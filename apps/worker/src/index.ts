@@ -22,6 +22,6 @@ await boss.work(QUEUES.backup, async () => {
   }
 });
 // dừng êm: đợi job đang chạy xong (tối đa 60 giây) rồi mới thoát
-for (const s of ['SIGTERM', 'SIGINT'] as const) process.once(s, () => { void boss.stop({ graceful: true, timeout: 60000 }).finally(() => process.exit(0)); });
+for (const s of ['SIGTERM', 'SIGINT'] as const) process.once(s, () => { void boss.stop({ graceful: true, timeout: 60000, wait: true }).finally(() => process.exit(0)); });
 log('worker started', { cron: env.BACKUP_CRON, dir: env.BACKUP_DIR });
 // Task 20 thêm boss.work(QUEUES.recomputeBalances, ...) tại đây.

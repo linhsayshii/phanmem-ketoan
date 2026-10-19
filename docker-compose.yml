@@ -17,6 +17,7 @@ services:
 
   api:
     build: { context: ., dockerfile: docker/api.Dockerfile }
+    init: true # tiến trình init chuyển SIGTERM cho lệnh con; lệnh chạy qua sh -c nên không có init thì tín hiệu dừng không tới node
     environment:
       DATABASE_URL: postgres://app_user:app_pass@postgres:5432/ketoan
       DATABASE_ADMIN_URL: postgres://postgres:postgres@postgres:5432/ketoan
@@ -31,7 +32,7 @@ services:
       - backups:/backups:ro
     depends_on:
       postgres: { condition: service_healthy }
-    command: ["sh", "-c", "node --import tsx packages/db/src/migrate-cli.ts && node --import tsx apps/api/src/server.ts"]
+    command: ["sh", "-c", "node --import tsx packages/db/src/migrate-cli.ts && exec node --import tsx apps/api/src/server.ts"]
 
   worker:
     build: { context: ., dockerfile: docker/worker.Dockerfile }
