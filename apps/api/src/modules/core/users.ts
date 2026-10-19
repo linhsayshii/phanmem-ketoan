@@ -36,6 +36,9 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     schema: { params: z.object({ id: z.string().uuid() }), body: userBody.partial().omit({ username: true }) } }, async (req) => {
     const b = req.body; const tenantId = req.auth!.tenantId!;
     await app.withTenant(req, async (trx) => {
+      // app_user không có RLS: phải xác nhận người dùng thuộc công ty hiện tại (RLS của tenant_user đã giới hạn theo công ty)
+      const member = await trx.selectFrom('tenant_user').select('user_id').where('user_id', '=', req.params.id).executeTakeFirst();
+      if (!member) throw new AppError('USER_NOT_FOUND', 'Không tìm thấy người dùng trong công ty', 404);
       if (b.roleCode) {
         const role = await trx.selectFrom('role').select('id').where('code', '=', b.roleCode).executeTakeFirstOrThrow();
         await trx.updateTable('tenant_user').set({ role_id: role.id }).where('tenant_id', '=', tenantId).where('user_id', '=', req.params.id).execute();

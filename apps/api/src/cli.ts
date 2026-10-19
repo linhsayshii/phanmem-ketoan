@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.js';
 import { parseArgs } from 'node:util';
 import pg from 'pg';
 import { hashPassword } from './modules/auth/service.js';

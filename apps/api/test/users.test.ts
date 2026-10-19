@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
+import { bootstrapTenant, createTestApp, TEST_PASSWORD, type TestApp } from './helpers.js';
 
 let ctx: TestApp;
 beforeAll(async () => { ctx = await createTestApp(); });
@@ -30,5 +30,15 @@ describe('người dùng và vai trò', () => {
     const res = await ctx.app.inject({ method: 'POST', url: '/api/users', headers: { cookie }, payload: { username: 'xyz', fullName: 'x', password: 'Matkhau1!', roleCode: 'xem' } });
     expect(res.statusCode).toBe(403);
     expect(res.json().error.code).toBe('FORBIDDEN');
+  });
+
+  it('không sửa được người dùng của công ty khác (404) và mật khẩu của họ không đổi', async () => {
+    const x = await bootstrapTenant(ctx, { code: `UX${Date.now()}` });
+    const y = await bootstrapTenant(ctx, { code: `UY${Date.now()}` });
+    const res = await ctx.app.inject({ method: 'PUT', url: `/api/users/${y.userId}`, headers: { cookie: x.cookie }, payload: { password: 'Doimatkhau1!' } });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.code).toBe('USER_NOT_FOUND');
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: y.username, password: TEST_PASSWORD } });
+    expect(login.statusCode).toBe(200);
   });
 });

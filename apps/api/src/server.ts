@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.js';
 import { createDb, createPool } from '@kt/db';
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
