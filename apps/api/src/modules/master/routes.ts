@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { CATALOGS, catalogByName } from './catalogs.js';
 import { createRow, deleteRow, getRow, listRows, updateRow } from './crud.js';
 import { AppError } from '../../plugins/errors.js';
+import { buildTemplate, importRows, parseWorkbook } from './importExcel.js';
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   const def = (name: string) => { const d = catalogByName(name); if (!d) throw new AppError('NOT_FOUND', `Không có danh mục ${name}`, 404); return d; };
@@ -10,6 +11,23 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.get('/api/catalogs/:name', { preHandler: app.requirePermission('catalog.view'), schema: { params: z.object({ name: z.string() }),
     querystring: z.object({ q: z.string().optional(), page: z.coerce.number().int().min(1).default(1), size: z.coerce.number().int().min(1).max(1000).default(100) }) } },
     async (req) => app.withTenant(req, (trx) => listRows(trx, def(req.params.name), req.query)));
+  app.get('/api/catalogs/:name/template.xlsx', { preHandler: app.requirePermission('catalog.view'), schema: { params: z.object({ name: z.string() }) } }, async (req, reply) => {
+    const d = def(req.params.name);
+    reply.header('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').header('content-disposition', `attachment; filename="mau_${d.name}.xlsx"`);
+    return reply.send(await buildTemplate(d));
+  });
+  app.post('/api/catalogs/:name/import', { preHandler: app.requirePermission('catalog.import'), schema: { params: z.object({ name: z.string() }), querystring: z.object({ mode: z.enum(['validate', 'commit']).default('validate') }) } }, async (req) => {
+    const d = def(req.params.name);
+    const file = await req.file(); if (!file) throw new AppError('IMPORT_NO_FILE', 'Thiếu tệp', 400);
+    const buf = await file.toBuffer();
+    const { rows, errors } = await parseWorkbook(d, buf);
+    if (req.query.mode === 'validate' || errors.length) {
+      if (errors.length && req.query.mode === 'commit') throw new AppError('IMPORT_ERRORS', `${errors.length} dòng lỗi`, 409, errors);
+      return { total: rows.length + errors.length, inserted: 0, errors };
+    }
+    const inserted = await app.withTenant(req, (trx) => importRows(trx, req.auth!.tenantId!, d, rows, errors));
+    return { total: rows.length, inserted, errors: [] };
+  });
   app.get('/api/catalogs/:name/:id', { preHandler: app.requirePermission('catalog.view'), schema: { params: z.object({ name: z.string(), id: z.string() }) } },
     async (req) => app.withTenant(req, (trx) => getRow(trx, def(req.params.name), req.params.id)));
   app.post('/api/catalogs/:name', { preHandler: app.requirePermission('catalog.create'), schema: { params: z.object({ name: z.string() }) } },

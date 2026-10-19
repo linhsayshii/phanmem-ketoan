@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import type { Kysely } from 'kysely';
 import { serializerCompiler, validatorCompiler, type ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Database } from '@kt/db';
@@ -27,6 +28,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config }) {
   await app.register(errorsPlugin);
   await app.register(cors, { origin: opts.config.WEB_ORIGIN, credentials: true });
   await app.register(cookie, { secret: opts.config.SESSION_SECRET });
+  await app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 } });
   await app.register(dbPlugin, { db: opts.db });
   await app.register(authPlugin);
   await app.register(authRoutes);

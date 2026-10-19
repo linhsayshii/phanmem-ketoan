@@ -8,6 +8,7 @@ import UsersPage from './pages/Users.js';
 import CompanyPage from './pages/Company.js';
 import CompanyWizard from './pages/CompanyWizard.js';
 import AccountsPage from './pages/Accounts.js';
+import ImportExcelPage from './pages/ImportExcel.js';
 import { api } from './api/client.js';
 
 // Các task sau thêm mục vào MENU và route vào routeTree.
@@ -19,6 +20,7 @@ export const MENU: MenuItem[] = [
   ] },
   { key: 'danhmuc', label: 'Danh mục', to: '/danh-muc', children: [
     { key: 'accounts', label: 'Hệ thống tài khoản', to: '/danh-muc/he-thong-tai-khoan', permission: 'account.view' },
+    { key: 'import', label: 'Nhập Excel', to: '/danh-muc/nhap-excel', permission: 'catalog.import' },
   ] },
 ];
 
@@ -36,7 +38,8 @@ const homeRoute = createRoute({ getParentRoute: () => appRoute, path: '/', compo
 const usersRoute = createRoute({ getParentRoute: () => appRoute, path: '/he-thong/nguoi-dung', component: UsersPage });
 const companyRoute = createRoute({ getParentRoute: () => appRoute, path: '/he-thong/cong-ty', component: CompanyPage });
 const accountsRoute = createRoute({ getParentRoute: () => appRoute, path: '/danh-muc/he-thong-tai-khoan', component: AccountsPage });
+const importRoute = createRoute({ getParentRoute: () => appRoute, path: '/danh-muc/nhap-excel', component: ImportExcelPage });
 
-export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, accountsRoute])]);
+export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, accountsRoute, importRoute])]);
 export const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }
