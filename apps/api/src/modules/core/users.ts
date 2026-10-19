@@ -24,8 +24,10 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     const id = await app.withTenant(req, async (trx) => {
       const role = await trx.selectFrom('role').select('id').where('code', '=', b.roleCode).executeTakeFirst();
       if (!role) throw new AppError('ROLE_NOT_FOUND', `Không có vai trò ${b.roleCode}`, 404);
+      // không bao giờ gắn tài khoản sẵn có (toàn cục) vào công ty này: nếu không, admin công ty khác đặt lại được mật khẩu của nó
       const existing = await trx.selectFrom('app_user').select('id').where('username', '=', b.username).executeTakeFirst();
-      const userId = existing?.id ?? (await trx.insertInto('app_user').values({ username: b.username, full_name: b.fullName, password_hash: passwordHash }).returning('id').executeTakeFirstOrThrow()).id;
+      if (existing) throw new AppError('USERNAME_TAKEN', 'Tên đăng nhập đã tồn tại', 409);
+      const userId = (await trx.insertInto('app_user').values({ username: b.username, full_name: b.fullName, password_hash: passwordHash }).returning('id').executeTakeFirstOrThrow()).id;
       await trx.insertInto('tenant_user').values({ tenant_id: tenantId, user_id: userId, role_id: role.id, sensitive_flags: JSON.stringify(b.sensitiveFlags) }).execute();
       return userId;
     });
@@ -40,13 +42,15 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       const member = await trx.selectFrom('tenant_user').select('user_id').where('user_id', '=', req.params.id).executeTakeFirst();
       if (!member) throw new AppError('USER_NOT_FOUND', 'Không tìm thấy người dùng trong công ty', 404);
       if (b.roleCode) {
-        const role = await trx.selectFrom('role').select('id').where('code', '=', b.roleCode).executeTakeFirstOrThrow();
+        const role = await trx.selectFrom('role').select('id').where('code', '=', b.roleCode).executeTakeFirst();
+        if (!role) throw new AppError('ROLE_NOT_FOUND', 'Không tìm thấy vai trò', 404);
         await trx.updateTable('tenant_user').set({ role_id: role.id }).where('tenant_id', '=', tenantId).where('user_id', '=', req.params.id).execute();
       }
       if (b.sensitiveFlags) await trx.updateTable('tenant_user').set({ sensitive_flags: JSON.stringify(b.sensitiveFlags) }).where('tenant_id', '=', tenantId).where('user_id', '=', req.params.id).execute();
       if (b.fullName) await trx.updateTable('app_user').set({ full_name: b.fullName }).where('id', '=', req.params.id).execute();
       if (b.password) {
         await trx.updateTable('app_user').set({ password_hash: await hashPassword(b.password) }).where('id', '=', req.params.id).execute();
+        await trx.deleteFrom('user_session').where('user_id', '=', req.params.id).execute();
         await sql`INSERT INTO audit_event(tenant_id, user_id, action, entity, entity_id) VALUES (${tenantId}::uuid, app_user_id(), 'reset_password', 'app_user', ${req.params.id})`.execute(trx);
       }
     });

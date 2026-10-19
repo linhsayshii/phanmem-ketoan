@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import argon2 from 'argon2';
 import { sql, type Kysely } from 'kysely';
 import { withTenant, type Database } from '@kt/db';
@@ -5,11 +6,16 @@ import { withTenant, type Database } from '@kt/db';
 export const hashPassword = (pw: string) => argon2.hash(pw, { type: argon2.argon2id });
 export const verifyPassword = (hash: string, pw: string) => argon2.verify(hash, pw).catch(() => false);
 
+// Băm giả để đăng nhập sai tên/tài khoản bị khóa tốn thời gian như sai mật khẩu (tránh dò tên đăng nhập qua thời gian phản hồi)
+let dummyHash: Promise<string> | undefined;
+const getDummyHash = () => (dummyHash ??= hashPassword(randomUUID()));
+
 export interface LoginResult { sessionId: string; userId: string; tenantId: string | null; tenants: { id: string; code: string; name: string }[] }
 
 export async function login(db: Kysely<Database>, input: { username: string; password: string; ip: string; ttlHours: number }): Promise<LoginResult | null> {
   const user = await db.selectFrom('app_user').selectAll().where('username', '=', input.username).executeTakeFirst();
-  const ok = user?.is_active ? await verifyPassword(user.password_hash, input.password) : false;
+  const verified = await verifyPassword(user?.is_active ? user.password_hash : await getDummyHash(), input.password);
+  const ok = verified && !!user?.is_active;
   await db.insertInto('login_event').values({ username: input.username, user_id: user?.id ?? null, success: ok, ip: input.ip }).execute();
   if (!user || !ok) return null;
   const tenants = await listTenantsOf(db, user.id);
