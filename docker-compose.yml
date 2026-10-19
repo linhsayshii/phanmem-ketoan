@@ -28,7 +28,7 @@ services:
     ports: ["3000:3000"]
     depends_on:
       postgres: { condition: service_healthy }
-    command: ["sh", "-c", "node packages/db/dist/migrate-cli.js && node apps/api/dist/server.js"]
+    command: ["sh", "-c", "node --import tsx packages/db/src/migrate-cli.ts && node --import tsx apps/api/src/server.ts"]
 
   worker:
     build: { context: ., dockerfile: docker/worker.Dockerfile }
