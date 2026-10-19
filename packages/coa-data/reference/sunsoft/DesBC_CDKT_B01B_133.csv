@@ -36,7 +36,7 @@ MASO,TEN_TK,THUYET_MINH,NGUON,TK,LOAI_DU,DK_KHAC,HIEN_AN,KIEU_CHU,SO_AM,MAU_DAM
 252,2. Dự phòng tổn thất đầu tư vào đơn vị khác (*),,,2292,N-C,,1,,1,0
 253,3. Đầu tư nắm giữ đến ngày đáo hạn dài hạn,,,1288,N-C,,1,,0,0
 260,VI. Tài sản dài hạn khác,,,,,,1,,0,0
-300,    TỔNG CỘNG TÀI SẢN (300=100+200),,+++,,,"MASO In('100','200')",1,B,0,1
+300,"    TỔNG CỘNG TÀI SẢN (300=100+200)",,+++,,,"MASO In('100','200')",1,B,0,1
 400,C - NỢ PHẢI TRẢ (400=410+420),,++,,,"MASO In('410','420')",1,B,0,1
 410,I. Nợ ngắn hạn,,+,,,"MASO In('411','412','413','414','415','416','417','418')",1,B,0,0
 411,1. Phải trả người bán ngắn hạn,,CN,331,C,,1,,0,0
@@ -63,4 +63,4 @@ MASO,TEN_TK,THUYET_MINH,NGUON,TK,LOAI_DU,DK_KHAC,HIEN_AN,KIEU_CHU,SO_AM,MAU_DAM
 515,5. Chênh lệch tỷ giá hối đoái,,,413,C-N,,1,,0,0
 516,6. Các quỹ thuộc vốn chủ sở hữu,,,418,C-N,,1,,0,0
 517,7. Lợi nhuận sau thuế chưa phân phối,,,421,C-N,,1,,0,0
-600,    TỔNG CỘNG NGUỒN VỐN (600=400+500),,+++,,,"MASO In('400','500')",1,B,0,1
+600,"    TỔNG CỘNG NGUỒN VỐN (600=400+500)",,+++,,,"MASO In('400','500')",1,B,0,1

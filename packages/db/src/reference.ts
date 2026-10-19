@@ -16,13 +16,16 @@ export async function syncReferenceData(adminUrl: string): Promise<void> {
     }
     for (const regime of COA_REGIMES) {
       const rows = loadCoaTemplate(regime);
-      await client.query('DELETE FROM coa_template WHERE regime = $1', [regime]);
       for (const r of rows) {
         await client.query(
           `INSERT INTO coa_template(regime, code, name, name_en, parent_code, is_group, root_type, normal_balance, track_currency, subledger_kind, source)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+           ON CONFLICT (regime, code) DO UPDATE SET name = EXCLUDED.name, name_en = EXCLUDED.name_en, parent_code = EXCLUDED.parent_code,
+             is_group = EXCLUDED.is_group, root_type = EXCLUDED.root_type, normal_balance = EXCLUDED.normal_balance,
+             track_currency = EXCLUDED.track_currency, subledger_kind = EXCLUDED.subledger_kind, source = EXCLUDED.source`,
           [r.regime, r.code, r.name, r.nameEn, r.parentCode, r.isGroup, r.rootType, r.normalBalance, r.trackCurrency, r.subledgerKind, r.source]);
       }
+      await client.query('DELETE FROM coa_template WHERE regime = $1 AND code <> ALL($2::text[])', [regime, rows.map((r) => r.code)]);
     }
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { await client.end(); }

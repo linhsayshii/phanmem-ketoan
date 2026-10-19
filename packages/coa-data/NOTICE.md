@@ -1,3 +1,7 @@
-Dữ liệu danh mục tài khoản TT133/TT200 được trích từ bảng danh mục mẫu của SUNSOFT PRO (chỉ số hiệu, tên, thuộc tính) để đối chiếu, sau đó rà soát với Phụ lục 1 TT 133/2016/TT-BTC và TT 200/2014/TT-BTC. Hệ thống tài khoản là văn bản quy phạm pháp luật, không thuộc phạm vi bảo hộ quyền tác giả (Luật Sở hữu trí tuệ Điều 15). Không có dữ liệu giao dịch nào của bất kỳ doanh nghiệp nào được trích.
+Dữ liệu danh mục tài khoản TT133 và TT200 được trích từ bảng danh mục mẫu `OrgDMTK` và `OrgDMTK_200` của SUNSOFT PRO (chỉ số hiệu, tên và thuộc tính tài khoản; cấu trúc cha/tổng hợp được chuẩn hóa theo số hiệu). Việc đối chiếu với Phụ lục 1 TT 133/2016/TT-BTC và Phụ lục 1 TT 200/2014/TT-BTC là bước còn chờ thực hiện; khi hoàn tất, ghi lại bằng cách cập nhật chuỗi `source` trong `src/load.ts`. Hiện chỉ có kiểm tra cấu trúc bằng `validateCoaTemplate`.
 
-Tình trạng rà soát: bước đối chiếu thủ công tên và số hiệu với văn bản gốc Phụ lục 1 TT 133/2016/TT-BTC và TT 200/2014/TT-BTC CHƯA được thực hiện vì không có văn bản gốc trong môi trường làm việc; `tt133.csv` và `tt200.csv` hiện là dữ liệu SUNSOFT đã chuẩn hóa cấu trúc (cha = mã tiền tố dài nhất, tổng hợp = có tài khoản con) và chỉ được kiểm tra bằng `validateCoaTemplate`. Cần rà soát với văn bản gốc trước khi dùng cho khách hàng. `tt99.csv` để trống chờ Phụ lục II TT 99/2025/TT-BTC (xem `tt99.status.json`).
+Hai mẫu này không chứa các tài khoản ngoài bảng (mã bắt đầu bằng 0, dạng `0xx`) vì danh mục SUNSOFT không có chúng.
+
+Mẫu TT99 (`data/coa/tt99.csv`) để trống, chờ nhập từ Phụ lục II TT 99/2025/TT-BTC (xem `data/coa/tt99.status.json`); các bảng `DesBC_*_99` của SUNSOFT không phải nguồn của TT99.
+
+Hệ thống tài khoản là văn bản quy phạm pháp luật, không thuộc phạm vi bảo hộ quyền tác giả (Luật Sở hữu trí tuệ Điều 15). Không có dữ liệu giao dịch nào của bất kỳ doanh nghiệp nào được trích.

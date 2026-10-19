@@ -4,7 +4,11 @@ set -euo pipefail
 SRC="${SUNSOFT_DIR:-$HOME/Downloads/SUNSOFTPRO}/KTDATA.dat"
 OUT="$(dirname "$0")/../reference/sunsoft"; mkdir -p "$OUT"
 PICK="node $(dirname "$0")/pick-columns.mjs"
-x() { if mdb-export -D '%Y-%m-%d' "$SRC" "$1" | $PICK "$2" > "$OUT/$3.csv"; then echo "$3: $(($(wc -l < "$OUT/$3.csv") - 1)) dòng"; else rm -f "$OUT/$3.csv"; echo "$3: bỏ qua (bảng không có)"; return 1; fi; }
+# Ghi ra tệp tạm rồi mv khi thành công; pick-columns.mjs in "<bảng>: N bản ghi" ra stderr.
+x() {
+  local tmp; tmp="$(mktemp "$OUT/.tmp.XXXXXX")"
+  if mdb-export -D '%Y-%m-%d' "$SRC" "$1" | $PICK "$2" "$3" > "$tmp"; then mv "$tmp" "$OUT/$3.csv"; else rm -f "$tmp"; echo "$3: bỏ qua (bảng không có)"; return 1; fi
+}
 x OrgDMTK     "TK_TI,TEN_TK,TEN_TK_E,LOAI_DU,TK_NTE,CHI_TIET,NHOM_ME,TC_KHAC,CAP_TK" OrgDMTK_133
 x OrgDMTK_200 "TK_TI,TEN_TK,TEN_TK_E,LOAI_DU,TK_NTE,CHI_TIET,NHOM_ME,TC_KHAC,CAP_TK" OrgDMTK_200
 for R in 99 133 200; do

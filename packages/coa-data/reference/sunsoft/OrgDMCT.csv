@@ -1,87 +1,44 @@
 MA_CT,TEN_CT,NHOM_CT,STT,TK_CT,MAU_SO,QD_SO,SOCT_THANG
-BC,Giấy báo có,B-NH,1,1121,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-BCN,Giấy báo có ngoại tệ,B-NH,1,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-BN,Giấy báo nợ,B-NH,2,1121,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-BNN,Giấy báo nợ ngoại tệ,B-NH,2,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-CC,Chứng từ phân bổ CCDC,F-PKT,99,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-CCD,"Điều chỉnh công cụ, dụng cụ",E-TS,2,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-CCG,"Giảm công cụ, dụng cụ",E-TS,2,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-CCT,"Tăng công cụ, dụng cụ",E-TS,1,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-DTS,Điều chỉnh tài sản cố định,E-TS,2,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-GTS,Giảm tài sản cố định,E-TS,2,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-HB,Hoá đơn bán hàng,D-HD,2,131,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-HBX,Hóa đơn bán hàng không qua kho,D-HD,1,131,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-HM,Hóa đơn mua hàng,D-HD,1,331,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-HMX,Hóa đơn mua hàng không qua kho,D-HD,2,331,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-KC,Chứng từ kết chuyển tự động,F-PKT,99,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-KH,Chứng từ trích khấu hao TSCĐ,F-PKT,99,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PC,Phiếu chi tiền mặt,A-TM,2,1111,Mẫu số 02 - TT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PCN,Phiếu chi ngoại tệ,A-TM,2,,Mẫu số 02 - TT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PCX,Phiếu chi khác,A-TM,2,,Mẫu số 02 - TT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PDV,Phiếu bán dịch vụ,F-PKT,2,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PDVM,Phiếu mua dịch vụ,F-PKT,1,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PK,PHIẾU KẾ TOÁN,F-PKT,98,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PN,Phiếu nhập kho,C-VT,1,,Mẫu số 01 - VT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PNCP,Phiếu nhập chi phí,C-VT,2,,Mẫu số 01 - VT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PNGC,Phiếu nhập vật tư gia công,C-VT,1,,Mẫu số 01 - VT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PNK,Phiếu nhập hàng nhập khẩu,C-VT,1,,Mẫu số 01 - VT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PNL,Phiếu nhập hàng bán trả lại,C-VT,2,,Mẫu số 01 - VT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PNT,Phiếu nhập kho thành phẩm,C-VT,2,,Mẫu số 01 - VT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PNX,Phiếu nhập khác,C-VT,1,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PT,Phiếu thu tiền mặt,A-TM,1,1111,Mẫu số 01 - TT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PTN,Phiếu thu ngoại tệ,A-TM,1,,Mẫu số 01 - TT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PTX,Phiếu thu khác,A-TM,1,,Mẫu số 01 - TT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PX,Phiếu xuất bán hàng,C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PXB,"Phiếu xuất biếu, tặng",C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PXD,Phiếu xuất điều chuyển kho,C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PXGC,Phiếu xuất vật tư gia công,C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PXH,Phiếu xuất huỷ hàng,C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PXL,Phiếu xuất trả lại hàng,C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PXS,"Phiếu xuất cho sản xuất, sử dụng",C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PXT,Phiếu xuất bán thành phẩm,C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-PXX,Phiếu xuất khác,C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-TTS,Tăng tài sản cố định,E-TS,1,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
-UC,Ủy nhiệm chi,B-NH,2,,,Ban hành theo TT số 133/2016/TT-BTC,
-"ngày 26/08/2016 của Bộ trưởng BTC.,0,0,0,0,0,0,,,",,,,,,,
+BC,Giấy báo có,B-NH,1,1121,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+BCN,Giấy báo có ngoại tệ,B-NH,1,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+BN,Giấy báo nợ,B-NH,2,1121,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+BNN,Giấy báo nợ ngoại tệ,B-NH,2,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+CC,Chứng từ phân bổ CCDC,F-PKT,99,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+CCD,"Điều chỉnh công cụ, dụng cụ",E-TS,2,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+CCG,"Giảm công cụ, dụng cụ",E-TS,2,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+CCT,"Tăng công cụ, dụng cụ",E-TS,1,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+DTS,Điều chỉnh tài sản cố định,E-TS,2,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+GTS,Giảm tài sản cố định,E-TS,2,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+HB,Hoá đơn bán hàng,D-HD,2,131,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+HBX,Hóa đơn bán hàng không qua kho,D-HD,1,131,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+HM,Hóa đơn mua hàng,D-HD,1,331,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+HMX,Hóa đơn mua hàng không qua kho,D-HD,2,331,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+KC,Chứng từ kết chuyển tự động,F-PKT,99,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+KH,Chứng từ trích khấu hao TSCĐ,F-PKT,99,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PC,Phiếu chi tiền mặt,A-TM,2,1111,Mẫu số 02 - TT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PCN,Phiếu chi ngoại tệ,A-TM,2,,Mẫu số 02 - TT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PCX,Phiếu chi khác,A-TM,2,,Mẫu số 02 - TT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PDV,Phiếu bán dịch vụ,F-PKT,2,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PDVM,Phiếu mua dịch vụ,F-PKT,1,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PK,PHIẾU KẾ TOÁN,F-PKT,98,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PN,Phiếu nhập kho,C-VT,1,,Mẫu số 01 - VT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PNCP,Phiếu nhập chi phí,C-VT,2,,Mẫu số 01 - VT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PNGC,Phiếu nhập vật tư gia công,C-VT,1,,Mẫu số 01 - VT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PNK,Phiếu nhập hàng nhập khẩu,C-VT,1,,Mẫu số 01 - VT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PNL,Phiếu nhập hàng bán trả lại,C-VT,2,,Mẫu số 01 - VT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PNT,Phiếu nhập kho thành phẩm,C-VT,2,,Mẫu số 01 - VT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PNX,Phiếu nhập khác,C-VT,1,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PT,Phiếu thu tiền mặt,A-TM,1,1111,Mẫu số 01 - TT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PTN,Phiếu thu ngoại tệ,A-TM,1,,Mẫu số 01 - TT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PTX,Phiếu thu khác,A-TM,1,,Mẫu số 01 - TT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PX,Phiếu xuất bán hàng,C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PXB,"Phiếu xuất biếu, tặng",C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PXD,Phiếu xuất điều chuyển kho,C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PXGC,Phiếu xuất vật tư gia công,C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PXH,Phiếu xuất huỷ hàng,C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PXL,Phiếu xuất trả lại hàng,C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PXS,"Phiếu xuất cho sản xuất, sử dụng",C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PXT,Phiếu xuất bán thành phẩm,C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+PXX,Phiếu xuất khác,C-VT,2,,Mẫu số 02 - VT,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+TTS,Tăng tài sản cố định,E-TS,1,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0
+UC,Ủy nhiệm chi,B-NH,2,,,Ban hành theo TT số 133/2016/TT-BTC ngày 26/08/2016 của Bộ trưởng BTC.,0

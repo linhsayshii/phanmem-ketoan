@@ -25,7 +25,7 @@ MASO,TEN_TK,THUYET_MINH,NGUON,TK,LOAI_DU,DK_KHAC,HIEN_AN,KIEU_CHU,SO_AM,MAU_DAM
 180,VIII. Tài sản khác,,+,,,"MASO In('181','182')",1,B,0,0
 181,1. Thuế GTGT được khấu trừ,,,133,N-C,,1,,0,0
 182,2. Tài sản khác,,,,N-C,"Left(TK_TI,3) In('142','144','242','244')",1,,0,0
-200,    TỔNG CỘNG TÀI SẢN (200 = 110+...+180),,++,,,"MASO In('110','120','130','140','150','160','170','180')",1,B,0,1
+200,"    TỔNG CỘNG TÀI SẢN (200 = 110+...+180)",,++,,,"MASO In('110','120','130','140','150','160','170','180')",1,B,0,1
 300,I. Nợ phải trả,,+,,,"MASO In('311','312','313','314','315','316','317','318','319','320')",1,B,0,0
 311,1. Phải trả người bán,,CN,331,C,,1,,0,0
 312,2. Người mua trả tiền trước,,CN,131,C,,1,,0,0
@@ -45,4 +45,4 @@ MASO,TEN_TK,THUYET_MINH,NGUON,TK,LOAI_DU,DK_KHAC,HIEN_AN,KIEU_CHU,SO_AM,MAU_DAM
 415,5. Chênh lệch tỷ giá hối đoái,,,413,C-N,,1,,0,0
 416,6. Các quỹ thuộc vốn chủ sở hữu,,,418,C-N,,1,,0,0
 417,7. Lợi nhuận sau thuế chưa phân phối,,,421,C-N,,1,,0,0
-500,    TỔNG CỘNG NGUỒN VỐN (500 = 300+400),,++,,,"MASO In('300','400')",1,B,0,1
+500,"    TỔNG CỘNG NGUỒN VỐN (500 = 300+400)",,++,,,"MASO In('300','400')",1,B,0,1

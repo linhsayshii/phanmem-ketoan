@@ -3,11 +3,27 @@ import { describe, expect, it } from 'vitest';
 import { validateCoaTemplate } from '@kt/domain';
 import { COA_REGIMES, dataPath, loadCoaTemplate, tt99Status } from '../src/index.js';
 
+// Tách một dòng CSV có nhận biết dấu nháy (cùng quy tắc với scripts/pick-columns.mjs; tệp tham chiếu không còn dấu xuống dòng trong ô).
+const splitLine = (l: string): string[] => {
+  const o: string[] = []; let c = ''; let q = false;
+  for (let i = 0; i < l.length; i++) {
+    const ch = l[i]!;
+    if (q) { if (ch === '"') { if (l[i + 1] === '"') { c += '"'; i++; } else q = false; } else c += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',') { o.push(c); c = ''; }
+    else c += ch;
+  }
+  o.push(c);
+  return o;
+};
 const refCodes = (file: string, col: string): string[] => {
   const lines = readFileSync(dataPath('..', 'reference', 'sunsoft', file), 'utf8').split(/\r?\n/).filter(Boolean);
-  const h = lines[0]!.split(','); const i = h.indexOf(col);
-  return lines.slice(1).map((l) => l.split(',')[i]?.replace(/"/g, '') ?? '').filter((v) => /^\d{3,}$/.test(v));
+  const i = splitLine(lines[0]!).indexOf(col);
+  return lines.slice(1).map((l) => splitLine(l)[i] ?? '').filter((v) => /^\d{3,}$/.test(v));
 };
+// Các bảng DesBC_*_99 của SUNSOFT là bản sao TT200 nên còn tham chiếu các tài khoản TT99 đã bỏ.
+const TT99_REMOVED = ['161', '417', '441', '461', '466', '611', '631'];
+const kept = (codes: string[]): string[] => codes.filter((c) => !TT99_REMOVED.includes(c));
 
 describe('mẫu hệ thống tài khoản', () => {
   for (const regime of COA_REGIMES) {
@@ -31,8 +47,8 @@ describe('mẫu hệ thống tài khoản', () => {
     if (!st.complete) { console.warn('CẢNH BÁO: tt99.csv chưa hoàn tất, bỏ qua kiểm tra đối chiếu TT99'); t.skip(); return; }
     const by = new Set(loadCoaTemplate('TT99').map((r) => r.code));
     for (const c of ['137', '215', '2295', '246', '332', '351', '1383']) expect(by.has(c), `thiếu TK mới ${c}`).toBe(true);
-    for (const c of ['161', '417', '441', '461', '466', '611', '631']) expect(by.has(c), `TK ${c} đã bỏ theo TT99`).toBe(false);
-    for (const c of refCodes('DesBC_CDKT_B01_99.csv', 'TK')) expect(by.has(c), `B01 tham chiếu ${c}`).toBe(true);
-    for (const c of [...refCodes('DesBC_KQKD_LAILO_99.csv', 'TK_TI'), ...refCodes('DesBC_KQKD_LAILO_99.csv', 'TK_DU')]) expect(by.has(c), `B02 tham chiếu ${c}`).toBe(true);
+    for (const c of TT99_REMOVED) expect(by.has(c), `TK ${c} đã bỏ theo TT99`).toBe(false);
+    for (const c of kept(refCodes('DesBC_CDKT_B01_99.csv', 'TK'))) expect(by.has(c), `B01 tham chiếu ${c}`).toBe(true);
+    for (const c of kept([...refCodes('DesBC_KQKD_LAILO_99.csv', 'TK_TI'), ...refCodes('DesBC_KQKD_LAILO_99.csv', 'TK_DU')])) expect(by.has(c), `B02 tham chiếu ${c}`).toBe(true);
   });
 });
