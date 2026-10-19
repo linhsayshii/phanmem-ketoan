@@ -6,6 +6,7 @@ export interface BackupOpts { adminUrl: string; dir: string; keep: number; pgDum
 
 export async function runBackup(opts: BackupOpts): Promise<{ file: string; bytes: number; pruned: string[] }> {
   mkdirSync(opts.dir, { recursive: true });
+  for (const f of readdirSync(opts.dir)) if (/^ketoan_\d{8}T\d{6}\.dump\.part$/.test(f)) rmSync(path.join(opts.dir, f), { force: true }); // file dở dang do bị giết cứng ở lần trước
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, '');
   const file = path.join(opts.dir, `ketoan_${stamp}.dump`);
   const part = `${file}.part`; // chỉ đổi tên thành file cuối khi pg_dump xong, nên không bao giờ có file .dump dở dang

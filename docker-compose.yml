@@ -41,6 +41,7 @@ services:
       BACKUP_DIR: /backups
       BACKUP_CRON: "0 2 * * *"
       BACKUP_KEEP: "14"
+    stop_grace_period: 70s # chờ boss.stop graceful (60 giây) xong trước khi Docker SIGKILL
     volumes:
       - backups:/backups
     depends_on:

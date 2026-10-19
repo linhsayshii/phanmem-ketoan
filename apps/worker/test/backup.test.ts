@@ -29,7 +29,7 @@ describe.skipIf(!hasPgDump)('sao lưu', () => {
 
   it('tạo file .dump khác rỗng và chỉ giữ lại keep file mới nhất', async () => {
     const dir = tmpDir();
-    for (const n of ['ketoan_20250101T000000.dump', 'ketoan_20250102T000000.dump']) writeFileSync(path.join(dir, n), 'x');
+    for (const n of ['ketoan_20250101T000000.dump', 'ketoan_20250102T000000.dump', 'ketoan_20250103T000000.dump.part']) writeFileSync(path.join(dir, n), 'x'); // .part cũ: do bị giết giữa chừng
     const r = await runBackup({ adminUrl: process.env.DATABASE_ADMIN_URL!, dir, keep: 2 });
     expect(r.bytes).toBeGreaterThan(1000);
     expect(statSync(r.file).size).toBe(r.bytes);
