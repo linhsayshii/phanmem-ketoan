@@ -1,7 +1,9 @@
+import { readdirSync, statSync } from 'node:fs';
+import path from 'node:path';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { sql, type Transaction } from 'kysely';
-import type { Database } from '@kt/db';
+import { QUEUES, type Database } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
 
 const companyBody = z.object({
@@ -47,6 +49,17 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       await trx.updateTable('tenant').set(set).where('id', '=', req.auth!.tenantId!).execute();
       return { ok: true };
     });
+  });
+
+  app.post('/api/backup/run', { preHandler: app.requirePermission('backup.run') }, async (req) => {
+    if (!app.boss) throw new AppError('NO_QUEUE', 'Hàng đợi chưa sẵn sàng', 503);
+    await app.boss.createQueue(QUEUES.backup);
+    const jobId = await app.boss.send(QUEUES.backup, { requestedBy: req.auth!.userId }, { singletonKey: 'manual', singletonSeconds: 60 });
+    return { jobId };
+  });
+  app.get('/api/backup', { preHandler: app.requirePermission('backup.run') }, async () => {
+    let files: string[] = []; try { files = readdirSync(app.config.BACKUP_DIR); } catch { files = []; }
+    return files.filter((f) => f.endsWith('.dump')).sort().reverse().map((f) => { const s = statSync(path.join(app.config.BACKUP_DIR, f)); return { name: f, bytes: s.size, mtime: s.mtime.toISOString() }; });
   });
 };
 export default routes;

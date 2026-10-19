@@ -1,14 +1,42 @@
-import { Button, Card, Form, Input, Select, Tabs, message } from 'antd';
+import { useEffect } from 'react';
+import { Button, Card, Form, Input, Select, Table, Tabs, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import { api } from '../api/client.js';
+import { useAuth } from '../auth.js';
 
 interface Company { code: string; name: string; taxCode: string | null; address: string | null; legalRep: string | null; chiefAccountant: string | null; phone: string | null; email: string | null }
 interface Settings { book_form: string; costing_method: string; base_currency: string; fx_rate_type: string; hidden_modules: string[]; extra_dims: { key: string; label: string }[] }
 
+interface BackupFile { name: string; bytes: number; mtime: string }
+
 const NULLABLE = ['taxCode', 'address', 'legalRep', 'chiefAccountant', 'phone', 'email'] as const;
+const fmtBytes = (n: number) => (n < 1048576 ? `${Math.ceil(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
+
+function BackupTab() {
+  const qc = useQueryClient();
+  const files = useQuery({ queryKey: ['backups'], queryFn: () => api<BackupFile[]>('/api/backup') });
+  useEffect(() => { if (files.error) void message.error((files.error as Error).message); }, [files.error]);
+  const run = useMutation({
+    mutationFn: () => api('/api/backup/run', { method: 'POST' }),
+    onError: (e) => { void message.error((e as Error).message); },
+    onSuccess: () => { void message.success('Đã đưa vào hàng đợi, bản sao lưu xuất hiện sau ít phút'); void qc.invalidateQueries({ queryKey: ['backups'] }); },
+  });
+  return (
+    <Card>
+      <Button type="primary" loading={run.isPending} onClick={() => run.mutate()} style={{ marginBottom: 12 }}>Sao lưu ngay</Button>
+      <Table<BackupFile> rowKey="name" size="small" pagination={false} loading={files.isLoading} dataSource={files.data ?? []} columns={[
+        { title: 'Tên file', dataIndex: 'name' },
+        { title: 'Dung lượng', dataIndex: 'bytes', align: 'right', render: fmtBytes },
+        { title: 'Thời gian', dataIndex: 'mtime', render: (v: string) => dayjs(v).format('DD/MM/YYYY HH:mm:ss') },
+      ]} />
+    </Card>
+  );
+}
 
 export default function CompanyPage() {
   const qc = useQueryClient();
+  const { can } = useAuth();
   const company = useQuery({ queryKey: ['company'], queryFn: () => api<Company>('/api/company') });
   const settings = useQuery({ queryKey: ['settings'], queryFn: () => api<Settings>('/api/settings') });
   const onError = (e: unknown) => { void message.error((e as Error).message); };
@@ -45,6 +73,7 @@ export default function CompanyPage() {
               <Button onClick={() => remove(f.name)}>Xóa</Button></div>))}
             <Button onClick={() => add()}>Thêm trường</Button></>)}</Form.List>
           <div style={{ marginTop: 16 }}><Button type="primary" htmlType="submit">Lưu</Button></div></Form></Card>) },
+      ...(can('backup.run') ? [{ key: 'saoluu', label: 'Sao lưu', children: <BackupTab /> }] : []),
     ]} />
   );
 }

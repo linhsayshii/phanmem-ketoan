@@ -3,6 +3,7 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import type { Kysely } from 'kysely';
+import type PgBoss from 'pg-boss';
 import { serializerCompiler, validatorCompiler, type ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Database } from '@kt/db';
 import type { Config } from './config.js';
@@ -20,13 +21,14 @@ import coaRoutes from './modules/coa/routes.js';
 import masterRoutes from './modules/master/routes.js';
 import auditRoutes from './modules/audit/routes.js';
 
-declare module 'fastify' { interface FastifyInstance { config: Config } }
+declare module 'fastify' { interface FastifyInstance { config: Config; boss: PgBoss | null } }
 
-export async function buildApp(opts: { db: Kysely<Database>; config: Config }) {
+export async function buildApp(opts: { db: Kysely<Database>; config: Config; boss?: PgBoss }) {
   const app = Fastify({ logger: process.env.NODE_ENV !== 'test', trustProxy: true }).withTypeProvider<ZodTypeProvider>();
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.decorate('config', opts.config);
+  app.decorate('boss', opts.boss ?? null);
   await app.register(errorsPlugin);
   await app.register(cors, { origin: opts.config.WEB_ORIGIN, credentials: true });
   await app.register(cookie, { secret: opts.config.SESSION_SECRET });

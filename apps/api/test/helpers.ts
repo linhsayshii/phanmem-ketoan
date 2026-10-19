@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import type { FastifyInstance } from 'fastify';
 import { sql } from 'kysely';
+import PgBoss from 'pg-boss';
 import { createTestUser, setupTestDb, newId, type TestDb } from '@kt/db/testing';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
@@ -10,9 +11,11 @@ export interface TestApp { app: FastifyInstance; t: TestDb; close(): Promise<voi
 
 export async function createTestApp(): Promise<TestApp> {
   const t = await setupTestDb();
-  const app = await buildApp({ db: t.db, config: loadConfig({ ...process.env, SESSION_SECRET: 'test-secret-123' }) });
+  const boss = new PgBoss({ connectionString: process.env.DATABASE_ADMIN_URL!, schema: 'pgboss' });
+  await boss.start();
+  const app = await buildApp({ db: t.db, config: loadConfig({ ...process.env, SESSION_SECRET: 'test-secret-123' }), boss });
   await app.ready();
-  return { app, t, close: async () => { await app.close(); await t.close(); } };
+  return { app, t, close: async () => { await app.close(); await boss.stop({ graceful: false }); await t.close(); } };
 }
 
 export const TEST_PASSWORD = 'Matkhau1!';
