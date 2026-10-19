@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ketoan
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ketoan"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: { context: ., dockerfile: docker/api.Dockerfile }
+    environment:
+      DATABASE_URL: postgres://app_user:app_pass@postgres:5432/ketoan
+      DATABASE_ADMIN_URL: postgres://postgres:postgres@postgres:5432/ketoan
+      SESSION_SECRET: ${SESSION_SECRET:-doi-chuoi-nay-khi-trien-khai}
+      SESSION_TTL_HOURS: "12"
+      COOKIE_SECURE: "false"
+      PORT: "3000"
+      WEB_ORIGIN: http://localhost:8080
+    ports: ["3000:3000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    command: ["sh", "-c", "node packages/db/dist/migrate-cli.js && node apps/api/dist/server.js"]
+
+  worker:
+    build: { context: ., dockerfile: docker/worker.Dockerfile }
+    environment:
+      DATABASE_URL: postgres://app_user:app_pass@postgres:5432/ketoan
+      DATABASE_ADMIN_URL: postgres://postgres:postgres@postgres:5432/ketoan
+      BACKUP_DIR: /backups
+      BACKUP_CRON: "0 2 * * *"
+      BACKUP_KEEP: "14"
+    volumes:
+      - backups:/backups
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  web:
+    build: { context: ., dockerfile: docker/web.Dockerfile }
+    ports: ["8080:80"]
+    depends_on: [api]
+
+volumes:
+  pgdata:
+  backups:
