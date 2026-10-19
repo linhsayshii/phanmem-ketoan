@@ -1,0 +1,33 @@
+import type pg from 'pg';
+import { buildFiscalPeriods, type Regime } from '@kt/domain';
+
+export async function ensureUser(c: pg.Client, username: string, passwordHash: string, fullName: string): Promise<string> {
+  const r = await c.query(`INSERT INTO app_user(username, full_name, password_hash) VALUES ($1,$2,$3) ON CONFLICT (username) DO UPDATE SET full_name = EXCLUDED.full_name RETURNING id`, [username, fullName, passwordHash]);
+  return r.rows[0].id;
+}
+export async function ensureTenant(c: pg.Client, t: { code: string; name: string; taxCode: string; ownerUserId: string }): Promise<{ id: string; created: boolean }> {
+  const ex = await c.query('SELECT id FROM tenant WHERE code = $1', [t.code]);
+  if (ex.rows[0]) return { id: ex.rows[0].id, created: false };
+  const r = await c.query('SELECT create_tenant($1,$2,$3,$4) AS id', [t.code, t.name, t.taxCode, t.ownerUserId]);
+  return { id: r.rows[0].id, created: true };
+}
+export async function withTenantClient<T>(c: pg.Client, tenantId: string, fn: () => Promise<T>): Promise<T> {
+  await c.query('BEGIN'); await c.query(`SELECT set_config('app.current_tenant', $1, true)`, [tenantId]);
+  try { const r = await fn(); await c.query('COMMIT'); return r; } catch (e) { await c.query('ROLLBACK'); throw e; }
+}
+export async function insertFiscalYear(c: pg.Client, tenantId: string, input: { fiscalYear: number; dateFrom: string; months: number; regime: Regime }) {
+  for (const p of buildFiscalPeriods(input))
+    await c.query('INSERT INTO fiscal_period(tenant_id, fiscal_year, period_no, date_from, date_to, regime) VALUES ($1,$2,$3,$4,$5,$6)', [tenantId, p.fiscalYear, p.periodNo, p.dateFrom, p.dateTo, p.regime]);
+}
+export async function generateAccountsSql(c: pg.Client, tenantId: string, regime: Regime): Promise<number> {
+  const tpl = await c.query('SELECT * FROM coa_template WHERE regime = $1 ORDER BY length(code), code', [regime]);
+  if (tpl.rows.length === 0) throw new Error(`Chưa có mẫu hệ thống tài khoản ${regime}`);
+  const idByCode = new Map<string, number>();
+  for (const t of tpl.rows) {
+    const r = await c.query(`INSERT INTO account(tenant_id, regime, code, name, name_en, parent_id, is_group, root_type, normal_balance, track_currency, subledger_kind)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+      [tenantId, regime, t.code, t.name, t.name_en, t.parent_code ? idByCode.get(t.parent_code) ?? null : null, t.is_group, t.root_type, t.normal_balance, t.track_currency, t.subledger_kind]);
+    idByCode.set(t.code, r.rows[0].id);
+  }
+  return tpl.rows.length;
+}
