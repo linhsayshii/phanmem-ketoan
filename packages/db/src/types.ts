@@ -35,9 +35,9 @@ export interface TenantUserTable {
   sensitive_flags: JSONColumnType<string[]>; is_active: Generated<boolean>;
 }
 export interface UserSessionTable { id: Generated<string>; user_id: string; tenant_id: string | null; expires_at: Timestamp; created_at: Generated<string>; ip: string | null }
-export interface LoginEventTable { id: Generated<string>; ts: Generated<string>; username: string; user_id: string | null; success: boolean; ip: string | null }
+export interface LoginEventTable { id: Generated<number>; ts: Generated<string>; username: string; user_id: string | null; success: boolean; ip: string | null }
 export interface AuditEventTable {
-  id: Generated<string>; tenant_id: string; ts: Generated<string>; user_id: string | null;
+  id: Generated<number>; tenant_id: string; ts: Generated<string>; user_id: string | null;
   action: string; entity: string; entity_id: string; before: JSONColumnType<unknown> | null; after: JSONColumnType<unknown> | null; ip: string | null;
 }
 export interface LegalParamTable { id: Generated<number>; code: string; value: JSONColumnType<unknown>; valid_from: DateOnly; valid_to: DateOnly | null; source: string }
