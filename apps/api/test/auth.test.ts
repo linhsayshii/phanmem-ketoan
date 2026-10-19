@@ -1,0 +1,51 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { sql } from 'kysely';
+import { createTestUser } from '@kt/db/testing';
+import { bootstrapTenant, createTestApp, TEST_PASSWORD, type TestApp } from './helpers.js';
+import { hashPassword } from '../src/modules/auth/service.js';
+
+let ctx: TestApp;
+beforeAll(async () => { ctx = await createTestApp(); });
+afterAll(async () => { await ctx.close(); });
+
+describe('xác thực', () => {
+  it('đăng nhập đúng trả cookie sid và danh sách công ty; tự chọn công ty khi chỉ có một', async () => {
+    const { cookie, tenantId } = await bootstrapTenant(ctx, { code: `AU${Date.now()}` });
+    const me = await ctx.app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
+    expect(me.statusCode).toBe(200);
+    expect(me.json()).toMatchObject({ tenantId, permissions: expect.arrayContaining(['voucher.post', 'user.create']) });
+  });
+
+  it('sai mật khẩu trả 401 và ghi login_event thất bại', async () => {
+    const username = `sai_${Date.now()}`;
+    await createTestUser(ctx.t.admin, { username, passwordHash: await hashPassword(TEST_PASSWORD) });
+    const res = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'khac' } });
+    expect(res.statusCode).toBe(401);
+    const ev = await sql<{ success: boolean }>`SELECT success FROM login_event WHERE username = ${username}`.execute(ctx.t.admin);
+    expect(ev.rows).toEqual([{ success: false }]);
+  });
+
+  it('chưa đăng nhập thì route bảo vệ trả 401; đăng xuất hủy phiên', async () => {
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/users' })).statusCode).toBe(401);
+    const { cookie } = await bootstrapTenant(ctx, { code: `AO${Date.now()}` });
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/auth/logout', headers: { cookie } })).statusCode).toBe(204);
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } })).statusCode).toBe(401);
+  });
+
+  it('người dùng thuộc hai công ty phải chọn công ty', async () => {
+    const a = await bootstrapTenant(ctx, { code: `AM${Date.now()}` });
+    const b = await bootstrapTenant(ctx, { code: `AN${Date.now()}` });
+    // thêm user của a vào b bằng admin
+    await sql`INSERT INTO tenant_user(tenant_id, user_id, role_id)
+              SELECT ${b.tenantId}::uuid, ${a.userId}::uuid, id FROM role WHERE tenant_id = ${b.tenantId}::uuid AND code = 'xem'`.execute(ctx.t.admin);
+    const res = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: a.username, password: TEST_PASSWORD } });
+    expect(res.json()).toMatchObject({ tenantId: null, tenants: expect.arrayContaining([expect.objectContaining({ id: a.tenantId }), expect.objectContaining({ id: b.tenantId })]) });
+    const cookie = `sid=${res.cookies.find((c) => c.name === 'sid')!.value}`;
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/users', headers: { cookie } })).statusCode).toBe(409);
+    const sel = await ctx.app.inject({ method: 'POST', url: '/api/auth/select-tenant', headers: { cookie }, payload: { tenantId: b.tenantId } });
+    expect(sel.statusCode).toBe(200);
+    const me = await ctx.app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
+    expect(me.json().tenantId).toBe(b.tenantId);
+    expect(me.json().permissions).not.toContain('user.create');
+  });
+});

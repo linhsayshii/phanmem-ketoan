@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { sql, type Kysely } from 'kysely';
 import { createDb, createPool } from './client.js';
 import { migrate } from './migrate.js';
+import { syncReferenceData } from './reference.js';
 import type { Database } from './types.js';
 
 export interface TestDb { admin: Kysely<Database>; db: Kysely<Database>; close(): Promise<void> }
@@ -13,6 +14,7 @@ export async function setupTestDb(): Promise<TestDb> {
   const adminUrl = process.env.DATABASE_ADMIN_URL!;
   const appUrl = process.env.DATABASE_URL!;
   await migrate(adminUrl);
+  await syncReferenceData(adminUrl);
   const adminPool = createPool(adminUrl);
   const appPool = createPool(appUrl);
   return {
