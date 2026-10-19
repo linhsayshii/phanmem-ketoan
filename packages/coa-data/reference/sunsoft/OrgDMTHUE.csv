@@ -1,0 +1,11 @@
+MA_THUE,TEN_THUE,THUE_SUAT,STT
+00,Thuế GTGT 0%,0,
+05,Thuế GTGT 5%,5,
+07,Thuế GTGT 10%x70%,7,
+08,Thuế GTGT 8%,8,
+10,Thuế GTGT 10%,10,
+KT,Hoá đơn GTGT không chịu thuế,0,
+KTH,Không tổng hợp lên tờ khai 01/GTGT,0,
+NK,Hóa đơn GTGT hàng nhập khẩu,1,
+TT,Hoá đơn trực tiếp 0%,0,
+XK,Hoá đơn GTGT hàng xuất khẩu,0,

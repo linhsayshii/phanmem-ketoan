@@ -1,0 +1,66 @@
+MASO,TEN_TK,THUYET_MINH,NGUON,TK,LOAI_DU,DK_KHAC,HIEN_AN,KIEU_CHU,SO_AM,MAU_DAM
+100,A - TÀI SẢN NGẮN HẠN (100=110+120+130+140+150),,++,,,"MASO In('110','120','130','140','150')",1,B,0,1
+110,I. Tiền và các khoản tương đương tiền,,,,N-C,"Left(TK_TI,3) In('111','112')",1,B,0,0
+120,II. Đầu tư tài chính ngắn hạn,,+,,,"MASO In('121','122','123')",1,B,0,0
+121,1. Chứng khoán kinh doanh,,,121,N-C,,1,,0,0
+122,2. Dự phòng giảm giá chứng khoán kinh doanh (*),,,2291,N-C,,1,,1,0
+123,3. Đầu tư nắm giữ đến ngày đáo hạn ngắn hạn,,,1281,N-C,,1,,0,0
+130,III. Các khoản phải thu ngắn hạn,,+,,,"MASO In('131','132','133','134','135')",1,B,0,0
+131,1. Phải thu ngắn hạn của khách hàng,,CN,131,N,,1,,0,0
+132,2. Trả trước cho người bán ngắn hạn,,CN,331,N,,1,,0,0
+133,3. Phải thu ngắn hạn khác,,,,N,"Left(TK_TI,3) In('138','141','335','338') And Left(TK_TI,4) Not In('1381')",1,,0,0
+134,4. Tài sản thiếu chờ xử lý,,,1381,N,,1,,0,0
+135,5. Dự phòng phải thu ngắn hạn khó đòi (*),,,2293,N-C,,1,,0,0
+140,IV. Hàng tồn kho,,+,,,"MASO In('141','142')",1,B,0,0
+141,1. Hàng tồn kho,,,,N-C,"Left(TK_TI,3) In('151','152','153','154','155','156','157')",1,,0,0
+142,2. Dự phòng giảm giá hàng tồn kho (*),,,2294,C,,1,,1,0
+150,V. Tài sản ngắn hạn khác,,+,,,"MASO In('151','152')",1,B,0,0
+151,1. Thuế GTGT được khấu trừ,,,133,N-C,,1,,0,0
+152,2. Tài sản ngắn hạn khác,,,,N-C,"Left(TK_TI,3) In('142','144','242','244')",1,,0,0
+200,B - TÀI SẢN DÀI HẠN (200=210+220+230+240+250+260),,++,,,"MASO In('210','220','230','240','250','260')",1,B,0,1
+210,I. Các khoản phải thu dài hạn,,+,,,"MASO In('211','212','213','214','215')",1,,0,0
+211,1. Phải thu dài hạn của khách hàng,,,,,,1,,0,0
+212,2. Trả trước cho người bán dài hạn,,,,,,1,,0,0
+213,3. Vốn kinh doanh ở các đợn vị trực thuộc,,,1361,N-C,,1,,0,0
+214,4. Phải thu dài hạn khác,,,,,,1,,0,0
+215,5. Dự phòng phải thu dài hạn khó đòi (*),,,,,,1,,1,0
+220,II. Tài sản cố định,,+,,,"MASO In('221','222')",1,B,0,0
+221,- Nguyên giá,,,,N-C,"Left(TK_TI,3) In('211','213')",1,,0,0
+222,- Giá trị hao mòn lũy kế (*),,,,N-C,"Left(TK_TI,4) In('2141','2142','2143')",1,,1,0
+230,III. Bất động sản đầu tư,,+,,,"MASO In('231','232')",1,B,0,0
+231,- Nguyên giá,,,217,N,,1,,0,0
+232,- Giá trị hao mòn lũy kế (*),,,2147,N-C,,1,,1,0
+240,IV. Xây dựng cơ bản dở dang,,,241,N-C,,1,,0,0
+250,V. Đầu tư tài chính dài hạn,,+,,,"MASO In('251','252','253')",1,B,0,0
+251,1. Đầu tư góp vốn vào đơn vị khác,,,,N-C,"Left(TK_TI,3) In('221','228')",1,,0,0
+252,2. Dự phòng tổn thất đầu tư vào đơn vị khác (*),,,2292,N-C,,1,,1,0
+253,3. Đầu tư nắm giữ đến ngày đáo hạn dài hạn,,,1288,N-C,,1,,0,0
+260,VI. Tài sản dài hạn khác,,,,,,1,,0,0
+300,    TỔNG CỘNG TÀI SẢN (300=100+200),,+++,,,"MASO In('100','200')",1,B,0,1
+400,C - NỢ PHẢI TRẢ (400=410+420),,++,,,"MASO In('410','420')",1,B,0,1
+410,I. Nợ ngắn hạn,,+,,,"MASO In('411','412','413','414','415','416','417','418')",1,B,0,0
+411,1. Phải trả người bán ngắn hạn,,CN,331,C,,1,,0,0
+412,2. Người mua trả tiền trước ngắn hạn,,CN,131,C,,1,,0,0
+413,3. Thuế và các khoản phải nộp nhà nước,,,333,C-N,,1,,0,0
+414,4. Phải trả người lao động,,,334,C-N,,1,,0,0
+415,5. Phải trả ngắn hạn khác,,,,C,"Left(TK_TI,3) In('335','338','138','141')",1,,0,0
+416,6. Vay và nợ thuê tài chính ngắn hạn,,,,C-N,"Left(TK_TI,3) In('311','315','341','342','343')",1,,0,0
+417,7. Dự phòng phải trả ngắn hạn (*),,,352,C-N,,1,,1,0
+418,8. Quỹ khen thưởng phúc lợi,,,,C-N,"Left(TK_TI,3) In('353','431')",1,,0,0
+420,II. Nợ dài hạn,,+,,,"MASO In('421','422','423','424','425','426','427')",1,B,0,0
+421,1. Phải trả người bán dài hạn,,,,,,1,,0,0
+422,2. Người mua trả tiền trước dài hạn,,,,,,1,,0,0
+423,3. Phải trả nội bộ về vốn kinh doanh,,,336,C-N,,1,,0,0
+424,4. Phải trả dài hạn khác,,,,,,1,,0,0
+425,5. Vay và nợ thuê tài chính dài hạn,,,,,,1,,0,0
+426,6. Dự phòng phải trả dài hạn (*),,,,,,1,,1,0
+427,7. Quỹ phát triển khoa học và công nghệ,,,356,C-N,,1,,0,0
+500,D - VỐN CHỦ SỞ HỮU (500=511+...+517),,+,,,"MASO In('511','512','513','514','515','516','517')",1,B,0,1
+511,1. Vốn góp của chủ sở hữu,,,4111,C-N,,1,,0,0
+512,2. Thặng dư vốn cổ phần,,,4112,C-N,,1,,0,0
+513,3. Vốn khác của chủ sở hữu,,,4118,C-N,,1,,0,0
+514,4. Cổ phiếu quỹ (*),,,419,C-N,,1,,1,0
+515,5. Chênh lệch tỷ giá hối đoái,,,413,C-N,,1,,0,0
+516,6. Các quỹ thuộc vốn chủ sở hữu,,,418,C-N,,1,,0,0
+517,7. Lợi nhuận sau thuế chưa phân phối,,,421,C-N,,1,,0,0
+600,    TỔNG CỘNG NGUỒN VỐN (600=400+500),,+++,,,"MASO In('400','500')",1,B,0,1

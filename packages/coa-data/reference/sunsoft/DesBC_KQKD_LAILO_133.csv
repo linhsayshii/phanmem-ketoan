@@ -1,0 +1,21 @@
+MASO,DIEN_GIAI,THUYET_MINH,NHAP,NGUON,TK_TI,TK_DU,LOAI_PS,DIEU_KIEN,HIEN_AN,KIEU_CHU,SO_AM,MAU_DAM
+01,1. Danh thu bán hàng và cung cấp dịch vụ,,1,,511,911,N,,1,B,0,0
+02,2. Các khoản giảm trừ doanh thu,,1,+,,,,"MASO In('03','04','05','06')",1,B,0,0
+10,3. Doanh thu thuần về bán hàng và cung cấp dịch vụ (10=01-02),,0,+,,,,"MASO In('01')-MASO In('03','04','05','06')",1,B,0,0
+11,4. Giá vốn hàng bán,,1,,632,911,C-N,,1,B,0,0
+20,5. Lợi nhuận gộp về bán hàng và cung cấp dịch vụ (20=10-11),,0,+,,,,"MASO='01'- MASO In('03','04','05','06','11')",1,B,0,0
+21,6. Doanh thu hoạt động tài chính,,1,,515,911,N-C,,1,B,0,0
+22,7. Chi phí tài chính,,1,,635,911,C-N,,1,B,0,0
+23,   - Trong đó: Chi phí lãi vay,,1,,,,,,1,N,0,0
+24,8. Chi phí quản lí kinh doanh,,1,,642,911,C-N,,1,B,0,0
+30,9. Lợi nhuận thuần từ hoạt động kinh doanh (30=20+21-22-24),,0,++,,,,"MASO In('20','21')-MASO in('22','24')",1,B,0,0
+31,10. Thu nhập khác,,1,,711,911,N-C,,1,B,0,0
+32,11. Chi phí khác,,1,,811,911,C-N,,1,B,0,0
+40,12. Lợi nhuận khác (40=31-32),,0,+,,,,MASO In('31')-MASO In('32'),1,B,0,0
+50,13. Tổng lợi nhuận kế toán trước thuế (50 = 30 + 40),,1,+++,,,,"MASO In('30','40')",1,B,0,0
+51,14. Chi phí thuế TNDN,,1,,821,911,C-N,,1,B,0,0
+60,15. Lợi nhuận sau thuế thu nhập doanh nghiệp (60 = 50-51),,0,++++,,,,MASO In('50')-MASO In('51'),1,B,0,0
+04,- Giảm giá hàng bán,,1,,,,,,0,,0,0
+05,- Hàng bán bị trả lại,,1,,,,,,0,,0,0
+06,"- Thuế XNK, thuế tiêu thụ đặc biệt, thuế GTGT theo phương pháp trực tiếp phải nộp",,1,,333,511,C,"Left(TK_TICO,4) In('3331','3332','3333')",0,,0,0
+03,- Chiết khấu thương mại,,1,,511,,N,"Left(TK_TICO,3) Not In('911')",0,,0,0

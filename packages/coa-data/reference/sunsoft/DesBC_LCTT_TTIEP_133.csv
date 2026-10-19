@@ -1,0 +1,30 @@
+MASO,CHI_TIEU,TK_NO,LEN_TK_NO,TK_CO,LEN_TK_CO,DK_KHAC,CHI_TIET,THUYET_MINH,NGUON,KIEU_CHU,HIEN_AN,MAU_DAM,SO_AM
+,I. Lưu chuyển tiền từ hoạt động kinh doanh,,,,,,1,,,H,1,1,0
+01,"1. Tiền thu từ bán hàng, cung cấp dịch vụ và doanh thu khác","111,112",3,"511,131",3,,0,,,,1,0,0
+02,"2. Tiền chi trả cho người cung cấp hàng hóa, dịch vụ","152,153,154,155,156,157,331,131,621,622,623,627,632,641,642",3,"111,112,341",3,,0,,,,1,0,1
+03,3. Tiền chi trả cho người lao động,334,3,"111,112,341",3,,0,,,,1,0,1
+04,4. Tiền lãi vay đã trả,"335,635",3,"111,112",3,,0,,,,1,0,1
+05,5. Thuế thu nhập doanh nghiệp đã nộp,3334,4,"111,112",3,,0,,,,1,0,1
+06,6. Tiền thu khác từ hoạt động kinh doanh,"111,112",3,"133,136,138,141,142,144,153,154,241,242,244,331,333,334,335,336,337,338,344,352,353,415,431,621,622,623,627,632,635,641,642,811,821",3,,0,,,,1,0,0
+07,7. Tiền chi khác cho hoạt động kinh doanh,"128,133,136,138,141,142,144,226,244,333,336,337,338,344,352,353,415,431,515,521,531,532,711,811,821",3,"111,112,341",3,"Left(TK_TINO,4) <>'3334'",0,,,,1,0,1
+20,Lưu chuyển tiền thuần từ hoạt động kinh doanh,,,,,01+06+02+03+04+05+07,1,,+,B,1,1,0
+,II. Lưu chuyển tiền từ hoạt động đầu tư,,,,,,1,,,H,1,1,0
+21,"1. Tiền chi để mua sắm, xây dựng TSCĐ, BĐSĐT và các tài sản dài hạn khác","211,241,242",3,"111,112",3,,0,"6,7,8,11",,,1,0,1
+22,"2. Tiền thu từ thanh lý, nhượng bán TSCĐ, BĐSĐT và các tài sản dài hạn khác","111,112",3,711,3,,0,,,,1,0,0
+23,"3. Tiền chi cho vay, đầu tư góp vốn vào đơn vị khác","221,228,121",3,"111,112",3,,0,,,,1,0,1
+24,"4. Tiền thu hồi cho vay, đầu tư góp vốn vào đơn vị khác","111,112",3,228,3,,0,,,,1,0,0
+25,"5. Tiền thu lãi cho vay, cổ tức và lợi nhuận được chia","111,112,113,341",3,"121,128,221,222,223,515",3,,0,,,,1,0,0
+30,Lưu chuyển tiền thuần từ hoạt động đầu tư,,,,,22+24+26+27+21+23+25,1,,+,B,1,1,0
+,III. Lưu chuyển tiền từ hoạt động tài chính,,,,,,1,,,H,1,1,0
+31,"1. Tiền thu từ phát hành cổ phiếu, nhận vốn góp của chủ sở hữu","111,112",3,"411,421",3,,0,21,,,1,0,0
+32,"2. Tiền trả lại vốn góp cho các chủ sở hữu, mua lại cổ phiếu của doanh nghiệp đã phát hành","411,419,418",3,"111,112",3,,0,21,,,1,0,1
+33,3. Tiền thu từ đi vay,"111,112,131,331,334,642,421,338,333",3,"311,341,342,343",3,,0,,,,1,0,0
+34,4. Tiền trả nợ gốc vay và nợ thuê tài chính,"311,315,341,342,343",3,"111,112,131,515",3,,0,,,,1,0,1
+35,"5. Lợi nhuận, cố tức đã trả cho chủ sở hữu",421,3,"111,112,341",3,,0,21,,,1,0,1
+40,Lưu chuyển tiền thuần từ hoạt động tài chính,,,,,31+33+32+34+35+36,1,,+,B,1,1,0
+50,Lưu chuyển tiền thuần trong kỳ (50=20+30+40),,,,,20+30+40,1,,++,B,1,1,0
+60,Tiền và tương đương tiền đầu kỳ,,,,,,0,,,B,1,1,0
+70,Tiền và tương đương tiền cuối kỳ (70=50+60+61),,,,,50+60+61,1,29,+++,B,1,1,0
+61,Ảnh hưởng của thay đổi tỷ giá hối đoái quy đổi ngoại tệ,,,,,61A+61B,1,,+,B,1,0,0
+61A,"Nợ 413 đối ứng tiền mặt, tiền gửi",413,3,"111,112",3,,0,,,,0,0,1
+61B,"Có 413 đối ứng tiền mặt, tiền gửi","111,112,121",3,413,3,,0,,,,0,0,0

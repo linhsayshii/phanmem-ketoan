@@ -1,0 +1,118 @@
+MASO,TEN_TK,THUYET_MINH,NGUON,TK,LOAI_DU,DK_KHAC,HIEN_AN,KIEU_CHU,SO_AM,MAU_DAM
+100,A - TÀI SẢN NGẮN HẠN,,+++,,,"MASO In('110','120','130','140','150')",1,B,0,0
+110,I. Tiền và các khoản tương đương tiền,,+,,,"MASO In('111','112')",1,B,0,0
+111,  1. Tiền,,,,N-C,"Left(TK_TI,3) In('111','112','113')",1,,0,0
+112,  2. Các khoản tương đương tiền,,,,,,1,,0,0
+120,II. Đầu tư tài chính ngắn hạn,,+,,,"MASO In('121','122','123','124','125','126')",1,B,0,0
+121,  1. Chứng khoán kinh doanh,,,121,N-C,,1,,0,0
+122,  2. Dự phòng giảm giá chứng khoán kinh doanh (*),,,,,,1,,1,0
+123,  3. Đầu tư nắm giữ đến ngày đáo hạn ngắn hạn,,,128,N-C,,1,,0,0
+124,  4. Dự phòng đầu tư nắm giữ đến ngày đáo hạn ngắn hạn (*),,,,,,0,,0,0
+125,  5. Đầu tư ngắn hạn khác,,,,,,0,,0,0
+126,  6. Dự phòng tổn thất các khoản đầu tư ngắn hạn khác (*),,,,,,0,,0,0
+130,III. Các khoản phải thu ngắn hạn,,++,,,"MASO In ('131','132','133','134','135','136','137','139')",1,B,0,0
+131,  1. Phải thu ngắn hạn của khách hàng,,CN,131,N,,1,,0,0
+132,  2. Trả trước cho người bán ngắn hạn,,CN,331,N,,1,,0,0
+133,  3. Phải thu nội bộ ngắn hạn,,,136,N,,1,,0,0
+134,  4. Phải thu theo tiến độ hợp đồng xây dựng,,,337,N,,1,,0,0
+135,  5. Phải thu ngắn hạn khác,,,,,,1,,0,0
+136,  6. Dự phòng phải thu ngắn hạn khó đòi (*),,,,N,"(Left(TK_TI,3) In('138','338') And Left(TK_TI,4) Not In('1381'))",1,,0,0
+137,  7. Tài sản thiếu chờ xử lý,,,,N-C,"(Left(TK_TI,3) In('139') Or Left(TK_TI,4) In('2293'))",1,,1,0
+140,IV. Hàng tồn kho,,+,,,"MASO In ('141','149')",1,B,0,0
+141,  1. Hàng tồn kho,,,,N-C,"Left(TK_TI,3) In('151','152','153','154','155','156','157','158')",1,,0,0
+149,  2. Dự phòng giảm giá hàng tồn kho (*),,,2294,N-C,,1,,1,0
+150,V. Tài sản ngắn hạn khác,,+,,,"MASO In ('151','152','153','154','155')",1,B,0,0
+151,     1. Chi phí trả trước ngắn hạn,,,142,N,,1,,0,0
+152,     2. Thuế giá trị gia tăng được khấu trừ,,,133,N-C,,1,,0,0
+153,     3. Thuế và các khoản khác phải thu Nhà nước,,,333,N,,1,,0,0
+154,     4. Giao dịch mua bán lại trái phiếu Chính phủ,,,171,N,,1,,0,0
+155,     5. Tài sản ngắn hạn khác,,,,N-C,"Left(TK_TI,3) In('141','144','244')",1,,0,0
+200,B - TÀI SẢN DÀI HẠN,,+++,,,"MASO In('210','220','230','240','250','260')",1,B,0,0
+210,I. Các khoản phải thu dài hạn,,++,,,"MASO In('211','212','213','214','215','216','219')",1,B,0,0
+211,     1. Phải thu dài hạn của khách hàng,,,,,,1,,0,0
+212,     2. Trả trước cho người bán dài hạn,,,,,,1,,0,0
+213,     3. Vốn kinh doanh ở đơn vị trực thuộc,,,,,,1,,0,0
+214,     4. Phải thu nội bộ dài hạn,,,,,,1,,0,0
+215,     5. Phải thu về cho vay dài hạn,,,1283,N-C,,1,,0,0
+216,     6. Phải thu dài hạn khác,,,,,,1,,0,0
+219,     7. Dự phòng phải thu dài hạn khó đòi (*),,,,,,1,,1,0
+220,II. Tài sản cố định,,++,,,"MASO In ('221','224','227')",1,B,0,0
+221,     1. Tài sản cố định hữu hình,,+,,,"MASO In ('222','223')",1,,0,0
+222,          - Nguyên giá,,,211,N-C,,1,,0,0
+223,          - Giá trị hao mòn luỹ kế (*),,,2141,N-C,,1,,1,0
+224,     2. Tài sản cố định thuê tài chính,,+,,,"MASO In ('225','226')",1,,0,0
+225,          - Nguyên giá,,,212,N-C,,1,,0,0
+226,          - Giá trị hao mòn luỹ kế (*),,,2142,N-C,,1,,1,0
+227,     3. Tài sản cố định vô hình,,+,,,"MASO In ('228','229')",1,,0,0
+228,          - Nguyên giá,,,213,N-C,,1,,0,0
+229,          - Giá trị hao mòn luỹ kế (*),,,2143,N-C,,1,,1,0
+230,III. Bất động sản đầu tư,,+,,,"MASO In ('231','232')",1,B,0,0
+231,          - Nguyên giá,,,217,N-C,,1,,0,0
+232,          - Giá trị hao mòn luỹ kế (*),,,2147,N-C,,1,,1,0
+240,IV. Tài sản dở dang dài hạn,,+,,,"MASO In ('241','242')",1,,0,0
+241,"     1. Chi phí sản xuất, kinh doanh dở dang dài hạn",,,,,,1,,0,0
+242,     2. Chi phí xây dựng cơ bản dở dang,,,241,N-C,,1,,0,0
+250,V. Đầu tư tài chính dài hạn,,+,,,"MASO In ('251','252','253','254','255')",1,B,0,0
+251,     1. Đầu tư vào công ty con,,,221,N-C,,1,,0,0
+252,"     2. Đầu tư vào công ty liên doanh, liên kết",,,,N-C,"Left(TK_TI,3) In('222','223')",1,,0,0
+253,     3. Đầu tư góp vốn vào đơn vị khác,,,228,N-C,,1,,0,0
+254,     4. Dự phòng đầu tư tài chính dài hạn (*),,,2292,N-C,,1,,1,0
+255,     5. Đầu tư nắm giữ đến ngày đáo hạn,,,,,,1,,0,0
+260,VI. Tài sản dài hạn khác,,+,,,"MASO In('261','262','263','268')",1,B,0,0
+261,     1. Chi phí trả trước dài hạn,,,242,N-C,,1,,0,0
+262,     2. Tài sản thuế thu nhập hoãn lại,,,243,N-C,,1,,0,0
+263,"     3. Thiết bị, vật tư, phụ tùng thay thế dài hạn",,,,,,1,,0,0
+268,     4. Tài sản dài hạn khác,,,,,,1,,0,0
+270,Tổng cộng tài sản (270 = 100 + 200),,++++,,,"MASO In('100','200')",1,B,0,0
+300,C - NỢ PHẢI TRẢ,,+++,,,"MASO In('310','330')",1,B,0,0
+310,I. Nợ ngắn hạn,,++,,,"(MASO in('311','312','313','314','315','316','317','318','319','320','321','322','323','324'))",1,B,0,0
+311,     1. Phải trả người bán ngắn hạn,,CN,331,C,,1,,0,0
+312,     2. Người mua trả tiền trước ngắn hạn,,CN,131,C,,1,,0,0
+313,     3. Thuế và các khoản phải nộp Nhà nước,,,333,C,,1,,0,0
+314,     4. Phải trả người lao động,,,334,C-N,,1,,0,0
+315,     5. Chi phí phải trả ngắn hạn,,,335,C-N,,1,,0,0
+316,     6. Phải trả nội bộ ngắn hạn,,,,,,1,,0,0
+317,     7. Phải trả theo tiến độ kế hoạch hợp đồng xây dựng,,,337,N-C,,1,,0,0
+318,     8. Doanh thu chưa thực hiện ngắn hạn,,,3387,C-N,,1,,0,0
+319,     9. Phải trả ngắn hạn khác,,,,C,"(Left(TK_TI,3) In('138','338')) AND (Left(TK_TI,4)<>'3387')",1,,0,0
+320,    10. Vay và nợ thuê tài chính ngắn hạn,,,,C-N,"Left(TK_TI,3) In('311','341','343')",1,,0,0
+321,    11. Dự phòng phảI trả ngắn hạn,,,352,C-N,,1,,0,0
+322,"    12. Quỹ khen thưởng, phúc lợi",,,,C-N,"Left(TK_TI,3) In('353','431')",1,,0,0
+323,    13. Quỹ bình ổn giá,,,357,C-N,,1,,0,0
+324,    14. Giao dịch mua bán lại trái phiếu Chính phủ,,,171,C-N,,1,,0,0
+330,II. Nợ dài hạn,,+,,,(MASO Between '331' AND '343'),1,B,0,0
+331,     1. Phải trả người bán dài hạn,,,,,,1,,0,0
+332,     2. Người mua trả tiền trước dài hạn,,,,,,1,,0,0
+333,     3. Chi phí phải trả dài hạn,,,,,,1,,0,0
+334,     4. Phải trả nội bộ về vốn kinh doanh,,,3361,C-N,,1,,0,0
+335,     5. Phải trả nội bộ dài hạn,,,,C-N,"Left(TK_TI,4) In('3362','3363','3368')",1,,0,0
+336,     6. Doanh thu chưa thực hiện dài hạn,,,,,,1,,0,0
+337,     7. Phải trả dài hạn khác,,,344,C-N,,1,,0,0
+338,     8. Vay và nợ thuê tài chính dài hạn,,,342,C-N,,1,,0,0
+339,     9. Trái phiếu chuyển đổi,,,3432,C-N,,1,,0,0
+340,   10. Cổ phiếu ưu đãi,,,41112,C-N,,1,,0,0
+341,    11. Thuế thu nhập hoãn lại phải trả,,,347,C,,1,,0,0
+342,    12. Dự phòng phải trả dài hạn,,,3522,C-N,,1,,0,0
+343,    13. Quỹ phát triển khoa học và công nghệ,,,356,C,,1,,0,0
+400,D - VỐN CHỦ SỞ HỮU,,++++,,,"MASO In('410','430')",1,B,0,0
+410,I. Vốn chủ sở hữu,,+++,,,"MASO In('411','412','413','414','415','416','417','418','419','420','421','422')",1,B,0,0
+411,     1. Vốn đầu tư của chủ sở hữu,,++,,,"MASO In('411a','411b')",1,,0,0
+411a,    - Cổ phiếu phổ thông có quyền biểu quyết,,,4111,C-N,,1,,0,0
+411b,    - Cổ phiếu ưu đãi,,,41112,C-N,,1,,0,0
+412,     2. Thặng dư vốn cổ phần,,,4112,C-N,,1,,1,0
+413,     3. Quyền chọn chuyển đổi trái phiếu,,,4113,C-N,,1,,0,0
+414,     4. Vốn khác của chủ sở hữu,,,4118,C-N,,1,,0,0
+415,     5. Cổ phiếu quỹ (*),,,419,C-N,,1,,1,0
+416,     6. Chênh lệch đánh giá lại tài sản,,,412,C-N,,1,,1,0
+417,     7. Chênh lệch tỷ giá hối đoái,,,413,C-N,,1,,1,0
+418,     8. Quỹ đầu tư phát triển,,,414,C-N,,1,,0,0
+419,     9. Quỹ hỗ trợ sắp xếp doanh nghiệp,,,417,C,,1,,0,0
+420,    10. Quỹ khác thuộc vốn chủ sở hữu,,,,C-N,"Left(TK_TI,3) In('415','418')",1,,0,0
+421,    11. Lợi nhuận sau thuế chưa phân phối,,+,,,"MASO In('421a','421b')",1,,1,0
+421a,   - LNST chưa phân phối lũy kế đến cuối kỳ trước,,,4211,C-N,,1,,0,0
+421b,   - LNST chưa phân phối kỳ này,,,4212,C-N,,1,,0,0
+422,   12. Nguồn vốn đầu tư XDCB,,,441,C-N,,1,,0,0
+430,II. Nguồn kinh phí và quỹ khác,,+,,,"MASO In('431','432')",1,B,0,0
+431,     1. Nguồn kinh phí,,,461,C-N,,1,,1,0
+432,     2. Nguồn kinh phí đã hình thành TSCĐ,,,466,C-N,,1,,0,0
+440,Tổng cộng nguồn vốn (440 = 300 + 400),,+++++,,,"MASO In('300','400')",1,B,0,0

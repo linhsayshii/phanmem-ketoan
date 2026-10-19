@@ -15,6 +15,6 @@
     "seed:abc": "tsx src/seed/demo-abc.ts",
     "seed:xyz": "tsx src/seed/dich-vu-xyz.ts"
   },
-  "dependencies": { "@kt/domain": "workspace:*", "kysely": "^0.27.4", "pg": "^8.13.0", "dotenv": "^16.4.5" },
+  "dependencies": { "@kt/coa-data": "workspace:*", "@kt/domain": "workspace:*", "kysely": "^0.27.4", "pg": "^8.13.0", "dotenv": "^16.4.5" },
   "devDependencies": { "@types/pg": "^8.11.10", "tsx": "^4.19.1" }
 }

@@ -1,0 +1,244 @@
+TK_TI,TEN_TK,TEN_TK_E,LOAI_DU,TK_NTE,CHI_TIET,NHOM_ME,TC_KHAC,CAP_TK
+1,TAI SAN LUU ĐONG,,N,0,0,,,
+111,Tiền mặt,,,0,0,1,,1
+1111,Tiền mặt Việt Nam,,N,0,1,111,,2
+1112,Tiền mặt ngoại tệ,,N,1,1,111,,2
+1113,Vàng tiền tệ,,N,0,0,111,,2
+112,Tiền gửi ngân hàng,,,0,0,1,,1
+1121,Tiền Việt Nam gửi ngân hàng,,N,0,1,112,,2
+1122,Ngoại tệ gửi ngân hàng,,N,1,1,112,,2
+113,Tiền đang chuyển,,,0,0,1,,1
+1131,Tiền Việt Nam đang chuyển,,N,0,1,113,,2
+1132,Ngoại tệ đang chuyển,,N,1,1,113,,2
+121,Chứng khoán kinh doanh,,,0,0,1,,1
+1211,Cổ phiếu,,N,0,1,121,,2
+1212,Trái phiếu,,N,0,1,121,,2
+1218,Chứng khoán và công cụ tài chính khác,,L,0,1,121,,2
+128,Đầu tư nắm giữ đến ngày đáo hạn,,,0,0,1,,1
+1281,Tiền gửi có kỳ hạn,,N,0,1,128,,2
+1282,Trái phiếu,,L,0,1,128,,2
+1283,Cho vay,,L,0,1,128,,2
+1288,Các khoản đầu tư khác nắm giữ đến ngày đáo hạn,,N,0,1,128,,2
+131,Phải thu khách hàng,,L,0,1,1,CN,1
+133,Thuế GTGT được khấu trừ,,,0,0,1,,1
+1331,"Thuế GTGT được khấu trừ hàng hóa, dịch vụ",,N,0,1,133,,2
+1332,Thuế GTGT được khấu trừ của TSCĐ,,N,0,1,133,,2
+136,Phải thu nội bộ,,,0,0,1,,1
+1361,Vốn kinh doanh ở các đơn vị trực thuộc,,N,0,1,136,,2
+1362,Phải thu nội bộ về chênh lệch tỷ giá,,L,0,1,136,,2
+1363,Phải thu nội bộ về chi phí đi vay đủ điều kiện được vốn hóa,,L,0,1,136,,2
+1368,Phải thu nội bộ khác,,N,0,1,136,,2
+138,Phải thu khác,,,0,0,1,,1
+1381,Tài sản thiếu chờ xử lý,,N,0,1,138,,2
+1385,Phải thu về cổ phần hóa,,N,0,1,138,,2
+1388,Phải thu khác,,N,0,1,138,,2
+141,Tạm ứng,,N,0,1,1,,1
+151,Hàng mua đang đi đường,,N,0,1,1,,1
+152,"Nguyên liệu, vật liệu",,N,0,1,1,VT,1
+153,"Công cụ, dụng cụ",,,0,0,1,VT,1
+1531,"Công cụ, dụng cụ",,N,0,1,153,VT,2
+1532,Bao bì luân chuyển,,N,0,1,153,VT,2
+1533,Đồ dùng cho thuê,,N,0,1,153,VT,2
+1534,"Thiết bị, phụ tùng thay thế",,N,0,1,153,VT,2
+154,"Chi phí sản xuất, kinh doanh dở dang",,N,0,1,1,VT,1
+155,Thành phẩm,,,0,0,1,VT,1
+1551,Thành phẩm nhập kho,,N,0,1,155,VT,2
+1552,Thành phẩm bất động sản,,N,0,1,155,VT,2
+156,Hàng hoá,,,0,0,1,VT,1
+1561,Giá mua hàng hóa,,N,0,1,156,VT,2
+1562,Chi phí thu mua hàng hóa,,N,0,1,156,VT,2
+1567,Hàng hóa bất động sản,,N,0,1,156,VT,2
+157,Hàng gửi đi bán,,N,0,1,1,VT,1
+158,Hàng hóa kho bảo thuế,,N,0,1,15,VT,1
+161,Chi sự nghiệp,,,0,0,1,,1
+1611,Chi sự nghiệp năm trước,,N,0,1,161,,2
+1612,Chi sự nghiệp năm nay,,N,0,1,161,,2
+171,Giao dịch mua bán lại trái phiếu chính phủ,,L,0,1,1,,1
+2,TAI SAN CO ĐINH,,,0,0,,,
+211,Tài sản cố định hữu hình,,,0,0,2,,1
+2111,"Nhà cửa, vật kiến trúc",,N,0,1,211,TS,2
+2112,"Máy móc, thiết bị",,N,0,1,211,TS,2
+2113,"Phương tiện vận tải, truyền dẫn",,N,0,1,211,TS,2
+2114,"Thiết bị, dụng cụ quản lí",,N,0,1,211,TS,2
+2115,"Cây, súc vật làm việc và cho sản phẩm",,N,0,1,211,TS,2
+2118,TSCĐ khác,,N,0,1,211,TS,2
+212,Tài sản cố định thuê tài chính,,,0,0,2,TS,1
+2121,TSCĐ hữu hình thuê tài chính,,N,0,1,212,TS,2
+2122,TSCĐ vô hình thuê tài chính,,N,0,1,212,TS,2
+213,Tài sản cố định vô hình,,,0,0,2,TS,1
+2131,Quyền sử dụng đất,,N,0,1,213,TS,2
+2132,Quyền phát hành,,N,0,1,213,TS,2
+2133,"Bản quyền, bằng sáng chế",,N,0,1,213,TS,2
+2134,"Nhãn hiệu, tên thương mại",,N,0,1,213,TS,2
+2135,Chương trình phần mềm,,N,0,1,213,TS,2
+2136,Giấy phép và giấy phép nhượng quyền,,N,0,1,213,TS,2
+2138,TSCĐ vô hình khác,,N,0,1,213,TS,2
+214,Hao mòn tài sản cố định,,,0,0,2,,1
+2141,Hao mòn TSCĐ hữu hình,,C,0,1,214,,2
+2142,Hao mòn TSCĐ thuê tài chính,,C,0,1,214,,2
+2143,Hao mòn TSCĐ vô hình,,C,0,1,214,,2
+2147,Hao mòn bất động sản đầu tư,,C,0,1,214,,2
+217,Bất động sản đầu tư,,,0,1,2,,1
+221,Đầu tư vào công ty con,,N,0,1,2,,1
+222,"Đầu tư vào công ty liên doanh, liên kết",,N,0,1,2,,1
+228,Đầu tư khác,,,0,0,2,,1
+2281,Đầu tư góp vốn vào đơn vị khác,,N,0,1,228,,2
+2288,Đầu tư khác,,N,0,1,228,,2
+229,Dự phòng tổn thất tài sản,,,0,0,2,,1
+2291,Dự phòng giảm giá chứng khoán kinh doanh,,L,0,1,229,,2
+2292,Dự phòng tổn thất đầu tư vào đơn vị khác,,L,0,1,229,,2
+2293,Dự phòng phải thu khó đòi,,L,0,1,229,,2
+2294,Dự phòng giảm giá hàng tồn kho,,L,0,1,229,,2
+241,Xây dựng cơ bản dở dang,,,0,0,2,,1
+2411,Mua sắm TSCĐ,,N,0,1,241,,2
+2412,Xây dựng cơ bản,,N,0,1,241,,2
+2413,Sửa chữa lớn TSCĐ,,N,0,1,241,,2
+242,Chi phí trả trước,,N,0,1,2,,1
+243,Tài sản thuế thu nhập hoãn lại,,L,0,1,2,,1
+244,"Cầm cố, thế chấp, ký quỹ, ký cược",,L,0,1,2,,1
+3,NO PHAI TRA,,,0,0,,,
+331,Phải trả cho người bán,,L,0,1,3,CN,1
+333,Thuế và các khoản phải nộp Nhà nước,,,0,0,3,,1
+3331,Thuế giá trị gia tăng (GTGT),,L,0,0,333,,2
+33311,Thuế GTGT đầu ra,,L,0,1,3331,,3
+33312,Thuế GTGT hàng nhập khẩu,,L,0,1,3331,,3
+3332,Thuế tiêu thụ đặc biệt,,L,0,1,333,,2
+3333,"Thuế xuất, nhập khẩu",,L,0,1,333,,2
+3334,Thuế thu nhập doanh nghiệp,,L,0,1,333,,2
+3335,Thuế thu nhập cá nhân,,L,0,1,333,,2
+3336,Thuế tài nguyên,,L,0,1,333,,2
+3337,"Thuế nhà đất, tiền thuê đất",,L,0,1,333,,2
+3338,Thuế bảo vệ môi trường và các loại thuế khác,,,0,0,333,,2
+33381,Thuế bảo vệ môi trường,,L,0,1,3338,,3
+33382,Các loại thuế khác,,L,0,1,3338,,3
+3339,"Phí, lệ phí, và các khoản phải nộp khác",,L,0,1,333,,2
+334,Phải trả người lao động,,,0,0,3,,1
+3341,Phải trả công nhân viên,,L,0,1,334,,2
+3348,Phải trả người lao động khác,,L,0,1,334,,2
+335,Chi phí phải trả,,L,0,1,3,,1
+336,Phải trả nội bộ,,,0,0,3,,1
+3361,Phải trả nội bộ về vốn kinh doanh,,L,0,1,,,2
+3362,Phải trả nội bộ về chênh lệch tỷ giá,,L,0,1,,,2
+3363,Phải trả nội bộ về chi phí đi vay đủ điều kiện được vốn hóa,,L,0,1,,,2
+3368,Phải trả nội bộ khác,,L,0,1,,,2
+337,Thanh toán theo tiến độ kế hoạch hợp đồng xây dựng,,L,0,1,3,,1
+338,"Phải trả, phải nộp khác",,,0,0,3,,1
+3381,Tài sản thừa chờ giải quyết,,L,0,1,338,,2
+3382,Kinh phí công đoàn,,L,0,1,338,,2
+3383,Bảo hiểm xã hội,,L,0,1,338,,2
+3384,Bảo hiểm y tế,,L,0,1,338,,2
+3385,Phải trả về cổ phần hóa,,L,0,1,338,,2
+3386,Bảo hiểm thất nghiệp,,L,0,1,338,,2
+3387,Doanh thu chưa thực hiện,,L,0,1,338,,2
+3388,"Phải trả, phải nộp khác",,L,0,1,338,,2
+341,Vay và nợ thuê tài chính,,,0,0,3,,1
+3411,Các khoản đi vay,,L,0,1,341,,2
+3412,Nợ thuê tài chính,,L,0,1,341,,2
+343,Trái phiếu phát hành,,,0,0,3,,1
+3431,Mệnh giá trái phiếu,,,0,0,343,,2
+34311,Mệnh giá trái phiếu,,L,0,1,3431,,3
+34312,Chiết khấu trái phiếu,,L,0,1,3431,,3
+34313,Phụ trội trái phiếu,,L,0,1,3431,,3
+3432,Trái phiếu chuyển đổi,,C,0,1,343,,2
+344,"Nhận ký quỹ, ký cược",,C,0,1,3,,1
+347,Thuế thu nhập hoãn lại phải trả,,L,0,1,3,,1
+352,Dự phòng phải trả,,,0,0,3,,1
+3521,Dự phòng bảo hành sản phẩm hàng hóa,,L,0,1,352,,2
+3522,Dự phòng bảo hành công trình xây dựng,,L,0,1,352,,2
+3523,Dự phòng tái cơ cấu doanh nghiệp,,L,0,1,352,,2
+3524,Dự phòng phải trả khác,,L,0,1,352,,2
+353,"Quỹ khen thưởng, phúc lợi",,C,0,0,3,,1
+3531,Quỹ khen thưởng,,L,0,1,353,,2
+3532,Quỹ phúc lợi,,L,0,1,353,,2
+3533,Quỹ phúc lợi đã hình thành TSCĐ,,L,0,1,353,,2
+3534,Quỹ thưởng BQL điều hành công ty,,L,0,1,353,,2
+356,Quỹ phát triển khoa học và công nghệ,,,0,1,3,,1
+3561,Quỹ phát triển KH và CN,,L,0,1,356,,2
+3562,Quỹ phát triển KH và CN đã hình thành TSCĐ,,L,0,1,356,,2
+357,Quỹ bình ổn giá,,L,0,1,3,,1
+4,VON CHU SO HUU,,,0,0,,,
+411,Vốn đầu tư của chủ sở hữu,,,0,0,4,,1
+4111,Vốn góp của chủ sở hữu,,,0,0,411,,2
+41111,Cổ phiếu phổ thông có quyền biểu quyết,,L,0,1,4111,,3
+41112,Cổ phiếu ưu đãi,,L,0,1,4111,,3
+4112,Thặng dư vốn cổ phần,,L,0,1,411,,2
+4113,Quyền chọn chuyển đổi trái phiếu,,L,0,1,411,,2
+4118,Vốn khác,,L,0,1,411,,2
+412,Chênh lệch đánh giá lại tài sản,,L,0,1,4,,1
+413,Chênh lệch tỷ giá,,,0,0,4,,1
+4131,Chênh lệch tỷ giá do đánh giá lại các khoản mục tiền tệ có gốc ngoại tệ,,L,0,1,413,,2
+4132,Chênh lệch tỷ giá hối đoái trong giai đoạn trước hoạt động,,L,0,1,413,,2
+414,Quỹ đầu tư phát triển,,L,0,1,4,,1
+417,"Quỹ hỗ trợ, sắp xếp doanh nghiệp",,L,0,1,4,,1
+418,Các quỹ khác thuộc vốn chủ sở hữu,,L,0,1,4,,1
+419,Cổ phiếu quỹ,,L,0,1,4,,1
+421,Lợi nhuận sau thuế chưa phân phối,,,0,0,4,,1
+4211,Lợi nhuận sau thuế chưa phân phối năm trước,,L,0,1,421,,2
+4212,Lợi nhuận sau thuế chưa phân phối năm nay,,L,0,1,421,,2
+441,Nguồn vốn đầu tư xây dựng cơ bản,,L,0,1,4,,1
+461,Nguồn kinh phí sự nghiệp,,,0,0,4,,1
+4611,Nguồn kinh phí sự nghiệp năm trước,,L,0,1,461,,2
+4612,Nguồn kinh phí sự nghiệp năm nay,,L,0,1,461,,2
+466,Nguồn kinh phí đã hình thành TSCĐ,,L,0,1,4,,1
+5,DOANH THU,,,0,0,,,
+511,Doanh thu bán hàng và cung cấp dịch vụ,,,0,0,5,,1
+5111,Doanh thu bán hàng hóa,,,0,1,511,,2
+5112,Doanh thu bán các thành phẩm,,,0,1,511,,2
+5113,Doanh thu cung cấp dịch vụ,,,0,1,511,,2
+5114,"Doanh thu trợ cấp, trợ giá",,,0,1,511,,2
+5117,Doanh thu kinh doanh bất động sản đầu tư,,,0,1,511,,2
+5118,Doanh thu khác,,,0,1,511,,2
+515,Doanh thu hoạt động tài chính,,,0,1,5,,1
+521,Các khoản giảm trừ doanh thu,,,0,0,5,,1
+5211,Chiết khấu thương mại,,,0,1,521,,2
+5212,Giảm giá hàng bán,,,0,1,521,,2
+5213,Hàng bán bị trả lại,,,0,1,521,,2
+6,CHI PHI,,,0,0,,,
+611,Mua hàng,,,0,0,6,,1
+6111,Mua nguyên vật liệu,,,0,1,611,,2
+6112,Mua hàng hoá,,,0,1,611,,2
+621,"Chi phí nguyên liệu, vật liệu trực tiếp",,,0,1,6,,1
+622,Chi phí nhân công trực tiếp,,,0,1,6,,1
+623,Chi phí sử dụng máy thi công,,,0,0,6,,1
+6231,Chi phí nhân công,,,0,1,623,,2
+6232,Chi phí vật liệu,,,0,1,623,,2
+6233,Chi phí dụng cụ sản xuất,,,0,1,623,,2
+6234,Chi phí khấu hao máy thi công,,,0,1,623,,2
+6237,Chi phí dịch vụ mua ngoài,,,0,1,623,,2
+6238,Chi phí bằng tiền khác,,,0,1,623,,2
+627,Chi phí sản xuất chung,,,0,0,6,,1
+6271,Chi phí nhân viên phân xưởng,,,0,1,627,,2
+6272,Chi phí vật liệu,,,0,1,627,,2
+6273,Chi phí dụng cụ sản xuất,,,0,1,627,,2
+6274,Chi phí khấu hao TSCĐ,,,0,1,627,,2
+6277,Chi phí dịch vụ mua ngoài,,,0,1,627,,2
+6278,Chi phí bằng tiền khác,,,0,1,627,,2
+631,Giá thành sản xuất,,,0,1,6,,1
+632,Giá vốn hàng bán,,,0,1,6,,1
+635,Chi phí tài chính,,,0,1,6,,1
+641,Chi phí bán hàng,,,0,0,6,,1
+6411,Chi phí nhân viên,,,0,1,641,,2
+6412,"Chi phí vật liệu,bao bì",,,0,1,641,,2
+6413,"Chi phí dụng cụ, đồ dùng",,,0,1,641,,2
+6414,Chi phí khấu hao TSCĐ,,,0,1,641,,2
+6415,Chi phí bảo hành,,,0,1,641,,2
+6417,Chi phí dịch vụ mua ngoài,,,0,1,641,,2
+6418,Chi phí bằng tiền khác,,,0,1,641,,2
+642,Chi phí quản lí doanh nghiệp,,,0,0,6,,1
+6421,Chi phí nhân viên quản lí,,,0,1,642,,2
+6422,Chi phí vật liệu quản lí,,,0,1,642,,2
+6423,Chi phí đồ dùng văn phòng,,,0,1,642,,2
+6424,Chi phí khấu hao TSCĐ,,,0,1,642,,2
+6425,"Thuế, phí và lệ phí",,,0,1,642,,2
+6426,Chi phí dự phòng,,,0,1,642,,2
+6427,Chi phí dịch vụ mua ngoài,,,0,1,642,,2
+6428,Chi phí bằng tiền khác,,,0,1,642,,2
+7,THU NHÂP KHAC,,,0,0,,,
+711,Thu nhập khác,,,0,1,7,,1
+8,CHI PHI KHAC,,,0,0,,,
+811,Chi phí khác,,,0,1,8,,1
+821,Chi phí thuế thu nhập doanh nghiệp,,,0,0,8,,1
+8211,Chi phí thuế TNDN hiện hành,,,0,1,821,,2
+8212,Chi phí thuế TNDN hoãn lại,,,0,1,821,,2
+9,KET QUA KINH DOANH,,,0,0,,,
+911,Xác định kết quả kinh doanh,,,0,1,9,,1
