@@ -80,8 +80,11 @@ describe('RLS', () => {
     const b = await createTestTenant(t.admin, { code: `H${Date.now()}`, name: 'H' });
     const base = { regime: 'TT99', root_type: 'asset', normal_balance: 'debit' } as const;
     const parentA = await t.admin.insertInto('account').values({ ...base, tenant_id: a, code: '1', name: 'Cha A' }).returning('id').executeTakeFirstOrThrow();
-    await expect(t.admin.insertInto('account').values({ ...base, tenant_id: b, code: '11', name: 'Con B', parent_id: parentA.id }).execute())
-      .rejects.toThrow(/foreign key/);
+    // Trigger fn_account_check (0002) chặn trước bằng ACCOUNT_PARENT_MISMATCH; bật app.bulk_rename để bỏ qua nó và vẫn kiểm chứng khoá ngoại.
+    await expect(t.admin.transaction().execute(async (trx) => {
+      await sql`SELECT set_config('app.bulk_rename', 'on', true)`.execute(trx);
+      await trx.insertInto('account').values({ ...base, tenant_id: b, code: '11', name: 'Con B', parent_id: parentA.id }).execute();
+    })).rejects.toThrow(/foreign key/);
     const roleA = await t.admin.selectFrom('role').select('id').where('tenant_id', '=', a).where('code', '=', 'admin').executeTakeFirstOrThrow();
     const u = await createTestUser(t.admin, { username: `r_${newId().slice(0, 8)}`, passwordHash: 'x' });
     await expect(t.admin.insertInto('tenant_user').values({ tenant_id: b, user_id: u, role_id: roleA.id, sensitive_flags: '[]' }).execute())

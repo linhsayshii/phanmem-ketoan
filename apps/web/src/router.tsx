@@ -7,6 +7,7 @@ import SelectTenantPage from './pages/SelectTenant.js';
 import UsersPage from './pages/Users.js';
 import CompanyPage from './pages/Company.js';
 import CompanyWizard from './pages/CompanyWizard.js';
+import AccountsPage from './pages/Accounts.js';
 import { api } from './api/client.js';
 
 // Các task sau thêm mục vào MENU và route vào routeTree.
@@ -15,6 +16,9 @@ export const MENU: MenuItem[] = [
     { key: 'users', label: 'Người dùng', to: '/he-thong/nguoi-dung', permission: 'user.view' },
     { key: 'company', label: 'Thông tin công ty', to: '/he-thong/cong-ty' },
     { key: 'newco', label: 'Tạo công ty mới', to: '/he-thong/tao-cong-ty' },
+  ] },
+  { key: 'danhmuc', label: 'Danh mục', to: '/danh-muc', children: [
+    { key: 'accounts', label: 'Hệ thống tài khoản', to: '/danh-muc/he-thong-tai-khoan', permission: 'account.view' },
   ] },
 ];
 
@@ -31,7 +35,8 @@ export const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app'
 const homeRoute = createRoute({ getParentRoute: () => appRoute, path: '/', component: () => <div>Chọn chức năng ở menu trái.</div> });
 const usersRoute = createRoute({ getParentRoute: () => appRoute, path: '/he-thong/nguoi-dung', component: UsersPage });
 const companyRoute = createRoute({ getParentRoute: () => appRoute, path: '/he-thong/cong-ty', component: CompanyPage });
+const accountsRoute = createRoute({ getParentRoute: () => appRoute, path: '/danh-muc/he-thong-tai-khoan', component: AccountsPage });
 
-export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute])]);
+export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, accountsRoute])]);
 export const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }

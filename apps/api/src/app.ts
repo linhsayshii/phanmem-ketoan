@@ -14,6 +14,7 @@ import roleRoutes from './modules/core/roles.js';
 import tenantRoutes from './modules/core/tenants.js';
 import fiscalYearRoutes from './modules/core/fiscalYears.js';
 import settingRoutes from './modules/core/settings.js';
+import coaRoutes from './modules/coa/routes.js';
 
 declare module 'fastify' { interface FastifyInstance { config: Config } }
 
@@ -33,6 +34,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config }) {
   await app.register(tenantRoutes);
   await app.register(fiscalYearRoutes);
   await app.register(settingRoutes);
+  await app.register(coaRoutes);
   app.get('/api/health', async () => ({ ok: true }));
   return app;
 }
