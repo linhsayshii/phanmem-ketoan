@@ -10,6 +10,7 @@ import CompanyWizard from './pages/CompanyWizard.js';
 import AccountsPage from './pages/Accounts.js';
 import ImportExcelPage from './pages/ImportExcel.js';
 import CatalogPage from './pages/Catalog.js';
+import AuditLogPage from './pages/AuditLog.js';
 import { api } from './api/client.js';
 
 // Các task sau thêm mục vào MENU và route vào routeTree.
@@ -18,6 +19,7 @@ export const MENU: MenuItem[] = [
     { key: 'users', label: 'Người dùng', to: '/he-thong/nguoi-dung', permission: 'user.view' },
     { key: 'company', label: 'Thông tin công ty', to: '/he-thong/cong-ty' },
     { key: 'newco', label: 'Tạo công ty mới', to: '/he-thong/tao-cong-ty' },
+    { key: 'audit', label: 'Nhật ký kiểm toán', to: '/he-thong/nhat-ky', permission: 'audit.view' },
   ] },
   { key: 'danhmuc', label: 'Danh mục', to: '/danh-muc', children: [
     { key: 'accounts', label: 'Hệ thống tài khoản', to: '/danh-muc/he-thong-tai-khoan', permission: 'account.view' },
@@ -52,10 +54,11 @@ export const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app'
 const homeRoute = createRoute({ getParentRoute: () => appRoute, path: '/', component: () => <div>Chọn chức năng ở menu trái.</div> });
 const usersRoute = createRoute({ getParentRoute: () => appRoute, path: '/he-thong/nguoi-dung', component: UsersPage });
 const companyRoute = createRoute({ getParentRoute: () => appRoute, path: '/he-thong/cong-ty', component: CompanyPage });
+const auditRoute = createRoute({ getParentRoute: () => appRoute, path: '/he-thong/nhat-ky', component: AuditLogPage });
 const accountsRoute = createRoute({ getParentRoute: () => appRoute, path: '/danh-muc/he-thong-tai-khoan', component: AccountsPage });
 const importRoute = createRoute({ getParentRoute: () => appRoute, path: '/danh-muc/nhap-excel', component: ImportExcelPage });
 const catalogRoute = createRoute({ getParentRoute: () => appRoute, path: '/danh-muc/$name', component: CatalogPage });
 
-export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, accountsRoute, importRoute, catalogRoute])]);
+export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, catalogRoute])]);
 export const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }

@@ -18,6 +18,7 @@ import settingRoutes from './modules/core/settings.js';
 import prefRoutes from './modules/core/prefs.js';
 import coaRoutes from './modules/coa/routes.js';
 import masterRoutes from './modules/master/routes.js';
+import auditRoutes from './modules/audit/routes.js';
 
 declare module 'fastify' { interface FastifyInstance { config: Config } }
 
@@ -41,6 +42,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config }) {
   await app.register(prefRoutes);
   await app.register(coaRoutes);
   await app.register(masterRoutes);
+  await app.register(auditRoutes);
   app.get('/api/health', async () => ({ ok: true }));
   return app;
 }
