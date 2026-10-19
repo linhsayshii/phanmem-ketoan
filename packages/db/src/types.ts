@@ -4,6 +4,7 @@ import type { ColumnType, Generated } from 'kysely';
 type JSONColumnType<T> = ColumnType<T, string, string>;
 
 export type Numeric = ColumnType<string, string | number, string | number>;
+type NumericDefault = ColumnType<string, string | number | undefined, string | number>; // Numeric có DEFAULT trong SQL
 export type Timestamp = ColumnType<string, string | Date | undefined, string | Date>;
 export type DateOnly = ColumnType<string, string, string>;
 
@@ -43,7 +44,7 @@ export interface AuditEventTable {
 export interface LegalParamTable { id: Generated<number>; code: string; value: JSONColumnType<unknown>; valid_from: DateOnly; valid_to: DateOnly | null; source: string }
 export interface FiscalPeriodTable {
   id: Generated<number>; tenant_id: string; fiscal_year: number; period_no: number;
-  date_from: DateOnly; date_to: DateOnly; regime: string; status: Generated<string>;
+  date_from: DateOnly; date_to: DateOnly; regime: string; status: Generated<string>; locked_modules: Generated<string[]>;
 }
 export interface AccountTable {
   id: Generated<number>; tenant_id: string; regime: string; code: string; name: string; name_en: string | null;
@@ -104,6 +105,41 @@ export interface ProjectTable {
 }
 export interface UomTable { id: Generated<number>; tenant_id: string; code: string; name: string; is_active: Generated<boolean> }
 
+export interface VoucherTypeTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; module: Generated<string>;
+  prefix: Generated<string>; suffix: Generated<string>; pad_length: Generated<number>; is_system: Generated<boolean>; is_active: Generated<boolean>;
+}
+export interface VoucherTable {
+  id: Generated<string>; tenant_id: string; voucher_type: string; voucher_no: string | null; seq_no: number | null;
+  posting_date: DateOnly; document_date: DateOnly; fiscal_year: Generated<number>; period_no: Generated<number>;
+  state: Generated<string>; description: string | null; party_id: string | null; currency_code: Generated<string>; fx_rate: Numeric | null;
+  source_doc_type: string | null; source_doc_id: string | null; reversal_of_id: string | null; reversed_by_id: string | null;
+  is_closing: Generated<boolean>; idempotency_key: string | null; created_by: string; created_at: Generated<string>;
+  posted_by: string | null; posted_at: Timestamp | null; version: Generated<number>; prev_hash: Buffer | null; row_hash: Buffer | null;
+}
+export interface VoucherLineTable {
+  id: Generated<number>; tenant_id: string; voucher_id: string; line_no: number; account_id: number; posting_date: DateOnly;
+  currency_code: Generated<string>; fx_rate: Numeric | null; amount_currency: NumericDefault;
+  debit: NumericDefault; credit: NumericDefault; balance: Generated<string>;
+  party_id: string | null; item_id: number | null; warehouse_id: number | null; department_id: number | null; project_id: number | null;
+  cost_item_id: number | null; contract_id: number | null; employee_id: number | null; asset_id: number | null;
+  extra_dims: Generated<JSONColumnType<Record<string, unknown>>>; description: string | null; due_date: DateOnly | null;
+}
+export interface VoucherCounterTable { tenant_id: string; voucher_type: string; fiscal_year: number; last_no: Generated<number> }
+export interface VoucherLineHistoryTable {
+  id: Generated<number>; tenant_id: string; voucher_id: string; version: number;
+  header: JSONColumnType<unknown>; lines: JSONColumnType<unknown>; archived_at: Generated<string>; archived_by: string | null;
+}
+export interface VoucherAttachmentTable {
+  id: Generated<string>; tenant_id: string; voucher_id: string; file_name: string; mime: string; bytes: number; storage_key: string;
+  uploaded_by: string; uploaded_at: Generated<string>;
+}
+export interface VoucherPairTable {
+  id: Generated<number>; tenant_id: string; voucher_id: string; posting_date: DateOnly; debit_account_id: number; credit_account_id: number;
+  debit_party_id: string | null; credit_party_id: string | null; amount: Numeric; is_closing: Generated<boolean>;
+}
+export interface BalanceStaleTable { tenant_id: string; stale_year: number; stale_period: number; marked_at: Generated<string> }
+
 export interface Database {
   tenant: TenantTable;
   app_user: AppUserTable;
@@ -135,4 +171,12 @@ export interface Database {
   cost_item: CostItemTable;
   project: ProjectTable;
   uom: UomTable;
+  voucher_type: VoucherTypeTable;
+  voucher: VoucherTable;
+  voucher_line: VoucherLineTable;
+  voucher_counter: VoucherCounterTable;
+  voucher_line_history: VoucherLineHistoryTable;
+  voucher_attachment: VoucherAttachmentTable;
+  voucher_pair: VoucherPairTable;
+  balance_stale: BalanceStaleTable;
 }
