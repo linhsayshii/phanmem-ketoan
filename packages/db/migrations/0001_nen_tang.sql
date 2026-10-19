@@ -83,20 +83,23 @@ CREATE TABLE role (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenant(id),
   code text NOT NULL, name text NOT NULL, is_system boolean NOT NULL DEFAULT false,
-  UNIQUE (tenant_id, code)
+  UNIQUE (tenant_id, code),
+  UNIQUE (tenant_id, id)
 );
 CREATE TABLE role_permission (
-  tenant_id uuid NOT NULL, role_id uuid NOT NULL REFERENCES role(id) ON DELETE CASCADE,
+  tenant_id uuid NOT NULL, role_id uuid NOT NULL,
   permission_code text NOT NULL REFERENCES permission(code),
-  PRIMARY KEY (tenant_id, role_id, permission_code)
+  PRIMARY KEY (tenant_id, role_id, permission_code),
+  FOREIGN KEY (tenant_id, role_id) REFERENCES role (tenant_id, id) ON DELETE CASCADE
 );
 CREATE TABLE tenant_user (
   tenant_id uuid NOT NULL REFERENCES tenant(id),
   user_id uuid NOT NULL REFERENCES app_user(id),
-  role_id uuid NOT NULL REFERENCES role(id),
+  role_id uuid NOT NULL,
   sensitive_flags jsonb NOT NULL DEFAULT '[]',
   is_active boolean NOT NULL DEFAULT true,
-  PRIMARY KEY (tenant_id, user_id)
+  PRIMARY KEY (tenant_id, user_id),
+  FOREIGN KEY (tenant_id, role_id) REFERENCES role (tenant_id, id)
 );
 CREATE TABLE audit_event (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -127,7 +130,7 @@ CREATE TABLE account (
   tenant_id uuid NOT NULL REFERENCES tenant(id),
   regime text NOT NULL,
   code text NOT NULL, name text NOT NULL, name_en text,
-  parent_id bigint REFERENCES account(id),
+  parent_id bigint,
   is_group boolean NOT NULL DEFAULT false,
   root_type text NOT NULL CHECK (root_type IN ('asset','liability','equity','income','expense','off_balance')),
   normal_balance text NOT NULL CHECK (normal_balance IN ('debit','credit','both')),
@@ -135,7 +138,9 @@ CREATE TABLE account (
   subledger_kind text CHECK (subledger_kind IN ('receivable','payable','inventory','fixed_asset','bank','cash')),
   reconcile boolean NOT NULL DEFAULT false,
   is_active boolean NOT NULL DEFAULT true,
-  UNIQUE (tenant_id, regime, code)
+  UNIQUE (tenant_id, regime, code),
+  UNIQUE (tenant_id, id),
+  FOREIGN KEY (tenant_id, parent_id) REFERENCES account (tenant_id, id)
 );
 CREATE INDEX ON account (tenant_id, parent_id);
 
@@ -174,7 +179,7 @@ END $$;
 SELECT rls_enable(t) FROM unnest(ARRAY['role','role_permission','audit_event','fiscal_period','account','tenant_setting','user_pref']::regclass[]) AS t;
 
 ALTER TABLE tenant ENABLE ROW LEVEL SECURITY; ALTER TABLE tenant FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant_self ON tenant USING (id = app_tenant() OR EXISTS (
+CREATE POLICY tenant_self ON tenant FOR SELECT USING (id = app_tenant() OR EXISTS (
   SELECT 1 FROM tenant_user tu WHERE tu.tenant_id = tenant.id AND tu.user_id = app_user_id()));
 CREATE POLICY tenant_self_update ON tenant FOR UPDATE USING (id = app_tenant()) WITH CHECK (id = app_tenant());
 
@@ -189,7 +194,7 @@ SELECT audit_enable(t) FROM unnest(ARRAY['role','role_permission','tenant_user',
 
 -- ===== Tạo công ty: SECURITY DEFINER vì chưa có app.current_tenant lúc tạo =====
 CREATE OR REPLACE FUNCTION create_tenant(p_code text, p_name text, p_tax_code text, p_owner_user uuid)
-RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_tenant uuid; v_admin_role uuid;
 BEGIN
   INSERT INTO tenant(code, name, tax_code) VALUES (p_code, p_name, p_tax_code) RETURNING id INTO v_tenant;

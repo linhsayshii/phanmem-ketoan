@@ -1,3 +1,4 @@
+import '../src/env.js';
 import { describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { migrate } from '../src/migrate.js';

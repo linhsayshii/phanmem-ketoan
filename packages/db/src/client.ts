@@ -2,10 +2,13 @@ import pg from 'pg';
 import { Kysely, PostgresDialect, sql, type Transaction } from 'kysely';
 import type { Database } from './types.js';
 
-// numeric (1700) và int8 (20) giữ nguyên dạng chuỗi: không bao giờ để driver ép sang number.
+// numeric (1700) giữ nguyên dạng chuỗi: không bao giờ để driver ép sang number (tiền dùng decimal.js).
+// int8 (20) -> number vì chỉ dùng cho id/đếm (bigint identity), nhỏ hơn nhiều so với 2^53.
 pg.types.setTypeParser(1700, (v) => v);
-pg.types.setTypeParser(20, (v) => v);
+pg.types.setTypeParser(20, (v) => Number(v));
 pg.types.setTypeParser(1082, (v) => v); // date -> 'YYYY-MM-DD'
+pg.types.setTypeParser(1184, (v) => v); // timestamptz -> chuỗi, khớp Timestamp trong types.ts
+pg.types.setTypeParser(1114, (v) => v); // timestamp -> chuỗi
 
 export interface TenantCtx {
   tenantId: string;

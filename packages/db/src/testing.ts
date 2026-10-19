@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.js';
 import { randomUUID } from 'node:crypto';
 import { sql, type Kysely } from 'kysely';
 import { createDb, createPool } from './client.js';

@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.js';
 import { migrate } from './migrate.js';
 
 const url = process.env.DATABASE_ADMIN_URL;
