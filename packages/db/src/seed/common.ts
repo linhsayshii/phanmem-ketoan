@@ -11,9 +11,15 @@ export async function ensureTenant(c: pg.Client, t: { code: string; name: string
   const r = await c.query('SELECT create_tenant($1,$2,$3,$4) AS id', [t.code, t.name, t.taxCode, t.ownerUserId]);
   return { id: r.rows[0].id, created: true };
 }
-export async function withTenantClient<T>(c: pg.Client, tenantId: string, fn: () => Promise<T>): Promise<T> {
-  await c.query('BEGIN'); await c.query(`SELECT set_config('app.current_tenant', $1, true)`, [tenantId]);
-  try { const r = await fn(); await c.query('COMMIT'); return r; } catch (e) { await c.query('ROLLBACK'); throw e; }
+// Đặt công ty (và người dùng) cho giao dịch đang mở: set_config(..., true) chỉ có hiệu lực trong giao dịch hiện tại.
+export async function setTenantContext(c: pg.Client, tenantId: string, userId?: string): Promise<void> {
+  await c.query(`SELECT set_config('app.current_tenant', $1, true)`, [tenantId]);
+  if (userId) await c.query(`SELECT set_config('app.current_user', $1, true)`, [userId]);
+}
+// Dùng khi chưa có giao dịch; trong giao dịch đã mở (như seedAbcTx) gọi setTenantContext trực tiếp.
+export async function withTenantClient<T>(c: pg.Client, tenantId: string, fn: () => Promise<T>, userId?: string): Promise<T> {
+  await c.query('BEGIN');
+  try { await setTenantContext(c, tenantId, userId); const r = await fn(); await c.query('COMMIT'); return r; } catch (e) { await c.query('ROLLBACK'); throw e; }
 }
 export async function insertFiscalYear(c: pg.Client, tenantId: string, input: { fiscalYear: number; dateFrom: string; months: number; regime: Regime }) {
   for (const p of buildFiscalPeriods(input))
