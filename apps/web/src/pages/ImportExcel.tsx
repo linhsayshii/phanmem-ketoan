@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client.js';
 
 interface Def { name: string; label: string }
-interface Result { total: number; inserted: number; errors: { row: number; column: string; message: string }[] }
+interface Result { total: number; inserted: number; errors: { row: number; column: string; message: string }[]; errorCount?: number }
 
 export default function ImportExcelPage() {
   const defs = useQuery({ queryKey: ['catalog-defs'], queryFn: () => api<Def[]>('/api/catalogs') });
@@ -32,7 +32,7 @@ export default function ImportExcelPage() {
         </Space>
         {result && result.errors.length === 0 && <Alert type="success" message={`${result.total} dòng hợp lệ${result.inserted ? `, đã nhập ${result.inserted}` : ''}`} />}
         {result && result.errors.length > 0 && (<>
-          <Alert type="error" message={`${result.errors.length} lỗi, chưa nhập dòng nào`} />
+          <Alert type="error" message={`${result.errorCount ?? result.errors.length} lỗi, chưa nhập dòng nào${(result.errorCount ?? 0) > result.errors.length ? ` (hiển thị ${result.errors.length} lỗi đầu)` : ''}`} />
           <Table size="small" rowKey={(r) => `${r.row}-${r.column}`} dataSource={result.errors} pagination={{ pageSize: 20 }}
             columns={[{ title: 'Dòng', dataIndex: 'row', width: 80 }, { title: 'Cột', dataIndex: 'column', width: 180 }, { title: 'Lỗi', dataIndex: 'message' }]} /></>)}
       </Space>

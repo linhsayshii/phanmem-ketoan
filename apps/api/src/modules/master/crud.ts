@@ -15,24 +15,33 @@ function assertId(def: CatalogDef, id: string): void {
 const lookupsOf = (def: CatalogDef) => def.columns.filter((c) => c.lookup && c.lookup.catalog !== 'currency').map((c, i) => ({ key: c.key, idKey: c.key.replace(/_code$/, '_id'), table: catalogByName(c.lookup!.catalog)!.table as string, alias: `l${i}` }));
 
 // Cột `<x>_code` có lookup → cột `<x>_id` trong DB (trừ currency_code: khóa là chính mã).
-export async function resolveLookups(trx: Trx, def: CatalogDef, row: Record<string, unknown>): Promise<Record<string, unknown>> {
+// `cache` (tùy chọn, dùng khi nhập hàng loạt) nhớ kết quả tra cứu thành công theo (danh mục, mã); không nhớ kết quả không tìm thấy.
+export async function resolveLookups(trx: Trx, def: CatalogDef, row: Record<string, unknown>, cache?: Map<string, unknown>): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = { ...row };
   for (const col of def.columns) {
     if (!col.lookup || !(col.key in row)) continue;
     const target = catalogByName(col.lookup.catalog)!;
     const value = row[col.key];
+    const ck = `${col.lookup.catalog}|${String(value)}`;
+    const notFound = () => new AppError('LOOKUP_NOT_FOUND', `Cột ${col.key}: không có mã "${String(value)}" trong ${target.label}`, 404);
     if (col.lookup.catalog === 'currency') {
       // Khóa của currency là chính mã nên giữ nguyên cột, chỉ kiểm tra mã có tồn tại trong công ty.
-      if (value !== null && value !== undefined && value !== '' && (await sql`SELECT 1 FROM currency WHERE code = ${String(value)}`.execute(trx)).rows.length === 0)
-        throw new AppError('LOOKUP_NOT_FOUND', `Cột ${col.key}: không có mã "${String(value)}" trong ${target.label}`, 404);
+      if (value !== null && value !== undefined && value !== '' && !cache?.has(ck)) {
+        if ((await sql`SELECT 1 FROM currency WHERE code = ${String(value)}`.execute(trx)).rows.length === 0) throw notFound();
+        cache?.set(ck, true);
+      }
       continue;
     }
     delete out[col.key];
     const idKey = col.key.replace(/_code$/, '_id');
     if (value === null || value === undefined || value === '') { out[idKey] = null; continue; }
-    const found = (await sql<{ id: unknown }>`SELECT id FROM ${sql.table(target.table as string)} WHERE code = ${String(value)}`.execute(trx)).rows[0];
-    if (!found) throw new AppError('LOOKUP_NOT_FOUND', `Cột ${col.key}: không có mã "${String(value)}" trong ${target.label}`, 404);
-    out[idKey] = found.id;
+    let id = cache?.get(ck);
+    if (id === undefined) {
+      id = (await sql<{ id: unknown }>`SELECT id FROM ${sql.table(target.table as string)} WHERE code = ${String(value)}`.execute(trx)).rows[0]?.id;
+      if (id === undefined) throw notFound();
+      cache?.set(ck, id);
+    }
+    out[idKey] = id;
   }
   return out;
 }

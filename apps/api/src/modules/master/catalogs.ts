@@ -13,7 +13,8 @@ const pct = z.string().regex(/^\d{1,3}(\.\d{1,2})?$/).refine((v) => Number(v) <=
 // Ngày ISO hợp lệ: loại 2026-02-30 bằng cách dựng lại ngày UTC rồi so chuỗi.
 const dateIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => {
   const [y, m, d] = s.split('-').map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10) === s;
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return !Number.isNaN(t.getTime()) && t.toISOString().slice(0, 10) === s;
 });
 // Mã tiền tệ khớp assertId của currency (/^[A-Z]{3}$/), nếu không dòng tạo ra sẽ không GET/PUT/DELETE được.
 const ccy = z.string().regex(/^[A-Z]{3}$/, 'Mã tiền tệ gồm 3 chữ in hoa');

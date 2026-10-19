@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { CATALOGS, catalogByName } from './catalogs.js';
 import { createRow, deleteRow, getRow, listRows, updateRow } from './crud.js';
 import { AppError } from '../../plugins/errors.js';
-import { buildTemplate, importRows, parseWorkbook } from './importExcel.js';
+import { MAX_ERRORS, buildTemplate, importRows, parseWorkbook } from './importExcel.js';
+
+class DryRun extends Error {} // chỉ để hoàn tác giao dịch sau khi kiểm tra thử
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   const def = (name: string) => { const d = catalogByName(name); if (!d) throw new AppError('NOT_FOUND', `Không có danh mục ${name}`, 404); return d; };
@@ -19,14 +21,18 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.post('/api/catalogs/:name/import', { preHandler: app.requirePermission('catalog.import'), schema: { params: z.object({ name: z.string() }), querystring: z.object({ mode: z.enum(['validate', 'commit']).default('validate') }) } }, async (req) => {
     const d = def(req.params.name);
     const file = await req.file(); if (!file) throw new AppError('IMPORT_NO_FILE', 'Thiếu tệp', 400);
-    const buf = await file.toBuffer();
-    const { rows, errors } = await parseWorkbook(d, buf);
-    if (req.query.mode === 'validate' || errors.length) {
-      if (errors.length && req.query.mode === 'commit') throw new AppError('IMPORT_ERRORS', `${errors.length} dòng lỗi`, 409, errors);
-      return { total: rows.length + errors.length, inserted: 0, errors };
+    const { rows, errors } = await parseWorkbook(d, await file.toBuffer());
+    const total = rows.length + new Set(errors.map((e) => e.row)).size;
+    const dry = req.query.mode === 'validate';
+    const report = (inserted: number) => ({ total, inserted, errors: [...errors].sort((a, b) => a.row - b.row).slice(0, MAX_ERRORS), errorCount: errors.length });
+    // Cả hai chế độ chạy cùng một đường ghi trong giao dịch; kiểm tra thử ném DryRun để hoàn tác nên báo đúng các lỗi như khi nhập thật.
+    try {
+      const inserted = await app.withTenant(req, async (trx) => { const n = await importRows(trx, req.auth!.tenantId!, d, rows, errors); if (dry) throw new DryRun(); return n; });
+      return report(inserted);
+    } catch (e) {
+      if (dry && (e instanceof DryRun || (e instanceof AppError && e.code === 'IMPORT_ERRORS'))) return report(0);
+      throw e;
     }
-    const inserted = await app.withTenant(req, (trx) => importRows(trx, req.auth!.tenantId!, d, rows, errors));
-    return { total: rows.length, inserted, errors: [] };
   });
   app.get('/api/catalogs/:name/:id', { preHandler: app.requirePermission('catalog.view'), schema: { params: z.object({ name: z.string(), id: z.string() }) } },
     async (req) => app.withTenant(req, (trx) => getRow(trx, def(req.params.name), req.params.id)));
