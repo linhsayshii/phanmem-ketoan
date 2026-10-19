@@ -4,6 +4,9 @@ export interface FiscalPeriodInput { fiscalYear: number; periodNo: number; dateF
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 export function buildFiscalPeriods(input: { fiscalYear: number; dateFrom: string; months: number; regime: Regime }): FiscalPeriodInput[] {
+  const first = new Date(input.dateFrom + 'T00:00:00Z');
+  if (!/^\d{4}-\d{2}-01$/.test(input.dateFrom) || Number.isNaN(first.getTime()) || iso(first) !== input.dateFrom) throw new Error('dateFrom phải là ngày đầu tháng dạng YYYY-MM-01');
+  if (!Number.isInteger(input.fiscalYear)) throw new Error('fiscalYear phải là số nguyên');
   if (!Number.isInteger(input.months) || input.months < 1 || input.months > 15) throw new Error('Số tháng phải từ 1 đến 15');
   const start = new Date(input.dateFrom + 'T00:00:00Z');
   if (Number.isNaN(start.getTime()) || start.getUTCDate() !== 1) throw new Error('Ngày bắt đầu phải là ngày đầu tháng');

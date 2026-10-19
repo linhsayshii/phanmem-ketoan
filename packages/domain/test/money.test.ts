@@ -25,4 +25,18 @@ describe('money', () => {
   it('D không nhận NaN', () => {
     expect(() => D('abc')).toThrow();
   });
+  it('D từ chối chuỗi không phải số thập phân thuần', () => {
+    expect(() => D('Infinity')).toThrow('Số không hợp lệ: Infinity');
+    expect(() => D('0x1f')).toThrow('Số không hợp lệ: 0x1f');
+    expect(() => D('1e3')).toThrow('Số không hợp lệ: 1e3');
+  });
+  it('D từ chối số không hữu hạn', () => {
+    expect(() => D(Infinity)).toThrow();
+    expect(() => D(NaN)).toThrow();
+  });
+  it('toString không dùng ký hiệu mũ', () => {
+    expect(D('-12.50').toString()).toBe('-12.5');
+    expect(D('0.0000001').toString()).toBe('0.0000001');
+    expect(D('1000000000000000000000').toString()).toBe('1000000000000000000000');
+  });
 });

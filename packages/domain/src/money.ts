@@ -1,13 +1,14 @@
 import { Decimal } from 'decimal.js';
 
-Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
+Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP, toExpNeg: -30, toExpPos: 30 });
 
 export { Decimal };
 export const ZERO = new Decimal(0);
 
 export function D(v: string | number | Decimal): Decimal {
+  if (typeof v === 'string' && !/^-?\d+(\.\d+)?$/.test(v)) throw new Error(`Số không hợp lệ: ${v}`);
   const d = new Decimal(v);
-  if (d.isNaN()) throw new Error(`Số không hợp lệ: ${String(v)}`);
+  if (!d.isFinite()) throw new Error(`Số không hợp lệ: ${String(v)}`);
   return d;
 }
 

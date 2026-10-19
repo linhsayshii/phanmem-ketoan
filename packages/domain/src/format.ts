@@ -11,8 +11,9 @@ export function formatVnNumber(v: string | Decimal | null | undefined, scale = 0
 }
 
 export function parseVnNumber(text: string): string | null {
-  const cleaned = text.trim().replace(/[\s.]/g, '').replace(',', '.');
-  if (cleaned === '' || !/^-?\d+(\.\d+)?$/.test(cleaned)) return null;
+  const s = text.trim();
+  if (!/^-?(\d{1,3}([. ]\d{3})+|\d+)(,\d+)?$/.test(s)) return null;
+  const cleaned = s.replace(/[. ]/g, '').replace(',', '.');
   return D(cleaned).toString();
 }
 

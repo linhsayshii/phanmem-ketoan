@@ -19,4 +19,11 @@ describe('buildFiscalPeriods', () => {
     expect(() => buildFiscalPeriods({ fiscalYear: 2026, dateFrom: '2026-01-01', months: 16, regime: 'TT99' })).toThrow();
     expect(() => buildFiscalPeriods({ fiscalYear: 2026, dateFrom: '2026-01-15', months: 12, regime: 'TT99' })).toThrow();
   });
+  it('từ chối ngày không hợp lệ hoặc fiscalYear không nguyên', () => {
+    expect(() => buildFiscalPeriods({ fiscalYear: 2026, dateFrom: '2026-02-29', months: 12, regime: 'TT99' })).toThrow('dateFrom phải là ngày đầu tháng dạng YYYY-MM-01');
+    expect(() => buildFiscalPeriods({ fiscalYear: 2026, dateFrom: '2026-4-1', months: 12, regime: 'TT99' })).toThrow('dateFrom phải là ngày đầu tháng dạng YYYY-MM-01');
+    expect(() => buildFiscalPeriods({ fiscalYear: 2026, dateFrom: '2026-04-15', months: 12, regime: 'TT99' })).toThrow('dateFrom phải là ngày đầu tháng dạng YYYY-MM-01');
+    expect(() => buildFiscalPeriods({ fiscalYear: 2026, dateFrom: '2026-13-01', months: 12, regime: 'TT99' })).toThrow('dateFrom phải là ngày đầu tháng dạng YYYY-MM-01');
+    expect(() => buildFiscalPeriods({ fiscalYear: 2026.5, dateFrom: '2026-01-01', months: 12, regime: 'TT99' })).toThrow('fiscalYear phải là số nguyên');
+  });
 });

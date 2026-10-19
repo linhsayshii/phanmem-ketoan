@@ -21,4 +21,11 @@ describe('format', () => {
     expect(parseVnDate('31/02/2026')).toBeNull();
     expect(parseVnDate('1/2/26')).toBe('2026-02-01');
   });
+  it('phân tích số chặt: dấu chấm chỉ là phân cách nghìn', () => {
+    expect(parseVnNumber('1.5')).toBeNull();
+    expect(parseVnNumber('0.5')).toBeNull();
+    expect(parseVnNumber('1.500,5')).toBe('1500.5');
+    expect(parseVnNumber('-2.000')).toBe('-2000');
+    expect(parseVnNumber('12345')).toBe('12345');
+  });
 });
