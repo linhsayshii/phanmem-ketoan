@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'kysely';
+import { withTenant } from '@kt/db';
 import { bootstrapTenant, createTestApp, TEST_PASSWORD, type TestApp } from './helpers.js';
 
 let ctx: TestApp; let cookie: string; let tenantId: string;
@@ -113,6 +114,9 @@ describe('danh mục khung', () => {
       ['party', { code: 'XX', name: 'X', payment_term_days: 3651 }],
       ['project', { code: 'XX', name: 'X', budget: '-5' }],
       ['project', { code: 'XX', name: 'X', date_from: '2026-13-01' }],
+      ['currency', { code: 'usd', name: 'Đô la' }],
+      ['exchange_rate', { currency_code: 'usd', rate_date: '2026-02-01', rate_type: 'buy', rate: '25000' }],
+      ['bank_account', { account_no: '9990002', bank_code: 'VCB', currency_code: 'usd', gl_account_code: '1121' }],
     ];
     for (const [name, payload] of cases) {
       const r = await post(name, payload);
@@ -181,7 +185,9 @@ describe('danh mục khung', () => {
     expect(lookup.statusCode).toBe(404); expect(lookup.json().error.code).toBe('LOOKUP_NOT_FOUND');
   });
 
-  it('app_user không gọi được seed_tenant_defaults (42501)', async () => {
-    await expect(sql`SELECT seed_tenant_defaults(${tenantId}::uuid)`.execute(ctx.t.db)).rejects.toMatchObject({ code: '42501' });
+  it('app_user không gọi được seed_tenant_defaults dù RLS cho phép ghi: thiếu quyền EXECUTE (42501)', async () => {
+    // Trong ngữ cảnh đúng công ty các INSERT bên trong sẽ qua RLS, nên chỉ việc thu quyền EXECUTE mới làm lệnh gọi bị từ chối.
+    await expect(withTenant(ctx.t.db, { tenantId }, (trx) => sql`SELECT seed_tenant_defaults(${tenantId}::uuid)`.execute(trx)))
+      .rejects.toMatchObject({ code: '42501', message: expect.stringMatching(/permission denied for function seed_tenant_defaults/) });
   });
 });

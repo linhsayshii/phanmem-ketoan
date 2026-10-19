@@ -15,6 +15,8 @@ const dateIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => {
   const [y, m, d] = s.split('-').map(Number) as [number, number, number];
   return new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10) === s;
 });
+// Mã tiền tệ khớp assertId của currency (/^[A-Z]{3}$/), nếu không dòng tạo ra sẽ không GET/PUT/DELETE được.
+const ccy = z.string().regex(/^[A-Z]{3}$/, 'Mã tiền tệ gồm 3 chữ in hoa');
 const code = z.string().min(1).max(30);
 const text = (o = true) => (o ? z.string().nullable().optional() : z.string().min(1));
 
@@ -47,10 +49,10 @@ const defs: CatalogDef[] = [
       { key: 'department_code', label: 'Bộ phận', type: 'text', lookup: { catalog: 'department' } }, { key: 'party_code', label: 'Đối tượng công nợ', type: 'text', lookup: { catalog: 'party' } },
       { key: 'tax_code', label: 'MST cá nhân', type: 'text' }, { key: 'id_number', label: 'Số CCCD', type: 'text' }, { key: 'position', label: 'Chức vụ', type: 'text' }, { key: 'phone', label: 'Điện thoại', type: 'text' }, { key: 'email', label: 'Email', type: 'text' }] },
   { name: 'currency', table: 'currency', label: 'Loại tiền', uniqueBy: ['code'], sort: 'code', searchIn: ['code', 'name'],
-    schema: z.object({ code: z.string().length(3), name: text(false), symbol: text(), minor_unit: z.number().int().min(0).max(4).optional(), is_active: z.boolean().optional() }),
+    schema: z.object({ code: ccy, name: text(false), symbol: text(), minor_unit: z.number().int().min(0).max(4).optional(), is_active: z.boolean().optional() }),
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên', type: 'text', required: true }, { key: 'symbol', label: 'Ký hiệu', type: 'text' }, { key: 'minor_unit', label: 'Số lẻ', type: 'number' }] },
   { name: 'exchange_rate', table: 'exchange_rate', label: 'Tỷ giá', uniqueBy: ['currency_code', 'rate_date', 'rate_type'], sort: 'rate_date', searchIn: ['currency_code'],
-    schema: z.object({ currency_code: z.string().length(3), rate_date: dateIso, rate_type: z.enum(['transfer_avg', 'buy', 'sell']), rate: exRate }),
+    schema: z.object({ currency_code: ccy, rate_date: dateIso, rate_type: z.enum(['transfer_avg', 'buy', 'sell']), rate: exRate }),
     columns: [{ key: 'currency_code', label: 'Loại tiền', type: 'text', required: true, lookup: { catalog: 'currency' } }, { key: 'rate_date', label: 'Ngày', type: 'date', required: true },
       { key: 'rate_type', label: 'Loại tỷ giá', type: 'select', required: true, options: [{ value: 'transfer_avg', label: 'Mua bán CK trung bình' }, { value: 'buy', label: 'Mua' }, { value: 'sell', label: 'Bán' }] },
       { key: 'rate', label: 'Tỷ giá', type: 'number', required: true }] },
@@ -58,7 +60,7 @@ const defs: CatalogDef[] = [
     schema: z.object({ code, name: text(false), short_name: text(), is_active: z.boolean().optional() }),
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên ngân hàng', type: 'text', required: true }, { key: 'short_name', label: 'Tên viết tắt', type: 'text' }] },
   { name: 'bank_account', table: 'bank_account', label: 'Tài khoản ngân hàng công ty', uniqueBy: ['account_no'], sort: 'account_no', searchIn: ['account_no', 'account_name'],
-    schema: z.object({ bank_code: code, account_no: text(false), account_name: text(), branch: text(), currency_code: z.string().length(3).optional(), gl_account_code: text(false), is_active: z.boolean().optional() }),
+    schema: z.object({ bank_code: code, account_no: text(false), account_name: text(), branch: text(), currency_code: ccy.optional(), gl_account_code: text(false), is_active: z.boolean().optional() }),
     columns: [{ key: 'bank_code', label: 'Ngân hàng', type: 'text', required: true, lookup: { catalog: 'bank' } }, { key: 'account_no', label: 'Số tài khoản', type: 'text', required: true },
       { key: 'account_name', label: 'Tên tài khoản', type: 'text' }, { key: 'branch', label: 'Chi nhánh', type: 'text' }, { key: 'currency_code', label: 'Loại tiền', type: 'text', lookup: { catalog: 'currency' } },
       { key: 'gl_account_code', label: 'Tài khoản kế toán (112x)', type: 'text', required: true }] },
