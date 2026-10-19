@@ -40,7 +40,8 @@ CREATE TABLE bank_account (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES tenant(id),
   bank_id bigint NOT NULL REFERENCES bank(id), account_no text NOT NULL, account_name text, branch text,
   currency_code char(3) NOT NULL DEFAULT 'VND', gl_account_code text NOT NULL, is_active boolean NOT NULL DEFAULT true,
-  UNIQUE (tenant_id, account_no));
+  UNIQUE (tenant_id, account_no),
+  FOREIGN KEY (tenant_id, currency_code) REFERENCES currency(tenant_id, code));
 CREATE TABLE payment_method (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES tenant(id),
   code text NOT NULL, name text NOT NULL, is_active boolean NOT NULL DEFAULT true, UNIQUE (tenant_id, code));
@@ -64,6 +65,21 @@ CREATE TABLE project (
 CREATE TABLE uom (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES tenant(id),
   code text NOT NULL, name text NOT NULL, is_active boolean NOT NULL DEFAULT true, UNIQUE (tenant_id, code));
+
+-- Bảng khóa theo mã (currency) không có cột id: entity_id lấy id, nếu không có thì lấy code. Phần còn lại giữ nguyên bản 0001.
+CREATE OR REPLACE FUNCTION fn_audit_row() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE v_tenant uuid; v_id text; v_before jsonb; v_after jsonb;
+BEGIN
+  IF TG_OP = 'DELETE' THEN v_before := to_jsonb(OLD); v_tenant := OLD.tenant_id; v_id := coalesce(to_jsonb(OLD)->>'id', to_jsonb(OLD)->>'code', '');
+  ELSIF TG_OP = 'INSERT' THEN v_after := to_jsonb(NEW); v_tenant := NEW.tenant_id; v_id := coalesce(to_jsonb(NEW)->>'id', to_jsonb(NEW)->>'code', '');
+  ELSE v_before := to_jsonb(OLD); v_after := to_jsonb(NEW); v_tenant := NEW.tenant_id; v_id := coalesce(to_jsonb(NEW)->>'id', to_jsonb(NEW)->>'code', '');
+    IF v_before = v_after THEN RETURN NEW; END IF;
+  END IF;
+  INSERT INTO audit_event(tenant_id, user_id, action, entity, entity_id, before, after, ip)
+  VALUES (v_tenant, app_user_id(), lower(TG_OP), TG_TABLE_NAME, coalesce(v_id, ''), v_before, v_after,
+          nullif(current_setting('app.client_ip', true), ''));
+  RETURN COALESCE(NEW, OLD);
+END $$;
 
 SELECT rls_enable(t), audit_enable(t) FROM unnest(ARRAY['party_group','party','party_bank_account','department','employee','currency','exchange_rate',
   'bank','bank_account','payment_method','tax_code','invoice_group','cost_item','project','uom']::regclass[]) AS t;
@@ -89,6 +105,8 @@ BEGIN
     (p_tenant, 'sale', 'KCT', 'Bán ra không chịu thuế', NULL);
   INSERT INTO uom(tenant_id, code, name) VALUES (p_tenant, 'CAI', 'Cái'), (p_tenant, 'CHIEC', 'Chiếc'), (p_tenant, 'BO', 'Bộ'), (p_tenant, 'GIO', 'Giờ'), (p_tenant, 'THANG', 'Tháng');
 END $$;
+-- Chỉ create_tenant (chủ sở hữu, SECURITY DEFINER) được gọi; app_user có EXECUTE từ ALTER DEFAULT PRIVILEGES của 0001 nên phải thu riêng.
+REVOKE EXECUTE ON FUNCTION seed_tenant_defaults(uuid) FROM PUBLIC, app_user;
 
 CREATE OR REPLACE FUNCTION create_tenant(p_code text, p_name text, p_tax_code text, p_owner_user uuid)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$

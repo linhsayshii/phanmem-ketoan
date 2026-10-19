@@ -89,4 +89,99 @@ describe('danh mục khung', () => {
     expect((await ctx.app.inject({ method: 'PUT', url: `/api/catalogs/uom/${uom.id}`, headers, payload: { name: 'Sửa' } })).statusCode).toBe(403);
     expect((await ctx.app.inject({ method: 'DELETE', url: `/api/catalogs/uom/${uom.id}`, headers })).statusCode).toBe(403);
   });
+
+  const post = (name: string, payload: Record<string, unknown>, headers = { cookie }) => ctx.app.inject({ method: 'POST', url: `/api/catalogs/${name}`, headers, payload });
+  const auditOf = async (entity: string, entityId: string) => (await sql<{ action: string; entity_id: string; before: Record<string, unknown> | null; after: Record<string, unknown> | null }>`
+    SELECT action, entity_id, before, after FROM audit_event WHERE tenant_id = ${tenantId}::uuid AND entity = ${entity} AND entity_id = ${entityId} ORDER BY id`.execute(ctx.t.admin)).rows;
+
+  it(':id sai dạng bị 404, không phải 500', async () => {
+    const put = await ctx.app.inject({ method: 'PUT', url: '/api/catalogs/party/abc', headers: { cookie }, payload: { name: 'x' } });
+    expect(put.statusCode).toBe(404);
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/catalogs/department/abc', headers: { cookie } })).statusCode).toBe(404);
+    expect((await ctx.app.inject({ method: 'DELETE', url: '/api/catalogs/uom/99999999999999999999', headers: { cookie } })).statusCode).toBe(404);
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/catalogs/currency/usd', headers: { cookie } })).statusCode).toBe(404);
+  });
+
+  it('số tiền, tỷ giá, thuế suất, ngày không hợp lệ bị 400 VALIDATION', async () => {
+    const cases: [string, Record<string, unknown>][] = [
+      ['exchange_rate', { currency_code: 'USD', rate_date: '2026-02-01', rate_type: 'buy', rate: '0' }],
+      ['exchange_rate', { currency_code: 'USD', rate_date: '2026-02-30', rate_type: 'buy', rate: '25000' }],
+      ['tax_code', { code: 'XX', name: 'X', kind: 'vat', rate: '1000' }],
+      ['tax_code', { code: 'XX', name: 'X', kind: 'vat', rate: '100.01' }],
+      ['invoice_group', { scope: 'sale', code: 'XX', name: 'X', rate: '101' }],
+      ['party', { code: 'XX', name: 'X', credit_limit: '100.5' }],
+      ['party', { code: 'XX', name: 'X', payment_term_days: 3651 }],
+      ['project', { code: 'XX', name: 'X', budget: '-5' }],
+      ['project', { code: 'XX', name: 'X', date_from: '2026-13-01' }],
+    ];
+    for (const [name, payload] of cases) {
+      const r = await post(name, payload);
+      expect(r.statusCode, `${name} ${JSON.stringify(payload)} -> ${r.body}`).toBe(400);
+      expect(r.json().error.code).toBe('VALIDATION');
+    }
+  });
+
+  it('lỗi dữ liệu của PostgreSQL (tràn số) được trả 400 VALIDATION, không phải 500', async () => {
+    const r = await post('party', { code: 'KH_OVF', name: 'Tràn số', credit_limit: '9'.repeat(25) });
+    expect(r.statusCode, r.body).toBe(400);
+    expect(r.json().error.code).toBe('VALIDATION');
+  });
+
+  it('khóa lạ trong thân yêu cầu bị 400; PUT thân rỗng chỉ kiểm tra dòng tồn tại', async () => {
+    const r = await post('department', { code: 'D_LA', name: 'Lạ', groupCode: 'x' });
+    expect(r.statusCode).toBe(400); expect(r.json().error.code).toBe('VALIDATION');
+    const dept = (await ctx.app.inject({ method: 'GET', url: '/api/catalogs/department?q=KD', headers: { cookie } })).json().rows[0] as { id: string };
+    const strictPut = await ctx.app.inject({ method: 'PUT', url: `/api/catalogs/department/${dept.id}`, headers: { cookie }, payload: { unknown_key: 1 } });
+    expect(strictPut.statusCode).toBe(400);
+    expect((await ctx.app.inject({ method: 'PUT', url: `/api/catalogs/department/${dept.id}`, headers: { cookie }, payload: {} })).statusCode).toBe(200);
+    expect((await ctx.app.inject({ method: 'PUT', url: '/api/catalogs/department/999999999', headers: { cookie }, payload: {} })).statusCode).toBe(404);
+  });
+
+  it('currency_code không có trong danh mục loại tiền bị 404 LOOKUP_NOT_FOUND', async () => {
+    const r = await post('bank_account', { account_no: '9990001', bank_code: 'VCB', currency_code: 'ZZZ', gl_account_code: '1121' });
+    expect(r.statusCode).toBe(404);
+    expect(r.json().error).toMatchObject({ code: 'LOOKUP_NOT_FOUND', message: expect.stringContaining('currency_code') });
+    const rate = await post('exchange_rate', { currency_code: 'ZZZ', rate_date: '2026-02-01', rate_type: 'buy', rate: '1' });
+    expect(rate.statusCode).toBe(404); expect(rate.json().error.code).toBe('LOOKUP_NOT_FOUND');
+  });
+
+  it('xóa dòng không được tham chiếu: 204, GET sau đó 404, audit có insert (after) và delete (before)', async () => {
+    const c = await post('uom', { code: 'TMP', name: 'Tạm' });
+    const id = String(c.json().id);
+    expect((await ctx.app.inject({ method: 'DELETE', url: `/api/catalogs/uom/${id}`, headers: { cookie } })).statusCode).toBe(204);
+    expect((await ctx.app.inject({ method: 'GET', url: `/api/catalogs/uom/${id}`, headers: { cookie } })).statusCode).toBe(404);
+    const ev = await auditOf('uom', id);
+    expect(ev.map((e) => e.action)).toEqual(['insert', 'delete']);
+    expect(ev[0]!.before).toBeNull(); expect(ev[0]!.after).toMatchObject({ code: 'TMP', name: 'Tạm' });
+    expect(ev[1]!.before).toMatchObject({ code: 'TMP', name: 'Tạm' }); expect(ev[1]!.after).toBeNull();
+  });
+
+  it('currency CRUD theo mã; audit lấy entity_id là mã', async () => {
+    const c = await post('currency', { code: 'EUR', name: 'Euro', symbol: '€', minor_unit: 2 });
+    expect(c.statusCode, c.body).toBe(201); expect(c.json().id).toBe('EUR');
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/catalogs/currency/EUR', headers: { cookie } })).statusCode).toBe(200);
+    expect((await ctx.app.inject({ method: 'PUT', url: '/api/catalogs/currency/EUR', headers: { cookie }, payload: { name: 'Euro (sửa)' } })).statusCode).toBe(200);
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/catalogs/currency/EUR', headers: { cookie } })).json().name).toBe('Euro (sửa)');
+    expect((await ctx.app.inject({ method: 'DELETE', url: '/api/catalogs/currency/EUR', headers: { cookie } })).statusCode).toBe(204);
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/catalogs/currency/EUR', headers: { cookie } })).statusCode).toBe(404);
+    expect((await auditOf('currency', 'EUR')).map((e) => e.action)).toEqual(['insert', 'update', 'delete']);
+  });
+
+  it('công ty khác không đọc/sửa/xóa được danh mục của công ty này và không tra cứu được mã của nó', async () => {
+    const b = await bootstrapTenant(ctx, { code: `DN${Date.now()}` });
+    const dept = (await ctx.app.inject({ method: 'GET', url: '/api/catalogs/department?q=KD', headers: { cookie } })).json().rows[0] as { id: string; name: string };
+    const url = `/api/catalogs/department/${dept.id}`;
+    expect((await ctx.app.inject({ method: 'GET', url, headers: { cookie: b.cookie } })).statusCode).toBe(404);
+    expect((await ctx.app.inject({ method: 'PUT', url, headers: { cookie: b.cookie }, payload: { name: 'Chiếm' } })).statusCode).toBe(404);
+    expect((await ctx.app.inject({ method: 'PUT', url, headers: { cookie: b.cookie }, payload: {} })).statusCode).toBe(404);
+    expect((await ctx.app.inject({ method: 'DELETE', url, headers: { cookie: b.cookie } })).statusCode).toBe(404);
+    const still = await ctx.app.inject({ method: 'GET', url, headers: { cookie } });
+    expect(still.statusCode).toBe(200); expect(still.json().name).toBe(dept.name);
+    const lookup = await post('party', { code: 'KH_B', name: 'Của B', group_code: 'KH_LE' }, { cookie: b.cookie });
+    expect(lookup.statusCode).toBe(404); expect(lookup.json().error.code).toBe('LOOKUP_NOT_FOUND');
+  });
+
+  it('app_user không gọi được seed_tenant_defaults (42501)', async () => {
+    await expect(sql`SELECT seed_tenant_defaults(${tenantId}::uuid)`.execute(ctx.t.db)).rejects.toMatchObject({ code: '42501' });
+  });
 });

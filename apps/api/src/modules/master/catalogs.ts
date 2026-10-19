@@ -4,12 +4,21 @@ import type { Database } from '@kt/db';
 export interface ColumnDef { key: string; label: string; type: 'text' | 'number' | 'boolean' | 'date' | 'select'; required?: boolean; options?: { value: string; label: string }[]; lookup?: { catalog: string }; width?: number }
 export interface CatalogDef { name: string; table: keyof Database; label: string; schema: z.ZodObject<z.ZodRawShape>; columns: ColumnDef[]; uniqueBy: string[]; sort: string; searchIn: string[] }
 
-const money = z.string().regex(/^-?\d+(\.\d+)?$/);
-const dateIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+// Số tiền VND: số nguyên không dấu (cột numeric(20,0)).
+const vnd = z.string().regex(/^\d+$/);
+// Tỷ giá numeric(20,10): tối đa 10 chữ số nguyên và 10 chữ số thập phân, phải > 0.
+const exRate = z.string().regex(/^\d{1,10}(\.\d{1,10})?$/).refine((v) => Number(v) > 0);
+// Thuế suất % numeric(5,2): không quá 100.
+const pct = z.string().regex(/^\d{1,3}(\.\d{1,2})?$/).refine((v) => Number(v) <= 100);
+// Ngày ISO hợp lệ: loại 2026-02-30 bằng cách dựng lại ngày UTC rồi so chuỗi.
+const dateIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => {
+  const [y, m, d] = s.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10) === s;
+});
 const code = z.string().min(1).max(30);
 const text = (o = true) => (o ? z.string().nullable().optional() : z.string().min(1));
 
-export const CATALOGS: CatalogDef[] = [
+const defs: CatalogDef[] = [
   { name: 'party_group', table: 'party_group', label: 'Nhóm đối tượng', uniqueBy: ['code'], sort: 'code', searchIn: ['code', 'name'],
     schema: z.object({ code, name: text(false), is_active: z.boolean().optional() }),
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên nhóm', type: 'text', required: true }] },
@@ -17,7 +26,7 @@ export const CATALOGS: CatalogDef[] = [
     schema: z.object({ code, name: text(false), is_customer: z.boolean().optional(), is_vendor: z.boolean().optional(), is_employee: z.boolean().optional(),
       group_code: text(), tax_code: z.string().regex(/^\d{10}(-\d{3})?$/).nullable().optional(), id_number: text(), id_issue_date: dateIso.nullable().optional(), id_issue_place: text(),
       address: text(), invoice_address: text(), contact_name: text(), phone: text(), email: z.string().email().nullable().optional(),
-      payment_term_days: z.number().int().min(0).nullable().optional(), credit_limit: money.nullable().optional(), default_account_code: text(), note: text(), is_active: z.boolean().optional() }),
+      payment_term_days: z.number().int().min(0).max(3650).nullable().optional(), credit_limit: vnd.nullable().optional(), default_account_code: text(), note: text(), is_active: z.boolean().optional() }),
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên đối tượng', type: 'text', required: true },
       { key: 'is_customer', label: 'Khách hàng', type: 'boolean' }, { key: 'is_vendor', label: 'Nhà cung cấp', type: 'boolean' }, { key: 'is_employee', label: 'Nhân viên', type: 'boolean' },
       { key: 'group_code', label: 'Nhóm', type: 'text', lookup: { catalog: 'party_group' } }, { key: 'tax_code', label: 'Mã số thuế', type: 'text' }, { key: 'id_number', label: 'Số CCCD', type: 'text' },
@@ -41,7 +50,7 @@ export const CATALOGS: CatalogDef[] = [
     schema: z.object({ code: z.string().length(3), name: text(false), symbol: text(), minor_unit: z.number().int().min(0).max(4).optional(), is_active: z.boolean().optional() }),
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên', type: 'text', required: true }, { key: 'symbol', label: 'Ký hiệu', type: 'text' }, { key: 'minor_unit', label: 'Số lẻ', type: 'number' }] },
   { name: 'exchange_rate', table: 'exchange_rate', label: 'Tỷ giá', uniqueBy: ['currency_code', 'rate_date', 'rate_type'], sort: 'rate_date', searchIn: ['currency_code'],
-    schema: z.object({ currency_code: z.string().length(3), rate_date: dateIso, rate_type: z.enum(['transfer_avg', 'buy', 'sell']), rate: money }),
+    schema: z.object({ currency_code: z.string().length(3), rate_date: dateIso, rate_type: z.enum(['transfer_avg', 'buy', 'sell']), rate: exRate }),
     columns: [{ key: 'currency_code', label: 'Loại tiền', type: 'text', required: true, lookup: { catalog: 'currency' } }, { key: 'rate_date', label: 'Ngày', type: 'date', required: true },
       { key: 'rate_type', label: 'Loại tỷ giá', type: 'select', required: true, options: [{ value: 'transfer_avg', label: 'Mua bán CK trung bình' }, { value: 'buy', label: 'Mua' }, { value: 'sell', label: 'Bán' }] },
       { key: 'rate', label: 'Tỷ giá', type: 'number', required: true }] },
@@ -57,12 +66,12 @@ export const CATALOGS: CatalogDef[] = [
     schema: z.object({ code, name: text(false), is_active: z.boolean().optional() }),
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên', type: 'text', required: true }] },
   { name: 'tax_code', table: 'tax_code', label: 'Loại thuế', uniqueBy: ['code'], sort: 'code', searchIn: ['code', 'name'],
-    schema: z.object({ code, name: text(false), kind: z.enum(['vat', 'import', 'excise']), rate: money.nullable().optional(), is_exempt: z.boolean().optional(), in_declaration: z.boolean().optional(), is_active: z.boolean().optional() }),
+    schema: z.object({ code, name: text(false), kind: z.enum(['vat', 'import', 'excise']), rate: pct.nullable().optional(), is_exempt: z.boolean().optional(), in_declaration: z.boolean().optional(), is_active: z.boolean().optional() }),
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên', type: 'text', required: true },
       { key: 'kind', label: 'Loại', type: 'select', required: true, options: [{ value: 'vat', label: 'GTGT' }, { value: 'import', label: 'Nhập khẩu' }, { value: 'excise', label: 'TTĐB' }] },
       { key: 'rate', label: 'Thuế suất %', type: 'number' }, { key: 'is_exempt', label: 'Không chịu thuế', type: 'boolean' }, { key: 'in_declaration', label: 'Lên tờ khai', type: 'boolean' }] },
   { name: 'invoice_group', table: 'invoice_group', label: 'Nhóm hóa đơn', uniqueBy: ['scope', 'code'], sort: 'code', searchIn: ['code', 'name'],
-    schema: z.object({ scope: z.enum(['purchase', 'sale']), code, name: text(false), rate: money.nullable().optional(), is_active: z.boolean().optional() }),
+    schema: z.object({ scope: z.enum(['purchase', 'sale']), code, name: text(false), rate: pct.nullable().optional(), is_active: z.boolean().optional() }),
     columns: [{ key: 'scope', label: 'Mua/Bán', type: 'select', required: true, options: [{ value: 'purchase', label: 'Mua vào' }, { value: 'sale', label: 'Bán ra' }] },
       { key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên nhóm', type: 'text', required: true }, { key: 'rate', label: 'Thuế suất %', type: 'number' }] },
   { name: 'cost_item', table: 'cost_item', label: 'Khoản mục chi phí', uniqueBy: ['code'], sort: 'code', searchIn: ['code', 'name'],
@@ -70,7 +79,7 @@ export const CATALOGS: CatalogDef[] = [
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên khoản mục', type: 'text', required: true },
       { key: 'parent_code', label: 'Thuộc khoản mục', type: 'text', lookup: { catalog: 'cost_item' } }, { key: 'default_account_code', label: 'TK chi phí ngầm định', type: 'text' }] },
   { name: 'project', table: 'project', label: 'Vụ việc / công trình', uniqueBy: ['code'], sort: 'code', searchIn: ['code', 'name'],
-    schema: z.object({ code, name: text(false), parent_code: text(), party_code: text(), date_from: dateIso.nullable().optional(), date_to: dateIso.nullable().optional(), budget: money.nullable().optional(), is_active: z.boolean().optional() }),
+    schema: z.object({ code, name: text(false), parent_code: text(), party_code: text(), date_from: dateIso.nullable().optional(), date_to: dateIso.nullable().optional(), budget: vnd.nullable().optional(), is_active: z.boolean().optional() }),
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên vụ việc', type: 'text', required: true },
       { key: 'parent_code', label: 'Thuộc vụ việc', type: 'text', lookup: { catalog: 'project' } }, { key: 'party_code', label: 'Khách hàng / chủ đầu tư', type: 'text', lookup: { catalog: 'party' } },
       { key: 'date_from', label: 'Từ ngày', type: 'date' }, { key: 'date_to', label: 'Đến ngày', type: 'date' }, { key: 'budget', label: 'Giá trị dự toán', type: 'number' }] },
@@ -78,4 +87,6 @@ export const CATALOGS: CatalogDef[] = [
     schema: z.object({ code, name: text(false), is_active: z.boolean().optional() }),
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên', type: 'text', required: true }] },
 ];
+// Mọi schema đều strict: khóa lạ trong thân yêu cầu bị từ chối (400 VALIDATION) thay vì bị bỏ qua.
+export const CATALOGS: CatalogDef[] = defs.map((d) => ({ ...d, schema: d.schema.strict() }));
 export const catalogByName = (name: string): CatalogDef | undefined => CATALOGS.find((c) => c.name === name);
