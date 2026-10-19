@@ -1,11 +1,12 @@
 import { Layout, Menu, Typography } from 'antd';
-import { Link, Outlet, useRouterState } from '@tanstack/react-router';
+import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useAuth } from '../auth.js';
 
 export interface MenuItem { key: string; label: string; to: string; permission?: string; children?: MenuItem[] | undefined }
 
 export function AppLayout({ menu }: { menu: MenuItem[] }) {
   const { me, can, logout } = useAuth();
+  const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const visible = (items: MenuItem[]): MenuItem[] => items.filter((i) => !i.permission || can(i.permission)).map((i) => ({ ...i, children: i.children ? visible(i.children) : undefined }));
   const toAntd = (items: MenuItem[]): { key: string; label: React.ReactNode; children?: unknown[] | undefined }[] =>
@@ -16,7 +17,7 @@ export function AppLayout({ menu }: { menu: MenuItem[] }) {
       <Layout.Sider width={240} theme="light"><div style={{ padding: 12 }}><Typography.Text strong>{company?.name ?? 'Kế toán'}</Typography.Text></div>
         <Menu mode="inline" selectedKeys={[path]} items={toAntd(visible(menu))} /></Layout.Sider>
       <Layout><Layout.Header style={{ background: '#fff', display: 'flex', justifyContent: 'flex-end', gap: 16 }}>
-        <span>{me?.username}</span><a onClick={() => void logout()}>Đăng xuất</a></Layout.Header>
+        <span>{me?.username}</span><a onClick={async () => { try { await logout(); } catch { /* trạng thái cục bộ đã được xóa, vẫn thoát về trang đăng nhập */ } void navigate({ to: '/dang-nhap' }); }}>Đăng xuất</a></Layout.Header>
         <Layout.Content style={{ padding: 16 }}><Outlet /></Layout.Content></Layout>
     </Layout>
   );

@@ -4,7 +4,7 @@ WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc tsconfig.base.json ./
 COPY packages ./packages
 COPY apps/worker ./apps/worker
-RUN pnpm install --frozen-lockfile --filter @kt/worker...
+RUN pnpm install --frozen-lockfile --filter . --filter @kt/worker...
 
 FROM node:22-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
