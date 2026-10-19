@@ -1,4 +1,4 @@
-import { Card, List } from 'antd';
+import { Button, Card, List } from 'antd';
 import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client.js';
@@ -14,6 +14,7 @@ export default function SelectTenantPage() {
         <List.Item onClick={async () => { await api('/api/auth/select-tenant', { method: 'POST', json: { tenantId: t.id } }); qc.clear(); await refresh(); void navigate({ to: '/' }); }} style={{ cursor: 'pointer' }}>
           <List.Item.Meta title={t.name} description={t.code} />
         </List.Item>)} />
+      <Button type="link" onClick={() => void navigate({ to: '/he-thong/tao-cong-ty' })}>Tạo công ty mới</Button>
     </Card>
   );
 }
