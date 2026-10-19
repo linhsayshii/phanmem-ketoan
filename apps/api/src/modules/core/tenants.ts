@@ -54,11 +54,13 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.post('/api/backup/run', { preHandler: app.requirePermission('backup.run') }, async (req) => {
     if (!app.boss) throw new AppError('NO_QUEUE', 'Hàng đợi chưa sẵn sàng', 503);
     await app.boss.createQueue(QUEUES.backup);
-    const jobId = await app.boss.send(QUEUES.backup, { requestedBy: req.auth!.userId }, { singletonKey: 'manual', singletonSeconds: 60 });
+    const jobId = await app.boss.send(QUEUES.backup, { requestedBy: req.auth!.userId }, { singletonKey: 'manual', singletonSeconds: 60, retryLimit: 3, retryDelay: 60 });
+    if (!jobId) throw new AppError('BACKUP_ALREADY_QUEUED', 'Đã có yêu cầu sao lưu đang chờ, thử lại sau 60 giây', 409); // singleton chặn bấm trùng
     return { jobId };
   });
   app.get('/api/backup', { preHandler: app.requirePermission('backup.run') }, async () => {
-    let files: string[] = []; try { files = readdirSync(app.config.BACKUP_DIR); } catch { files = []; }
+    let files: string[] = [];
+    try { files = readdirSync(app.config.BACKUP_DIR); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; } // chưa có thư mục = chưa có bản sao lưu; lỗi khác (quyền, mount hỏng) phải lộ ra
     return files.filter((f) => f.endsWith('.dump')).sort().reverse().map((f) => { const s = statSync(path.join(app.config.BACKUP_DIR, f)); return { name: f, bytes: s.size, mtime: s.mtime.toISOString() }; });
   });
 };

@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, rmSync, statSync, unlinkSync } from 'node:fs';
+import { mkdirSync, readdirSync, renameSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
@@ -8,14 +8,16 @@ export async function runBackup(opts: BackupOpts): Promise<{ file: string; bytes
   mkdirSync(opts.dir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, '');
   const file = path.join(opts.dir, `ketoan_${stamp}.dump`);
+  const part = `${file}.part`; // chỉ đổi tên thành file cuối khi pg_dump xong, nên không bao giờ có file .dump dở dang
   try {
     await new Promise<void>((resolve, reject) => {
-      const p = spawn(opts.pgDumpPath ?? 'pg_dump', ['--format=custom', '--no-owner', '--file', file, '--dbname', opts.adminUrl], { stdio: ['ignore', 'ignore', 'pipe'] });
+      const p = spawn(opts.pgDumpPath ?? 'pg_dump', ['--format=custom', '--no-owner', '--file', part, '--dbname', opts.adminUrl], { stdio: ['ignore', 'ignore', 'pipe'] });
       let err = ''; p.stderr.on('data', (d) => { err += String(d); });
       p.on('error', reject); p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`pg_dump thoát mã ${code}: ${err}`))));
     });
+    renameSync(part, file);
   } catch (e) {
-    rmSync(file, { force: true }); // pg_dump để lại file rỗng khi lỗi: không để nó chiếm chỗ bản tốt trong đợt dọn
+    rmSync(part, { force: true }); // pg_dump để lại file rỗng/dở dang khi lỗi hoặc bị giết
     throw e;
   }
   const all = readdirSync(opts.dir).filter((f) => /^ketoan_\d{8}T\d{6}\.dump$/.test(f)).sort();

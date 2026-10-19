@@ -25,7 +25,10 @@ services:
       COOKIE_SECURE: "false"
       PORT: "3000"
       WEB_ORIGIN: http://localhost:8080
+      BACKUP_DIR: /backups
     ports: ["3000:3000"]
+    volumes:
+      - backups:/backups:ro
     depends_on:
       postgres: { condition: service_healthy }
     command: ["sh", "-c", "node --import tsx packages/db/src/migrate-cli.ts && node --import tsx apps/api/src/server.ts"]

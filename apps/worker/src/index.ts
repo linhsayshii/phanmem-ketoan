@@ -13,8 +13,15 @@ await boss.start();
 await boss.createQueue(QUEUES.backup);
 await boss.schedule(QUEUES.backup, env.BACKUP_CRON, {}, { tz: 'Asia/Ho_Chi_Minh' });
 await boss.work(QUEUES.backup, async () => {
-  const r = await runBackup({ adminUrl: env.DATABASE_ADMIN_URL, dir: env.BACKUP_DIR, keep: env.BACKUP_KEEP });
-  log('backup done', r);
+  try {
+    const r = await runBackup({ adminUrl: env.DATABASE_ADMIN_URL, dir: env.BACKUP_DIR, keep: env.BACKUP_KEEP });
+    log('backup done', r);
+  } catch (e) {
+    log('backup failed', { error: String(e) });
+    throw e; // để pg-boss ghi nhận thất bại và thử lại
+  }
 });
+// dừng êm: đợi job đang chạy xong (tối đa 60 giây) rồi mới thoát
+for (const s of ['SIGTERM', 'SIGINT'] as const) process.once(s, () => { void boss.stop({ graceful: true, timeout: 60000 }).finally(() => process.exit(0)); });
 log('worker started', { cron: env.BACKUP_CRON, dir: env.BACKUP_DIR });
 // Task 20 thêm boss.work(QUEUES.recomputeBalances, ...) tại đây.

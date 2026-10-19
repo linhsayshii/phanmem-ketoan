@@ -12,3 +12,5 @@ boss.on('error', (e) => console.error('pg-boss', e)); // không có bộ nghe 'e
 await boss.start();
 const app = await buildApp({ db, config, boss });
 await app.listen({ port: config.PORT, host: '0.0.0.0' });
+// dừng êm khi nhận SIGTERM/SIGINT (docker stop): đóng HTTP rồi mới ngắt hàng đợi
+for (const s of ['SIGTERM', 'SIGINT'] as const) process.once(s, () => { void app.close().then(() => boss.stop({ graceful: false, wait: false })).finally(() => process.exit(0)); });
