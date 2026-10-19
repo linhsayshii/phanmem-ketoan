@@ -1,0 +1,20 @@
+{
+  "name": "@kt/db",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": { "types": "./src/index.ts", "import": "./src/index.ts" },
+    "./testing": { "types": "./src/testing.ts", "import": "./src/testing.ts" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && cp -r migrations dist/",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "migrate": "tsx src/migrate-cli.ts",
+    "seed:abc": "tsx src/seed/demo-abc.ts",
+    "seed:xyz": "tsx src/seed/dich-vu-xyz.ts"
+  },
+  "dependencies": { "@kt/domain": "workspace:*", "kysely": "^0.27.4", "pg": "^8.13.0", "dotenv": "^16.4.5" },
+  "devDependencies": { "@types/pg": "^8.11.10", "tsx": "^4.19.1" }
+}
