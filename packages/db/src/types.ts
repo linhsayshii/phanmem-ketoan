@@ -57,6 +57,53 @@ export interface CoaTemplateTable {
 export interface TenantSettingTable { tenant_id: string; key: string; value: JSONColumnType<unknown>; updated_at: Generated<string> }
 export interface UserPrefTable { user_id: string; tenant_id: string; key: string; value: JSONColumnType<unknown> }
 
+export interface PartyGroupTable { id: Generated<string>; tenant_id: string; code: string; name: string; is_active: Generated<boolean> }
+export interface PartyTable {
+  id: Generated<string>; tenant_id: string; code: string; name: string;
+  is_customer: Generated<boolean>; is_vendor: Generated<boolean>; is_employee: Generated<boolean>;
+  group_id: string | null; tax_code: string | null; id_number: string | null; id_issue_date: DateOnly | null; id_issue_place: string | null;
+  address: string | null; invoice_address: string | null; contact_name: string | null; phone: string | null; email: string | null;
+  payment_term_days: number | null; credit_limit: Numeric | null; default_account_code: string | null; note: string | null;
+  is_active: Generated<boolean>; created_at: Generated<string>;
+}
+export interface PartyBankAccountTable {
+  id: Generated<string>; tenant_id: string; party_id: string; bank_name: string; account_no: string; account_name: string | null; branch: string | null;
+}
+export interface DepartmentTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; parent_id: number | null; is_branch: Generated<boolean>; is_active: Generated<boolean>;
+}
+export interface EmployeeTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; department_id: number | null; party_id: string | null;
+  tax_code: string | null; id_number: string | null; position: string | null; phone: string | null; email: string | null; is_active: Generated<boolean>;
+}
+export interface CurrencyTable {
+  tenant_id: string; code: string; name: string; symbol: string | null; minor_unit: Generated<number>; is_active: Generated<boolean>;
+}
+export interface ExchangeRateTable {
+  id: Generated<number>; tenant_id: string; currency_code: string; rate_date: DateOnly; rate_type: string; rate: Numeric;
+}
+export interface BankTable { id: Generated<number>; tenant_id: string; code: string; name: string; short_name: string | null; is_active: Generated<boolean> }
+export interface BankAccountTable {
+  id: Generated<number>; tenant_id: string; bank_id: number; account_no: string; account_name: string | null; branch: string | null;
+  currency_code: Generated<string>; gl_account_code: string; is_active: Generated<boolean>;
+}
+export interface PaymentMethodTable { id: Generated<number>; tenant_id: string; code: string; name: string; is_active: Generated<boolean> }
+export interface TaxCodeTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; kind: string; rate: Numeric | null;
+  is_exempt: Generated<boolean>; in_declaration: Generated<boolean>; is_active: Generated<boolean>;
+}
+export interface InvoiceGroupTable {
+  id: Generated<number>; tenant_id: string; scope: string; code: string; name: string; rate: Numeric | null; is_active: Generated<boolean>;
+}
+export interface CostItemTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; parent_id: number | null; default_account_code: string | null; is_active: Generated<boolean>;
+}
+export interface ProjectTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; parent_id: number | null; party_id: string | null;
+  date_from: DateOnly | null; date_to: DateOnly | null; budget: Numeric | null; is_active: Generated<boolean>;
+}
+export interface UomTable { id: Generated<number>; tenant_id: string; code: string; name: string; is_active: Generated<boolean> }
+
 export interface Database {
   tenant: TenantTable;
   app_user: AppUserTable;
@@ -73,4 +120,19 @@ export interface Database {
   coa_template: CoaTemplateTable;
   tenant_setting: TenantSettingTable;
   user_pref: UserPrefTable;
+  party_group: PartyGroupTable;
+  party: PartyTable;
+  party_bank_account: PartyBankAccountTable;
+  department: DepartmentTable;
+  employee: EmployeeTable;
+  currency: CurrencyTable;
+  exchange_rate: ExchangeRateTable;
+  bank: BankTable;
+  bank_account: BankAccountTable;
+  payment_method: PaymentMethodTable;
+  tax_code: TaxCodeTable;
+  invoice_group: InvoiceGroupTable;
+  cost_item: CostItemTable;
+  project: ProjectTable;
+  uom: UomTable;
 }
