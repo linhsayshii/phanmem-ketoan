@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { sql } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import pg from 'pg';
 import { withTenant } from '../src/client.js';
 import { createTestTenant, setupTestDb, type TestDb } from '../src/testing.js';
 import { insertFiscalYear, generateAccountsSql } from '../src/seed/common.js';
+import type { Database } from '../src/types.js';
 
 let t: TestDb; let tenantId: string; let userId: string;
 const admin = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL });
@@ -22,6 +23,12 @@ beforeAll(async () => {
 afterAll(async () => { await admin.end(); await t.close(); });
 
 const ctx = () => ({ tenantId, userId });
+const run = <T>(fn: (trx: Transaction<Database>) => Promise<T>) => withTenant(t.db, ctx(), fn);
+// Như thủ tục ghi sổ ở Task 15: bật app.state_change trong chính giao dịch rồi đổi state.
+const setState = (id: string, state: string) => run(async (trx) => {
+  await sql`SELECT set_config('app.state_change', 'on', true)`.execute(trx);
+  await trx.updateTable('voucher').set({ state }).where('id', '=', id).execute();
+});
 type Line = { code: string; debit?: string; credit?: string; party?: string | null; regime?: string };
 async function newVoucher(date: string, lines: Line[], type = 'PKT') {
   return withTenant(t.db, ctx(), async (trx) => {
@@ -38,18 +45,21 @@ async function newVoucher(date: string, lines: Line[], type = 'PKT') {
 
 describe('lược đồ sổ cái', () => {
   it('partition theo tháng được tạo cho năm tài chính và có RLS', async () => {
-    const r = await sql<{ relname: string; relrowsecurity: boolean }>`SELECT c.relname, c.relrowsecurity FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid WHERE i.inhparent = 'voucher_line'::regclass AND c.relname LIKE 'voucher_line_y2026%' ORDER BY 1`.execute(t.admin);
+    const r = await sql<{ relname: string; relrowsecurity: boolean; relforcerowsecurity: boolean; npol: number }>`SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity,
+        (SELECT count(*) FROM pg_policies p WHERE p.tablename = c.relname)::int AS npol
+      FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid WHERE i.inhparent = 'voucher_line'::regclass AND c.relname LIKE 'voucher_line_y2026%' ORDER BY 1`.execute(t.admin);
     expect(r.rows.map((x) => x.relname)).toEqual(expect.arrayContaining(['voucher_line_y2026m01', 'voucher_line_y2026m12']));
-    expect(r.rows.every((x) => x.relrowsecurity)).toBe(true);
+    expect(r.rows.every((x) => x.relrowsecurity && x.relforcerowsecurity && x.npol > 0)).toBe(true);
     // kỳ 0 (mở sổ) là ngày 31/12 của năm trước nên cũng có partition tháng 12/2025
     expect((await sql<{ n: number }>`SELECT count(*) AS n FROM pg_class WHERE relname = 'voucher_line_y2025m12'`.execute(t.admin)).rows[0]!.n).toBe(1);
   });
 
-  it('công ty mới có đủ loại chứng từ hệ thống; app_user không gọi được hàm seed', async () => {
+  it('công ty mới có đủ loại chứng từ hệ thống; app_user không gọi được hàm seed và hàm tạo partition', async () => {
     const types = await sql<{ code: string }>`SELECT code FROM voucher_type WHERE tenant_id = ${tenantId}::uuid ORDER BY 1`.execute(t.admin);
     expect(types.rows.map((x) => x.code)).toEqual(['DK', 'KC', 'PB', 'PKT']);
-    const p = await sql<{ a: boolean; b: boolean }>`SELECT has_function_privilege('app_user', 'seed_tenant_defaults(uuid)', 'EXECUTE') AS a, has_function_privilege('app_user', 'seed_voucher_types(uuid)', 'EXECUTE') AS b`.execute(t.admin);
-    expect(p.rows[0]).toEqual({ a: false, b: false });
+    const p = await sql<{ a: boolean; b: boolean; c: boolean }>`SELECT has_function_privilege('app_user', 'seed_tenant_defaults(uuid)', 'EXECUTE') AS a,
+      has_function_privilege('app_user', 'seed_voucher_types(uuid)', 'EXECUTE') AS b, has_function_privilege('app_user', 'ensure_line_partitions(date, date)', 'EXECUTE') AS c`.execute(t.admin);
+    expect(p.rows[0]).toEqual({ a: false, b: false, c: false });
   });
 
   it('chứng từ lệch bị từ chối khi commit; cân thì ghi được và trigger điền fiscal_year/period_no', async () => {
@@ -87,6 +97,90 @@ describe('lược đồ sổ cái', () => {
     expect(sumBy('dr')).toEqual({ 6421: 70, 6422: 30 });
     expect(sumBy('cr')).toEqual({ 1111: 33, 1121: 67 });
     expect(pairs.rows).toHaveLength(3);
+  });
+
+  it('đã ghi sổ (qua app.state_change): header và dòng chỉ sửa được diễn giải, nhật ký dòng có balance', async () => {
+    const id = await newVoucher('2026-06-01', [{ code: '1111', debit: '8' }, { code: '5113', credit: '8' }]);
+    await setState(id, 'posted');
+    await expect(run((trx) => trx.updateTable('voucher').set({ document_date: '2026-06-02' }).where('id', '=', id).execute())).rejects.toThrow(/VOUCHER_IMMUTABLE/);
+    await expect(run((trx) => trx.updateTable('voucher_line').set({ debit: '9' }).where('voucher_id', '=', id).where('line_no', '=', 1).execute())).rejects.toThrow(/LINE_IMMUTABLE/);
+    await run(async (trx) => {
+      await trx.updateTable('voucher').set({ description: 'sửa diễn giải' }).where('id', '=', id).execute();
+      await trx.updateTable('voucher_line').set({ description: 'sửa dòng' }).where('voucher_id', '=', id).where('line_no', '=', 1).execute();
+    });
+    const a = await sql<{ b: string }>`SELECT after->>'balance' AS b FROM audit_event WHERE tenant_id = ${tenantId}::uuid AND entity = 'voucher_line' ORDER BY id DESC LIMIT 1`.execute(t.admin);
+    expect(a.rows[0]!.b).toBe('8');
+  });
+
+  it('không chuyển dòng sang chứng từ đã ghi sổ bằng cách đổi voucher_id', async () => {
+    const posted = await newVoucher('2026-06-02', [{ code: '1111', debit: '3' }, { code: '5113', credit: '3' }]);
+    await setState(posted, 'posted');
+    const draft = await newVoucher('2026-06-02', [{ code: '1111', debit: '4' }, { code: '5113', credit: '4' }]);
+    // line_no + 10 để không vướng UNIQUE (voucher_id, line_no, posting_date): chỉ trigger mới chặn được
+    await expect(run((trx) => trx.updateTable('voucher_line').set({ voucher_id: posted, line_no: sql<number>`line_no + 10` }).where('voucher_id', '=', draft).execute())).rejects.toThrow(/không chuyển dòng/);
+  });
+
+  it('dòng đã ghi sổ vẫn sửa được diễn giải và chiều phân tích khi tài khoản đã ngừng dùng; dòng mới thì bị chặn', async () => {
+    const id = await newVoucher('2026-06-03', [{ code: '1111', debit: '2' }, { code: '5113', credit: '2' }]);
+    await setState(id, 'posted');
+    const dept = await t.admin.insertInto('department').values({ tenant_id: tenantId, code: 'PB1', name: 'Phòng 1' }).returning('id').executeTakeFirstOrThrow();
+    const a1111 = await acc('1111');
+    await t.admin.updateTable('account').set({ is_active: false }).where('id', '=', a1111).execute();
+    try {
+      await run((trx) => trx.updateTable('voucher_line').set({ description: 'tài khoản đã ngừng', department_id: dept.id }).where('voucher_id', '=', id).where('line_no', '=', 1).execute());
+      await expect(newVoucher('2026-06-03', [{ code: '1111', debit: '1' }, { code: '5113', credit: '1' }])).rejects.toThrow(/ACCOUNT_INACTIVE/);
+    } finally {
+      await t.admin.updateTable('account').set({ is_active: true }).where('id', '=', a1111).execute();
+    }
+  });
+
+  it('đổi ngày ghi sổ của chứng từ nháp thì dòng đi theo sang partition của tháng mới', async () => {
+    const id = await newVoucher('2026-03-15', [{ code: '1111', debit: '6' }, { code: '5113', credit: '6' }]);
+    await run((trx) => trx.updateTable('voucher').set({ posting_date: '2026-04-20' }).where('id', '=', id).execute());
+    const r = await run((trx) => sql<{ posting_date: string; part: string }>`SELECT posting_date, tableoid::regclass::text AS part FROM voucher_line WHERE voucher_id = ${id}::uuid ORDER BY line_no`.execute(trx));
+    const moved = { posting_date: '2026-04-20', part: 'voucher_line_y2026m04' };
+    expect(r.rows).toEqual([moved, moved]);
+  });
+
+  it('hủy chứng từ nháp rỗng (draft → cancelled) được; ghi sổ chứng từ rỗng thì VOUCHER_EMPTY', async () => {
+    await setState(await newVoucher('2026-06-04', []), 'cancelled');
+    await expect(setState(await newVoucher('2026-06-04', []), 'posted')).rejects.toThrow(/VOUCHER_EMPTY/);
+  });
+
+  it('tài khoản đã có phát sinh: đổi mã hay xóa bị chặn, SET code = code thì không', async () => {
+    await newVoucher('2026-06-05', [{ code: '1111', debit: '1' }, { code: '5113', credit: '1' }]);
+    const id = await acc('1111');
+    await expect(t.admin.updateTable('account').set({ code: '1111X' }).where('id', '=', id).execute()).rejects.toThrow(/ACCOUNT_IN_USE/);
+    await expect(t.admin.deleteFrom('account').where('id', '=', id).execute()).rejects.toThrow(/ACCOUNT_IN_USE/);
+    await sql`UPDATE account SET code = code WHERE id = ${id}`.execute(t.admin);
+  });
+
+  it('ensure_line_partitions từ chối khoảng bất thường', async () => {
+    for (const [from, to] of [['2026-02-01', '2026-01-01'], ['2026-01-01', '2028-01-01'], ['1980-01-01', '1980-02-01'], ['2026-01-01', '2300-01-01']])
+      await expect(sql`SELECT ensure_line_partitions(${from}::date, ${to}::date)`.execute(t.admin), `${from}..${to}`).rejects.toThrow(/PARTITION_RANGE_INVALID/);
+  });
+
+  it('hai công ty cùng thêm kỳ cho một tháng chưa có partition đồng thời đều thành công', async () => {
+    await sql`DROP TABLE IF EXISTS voucher_line_y2150m01`.execute(t.admin);
+    const ta = await createTestTenant(t.admin, { code: `PA${Date.now()}`, name: 'Partition A' });
+    const tb = await createTestTenant(t.admin, { code: `PB${Date.now()}`, name: 'Partition B' });
+    const a = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL }); const b = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL });
+    await Promise.all([a.connect(), b.connect()]);
+    const ins = (c: pg.Client, tenant: string) => c.query(`INSERT INTO fiscal_period(tenant_id, fiscal_year, period_no, date_from, date_to, regime) VALUES ($1, 2150, 1, '2150-01-01', '2150-01-31', 'TT133')`, [tenant]);
+    try {
+      await Promise.all([a.query('BEGIN'), b.query('BEGIN')]);
+      await ins(a, ta); // A tạo partition nhưng chưa commit: B phải chờ khóa chứ không đua tới "already exists"
+      const pb = ins(b, tb).then(() => null, (e: Error) => e);
+      await new Promise((r) => setTimeout(r, 300));
+      await a.query('COMMIT');
+      expect(await pb).toBeNull();
+      await b.query('COMMIT');
+      expect((await sql<{ n: number }>`SELECT count(*) AS n FROM fiscal_period WHERE tenant_id IN (${ta}::uuid, ${tb}::uuid)`.execute(t.admin)).rows[0]!.n).toBe(2);
+    } finally {
+      await a.query('ROLLBACK').catch(() => undefined); await b.query('ROLLBACK').catch(() => undefined);
+      await Promise.all([a.end(), b.end()]);
+      await sql`DROP TABLE IF EXISTS voucher_line_y2150m01`.execute(t.admin);
+    }
   });
 
   it('tài khoản khác chế độ kế toán của kỳ bị từ chối', async () => {

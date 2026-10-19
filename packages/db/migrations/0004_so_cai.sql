@@ -146,6 +146,13 @@ SELECT rls_enable(t) FROM unnest(ARRAY['voucher','voucher_line','voucher_counter
 CREATE OR REPLACE FUNCTION ensure_line_partitions(p_from date, p_to date) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE d date := date_trunc('month', p_from)::date; v_name text;
 BEGIN
+  -- Chặn đầu vào bất thường (hàm là SECURITY DEFINER): tối đa 24 tháng, năm 1990-2199.
+  IF p_from IS NULL OR p_to IS NULL OR p_to < p_from OR extract(year FROM p_from) NOT BETWEEN 1990 AND 2199 OR extract(year FROM p_to) NOT BETWEEN 1990 AND 2199 THEN
+    RAISE EXCEPTION 'PARTITION_RANGE_INVALID: khoảng % - % không hợp lệ (cần từ <= đến, năm 1990-2199)', p_from, p_to USING ERRCODE = 'P0001'; END IF;
+  IF (extract(year FROM p_to)::int - extract(year FROM p_from)::int) * 12 + extract(month FROM p_to)::int - extract(month FROM p_from)::int + 1 > 24 THEN
+    RAISE EXCEPTION 'PARTITION_RANGE_INVALID: khoảng % - % dài hơn 24 tháng', p_from, p_to USING ERRCODE = 'P0001'; END IF;
+  -- Hai giao dịch cùng tạo một tháng sẽ đua nhau tới "already exists": tuần tự hóa bằng khóa tư vấn đến hết giao dịch.
+  PERFORM pg_advisory_xact_lock(hashtext('ensure_line_partitions'));
   WHILE d <= p_to LOOP
     v_name := format('voucher_line_y%sm%s', to_char(d, 'YYYY'), to_char(d, 'MM'));
     IF to_regclass(v_name) IS NULL THEN
@@ -158,10 +165,13 @@ BEGIN
     d := (d + interval '1 month')::date;
   END LOOP;
 END $$;
-CREATE OR REPLACE FUNCTION fn_fiscal_period_partitions() RETURNS trigger LANGUAGE plpgsql AS $$
+-- Chỉ trigger này (SECURITY DEFINER) và migration gọi được ensure_line_partitions; app_user không có EXECUTE.
+REVOKE EXECUTE ON FUNCTION ensure_line_partitions(date, date) FROM PUBLIC, app_user;
+CREATE OR REPLACE FUNCTION fn_fiscal_period_partitions() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN PERFORM ensure_line_partitions(NEW.date_from, NEW.date_to); RETURN NEW; END $$;
 CREATE TRIGGER trg_fiscal_period_partitions AFTER INSERT ON fiscal_period FOR EACH ROW EXECUTE FUNCTION fn_fiscal_period_partitions();
-SELECT ensure_line_partitions(min(date_from), max(date_to)) FROM fiscal_period HAVING count(*) > 0;
+-- Từng khoảng (không gộp min..max để không vượt giới hạn 24 tháng).
+SELECT ensure_line_partitions(date_from, date_to) FROM (SELECT DISTINCT date_from, date_to FROM fiscal_period) AS r;
 
 -- ===== Kỳ =====
 ALTER TABLE fiscal_period ADD COLUMN locked_modules text[] NOT NULL DEFAULT '{}';
@@ -228,26 +238,37 @@ BEGIN
 END $$;
 CREATE TRIGGER trg_voucher_delete BEFORE DELETE ON voucher FOR EACH ROW EXECUTE FUNCTION fn_voucher_delete();
 
+-- Đổi ngày ghi sổ của chứng từ nháp: dòng đi theo (fn_line_before gán lại posting_date, dòng chuyển sang partition của tháng mới).
+-- Chứng từ đã ghi sổ không đổi ngày được nên không tới đây.
+CREATE OR REPLACE FUNCTION fn_voucher_date_sync() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN UPDATE voucher_line SET line_no = line_no WHERE voucher_id = NEW.id; RETURN NULL; END $$;
+CREATE TRIGGER trg_voucher_date_sync AFTER UPDATE OF posting_date ON voucher FOR EACH ROW WHEN (NEW.posting_date IS DISTINCT FROM OLD.posting_date) EXECUTE FUNCTION fn_voucher_date_sync();
+
 -- ===== Trigger dòng =====
 CREATE OR REPLACE FUNCTION fn_line_before() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE v voucher; a account; v_regime text;
 BEGIN
+  IF TG_OP = 'UPDATE' AND NEW.voucher_id IS DISTINCT FROM OLD.voucher_id THEN
+    RAISE EXCEPTION 'LINE_IMMUTABLE: không chuyển dòng sang chứng từ khác' USING ERRCODE = 'P0001'; END IF;
   SELECT * INTO v FROM voucher WHERE id = NEW.voucher_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'VOUCHER_NOT_FOUND: %', NEW.voucher_id USING ERRCODE = 'P0001'; END IF;
   NEW.tenant_id := v.tenant_id; NEW.posting_date := v.posting_date;
   IF TG_OP = 'INSERT' AND v.state <> 'draft' AND current_setting('app.unposting', true) IS DISTINCT FROM 'on' THEN
     RAISE EXCEPTION 'LINE_IMMUTABLE: không thêm dòng vào chứng từ đã ghi sổ' USING ERRCODE = 'P0001'; END IF;
-  SELECT * INTO a FROM account WHERE id = NEW.account_id AND tenant_id = v.tenant_id;
-  IF NOT FOUND THEN RAISE EXCEPTION 'ACCOUNT_NOT_FOUND: tài khoản id %', NEW.account_id USING ERRCODE = 'P0001'; END IF;
-  -- Một công ty có thể giữ nhiều hệ tài khoản; mỗi năm tài chính dùng đúng một chế độ (fiscal_period.regime).
-  SELECT regime INTO v_regime FROM fiscal_period WHERE tenant_id = v.tenant_id AND fiscal_year = v.fiscal_year AND period_no = v.period_no;
-  IF a.regime IS DISTINCT FROM v_regime THEN
-    RAISE EXCEPTION 'ACCOUNT_REGIME_MISMATCH: tài khoản % thuộc chế độ %, kỳ chứng từ dùng chế độ %', a.code, a.regime, v_regime USING ERRCODE = 'P0001'; END IF;
-  IF a.is_group THEN RAISE EXCEPTION 'ACCOUNT_IS_GROUP: tài khoản % là tài khoản tổng hợp, không định khoản được', a.code USING ERRCODE = 'P0001'; END IF;
-  IF NOT a.is_active THEN RAISE EXCEPTION 'ACCOUNT_INACTIVE: tài khoản % đã ngừng sử dụng', a.code USING ERRCODE = 'P0001'; END IF;
-  IF a.subledger_kind IN ('receivable','payable') AND NEW.party_id IS NULL THEN RAISE EXCEPTION 'LINE_PARTY_REQUIRED: tài khoản % phải có đối tượng', a.code USING ERRCODE = 'P0001'; END IF;
-  IF a.subledger_kind = 'inventory' AND NEW.item_id IS NULL THEN RAISE EXCEPTION 'LINE_ITEM_REQUIRED: tài khoản % phải có vật tư', a.code USING ERRCODE = 'P0001'; END IF;
-  IF a.subledger_kind = 'fixed_asset' AND NEW.asset_id IS NULL THEN RAISE EXCEPTION 'LINE_ASSET_REQUIRED: tài khoản % phải có tài sản', a.code USING ERRCODE = 'P0001'; END IF;
+  -- Kiểm tra tài khoản/đối tượng chỉ khi thêm dòng hoặc đổi tài khoản, đối tượng, vật tư, tài sản: sửa diễn giải dòng cũ không bị chặn khi tài khoản đã ngừng dùng.
+  IF TG_OP = 'INSERT' OR (NEW.account_id, NEW.party_id, NEW.item_id, NEW.asset_id) IS DISTINCT FROM (OLD.account_id, OLD.party_id, OLD.item_id, OLD.asset_id) THEN
+    SELECT * INTO a FROM account WHERE id = NEW.account_id AND tenant_id = v.tenant_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'ACCOUNT_NOT_FOUND: tài khoản id %', NEW.account_id USING ERRCODE = 'P0001'; END IF;
+    -- Một công ty có thể giữ nhiều hệ tài khoản; mỗi năm tài chính dùng đúng một chế độ (fiscal_period.regime).
+    SELECT regime INTO v_regime FROM fiscal_period WHERE tenant_id = v.tenant_id AND fiscal_year = v.fiscal_year AND period_no = v.period_no;
+    IF a.regime IS DISTINCT FROM v_regime THEN
+      RAISE EXCEPTION 'ACCOUNT_REGIME_MISMATCH: tài khoản % thuộc chế độ %, kỳ chứng từ dùng chế độ %', a.code, a.regime, v_regime USING ERRCODE = 'P0001'; END IF;
+    IF a.is_group THEN RAISE EXCEPTION 'ACCOUNT_IS_GROUP: tài khoản % là tài khoản tổng hợp, không định khoản được', a.code USING ERRCODE = 'P0001'; END IF;
+    IF NOT a.is_active THEN RAISE EXCEPTION 'ACCOUNT_INACTIVE: tài khoản % đã ngừng sử dụng', a.code USING ERRCODE = 'P0001'; END IF;
+    IF a.subledger_kind IN ('receivable','payable') AND NEW.party_id IS NULL THEN RAISE EXCEPTION 'LINE_PARTY_REQUIRED: tài khoản % phải có đối tượng', a.code USING ERRCODE = 'P0001'; END IF;
+    IF a.subledger_kind = 'inventory' AND NEW.item_id IS NULL THEN RAISE EXCEPTION 'LINE_ITEM_REQUIRED: tài khoản % phải có vật tư', a.code USING ERRCODE = 'P0001'; END IF;
+    IF a.subledger_kind = 'fixed_asset' AND NEW.asset_id IS NULL THEN RAISE EXCEPTION 'LINE_ASSET_REQUIRED: tài khoản % phải có tài sản', a.code USING ERRCODE = 'P0001'; END IF;
+  END IF;
   IF NEW.currency_code = 'VND' THEN NEW.amount_currency := NEW.debit - NEW.credit; NEW.fx_rate := NULL; END IF;
   RETURN NEW;
 END $$;
@@ -261,13 +282,13 @@ BEGIN
   IF v_state IN ('posted','reversed','cancelled') THEN
     IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'LINE_IMMUTABLE: không xóa dòng của chứng từ đã ghi sổ' USING ERRCODE = 'P0001'; END IF;
     IF v_status = 'hard_locked' THEN RAISE EXCEPTION 'PERIOD_HARD_LOCKED: kỳ đã khóa cứng' USING ERRCODE = 'P0001'; END IF;
-    -- 'balance' là cột sinh (debit - credit): trong trigger BEFORE, NEW.balance còn NULL nên phải bỏ ra; debit/credit đã được so sánh.
+    -- 'balance' là cột sinh (debit - credit): trong trigger BEFORE, NEW.balance còn NULL nên bỏ ra khi so sánh (debit/credit đã được so sánh) và tính lại khi ghi nhật ký.
     IF (to_jsonb(NEW) - 'balance' - 'description' - 'due_date' - 'department_id' - 'project_id' - 'cost_item_id' - 'employee_id' - 'extra_dims')
        IS DISTINCT FROM (to_jsonb(OLD) - 'balance' - 'description' - 'due_date' - 'department_id' - 'project_id' - 'cost_item_id' - 'employee_id' - 'extra_dims') THEN
       RAISE EXCEPTION 'LINE_IMMUTABLE: dòng đã ghi sổ chỉ sửa được diễn giải và chiều phân tích; dùng Bỏ ghi sổ hoặc Đảo' USING ERRCODE = 'P0001';
     END IF;
     INSERT INTO audit_event(tenant_id, user_id, action, entity, entity_id, before, after, ip)
-      VALUES (OLD.tenant_id, app_user_id(), 'update', 'voucher_line', OLD.id::text, to_jsonb(OLD), to_jsonb(NEW), nullif(current_setting('app.client_ip', true), ''));
+      VALUES (OLD.tenant_id, app_user_id(), 'update', 'voucher_line', OLD.id::text, to_jsonb(OLD), to_jsonb(NEW) || jsonb_build_object('balance', NEW.debit - NEW.credit), nullif(current_setting('app.client_ip', true), ''));
   END IF;
   RETURN COALESCE(NEW, OLD);
 END $$;
@@ -280,7 +301,7 @@ BEGIN
   SELECT * INTO v FROM voucher WHERE id = p_voucher;
   IF NOT FOUND THEN RETURN; END IF;  -- chứng từ đã bị xóa trong cùng transaction
   SELECT coalesce(sum(debit),0), coalesce(sum(credit),0), count(*) INTO v_d, v_c, v_n FROM voucher_line WHERE voucher_id = p_voucher;
-  IF v_n = 0 AND v.state <> 'draft' THEN RAISE EXCEPTION 'VOUCHER_EMPTY: chứng từ % không có dòng', coalesce(v.voucher_no, v.id::text) USING ERRCODE = 'P0001'; END IF;
+  IF v_n = 0 AND v.state IN ('posted','reversed') THEN RAISE EXCEPTION 'VOUCHER_EMPTY: chứng từ % không có dòng', coalesce(v.voucher_no, v.id::text) USING ERRCODE = 'P0001'; END IF;
   IF v_d <> v_c THEN RAISE EXCEPTION 'VOUCHER_UNBALANCED: tổng Nợ % khác tổng Có %', v_d, v_c USING ERRCODE = 'P0001'; END IF;
   FOR v_cur IN SELECT currency_code, sum(amount_currency) AS s FROM voucher_line WHERE voucher_id = p_voucher AND currency_code <> 'VND' GROUP BY currency_code HAVING sum(amount_currency) <> 0 LOOP
     RAISE EXCEPTION 'VOUCHER_UNBALANCED_CURRENCY: nguyên tệ % lệch %', v_cur.currency_code, v_cur.s USING ERRCODE = 'P0001';
