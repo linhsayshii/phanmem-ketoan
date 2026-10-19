@@ -5,12 +5,16 @@ import { api } from '../api/client.js';
 interface Company { code: string; name: string; taxCode: string | null; address: string | null; legalRep: string | null; chiefAccountant: string | null; phone: string | null; email: string | null }
 interface Settings { book_form: string; costing_method: string; base_currency: string; fx_rate_type: string; hidden_modules: string[]; extra_dims: { key: string; label: string }[] }
 
+const NULLABLE = ['taxCode', 'address', 'legalRep', 'chiefAccountant', 'phone', 'email'] as const;
+
 export default function CompanyPage() {
   const qc = useQueryClient();
   const company = useQuery({ queryKey: ['company'], queryFn: () => api<Company>('/api/company') });
   const settings = useQuery({ queryKey: ['settings'], queryFn: () => api<Settings>('/api/settings') });
-  const saveCompany = useMutation({ mutationFn: (v: Partial<Company>) => api('/api/company', { method: 'PUT', json: v }), onSuccess: () => { void qc.invalidateQueries({ queryKey: ['company'] }); void message.success('Đã lưu'); } });
-  const saveSettings = useMutation({ mutationFn: (v: Partial<Settings>) => api('/api/settings', { method: 'PUT', json: v }), onSuccess: () => { void qc.invalidateQueries({ queryKey: ['settings'] }); void message.success('Đã lưu'); } });
+  const onError = (e: unknown) => { void message.error((e as Error).message); };
+  // ô nhập để trống gửi chuỗi rỗng: API từ chối (mã số thuế, email) hoặc lưu '' thay vì xóa trường
+  const saveCompany = useMutation({ mutationFn: (v: Partial<Company>) => api('/api/company', { method: 'PUT', json: { ...v, ...Object.fromEntries(NULLABLE.map((k) => [k, v[k] === '' ? null : v[k]])) } }), onError, onSuccess: () => { void qc.invalidateQueries({ queryKey: ['company'] }); void message.success('Đã lưu'); } });
+  const saveSettings = useMutation({ mutationFn: (v: Partial<Settings>) => api('/api/settings', { method: 'PUT', json: v }), onError, onSuccess: () => { void qc.invalidateQueries({ queryKey: ['settings'] }); void message.success('Đã lưu'); } });
   if (!company.data || !settings.data) return null;
   return (
     <Tabs items={[

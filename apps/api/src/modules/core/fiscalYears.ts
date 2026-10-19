@@ -6,7 +6,7 @@ import type { Database } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
 
 export const fiscalYearBody = z.object({
-  fiscalYear: z.number().int().min(2000).max(2100), dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  fiscalYear: z.number().int().min(2000).max(2100), dateFrom: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-01$/, 'Ngày bắt đầu phải là ngày đầu tháng (YYYY-MM-01)'),
   months: z.number().int().min(1).max(15).default(12), regime: z.enum(['TT99', 'TT133', 'TT200', 'TT58']),
 });
 export type FiscalYearInput = z.infer<typeof fiscalYearBody>;
@@ -19,7 +19,9 @@ export async function createFiscalYear(trx: Transaction<Database>, tenantId: str
     const next = new Date(last.date_to + 'T00:00:00Z'); next.setUTCDate(next.getUTCDate() + 1);
     if (next.toISOString().slice(0, 10) !== input.dateFrom) throw new AppError('FISCAL_YEAR_GAP', `Năm mới phải bắt đầu ngày ${next.toISOString().slice(0, 10)}`, 409);
   }
-  const periods = buildFiscalPeriods({ fiscalYear: input.fiscalYear, dateFrom: input.dateFrom, months: input.months, regime: input.regime as Regime });
+  let periods: ReturnType<typeof buildFiscalPeriods>;
+  try { periods = buildFiscalPeriods({ fiscalYear: input.fiscalYear, dateFrom: input.dateFrom, months: input.months, regime: input.regime as Regime }); }
+  catch (e) { throw new AppError('VALIDATION', (e as Error).message, 400); }
   await trx.insertInto('fiscal_period').values(periods.map((p) => ({ tenant_id: tenantId, fiscal_year: p.fiscalYear, period_no: p.periodNo, date_from: p.dateFrom, date_to: p.dateTo, regime: p.regime }))).execute();
   return periods.length;
 }
