@@ -67,7 +67,8 @@ describe('sinh tài khoản từ mẫu', () => {
     expect((await list(cookie, 'TT200')).length).toBe(await templateCount('TT200'));
   });
 
-  it('TT99 chưa có mẫu: tạo năm tài chính bị 409 COA_TEMPLATE_PENDING và không để lại kỳ nào', async () => {
+  it('TT99 chưa có mẫu: tạo năm tài chính bị 409 COA_TEMPLATE_PENDING và không để lại kỳ nào', async ({ skip }) => {
+    if ((await templateCount('TT99')) > 0) skip('Mẫu TT99 đã có dữ liệu, trường hợp chờ văn bản gốc không còn áp dụng');
     const { cookie } = await bootstrapTenant(ctx, { code: `CE${Date.now()}` });
     const r = await post(cookie, '/api/fiscal-years', { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT99' });
     expect(r.statusCode).toBe(409); expect(r.json().error.code).toBe('COA_TEMPLATE_PENDING');
@@ -131,6 +132,58 @@ describe('quy tắc cây tài khoản', () => {
     expect(cross.statusCode).toBe(409); expect(cross.json().error.code).toBe('ACCOUNT_ROOT_MISMATCH');
     const missing = await post(cookie, '/api/accounts/merge', { regime: 'TT133', sourceCode: '99999', targetCode: '11212' });
     expect(missing.statusCode).toBe(404);
+  });
+
+  it('đổi số hiệu và ghép chọn cây theo parent_id: tài khoản cùng tiền tố nhưng là con trực tiếp của cấp trên không bị kéo theo', async () => {
+    const { cookie } = await tenantWithCoa('CM');
+    for (const [parentCode, code] of [['1121', '11211'], ['112', '11219']] as const) await post(cookie, '/api/accounts', { regime: 'TT133', parentCode, code, name: code });
+    const before = await list(cookie);
+    const a11219 = before.find((r) => r.code === '11219')!;
+    expect(a11219.parentId).toBe(before.find((r) => r.code === '112')!.id);
+    expect((await post(cookie, '/api/accounts/rename', { regime: 'TT133', oldCode: '1121', newCode: '1129' })).statusCode).toBe(200);
+    const renamed = await list(cookie);
+    expect(renamed.find((r) => r.code === '11219')).toEqual(a11219);
+    expect(renamed.map((r) => r.code)).toEqual(expect.arrayContaining(['1129', '11291']));
+    expect(renamed.map((r) => r.code)).not.toContain('1121');
+    // Ghép cây 1129 vào 1122 (tài khoản lá): 11219 vẫn giữ nguyên, 11291 thành 11221.
+    const mg = await post(cookie, '/api/accounts/merge', { regime: 'TT133', sourceCode: '1129', targetCode: '1122' });
+    expect(mg.statusCode).toBe(200);
+    const merged = await list(cookie);
+    expect(merged.find((r) => r.code === '11219')).toEqual(a11219);
+    expect(merged.map((r) => r.code)).not.toContain('11291');
+    expect(merged.map((r) => r.code)).not.toContain('1129');
+    const t1122 = merged.find((r) => r.code === '1122')!;
+    expect(t1122.isGroup).toBe(true);
+    expect(merged.find((r) => r.code === '11221')!.parentId).toBe(t1122.id);
+  });
+
+  it('ba cấp: đổi số hiệu 11211 -> 11212 đổi cả cháu chắt; vẫn từ chối đổi ra ngoài tiền tố của cha', async () => {
+    const { cookie } = await tenantWithCoa('CN');
+    for (const [parentCode, code] of [['1121', '11211'], ['11211', '112111'], ['112111', '1121111']] as const) await post(cookie, '/api/accounts', { regime: 'TT133', parentCode, code, name: code });
+    expect((await post(cookie, '/api/accounts/rename', { regime: 'TT133', oldCode: '11211', newCode: '11212' })).statusCode).toBe(200);
+    const rows = await list(cookie);
+    const codes = rows.map((r) => r.code);
+    expect(codes).toEqual(expect.arrayContaining(['11212', '112121', '1121211']));
+    expect(codes).not.toContain('11211'); expect(codes).not.toContain('112111'); expect(codes).not.toContain('1121111');
+    expect(rows.find((r) => r.code === '1121211')!.parentId).toBe(rows.find((r) => r.code === '112121')!.id);
+    expect(rows.find((r) => r.code === '112121')!.parentId).toBe(rows.find((r) => r.code === '11212')!.id);
+    const bad = await post(cookie, '/api/accounts/rename', { regime: 'TT133', oldCode: '11212', newCode: '11312' });
+    expect(bad.statusCode).toBe(409); expect(bad.json().error.code).toBe('ACCOUNT_CODE_PREFIX');
+    expect((await list(cookie)).map((r) => r.code)).toContain('1121211');
+  });
+
+  it('ba cấp: ghép 11211 vào 11212 chuyển cháu chắt sang đích, xóa cả cây nguồn, đích thành tổng hợp', async () => {
+    const { cookie } = await tenantWithCoa('CO');
+    for (const [parentCode, code] of [['1121', '11211'], ['11211', '112111'], ['112111', '1121111'], ['1121', '11212']] as const) await post(cookie, '/api/accounts', { regime: 'TT133', parentCode, code, name: code });
+    expect((await list(cookie)).find((r) => r.code === '11212')!.isGroup).toBe(false);
+    expect((await post(cookie, '/api/accounts/merge', { regime: 'TT133', sourceCode: '11211', targetCode: '11212' })).statusCode).toBe(200);
+    const rows = await list(cookie);
+    const codes = rows.map((r) => r.code);
+    expect(codes).toEqual(expect.arrayContaining(['11212', '112121', '1121211']));
+    expect(codes).not.toContain('11211'); expect(codes).not.toContain('112111'); expect(codes).not.toContain('1121111');
+    expect(rows.find((r) => r.code === '1121211')!.parentId).toBe(rows.find((r) => r.code === '112121')!.id);
+    expect(rows.find((r) => r.code === '112121')!.parentId).toBe(rows.find((r) => r.code === '11212')!.id);
+    expect(rows.find((r) => r.code === '11212')!.isGroup).toBe(true);
   });
 
   it('sửa tên, ngừng dùng; thân rỗng không lỗi; không có tài khoản thì 404', async () => {

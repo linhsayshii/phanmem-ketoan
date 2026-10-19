@@ -7,7 +7,7 @@ import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
 export const REGIMES = [
-  { value: 'TT99', label: 'TT 99/2025/TT-BTC (từ năm tài chính 2026)' },
+  { value: 'TT99', label: 'TT99 (chờ văn bản gốc)' },
   { value: 'TT133', label: 'TT 133/2016/TT-BTC (DNNVV)' },
   { value: 'TT200', label: 'TT 200/2014/TT-BTC (dữ liệu 2025 trở về trước)' },
 ];
@@ -32,7 +32,7 @@ export default function CompanyWizard() {
         </Form>
       )}
       {step === 1 && (
-        <Form layout="vertical" initialValues={{ fiscalYear: 2026, dateFrom: dayjs('2026-01-01'), months: 12, regime: 'TT99' }}
+        <Form layout="vertical" initialValues={{ fiscalYear: 2026, dateFrom: dayjs('2026-01-01'), months: 12, regime: 'TT133' }}
           onFinish={async (v) => { try {
             await api('/api/fiscal-years', { method: 'POST', json: { ...v, dateFrom: (v.dateFrom as dayjs.Dayjs).format('YYYY-MM-DD') } });
             void message.success('Đã tạo năm tài chính'); void navigate({ to: '/' });

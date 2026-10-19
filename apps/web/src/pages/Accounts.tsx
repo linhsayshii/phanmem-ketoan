@@ -41,10 +41,10 @@ export default function AccountsPage() {
         { title: 'Số hiệu', dataIndex: 'code', width: 140 }, { title: 'Tên tài khoản', dataIndex: 'name' },
         { title: 'Loại dư', dataIndex: 'normalBalance', width: 110, render: (v: string) => NB[v] },
         { title: 'Theo dõi', width: 200, render: (_, a) => <>{a.subledgerKind && <Tag>{SK[a.subledgerKind]}</Tag>}{a.trackCurrency && <Tag>Ngoại tệ</Tag>}{a.isGroup && <Tag color="blue">Tổng hợp</Tag>}</> },
-        { title: '', width: 260, render: (_, a) => can('account.update') && (<Space>
-          <a onClick={() => setModal({ kind: 'sub', code: a.code })}>Thêm tiểu khoản</a>
-          <a onClick={() => setModal({ kind: 'rename', code: a.code })}>Đổi số hiệu</a>
-          {!a.isGroup && <a onClick={() => setModal({ kind: 'merge', code: a.code })}>Ghép</a>}</Space>) }]} />
+        { title: '', width: 260, render: (_, a) => (<Space>
+          {can('account.create') && <a onClick={() => setModal({ kind: 'sub', code: a.code })}>Thêm tiểu khoản</a>}
+          {can('account.update') && <a onClick={() => setModal({ kind: 'rename', code: a.code })}>Đổi số hiệu</a>}
+          {can('account.update') && !a.isGroup && <a onClick={() => setModal({ kind: 'merge', code: a.code })}>Ghép</a>}</Space>) }]} />
       <Modal open={!!modal} onCancel={() => setModal(null)} onOk={() => form.submit()} destroyOnHidden
         title={modal?.kind === 'sub' ? `Thêm tiểu khoản của ${modal.code}` : modal?.kind === 'rename' ? `Đổi số hiệu ${modal.code}` : `Ghép ${modal?.code} vào tài khoản khác`}>
         <Form form={form} layout="vertical" onFinish={(v) => run.mutate(v)}>

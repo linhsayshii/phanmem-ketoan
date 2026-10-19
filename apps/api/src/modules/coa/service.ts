@@ -39,10 +39,16 @@ export async function addSubAccount(trx: Transaction<Database>, tenantId: string
   return r.id;
 }
 
-// Sau khi đổi mã hàng loạt (trigger tiền tố đang tắt): bật lại rồi "chạm" cột code để trigger kiểm tra tiền tố với cha và đặt is_group cho cha theo mã mới.
-async function revalidateTree(trx: Transaction<Database>, regime: string, prefix: string): Promise<void> {
+// Tài khoản và mọi con cháu theo parent_id (không dựa vào tiền tố mã: một tài khoản có thể là con trực tiếp của cấp xa hơn).
+async function subtreeIds(trx: Transaction<Database>, rootId: number): Promise<number[]> {
+  const r = await sql<{ id: number }>`WITH RECURSIVE sub AS (SELECT id FROM account WHERE id = ${rootId} UNION ALL SELECT a.id FROM account a JOIN sub ON a.parent_id = sub.id) SELECT id FROM sub`.execute(trx);
+  return r.rows.map((x) => x.id);
+}
+
+// Sau khi đổi mã hàng loạt (trigger tiền tố đang tắt): bật lại rồi "chạm" cột code của các dòng đã đổi để trigger kiểm tra tiền tố với cha.
+async function revalidateTree(trx: Transaction<Database>, ids: number[]): Promise<void> {
   await sql`SELECT set_config('app.bulk_rename', 'off', true)`.execute(trx);
-  await sql`UPDATE account SET code = code WHERE regime = ${regime} AND code LIKE ${prefix + '%'}`.execute(trx);
+  await sql`UPDATE account SET code = code WHERE id = ANY(${ids})`.execute(trx);
 }
 
 export async function renameAccount(trx: Transaction<Database>, _tenantId: string, input: { regime: string; oldCode: string; newCode: string }): Promise<void> {
@@ -50,23 +56,29 @@ export async function renameAccount(trx: Transaction<Database>, _tenantId: strin
   if (!acc) throw new AppError('ACCOUNT_NOT_FOUND', `Không có tài khoản ${input.oldCode}`, 404);
   if (!/^\d{1,8}$/.test(input.newCode)) throw new AppError('ACCOUNT_CODE_INVALID', 'Mã phải là 1–8 chữ số', 400);
   // Đổi cả cây (tài khoản và mọi tài khoản con) cùng một tiền tố; trigger tiền tố được tạm bỏ qua bằng biến phiên trong transaction này.
+  const ids = await subtreeIds(trx, acc.id);
   await sql`SELECT set_config('app.bulk_rename', 'on', true)`.execute(trx);
-  await sql`UPDATE account SET code = ${input.newCode} || substr(code, ${input.oldCode.length + 1})
-            WHERE regime = ${input.regime} AND (code = ${input.oldCode} OR code LIKE ${input.oldCode + '%'})`.execute(trx);
-  await revalidateTree(trx, input.regime, input.newCode);
+  await sql`UPDATE account SET code = ${input.newCode} || substr(code, ${input.oldCode.length + 1}) WHERE id = ANY(${ids})`.execute(trx);
+  await revalidateTree(trx, ids);
 }
 
 export async function mergeAccounts(trx: Transaction<Database>, _tenantId: string, input: { regime: string; sourceCode: string; targetCode: string }): Promise<void> {
   const src = await trx.selectFrom('account').selectAll().where('regime', '=', input.regime).where('code', '=', input.sourceCode).executeTakeFirst();
   const dst = await trx.selectFrom('account').selectAll().where('regime', '=', input.regime).where('code', '=', input.targetCode).executeTakeFirst();
   if (!src || !dst) throw new AppError('ACCOUNT_NOT_FOUND', 'Không có tài khoản nguồn hoặc đích', 404);
-  if (dst.code.startsWith(src.code)) throw new AppError('ACCOUNT_MERGE_INVALID', 'Không ghép tài khoản vào chính nó hoặc vào tài khoản con của nó', 409);
+  const tree = await subtreeIds(trx, src.id);
+  if (tree.includes(dst.id)) throw new AppError('ACCOUNT_MERGE_INVALID', 'Không ghép tài khoản vào chính nó hoặc vào tài khoản con của nó', 409);
   if (src.root_type !== dst.root_type) throw new AppError('ACCOUNT_ROOT_MISMATCH', 'Hai tài khoản khác loại', 409);
   // Cả cây dưới nguồn chuyển sang đích với mã đổi tiền tố; con trực tiếp đổi cha sang đích.
-  await sql`SELECT set_config('app.bulk_rename', 'on', true)`.execute(trx);
-  await sql`UPDATE account SET code = ${dst.code} || substr(code, ${src.code.length + 1}),
-              parent_id = CASE WHEN parent_id = ${src.id} THEN ${dst.id} ELSE parent_id END
-            WHERE regime = ${input.regime} AND code LIKE ${src.code + '%'} AND id <> ${src.id}`.execute(trx);
-  await revalidateTree(trx, input.regime, dst.code);
+  const moved = tree.filter((id) => id !== src.id);
+  if (moved.length) {
+    await sql`SELECT set_config('app.bulk_rename', 'on', true)`.execute(trx);
+    await sql`UPDATE account SET code = ${dst.code} || substr(code, ${src.code.length + 1}),
+                parent_id = CASE WHEN parent_id = ${src.id} THEN ${dst.id} ELSE parent_id END
+              WHERE id = ANY(${moved})`.execute(trx);
+    // Đặt is_group cho đích trước: để trigger tự đặt trong lúc câu UPDATE nhiều dòng đang quét sẽ gặp lỗi 27000.
+    await trx.updateTable('account').set({ is_group: true }).where('id', '=', dst.id).execute();
+    await revalidateTree(trx, moved);
+  }
   await trx.deleteFrom('account').where('id', '=', src.id).execute();
 }
