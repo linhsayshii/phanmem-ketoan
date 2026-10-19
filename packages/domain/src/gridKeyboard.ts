@@ -15,3 +15,24 @@ export function nextCellOnTab(pos: CellPos, g: GridShape): Move {
   return m.addRow ? { ...pos, addRow: false } : m;
 }
 export const isLookupKey = (e: { key: string }): boolean => e.key === 'F4';
+
+export type GridKeyAction =
+  | { type: 'none' }
+  | { type: 'move'; pos: CellPos; addRow: boolean }
+  | { type: 'lookup' }
+  | { type: 'deleteRow' }
+  | { type: 'insertRow' };
+
+// Quyết định phím nào lưới tự xử lý. `none` = để AG Grid làm mặc định (kể cả Shift+Enter/Shift+Tab đi ngược, lưới chỉ đọc, ô không xác định).
+export function gridKeyAction(e: { key: string; ctrlKey: boolean; shiftKey: boolean }, pos: CellPos, g: GridShape & { readOnly: boolean }): GridKeyAction {
+  const none: GridKeyAction = { type: 'none' };
+  if (g.readOnly || pos.col < 0) return none;
+  if (isLookupKey(e)) return { type: 'lookup' };
+  if (e.ctrlKey && e.key === 'Delete') return { type: 'deleteRow' };
+  if (e.ctrlKey && e.key === 'Insert') return { type: 'insertRow' };
+  if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey) {
+    const m = e.key === 'Enter' ? nextCellOnEnter(pos, g) : nextCellOnTab(pos, g);
+    return { type: 'move', pos: { row: m.row, col: m.col }, addRow: m.addRow };
+  }
+  return none;
+}

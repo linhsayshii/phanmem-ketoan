@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Form, Input, Modal, Select, type SelectProps } from 'antd';
+import { Form, Input, Modal, Select, message, type SelectProps } from 'antd';
 import { isLookupKey } from '@kt/domain';
 
 export interface LookupRow { id: string | number; code: string; name: string }
@@ -25,6 +25,7 @@ export function LookupSelect({ catalog, value, onChange, valueField = 'code', qu
   const [rows, setRows] = useState<LookupRow[]>([]);
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
   const timer = useRef<ReturnType<typeof setTimeout>>();
   const search = (q: string) => { clearTimeout(timer.current); timer.current = setTimeout(() => { void fetcher(catalog, q).then(setRows); }, 150); };
@@ -36,8 +37,14 @@ export function LookupSelect({ catalog, value, onChange, valueField = 'code', qu
         onKeyDown={(e) => { if (isLookupKey(e)) { e.preventDefault(); setOpen(true); } }}
         onChange={(v: string) => { if (v === QUICK) { setOpen(false); setAdding(true); return; } onChange?.(v ?? null, rows.find((r) => String(r[valueField]) === v) ?? null); }} allowClear />
       {quickAddFields && (
-        <Modal title="Thêm nhanh" open={adding} onCancel={() => setAdding(false)} onOk={() => form.submit()} destroyOnHidden>
-          <Form form={form} layout="vertical" onFinish={async (v) => { const row = await creator(catalog, v); setRows((xs) => [row, ...xs]); onChange?.(String(row[valueField]), row); setAdding(false); form.resetFields(); }}>
+        <Modal title="Thêm nhanh" open={adding} onCancel={() => setAdding(false)} onOk={() => form.submit()} confirmLoading={saving} destroyOnHidden>
+          <Form form={form} layout="vertical" onFinish={async (v) => {
+            setSaving(true);
+            let row: LookupRow;
+            // lỗi (trùng mã, thiếu quyền...) thì báo và giữ hộp thoại mở để sửa
+            try { row = await creator(catalog, v); } catch (e) { void message.error((e as Error).message); return; } finally { setSaving(false); }
+            setRows((xs) => [row, ...xs]); onChange?.(String(row[valueField]), row); setAdding(false); form.resetFields();
+          }}>
             {quickAddFields.map((f) => <Form.Item key={f.key} name={f.key} label={f.label} rules={[{ required: true }]}><Input /></Form.Item>)}
           </Form>
         </Modal>)}
