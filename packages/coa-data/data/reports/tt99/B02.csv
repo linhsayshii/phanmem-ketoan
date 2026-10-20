@@ -18,3 +18,5 @@ line_code,label,parent_line_code,source,side,formula,is_bold,negate,note_ref
 51,16. Chi phí thuế TNDN hiện hành,,movement,net_debit,8211,0,0,
 52,17. Chi phí thuế TNDN hoãn lại,,movement,net_debit,8212,0,0,
 60,18. Lợi nhuận sau thuế thu nhập doanh nghiệp (60 = 50 - 51 - 52),,lines,net_debit,[50]-[51]-[52],1,0,
+70,19. Lãi cơ bản trên cổ phiếu (*),,balance,net_debit,0,0,0,
+71,20. Lãi suy giảm trên cổ phiếu (*),,balance,net_debit,0,0,0,

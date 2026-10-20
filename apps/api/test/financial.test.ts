@@ -182,6 +182,25 @@ describe('báo cáo tài chính theo dòng', () => {
   });
 });
 
+describe('B03 tiền đầu kỳ', () => {
+  it('dòng 60 là số dư đầu kỳ thật (kể cả khi kỳ báo cáo bắt đầu giữa năm), tiền chuyển giữa 111 và 112 triệt tiêu; 50 + 60 + 61 = 70', async () => {
+    const { cookie: c } = await bootstrapTenant(ctx, { code: `B3${Date.now()}` });
+    await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' } });
+    const row = (accountCode: string, debit: string, credit: string) => ({ accountCode, currencyCode: 'VND', debit, credit, debitCurrency: '0', creditCurrency: '0', partyCode: null });
+    await ctx.app.inject({ method: 'PUT', url: '/api/opening-balance/2026', headers: { cookie: c }, payload: { rows: [row('1111', '1000', '0'), row('4111', '0', '1000')] } });
+    await ctx.app.inject({ method: 'POST', url: '/api/opening-balance/2026/post', headers: { cookie: c } });
+    await ok(pkt('2026-02-01', [{ accountCode: '1111', debit: '500' }, { accountCode: '5113', credit: '500' }], c));
+    await ok(pkt('2026-02-10', [{ accountCode: '1121', debit: '400' }, { accountCode: '1111', credit: '400' }], c)); // tiền sang tiền
+    await ok(pkt('2026-03-01', [{ accountCode: '6422', debit: '300' }, { accountCode: '1121', credit: '300' }], c));
+    const val = (r: { json(): { rows: Row[] } }, code: string) => rowOf(r, code).current;
+    const full = await get('/api/reports/financial/B03?from=2026-01-01&to=2026-03-31', c);
+    expect(full.statusCode, full.body).toBe(200);
+    expect([val(full, '60'), val(full, '70'), val(full, '50'), val(full, '61')]).toEqual(['1000', '1200', '200', '0']);
+    const mid = await get('/api/reports/financial/B03?from=2026-02-05&to=2026-03-31', c);
+    expect([val(mid, '60'), val(mid, '70'), val(mid, '50')]).toEqual(['1500', '1200', '-300']);
+  });
+});
+
 describe('shiftYear', () => {
   it('lùi/tiến năm giữ tháng ngày; 29/2 về 28/2 ở năm không nhuận, giữ 29/2 ở năm nhuận', () => {
     expect(shiftYear('2024-02-29', -1)).toBe('2023-02-28'); expect(shiftYear('2024-02-29', 1)).toBe('2025-02-28'); expect(shiftYear('2024-02-29', 4)).toBe('2028-02-29');

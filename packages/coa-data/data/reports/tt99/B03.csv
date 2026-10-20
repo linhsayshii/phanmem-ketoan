@@ -23,6 +23,6 @@ line_code,label,parent_line_code,source,side,formula,is_bold,negate,note_ref
 36,"6. Cổ tức, lợi nhuận đã trả cho chủ sở hữu",40,pair,net_debit,"N421,332/C111,112,113",0,1,
 40,Lưu chuyển tiền thuần từ hoạt động tài chính,,lines,net_debit,[31]-[32]+[33]-[34]-[35]-[36],1,0,
 50,Lưu chuyển tiền thuần trong kỳ (50 = 20 + 30 + 40),,lines,net_debit,[20]+[30]+[40],1,0,
-60,Tiền và tương đương tiền đầu kỳ,,lines,net_debit,[70]-[50]-[61],0,0,
+60,Tiền và tương đương tiền đầu kỳ,,lines,net_debit,"[70]-N111,112,113/C1,2,3,4,5,6,7,8,9+N1,2,3,4,5,6,7,8,9/C111,112,113",0,0,
 61,Ảnh hưởng của thay đổi tỷ giá hối đoái quy đổi ngoại tệ,,pair,net_debit,"N111,112,113/C413-N413/C111,112,113",0,0,
 70,Tiền và tương đương tiền cuối kỳ (70 = 50 + 60 + 61),,balance,debit,111+112+113,1,0,
