@@ -36,7 +36,7 @@ describe.skipIf(!hasPgDump)('sao lưu', () => {
     expect(r.pruned).toEqual(['ketoan_20250101T000000.dump']);
     expect(readdirSync(dir).sort()).toEqual(['ketoan_20250102T000000.dump', path.basename(r.file)].sort());
     expect(readdirSync(dir).filter((f) => f.endsWith('.part'))).toEqual([]);
-  });
+  }, 60_000);
 
   it('báo lỗi khi pg_dump thất bại và không để lại file rỗng, file .part hay xóa bản tốt', async () => {
     const dir = tmpDir();

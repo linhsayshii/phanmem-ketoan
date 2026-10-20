@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Alert, DatePicker, Radio, Space, Switch, Table, Tabs } from 'antd';
+import { Alert, Button, Checkbox, DatePicker, Modal, Radio, Select, Space, Switch, Table, Tabs, message } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber } from '@kt/domain';
 import { KeyboardGrid, LookupSelect, useRememberedFilter } from '@kt/ui';
-import { api } from '../api/client.js';
+import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor } from '../lookups.js';
 
@@ -36,8 +36,47 @@ function Summary({ items }: { items: [string, Side][] }) {
 const Grid = <T extends object>({ rows, columns }: { rows: T[]; columns: ColDef<T>[] }) =>
   <KeyboardGrid<T> rows={rows} columns={columns} onRowsChange={() => undefined} addRowTemplate={() => ({} as T)} readOnly height="calc(100vh - 330px)" />;
 
-export default function LedgersPage() {
+const BOOKS = [{ value: 'journal', label: 'Sổ Nhật ký chung' }, { value: 'ledgers', label: 'Sổ Cái (mọi tài khoản có số liệu)' }, { value: 'trial', label: 'Bảng cân đối số phát sinh' },
+  { value: 'B01', label: 'B01 - Báo cáo tình hình tài chính' }, { value: 'B02', label: 'B02 - Kết quả hoạt động kinh doanh' }, { value: 'B03', label: 'B03 - Lưu chuyển tiền tệ' }];
+const FULL_BOOK_FLAGS = ['view_receivable', 'view_payable', 'view_cost']; // Nhật ký chung và Sổ Cái in cả công nợ và giá vốn
+const fileKind = { pdf: 'PDF', xlsx: 'Excel' } as const;
+
+// In liên tục cả bộ sổ của một năm tài chính: máy chủ trả một PDF nhiều phần hoặc một Excel nhiều sheet, tải về thành tệp.
+function BookSetModal({ open, onClose }: { open: boolean; onClose(): void }) {
   const { me } = useAuth();
+  const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<{ fiscalYear: number; regime: string }[]>('/api/fiscal-years'), enabled: open });
+  const [year, setYear] = useState<number | undefined>();
+  const [include, setInclude] = useState<string[]>(['journal', 'ledgers', 'trial']);
+  const [format, setFormat] = useState<'pdf' | 'xlsx'>('pdf');
+  const [busy, setBusy] = useState(false);
+  const fiscalYear = year ?? years.data?.at(-1)?.fiscalYear;
+  const fullBooks = FULL_BOOK_FLAGS.every((f) => me?.sensitive.includes(f));
+  const run = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch('/api/print/book-set', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fiscalYear, include, format }) });
+      if (!res.ok) { const b = await res.json().catch(() => null) as { error?: { message?: string } } | null; throw new ApiError('HTTP_' + res.status, b?.error?.message ?? `Lỗi hệ thống (${res.status})`, res.status); }
+      const url = URL.createObjectURL(await res.blob());
+      const a = Object.assign(document.createElement('a'), { href: url, download: `bo-so-${fiscalYear}.${format}` });
+      a.click(); URL.revokeObjectURL(url); onClose();
+    } catch (e) { void message.error((e as Error).message); } finally { setBusy(false); }
+  };
+  return (
+    <Modal open={open} onCancel={onClose} title="In cả bộ sổ năm" okText="In" cancelText="Đóng" confirmLoading={busy} okButtonProps={{ disabled: !fiscalYear || !include.length }} onOk={() => void run()}>
+      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Select style={{ width: 200 }} placeholder="Năm tài chính" value={fiscalYear} onChange={setYear} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
+        <Checkbox.Group value={include} onChange={(v) => setInclude(v as string[])} style={{ display: 'grid', gap: 4 }}
+          options={BOOKS.map((b) => ({ ...b, disabled: !fullBooks && (b.value === 'journal' || b.value === 'ledgers') }))} />
+        {!fullBooks && <Alert type="info" showIcon message="Nhật ký chung và Sổ Cái cả năm cần đủ các quyền xem công nợ phải thu, phải trả và giá vốn." />}
+        <Radio.Group optionType="button" value={format} onChange={(e) => setFormat(e.target.value as 'pdf' | 'xlsx')} options={Object.entries(fileKind).map(([value, label]) => ({ value, label }))} />
+      </Space>
+    </Modal>
+  );
+}
+
+export default function LedgersPage() {
+  const { me, can } = useAuth();
+  const [bookSet, setBookSet] = useState(false);
   const [tab, setTab] = useState<TabKey>('journal');
   const [f, setF] = useRememberedFilter('ledgers', { from: dayjs().startOf('month').format('YYYY-MM-DD'), to: dayjs().endOf('month').format('YYYY-MM-DD'), accountCode: '', mode: 'voucher' as Mode, level: 0,
     splitParty: true, partyCode: '', costItemCode: '', projectCode: '', departmentCode: '' }, `${me?.tenantId}:${me?.userId}`);
@@ -51,6 +90,7 @@ export default function LedgersPage() {
     detail: `/api/reports/ledgers/detail?${query({ accountCode: f.accountCode, partyCode: f.partyCode, costItemCode: f.costItemCode, projectCode: f.projectCode, departmentCode: f.departmentCode })}`,
     trial: `/api/reports/ledgers/trial-balance?${query({ level: f.level ? String(f.level) : '', splitParty: String(f.splitParty) })}` }[tab];
   const needAccount = (tab === 'ledger' || tab === 'detail') && !f.accountCode;
+  const printAs = (format: 'pdf' | 'xlsx') => { window.open(`${url}&format=${format}`, '_blank'); }; // cùng bộ lọc với màn hình; Sổ Cái luôn in theo chứng từ
   const data = useQuery({ queryKey: ['ledgers', url], queryFn: () => api<Record<string, unknown>>(url), enabled: !needAccount, retry: false });
 
   const columns = useMemo(() => {
@@ -106,10 +146,15 @@ export default function LedgersPage() {
         {tab === 'trial' && <>
           <Radio.Group optionType="button" value={f.level} onChange={(e) => setF({ ...f, level: e.target.value as number })} options={[{ value: 1, label: 'Cấp 1' }, { value: 2, label: 'Cấp 2' }, { value: 3, label: 'Cấp 3' }, { value: 0, label: 'Tất cả' }]} />
           <span><Switch checked={f.splitParty} onChange={(splitParty) => setF({ ...f, splitParty })} /> Tách dư hai bên theo đối tượng</span></>}
+        {can('report.print') && <>
+          <Button disabled={needAccount} onClick={() => printAs('pdf')}>In PDF</Button>
+          <Button disabled={needAccount} onClick={() => printAs('xlsx')}>Xuất Excel</Button>
+          <Button onClick={() => setBookSet(true)}>In cả bộ sổ năm…</Button></>}
       </Space>
       {tab === 'detail' && <Space wrap>{lookup('party', 'partyCode', 'Đối tượng')}{lookup('cost_item', 'costItemCode', 'Khoản mục')}{lookup('project', 'projectCode', 'Vụ việc')}{lookup('department', 'departmentCode', 'Bộ phận')}</Space>}
       <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={[{ key: 'journal', label: 'Nhật ký chung' }, { key: 'ledger', label: 'Sổ Cái' }, { key: 'detail', label: 'Sổ chi tiết' }, { key: 'trial', label: 'Bảng cân đối số phát sinh' }]} />
       {data.isFetching && !d ? <Alert type="info" message="Đang tải…" /> : body()}
+      <BookSetModal open={bookSet} onClose={() => setBookSet(false)} />
     </Space>
   );
 }

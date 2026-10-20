@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Checkbox, DatePicker, Drawer, Input, Modal, Select, Space, Switch, Table, Tooltip, message } from 'antd';
+import { Alert, Button, Checkbox, DatePicker, Drawer, Input, Modal, Select, Space, Switch, Table, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import dayjs from 'dayjs';
@@ -122,7 +122,9 @@ export default function FinancialPage() {
           ? <><span>Đến ngày</span><DatePicker format="DD/MM/YYYY" allowClear={false} value={dayjs(range.to)} onChange={(d) => d && setCustom({ year: fy.fiscalYear, from: fy.dateFrom, to: d.format('YYYY-MM-DD') })} /></>
           : <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(range.from), dayjs(range.to)]} onChange={(r) => r?.[0] && r[1] && setCustom({ year: fy.fiscalYear, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />)}
         {!isB01 && <span><Switch checked={compare} onChange={setCompare} /> So sánh năm trước</span>}
-        <Tooltip title="In báo cáo làm ở tác vụ in ấn (Task 24)"><Button disabled>In</Button></Tooltip>
+        {can('report.print') && range && <>
+          <Button disabled={!report.data} onClick={() => { window.open(`/api/reports/financial/${code}?${query({ ...range, format: 'pdf' })}`, '_blank'); }}>In PDF</Button>
+          <Button disabled={!report.data} onClick={() => { window.open(`/api/reports/financial/${code}?${query({ ...range, format: 'xlsx' })}`, '_blank'); }}>Xuất Excel</Button></>}
         {can('report_def.update') && fy && <>
           <Button onClick={() => setEditing(true)}>Sửa công thức</Button>
           <Button loading={reload.isPending} onClick={() => Modal.confirm({ title: `Nạp lại mẫu ${code}?`, content: 'Báo cáo này được thay bằng mẫu hệ thống; các báo cáo khác của công ty giữ nguyên.', okText: 'Nạp lại mẫu', cancelText: 'Hủy', onOk: () => reload.mutateAsync().catch(() => undefined) })}>Nạp lại mẫu</Button></>}

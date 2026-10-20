@@ -2,7 +2,7 @@ import { formatVnDate, formatVnNumber, sum } from '@kt/domain';
 import type { VoucherDto } from '../../ledger/vouchers.service.js';
 
 export interface CompanyInfo { name: string; address: string | null; taxCode: string | null; legalRep: string | null; chiefAccountant: string | null; formNo: string; issuedBy: string }
-const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+export const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 export const PRINT_CSS = `
   @page { size: A4; margin: 12mm; }
