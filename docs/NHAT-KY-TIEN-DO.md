@@ -20,3 +20,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-21 01:30 | GĐ2 | T3 quyền GĐ2 (0024), cờ nhạy cảm dùng chung, todayVn/vnDayStart, chặn lộ số tiền qua hàng đợi kiểm cân bằng | fef28ed, bf279b8 | domain 48, db 65, api 308, worker 11, web 66; lint/typecheck sạch
 2026-10-21 01:53 | GĐ2 | T4 loại chứng từ GĐ2 (0025), cột tiêu đề chứng từ, siết tỷ giá dòng ngoại tệ, VOUCHER_TYPES/CASH_PURPOSES | 9785790 | domain 54, coa-data 22, db 72, api 309, bất biến 18; lint/typecheck sạch
 2026-10-21 02:21 | GĐ2 | T5 API chứng từ theo loại (PT/PC/BC/BN/CT), quy tắc theo loại, DTO periodStatus/hashed | 3181813, c16e9dc, 4f152d9 | api 330, domain 55, db 73, coa-data 22; lint/typecheck sạch
+2026-10-21 03:47 | GĐ2 | T6 màn hình chứng từ dùng chung theo loại, Đảo chọn ngày, bỏ ghi sổ số dư đầu kỳ, xác nhận thay đổi chưa lưu | 66e200a, 47c68df | web 87, ui 31, api openingBalance 19, e2e phieu-thu + phieu-ke-toan 3; lint/typecheck sạch
