@@ -12,7 +12,7 @@ import { renderReportXlsx } from './print/excel.js';
 import { assertPrintable, renderReportsHtml, type ReportDoc } from './print/html.js';
 import { renderPdf } from './print/pdf.js';
 
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => !Number.isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s, 'Ngày không hợp lệ');
+export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => !Number.isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s, 'Ngày không hợp lệ');
 const range = { from: isoDate, to: isoDate };
 const ordered = (q: { from: string; to: string }) => q.from <= q.to;
 const orderedMsg = { message: 'Từ ngày phải trước hoặc bằng đến ngày' };
@@ -22,7 +22,7 @@ const format = z.enum(['json', 'html', 'pdf', 'xlsx']).default('json');
 type PrintFormat = 'html' | 'pdf' | 'xlsx';
 
 // Tên tệp mã hóa theo RFC 5987 (tên có thể chứa mã tài khoản/báo cáo do người dùng gõ). PDF mở trong tab, Excel tải về. Khổ giấy từng sổ do renderReportsHtml quyết định (CSS), không qua tùy chọn landscape của renderPdf.
-async function respondReport(reply: FastifyReply, docs: ReportDoc[], format: PrintFormat, fileName: string) {
+export async function respondReport(reply: FastifyReply, docs: ReportDoc[], format: PrintFormat, fileName: string) {
   const name = encodeURIComponent(fileName);
   if (format !== 'xlsx') assertPrintable(docs); // HTML/PDF dựng cả bộ trong một trang: chặn sổ quá lớn, Excel không bị giới hạn
   if (format === 'html') return reply.type('text/html; charset=utf-8').send(renderReportsHtml(docs));

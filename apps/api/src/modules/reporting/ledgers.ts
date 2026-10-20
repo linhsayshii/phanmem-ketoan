@@ -8,7 +8,7 @@ export interface Side { debit: string; credit: string }
 const NIL: Side = { debit: '0', credit: '0' };
 const side = (net: Decimal): Side => ({ debit: net.gt(0) ? net.toString() : '0', credit: net.lt(0) ? net.neg().toString() : '0' });
 const add = (x: Side, y: Side): Side => ({ debit: D(x.debit).plus(y.debit).toString(), credit: D(x.credit).plus(y.credit).toString() });
-const dayBefore = (iso: string) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
+export const dayBefore = (iso: string) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
 const POSTED = sql`v.state IN ('posted','reversed')`;
 
 interface Filters { partyId?: string | undefined; costItemId?: number | undefined; projectId?: number | undefined; departmentId?: number | undefined }

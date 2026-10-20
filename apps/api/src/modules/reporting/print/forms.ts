@@ -16,6 +16,9 @@ const FORMS: Record<string, Record<string, string>> = {
   B02: { TT99: 'B02-DN', TT133: 'B02-DNN', TT200: 'B02-DN' },
   B03: { TT99: 'B03-DN', TT133: 'B03-DNN', TT200: 'B03-DN' },
   // Chứng từ tiền mặt: chép từ mẫu trong văn bản gốc của TT 133/2016 và TT 99/2025 (~/legal-docs); TT200 và TT58 chưa có văn bản gốc đối chiếu nên không có mục (xem voucherFormFor).
+  // Sổ quỹ tiền mặt và Sổ tiền gửi ngân hàng: TT133 mẫu S04a-DNN, S05-DNN (Phụ lục 4); TT99 mẫu S07-DN, S08-DN (danh mục sổ). TT200 và TT58 chưa có văn bản gốc đối chiếu nên không có mục (xem bookFormFor).
+  'so-quy': { TT99: 'S07-DN', TT133: 'S04a-DNN' },
+  'so-tien-gui': { TT99: 'S08-DN', TT133: 'S05-DNN' },
   '01-TT': { TT99: '01 - TT', TT133: '01 - TT' },
   '02-TT': { TT99: '02 - TT', TT133: '02 - TT' },
 };
@@ -32,4 +35,10 @@ export function formNoFor(regime: string, key: string): FormRef {
 export function voucherFormFor(regime: string, key: string): FormRef | null {
   const formNo = Object.hasOwn(FORMS, key) ? FORMS[key]![regime] : undefined;
   return formNo && VOUCHER_LEGEND[regime] ? { formNo, issuedBy: VOUCHER_LEGEND[regime] } : null;
+}
+
+// Mẫu sổ có trong văn bản gốc của chế độ; null thì sổ in không có dòng "Mẫu số" (không dùng mã khóa nội bộ làm số mẫu).
+export function bookFormFor(regime: string, key: string): FormRef | null {
+  const formNo = Object.hasOwn(FORMS, key) ? FORMS[key]![regime] : undefined;
+  return formNo && ISSUED[regime] ? { formNo, issuedBy: ISSUED[regime] } : null;
 }

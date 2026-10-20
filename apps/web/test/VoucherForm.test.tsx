@@ -114,6 +114,49 @@ describe('Màn hình chứng từ theo loại', () => {
   });
 });
 
+describe('Tồn quỹ và cảnh báo tồn quỹ âm', () => {
+  beforeEach(() => { mocks.route.type = 'PT'; mocks.route.id = 'moi'; });
+  afterEach(() => { mocks.api.mockReset(); mocks.navigate.mockReset(); });
+  const balanceCalls = () => mocks.api.mock.calls.map(([p]) => String(p)).filter((p) => p.startsWith('/api/cash/balance'));
+
+  it('Phiếu thu: hiện tồn quỹ cuối ngày hạch toán của TK 1111; âm thì tô đỏ', async () => {
+    mocks.api.mockImplementation(async (path: string) => (path === '/api/fiscal-years' ? years : path.startsWith('/api/cash/balance') ? { balance: '12500000', balanceCurrency: '0' } : []));
+    const first = renderForm();
+    const tag = await screen.findByText(/Tồn quỹ cuối ngày/, {}, slow);
+    expect(tag).toHaveTextContent('12.500.000');
+    expect(tag).toHaveTextContent('(chưa kể phiếu này)');
+    const q = new URLSearchParams(balanceCalls()[0]!.split('?')[1]);
+    expect([q.get('accountCode'), q.get('asOf')]).toEqual(['1111', todayVn()]);
+    expect(tag.closest('.ant-tag')).not.toHaveClass('ant-tag-red');
+    first.unmount();
+    mocks.api.mockImplementation(async (path: string) => (path === '/api/fiscal-years' ? years : path.startsWith('/api/cash/balance') ? { balance: '-300000', balanceCurrency: '0' } : []));
+    renderForm();
+    expect((await screen.findByText(/Tồn quỹ cuối ngày/, {}, slow)).closest('.ant-tag')).toHaveClass('ant-tag-red');
+  });
+
+  it('chứng từ không phải phiếu thu/chi/giấy báo thì không hỏi tồn quỹ', async () => {
+    mocks.route.type = 'PKT';
+    mocks.api.mockImplementation(async (path: string) => (path === '/api/fiscal-years' ? years : []));
+    renderForm();
+    await screen.findByText('Phiếu kế toán (mới)', {}, slow);
+    expect(balanceCalls()).toEqual([]);
+  });
+
+  it('ghi sổ được kèm cảnh báo CASH_NEGATIVE: hiện cảnh báo của máy chủ sau thông báo Đã ghi sổ', async () => {
+    mocks.route.type = 'PKT'; mocks.route.id = 'v1';
+    const warning = 'Tồn quỹ TK 1111 âm -500.000 sau khi ghi sổ ngày 05/01/2026';
+    mocks.api.mockImplementation(async (path: string) => {
+      if (path === '/api/fiscal-years') return years;
+      if (path === '/api/vouchers/v1/post') return posted({ warnings: [{ code: 'CASH_NEGATIVE', message: warning }] });
+      return path === '/api/vouchers/v1' ? posted({ state: 'draft', version: 1 }) : [];
+    });
+    renderForm();
+    await userEvent.click(await screen.findByRole('button', { name: /Ghi sổ/ }, slow));
+    expect(await screen.findByText(warning, {}, slow)).toBeInTheDocument();
+    expect(screen.getByText('Đã ghi sổ')).toBeInTheDocument();
+  });
+});
+
 describe('Loại chứng từ không có', () => {
   beforeEach(() => { mocks.route.id = 'moi'; });
   afterEach(() => { mocks.api.mockReset(); });

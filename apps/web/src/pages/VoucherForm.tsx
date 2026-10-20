@@ -19,7 +19,7 @@ export interface Line { lineNo?: number; accountCode: string; accountName?: stri
 interface Voucher { id: string; voucherType: string; voucherNo: string | null; postingDate: string; documentDate: string; state: string; description: string | null; partyCode: string | null;
   personName?: string | null; personAddress?: string | null; attachmentsCount?: number | null; bankAccountNo?: string | null; counterBankAccountNo?: string | null; partyBankAccountNo?: string | null;
   dueDate?: string | null; purpose?: string | null; periodStatus: 'open' | 'soft_locked' | 'hard_locked'; hashed: boolean;
-  currencyCode: string; fxRate: string | null; version: number; totalDebit: string; lines: Line[] }
+  currencyCode: string; fxRate: string | null; version: number; totalDebit: string; lines: Line[]; warnings?: { code: string; message: string }[] }
 interface FormValues { postingDate: Dayjs; documentDate: Dayjs; description?: string | null; partyCode?: string | null; personName?: string | null; personAddress?: string | null; attachmentsCount?: number | null;
   bankAccountNo?: string | null; counterBankAccountNo?: string | null; partyBankAccountNo?: string | null; dueDate?: Dayjs | null; purpose?: string | null; currencyCode?: string; fxRate?: string | null }
 
@@ -141,11 +141,16 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const postingDate = Form.useWatch('postingDate', form);
   const postingIso = postingDate?.isValid() ? iso(postingDate) : undefined;
   const currency = Form.useWatch('currencyCode', form) ?? 'VND';
+  const bankAccountNo = Form.useWatch('bankAccountNo', form);
+  // Tồn quỹ (tiền mặt) hoặc số dư tiền gửi (đã chọn tài khoản ngân hàng) cuối ngày hạch toán; chưa đủ dữ kiện hoặc không xem được thì không hiện.
+  const cashAccount = eff.moneyKind === 'cash' ? lines.find((l) => l.accountCode.startsWith('111'))?.accountCode : eff.moneyKind === 'bank' && bankAccountNo ? '112' : undefined;
+  const cashBalance = useQuery({ queryKey: ['cash-balance', cashAccount, bankAccountNo, currency, postingIso], enabled: !!cashAccount && !!postingIso && can('voucher.view'), retry: false,
+    queryFn: () => api<{ balance: string; balanceCurrency: string }>(`/api/cash/balance?${new URLSearchParams({ accountCode: cashAccount!, asOf: postingIso!, ...(eff.moneyKind === 'bank' && bankAccountNo ? { bankAccountNo } : {}), ...(currency !== 'VND' ? { currency } : {}) })}`) });
   const regime = regimeFor(years.data ?? [], postingIso);
   const accountFetcher = useMemo(() => accountFetcherFor(postingIso), [postingIso]);
   const t = totals(lines); const balanced = isBalanced(cleanLines(lines).map((l) => ({ debit: l.debit, credit: l.credit })));
 
-  const invalidate = (voucherId = id) => Promise.all([qc.invalidateQueries({ queryKey: ['voucher', voucherId] }), qc.invalidateQueries({ queryKey: ['vouchers'] })]);
+  const invalidate = (voucherId = id) => Promise.all([qc.invalidateQueries({ queryKey: ['voucher', voucherId] }), qc.invalidateQueries({ queryKey: ['vouchers'] }), qc.invalidateQueries({ queryKey: ['cash-balance'] })]);
   const conflict = useRef<{ destroy(): void } | null>(null);
   const onErr = (e: unknown) => {
     if (e instanceof ApiError && e.code === 'VERSION_CONFLICT') { // người khác đã sửa: không tự tải lại (mất chữ đang nhập), để người dùng chọn
@@ -182,6 +187,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     // trả Promise: isPending giữ tới khi tải lại xong, để Ctrl+S liền sau không gửi version cũ
     onSuccess: async (r, postAfter) => {
       void message.success(postAfter ? 'Đã ghi sổ' : 'Đã lưu');
+      for (const w of r.warnings ?? []) void message.warning({ content: w.message, duration: 10 }); // ví dụ CASH_NEGATIVE: ghi sổ được nhưng tồn quỹ âm
       setFormDirty(false); setRowsDirty(false); // đã lưu: chuyển trang không hỏi bỏ thay đổi
       if (isNew) toVoucher({ ...r, voucherType: r.voucherType ?? eff.code });
       await invalidate(r.id); // luôn tải lại: một lần tải đang chạy từ trước khi ghi sổ không được ghi đè trạng thái mới
@@ -302,6 +308,13 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
         <b>Tổng Nợ: {formatVnNumber(t.debit)}</b><b>Tổng Có: {formatVnNumber(t.credit)}</b>
         {!balanced && <Tag color="red">Chênh lệch {formatVnNumber(sum([t.debit, `-${t.credit}`]).toString())}</Tag>}
       </div>
+      {cashBalance.data?.balance !== undefined && postingIso && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+          <Tag color={D(cashBalance.data.balance).lt(0) ? 'red' : 'default'}>
+            {eff.moneyKind === 'cash' ? 'Tồn quỹ' : 'Số dư tiền gửi'} cuối ngày {formatVnDate(postingIso)}{posted ? '' : ' (chưa kể phiếu này)'}: {formatVnNumber(cashBalance.data.balance)}
+            {currency !== 'VND' && <> ({formatVnNumber(cashBalance.data.balanceCurrency, D(cashBalance.data.balanceCurrency).decimalPlaces())} {currency})</>}
+          </Tag>
+        </div>)}
       {!isNew && <Attachments voucherId={id} canEdit={can('voucher.update')} />}
       <Modal open={!!lookup} onCancel={() => setLookup(null)} footer={null} title="Chọn từ danh mục" destroyOnHidden afterOpenChange={(o) => { if (o) lookupBox.current?.querySelector('input')?.focus(); }}>
         {lookup && <div ref={lookupBox}><LookupSelect catalog={LOOKUP_CATALOG[lookup.col]!} style={{ width: '100%' }}

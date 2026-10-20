@@ -10,6 +10,8 @@ export const SETTINGS = z.object({
   hidden_modules: z.array(z.string()).default([]),
   extra_dims: z.array(z.object({ key: z.string().regex(/^[a-z_]+$/), label: z.string().min(1) })).default([]),
   fx_rate_type: z.enum(['transfer_avg', 'buy', 'sell']).default('transfer_avg'),
+  // Ghi sổ làm tồn quỹ tiền mặt hoặc số dư tiền gửi âm: warn = ghi sổ và cảnh báo, block = chặn (409 CASH_NEGATIVE).
+  cash_negative: z.enum(['warn', 'block']).default('warn'),
 });
 export type Settings = z.infer<typeof SETTINGS>;
 

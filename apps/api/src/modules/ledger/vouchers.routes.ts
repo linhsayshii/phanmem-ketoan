@@ -7,6 +7,7 @@ import { voucherTypeDef } from '@kt/domain';
 import * as S from './vouchers.service.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { AppError } from '../../plugins/errors.js';
+import { postWithCashCheck } from '../cash/books.js';
 import { formNoFor, voucherFormFor } from '../reporting/print/forms.js';
 import { renderCashVoucherHtml, type BankInfo } from '../reporting/print/cashVoucherHtml.js';
 import { renderPdf } from '../reporting/print/pdf.js';
@@ -73,7 +74,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     // Chứng từ đã ghi sổ rồi bỏ ghi sổ có version >= 3 nên không bị ghi sổ lại bởi một yêu cầu gửi lại.
     const dto = await withOverride(req, async (trx) => {
       const v = await S.createVoucher(trx, ctx(req), input);
-      return autoPost && v.state === 'draft' && v.version === 1 ? S.postVoucher(trx, v.id) : v;
+      return autoPost && v.state === 'draft' && v.version === 1 ? postWithCashCheck(trx, req.auth!.tenantId!, v.id) : v;
     });
     if (dto.state === 'posted') notifyRecompute(app, req.auth!.tenantId!);
     return reply.status(201).send(dto);
@@ -85,7 +86,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.post('/api/vouchers/:id/post', { preHandler: app.requirePermission('voucher.post'), schema: { params: idParam } }, async (req) => {
-    const dto = await withOverride(req, (trx) => S.postVoucher(trx, req.params.id)); notifyRecompute(app, req.auth!.tenantId!); return dto; });
+    const dto = await withOverride(req, (trx) => postWithCashCheck(trx, req.auth!.tenantId!, req.params.id)); notifyRecompute(app, req.auth!.tenantId!); return dto; });
   app.post('/api/vouchers/:id/unpost', { preHandler: app.requirePermission('voucher.unpost'), schema: { params: idParam } }, async (req) => {
     if (!req.auth!.permissions.has('voucher.edit_posted')) throw new AppError('FORBIDDEN', 'Thiếu quyền sửa sau ghi sổ', 403);
     const dto = await app.withTenant(req, (trx) => S.unpostVoucher(trx, req.params.id)); notifyRecompute(app, req.auth!.tenantId!); return dto; });
