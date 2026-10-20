@@ -258,6 +258,26 @@ describe('lược đồ sổ cái', () => {
       });
     });
 
+    it('app_user không ghi thẳng vào partition (kể cả partition mới tạo); đọc qua bảng gốc vẫn chạy', async () => {
+      const id = await newVoucher('2026-05-12', [{ code: '1111', debit: '4' }, { code: '5113', credit: '4' }]);
+      await expect(run((trx) => sql`DELETE FROM voucher_line_y2026m05 WHERE voucher_id = ${id}::uuid`.execute(trx))).rejects.toThrow(/permission denied/);
+      await expect(run((trx) => sql`INSERT INTO voucher_line_y2026m05(tenant_id, voucher_id, line_no, account_id, posting_date, currency_code, debit, credit, amount_currency) SELECT tenant_id, voucher_id, 99, account_id, posting_date, currency_code, debit, credit, amount_currency FROM voucher_line WHERE voucher_id = ${id}::uuid`.execute(trx))).rejects.toThrow(/permission denied/);
+      await admin.query(`SELECT ensure_line_partitions('2027-01-01','2027-01-31')`);
+      const g = await sql<{ n: number }>`SELECT count(*)::int AS n FROM information_schema.role_table_grants WHERE grantee = 'app_user' AND table_name LIKE 'voucher_line_y%'`.execute(t.admin);
+      expect(g.rows[0]!.n).toBe(0);
+      expect((await run((trx) => sql<{ n: number }>`SELECT count(*)::int AS n FROM voucher_line WHERE voucher_id = ${id}::uuid`.execute(trx))).rows[0]!.n).toBe(2);
+    });
+
+    it('COPY qua bảng gốc: chứng từ lệch bị bắt khi commit (trigger cấp câu lệnh chạy với COPY)', async () => {
+      await admin.query('BEGIN');
+      try {
+        const v = (await admin.query(`INSERT INTO voucher(tenant_id, voucher_type, posting_date, document_date, state, description, currency_code, created_by) VALUES ($1,'PKT','2026-05-10','2026-05-10','draft','t','VND',$2) RETURNING id`, [tenantId, userId])).rows[0].id;
+        const row = [tenantId, v, 1, await acc('1111'), '2026-05-10', 'VND', 9, 0, 9].join('\\t');
+        await admin.query(`COPY voucher_line(tenant_id, voucher_id, line_no, account_id, posting_date, currency_code, debit, credit, amount_currency) FROM PROGRAM 'printf "${row}\\n"'`);
+        await expect(admin.query('COMMIT')).rejects.toThrow(/VOUCHER_UNBALANCED/);
+      } finally { await admin.query('ROLLBACK'); }
+    });
+
     it('chứng từ đã ghi sổ: xóa dòng bị chặn và hàng đợi rỗng sau giao dịch lỗi', async () => {
       const id = await newVoucher('2026-05-11', [{ code: '1111', debit: '3' }, { code: '5113', credit: '3' }]);
       await setState(id, 'posted');
