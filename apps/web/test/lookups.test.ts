@@ -34,4 +34,10 @@ describe('accountFetcherFor', () => {
     expect(apiMock).toHaveBeenCalledWith('/api/accounts?regime=TT133');
     expect(apiMock.mock.calls.filter(([p]) => p === '/api/accounts?regime=TT133')).toHaveLength(1); // đã nhớ
   });
+  it('includeGroups: thêm tài khoản tổng hợp (sổ Cái của cả nhóm), vẫn bỏ tài khoản ngừng dùng', async () => {
+    const acc = (id: number, code: string, extra: object = {}) => ({ id, code, name: `TK ${code}`, isGroup: false, isActive: true, ...extra });
+    apiMock.mockImplementation(async (path: string) => (path === '/api/fiscal-years' ? years : [acc(1, '6422'), acc(2, '642', { isGroup: true }), acc(3, '6423', { isActive: false })]));
+    const f = accountFetcherFor('2026-03-01', true);
+    expect((await f('account', '642')).map((r) => r.code)).toEqual(['6422', '642']);
+  });
 });

@@ -139,6 +139,7 @@ export interface VoucherAttachmentTable {
 export interface VoucherPairTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; posting_date: DateOnly; debit_account_id: number; credit_account_id: number;
   debit_party_id: string | null; credit_party_id: string | null; amount: Numeric; is_closing: Generated<boolean>;
+  debit_line_id: number | null; credit_line_id: number | null;
 }
 export interface OpeningBalanceTable {
   id: Generated<number>; tenant_id: string; fiscal_year: number; account_id: number; party_id: string | null; currency_code: Generated<string>;
