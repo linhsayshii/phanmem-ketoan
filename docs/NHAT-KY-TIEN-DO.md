@@ -15,3 +15,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-20 23:16 | GĐ1.5 T10 (A11) | kiểm cân bằng theo câu lệnh, khóa ghi trực tiếp partition | 0757d64, ba4e289 | db 62, vouchers+DK 40, bất biến 18 passed; DK 6.002 dòng 25,9 s → 2,9 s
 2026-10-20 23:22 | GĐ1.5 T11 (A12) | script đo 100.000 dòng; BCĐPS năm 175 ms | 96c9584 | lint+typecheck xanh, db 62 passed
 2026-10-21 00:12 | GĐ1.5 kết thúc | rà soát toàn nhánh (Opus), hai đợt sửa (0022 đăng nhập/hàng đợi, 0023 kết chuyển theo chế độ), nginx X-Forwarded-For, tài liệu; tag gd1-5-hoan-tat | f972086, 1f7b6e0, 3315ffb | lint+typecheck xanh, 511 passed, bất biến 18 passed, e2e 4 passed
+2026-10-21 00:39 | GĐ2 T1 | danh mục: thoát ký tự tìm kiếm, cắt khoảng trắng, ngưng dùng, lỗi trùng mã | 3bf4325, 9ac2ee8 | api 306, web 62 passed
