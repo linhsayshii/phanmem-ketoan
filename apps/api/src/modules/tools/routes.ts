@@ -2,6 +2,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
 import { z } from 'zod';
+import { SENSITIVE_FLAGS_ALL } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { dateIso, type CatalogDef } from '../master/catalogs.js';
 import { getRow, listRows, updateRow } from '../master/crud.js';
@@ -37,7 +38,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   // Đọc dữ liệu và ghi dòng audit `export` trong cùng một giao dịch; dựng PDF và nén zip ngoài giao dịch; zip dựng xong mới ghi dòng `export_completed` (kèm băm) ở giao dịch ngắn riêng,
   // ghi không được thì không trả tệp.
   app.post('/api/export/authority', { preHandler: app.requirePermission('export.authority'), schema: { body: z.object({ from: dateIso, to: dateIso }).refine((b) => b.from <= b.to, { message: 'Từ ngày phải trước hoặc bằng đến ngày' }) } }, async (req, reply) => {
-    for (const flag of ['view_receivable', 'view_payable', 'view_cost']) if (!req.auth!.sensitive.has(flag)) throw new AppError('FORBIDDEN', `Xuất dữ liệu cho cơ quan thẩm quyền gồm Nhật ký chung và Sổ Cái, cần cờ nhạy cảm ${flag}`, 403);
+    for (const flag of SENSITIVE_FLAGS_ALL) if (!req.auth!.sensitive.has(flag)) throw new AppError('FORBIDDEN', `Xuất dữ liệu cho cơ quan thẩm quyền gồm Nhật ký chung và Sổ Cái, cần cờ nhạy cảm ${flag}`, 403);
     const tenantId = req.auth!.tenantId!;
     const audit = (trx: Transaction<Database>, action: string, after: object) =>
       sql`INSERT INTO audit_event(tenant_id, user_id, action, entity, entity_id, after, ip) VALUES (${tenantId}::uuid, app_user_id(), ${action}, 'tenant', ${tenantId}, ${JSON.stringify(after)}::jsonb, ${req.ip})`.execute(trx);
@@ -45,7 +46,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       const d = await collectAuthorityData(trx, tenantId, req.body);
       await audit(trx, 'export', req.body);
       return d;
-    });
+    }, { isolation: 'repeatable read' }); // đọc nhiều bảng trên một ảnh chụp dữ liệu; vẫn đọc ghi vì ghi dòng audit
     const pkg = await buildAuthorityPackage(data);
     await app.withTenant(req, (trx) => audit(trx, 'export_completed', { ...req.body, manifestSha256: pkg.manifestSha256, zipSha256: pkg.zipSha256 }));
     const name = encodeURIComponent(`xuat-du-lieu-${req.body.from}-${req.body.to}.zip`);

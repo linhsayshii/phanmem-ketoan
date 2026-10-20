@@ -123,7 +123,7 @@ describe('in sổ: nội dung, hệ tài khoản, quyền', () => {
   });
 
   it('người thiếu quyền report.print xem được JSON nhưng không in được', async () => {
-    const c = await userCookie('xem', []);
+    const c = await userCookie('xem', ['view_receivable', 'view_payable', 'view_cost']);
     await ctx.t.admin.deleteFrom('role_permission').where('tenant_id', '=', tenant2).where('permission_code', '=', 'report.print').where('role_id', 'in', ctx.t.admin.selectFrom('role').select('id').where('tenant_id', '=', tenant2).where('code', '=', 'xem')).execute();
     const url = '/api/reports/ledgers/general-journal?from=2026-01-01&to=2026-01-31';
     expect((await get(url, c)).statusCode).toBe(200);
@@ -143,8 +143,8 @@ describe('in sổ: nội dung, hệ tài khoản, quyền', () => {
     expect((await get('/api/reports/ledgers/account?accountCode=131&from=2026-01-01&to=2026-01-31&format=html', restricted)).statusCode).toBe(403);
     expect((await get('/api/reports/ledgers/detail?accountCode=632&from=2026-01-01&to=2026-01-31&format=html', restricted)).statusCode).toBe(403);
     expect((await get('/api/reports/ledgers/account?accountCode=1111&from=2026-01-01&to=2026-01-31&format=html', restricted)).statusCode).toBe(200);
-    for (const include of [['ledgers'], ['journal'], ['trial', 'ledgers']]) expect((await post('/api/print/book-set', { fiscalYear: 2026, include, format: 'xlsx' }, restricted)).statusCode, include.join()).toBe(403);
-    expect((await post('/api/print/book-set', { fiscalYear: 2026, include: ['trial', 'B01'], format: 'xlsx' }, restricted)).statusCode).toBe(200);
+    for (const include of [['ledgers'], ['journal'], ['trial'], ['trial', 'ledgers']]) expect((await post('/api/print/book-set', { fiscalYear: 2026, include, format: 'xlsx' }, restricted)).statusCode, include.join()).toBe(403);
+    expect((await post('/api/print/book-set', { fiscalYear: 2026, include: ['B01'], format: 'xlsx' }, restricted)).statusCode).toBe(200); // báo cáo tài chính không bị che
     expect((await post('/api/print/book-set', { fiscalYear: 2026, include: ['ledgers'], format: 'xlsx' })).statusCode).toBe(200); // chủ công ty có đủ cờ
   });
 });

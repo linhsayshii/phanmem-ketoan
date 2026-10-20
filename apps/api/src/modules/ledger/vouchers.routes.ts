@@ -2,7 +2,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { sql, type Transaction } from 'kysely';
-import type { Database } from '@kt/db';
+import { READ_SNAPSHOT, type Database } from '@kt/db';
 import * as S from './vouchers.service.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { AppError } from '../../plugins/errors.js';
@@ -35,7 +35,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       const { regime } = await trx.selectFrom('voucher as v').innerJoin('fiscal_period as p', 'p.fiscal_year', 'v.fiscal_year').select('p.regime').where('v.id', '=', v.id).executeTakeFirstOrThrow();
       const f = formNoFor(regime, 'PKT');
       return { v, c: { name: t.name, address: t.address, taxCode: t.tax_code, legalRep: t.legal_rep, chiefAccountant: t.chief_accountant, formNo: f.formNo, issuedBy: f.issuedBy } };
-    });
+    }, READ_SNAPSHOT);
     const html = renderVoucherHtml(v, c);
     if (req.query.format === 'html') return reply.type('text/html; charset=utf-8').send(html);
     // số chứng từ lấy từ tiền tố/hậu tố người dùng cấu hình nên phải mã hóa (RFC 5987), không đưa thẳng vào tiêu đề

@@ -1,6 +1,6 @@
 import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
-import { D, sum, ZERO, type Decimal } from '@kt/domain';
+import { D, sum, SENSITIVE_FLAGS_ALL, ZERO, type Decimal } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 
 type Trx = Transaction<Database>;
@@ -60,14 +60,21 @@ async function openingFromLines(trx: Trx, regime: string, prefix: string, from: 
   return D(r.rows[0]?.net ?? '0');
 }
 
-export async function generalJournal(trx: Trx, f: { from: string; to: string }) {
+// Trần số dòng của Nhật ký chung trả JSON cho màn hình; bản in/Excel không bị cắt.
+export const JOURNAL_JSON_LIMIT = 50_000;
+export async function generalJournal(trx: Trx, f: { from: string; to: string }, limit?: number) {
+  const where = sql`${POSTED} AND v.posting_date BETWEEN ${f.from}::date AND ${f.to}::date AND l.posting_date BETWEEN ${f.from}::date AND ${f.to}::date`;
   const rows = await sql<{ postingDate: string; voucherId: string; voucherNo: string; voucherType: string; documentDate: string; description: string | null; accountCode: string; accountName: string; debit: string; credit: string }>`
     SELECT v.posting_date AS "postingDate", v.id AS "voucherId", v.voucher_no AS "voucherNo", v.voucher_type AS "voucherType", v.document_date AS "documentDate", coalesce(l.description, v.description) AS description,
            a.code AS "accountCode", a.name AS "accountName", l.debit::text AS debit, l.credit::text AS credit
     FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
-    WHERE ${POSTED} AND v.posting_date BETWEEN ${f.from}::date AND ${f.to}::date AND l.posting_date BETWEEN ${f.from}::date AND ${f.to}::date
-    ORDER BY v.posting_date, v.voucher_type, v.seq_no, l.line_no`.execute(trx);
-  return { rows: rows.rows, totalDebit: sum(rows.rows.map((r) => r.debit)).toString(), totalCredit: sum(rows.rows.map((r) => r.credit)).toString() };
+    WHERE ${where}
+    ORDER BY v.posting_date, v.voucher_type, v.seq_no, l.line_no ${limit === undefined ? sql`` : sql`LIMIT ${limit + 1}`}`.execute(trx); // đọc dư một dòng để biết có bị cắt không
+  const truncated = limit !== undefined && rows.rows.length > limit;
+  const shown = truncated ? rows.rows.slice(0, limit) : rows.rows;
+  // Bị cắt thì tổng vẫn là tổng cả khoảng (không phải tổng các dòng đang hiện).
+  const totals = truncated ? (await sql<{ d: string; c: string }>`SELECT coalesce(sum(l.debit), 0)::text AS d, coalesce(sum(l.credit), 0)::text AS c FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id WHERE ${where}`.execute(trx)).rows[0]! : null;
+  return { rows: shown, totalDebit: totals?.d ?? sum(shown.map((r) => r.debit)).toString(), totalCredit: totals?.c ?? sum(shown.map((r) => r.credit)).toString(), truncated };
 }
 
 // Mỗi cặp đối ứng cho một dòng sổ ở mỗi bên khớp tiền tố: cặp Nợ 1122 / Có 1121 trong sổ 112 cho một dòng Nợ (đối ứng 1121) và một dòng Có (đối ứng 1122).
@@ -165,10 +172,20 @@ export async function trialBalance(trx: Trx, tenantId: string, f: { from: string
   return { rows, totals };
 }
 
+// Lý do cờ nhạy cảm che tài khoản này với người dùng; null là được xem. Dùng cho cả chặn (assertSensitive) lẫn lọc (số dư).
+export function sensitiveDenial(auth: { sensitive: Set<string> }, acc: { subledger_kind: string | null; code: string }): string | null {
+  if (acc.subledger_kind === 'receivable' && !auth.sensitive.has('view_receivable')) return 'Không có quyền xem công nợ phải thu';
+  if (acc.subledger_kind === 'payable' && !auth.sensitive.has('view_payable')) return 'Không có quyền xem công nợ phải trả';
+  if (acc.code.startsWith('632') && !auth.sensitive.has('view_cost')) return 'Không có quyền xem giá vốn';
+  return null;
+}
 export function assertSensitive(auth: { sensitive: Set<string> }, acc: { subledger_kind: string | null; code: string }) {
-  if (acc.subledger_kind === 'receivable' && !auth.sensitive.has('view_receivable')) throw new AppError('FORBIDDEN', 'Không có quyền xem công nợ phải thu', 403);
-  if (acc.subledger_kind === 'payable' && !auth.sensitive.has('view_payable')) throw new AppError('FORBIDDEN', 'Không có quyền xem công nợ phải trả', 403);
-  if (acc.code.startsWith('632') && !auth.sensitive.has('view_cost')) throw new AppError('FORBIDDEN', 'Không có quyền xem giá vốn', 403);
+  const denied = sensitiveDenial(auth, acc);
+  if (denied) throw new AppError('FORBIDDEN', denied, 403);
+}
+// Sổ tổng hợp (Nhật ký chung, Bảng cân đối số phát sinh) gồm mọi tài khoản, kể cả công nợ và giá vốn: cần đủ cả ba cờ.
+export function assertAllSensitive(auth: { sensitive: Set<string> }) {
+  if (!SENSITIVE_FLAGS_ALL.every((f) => auth.sensitive.has(f))) throw new AppError('FORBIDDEN', 'Cần quyền xem công nợ phải thu, phải trả và giá vốn để xem sổ tổng hợp', 403);
 }
 
 // Kiểm tra cờ nhạy cảm trên chính tài khoản và mọi tài khoản con: sổ của tài khoản tổng hợp cũng chứa số liệu của các tài khoản con.

@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { sql } from 'kysely';
+import { withTenant } from '@kt/db';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
+import { generalJournal } from '../src/modules/reporting/ledgers.js';
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 }); // máy chủ DB có lúc bận: mỗi kiểm thử gọi nhiều API
-let ctx: TestApp; let cookie: string;
+let ctx: TestApp; let cookie: string; let tenantId: string;
 const pkt = (date: string, lines: object[], c = cookie) => ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie: c }, payload: { voucherType: 'PKT', postingDate: date, documentDate: date, description: `CT ${date}`, autoPost: true, lines } });
 const get = (url: string, c = cookie) => ctx.app.inject({ method: 'GET', url, headers: { cookie: c } });
 const ok = async (p: ReturnType<typeof pkt>) => { const r = await p; expect(r.statusCode, r.body).toBe(201); return r; };
@@ -11,7 +13,7 @@ type Side = { debit: string; credit: string };
 type TRow = { accountCode: string; isGroup: boolean; opening: Side; period: Side; closing: Side };
 
 beforeAll(async () => {
-  ctx = await createTestApp(); ({ cookie } = await bootstrapTenant(ctx, { code: `LG${Date.now()}` }));
+  ctx = await createTestApp(); ({ cookie, tenantId } = await bootstrapTenant(ctx, { code: `LG${Date.now()}` }));
   await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' } });
   for (const [code, name] of [['KH001', 'Khách 1'], ['KH002', 'Khách 2']]) await ctx.app.inject({ method: 'POST', url: '/api/catalogs/party', headers: { cookie }, payload: { code, name, is_customer: true } });
   await ctx.app.inject({ method: 'PUT', url: '/api/opening-balance/2026', headers: { cookie }, payload: { rows: [
@@ -32,6 +34,15 @@ describe('sổ sách', () => {
     expect(r.json().rows).toHaveLength(7); expect(r.json().totalDebit).toBe('1100'); expect(r.json().totalCredit).toBe('1100');
     expect(r.json().rows[0]).toMatchObject({ postingDate: '2026-01-10', accountCode: '131', debit: '500' });
     expect(r.json().rows.every((x: { voucherId: string }) => x.voucherId)).toBe(true);
+  });
+  it('Nhật ký chung JSON có cờ truncated; vượt giới hạn dòng thì cắt, tổng vẫn là tổng cả khoảng', async () => {
+    expect((await get('/api/reports/ledgers/general-journal?from=2026-01-01&to=2026-02-28')).json().truncated).toBe(false);
+    const [from, to] = ['2026-01-01', '2026-02-28'];
+    const cut = await withTenant(ctx.t.db, { tenantId }, (trx) => generalJournal(trx, { from, to }, 3));
+    expect(cut.truncated).toBe(true); expect(cut.rows).toHaveLength(3);
+    expect(cut.totalDebit).toBe('1100'); expect(cut.totalCredit).toBe('1100'); // tổng của cả khoảng, không chỉ các dòng đang hiện
+    const exact = await withTenant(ctx.t.db, { tenantId }, (trx) => generalJournal(trx, { from, to }, 7));
+    expect(exact.truncated).toBe(false); expect(exact.rows).toHaveLength(7);
   });
   it('Sổ Cái 1111 theo chứng từ: dư đầu 1000, phát sinh, dư cuối 800, đối ứng đúng', async () => {
     const r = await get('/api/reports/ledgers/account?accountCode=1111&from=2026-01-01&to=2026-02-28&mode=voucher');

@@ -1,6 +1,9 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { sql } from 'kysely';
 import { z } from 'zod';
+import { READ_SNAPSHOT } from '@kt/db';
+import { AppError } from '../../plugins/errors.js';
+import { sensitiveDenial } from '../reporting/ledgers.js';
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   app.get('/api/balances', { preHandler: app.requirePermission('report.view'), schema: { querystring: z.object({ asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), accountCode: z.string().optional(), byParty: z.enum(['true', 'false']).default('false') }) } }, async (req) =>
@@ -12,6 +15,13 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       const period = await trx.selectFrom('fiscal_period').select('regime').where('date_from', '<=', asOf)
         .orderBy(sql`date_to < ${asOf}::date`).orderBy(sql`period_no = 0`).orderBy('fiscal_year', 'desc').orderBy('period_no', 'desc').executeTakeFirst();
       if (!period) return { rows: [], stale };
+      // Cờ nhạy cảm như sổ sách: tài khoản công nợ/giá vốn người dùng không được xem thì bỏ khỏi kết quả; chỉ định mã trúng toàn tài khoản bị che thì 403.
+      const accounts = await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', period.regime).execute();
+      const denied = new Map(accounts.flatMap((a) => { const m = sensitiveDenial(req.auth!, a); return m ? [[a.code, m] as const] : []; }));
+      if (req.query.accountCode) {
+        const hit = accounts.filter((a) => a.code.startsWith(req.query.accountCode!));
+        if (hit.length && hit.every((a) => denied.has(a.code))) throw new AppError('FORBIDDEN', denied.get(hit[0]!.code)!, 403);
+      }
       const prefix = req.query.accountCode ? req.query.accountCode.replace(/[\\%_]/g, '\\$&') + '%' : null;
       const rows = await sql<{ accountCode: string; accountName: string; partyCode: string | null; partyName: string | null; currencyCode: string; debit: string; credit: string; debitCur: string; creditCur: string }>`
         SELECT a.code AS "accountCode", a.name AS "accountName", ${byParty ? sql`p.code` : sql`NULL`} AS "partyCode", ${byParty ? sql`p.name` : sql`NULL`} AS "partyName", b.currency_code AS "currencyCode",
@@ -22,8 +32,8 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         GROUP BY a.code, a.name, b.currency_code ${byParty ? sql`, p.code, p.name` : sql``}
         ${byParty ? sql`` : sql`HAVING sum(b.debit - b.credit) <> 0 OR sum(b.debit_cur - b.credit_cur) <> 0`}
         ORDER BY a.code, 3, b.currency_code`.execute(trx);
-      return { rows: rows.rows, stale };
-    }));
+      return { rows: rows.rows.filter((r) => !denied.has(r.accountCode)), stale };
+    }, READ_SNAPSHOT));
   app.post('/api/balances/recompute', { preHandler: app.requirePermission('report.view') }, async (req) =>
     app.withTenant(req, async (trx) => ({ periods: (await sql<{ n: number }>`SELECT recompute_balances(${req.auth!.tenantId!}::uuid) AS n`.execute(trx)).rows[0]!.n })));
 };
