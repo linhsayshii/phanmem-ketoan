@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import DataCheckPage from '../src/pages/DataCheck.js';
 
 const apiMock = vi.hoisted(() => vi.fn());
-vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: () => true }) }));
+const perms = vi.hoisted(() => ({ has: (_c: string): boolean => true }));
+vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: (c: string) => perms.has(c) }) }));
 vi.mock('../src/api/client.js', () => ({ api: apiMock }));
 vi.mock('@tanstack/react-router', () => ({ Link: ({ children, params }: { children: React.ReactNode; params: { id: string } }) => <a href={`/chung-tu/phieu-ke-toan/${params.id}`}>{children}</a> }));
 
@@ -13,7 +14,7 @@ const RULES = [
   { id: 1, code: 'CT_KHONG_CAN', name: 'Chứng từ không cân', severity: 'error', sql: 'SELECT 1 /* cân */', message: 'Tổng Nợ khác tổng Có', fix_hint: 'Cân lại', is_system: true, is_enabled: true },
   { id: 2, code: 'SO_DU_SAI_LOAI', name: 'Số dư trái loại dư', severity: 'warning', sql: 'SELECT 2', message: 'Dư trái loại', fix_hint: null, is_system: true, is_enabled: false },
 ];
-const RESULTS = { ran: 1, results: [
+const RESULTS = { ran: 1, truncated: ['CT_KHONG_CAN'], results: [
   { ruleCode: 'CT_KHONG_CAN', ruleName: 'Chứng từ không cân', severity: 'error', message: 'Tổng Nợ khác tổng Có', fixHint: 'Cân lại', voucherId: 'v1', voucherNo: 'PKT00007', ref: 'PKT00007', detail: 'Nợ 100 / Có 90' },
 ] };
 const writes = () => apiMock.mock.calls.filter(([, init]) => init?.method === 'POST' || init?.method === 'PUT');
@@ -21,6 +22,7 @@ const writes = () => apiMock.mock.calls.filter(([, init]) => init?.method === 'P
 describe('Màn hình soát lỗi dữ liệu', () => {
   const renderPage = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><DataCheckPage /></QueryClientProvider>);
   beforeEach(() => {
+    perms.has = () => true;
     apiMock.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path.startsWith('/api/catalogs/data_check_rule') && !init) return { rows: RULES, total: 2 };
       if (path === '/api/data-check/run') return RESULTS;
@@ -45,6 +47,7 @@ describe('Màn hình soát lỗi dữ liệu', () => {
     const link = await screen.findByRole('link', { name: 'Sửa chứng từ' });
     expect(link).toHaveAttribute('href', '/chung-tu/phieu-ke-toan/v1');
     expect(screen.getByText('Nợ 100 / Có 90')).toBeInTheDocument();
+    expect(screen.getByText('Chỉ hiển thị 1000 kết quả đầu')).toBeInTheDocument();
     const [, init] = writes()[0]!;
     expect(JSON.parse(JSON.stringify(init.json)).codes).toEqual(['CT_KHONG_CAN']);
   });
@@ -63,4 +66,13 @@ describe('Màn hình soát lỗi dữ liệu', () => {
     await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/catalogs/data_check_rule/1', { method: 'PUT',
       json: { name: 'Chứng từ không cân', severity: 'error', message: 'Lệch Nợ Có', fix_hint: 'Cân lại' } }));
   }, 30_000);
+
+  it('thiếu quyền data_check.manage: vẫn xem và chạy được, nhưng công tắc bị khóa và không có nút Sửa', async () => {
+    perms.has = (c) => c !== 'data_check.manage';
+    renderPage();
+    await screen.findByText('Chứng từ không cân');
+    for (const sw of screen.getAllByRole('switch')) expect(sw).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Sửa' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Soát lỗi' })).toBeEnabled();
+  });
 });

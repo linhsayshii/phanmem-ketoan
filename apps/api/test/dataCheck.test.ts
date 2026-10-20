@@ -3,8 +3,8 @@ import { sql, type Transaction } from 'kysely';
 import { withTenant, type Database } from '@kt/db';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
 
-let ctx: TestApp; let cookie: string; let tenantId: string;
-type Res = { ruleCode: string; message: string; severity: string; ref: string | null };
+let ctx: TestApp; let cookie: string; let tenantId: string; let userId: string;
+type Res = { ruleCode: string; message: string; severity: string; ref: string | null; voucherId: string | null; detail: string | null };
 const run = (body: object) => ctx.app.inject({ method: 'POST', url: '/api/data-check/run', headers: { cookie }, payload: body });
 const results = async (body: object) => (await run(body)).json().results as Res[];
 const ruleRow = async (code: string) => (await ctx.app.inject({ method: 'GET', url: `/api/catalogs/data_check_rule?q=${code}`, headers: { cookie } })).json().rows.find((r: { code: string }) => r.code === code);
@@ -12,10 +12,12 @@ const setRule = (id: number, payload: object) => ctx.app.inject({ method: 'PUT',
 // Quy tắc chỉ có thể do chủ sở hữu CSDL (migration/seed) thêm: kiểm thử dựng quy tắc xấu bằng kết nối owner.
 const ownerRule = (code: string, sqlText: string, isSystem = false) => ctx.t.admin.insertInto('data_check_rule')
   .values({ tenant_id: tenantId, code, name: code, severity: 'warning', sql: sqlText, message: 'm', is_system: isSystem }).execute();
+const disable = (...codes: string[]) => ctx.t.admin.updateTable('data_check_rule').set({ is_enabled: false }).where('tenant_id', '=', tenantId).where('code', 'in', codes).execute();
+const range = { from: '2026-01-01', to: '2026-12-31' };
 const voucherCount = async () => Number((await sql<{ n: number }>`SELECT count(*)::int AS n FROM voucher WHERE tenant_id = ${tenantId}::uuid`.execute(ctx.t.admin)).rows[0]!.n);
 
 beforeAll(async () => {
-  ctx = await createTestApp(); let userId: string; ({ cookie, tenantId, userId } = await bootstrapTenant(ctx, { code: `DC${Date.now()}` }));
+  ctx = await createTestApp(); ({ cookie, tenantId, userId } = await bootstrapTenant(ctx, { code: `DC${Date.now()}` }));
   await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' } });
   // chứng từ nháp không dòng, kỳ khóa mềm
   await ctx.t.admin.insertInto('voucher').values({ tenant_id: tenantId, voucher_type: 'PKT', posting_date: '2026-01-15', document_date: '2026-01-15', created_by: userId }).execute();
@@ -82,16 +84,17 @@ describe('soát lỗi', () => {
 
   it('(c) tắt quy tắc qua danh mục thì không chạy nữa; sửa thông điệp và mức có hiệu lực ở lần chạy sau', async () => {
     const id = (await ruleRow('CT_KHONG_CO_DONG')).id;
+    const enabledNow = ((await ctx.app.inject({ method: 'GET', url: '/api/catalogs/data_check_rule', headers: { cookie } })).json().rows as { is_enabled: boolean }[]).filter((r) => r.is_enabled).length;
     expect((await results({ from: '2026-01-01', to: '2026-12-31', codes: ['CT_KHONG_CO_DONG'] })).length).toBeGreaterThan(0);
     expect((await setRule(id, { message: 'Chứng từ nháp trống', severity: 'error', fix_hint: 'Xóa đi' })).statusCode).toBe(200);
     const edited = (await results({ from: '2026-01-01', to: '2026-12-31', codes: ['CT_KHONG_CO_DONG'] }))[0]!;
     expect(edited).toMatchObject({ message: 'Chứng từ nháp trống', severity: 'error' });
     expect((await setRule(id, { is_enabled: false })).statusCode).toBe(200);
     const off = await run({ from: '2026-01-01', to: '2026-12-31', codes: ['CT_KHONG_CO_DONG'] });
-    expect(off.json()).toEqual({ results: [], ran: 0 });
+    expect(off.json()).toEqual({ results: [], ran: 0, truncated: [] });
     const all = await run({ from: '2026-01-01', to: '2026-12-31' });
     expect((all.json().results as Res[]).some((x) => x.ruleCode === 'CT_KHONG_CO_DONG')).toBe(false);
-    expect(all.json().ran).toBe(5);
+    expect(all.json().ran).toBe(enabledNow - 1);
     expect((await setRule(id, { is_enabled: true, message: 'Chứng từ nháp rỗng', severity: 'warning', fix_hint: 'Xóa chứng từ hoặc nhập dòng' })).statusCode).toBe(200);
   }, 30_000);
 
@@ -146,4 +149,111 @@ describe('soát lỗi', () => {
     const res = await results({ from: '2026-01-01', to: '2026-12-31', codes: ['CHI_DUNG_TO'] });
     expect(res).toMatchObject([{ ruleCode: 'CHI_DUNG_TO', ref: '2026-12-31' }]);
   });
+
+  it('giới hạn độ dài tên, thông điệp, hướng dẫn: API 400, app_user ghi thẳng vượt giới hạn bị CHECK từ chối (23514)', async () => {
+    const id = (await ruleRow('CT_KHONG_CAN')).id;
+    for (const bad of [{ name: 'x'.repeat(201) }, { message: 'x'.repeat(501) }, { fix_hint: 'x'.repeat(501) }]) {
+      const r = await setRule(id, bad);
+      expect(r.statusCode, r.body).toBe(400); expect(r.json().error.code).toBe('VALIDATION');
+    }
+    const at = await setRule(id, { name: 'n'.repeat(200), message: 'm'.repeat(500), fix_hint: 'h'.repeat(500) });
+    expect(at.statusCode, at.body).toBe(200);
+    await setRule(id, { name: 'Chứng từ không cân', message: 'Tổng Nợ khác tổng Có', fix_hint: 'Mở chứng từ và cân lại các dòng' });
+    const as = <T>(fn: (trx: Transaction<Database>) => Promise<T>) => withTenant(ctx.t.db, { tenantId }, fn);
+    await expect(as((trx) => sql`UPDATE data_check_rule SET name = repeat('x', 201) WHERE code = 'CT_KHONG_CAN'`.execute(trx))).rejects.toMatchObject({ code: '23514' });
+    await expect(as((trx) => sql`UPDATE data_check_rule SET message = repeat('x', 501) WHERE code = 'CT_KHONG_CAN'`.execute(trx))).rejects.toMatchObject({ code: '23514' });
+    await expect(as((trx) => sql`UPDATE data_check_rule SET fix_hint = repeat('x', 501) WHERE code = 'CT_KHONG_CAN'`.execute(trx))).rejects.toMatchObject({ code: '23514' });
+  });
+
+  it('quyền data_check.manage: admin và kế toán trưởng có, kế toán viên chỉ xem (403 khi sửa/bật tắt)', async () => {
+    const username = `kv_${Date.now()}`;
+    const mk = await ctx.app.inject({ method: 'POST', url: '/api/users', headers: { cookie }, payload: { username, fullName: 'KV', password: 'Matkhau1!', roleCode: 'ketoan_vien' } });
+    expect(mk.statusCode, mk.body).toBe(201);
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+    const kv = `sid=${login.cookies.find((c) => c.name === 'sid')!.value}`;
+    const id = (await ruleRow('CT_KHONG_CAN')).id;
+    for (const payload of [{ is_enabled: false }, { message: 'Sửa lén' }]) {
+      const r = await ctx.app.inject({ method: 'PUT', url: `/api/catalogs/data_check_rule/${id}`, headers: { cookie: kv }, payload });
+      expect(r.statusCode, r.body).toBe(403);
+    }
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/catalogs/data_check_rule', headers: { cookie: kv } })).statusCode).toBe(200);
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/data-check/run', headers: { cookie: kv }, payload: range })).statusCode).toBe(200);
+    expect((await ruleRow('CT_KHONG_CAN')).is_enabled).toBe(true);
+    const holders = await sql<{ code: string }>`SELECT r.code FROM role_permission rp JOIN role r ON r.tenant_id = rp.tenant_id AND r.id = rp.role_id WHERE rp.tenant_id = ${tenantId}::uuid AND rp.permission_code = 'data_check.manage' ORDER BY r.code`.execute(ctx.t.admin);
+    expect(holders.rows.map((x) => x.code)).toEqual(['admin', 'ketoan_truong']);
+    // Công ty tạo trước migration cũng được cấp (backfill theo mã vai trò).
+    const missing = await sql<{ n: number }>`SELECT count(*)::int AS n FROM role r WHERE r.code IN ('admin', 'ketoan_truong') AND NOT EXISTS (SELECT 1 FROM role_permission rp WHERE rp.tenant_id = r.tenant_id AND rp.role_id = r.id AND rp.permission_code = 'data_check.manage')`.execute(ctx.t.admin);
+    expect(missing.rows[0]!.n).toBe(0);
+  });
+
+  it('quy tắc đổi công ty của phiên (set_config app.current_tenant) bị phát hiện: 409 RULE_TENANT_CHANGED, cả lần soát bị hủy', async () => {
+    await ownerRule('DOI_CONG_TY', "SELECT NULL::uuid, set_config('app.current_tenant', gen_random_uuid()::text, true), 'x'");
+    try {
+      const r = await run({ ...range, codes: ['DOI_CONG_TY'] });
+      expect(r.statusCode, r.body).toBe(409); expect(r.json().error.code).toBe('RULE_TENANT_CHANGED');
+      // Cả lần soát bị hủy, kể cả khi các quy tắc đứng trước đã chạy xong.
+      const mixed = await run({ ...range, codes: ['CT_KHONG_CO_DONG', 'DOI_CONG_TY'] });
+      expect(mixed.statusCode).toBe(409); expect(mixed.json().results).toBeUndefined();
+    } finally { await disable('DOI_CONG_TY'); }
+  });
+
+  it('quy tắc đặt lại statement_timeout không ảnh hưởng quy tắc sau: mỗi quy tắc xong là đặt lại 15s', async () => {
+    await ownerRule('TIMEOUT_A', "SELECT NULL::uuid, set_config('statement_timeout', '0', true), 'x'");
+    await ownerRule('TIMEOUT_B', "SELECT NULL::uuid, current_setting('statement_timeout'), 'x'");
+    try {
+      const res = await results({ ...range, codes: ['TIMEOUT_A', 'TIMEOUT_B'] });
+      expect(res.find((x) => x.ruleCode === 'TIMEOUT_B')!.ref).toBe('15s');
+    } finally { await disable('TIMEOUT_A', 'TIMEOUT_B'); }
+  });
+
+  it('cắt kết quả ở 1000 dòng mỗi quy tắc và báo truncated; đúng 1000 dòng thì không cắt', async () => {
+    await ownerRule('CAT_1000', "SELECT NULL::uuid, g::text, 'x' FROM generate_series(1, 1000) g WHERE $1::date < $2::date");
+    await ownerRule('CAT_1001', "SELECT NULL::uuid, g::text, 'x' FROM generate_series(1, 1001) g WHERE $1::date < $2::date");
+    try {
+      const body = (await run({ ...range, codes: ['CAT_1000', 'CAT_1001'] })).json() as { results: Res[]; ran: number; truncated: string[] };
+      expect(body.results.filter((x) => x.ruleCode === 'CAT_1000')).toHaveLength(1000);
+      expect(body.results.filter((x) => x.ruleCode === 'CAT_1001')).toHaveLength(1000);
+      expect(body.truncated).toEqual(['CAT_1001']);
+    } finally { await disable('CAT_1000', 'CAT_1001'); }
+  });
+
+  it('mỗi công ty chỉ một lần soát tại một thời điểm: đang có lần khác giữ khóa thì 409 DATA_CHECK_RUNNING', async () => {
+    await ctx.t.admin.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended('data_check:' || ${tenantId}::text, 0))`.execute(trx);
+      const r = await run(range);
+      expect(r.statusCode, r.body).toBe(409); expect(r.json().error.code).toBe('DATA_CHECK_RUNNING');
+    });
+    expect((await run(range)).statusCode).toBe(200); // khóa theo giao dịch: nhả khi lần kia xong
+  });
+
+  it('phát hiện được CT_KHONG_CAN, CN_THIEU_DOI_TUONG, TK_TONG_HOP_TREN_DONG trên dữ liệu dựng bằng owner; chứng từ đã hủy không bị báo', async () => {
+    // DB đã chặn chứng từ lệch và dòng sai bằng trigger; replica tắt trigger để dựng dữ liệu "bẩn" (như sau nhập thô) cho quy tắc có việc làm.
+    const ids = await ctx.t.admin.transaction().execute(async (trx) => {
+      await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+      const voucher = async (date: string, state: string, lines: [string, number, number][]) => {
+        const v = await trx.insertInto('voucher').values({ tenant_id: tenantId, voucher_type: 'PKT', posting_date: date, document_date: date, state, created_by: userId }).returning('id').executeTakeFirstOrThrow();
+        let no = 0;
+        for (const [code, debit, credit] of lines) {
+          no += 1;
+          await sql`INSERT INTO voucher_line(tenant_id, voucher_id, line_no, account_id, posting_date, debit, credit)
+            SELECT ${tenantId}::uuid, ${v.id}::uuid, ${no}, a.id, ${date}::date, ${debit}, ${credit} FROM account a WHERE a.tenant_id = ${tenantId}::uuid AND a.regime = 'TT133' AND a.code = ${code}`.execute(trx);
+        }
+        return v.id;
+      };
+      return {
+        uneven: await voucher('2026-03-05', 'draft', [['1111', 100, 0], ['5111', 0, 90]]),
+        noParty: await voucher('2026-04-05', 'draft', [['331', 50, 0], ['1111', 0, 50]]),
+        group: await voucher('2026-05-05', 'draft', [['3331', 10, 0], ['1111', 0, 10]]),
+        // đã hủy: vừa lệch, vừa thiếu đối tượng, vừa dùng tài khoản tổng hợp, nhưng không còn sửa được nên không được báo
+        cancelled: await voucher('2026-06-05', 'cancelled', [['331', 100, 0], ['3331', 0, 90]]),
+      };
+    });
+    const res = await results({ ...range, codes: ['CT_KHONG_CAN', 'CN_THIEU_DOI_TUONG', 'TK_TONG_HOP_TREN_DONG'] });
+    expect(res.every((x) => !/Quy tắc lỗi/.test(x.message))).toBe(true);
+    const of = (rule: string) => res.filter((x) => x.ruleCode === rule).map((x) => ({ voucherId: x.voucherId, detail: x.detail }));
+    expect(of('CT_KHONG_CAN')).toEqual([{ voucherId: ids.uneven, detail: 'Nợ 100 / Có 90' }]);
+    expect(of('CN_THIEU_DOI_TUONG')).toEqual([{ voucherId: ids.noParty, detail: 'TK 331 dòng 1' }]);
+    expect(of('TK_TONG_HOP_TREN_DONG')).toEqual([{ voucherId: ids.group, detail: 'TK 3331' }]);
+    expect(res.some((x) => x.voucherId === ids.cancelled)).toBe(false);
+  }, 30_000);
 });

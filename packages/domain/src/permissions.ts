@@ -28,5 +28,6 @@ export const PERMISSIONS: readonly { code: string; name: string; group: string }
   { code: 'report.print', name: 'In sổ sách, báo cáo', group: 'Báo cáo' },
   ...crud('report_def', 'định nghĩa báo cáo', 'Báo cáo'),
   { code: 'data_check.run', name: 'Soát lỗi dữ liệu', group: 'Tiện ích' },
+  { code: 'data_check.manage', name: 'Quản lý quy tắc soát lỗi', group: 'Tiện ích' },
 ];
 export const PERMISSION_CODES: readonly string[] = PERMISSIONS.map((p) => p.code);

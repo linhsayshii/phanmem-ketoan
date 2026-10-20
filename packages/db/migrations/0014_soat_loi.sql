@@ -5,7 +5,9 @@ CREATE TABLE data_check_rule (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES tenant(id),
   code text NOT NULL, name text NOT NULL, severity text NOT NULL CHECK (severity IN ('error','warning')),
   sql text NOT NULL, message text NOT NULL, fix_hint text, is_system boolean NOT NULL DEFAULT false, is_enabled boolean NOT NULL DEFAULT true,
-  UNIQUE (tenant_id, code));
+  UNIQUE (tenant_id, code),
+  -- Tên, thông điệp, hướng dẫn được sao chép vào từng dòng kết quả: chặn độ dài để người có quyền sửa không làm phình phản hồi (kèm giới hạn ở API).
+  CONSTRAINT data_check_rule_text_len CHECK (length(name) <= 200 AND length(message) <= 500 AND (fix_hint IS NULL OR length(fix_hint) <= 500)));
 SELECT rls_enable('data_check_rule');
 -- Mặc định 0001 cấp đủ SELECT/INSERT/UPDATE/DELETE cho app_user: thu lại, chỉ cấp UPDATE trên các cột không phải SQL.
 REVOKE INSERT, UPDATE, DELETE ON data_check_rule FROM app_user;
@@ -66,6 +68,42 @@ BEGIN
   PERFORM seed_voucher_types(p_tenant);
   PERFORM seed_data_check_rules(p_tenant);
 END $$;
+
+-- Quyền mới data_check.manage (sửa/bật tắt quy tắc soát lỗi): admin và kế toán trưởng có, kế toán viên và vai trò chỉ xem không có.
+-- Dòng permission do syncReferenceData cập nhật tên/nhóm; thêm sẵn ở đây để khóa ngoại của role_permission đúng ngay sau migration.
+INSERT INTO permission(code, name, group_name) VALUES ('data_check.manage', 'Quản lý quy tắc soát lỗi', 'Tiện ích') ON CONFLICT (code) DO NOTHING;
+-- Định nghĩa lại create_tenant: nội dung 0003 + loại data_check.manage khỏi vai trò ketoan_vien (admin lấy mọi quyền, ketoan_truong lấy mọi quyền trừ user.* và role.*). Quyền EXECUTE giữ nguyên.
+CREATE OR REPLACE FUNCTION create_tenant(p_code text, p_name text, p_tax_code text, p_owner_user uuid)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE v_tenant uuid; v_admin_role uuid;
+BEGIN
+  INSERT INTO tenant(code, name, tax_code) VALUES (p_code, p_name, p_tax_code) RETURNING id INTO v_tenant;
+  PERFORM set_config('app.current_tenant', v_tenant::text, true);
+  INSERT INTO role(tenant_id, code, name, is_system) VALUES
+    (v_tenant, 'admin', 'Quản trị', true), (v_tenant, 'ketoan_truong', 'Kế toán trưởng', true),
+    (v_tenant, 'ketoan_vien', 'Kế toán viên', true), (v_tenant, 'xem', 'Chỉ xem', true);
+  SELECT id INTO v_admin_role FROM role WHERE tenant_id = v_tenant AND code = 'admin';
+  INSERT INTO role_permission(tenant_id, role_id, permission_code) SELECT v_tenant, v_admin_role, code FROM permission;
+  INSERT INTO role_permission(tenant_id, role_id, permission_code)
+    SELECT v_tenant, r.id, p.code FROM role r CROSS JOIN permission p
+    WHERE r.tenant_id = v_tenant AND r.code = 'ketoan_truong' AND p.code NOT LIKE 'user.%' AND p.code NOT LIKE 'role.%';
+  INSERT INTO role_permission(tenant_id, role_id, permission_code)
+    SELECT v_tenant, r.id, p.code FROM role r CROSS JOIN permission p
+    WHERE r.tenant_id = v_tenant AND r.code = 'ketoan_vien'
+      AND p.code NOT LIKE 'user.%' AND p.code NOT LIKE 'role.%' AND p.code NOT LIKE 'period.%'
+      AND p.code NOT LIKE '%.unpost' AND p.code NOT IN ('voucher.edit_posted','voucher.backdate_locked','voucher.renumber','export.authority','backup.run','setting.update','company.update','data_check.manage');
+  INSERT INTO role_permission(tenant_id, role_id, permission_code)
+    SELECT v_tenant, r.id, p.code FROM role r CROSS JOIN permission p
+    WHERE r.tenant_id = v_tenant AND r.code = 'xem' AND (p.code LIKE '%.view' OR p.code LIKE '%.print');
+  INSERT INTO tenant_user(tenant_id, user_id, role_id, sensitive_flags)
+    VALUES (v_tenant, p_owner_user, v_admin_role, '["view_cost","view_receivable","view_payable","view_salary"]');
+  PERFORM seed_tenant_defaults(v_tenant);
+  RETURN v_tenant;
+END $$;
+-- Công ty đã tạo trước migration này: cấp cho admin và ketoan_truong. Tắt audit khi cấp bù để migration không ghi nhật ký kiểm toán không có người dùng (như 0004).
+ALTER TABLE role_permission DISABLE TRIGGER trg_audit;
+INSERT INTO role_permission(tenant_id, role_id, permission_code) SELECT r.tenant_id, r.id, 'data_check.manage' FROM role r WHERE r.code IN ('admin', 'ketoan_truong') ON CONFLICT DO NOTHING;
+ALTER TABLE role_permission ENABLE TRIGGER trg_audit;
 
 -- Công ty đã tạo trước migration này: bổ sung quy tắc.
 SELECT seed_data_check_rules(id) FROM tenant;
