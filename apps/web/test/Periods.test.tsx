@@ -59,4 +59,25 @@ describe('Màn hình kỳ kế toán', () => {
     expect(await screen.findByText('(hash_tail)')).toBeInTheDocument();
     expect(screen.getByText('(chưa số)')).toBeInTheDocument();
   });
+
+  it('thẻ Loại chứng từ và đánh số: hiện số tiếp theo, sửa cấu hình và đánh lại số theo năm đang chọn', async () => {
+    apiMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/fiscal-years') return [{ fiscalYear: 2026 }];
+      if (path === '/api/periods?year=2026') return [];
+      if (path === '/api/voucher-types') return [{ code: 'PKT', name: 'Phiếu kế toán', prefix: 'PKT{YY}-', suffix: '', pad_length: 4 }];
+      if (path === '/api/voucher-types/PKT/next-no?year=2026') return { preview: 'PKT26-0005' };
+      if (path === '/api/vouchers/renumber') return { count: 4 };
+      return init?.method === 'PUT' ? { ok: true } : {};
+    });
+    renderPage();
+    await userEvent.click(await screen.findByRole('tab', { name: 'Loại chứng từ và đánh số' }));
+    expect(await screen.findByText('PKT26-0005')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Sửa' }));
+    const prefix = await screen.findByLabelText('Tiền tố'); await userEvent.clear(prefix); await userEvent.type(prefix, 'PC');
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }));
+    await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/voucher-types/PKT', { method: 'PUT', json: { name: 'Phiếu kế toán', prefix: 'PC', suffix: '', padLength: 4 } }));
+    await userEvent.click(screen.getByRole('button', { name: 'Đánh lại số theo ngày' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Đánh lại số' }));
+    await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/vouchers/renumber', { method: 'POST', json: { voucherType: 'PKT', fiscalYear: 2026 } }));
+  }, 20000);
 });

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Modal, Select, Space, Table, Tag, message } from 'antd';
+import { Button, Form, Input, InputNumber, Modal, Select, Space, Table, Tabs, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api } from '../api/client.js';
@@ -16,6 +16,56 @@ const MODULES = [{ value: 'general', label: 'Tổng hợp' }, { value: 'cash', l
   { value: 'arap', label: 'Công nợ' }, { value: 'assets', label: 'Tài sản cố định' }, { value: 'payroll', label: 'Lương' }];
 const periodLabel = (no: number) => (no === 0 ? 'Số dư đầu kỳ' : `Kỳ ${no}`);
 const fmtDate = (d: string) => dayjs(d).format('DD/MM/YYYY');
+
+// Loại chứng từ: GET /api/voucher-types trả nguyên cột (snake_case).
+interface VoucherTypeRow { code: string; name: string; prefix: string; suffix: string; pad_length: number }
+interface TypeForm { name: string; prefix: string; suffix: string; padLength: number }
+const NextNo = ({ row, year }: { row: VoucherTypeRow; year: number | undefined }) => {
+  const q = useQuery({ queryKey: ['next-no', row.code, year, row.prefix, row.suffix, row.pad_length], enabled: year !== undefined, queryFn: () => api<{ preview: string }>(`/api/voucher-types/${row.code}/next-no?year=${year}`) });
+  return <code>{q.data?.preview ?? ''}</code>;
+};
+
+function VoucherTypesTab({ year }: { year: number | undefined }) {
+  const qc = useQueryClient();
+  const { can } = useAuth();
+  const types = useQuery({ queryKey: ['voucher-types'], queryFn: () => api<VoucherTypeRow[]>('/api/voucher-types') });
+  const [editing, setEditing] = useState<VoucherTypeRow | null>(null);
+  const [form] = Form.useForm<TypeForm>();
+  useEffect(() => { if (types.error) void message.error((types.error as Error).message); }, [types.error]);
+  const refresh = () => { void qc.invalidateQueries({ queryKey: ['voucher-types'] }); void qc.invalidateQueries({ queryKey: ['next-no'] }); };
+  const onError = (e: unknown) => { void message.error((e as Error).message); };
+  const save = useMutation({ mutationFn: (v: TypeForm) => api(`/api/voucher-types/${editing!.code}`, { method: 'PUT', json: v }), onError,
+    onSuccess: () => { setEditing(null); refresh(); void message.success('Đã lưu cấu hình đánh số'); } });
+  const renumber = useMutation({ mutationFn: (code: string) => api<{ count: number }>('/api/vouchers/renumber', { method: 'POST', json: { voucherType: code, fiscalYear: year } }), onError,
+    onSuccess: (r) => { refresh(); void message.success(`Đã đánh lại số ${r.count} chứng từ`); } });
+  const confirmRenumber = (r: VoucherTypeRow) => Modal.confirm({ title: `Đánh lại số ${r.code} năm ${year} theo ngày?`, okText: 'Đánh lại số', cancelText: 'Hủy',
+    content: 'Số chứng từ được cấp lại liền nhau theo ngày ghi sổ. Chỉ chạy được khi mọi kỳ của năm còn mở; có kỳ đã khóa thì bị từ chối.', onOk: () => renumber.mutateAsync(r.code).catch(() => undefined) });
+  return (
+    <>
+      <Table<VoucherTypeRow> rowKey="code" size="small" pagination={false} loading={types.isFetching || renumber.isPending} dataSource={types.data ?? []} columns={[
+        { title: 'Mã', dataIndex: 'code', width: 90 },
+        { title: 'Tên', dataIndex: 'name' },
+        { title: 'Tiền tố', dataIndex: 'prefix', width: 130 },
+        { title: 'Hậu tố', dataIndex: 'suffix', width: 130 },
+        { title: 'Độ dài số', dataIndex: 'pad_length', width: 100, align: 'right' },
+        { title: `Số tiếp theo (${year ?? ''})`, key: 'next', width: 180, render: (_, r) => <NextNo row={r} year={year} /> },
+        { title: '', key: 'act', width: 260, render: (_, r) => (
+          <Space>
+            {can('setting.update') && <Button size="small" onClick={() => setEditing(r)}>Sửa</Button>}
+            {can('voucher.renumber') && <Button size="small" disabled={year === undefined} onClick={() => confirmRenumber(r)}>Đánh lại số theo ngày</Button>}
+          </Space>) },
+      ]} />
+      <Modal open={!!editing} title={`Cấu hình đánh số - ${editing?.code ?? ''}`} okText="Lưu" cancelText="Hủy" confirmLoading={save.isPending} destroyOnHidden onCancel={() => setEditing(null)} onOk={() => form.submit()}>
+        <Form<TypeForm> form={form} layout="vertical" initialValues={{ name: editing?.name ?? '', prefix: editing?.prefix ?? '', suffix: editing?.suffix ?? '', padLength: editing?.pad_length ?? 5 }} onFinish={(v) => save.mutate(v)}>
+          <Form.Item name="name" label="Tên" rules={[{ required: true, message: 'Nhập tên' }]}><Input /></Form.Item>
+          <Form.Item name="prefix" label="Tiền tố" extra="Dùng {YY} hoặc {YYYY} để chèn năm tài chính"><Input maxLength={20} /></Form.Item>
+          <Form.Item name="suffix" label="Hậu tố"><Input maxLength={20} /></Form.Item>
+          <Form.Item name="padLength" label="Độ dài số (đệm số 0)" rules={[{ required: true, message: 'Nhập độ dài từ 1 đến 10' }]}><InputNumber min={1} max={10} precision={0} /></Form.Item>
+        </Form>
+      </Modal>
+    </>
+  );
+}
 
 export default function PeriodsPage() {
   const qc = useQueryClient();
@@ -43,30 +93,36 @@ export default function PeriodsPage() {
         <span>Năm tài chính</span>
         <Select style={{ width: 120 }} value={year} loading={years.isLoading} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: y.fiscalYear }))} onChange={setPicked} />
       </Space>
-      <Table<PeriodRow> rowKey="periodNo" size="small" pagination={false} loading={periods.isFetching || run.isPending} dataSource={periods.data ?? []} columns={[
-        { title: 'Kỳ', dataIndex: 'periodNo', width: 120, render: periodLabel },
-        { title: 'Từ ngày', dataIndex: 'dateFrom', width: 110, render: fmtDate },
-        { title: 'Đến ngày', dataIndex: 'dateTo', width: 110, render: fmtDate },
-        { title: 'Trạng thái', dataIndex: 'status', width: 110, render: (s: PeriodRow['status']) => <Tag color={STATUS[s].color}>{STATUS[s].label}</Tag> },
-        { title: 'Phần hành khóa', dataIndex: 'lockedModules', render: (m: string[], r) => (
-          <Select mode="multiple" allowClear style={{ minWidth: 220 }} placeholder="Không khóa" value={m} options={MODULES} disabled={!can('period.lock') || r.status === 'hard_locked'}
-            onChange={(v: string[]) => run.mutate(() => api(url(r.periodNo, 'modules'), { method: 'PUT', json: { modules: v } }))} />) },
-        { title: 'Chứng từ nháp', dataIndex: 'draftCount', width: 120, align: 'right' },
-        { title: 'Hash', dataIndex: 'hashTail', width: 100, render: (h: string | null) => (h ? <span title={h}>{h.slice(0, 8)}</span> : '') },
-        { title: '', key: 'act', width: 300, render: (_, r) => (
-          <Space>
-            {r.status === 'open' && can('period.lock') && <Button size="small" onClick={() => run.mutate(() => api(url(r.periodNo, 'lock'), { method: 'POST', json: { level: 'soft' } }))}>Khóa sổ</Button>}
-            {r.status !== 'hard_locked' && can('period.lock') && <Button size="small" danger onClick={() => hardLock(r)}>Khóa cứng</Button>}
-            {r.status !== 'open' && can('period.unlock') && (r.status !== 'hard_locked' || can('period.unlock_hard')) && <Button size="small" onClick={() => run.mutate(() => api(url(r.periodNo, 'unlock'), { method: 'POST' }))}>Bỏ khóa</Button>}
-            {r.status === 'hard_locked' && <Button size="small" onClick={() => run.mutate(() => verify(r.periodNo))}>Kiểm tra hash</Button>}
-          </Space>) },
+      <Tabs items={[
+        { key: 'periods', label: 'Kỳ kế toán', children: (
+        <>
+          <Table<PeriodRow> rowKey="periodNo" size="small" pagination={false} loading={periods.isFetching || run.isPending} dataSource={periods.data ?? []} columns={[
+            { title: 'Kỳ', dataIndex: 'periodNo', width: 120, render: periodLabel },
+            { title: 'Từ ngày', dataIndex: 'dateFrom', width: 110, render: fmtDate },
+            { title: 'Đến ngày', dataIndex: 'dateTo', width: 110, render: fmtDate },
+            { title: 'Trạng thái', dataIndex: 'status', width: 110, render: (s: PeriodRow['status']) => <Tag color={STATUS[s].color}>{STATUS[s].label}</Tag> },
+            { title: 'Phần hành khóa', dataIndex: 'lockedModules', render: (m: string[], r) => (
+              <Select mode="multiple" allowClear style={{ minWidth: 220 }} placeholder="Không khóa" value={m} options={MODULES} disabled={!can('period.lock') || r.status === 'hard_locked'}
+                onChange={(v: string[]) => run.mutate(() => api(url(r.periodNo, 'modules'), { method: 'PUT', json: { modules: v } }))} />) },
+            { title: 'Chứng từ nháp', dataIndex: 'draftCount', width: 120, align: 'right' },
+            { title: 'Hash', dataIndex: 'hashTail', width: 100, render: (h: string | null) => (h ? <span title={h}>{h.slice(0, 8)}</span> : '') },
+            { title: '', key: 'act', width: 300, render: (_, r) => (
+              <Space>
+                {r.status === 'open' && can('period.lock') && <Button size="small" onClick={() => run.mutate(() => api(url(r.periodNo, 'lock'), { method: 'POST', json: { level: 'soft' } }))}>Khóa sổ</Button>}
+                {r.status !== 'hard_locked' && can('period.lock') && <Button size="small" danger onClick={() => hardLock(r)}>Khóa cứng</Button>}
+                {r.status !== 'open' && can('period.unlock') && (r.status !== 'hard_locked' || can('period.unlock_hard')) && <Button size="small" onClick={() => run.mutate(() => api(url(r.periodNo, 'unlock'), { method: 'POST' }))}>Bỏ khóa</Button>}
+                {r.status === 'hard_locked' && <Button size="small" onClick={() => run.mutate(() => verify(r.periodNo))}>Kiểm tra hash</Button>}
+              </Space>) },
+          ]} />
+          <Modal open={!!bad} title={`Chứng từ lệch hash - ${bad ? periodLabel(bad.periodNo) : ''}`} width={900} footer={null} onCancel={() => setBad(null)}>
+            <Table<Mismatch> rowKey={(r) => r.voucherId ?? 'hash_tail'} size="small" pagination={false} dataSource={bad?.rows ?? []} columns={[
+              { title: 'Số chứng từ', dataIndex: 'voucherNo', width: 130, render: (n: string | null) => n ?? '(chưa số)' },
+              { title: 'Hash lưu', dataIndex: 'stored', render: (h: string | null) => <code>{h?.slice(0, 16) ?? '(trống)'}</code> },
+              { title: 'Hash tính lại', dataIndex: 'computed', render: (h: string) => <code>{h.slice(0, 16)}</code> }]} />
+          </Modal>
+        </>) },
+        { key: 'numbering', label: 'Loại chứng từ và đánh số', children: <VoucherTypesTab year={year} /> },
       ]} />
-      <Modal open={!!bad} title={`Chứng từ lệch hash - ${bad ? periodLabel(bad.periodNo) : ''}`} width={900} footer={null} onCancel={() => setBad(null)}>
-        <Table<Mismatch> rowKey={(r) => r.voucherId ?? 'hash_tail'} size="small" pagination={false} dataSource={bad?.rows ?? []} columns={[
-          { title: 'Số chứng từ', dataIndex: 'voucherNo', width: 130, render: (n: string | null) => n ?? '(chưa số)' },
-          { title: 'Hash lưu', dataIndex: 'stored', render: (h: string | null) => <code>{h?.slice(0, 16) ?? '(trống)'}</code> },
-          { title: 'Hash tính lại', dataIndex: 'computed', render: (h: string) => <code>{h.slice(0, 16)}</code> }]} />
-      </Modal>
     </>
   );
 }
