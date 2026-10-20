@@ -408,6 +408,34 @@ Model: sonnet.
 - [ ] **Step 4:** `pnpm db:migrate`; `pnpm -F @kt/api test -- test/cashCount.test.ts`; `pnpm -F @kt/web e2e -- kiem-ke-quy.spec.ts` xanh.
 - [ ] **Step 5:** Commit `feat(cash): kiểm kê quỹ và xử lý chênh lệch`.
 
+### Task 9b: Số dư đầu kỳ theo tài khoản ngân hàng
+
+Model: sonnet. Thêm bởi controller (phát hiện M4 khi rà soát Task 8): sổ tiền gửi theo từng tài khoản ngân hàng mở đầu bằng 0 vì dòng DK không có `bank_account_id`. Task 9 đã thêm cột `opening_balance.bank_account_id` (migration 0026, khóa ngoại tổng hợp tới `bank_account`, chỉ mục duy nhất gồm cột này). Tác vụ này không có migration.
+
+**Files:**
+- Modify: `apps/api/src/modules/ledger/openingBalance.ts`, `apps/web/src/pages/OpeningBalance.tsx`
+- Test: `apps/api/test/openingBalance.test.ts`, `apps/api/test/cashBooks.test.ts`, `apps/web/test/OpeningBalance.test.tsx` (nếu có; không có thì thêm ca vào kiểm thử trang sẵn có)
+
+**Interfaces:**
+- `openingRow` thêm `bankAccountNo: z.string().trim().min(1).max(50).nullable().optional()` (mã `bank_account.account_no`). Lưu: tra `bank_account` theo `account_no`, không có → 404 `BANK_ACCOUNT_NOT_FOUND`; tài khoản của dòng khác `bank_account.gl_account_code` → 400 `BANK_ACCOUNT_GL_MISMATCH` (cùng mã lỗi với chứng từ, Task 5); dòng trên tài khoản không phải `subledger_kind='bank'` mà có `bankAccountNo` → 400 `BANK_ACCOUNT_NOT_ALLOWED`.
+- `GET /api/opening-balance/:year` trả thêm `bankAccountNo`, `bankName` (nếu có cột tên).
+- Kiểm tra (`issues`): dòng tài khoản `subledger_kind='bank'` không có tài khoản ngân hàng → cảnh báo (không chặn) "Tài khoản <mã> chưa gán tài khoản ngân hàng: sổ tiền gửi theo tài khoản ngân hàng sẽ thiếu số dư đầu".
+- Ghi sổ (`postOpening`): dòng DK mang `bank_account_id` của dòng số dư; gộp dòng theo (tài khoản, đối tượng, tiền tệ, tài khoản ngân hàng).
+- Mẫu Excel (`openingTemplate`) và nhập Excel: thêm cột "Tài khoản ngân hàng" (số tài khoản) ngay sau cột đối tượng; tệp mẫu cũ (thiếu cột) vẫn nhập được nếu tiêu đề cột cho phép nhận biết, không thì ghi rõ trong báo cáo cách đã chọn.
+- Màn hình Số dư đầu kỳ: cột "TK ngân hàng" (`LookupSelect` danh mục `bank_account`) chỉ sửa được ở dòng tài khoản ngân hàng.
+
+- [ ] **Step 1: Kiểm thử thất bại:**
+
+```ts
+it('số dư đầu 1121 theo hai tài khoản ngân hàng: ghi sổ DK mang bank_account_id; sổ tiền gửi từng tài khoản mở đầu đúng', async () => {});
+it('bankAccountNo lạ 404; lệch tài khoản sổ cái 400 BANK_ACCOUNT_GL_MISMATCH; trên 131 thì 400 BANK_ACCOUNT_NOT_ALLOWED', async () => {});
+it('dòng 1121 không gán tài khoản ngân hàng: kiểm tra trả cảnh báo, vẫn ghi sổ được', async () => {});
+it('nhập Excel có cột tài khoản ngân hàng', async () => {});
+```
+
+- [ ] **Step 2:** FAIL. **Step 3:** Cài đặt. **Step 4:** `pnpm -F @kt/api test -- test/openingBalance.test.ts test/cashBooks.test.ts`, `pnpm -F @kt/web test` xanh; `pnpm lint && pnpm typecheck`.
+- [ ] **Step 5:** Commit `feat(ledger): số dư đầu kỳ theo tài khoản ngân hàng`.
+
 ### Task 10: Tỷ giá theo ngày và tỷ giá xuất quỹ
 
 Model: **opus**.
