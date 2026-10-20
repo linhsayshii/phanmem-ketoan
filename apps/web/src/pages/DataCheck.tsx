@@ -76,7 +76,7 @@ export default function DataCheckPage() {
                 { title: 'Tham chiếu', dataIndex: 'ref', width: 220 },
                 { title: 'Chi tiết', dataIndex: 'detail' },
                 { title: 'Hướng dẫn sửa', dataIndex: 'fixHint' },
-                { title: '', key: 'fix', width: 120, render: (_, r) => r.voucherId && <Link to="/chung-tu/phieu-ke-toan/$id" params={{ id: r.voucherId }}>Sửa chứng từ</Link> },
+                { title: '', key: 'fix', width: 120, render: (_, r) => r.voucherId && <Link to="/chung-tu/$type/$id" params={{ type: 'PKT', id: r.voucherId }}>Sửa chứng từ</Link> },
               ]} /></>) }))} />
         </Card>)}
 

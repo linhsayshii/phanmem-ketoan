@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanLines, emptyLine, parseAmount, totals } from '../src/pages/Voucher.js';
+import { cleanLines, emptyLine, mirrorCashAmount, parseAmount, totals } from '../src/pages/VoucherForm.js';
 
 describe('Phiếu kế toán: tổng và làm sạch dòng', () => {
   it('bỏ dòng trống, tính tổng Nợ/Có', () => {
@@ -24,5 +24,28 @@ describe('Phiếu kế toán: nhập số tiền ở ô Nợ/Có', () => {
   it('tối đa 16 chữ số: 10^16 bị từ chối, giữ giá trị cũ', () => {
     expect(parseAmount('9999999999999999', '0')).toBe('9999999999999999');
     expect(parseAmount('10000000000000000', '100')).toBe('100');
+  });
+});
+
+describe('Phiếu thu/chi: số tiền dòng quỹ chép sang dòng đối ứng', () => {
+  const rows = (cash: string, counter: string) => [{ ...emptyLine(), accountCode: '1111', debit: cash }, { ...emptyLine(), accountCode: '131', credit: counter }];
+  it('nhập số tiền ở dòng quỹ: dòng đối ứng còn 0 lấy cùng số tiền ở bên ngược lại', () => {
+    const m = mirrorCashAmount(rows('5000000', '0'), 'debit', '0');
+    expect(m.rows[1]?.credit).toBe('5000000'); expect(m.last).toBe('5000000');
+  });
+  it('sửa lại số tiền: dòng đối ứng đi theo khi còn bằng số cũ', () => {
+    expect(mirrorCashAmount(rows('7000000', '5000000'), 'debit', '5000000').rows[1]?.credit).toBe('7000000');
+  });
+  it('dòng đối ứng đã sửa tay khác số cũ thì giữ nguyên', () => {
+    const m = mirrorCashAmount(rows('7000000', '3000000'), 'debit', '5000000');
+    expect(m.rows[1]?.credit).toBe('3000000'); expect(m.last).toBe('7000000');
+  });
+  it('số tiền dòng quỹ không đổi thì không đụng vào dòng nào', () => {
+    const r = rows('5000000', '0');
+    expect(mirrorCashAmount(r, 'debit', '5000000').rows).toBe(r);
+  });
+  it('phiếu chi: số tiền dòng quỹ ở bên Có, dòng đối ứng ở bên Nợ', () => {
+    const r = [{ ...emptyLine(), accountCode: '1111', credit: '2000000' }, { ...emptyLine(), accountCode: '331' }];
+    expect(mirrorCashAmount(r, 'credit', '0').rows[1]?.debit).toBe('2000000');
   });
 });

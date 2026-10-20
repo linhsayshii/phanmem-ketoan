@@ -8,7 +8,7 @@ const apiMock = vi.hoisted(() => vi.fn());
 const perms = vi.hoisted(() => ({ has: (_c: string): boolean => true }));
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: (c: string) => perms.has(c) }) }));
 vi.mock('../src/api/client.js', () => ({ api: apiMock }));
-vi.mock('@tanstack/react-router', () => ({ Link: ({ children, params }: { children: React.ReactNode; params: { id: string } }) => <a href={`/chung-tu/phieu-ke-toan/${params.id}`}>{children}</a> }));
+vi.mock('@tanstack/react-router', () => ({ Link: ({ children, params }: { children: React.ReactNode; params: { type: string; id: string } }) => <a href={`/chung-tu/${params.type}/${params.id}`}>{children}</a> }));
 
 const RULES = [
   { id: 1, code: 'CT_KHONG_CAN', name: 'Chứng từ không cân', severity: 'error', sql: 'SELECT 1 /* cân */', message: 'Tổng Nợ khác tổng Có', fix_hint: 'Cân lại', is_system: true, is_enabled: true },
@@ -45,7 +45,7 @@ describe('Màn hình soát lỗi dữ liệu', () => {
     await screen.findByText('Chứng từ không cân');
     await userEvent.click(screen.getByRole('button', { name: 'Soát lỗi' }));
     const link = await screen.findByRole('link', { name: 'Sửa chứng từ' });
-    expect(link).toHaveAttribute('href', '/chung-tu/phieu-ke-toan/v1');
+    expect(link).toHaveAttribute('href', '/chung-tu/PKT/v1');
     expect(screen.getByText('Nợ 100 / Có 90')).toBeInTheDocument();
     expect(screen.getByText('Chỉ hiển thị 1000 kết quả đầu')).toBeInTheDocument();
     const [, init] = writes()[0]!;

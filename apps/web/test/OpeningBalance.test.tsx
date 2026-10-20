@@ -52,4 +52,23 @@ describe('Màn hình Số dư đầu kỳ', () => {
     expect(await screen.findByText('Không tải được')).toBeInTheDocument();
     for (const name of ['Lưu', 'Kiểm tra', 'Ghi sổ số dư đầu kỳ', 'Nhập Excel']) expect(screen.getByRole('button', { name })).toBeDisabled();
   });
+  it('Bỏ ghi sổ số dư đầu kỳ: hỏi xác nhận rồi gọi unpost của năm; thiếu quyền bỏ ghi sổ thì không có nút', async () => {
+    mocks.api.mockImplementation(async (path: string, init?: { method?: string }) => (path === '/api/fiscal-years' ? years : init?.method === 'POST' ? { id: 'dk1', state: 'draft' } : []));
+    renderPage();
+    const unpost = await screen.findByRole('button', { name: 'Bỏ ghi sổ số dư đầu kỳ' });
+    await waitFor(() => expect(unpost).toBeEnabled());
+    await userEvent.click(unpost);
+    expect(mocks.api).not.toHaveBeenCalledWith('/api/opening-balance/2026/unpost', expect.anything());
+    await userEvent.click(await screen.findByRole('button', { name: 'Bỏ ghi sổ' }));
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/opening-balance/2026/unpost', { method: 'POST', json: {} }));
+    expect(await screen.findByText('Đã bỏ ghi sổ số dư đầu kỳ, sửa số dư rồi ghi sổ lại')).toBeInTheDocument();
+  });
+
+  it('thiếu quyền bỏ ghi sổ chứng từ: không có nút Bỏ ghi sổ số dư đầu kỳ', async () => {
+    mocks.perms.has = (c) => c !== 'voucher.unpost';
+    apiFor(async () => []);
+    renderPage();
+    await screen.findByRole('button', { name: 'Ghi sổ số dư đầu kỳ' });
+    expect(screen.queryByRole('button', { name: 'Bỏ ghi sổ số dư đầu kỳ' })).not.toBeInTheDocument();
+  });
 });

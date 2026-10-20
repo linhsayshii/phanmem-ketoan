@@ -3,7 +3,7 @@ import ExcelJS from 'exceljs';
 import FormData from 'form-data';
 import { sql } from 'kysely';
 import { withTenant } from '@kt/db';
-import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
+import { bootstrapTenant, createTestApp, TEST_PASSWORD, type TestApp } from './helpers.js';
 
 let ctx: TestApp; let cookie: string; let tenantId: string;
 const R = (accountCode: string, debit = '0', credit = '0', partyCode: string | null = null, more: object = {}) =>
@@ -280,6 +280,35 @@ describe('chứng từ DK: không lập tay, không bị chiếm, số dư lớn
     expect(again.statusCode, again.body).toBe(200); expect(again.json()).toMatchObject({ id: dkId, state: 'posted' });
     // cờ cho phép bỏ ghi sổ chỉ sống trong giao dịch của postOpening: sau đó SQL trực tiếp lại bị chặn
     await expect(withTenant(ctx.t.db, { tenantId: t3, userId: u3 }, (trx) => sql`SELECT unpost_voucher(${dkId}::uuid)`.execute(trx))).rejects.toMatchObject({ message: `VOUCHER_SYSTEM_GENERATED: ${MSG}` });
+  }, 30_000);
+
+  it('bỏ ghi sổ số dư đầu kỳ từ màn hình số dư; route chung vẫn từ chối', async () => {
+    const dkId = (await api('GET', '/api/vouchers?type=DK&state=posted')).json().rows[0].id as string;
+    // cần cả opening_balance.update lẫn voucher.unpost: vai trò chỉ có quyền thứ nhất bị 403 và chứng từ không đổi
+    const roles = (await api('GET', '/api/roles')).json() as { id: string; code: string }[];
+    const xem = roles.find((r) => r.code === 'xem')!;
+    expect((await api('PUT', `/api/roles/${xem.id}/permissions`, { permissions: ['opening_balance.view', 'opening_balance.update'] })).statusCode).toBe(200);
+    const username = `ob_${Date.now()}`;
+    await api('POST', '/api/users', { username, fullName: 'KT', password: TEST_PASSWORD, roleCode: 'xem' });
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: TEST_PASSWORD } });
+    const limited = `sid=${login.cookies.find((c) => c.name === 'sid')!.value}`;
+    const denied = await ctx.app.inject({ method: 'POST', url: '/api/opening-balance/2026/unpost', headers: { cookie: limited } });
+    expect([denied.statusCode, denied.json().error.code]).toEqual([403, 'FORBIDDEN']);
+    expect((await api('GET', `/api/vouchers/${dkId}`)).json().state).toBe('posted');
+
+    await sql`DELETE FROM pgboss.job WHERE name = 'balance.recompute' AND data->>'tenantId' = ${t3}`.execute(ctx.t.admin); // job chờ cũ chặn gửi job mới (singletonKey)
+    const un = await api('POST', '/api/opening-balance/2026/unpost');
+    expect(un.statusCode, un.body).toBe(200); expect(un.json()).toMatchObject({ id: dkId, voucherType: 'DK', state: 'draft' });
+    await expect.poll(jobs, { timeout: 5000 }).toBeGreaterThan(0); // bỏ ghi sổ phải báo worker tính lại số dư
+    // route chung vẫn chặn chứng từ DK do màn hình số dư sinh, kể cả khi đang nháp
+    const generic = await api('POST', `/api/vouchers/${dkId}/discard`);
+    expect([generic.statusCode, generic.json().error.code]).toEqual([409, 'VOUCHER_SYSTEM_GENERATED']);
+    // bỏ lần hai: không còn chứng từ DK đã ghi sổ
+    const twice = await api('POST', '/api/opening-balance/2026/unpost');
+    expect([twice.statusCode, twice.json().error.code]).toEqual([409, 'OPENING_NOT_POSTED']);
+    // ghi sổ lại từ màn hình số dư dùng lại đúng chứng từ cũ
+    const again = await api('POST', '/api/opening-balance/2026/post');
+    expect(again.statusCode, again.body).toBe(200); expect(again.json()).toMatchObject({ id: dkId, state: 'posted' });
   }, 30_000);
 
   it('ghi sổ 6001 dòng: chia lô khi ghi dòng chứng từ (không vượt giới hạn tham số bind)', async () => {

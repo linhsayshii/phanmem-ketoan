@@ -33,7 +33,7 @@ function LedgerDrawer({ target, range, onClose }: { target: { accountCode: strin
       {q.error && <Alert type="error" showIcon message={(q.error as Error).message} />}
       <Table<LedgerRow> size="small" rowKey={(r) => `${r.voucherId}|${r.counterAccountCode}|${r.debit}|${r.credit}`} loading={q.isFetching} pagination={{ pageSize: 50, hideOnSinglePage: true }} dataSource={q.data?.rows ?? []} columns={[
         { title: 'Ngày', dataIndex: 'postingDate', width: 100, render: formatVnDate },
-        { title: 'Chứng từ', key: 'v', width: 120, render: (_, r) => <Link to="/chung-tu/phieu-ke-toan/$id" params={{ id: r.voucherId }}>{r.voucherNo}</Link> },
+        { title: 'Chứng từ', key: 'v', width: 120, render: (_, r) => <Link to="/chung-tu/$type/$id" params={{ type: 'PKT', id: r.voucherId }}>{r.voucherNo}</Link> },
         { title: 'Diễn giải', dataIndex: 'description' }, { title: 'TK đối ứng', dataIndex: 'counterAccountCode', width: 90 },
         { title: 'Nợ', dataIndex: 'debit', align: 'right', width: 110, render: num }, { title: 'Có', dataIndex: 'credit', align: 'right', width: 110, render: num }]} />
     </Drawer>

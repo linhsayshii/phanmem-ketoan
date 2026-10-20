@@ -12,17 +12,20 @@ import ImportExcelPage from './pages/ImportExcel.js';
 import CatalogPage from './pages/Catalog.js';
 import AuditLogPage from './pages/AuditLog.js';
 import PeriodsPage from './pages/Periods.js';
-import VoucherListPage from './pages/VoucherList.js';
-import VoucherPage from './pages/Voucher.js';
+import VoucherListPage, { typeLabel } from './pages/VoucherList.js';
+import VoucherPage from './pages/VoucherForm.js';
 import OpeningBalancePage from './pages/OpeningBalance.js';
 import ClosingPage from './pages/Closing.js';
 import LedgersPage from './pages/Ledgers.js';
 import FinancialPage from './pages/Financial.js';
 import DataCheckPage from './pages/DataCheck.js';
 import ExportPage from './pages/Export.js';
+import { VOUCHER_TYPES } from '@kt/domain';
 import { api } from './api/client.js';
 
 // Các task sau thêm mục vào MENU và route vào routeTree.
+// Mỗi mục menu Chứng từ là danh sách lọc theo loại; hóa đơn (HDB, HDM, GGB, GGM) có màn hình riêng ở giai đoạn sau.
+const VOUCHER_MENU_TYPES = ['PT', 'PC', 'BC', 'BN', 'CT', 'QTU', 'BT', 'PKT'] as const;
 export const MENU: MenuItem[] = [
   { key: 'hethong', label: 'Hệ thống', to: '/he-thong', children: [
     { key: 'users', label: 'Người dùng', to: '/he-thong/nguoi-dung', permission: 'user.view' },
@@ -49,7 +52,7 @@ export const MENU: MenuItem[] = [
     { key: 'import', label: 'Nhập Excel', to: '/danh-muc/nhap-excel', permission: 'catalog.import' },
   ] },
   { key: 'chungtu', label: 'Chứng từ', to: '/chung-tu', children: [
-    { key: 'pkt', label: 'Phiếu kế toán', to: '/chung-tu/phieu-ke-toan', permission: 'voucher.view' },
+    ...VOUCHER_MENU_TYPES.map((code) => ({ key: code.toLowerCase(), label: typeLabel(VOUCHER_TYPES[code]!), to: `/chung-tu/${code}`, permission: 'voucher.view' })),
   ] },
   { key: 'socai', label: 'Sổ cái', to: '/so-cai', children: [
     { key: 'periods', label: 'Kỳ kế toán và khóa sổ', to: '/so-cai/ky-ke-toan', permission: 'period.view' },
@@ -89,10 +92,13 @@ const ledgersRoute = createRoute({ getParentRoute: () => appRoute, path: '/bao-c
 const financialRoute = createRoute({ getParentRoute: () => appRoute, path: '/bao-cao/bao-cao-tai-chinh', component: FinancialPage });
 const dataCheckRoute = createRoute({ getParentRoute: () => appRoute, path: '/tien-ich/soat-loi', component: DataCheckPage });
 const exportRoute = createRoute({ getParentRoute: () => appRoute, path: '/tien-ich/xuat-du-lieu', component: ExportPage });
-const voucherListRoute = createRoute({ getParentRoute: () => appRoute, path: '/chung-tu/phieu-ke-toan', component: VoucherListPage });
-const voucherRoute = createRoute({ getParentRoute: () => appRoute, path: '/chung-tu/phieu-ke-toan/$id', component: VoucherPage });
+const voucherListRoute = createRoute({ getParentRoute: () => appRoute, path: '/chung-tu/$type', component: VoucherListPage });
+const voucherRoute = createRoute({ getParentRoute: () => appRoute, path: '/chung-tu/$type/$id', component: VoucherPage });
+// Địa chỉ cũ của Phiếu kế toán (đã gửi cho người dùng, lưu trong dấu trang) chuyển sang địa chỉ theo loại.
+const oldPktListRoute = createRoute({ getParentRoute: () => appRoute, path: '/chung-tu/phieu-ke-toan', beforeLoad: () => { throw redirect({ to: '/chung-tu/$type', params: { type: 'PKT' } }); } });
+const oldPktRoute = createRoute({ getParentRoute: () => appRoute, path: '/chung-tu/phieu-ke-toan/$id', beforeLoad: ({ params }) => { throw redirect({ to: '/chung-tu/$type/$id', params: { type: 'PKT', id: params.id } }); } });
 const catalogRoute = createRoute({ getParentRoute: () => appRoute, path: '/danh-muc/$name', component: CatalogPage });
 
-export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, closingRoute, ledgersRoute, financialRoute, dataCheckRoute, exportRoute, voucherListRoute, voucherRoute, catalogRoute])]);
+export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, closingRoute, ledgersRoute, financialRoute, dataCheckRoute, exportRoute, oldPktListRoute, oldPktRoute, voucherListRoute, voucherRoute, catalogRoute])]);
 export const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }

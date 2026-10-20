@@ -27,7 +27,7 @@ const date = <T,>(headerName: string, field: string): ColDef<T> => ({ field, hea
 const drillable = <T,>(cols: ColDef<T>[], open: (r: T) => void): ColDef<T>[] => cols.map((c) => ({ ...c, editable: false,
   suppressKeyboardEvent: (p) => { if (p.event.type === 'keydown' && p.event.key === 'Enter' && p.data) { p.event.preventDefault(); open(p.data); return true; } return false; },
   onCellDoubleClicked: (e) => { if (e.data) open(e.data); } }));
-const openVoucher = (id: string) => { window.open(`/chung-tu/phieu-ke-toan/${id}`, '_blank', 'noopener'); };
+const openVoucher = (id: string) => { window.open(`/chung-tu/PKT/${id}`, '_blank', 'noopener'); };
 const sideCols = <T,>(title: string, get: (r: T) => Side, width = 120): ColDef<T>[] => [num<T>(`${title} Nợ`, (r) => get(r).debit, width), num<T>(`${title} Có`, (r) => get(r).credit, width)];
 
 function Summary({ items }: { items: [string, Side][] }) {

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import VoucherPage from '../src/pages/Voucher.js';
+import VoucherPage from '../src/pages/VoucherForm.js';
 
 const mocks = vi.hoisted(() => {
   class ApiError extends Error { constructor(public code: string, message: string, public status = 409) { super(message); } }
@@ -11,11 +11,11 @@ const mocks = vi.hoisted(() => {
 vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: mocks.ApiError }));
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: (c: string) => mocks.perms.has(c) }) }));
 // lưới AG Grid và ô tra danh mục nặng trong jsdom và không thuộc điều đang kiểm tra (nút theo trạng thái/quyền); đường nhập phím được kiểm bằng Playwright
-vi.mock('@kt/ui', () => ({ KeyboardGrid: () => null, LookupSelect: () => null }));
-vi.mock('@tanstack/react-router', () => ({ useParams: () => ({ id: mocks.id.v }), useNavigate: () => vi.fn() }));
+vi.mock('@kt/ui', () => ({ KeyboardGrid: () => null, LookupSelect: () => null, useUnsavedChanges: () => (proceed: () => void) => proceed() }));
+vi.mock('@tanstack/react-router', () => ({ useParams: () => ({ type: 'PKT', id: mocks.id.v }), useNavigate: () => vi.fn() }));
 
 const voucher = (state: string, extra: object = {}) => ({ id: 'v1', voucherType: 'PKT', voucherNo: state === 'draft' ? null : 'PKT00001', postingDate: '2026-01-05', documentDate: '2026-01-05', state, description: 'Chi VPP',
-  partyCode: null, currencyCode: 'VND', fxRate: null, version: 3, totalDebit: '1500000',
+  partyCode: null, currencyCode: 'VND', fxRate: null, version: 3, totalDebit: '1500000', periodStatus: 'open', hashed: false,
   lines: [{ lineNo: 1, accountCode: '6422', accountName: 'CP QLDN', debit: '1500000', credit: '0', description: null, partyCode: null, departmentCode: null, projectCode: null, costItemCode: null },
     { lineNo: 2, accountCode: '1111', accountName: 'Tiền mặt', debit: '0', credit: '1500000', description: null, partyCode: null, departmentCode: null, projectCode: null, costItemCode: null }], ...extra });
 

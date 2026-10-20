@@ -118,4 +118,29 @@ describe('Màn hình kết chuyển cuối kỳ', () => {
     expect(screen.queryByRole('button', { name: 'Chạy tất cả bước cuối kỳ' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Lưu sơ đồ' })).toBeNull();
   });
+  it('đổi ngày kết chuyển khi sơ đồ đang sửa dở: hỏi trước; Ở lại giữ ngày và phần đã nhập, Tiếp tục nạp sơ đồ của ngày mới', async () => {
+    renderPage();
+    const name = (await screen.findAllByDisplayValue('Kết chuyển doanh thu'))[0]!;
+    await userEvent.clear(name); await userEvent.type(name, 'Kết chuyển doanh thu sửa dở');
+    const picker = document.querySelector<HTMLInputElement>('.ant-picker input')!;
+    const newDay = dayjs().endOf('month').subtract(1, 'month').endOf('month');
+    await userEvent.clear(picker); await userEvent.type(picker, `${newDay.format('DD/MM/YYYY')}{Enter}`);
+    expect(await screen.findByText('Bỏ thay đổi chưa lưu?', { selector: '.ant-modal-confirm-title' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Ở lại' }));
+    expect(screen.getByDisplayValue('Kết chuyển doanh thu sửa dở')).toBeInTheDocument();
+    expect(apiMock).not.toHaveBeenCalledWith(`/api/closing/steps?date=${newDay.format('YYYY-MM-DD')}`);
+    await userEvent.clear(picker); await userEvent.type(picker, `${newDay.format('DD/MM/YYYY')}{Enter}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Tiếp tục' }));
+    await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith(`/api/closing/steps?date=${newDay.format('YYYY-MM-DD')}`));
+  }, 60_000);
+
+  it('đổi ngày khi chưa sửa gì: đổi ngay, không hỏi', async () => {
+    renderPage();
+    await screen.findAllByDisplayValue('Kết chuyển doanh thu');
+    const picker = document.querySelector<HTMLInputElement>('.ant-picker input')!;
+    const newDay = dayjs().endOf('month').subtract(1, 'month').endOf('month');
+    await userEvent.clear(picker); await userEvent.type(picker, `${newDay.format('DD/MM/YYYY')}{Enter}`);
+    await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith(`/api/closing/steps?date=${newDay.format('YYYY-MM-DD')}`));
+    expect(screen.queryByText('Bỏ thay đổi chưa lưu?', { selector: '.ant-modal-confirm-title' })).not.toBeInTheDocument();
+  }, 60_000);
 });

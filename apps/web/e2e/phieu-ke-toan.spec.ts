@@ -16,7 +16,7 @@ async function signIn(page: Page, request: APIRequestContext) {
 
 test('nhập phiếu kế toán hoàn toàn bằng bàn phím rồi ghi sổ', async ({ page, request }) => {
   await signIn(page, request);
-  await page.goto('/chung-tu/phieu-ke-toan');
+  await page.goto('/chung-tu/PKT');
   await expect(page.getByRole('heading', { name: 'Phiếu kế toán' })).toBeVisible(); // phím tắt Insert chỉ có tác dụng sau khi trang đã dựng xong
   await page.keyboard.press('Insert');
   await expect(page.getByText('Phiếu kế toán (mới)')).toBeVisible();
@@ -34,7 +34,7 @@ test('nhập phiếu kế toán hoàn toàn bằng bàn phím rồi ghi sổ', a
   await expect(page.getByText('Tổng Có: 1.500.000')).toBeVisible();
   await page.keyboard.press('Control+s');
   await expect(page.locator('.ant-message').getByText('Đã lưu')).toBeVisible(); // thông báo nổi; nhãn trạng thái "Đã ghi sổ" cũng nằm trên trang nên không tìm theo chữ trần
-  await expect(page).toHaveURL(/phieu-ke-toan\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/PKT\/[0-9a-f-]{36}$/);
   // chờ chứng từ tải xong rồi mới bấm F9: trang vừa dựng lại, lưới trống tới khi GET trả về (tiêu đề "(chưa cấp số)" hiện trước đó)
   await expect(page.locator('.ag-center-cols-container [col-id="accountCode"]', { hasText: '6422' })).toBeVisible(); // hasText: lưới có thể giữ tạm dòng trống cũ cạnh dòng mới nên không chọn theo row-index
   await page.keyboard.press('F9');
@@ -47,7 +47,7 @@ test('Ctrl+S khi con trỏ còn trong ô đang gõ vẫn lưu số vừa gõ; En
   const marker = `PW-${Date.now()}`;
   // bộ lọc danh sách (lưu theo người dùng) trỏ tới đúng chứng từ này
   expect((await request.put('/api/prefs/filter%3Avouchers%3APKT', { data: { value: { from: '2026-01-01', to: '2026-12-31', state: '', q: marker } } })).ok()).toBeTruthy();
-  await page.goto('/chung-tu/phieu-ke-toan/moi');
+  await page.goto('/chung-tu/PKT/moi');
   await page.getByLabel('Ngày hạch toán').fill('16/01/2026'); await page.keyboard.press('Enter');
   await page.getByLabel('Diễn giải').fill(marker);
 
@@ -59,15 +59,15 @@ test('Ctrl+S khi con trỏ còn trong ô đang gõ vẫn lưu số vừa gõ; En
   await page.keyboard.type('2000'); // không Enter: ô còn đang sửa khi bấm Ctrl+S
   await page.keyboard.press('Control+s');
   await expect(page.locator('.ant-message').getByText('Đã lưu')).toBeVisible();
-  await expect(page).toHaveURL(/phieu-ke-toan\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/PKT\/[0-9a-f-]{36}$/);
   const id = page.url().split('/').at(-1)!;
   const saved = await (await request.get(`/api/vouchers/${id}`)).json();
   expect(saved.lines.map((l: { accountCode: string; debit: string; credit: string }) => [l.accountCode, l.debit, l.credit])).toEqual([['6422', '2000', '0'], ['1111', '0', '2000']]);
 
-  await page.goto('/chung-tu/phieu-ke-toan');
+  await page.goto('/chung-tu/PKT');
   const row = page.locator('.ag-row', { hasText: marker });
   await expect(row).toBeVisible();
   await row.locator('[col-id="description"]').click();
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(new RegExp(`phieu-ke-toan/${id}$`));
+  await expect(page).toHaveURL(new RegExp(`PKT/${id}$`));
 });

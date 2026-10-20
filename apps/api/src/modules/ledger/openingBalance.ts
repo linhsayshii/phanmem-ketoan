@@ -7,7 +7,7 @@ import { D, formatVnNumber, parseVnNumber, sum, VND_AMOUNT_MSG, VND_AMOUNT_RE } 
 import { AppError } from '../../plugins/errors.js';
 import { MAX_ERRORS, MAX_ROWS, plainCell, type ImportError } from '../master/importExcel.js';
 import { notifyRecompute } from './notifyRecompute.js';
-import { postVoucher, type VoucherDto } from './vouchers.service.js';
+import { getVoucher, postVoucher, type VoucherDto } from './vouchers.service.js';
 
 // Tiền VND là đồng nguyên (numeric(20,0) sẽ âm thầm làm tròn '100.5'); nguyên tệ numeric(20,4).
 const vnd = z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG);
@@ -147,6 +147,17 @@ export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: str
   return postVoucher(trx, id);
 }
 
+// Bỏ ghi sổ chứng từ DK của năm từ màn hình Số dư đầu kỳ: chứng từ về nháp, số dư nhập vẫn giữ để sửa rồi ghi sổ lại.
+export async function unpostOpening(trx: Trx, tenantId: string, year: number): Promise<VoucherDto> {
+  await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`opening_balance:${tenantId}:${year}`}, 0))`.execute(trx);
+  const dk = await trx.selectFrom('voucher').select('id').where('voucher_type', '=', 'DK').where('fiscal_year', '=', year).where('source_doc_type', '=', 'opening_balance')
+    .where('reversal_of_id', 'is', null).where('state', '=', 'posted').executeTakeFirst();
+  if (!dk) throw new AppError('OPENING_NOT_POSTED', `Năm ${year} chưa có chứng từ số dư đầu kỳ đã ghi sổ`, 409);
+  // shortcut: chưa chặn khi khoản công nợ mở của DK đã được đối trừ; Task 11 thêm kiểm tra này và trả 409 OPEN_ITEM_SETTLED tại đây.
+  await unpostOpeningVoucher(trx, dk.id);
+  return getVoucher(trx, dk.id);
+}
+
 // ===== Excel =====
 const COLS = [['accountCode', 'Số hiệu TK (*)'], ['partyCode', 'Mã đối tượng'], ['currencyCode', 'Loại tiền (*)'], ['debit', 'Dư Nợ'], ['credit', 'Dư Có'],
   ['debitCurrency', 'Dư Nợ nguyên tệ'], ['creditCurrency', 'Dư Có nguyên tệ']] as const;
@@ -219,6 +230,12 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     app.withTenant(req, (trx) => checkOpening(trx, req.params.year)));
   app.post('/api/opening-balance/:year/post', { preHandler: app.requirePermission('opening_balance.update'), schema: { params: yearParam } }, async (req) => {
     const dto = await app.withTenant(req, (trx) => postOpening(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.params.year));
+    notifyRecompute(app, req.auth!.tenantId!);
+    return dto;
+  });
+  // Cần cả quyền sửa số dư đầu kỳ lẫn quyền bỏ ghi sổ chứng từ.
+  app.post('/api/opening-balance/:year/unpost', { preHandler: [app.requirePermission('opening_balance.update'), app.requirePermission('voucher.unpost')], schema: { params: yearParam } }, async (req) => {
+    const dto = await app.withTenant(req, (trx) => unpostOpening(trx, req.auth!.tenantId!, req.params.year));
     notifyRecompute(app, req.auth!.tenantId!);
     return dto;
   });

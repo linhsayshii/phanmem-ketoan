@@ -10,6 +10,7 @@ Tài liệu ngắn cho kế toán viên và kế toán trưởng: nhập Phiếu
 
 ## Phiếu kế toán
 
+- Menu Chứng từ có một mục cho từng loại: Phiếu thu, Phiếu chi, Giấy báo Có, Giấy báo Nợ, Chuyển tiền nội bộ, Quyết toán tạm ứng, Bù trừ công nợ, Phiếu kế toán. Mỗi mục là danh sách chỉ gồm loại đó; Insert ở danh sách mở phiếu mới cùng loại. Phiếu thu/chi và giấy báo có thêm người nộp/nhận, địa chỉ, số chứng từ gốc kèm theo, mục đích (chọn "Thu tiền khách hàng" thì dòng đối ứng tự điền TK 131 theo chế độ kế toán của năm) và tài khoản ngân hàng cho giấy báo. Nhập số tiền ở dòng quỹ (1111) thì dòng đối ứng đầu tiên tự lấy cùng số tiền ở bên ngược lại.
 - Vào Chứng từ → Phiếu kế toán, bấm "Thêm (Insert)". Nhập ngày hạch toán, diễn giải rồi các dòng định khoản trên lưới; tổng Nợ phải bằng tổng Có mới ghi sổ được.
 - Phím tắt: Enter hoặc Tab sang ô kế tiếp (Enter ở ô cuối thêm dòng mới), F4 tra cứu tài khoản hoặc đối tượng, Ctrl+Insert chèn dòng, Ctrl+Delete xóa dòng, Ctrl+S lưu nháp, F9 lưu và ghi sổ.
 - Tài khoản công nợ (131, 331...) bắt buộc có đối tượng; không định khoản vào tài khoản tổng hợp (có tài khoản con).
@@ -19,14 +20,15 @@ Tài liệu ngắn cho kế toán viên và kế toán trưởng: nhập Phiếu
 
 - Vào Sổ cái → Số dư đầu kỳ, chọn năm tài chính đầu tiên của công ty, nhập số dư từng tài khoản chi tiết (công nợ nhập theo từng đối tượng) hoặc "Nhập Excel" bằng "Tải mẫu Excel".
 - Bấm "Kiểm tra" để xem lỗi (tổng Nợ khác tổng Có, nhập sai bên, thiếu đối tượng, tài khoản loại 5–9), sửa hết lỗi rồi bấm "Ghi sổ số dư đầu kỳ": hệ thống tạo một phiếu loại DK đã ghi sổ.
-- Chỉ nhập cho năm đầu tiên; các năm sau số dư tự chuyển từ cuối năm trước. Muốn sửa, nhập lại rồi ghi sổ lần nữa (phiếu DK cũ được thay, giữ nguyên số).
+- Chỉ nhập cho năm đầu tiên; các năm sau số dư tự chuyển từ cuối năm trước. Muốn sửa, nhập lại rồi ghi sổ lần nữa (phiếu DK cũ được thay, giữ nguyên số), hoặc bấm "Bỏ ghi sổ số dư đầu kỳ" (cần quyền sửa số dư đầu kỳ và quyền bỏ ghi sổ) để đưa phiếu DK về nháp, sửa số dư rồi ghi sổ lại. Đây là cách duy nhất bỏ ghi sổ phiếu DK; màn hình chứng từ chung không bỏ ghi sổ phiếu DK.
 
 ## Ghi sổ, bỏ ghi sổ, đảo, hủy: dùng cái nào
 
 - Phiếu nháp chưa ghi sổ: sửa tự do; không cần nữa thì "Hủy" (số phiếu đã cấp được giữ lại, không dùng lại).
 - Phiếu đã ghi sổ, kỳ còn mở: chỉ sửa diễn giải và chiều phân tích (bộ phận, vụ việc, khoản mục) tại chỗ, có ghi nhật ký. Sửa số tiền, tài khoản hoặc ngày thì "Bỏ ghi sổ", sửa rồi ghi sổ lại; dòng cũ được lưu lại trong lịch sử. Cần quyền "sửa sau ghi sổ".
-- Kỳ đã khóa sổ: không bỏ ghi sổ được; lập phiếu "Đảo" (ghi sổ ngay với ngày hôm nay, đối ứng ngược phiếu gốc) rồi nhập phiếu đúng; ghi vào ngày thuộc kỳ khóa sổ thì cần quyền ghi lùi ngày. Không xóa được phiếu đã ghi sổ.
-- Kỳ khóa cứng: không sửa, không đảo, không ghi lùi vào kỳ đó, không thêm hoặc xóa chứng từ gốc đính kèm (tải về vẫn được); điều chỉnh bằng phiếu mới ở kỳ mở gần nhất.
+- Kỳ đã khóa sổ: không bỏ ghi sổ được; lập phiếu "Đảo" (hỏi ngày hạch toán của phiếu đảo, mặc định hôm nay và không sớm hơn ngày phiếu gốc, kèm diễn giải "Đảo chứng từ … ngày …" sửa được; ghi sổ ngay, đối ứng ngược phiếu gốc) rồi nhập phiếu đúng; ghi vào ngày thuộc kỳ khóa sổ thì cần quyền ghi lùi ngày. Không xóa được phiếu đã ghi sổ.
+- Kỳ khóa cứng: không sửa, không đảo, không ghi lùi vào kỳ đó, không thêm hoặc xóa chứng từ gốc đính kèm (tải về vẫn được); điều chỉnh bằng phiếu mới ở kỳ mở gần nhất ("Nhân bản sang kỳ mở").
+- Đang nhập dở mà bấm Đảo, Bỏ ghi sổ, Nhân bản hoặc Hủy thì hệ thống hỏi "Bỏ thay đổi chưa lưu?" trước; màn hình Kết chuyển cuối kỳ hỏi tương tự khi đổi ngày kết chuyển lúc sơ đồ đang sửa dở.
 - Phiếu do hệ thống sinh (KC/PB của màn hình Kết chuyển, DK của màn hình Số dư đầu kỳ) không bỏ ghi sổ, hủy, xóa hay sửa dòng được ở màn hình Phiếu kế toán, và không lập tay phiếu KC hay DK: kết chuyển dùng "Chạy lại (đảo cũ)", số dư đầu kỳ sửa ở màn hình Số dư đầu kỳ. Phiếu PB vẫn lập tay được. Một phiếu tối đa 5.000 dòng.
 
 ## Khóa sổ ba mức
@@ -68,4 +70,4 @@ Tài liệu ngắn cho kế toán viên và kế toán trưởng: nhập Phiếu
 - Tài khoản theo dõi chi tiết vật tư hoặc tài sản cố định (hệ TT133 hiện có: 152–157 và 2111–2113) chưa ghi sổ được cho tới giai đoạn 2: định khoản vào đó bị từ chối vì thiếu vật tư/tài sản, và số dư đầu kỳ của chúng không nhập được ở màn hình Số dư đầu kỳ; sẽ nhập ở phân hệ kho và tài sản của giai đoạn 2.
 - Đổi chế độ kế toán giữa hai năm (ví dụ TT200 sang TT99) cần bước chuyển đổi số dư giữa hai hệ tài khoản, chưa có. Sau khi đổi, cột so sánh (số đầu năm của B01, năm trước của B02/B03) hiện "—" kèm cảnh báo thay vì số sai, và số dư cuối năm cũ không tự chuyển sang tài khoản của hệ mới.
 - Hệ tài khoản TT99 đã nhập từ Phụ lục II Thông tư 99/2025 (công ty mới chọn TT99 được ngay); công ty mẫu XYZ vẫn dùng TT133 vì dữ liệu mẫu dùng tài khoản của TT133.
-- Màn hình Phiếu kế toán chỉ nhập tiền Việt Nam đồng: dữ liệu đã có cột nguyên tệ và tỷ giá, nhưng màn hình nhập ngoại tệ theo dòng và bảng tỷ giá tự điền để giai đoạn 2. Một dòng VND tối đa 9.999.999.999.999.999 đồng (vượt thì bị từ chối).
+- Chọn loại tiền khác VND ở tiêu đề chứng từ thì hiện ô Tỷ giá và cột Nguyên tệ (Nợ dương, Có âm) để nhập; bảng tỷ giá tự điền theo ngày chưa có (làm trong giai đoạn 2). Một dòng VND tối đa 9.999.999.999.999.999 đồng (vượt thì bị từ chối).

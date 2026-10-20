@@ -35,3 +35,12 @@ export function accountFetcherFor(postingDate?: string, includeGroups = false, i
       .filter((r) => !k || r.code.startsWith(k) || r.name.toLowerCase().includes(k)).slice(0, 50);
   };
 }
+
+// Tài khoản ngân hàng của công ty: danh mục không có cột mã/tên chung nên số tài khoản làm mã, tên tài khoản (hoặc mã ngân hàng) làm tên.
+// Giá trị lưu vào chứng từ là số tài khoản (bank_account.account_no).
+interface BankAccountRow { id: string; account_no: string; account_name: string | null; bank_code: string; is_active?: boolean }
+export async function bankAccountFetcher(q: string, signal: AbortSignal): Promise<LookupRow[]> {
+  const r = await fetch(`/api/catalogs/bank_account?q=${encodeURIComponent(q)}&size=50`, { credentials: 'include', signal });
+  if (!r.ok) return []; // phiên hết hạn / thiếu quyền: danh sách rỗng
+  return ((await r.json()) as { rows: BankAccountRow[] }).rows.map((b) => ({ id: b.id, code: b.account_no, name: b.account_name || b.bank_code, ...(b.is_active === false ? { inactive: true } : {}) }));
+}

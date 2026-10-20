@@ -1,10 +1,10 @@
 import { useCallback, useMemo } from 'react';
-import { Button, DatePicker, Input, Select, Space, Tag } from 'antd';
+import { Alert, Button, DatePicker, Input, Select, Space, Tag } from 'antd';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useParams } from '@tanstack/react-router';
 import type { ColDef, SuppressKeyboardEventParams } from 'ag-grid-community';
 import dayjs from 'dayjs';
-import { formatVnDate, formatVnNumber } from '@kt/domain';
+import { formatVnDate, formatVnNumber, voucherTypeDef, type VoucherTypeDef } from '@kt/domain';
 import { KeyboardGrid, useHotkeys, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
@@ -12,12 +12,20 @@ import { useAuth } from '../auth.js';
 interface Row { id: string; voucherType: string; voucherNo: string | null; postingDate: string; state: string; description: string | null; partyName: string | null; totalDebit: string }
 export const STATE_LABEL: Record<string, string> = { draft: 'Nháp', posted: 'Đã ghi sổ', reversed: 'Đã đảo', cancelled: 'Đã hủy' };
 const STATE_COLOR: Record<string, string> = { draft: 'default', posted: 'green', reversed: 'orange', cancelled: 'red' };
+// Tên gọi trên menu và tiêu đề: bỏ phần chú thích trong ngoặc, vd. "Giấy báo Nợ (in Ủy nhiệm chi)" -> "Giấy báo Nợ".
+export const typeLabel = (d: VoucherTypeDef): string => d.name.replace(/\s*\(.*\)$/, '');
 
 export default function VoucherListPage() {
+  const { type } = useParams({ strict: false }) as { type: string };
+  const def = voucherTypeDef(type);
+  return def ? <VoucherList key={def.code} def={def} /> : <Alert type="error" showIcon message={`Không có loại chứng từ "${type}"`} />;
+}
+
+function VoucherList({ def }: { def: VoucherTypeDef }) {
   const navigate = useNavigate(); const { me } = useAuth();
-  const open = useCallback((id: string) => void navigate({ to: '/chung-tu/phieu-ke-toan/$id', params: { id } }), [navigate]);
-  const [f, setF] = useRememberedFilter('vouchers:PKT', { from: dayjs().startOf('month').format('YYYY-MM-DD'), to: dayjs().endOf('month').format('YYYY-MM-DD'), state: '' as string, q: '' }, `${me?.tenantId}:${me?.userId}`);
-  const qs = new URLSearchParams({ type: 'PKT', from: f.from, to: f.to, size: '500', ...(f.state ? { state: f.state } : {}), ...(f.q ? { q: f.q } : {}) }).toString();
+  const open = useCallback((id: string) => void navigate({ to: '/chung-tu/$type/$id', params: { type: def.code, id } }), [navigate, def.code]);
+  const [f, setF] = useRememberedFilter(`vouchers:${def.code}`, { from: dayjs().startOf('month').format('YYYY-MM-DD'), to: dayjs().endOf('month').format('YYYY-MM-DD'), state: '' as string, q: '' }, `${me?.tenantId}:${me?.userId}`);
+  const qs = new URLSearchParams({ type: def.code, from: f.from, to: f.to, size: '500', ...(f.state ? { state: f.state } : {}), ...(f.q ? { q: f.q } : {}) }).toString();
   const data = useQuery({ queryKey: ['vouchers', qs], queryFn: () => api<{ rows: Row[]; total: number }>(`/api/vouchers?${qs}`) });
   useHotkeys({ Insert: () => open('moi') });
   // Enter trên dòng đang chọn = mở chứng từ (lưới chỉ đọc nên KeyboardGrid không xử lý Enter)
@@ -32,7 +40,7 @@ export default function VoucherListPage() {
   return (
     <>
       <Space style={{ marginBottom: 12 }} wrap>
-        <h2 style={{ margin: 0 }}>Phiếu kế toán</h2>
+        <h2 style={{ margin: 0 }}>{typeLabel(def)}</h2>
         <DatePicker.RangePicker format="DD/MM/YYYY" value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
         <Select style={{ width: 140 }} value={f.state} onChange={(state) => setF({ ...f, state })} options={[{ value: '', label: 'Mọi trạng thái' }, ...Object.entries(STATE_LABEL).map(([value, label]) => ({ value, label }))]} />
         <Input.Search key={f.q} placeholder="Số, diễn giải, đối tượng" defaultValue={f.q} onSearch={(q) => setF({ ...f, q })} style={{ width: 260 }} allowClear />

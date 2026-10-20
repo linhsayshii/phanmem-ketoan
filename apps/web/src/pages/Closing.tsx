@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import dayjs, { type Dayjs } from 'dayjs';
 import { sum, VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
+import { useUnsavedChanges } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -48,12 +49,15 @@ export default function ClosingPage() {
   const [date, setDate] = useState<Dayjs>(() => dayjs().endOf('month'));
   const postingDate = date.format('YYYY-MM-DD');
   const [form] = Form.useForm<{ steps: FormStep[] }>();
+  // Sơ đồ đang sửa dở: đổi ngày kết chuyển nạp sơ đồ của ngày khác nên phải hỏi trước, cùng cơ chế với màn hình chứng từ.
+  const [dirty, setDirty] = useState(false);
+  const confirmIfDirty = useUnsavedChanges(dirty);
   const steps = useQuery({ queryKey: ['closing-steps', postingDate], queryFn: () => api<Step[]>(`/api/closing/steps?date=${postingDate}`) });
   const runs = useQuery({ queryKey: ['closing-runs', date.year()], queryFn: () => api<Run[]>(`/api/closing/runs?year=${date.year()}`) });
   useEffect(() => { if (steps.error) void message.error((steps.error as Error).message); }, [steps.error]);
   useEffect(() => { if (runs.error) void message.error((runs.error as Error).message); }, [runs.error]);
   const canEdit = can('closing_step.update');
-  useEffect(() => { if (steps.data && canEdit) form.setFieldsValue({ steps: steps.data.map(toForm) }); }, [steps.data, form, canEdit]);
+  useEffect(() => { if (steps.data && canEdit) { form.setFieldsValue({ steps: steps.data.map(toForm) }); setDirty(false); } }, [steps.data, form, canEdit]);
   const onError = (e: unknown) => { void message.error((e as Error).message); };
   // Tải lại cả khi lỗi: chạy tất cả có thể đã xong vài bước trước khi gặp lỗi, nhật ký phải hiện đúng. Chạy bước không tải lại sơ đồ (biểu mẫu đang sửa dở sẽ bị đặt lại).
   const refresh = (...keys: string[]) => () => { for (const k of keys) void qc.invalidateQueries({ queryKey: [k] }); };
@@ -88,7 +92,7 @@ export default function ClosingPage() {
       <Space wrap>
         <h2 style={{ margin: 0 }}>Kết chuyển cuối kỳ</h2>
         <span>Ngày kết chuyển</span>
-        <DatePicker format="DD/MM/YYYY" allowClear={false} value={date} onChange={(d) => d && setDate(d)} />
+        <DatePicker format="DD/MM/YYYY" allowClear={false} value={date} onChange={(d) => d && confirmIfDirty(() => setDate(d))} />
         {can('closing.run') && <Button type="primary" disabled={!periodEnd.length} loading={exec.isPending} onClick={runAll}>Chạy tất cả bước cuối kỳ</Button>}
       </Space>
       {laterDone.length > 0 && <Alert type="warning" showIcon closable onClose={() => setLaterDone([])} message={`Các bước sau đã chạy trước đó: ${laterDone.join(', ')}; hãy chạy lại các bước này hoặc Chạy tất cả`} />}
@@ -111,14 +115,14 @@ export default function ClosingPage() {
         <Table<Run> rowKey="id" size="small" pagination={{ pageSize: 20, hideOnSinglePage: true }} loading={runs.isFetching} dataSource={runs.data ?? []} columns={[
           { title: 'Ngày', dataIndex: 'postingDate', width: 110, render: fmtDate },
           { title: 'Bước', dataIndex: 'stepName' },
-          { title: 'Chứng từ', key: 'v', width: 140, render: (_, r) => <Link to="/chung-tu/phieu-ke-toan/$id" params={{ id: r.voucherId }}>{r.voucherNo ?? '(chưa số)'}</Link> },
+          { title: 'Chứng từ', key: 'v', width: 140, render: (_, r) => <Link to="/chung-tu/$type/$id" params={{ type: 'KC', id: r.voucherId }}>{r.voucherNo ?? '(chưa số)'}</Link> },
           { title: 'Trạng thái', dataIndex: 'status', width: 110, render: (s: Run['status']) => (s === 'done' ? <Tag color="green">Đã chạy</Tag> : <Tag color="orange">Đã đảo</Tag>) },
           { title: 'Lúc chạy', dataIndex: 'createdAt', width: 150, render: (t: string) => dayjs(t).format('DD/MM/YYYY HH:mm') },
         ]} />
       </Card>
       {canEdit && (
         <Card size="small" title="Sơ đồ kết chuyển, phân bổ">
-          <Form<{ steps: FormStep[] }> form={form} layout="vertical" onFinish={onFinish}>
+          <Form<{ steps: FormStep[] }> form={form} layout="vertical" onFinish={onFinish} onValuesChange={() => setDirty(true)}>
             <Form.List name="steps">
               {(fields, { add, remove }) => (
                 <>

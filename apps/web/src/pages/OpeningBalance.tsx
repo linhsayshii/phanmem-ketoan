@@ -7,7 +7,7 @@ import { KeyboardGrid, LookupSelect } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor } from '../lookups.js';
-import { parseAmount } from './Voucher.js';
+import { parseAmount } from './VoucherForm.js';
 
 // accountName, partyName và id chỉ để hiển thị; máy chủ không nhận.
 type Row = { accountCode: string; accountName: string; partyCode: string | null; partyName: string | null; currencyCode: string; debit: string; credit: string; debitCurrency: string; creditCurrency: string };
@@ -100,6 +100,11 @@ export default function OpeningBalancePage() {
     }
   });
 
+  // Bỏ ghi sổ chứng từ DK của năm để sửa số dư; đây là thao tác bỏ ghi sổ tại màn hình này (chứng từ loại DK không sửa qua route chung).
+  const unpost = () => Modal.confirm({ title: 'Bỏ ghi sổ số dư đầu kỳ?', content: `Chứng từ số dư đầu kỳ năm ${year} trở về nháp để sửa; sổ cái và số dư được tính lại. Ghi sổ lại sau khi sửa.`, okText: 'Bỏ ghi sổ', cancelText: 'Không',
+    onOk: () => run(async () => { await api(`/api/opening-balance/${year}/unpost`, { method: 'POST', json: {} }); setPosted(null); setIssues(null);
+      await qc.invalidateQueries({ queryKey: ['opening', year] }); void message.success('Đã bỏ ghi sổ số dư đầu kỳ, sửa số dư rồi ghi sổ lại'); }) });
+
   const columns = useMemo<ColDef<Row>[]>(() => [
     codeCol('accountCode', 'accountName', 'TK (F4)', 110), { field: 'accountName', headerName: 'Tên tài khoản', flex: 1, editable: false },
     codeCol('partyCode', 'partyName', 'Đối tượng (F4)', 130), { field: 'currencyCode', headerName: 'Loại tiền', width: 90, valueParser: (p) => String(p.newValue ?? '').trim().toUpperCase() },
@@ -114,6 +119,7 @@ export default function OpeningBalancePage() {
       {mayEdit && <Button type="primary" onClick={() => void save()} loading={busy} disabled={!ready}>Lưu</Button>}
       <Button onClick={() => void check()} disabled={busy || !ready}>Kiểm tra</Button>
       {mayEdit && <Button onClick={() => void post()} disabled={busy || !ready}>Ghi sổ số dư đầu kỳ</Button>}
+      {mayEdit && can('voucher.unpost') && <Button onClick={unpost} disabled={busy || !ready}>Bỏ ghi sổ số dư đầu kỳ</Button>}
       <Button href="/api/opening-balance/template.xlsx">Tải mẫu Excel</Button>
       {mayEdit && <Button onClick={() => setImporting(true)} disabled={!ready}>Nhập Excel</Button>}
     </Space>}>
