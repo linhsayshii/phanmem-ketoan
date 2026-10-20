@@ -2,6 +2,11 @@
 import type { Regime } from './period.js';
 
 export type HeaderField = 'party' | 'personName' | 'personAddress' | 'attachmentsCount' | 'bankAccount' | 'counterBankAccount' | 'partyBankAccount' | 'dueDate' | 'purpose' | 'currency';
+// Nhãn tiếng Việt của trường tiêu đề, dùng cho thông báo thiếu trường bắt buộc và nhãn ô nhập.
+export const HEADER_FIELD_LABELS: Record<HeaderField, string> = {
+  party: 'Đối tượng', personName: 'Người nộp/nhận', personAddress: 'Địa chỉ', attachmentsCount: 'Số chứng từ gốc kèm theo', bankAccount: 'Tài khoản ngân hàng',
+  counterBankAccount: 'Tài khoản ngân hàng nhận', partyBankAccount: 'Tài khoản ngân hàng của đối tượng', dueDate: 'Hạn thanh toán', purpose: 'Mục đích', currency: 'Loại tiền',
+};
 export interface VoucherTypeDef {
   code: string; name: string; module: 'general' | 'cash' | 'bank' | 'arap'; manual: boolean; header: HeaderField[]; required: HeaderField[];
   cashSide?: 'in' | 'out'; moneyKind?: 'cash' | 'bank'; hasItems?: boolean; invoiceDirection?: 'purchase' | 'sale'; refund?: boolean; printForms: string[];
@@ -45,7 +50,7 @@ export interface CashPurpose {
 }
 const all = (...codes: string[]): CashPurpose['counterAccounts'] => ({ TT133: codes, TT99: codes, TT200: codes });
 // Tài khoản đối ứng là tài khoản chi tiết có trong mẫu hệ thống tài khoản của chế độ (kiểm thử ở packages/coa-data/test/cashPurposes.test.ts). BHTN là 3385 ở TT133, 3386 ở TT99 và TT200.
-const TAXES = ['33311', '3332', '3333', '3334', '3335', '3336', '3337', '3339'];
+const TAXES = ['33311', '33312', '3332', '3333', '3334', '3335', '3336', '3337', '33381', '33382', '3339'];
 export const CASH_PURPOSES: readonly CashPurpose[] = [
   { code: 'thu_khach_hang', label: 'Thu tiền khách hàng', types: ['PT', 'BC'], counterAccounts: all('131'), partyRequired: true },
   { code: 'thu_hoan_ung', label: 'Thu hoàn ứng', types: ['PT', 'BC'], counterAccounts: all('141'), partyRequired: false },

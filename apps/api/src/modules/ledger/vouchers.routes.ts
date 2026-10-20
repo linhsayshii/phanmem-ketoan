@@ -11,6 +11,8 @@ import { renderPdf } from '../reporting/print/pdf.js';
 import { renderVoucherHtml } from '../reporting/print/voucherHtml.js';
 
 const idParam = z.object({ id: z.string().uuid() });
+// Sửa chứng từ đã ghi sổ: phải có diễn giải hoặc ít nhất một dòng cần sửa (thân {} hay chỉ { version } không đổi gì).
+const metaBody = S.metaInput.extend({ version: z.number().int() }).refine((b) => b.description !== undefined || !!b.lines?.length, 'Không có nội dung cần sửa');
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   const ctx = (req: FastifyRequest) => ({ tenantId: req.auth!.tenantId!, userId: req.auth!.userId });
@@ -55,7 +57,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     return reply.status(201).send(dto);
   });
 
-  app.put('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.update'), schema: { params: idParam, body: z.union([S.voucherInput.extend({ version: z.number().int() }), S.metaInput.extend({ version: z.number().int() })]) } }, async (req) => {
+  app.put('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.update'), schema: { params: idParam, body: z.union([S.voucherInput.extend({ version: z.number().int() }), metaBody]) } }, async (req) => {
     const { version, ...input } = req.body;
     return withOverride(req, (trx) => 'voucherType' in input ? S.updateDraft(trx, req.params.id, version, input) : S.updatePostedMeta(trx, req.params.id, version, input));
   });

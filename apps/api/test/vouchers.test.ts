@@ -258,6 +258,50 @@ describe('chứng từ', () => {
     expect(r.json().lines.map((l: { amountCurrency: string }) => l.amountCurrency)).toEqual(['-1000.0000', '1000.0000']);
   });
 
+  it('thiếu quyền voucher.create thì không tạo được, thiếu voucher.post thì không ghi sổ được (403)', async () => {
+    const xem = await userWith('xem', ['voucher.view']);
+    const body = pkt('2026-08-01', [L('6422', '2'), L('1111', '0', '2')]);
+    const noCreate = await ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie: xem }, payload: body });
+    expect([noCreate.statusCode, noCreate.json().error.code]).toEqual([403, 'FORBIDDEN']);
+    const draft = (await create(body)).json();
+    const nhap = await userWith('xem', ['voucher.view', 'voucher.create']);
+    const noPost = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${draft.id}/post`, headers: { cookie: nhap } });
+    expect([noPost.statusCode, noPost.json().error.code]).toEqual([403, 'FORBIDDEN']);
+    expect((await ctx.app.inject({ method: 'GET', url: `/api/vouchers/${draft.id}`, headers: { cookie } })).json().state).toBe('draft');
+  });
+
+  it('PUT với thân {} hoặc chỉ { version } trả 400 VALIDATION', async () => {
+    const v = (await create(pkt('2026-08-02', [L('6422', '2'), L('1111', '0', '2')], { autoPost: true }))).json();
+    for (const payload of [{}, { version: v.version }]) {
+      const r = await ctx.app.inject({ method: 'PUT', url: `/api/vouchers/${v.id}`, headers: { cookie }, payload });
+      expect([r.statusCode, r.json().error.code]).toEqual([400, 'VALIDATION']);
+    }
+    const ok = await ctx.app.inject({ method: 'PUT', url: `/api/vouchers/${v.id}`, headers: { cookie }, payload: { version: v.version, description: 'Có nội dung' } });
+    expect(ok.statusCode, ok.body).toBe(200);
+  });
+
+  it('ghi sổ lại sau khi kỳ bị khóa mềm trong lúc chứng từ đang bỏ ghi sổ: 409 PERIOD_SOFT_LOCKED, có quyền ghi lùi thì được', async () => {
+    const kv = await userWith('ketoan_vien', ['voucher.view', 'voucher.post']);
+    const v = (await create(pkt('2026-08-03', [L('6422', '5'), L('1111', '0', '5')], { autoPost: true }))).json();
+    await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${v.id}/unpost`, headers: { cookie } });
+    const setStatus = (status: string) => sql`UPDATE fiscal_period SET status = ${status} WHERE tenant_id = ${tenantId}::uuid AND fiscal_year = 2026 AND period_no = 8`.execute(ctx.t.admin);
+    await setStatus('soft_locked');
+    try {
+      const blocked = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${v.id}/post`, headers: { cookie: kv } });
+      expect([blocked.statusCode, blocked.json().error.code]).toEqual([409, 'PERIOD_SOFT_LOCKED']);
+      const ok = await post(v.id); expect(ok.statusCode, ok.body).toBe(200); expect(ok.json()).toMatchObject({ state: 'posted', voucherNo: v.voucherNo });
+    } finally { await setStatus('open'); }
+  });
+
+  it('hai yêu cầu ghi sổ đồng thời cùng chứng từ: đúng một thành công, số chứng từ không nhảy', async () => {
+    const lastNo = async () => (await sql<{ n: number }>`SELECT coalesce(max(last_no), 0)::int AS n FROM voucher_counter WHERE tenant_id = ${tenantId}::uuid AND voucher_type = 'PKT' AND fiscal_year = 2026`.execute(ctx.t.admin)).rows[0]!.n;
+    const v = (await create(pkt('2026-08-04', [L('6422', '6'), L('1111', '0', '6')]))).json();
+    const before = await lastNo();
+    const [a, b] = await Promise.all([post(v.id), post(v.id)]);
+    expect([a.statusCode, b.statusCode].sort()).toEqual([200, 409]);
+    expect(await lastNo()).toBe(before + 1);
+  });
+
   it('ghi sổ gửi việc tính lại số dư vào hàng đợi cho worker', async () => {
     const jobs = async () => (await sql<{ n: number }>`SELECT count(*) AS n FROM pgboss.job WHERE name = 'balance.recompute' AND data->>'tenantId' = ${tenantId}`.execute(ctx.t.admin)).rows[0]!.n;
     await expect.poll(jobs, { timeout: 5000 }).toBeGreaterThan(0);

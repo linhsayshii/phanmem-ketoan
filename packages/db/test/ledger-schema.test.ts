@@ -347,6 +347,11 @@ describe('GĐ2: loại chứng từ, cột tiêu đề và cân bằng ngoại t
     await expect(fxVoucher('2026-07-01', [{ code: '1122', amount: '1000', rate: '25400', debit: '25400002' }, { code: '5113', amount: '-1000', rate: '25400', credit: '25400002' }])).rejects.toThrow(/LINE_FX_MISMATCH/);
   });
 
+  it('dòng Có ngoại tệ nhập sai dấu nguyên tệ (+1000 trên dòng Có) bị từ chối', async () => {
+    await expect(fxVoucher('2026-07-01', [{ code: '1122', amount: '1000', rate: '25400', debit: '25400000' }, { code: '5113', amount: '1000', rate: '25400', credit: '25400000' }]))
+      .rejects.toThrow(/LINE_FX_MISMATCH: dòng 2 nguyên tệ 1000\.0000 × tỷ giá 25400\.0000000000 khác số tiền VND -25400000/);
+  });
+
   it('dòng ngoại tệ không tỷ giá chỉ được khi nguyên tệ = 0 hoặc chứng từ DK', async () => {
     await expect(fxVoucher('2026-07-02', [{ code: '1122', amount: '1000', rate: null, debit: '25400000' }, { code: '5113', amount: '-1000', rate: null, credit: '25400000' }])).rejects.toThrow(/LINE_FX_RATE_REQUIRED/);
     await fxVoucher('2026-07-02', [{ code: '1122', amount: '0', rate: null, debit: '300' }, { code: '5113', amount: '0', rate: null, credit: '300' }]); // dòng điều chỉnh chỉ VND (CL, DG, XQ)
