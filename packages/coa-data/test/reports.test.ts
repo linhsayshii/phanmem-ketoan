@@ -48,13 +48,15 @@ describe('mẫu báo cáo tài chính', () => {
     }
   });
   it('tài khoản trong công thức tồn tại trong mẫu hệ thống tài khoản (chỉ khi bộ báo cáo complete=true)', () => {
+    const pending: string[] = [];
     for (const regime of REGIMES) {
       const coa = new Set(loadCoaTemplate(regime).map((a) => a.code));
       for (const code of CODES) {
-        if (!complete(regime, code)) { console.warn(`CẢNH BÁO: ${regime}/${code} chưa hoàn tất, bỏ qua đối chiếu tài khoản`); continue; }
+        if (!complete(regime, code)) { pending.push(`${regime}/${code}`); continue; }
         for (const l of rows.filter((r) => r.regime === regime && r.reportCode === code)) if (l.formula)
           for (const a of formulaRefs(parseFormula(l.formula)).accounts) expect([...coa].some((c) => c.startsWith(a) || a.startsWith(c)), `${regime}/${code}/${l.lineCode}: TK ${a}`).toBe(true);
       }
     }
+    if (pending.length) console.warn(`CẢNH BÁO: ${pending.length} bộ báo cáo chưa hoàn tất (chờ văn bản), bỏ qua đối chiếu tài khoản: ${pending.join(', ')}`);
   });
 });

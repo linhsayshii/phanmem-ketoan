@@ -16,7 +16,7 @@ const range = { from: isoDate, to: isoDate };
 const ordered = (q: { from: string; to: string }) => q.from <= q.to;
 const orderedMsg = { message: 'Từ ngày phải trước hoặc bằng đến ngày' };
 const regimeEnum = z.enum(['TT99', 'TT133', 'TT200', 'TT58']);
-const reportCode = z.string().min(1).max(20);
+const reportCode = z.enum(['B01', 'B02', 'B03']);
 const format = z.enum(['json', 'html', 'pdf', 'xlsx']).default('json');
 type PrintFormat = 'html' | 'pdf' | 'xlsx';
 

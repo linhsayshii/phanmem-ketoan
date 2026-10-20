@@ -9,7 +9,7 @@ import { useAuth } from '../auth.js';
 
 interface FiscalYear { fiscalYear: number; regime: string; dateFrom: string; dateTo: string }
 interface Row { lineCode: string; label: string; parentLineCode: string | null; isBold: boolean; negate: boolean; noteRef: string | null; source: string; formula: string | null; current: string; previous: string | null }
-interface Report { reportCode: string; name: string; formNo: string; issuedBy: string; regime: string; period: { from: string; to: string }; rows: Row[] }
+interface Report { reportCode: string; name: string; formNo: string; issuedBy: string; regime: string; period: { from: string; to: string }; previousNote?: 'REGIME_CHANGED'; rows: Row[] }
 interface DrillRow { accountCode: string; accountName: string; counterAccountCode?: string; partyCode: string | null; amount: string }
 interface LedgerRow { postingDate: string; voucherId: string; voucherNo: string; description: string | null; counterAccountCode: string; debit: string; credit: string }
 interface EditLine { key: number; lineCode: string; label: string; parentLineCode: string | null; source: string; side: string; formula: string | null; isBold: boolean; negate: boolean; noteRef: string | null }
@@ -21,6 +21,7 @@ const query = (o: Record<string, string>) => new URLSearchParams(o).toString();
 // Số âm trong ngoặc; dòng negate (khoản chi) hiện trong ngoặc như số âm.
 const show = (v: string | null, negate = false) => { if (v === null) return ''; const x = negate ? D(v).neg() : D(v); return !x.isZero() && x.isNegative() ? `(${formatVnNumber(x.neg())})` : formatVnNumber(x.abs()); };
 const num = (v: string) => (v === '0' ? '' : formatVnNumber(v));
+const REGIME_NOTE = 'Năm trước dùng chế độ kế toán khác; cần chuyển đổi số dư'; // cột so sánh để trống khi ngày so sánh thuộc kỳ của chế độ khác
 const LINK = { padding: 0, height: 'auto' } as const; // nút dạng liên kết: nhận phím Tab/Enter, khác thẻ <a> không có href
 
 // Sổ Cái (cấp 2): các dòng chứng từ tạo nên số của một tài khoản/đối tượng, mở chứng từ gốc.
@@ -71,6 +72,7 @@ function FormulaEditor({ reportCode, regime, onClose, onSaved }: { reportCode: s
     <Modal open onCancel={onClose} width={1280} title={`Sửa công thức ${reportCode} (${regime})`} okText="Lưu" cancelText="Đóng" confirmLoading={save.isPending} onOk={() => save.mutate()}>
       {load.error && <Alert type="error" showIcon message={(load.error as Error).message} />}
       <p>Công thức: cộng/trừ các hạng tử. <code>111+112</code> tiền tố tài khoản, <code>131(1312)</code> trừ tiền tố con, <code>[100]</code> dòng khác, <code>N911/C632</code> đối ứng Nợ/Có, <code>0</code> số.</p>
+      <p>Cột &quot;Âm&quot; chỉ đổi cách hiển thị (số trong ngoặc), không đổi giá trị: dòng tổng phải trừ rõ ràng bằng dấu <code>-</code> trong công thức.</p>
       <Table<EditLine> size="small" rowKey="key" pagination={false} scroll={{ y: 420 }} loading={load.isFetching} dataSource={lines} columns={[
         { title: 'Mã dòng', key: 'lineCode', width: 80, render: text('lineCode') }, { title: 'Chỉ tiêu', key: 'label', render: text('label') }, { title: 'Dòng cha', key: 'parent', width: 80, render: text('parentLineCode') },
         { title: 'Nguồn', key: 'source', width: 110, render: (_, l) => <Select size="small" style={{ width: 100 }} options={SOURCES} value={l.source} onChange={(source) => set(l.key, { source })} /> },
@@ -108,6 +110,7 @@ export default function FinancialPage() {
   const depthOf = (r: Row) => { let d = 0; let p = r.parentLineCode; while (p && d < 10) { p = rows.find((x) => x.lineCode === p)?.parentLineCode ?? null; d++; } return d; };
   const missing = report.error instanceof ApiError && report.error.code === 'REPORT_NOT_FOUND';
   const amount = (field: 'current' | 'previous') => (_: unknown, r: Row) => {
+    if (field === 'previous' && report.data?.previousNote) return r.formula ? '—' : '';
     const v = r[field]; if (v === null || !r.formula) return '';
     const text = show(v, r.negate);
     return field === 'current' ? <Button type="link" size="small" style={LINK} title="Truy ngược" onClick={() => setDrill(r)}>{text}</Button> : text;
@@ -132,13 +135,14 @@ export default function FinancialPage() {
       {years.data && !years.data.length && <Alert type="info" showIcon message="Chưa có năm tài chính nào. Tạo năm tài chính trước khi xem báo cáo." />}
       {report.data && <div><b>{report.data.name}</b> - Mẫu số {report.data.formNo}<div style={{ color: '#888' }}>{report.data.issuedBy}</div></div>}
       {missing && <Alert type="info" showIcon message={`Chưa có định nghĩa ${code} cho ${fy?.regime}. ${can('report_def.update') ? 'Bấm "Sửa công thức" để định nghĩa các chỉ tiêu.' : 'Liên hệ người quản trị để định nghĩa.'}`} />}
+      {report.data?.previousNote && <Alert type="warning" showIcon message={REGIME_NOTE} />}
       {report.error && !missing && <Alert type="error" showIcon message={(report.error as Error).message} />}
       {report.data && (
         <Table<Row> size="small" bordered rowKey="lineCode" pagination={false} loading={report.isFetching} dataSource={rows} scroll={{ y: 'calc(100vh - 360px)' }} columns={[
           { title: 'Chỉ tiêu', key: 'label', render: (_, r) => <span style={{ paddingLeft: depthOf(r) * 16, fontWeight: r.isBold ? 700 : 400 }}>{r.label}</span> },
           { title: 'Mã số', dataIndex: 'lineCode', width: 80, align: 'center' }, { title: 'Thuyết minh', dataIndex: 'noteRef', width: 100, align: 'center' },
           { title: isB01 ? 'Số cuối kỳ' : 'Kỳ này', key: 'current', width: 160, align: 'right', onCell: (r) => ({ style: { fontWeight: r.isBold ? 700 : 400 } }), render: amount('current') },
-          ...(report.data.rows.some((r) => r.previous !== null) ? [{ title: isB01 ? 'Số đầu năm' : 'Năm trước', key: 'previous', width: 160, align: 'right' as const, onCell: (r: Row) => ({ style: { fontWeight: r.isBold ? 700 : 400 } }), render: amount('previous') }] : []),
+          ...(report.data.previousNote || report.data.rows.some((r) => r.previous !== null) ? [{ title: isB01 ? 'Số đầu năm' : 'Năm trước', key: 'previous', width: 160, align: 'right' as const, onCell: (r: Row) => ({ style: { fontWeight: r.isBold ? 700 : 400 } }), render: amount('previous') }] : []),
         ]} />)}
       {range && <DrillDrawer reportCode={code} row={drill} range={range} onClose={() => setDrill(null)} />}
       {fy && editing && <FormulaEditor reportCode={code} regime={fy.regime} onClose={() => setEditing(false)} onSaved={refresh} />}

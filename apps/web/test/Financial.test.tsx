@@ -47,7 +47,8 @@ describe('Màn hình báo cáo tài chính', () => {
     expect(screen.getByText('1.234.567')).toBeInTheDocument();
     expect(screen.getByText('(500)')).toBeInTheDocument(); // dòng negate
     expect(screen.getByText('(250)')).toBeInTheDocument(); // số âm
-    expect(screen.queryByRole('link', { name: '0' })).not.toBeInTheDocument(); // dòng không công thức không truy ngược được
+    expect(screen.getByRole('button', { name: '1.234.567' })).toBeInTheDocument(); // số của dòng có công thức là nút truy ngược
+    expect(screen.queryByRole('button', { name: '0' })).not.toBeInTheDocument(); // dòng không công thức (số 0) không truy ngược được
   });
 
   it('nhấn số truy ngược ra tài khoản, nhấn tài khoản mở sổ Cái', async () => {
@@ -71,6 +72,7 @@ describe('Màn hình báo cáo tài chính', () => {
     await vi.waitFor(() => expect(info).toHaveBeenCalledWith(expect.stringContaining('chờ văn bản')));
 
     await userEvent.click(screen.getByRole('button', { name: 'Sửa công thức' }));
+    expect(await screen.findByText(/chỉ đổi cách hiển thị/)).toBeInTheDocument(); // negate không đổi giá trị
     const formula = await screen.findByDisplayValue('[111]');
     await userEvent.clear(formula); await userEvent.click(formula); await userEvent.paste('[111]+[131]'); // type() hiểu [ là phím đặc biệt
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }));
@@ -79,6 +81,18 @@ describe('Màn hình báo cáo tài chính', () => {
     await vi.waitFor(() => expect(ok).toHaveBeenCalledWith('Đã lưu công thức'));
     info.mockRestore(); ok.mockRestore();
   }, 30_000);
+
+  it('đổi chế độ kế toán: cột so sánh hiện "—" kèm ghi chú thay vì số 0', async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === '/api/fiscal-years') return [{ fiscalYear: 2027, regime: 'TT200', dateFrom: '2027-01-01', dateTo: '2027-12-31' }];
+      if (path.startsWith('/api/reports/financial/B01')) return { ...REPORT, regime: 'TT200', previousNote: 'REGIME_CHANGED', rows: REPORT.rows.map((r) => ({ ...r, previous: null })) };
+      throw new Error('không mô phỏng ' + path);
+    });
+    renderPage();
+    expect(await screen.findByText('Năm trước dùng chế độ kế toán khác; cần chuyển đổi số dư')).toBeInTheDocument();
+    expect(screen.getAllByText('Số đầu năm').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('—')).toHaveLength(4); // 4 dòng có công thức; dòng ghi chú không công thức để trống
+  });
 
   it('không có quyền sửa định nghĩa thì không thấy nút sửa/nạp lại', async () => {
     perms.has = (c) => c !== 'report_def.update';

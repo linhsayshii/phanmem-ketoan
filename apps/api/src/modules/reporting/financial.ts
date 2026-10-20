@@ -82,7 +82,7 @@ async function loadDef(trx: Trx, reportCode: string, regime: string) {
 
 const dayBeforeIso = (iso: string) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
 // Lùi/tiến n năm giữ nguyên tháng ngày; 29/2 về 28/2 ở năm không nhuận.
-const shiftYear = (iso: string, n: number) => {
+export const shiftYear = (iso: string, n: number) => {
   const [y, m, d] = iso.split('-').map(Number) as [number, number, number]; const last = new Date(Date.UTC(y + n, m, 0)).getUTCDate();
   return `${String(y + n).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
 };
@@ -93,6 +93,12 @@ async function yearStartOf(trx: Trx, date: string): Promise<string> {
   return (await trx.selectFrom('fiscal_period').select('date_from').where('fiscal_year', '=', p.fiscal_year).where('period_no', '=', 1).executeTakeFirstOrThrow()).date_from;
 }
 
+// Chế độ của kỳ chứa `date` (kỳ thường đứng trước kỳ 0 trùng ngày cuối năm, cùng cách chọn với fn_balances_at); null khi không kỳ nào chứa.
+async function regimeAt(trx: Trx, date: string): Promise<string | null> {
+  const r = await sql<{ regime: string }>`SELECT regime FROM fiscal_period WHERE date_from <= ${date}::date AND date_to >= ${date}::date ORDER BY period_no = 0, fiscal_year DESC, period_no DESC LIMIT 1`.execute(trx);
+  return r.rows[0]?.regime ?? null;
+}
+
 export async function evaluateFinancialReport(trx: Trx, tenantId: string, q: { reportCode: string; from: string; to: string; comparePrevYear: boolean }) {
   const regime = await regimeOf(trx, q);
   const { def, lines } = await loadDef(trx, q.reportCode, regime);
@@ -100,8 +106,13 @@ export async function evaluateFinancialReport(trx: Trx, tenantId: string, q: { r
   const run = (from: string, to: string) => evaluateReport(defs, sqlResolver(reportData(trx, tenantId, regime, { from, to })));
   const current = await run(q.from, q.to);
   // B01: cột so sánh là "số đầu năm" = dư tại ngày trước ngày đầu năm tài chính chứa `to` (gồm DK kỳ 0); B02/B03: cùng kỳ năm trước khi được yêu cầu.
-  const previous = q.reportCode === 'B01' ? await run(q.from, dayBeforeIso(await yearStartOf(trx, q.to))) : q.comparePrevYear ? await run(shiftYear(q.from, -1), shiftYear(q.to, -1)) : null;
-  return { reportCode: def.report_code, name: def.name, formNo: def.form_no, issuedBy: def.issued_by, regime, period: { from: q.from, to: q.to },
+  const compareTo = q.reportCode === 'B01' ? dayBeforeIso(await yearStartOf(trx, q.to)) : q.comparePrevYear ? shiftYear(q.to, -1) : null;
+  // Ngày so sánh thuộc kỳ của chế độ khác (đổi chế độ giữa hai năm): số của hệ tài khoản kia không cộng vào chỉ tiêu của hệ này, nên để trống thay vì hiện 0 sai.
+  // Chưa có chức năng chuyển đổi số dư giữa hai hệ tài khoản; ngày không thuộc kỳ nào (năm đầu tiên) thì không có số liệu, vẫn là 0.
+  const prevRegime = compareTo === null ? null : await regimeAt(trx, compareTo);
+  const changed = prevRegime !== null && prevRegime !== regime;
+  const previous = compareTo === null || changed ? null : await run(q.reportCode === 'B01' ? q.from : shiftYear(q.from, -1), compareTo);
+  return { reportCode: def.report_code, name: def.name, formNo: def.form_no, issuedBy: def.issued_by, regime, period: { from: q.from, to: q.to }, ...(changed && { previousNote: 'REGIME_CHANGED' as const }),
     rows: lines.map((l) => ({ lineCode: l.line_code, label: l.label, parentLineCode: l.parent_line_code, isBold: l.is_bold, negate: l.negate, noteRef: l.note_ref, source: l.source, formula: l.formula,
       current: (current.get(l.line_code) ?? ZERO).toString(), previous: previous ? (previous.get(l.line_code) ?? ZERO).toString() : null })) };
 }
@@ -148,6 +159,12 @@ export async function saveReportDef(trx: Trx, tenantId: string, regime: string, 
   const codes = new Set(lines.map((l) => l.lineCode));
   if (codes.size !== lines.length) throw new AppError('VALIDATION', 'Mã dòng bị trùng', 400);
   for (const l of lines) if (l.parentLineCode && !codes.has(l.parentLineCode)) throw new AppError('VALIDATION', `Dòng ${l.lineCode}: không có dòng cha ${l.parentLineCode}`, 400);
+  // Chuỗi dòng cha không được quay về chính dòng đang xét (dòng tự làm cha của mình hoặc vòng A -> B -> A): thụt lề theo cha sẽ không dừng.
+  const parentOf = new Map(lines.map((l) => [l.lineCode, l.parentLineCode]));
+  for (const l of lines) for (let seen = new Set([l.lineCode]), p = l.parentLineCode; p; p = parentOf.get(p) ?? null) {
+    if (seen.has(p)) throw new AppError('VALIDATION', `Dòng ${l.lineCode}: dòng cha tạo vòng lặp`, 400);
+    seen.add(p);
+  }
   const f = formNoFor(regime, reportCode);
   const d = await trx.insertInto('report_def').values({ tenant_id: tenantId, regime, report_code: reportCode, name: REPORT_NAMES[reportCode]?.[regime] ?? reportCode, form_no: f.formNo, issued_by: f.issuedBy })
     .onConflict((oc) => oc.columns(['tenant_id', 'regime', 'report_code']).doUpdateSet({ name: sql`report_def.name` })).returning('id').executeTakeFirstOrThrow(); // cập nhật giả để RETURNING trả id của định nghĩa đã có

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { sql } from 'kysely';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
+import { shiftYear } from '../src/modules/reporting/financial.js';
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 }); // máy chủ DB có lúc bận: mỗi kiểm thử gọi nhiều API
 let ctx: TestApp; let cookie: string;
@@ -114,6 +115,45 @@ describe('báo cáo tài chính theo dòng', () => {
     const far = await get('/api/reports/financial/B01?from=2031-01-01&to=2031-03-31');
     expect([far.statusCode, far.json().error.code]).toEqual([404, 'PERIOD_NOT_FOUND']);
   });
+  it('lưu định nghĩa sai cấu trúc bị 400 và không đổi gì: mã dòng trùng, thiếu dòng cha, dòng tự làm cha, vòng dòng cha', async () => {
+    const before = (await get('/api/report-defs/B01?regime=TT133')).json().lines;
+    const line = (lineCode: string, parentLineCode: string | null) => ({ lineCode, label: lineCode, parentLineCode, source: 'balance', side: 'net_debit', formula: '111' });
+    const cases: [string, object[]][] = [
+      ['trùng mã dòng', [line('A', null), line('A', null)]], ['thiếu dòng cha', [line('A', 'KHONGCO')]],
+      ['tự làm cha', [line('A', 'A')]], ['vòng A -> B -> A', [line('A', 'B'), line('B', 'A')]], ['vòng không chứa dòng gốc', [line('R', 'A'), line('A', 'B'), line('B', 'A')]]];
+    for (const [name, lines] of cases) {
+      const r = await put('B01', 'TT133', lines);
+      expect([r.statusCode, r.json().error.code], name).toEqual([400, 'VALIDATION']);
+    }
+    expect((await get('/api/report-defs/B01?regime=TT133')).json().lines).toEqual(before);
+    expect((await put('B01', 'TT133', [line('A', null), line('B', 'A'), line('C', 'B')])).statusCode).toBe(200); // cây hợp lệ vẫn lưu được
+    expect((await put('B01', 'TT133', MINI_B01)).statusCode).toBe(200); // trả lại định nghĩa cho các kiểm thử sau
+  });
+  it('mã báo cáo chỉ là B01, B02 hoặc B03', async () => {
+    const q = 'from=2026-01-01&to=2026-03-31';
+    expect((await get(`/api/reports/financial/B09?${q}`)).statusCode).toBe(400);
+    expect((await get(`/api/reports/financial/B09/lines/1?${q}`)).statusCode).toBe(400);
+    expect((await get('/api/report-defs/B09?regime=TT133')).statusCode).toBe(400);
+    expect((await put('B09', 'TT133', MINI_B01)).statusCode).toBe(400);
+    expect((await post('/api/report-defs/B09/reload', { regime: 'TT133' })).statusCode).toBe(400);
+  });
+  it('xem định nghĩa cần report_def.view, sửa và nạp lại cần report_def.update', async () => {
+    const roles = (await get('/api/roles')).json() as { id: string; code: string }[];
+    const setRole = (permissions: string[]) => ctx.app.inject({ method: 'PUT', url: `/api/roles/${roles.find((x) => x.code === 'xem')!.id}/permissions`, headers: { cookie }, payload: { permissions } });
+    const username = `xemdef_${Date.now()}`;
+    await ctx.app.inject({ method: 'POST', url: '/api/users', headers: { cookie }, payload: { username, fullName: 'X', password: 'Matkhau1!', roleCode: 'xem', sensitiveFlags: [] } });
+    const login = async () => `sid=${(await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } })).cookies.find((c) => c.name === 'sid')!.value}`;
+    const calls = (c: string) => Promise.all([get('/api/report-defs/B01?regime=TT133', c), put('B01', 'TT133', MINI_B01, c), post('/api/report-defs/B01/reload', { regime: 'TT133' }, c)]).then((rs) => rs.map((r) => r.statusCode));
+    await setRole(['report.view']);
+    const c1 = await login();
+    expect(await calls(c1)).toEqual([403, 403, 403]);
+    expect((await get('/api/reports/financial/B01?from=2026-01-01&to=2026-03-31', c1)).statusCode).toBe(200); // xem báo cáo chỉ cần report.view
+    await setRole(['report.view', 'report_def.view']);
+    expect(await calls(await login())).toEqual([200, 403, 403]);
+    await setRole(['report.view', 'report_def.view', 'report_def.update']);
+    expect(await calls(await login())).toEqual([200, 200, 200]);
+    expect((await get('/api/report-defs/B01?regime=TT133')).json().lines).toHaveLength(MINI_B01.length); // PUT của người dùng thử giữ nguyên định nghĩa
+  });
   it('danh sách báo cáo theo hệ hoặc theo năm', async () => {
     const byRegime = await get('/api/reports/financial?regime=TT133');
     expect(byRegime.json().map((x: { reportCode: string; formNo: string }) => [x.reportCode, x.formNo])).toEqual([['B01', 'B01a-DNN'], ['B02', 'B02-DNN']]);
@@ -136,6 +176,13 @@ describe('báo cáo tài chính theo dòng', () => {
     expect((await get('/api/reports/financial/B01?from=2026-01-01&to=2026-03-31', c2)).statusCode).toBe(200);
     expect((await get('/api/reports/financial/B01/lines/131?from=2026-01-01&to=2026-03-31', c2)).statusCode).toBe(403);
     expect((await get('/api/reports/financial/B01/lines/111?from=2026-01-01&to=2026-03-31', c2)).statusCode).toBe(200);
+  });
+});
+
+describe('shiftYear', () => {
+  it('lùi/tiến năm giữ tháng ngày; 29/2 về 28/2 ở năm không nhuận, giữ 29/2 ở năm nhuận', () => {
+    expect(shiftYear('2024-02-29', -1)).toBe('2023-02-28'); expect(shiftYear('2024-02-29', 1)).toBe('2025-02-28'); expect(shiftYear('2024-02-29', 4)).toBe('2028-02-29');
+    expect(shiftYear('2026-03-31', -1)).toBe('2025-03-31'); expect(shiftYear('2026-01-01', -1)).toBe('2025-01-01'); expect(shiftYear('2024-12-31', 1)).toBe('2025-12-31');
   });
 });
 
@@ -185,5 +232,55 @@ describe('một công ty giữ nhiều hệ tài khoản', () => {
     // Báo cáo TT200 của năm 2027 chỉ thấy số của hệ TT200.
     expect((await put('B02', 'TT200', [{ lineCode: '01', label: 'Doanh thu', parentLineCode: null, source: 'movement', side: 'net_credit', formula: '511' }], c)).statusCode).toBe(200);
     expect(rowOf(await get('/api/reports/financial/B02?from=2027-01-01&to=2027-12-31', c), '01').current).toBe('40');
+  });
+  it('cột so sánh để trống (previous null, previousNote REGIME_CHANGED) khi ngày so sánh thuộc kỳ của chế độ khác', async () => {
+    const { cookie: c } = await bootstrapTenant(ctx, { code: `FN${Date.now()}` });
+    const fy = (fiscalYear: number, regime: string) => ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime } });
+    expect((await fy(2026, 'TT133')).statusCode).toBe(201); expect((await fy(2027, 'TT200')).statusCode).toBe(201);
+    await ok(pkt('2026-05-01', [{ accountCode: '1111', debit: '100' }, { accountCode: '5113', credit: '100' }], c));
+    await ok(pkt('2027-05-01', [{ accountCode: '1111', debit: '40' }, { accountCode: '5113', credit: '40' }], c));
+    const b01 = [{ lineCode: '10', label: 'Tiền', parentLineCode: null, source: 'balance', side: 'net_debit', formula: '111' }, { lineCode: '20', label: 'Cộng', parentLineCode: null, source: 'lines', side: 'net_debit', formula: '[10]' }];
+    const b02 = [{ lineCode: '01', label: 'Doanh thu', parentLineCode: null, source: 'movement', side: 'net_credit', formula: '511' }];
+    for (const regime of ['TT133', 'TT200']) { expect((await put('B01', regime, b01, c)).statusCode).toBe(200); expect((await put('B02', regime, b02, c)).statusCode).toBe(200); }
+
+    // B01 năm 2027 (TT200): số đầu năm là dư ngày 31/12/2026 của hệ TT133 -> để trống, không phải 0.
+    const r = await get('/api/reports/financial/B01?from=2027-01-01&to=2027-12-31', c);
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json()).toMatchObject({ regime: 'TT200', previousNote: 'REGIME_CHANGED' });
+    expect(r.json().rows.map((x: Row) => [x.lineCode, x.current, x.previous])).toEqual([['10', '40', null], ['20', '40', null]]);
+    // B02 năm 2027 so sánh năm trước: cùng kỳ năm 2026 thuộc TT133 -> để trống; không so sánh thì không có ghi chú.
+    const b = await get('/api/reports/financial/B02?from=2027-01-01&to=2027-12-31&comparePrevYear=true', c);
+    expect(b.json()).toMatchObject({ regime: 'TT200', previousNote: 'REGIME_CHANGED' }); expect(rowOf(b, '01')).toMatchObject({ current: '40', previous: null });
+    const nb = await get('/api/reports/financial/B02?from=2027-01-01&to=2027-12-31', c);
+    expect(nb.json().previousNote).toBeUndefined(); expect(rowOf(nb, '01').previous).toBeNull();
+    // Cùng chế độ thì vẫn có số so sánh: năm đầu tiên (kỳ 0 cùng chế độ) và B01 TT133 có khoảng ngày vắt sang năm sau.
+    const first = await get('/api/reports/financial/B01?from=2026-01-01&to=2026-12-31', c);
+    expect(first.json().previousNote).toBeUndefined(); expect(rowOf(first, '10')).toMatchObject({ current: '100', previous: '0' });
+    const span = await get('/api/reports/financial/B01?from=2026-01-01&to=2027-12-31', c);
+    expect(span.json()).toMatchObject({ regime: 'TT133' }); expect(span.json().previousNote).toBeUndefined(); expect(rowOf(span, '10')).toMatchObject({ current: '100', previous: '100' });
+    // Bản in dùng cùng dữ liệu: cột so sánh in trống (ô số rỗng), không in 0.
+    const html = await get('/api/reports/financial/B01?from=2027-01-01&to=2027-12-31&format=html', c);
+    expect(html.statusCode, html.body).toBe(200); expect(html.body.match(/<td class="num"><\/td>/g)).toHaveLength(2);
+  });
+});
+
+describe('số dư theo đối tượng gộp nhiều loại tiền', () => {
+  it('dư Nợ/Có của một đối tượng là dư ròng gộp loại tiền, không cộng riêng từng loại tiền', async () => {
+    const { cookie: c } = await bootstrapTenant(ctx, { code: `FX${Date.now()}` });
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' } })).statusCode).toBe(201);
+    await ctx.app.inject({ method: 'POST', url: '/api/catalogs/party', headers: { cookie: c }, payload: { code: 'KH003', name: 'K3', is_customer: true } });
+    // KH003 mua chịu 1.000 USD (25.400.000 đồng) rồi trả 10.000.000 đồng: dư ròng Nợ 15.400.000 đồng. Theo từng loại tiền sẽ ra Nợ 25.400.000 và Có 10.000.000.
+    const usd = await ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie: c }, payload: { voucherType: 'PKT', postingDate: '2026-02-01', documentDate: '2026-02-01', description: 'USD', autoPost: true, currencyCode: 'USD', fxRate: '25400',
+      lines: [{ accountCode: '131', debit: '25400000', amountCurrency: '1000', partyCode: 'KH003' }, { accountCode: '5113', credit: '25400000', amountCurrency: '-1000' }] } });
+    expect(usd.statusCode, usd.body).toBe(201);
+    await ok(pkt('2026-02-02', [{ accountCode: '1111', debit: '10000000' }, { accountCode: '131', credit: '10000000', partyCode: 'KH003' }], c));
+    const lines = [{ lineCode: 'D', label: 'Dư Nợ 131', parentLineCode: null, source: 'balance', side: 'debit', formula: '131' }, { lineCode: 'C', label: 'Dư Có 131', parentLineCode: null, source: 'balance', side: 'credit', formula: '131' },
+      { lineCode: 'N', label: 'Ròng 131', parentLineCode: null, source: 'balance', side: 'net_debit', formula: '131' }];
+    expect((await put('B01', 'TT133', lines, c)).statusCode).toBe(200);
+    const r = await get('/api/reports/financial/B01?from=2026-01-01&to=2026-12-31', c);
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().rows.map((x: Row) => [x.lineCode, x.current])).toEqual([['D', '15400000'], ['C', '0'], ['N', '15400000']]);
+    const d = await get('/api/reports/financial/B01/lines/D?from=2026-01-01&to=2026-12-31', c);
+    expect(d.json().accounts).toEqual([{ accountCode: '131', accountName: expect.any(String), partyCode: 'KH003', amount: '15400000' }]);
   });
 });
