@@ -145,6 +145,12 @@ export interface OpeningBalanceTable {
   debit: NumericDefault; credit: NumericDefault; debit_currency: NumericDefault; credit_currency: NumericDefault;
 }
 export interface BalanceStaleTable { tenant_id: string; stale_year: number; stale_period: number; marked_at: Generated<string> }
+export interface AccountPeriodBalanceTable {
+  tenant_id: string; account_id: number; fiscal_year: number; period_no: number; currency_code: string; party_id: Generated<string>;
+  opening_debit: NumericDefault; opening_credit: NumericDefault; period_debit: NumericDefault; period_credit: NumericDefault; closing_debit: NumericDefault; closing_credit: NumericDefault;
+  opening_debit_cur: NumericDefault; opening_credit_cur: NumericDefault; period_debit_cur: NumericDefault; period_credit_cur: NumericDefault; closing_debit_cur: NumericDefault; closing_credit_cur: NumericDefault;
+  computed_at: Generated<string>;
+}
 
 export interface Database {
   tenant: TenantTable;
@@ -185,5 +191,6 @@ export interface Database {
   voucher_attachment: VoucherAttachmentTable;
   voucher_pair: VoucherPairTable;
   balance_stale: BalanceStaleTable;
+  account_period_balance: AccountPeriodBalanceTable;
   opening_balance: OpeningBalanceTable;
 }

@@ -1,12 +1,14 @@
 import './env.js';
 import { z } from 'zod';
-import { QUEUES } from '@kt/db';
+import { QUEUES, createDb, createPool, type RecomputeBalancesJob } from '@kt/db';
 import { createBoss } from './boss.js';
 import { runBackup } from './jobs/backup.js';
+import { recomputeBalances } from './jobs/recomputeBalances.js';
 
-const env = z.object({ DATABASE_ADMIN_URL: z.string(), BACKUP_DIR: z.string().default('./backups'), BACKUP_CRON: z.string().default('0 2 * * *'), BACKUP_KEEP: z.coerce.number().int().min(1).default(14) }).parse(process.env);
+const env = z.object({ DATABASE_URL: z.string(), DATABASE_ADMIN_URL: z.string(), BACKUP_DIR: z.string().default('./backups'), BACKUP_CRON: z.string().default('0 2 * * *'), BACKUP_KEEP: z.coerce.number().int().min(1).default(14) }).parse(process.env);
 const log = (msg: string, extra: Record<string, unknown> = {}) => console.log(JSON.stringify({ ts: new Date().toISOString(), msg, ...extra }));
 
+const db = createDb(createPool(env.DATABASE_URL)); // app_user: job tính lại số dư chạy qua RLS, không dùng quyền admin
 const boss = createBoss(env.DATABASE_ADMIN_URL);
 boss.on('error', (e) => log('boss error', { error: String(e) }));
 await boss.start();
@@ -21,7 +23,17 @@ await boss.work(QUEUES.backup, async () => {
     throw e; // để pg-boss ghi nhận thất bại và thử lại
   }
 });
+await boss.createQueue(QUEUES.recomputeBalances);
+// batchSize 1: mỗi job là một công ty; singletonKey phía gửi đã gộp các lần gửi dồn dập. Lỗi để pg-boss thử lại (tính lại là idempotent).
+await boss.work<RecomputeBalancesJob>(QUEUES.recomputeBalances, { batchSize: 1 }, async ([job]) => {
+  try {
+    const n = await recomputeBalances(db, job!.data);
+    log('recompute done', { tenantId: job!.data.tenantId, periods: n });
+  } catch (e) {
+    log('recompute failed', { tenantId: job!.data.tenantId, error: String(e) });
+    throw e;
+  }
+});
 // dừng êm: đợi job đang chạy xong (tối đa 60 giây) rồi mới thoát
 for (const s of ['SIGTERM', 'SIGINT'] as const) process.once(s, () => { void boss.stop({ graceful: true, timeout: 60000, wait: true }).finally(() => process.exit(0)); });
 log('worker started', { cron: env.BACKUP_CRON, dir: env.BACKUP_DIR });
-// Task 20 thêm boss.work(QUEUES.recomputeBalances, ...) tại đây.

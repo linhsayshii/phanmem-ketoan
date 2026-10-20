@@ -226,6 +226,9 @@ importers:
       '@types/pg':
         specifier: ^8.11.10
         version: 8.23.1
+      fast-check:
+        specifier: ^3.22.0
+        version: 3.23.2
       tsx:
         specifier: ^4.19.1
         version: 4.23.15
