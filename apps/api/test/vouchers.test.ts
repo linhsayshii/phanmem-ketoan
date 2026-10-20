@@ -252,6 +252,7 @@ describe('chứng từ', () => {
     const ok = await usd([L('1111', '25400000', '0', { amountCurrency: '1000' }), L('5113', '0', '25400000', { amountCurrency: '-1000' })]);
     expect(ok.statusCode, ok.body).toBe(201);
     expect(ok.json().lines.map((l: { amountCurrency: string }) => l.amountCurrency)).toEqual(['1000.0000', '-1000.0000']);
+    expect(ok.json().lines.map((l: { fxRate: string }) => Number(l.fxRate))).toEqual([25400, 25400]); // dòng không ghi tỷ giá lấy tỷ giá tiêu đề
     const r = await reverse(ok.json().id, '2026-06-06');
     expect(r.statusCode, r.body).toBe(201);
     expect(r.json().lines.map((l: { amountCurrency: string }) => l.amountCurrency)).toEqual(['-1000.0000', '1000.0000']);

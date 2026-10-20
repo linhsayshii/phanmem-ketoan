@@ -117,6 +117,8 @@ export interface VoucherTable {
   source_doc_type: string | null; source_doc_id: string | null; reversal_of_id: string | null; reversed_by_id: string | null;
   is_closing: Generated<boolean>; idempotency_key: string | null; created_by: string; created_at: Generated<string>;
   posted_by: string | null; posted_at: Timestamp | null; version: Generated<number>; prev_hash: Buffer | null; row_hash: Buffer | null;
+  person_name: string | null; person_address: string | null; attachments_count: number | null;
+  bank_account_id: number | null; counter_bank_account_id: number | null; party_bank_account_id: string | null; due_date: DateOnly | null; purpose: string | null;
 }
 export interface VoucherLineTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; line_no: number; account_id: number; posting_date: DateOnly;
@@ -125,7 +127,7 @@ export interface VoucherLineTable {
   party_id: string | null; item_id: number | null; warehouse_id: number | null; department_id: number | null; project_id: number | null;
   cost_item_id: number | null; contract_id: number | null; employee_id: number | null; asset_id: number | null;
   // jsonb NOT NULL DEFAULT '{}': Generated<JSONColumnType<...>> không bung được kiểu lồng nên khai báo thẳng ColumnType.
-  extra_dims: ColumnType<Record<string, unknown>, string | undefined, string>; description: string | null; due_date: DateOnly | null;
+  extra_dims: ColumnType<Record<string, unknown>, string | undefined, string>; description: string | null; due_date: DateOnly | null; bank_account_id: number | null;
 }
 export interface VoucherCounterTable { tenant_id: string; voucher_type: string; fiscal_year: number; last_no: Generated<number> }
 export interface VoucherLineHistoryTable {

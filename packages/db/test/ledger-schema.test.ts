@@ -56,7 +56,7 @@ describe('lược đồ sổ cái', () => {
 
   it('công ty mới có đủ loại chứng từ hệ thống; app_user không gọi được hàm seed và hàm tạo partition', async () => {
     const types = await sql<{ code: string }>`SELECT code FROM voucher_type WHERE tenant_id = ${tenantId}::uuid ORDER BY 1`.execute(t.admin);
-    expect(types.rows.map((x) => x.code)).toEqual(['DK', 'KC', 'PB', 'PKT']);
+    expect(types.rows.map((x) => x.code)).toEqual(['BC', 'BN', 'BT', 'CL', 'CT', 'DG', 'DK', 'GGB', 'GGM', 'HDB', 'HDM', 'KC', 'KTT', 'PB', 'PC', 'PKT', 'PT', 'QTU', 'XQ']);
     const p = await sql<{ a: boolean; b: boolean; c: boolean }>`SELECT has_function_privilege('app_user', 'seed_tenant_defaults(uuid)', 'EXECUTE') AS a,
       has_function_privilege('app_user', 'seed_voucher_types(uuid)', 'EXECUTE') AS b, has_function_privilege('app_user', 'ensure_line_partitions(date, date)', 'EXECUTE') AS c`.execute(t.admin);
     expect(p.rows[0]).toEqual({ a: false, b: false, c: false });
@@ -314,5 +314,98 @@ describe('lược đồ sổ cái', () => {
       await expect(run(async (trx) => { await sql`SELECT set_config('app.state_change','on',true)`.execute(trx); await trx.deleteFrom('voucher_line').where('voucher_id', '=', id).execute(); })).rejects.toThrow();
       expect(await run((trx) => pending(trx))).toBe(0);
     });
+  });
+});
+
+describe('GĐ2: loại chứng từ, cột tiêu đề và cân bằng ngoại tệ', () => {
+  // Chứng từ USD nháp; mỗi dòng: tài khoản, nguyên tệ (Nợ dương, Có âm), tỷ giá, tiền VND.
+  type FxLine = { code: string; amount: string; rate: string | null; debit?: string; credit?: string };
+  async function fxVoucher(date: string, lines: FxLine[], type = 'PKT') {
+    return withTenant(t.db, ctx(), async (trx) => {
+      const v = await trx.insertInto('voucher').values({ tenant_id: tenantId, voucher_type: type, posting_date: date, document_date: date, state: 'draft', description: 'fx', currency_code: 'USD', created_by: userId })
+        .returning('id').executeTakeFirstOrThrow();
+      let n = 0;
+      for (const l of lines) await trx.insertInto('voucher_line').values({ tenant_id: tenantId, voucher_id: v.id, line_no: ++n, account_id: await acc(l.code), posting_date: date, currency_code: 'USD',
+        amount_currency: l.amount, fx_rate: l.rate, debit: l.debit ?? '0', credit: l.credit ?? '0' }).execute();
+      return v.id;
+    });
+  }
+
+  it('công ty có đủ loại chứng từ GĐ2 với đúng phần hành', async () => {
+    const r = await sql<{ code: string; module: string; prefix: string; is_system: boolean }>`SELECT code, module, prefix, is_system FROM voucher_type WHERE tenant_id = ${tenantId}::uuid`.execute(t.admin);
+    expect(Object.fromEntries(r.rows.map((x) => [x.code, x.module]))).toEqual({
+      PKT: 'general', DK: 'general', KC: 'general', PB: 'general', PT: 'cash', PC: 'cash', BC: 'bank', BN: 'bank', CT: 'bank', QTU: 'general', BT: 'arap',
+      HDB: 'arap', HDM: 'arap', GGB: 'arap', GGM: 'arap', CL: 'arap', DG: 'general', XQ: 'general', KTT: 'general' });
+    expect(r.rows.every((x) => x.prefix === x.code && x.is_system)).toBe(true);
+  });
+
+  it('dòng ngoại tệ có tỷ giá: nguyên tệ × tỷ giá phải khớp VND trong 1 đồng', async () => {
+    const pair = (debit: string) => [{ code: '1122', amount: '1000', rate: '25400', debit }, { code: '5113', amount: '-1000', rate: '25400', credit: '25400000' }];
+    await fxVoucher('2026-07-01', pair('25400000'));
+    await fxVoucher('2026-07-01', [{ code: '1122', amount: '1000', rate: '25400', debit: '25400001' }, { code: '5113', amount: '-1000', rate: '25400', credit: '25400001' }]); // lệch đúng 1 đồng: được
+    await expect(fxVoucher('2026-07-01', pair('2540000'))).rejects.toThrow(/LINE_FX_MISMATCH: dòng 1 nguyên tệ 1000\.0000 × tỷ giá 25400\.0000000000 khác số tiền VND 2540000/);
+    await expect(fxVoucher('2026-07-01', [{ code: '1122', amount: '1000', rate: '25400', debit: '25400002' }, { code: '5113', amount: '-1000', rate: '25400', credit: '25400002' }])).rejects.toThrow(/LINE_FX_MISMATCH/);
+  });
+
+  it('dòng ngoại tệ không tỷ giá chỉ được khi nguyên tệ = 0 hoặc chứng từ DK', async () => {
+    await expect(fxVoucher('2026-07-02', [{ code: '1122', amount: '1000', rate: null, debit: '25400000' }, { code: '5113', amount: '-1000', rate: null, credit: '25400000' }])).rejects.toThrow(/LINE_FX_RATE_REQUIRED/);
+    await fxVoucher('2026-07-02', [{ code: '1122', amount: '0', rate: null, debit: '300' }, { code: '5113', amount: '0', rate: null, credit: '300' }]); // dòng điều chỉnh chỉ VND (CL, DG, XQ)
+    await fxVoucher('2025-12-31', [{ code: '1122', amount: '1000', rate: null, debit: '25400000' }, { code: '5113', amount: '-1000', rate: null, credit: '25400000' }], 'DK');
+  });
+
+  it('sửa diễn giải dòng ngoại tệ cũ không tỷ giá vẫn được (không kiểm lại tỷ giá); đổi nguyên tệ thì kiểm lại', async () => {
+    const id = await withTenant(t.db, ctx(), async (trx) => (await trx.insertInto('voucher').values({ tenant_id: tenantId, voucher_type: 'PKT', posting_date: '2026-07-03', document_date: '2026-07-03', state: 'draft', description: 'cũ', currency_code: 'USD', created_by: userId })
+      .returning('id').executeTakeFirstOrThrow()).id);
+    // Dòng sinh trước khi có kiểm tra: dựng bằng quyền quản trị với trigger tắt (giống dữ liệu cũ).
+    await admin.query('SET session_replication_role = replica');
+    try {
+      for (const [no, code, amount, debit, credit] of [[1, '1122', '1000', 25400000, 0], [2, '5113', '-1000', 0, 25400000]] as const)
+        await admin.query(`INSERT INTO voucher_line(tenant_id, voucher_id, line_no, account_id, posting_date, currency_code, amount_currency, debit, credit) VALUES ($1,$2,$3,$4,'2026-07-03','USD',$5,$6,$7)`, [tenantId, id, no, await acc(code), amount, debit, credit]);
+    } finally { await admin.query('SET session_replication_role = DEFAULT'); }
+    await run((trx) => trx.updateTable('voucher_line').set({ description: 'sửa diễn giải' }).where('voucher_id', '=', id).where('line_no', '=', 1).execute());
+    await expect(run((trx) => trx.updateTable('voucher_line').set({ amount_currency: '2000' }).where('voucher_id', '=', id).where('line_no', '=', 1).execute())).rejects.toThrow(/LINE_FX_RATE_REQUIRED/);
+  });
+
+  it('cột tiêu đề mới sửa được khi nháp, bất biến sau ghi sổ; số kèm theo không âm', async () => {
+    const id = await newVoucher('2026-07-04', [{ code: '1111', debit: '5' }, { code: '5113', credit: '5' }]);
+    await run((trx) => trx.updateTable('voucher').set({ person_name: 'Nguyễn Văn A', person_address: 'Hà Nội', attachments_count: 2, purpose: 'thu_khach_hang', due_date: '2026-08-01' }).where('id', '=', id).execute());
+    await expect(run((trx) => trx.updateTable('voucher').set({ attachments_count: -1 }).where('id', '=', id).execute())).rejects.toMatchObject({ code: '23514' });
+    await setState(id, 'posted');
+    for (const set of [{ person_name: 'x' }, { person_address: 'x' }, { attachments_count: 3 }, { purpose: 'x' }, { due_date: '2026-09-01' }])
+      await expect(run((trx) => trx.updateTable('voucher').set(set).where('id', '=', id).execute())).rejects.toThrow(/VOUCHER_IMMUTABLE/);
+  });
+
+  it('tài khoản ngân hàng: khóa ngoại theo công ty (tiêu đề và dòng); đảo chứng từ chép bank_account_id sang dòng đảo', async () => {
+    const bank = await t.admin.insertInto('bank').values({ tenant_id: tenantId, code: 'VCB', name: 'Vietcombank' }).returning('id').executeTakeFirstOrThrow();
+    const ba = await t.admin.insertInto('bank_account').values({ tenant_id: tenantId, bank_id: bank.id, account_no: '0011001', gl_account_code: '1121' }).returning('id').executeTakeFirstOrThrow();
+    const other = await createTestTenant(t.admin, { code: `BK${Date.now()}`, name: 'Công ty ngân hàng khác' });
+    const ob = await t.admin.insertInto('bank').values({ tenant_id: other, code: 'ACB', name: 'ACB' }).returning('id').executeTakeFirstOrThrow();
+    const oba = await t.admin.insertInto('bank_account').values({ tenant_id: other, bank_id: ob.id, account_no: '9999', gl_account_code: '1121' }).returning('id').executeTakeFirstOrThrow();
+    const draft = (bankAccountId: number, header: Record<string, unknown> = {}) => run(async (trx) => {
+      const v = await trx.insertInto('voucher').values({ tenant_id: tenantId, voucher_type: 'PKT', posting_date: '2026-07-05', document_date: '2026-07-05', state: 'draft', description: 'bk', currency_code: 'VND', created_by: userId, ...header })
+        .returning('id').executeTakeFirstOrThrow();
+      await trx.insertInto('voucher_line').values([
+        { tenant_id: tenantId, voucher_id: v.id, line_no: 1, account_id: await acc('1121'), posting_date: '2026-07-05', debit: '70', amount_currency: '70', bank_account_id: bankAccountId },
+        { tenant_id: tenantId, voucher_id: v.id, line_no: 2, account_id: await acc('5113'), posting_date: '2026-07-05', credit: '70', amount_currency: '-70' }]).execute();
+      return v.id;
+    });
+    await expect(draft(oba.id)).rejects.toMatchObject({ code: '23503' });
+    await expect(draft(ba.id, { bank_account_id: oba.id })).rejects.toMatchObject({ code: '23503' });
+    await expect(draft(ba.id, { counter_bank_account_id: oba.id })).rejects.toMatchObject({ code: '23503' });
+    const id = await draft(ba.id, { bank_account_id: ba.id });
+    await run((trx) => sql`SELECT post_voucher(${id}::uuid)`.execute(trx));
+    const rev = (await run((trx) => sql<{ r: string }>`SELECT reverse_voucher(${id}::uuid, ${'2026-07-06'}::date, NULL) AS r`.execute(trx))).rows[0]!.r;
+    const lines = await run((trx) => trx.selectFrom('voucher_line').select(['line_no', 'bank_account_id']).where('voucher_id', '=', rev).orderBy('line_no').execute());
+    expect(lines).toEqual([{ line_no: 1, bank_account_id: ba.id }, { line_no: 2, bank_account_id: null }]);
+  });
+
+  it('chứng từ do hệ thống sinh (đối trừ chênh lệch tỷ giá, đánh giá lại, xuất quỹ, khấu trừ thuế, phân bổ) không bỏ ghi sổ hay hủy qua hàm chung', async () => {
+    for (const src of ['settlement_fx', 'fx_revaluation', 'fx_outflow', 'vat_offset', 'amortization']) {
+      const id = await newVoucher('2026-07-07', [{ code: '1111', debit: '1' }, { code: '5113', credit: '1' }]);
+      await admin.query(`UPDATE voucher SET source_doc_type = $2 WHERE id = $1`, [id, src]);
+      await expect(run((trx) => sql`SELECT discard_voucher(${id}::uuid)`.execute(trx)), src).rejects.toThrow(/VOUCHER_SYSTEM_GENERATED/);
+      await run((trx) => sql`SELECT post_voucher(${id}::uuid)`.execute(trx));
+      await expect(run((trx) => sql`SELECT unpost_voucher(${id}::uuid)`.execute(trx)), src).rejects.toThrow(/VOUCHER_SYSTEM_GENERATED/);
+    }
   });
 });

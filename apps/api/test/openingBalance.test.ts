@@ -168,7 +168,8 @@ describe('số dư đầu kỳ', () => {
 
     const usd = (lines: object[]) => ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie }, payload: {
       voucherType: 'PKT', postingDate: '2026-06-05', documentDate: '2026-06-05', currencyCode: 'USD', fxRate: '25000', lines } });
-    const lech = await usd([{ accountCode: '1122', debit: '2500000', credit: '0', amountCurrency: '100' }, { accountCode: '1122', debit: '0', credit: '2500000', amountCurrency: '-90' }]);
+    // Hai tỷ giá riêng từng dòng để VND cân (2.500.000) mà nguyên tệ lệch (100 so với -90); một tỷ giá chung thì VND cũng lệch và bị LINE_FX_MISMATCH.
+    const lech = await usd([{ accountCode: '1122', debit: '2500000', credit: '0', amountCurrency: '100', fxRate: '25000' }, { accountCode: '1122', debit: '0', credit: '2500000', amountCurrency: '-90', fxRate: '27777.7778' }]);
     expect(lech.statusCode).toBe(409); expect(lech.json().error.code).toBe('VOUCHER_UNBALANCED_CURRENCY');
     const dung = await usd([{ accountCode: '1122', debit: '2500000', credit: '0', amountCurrency: '100' }, { accountCode: '1122', debit: '0', credit: '2500000', amountCurrency: '-100' }]);
     expect(dung.statusCode, dung.body).toBe(201);

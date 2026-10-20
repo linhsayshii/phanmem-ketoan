@@ -69,12 +69,12 @@ function lookupIn(trx: Trx, regime?: string): Lookup {
     return id;
   };
 }
-async function resolveLine(lookup: Lookup, l: LineInput, currency: string) {
+async function resolveLine(lookup: Lookup, l: LineInput, currency: string, headerFxRate?: string) {
   const debit = D(l.debit); const credit = D(l.credit);
   if (debit.gt(0) && credit.gt(0)) throw new AppError('LINE_BOTH_SIDES', `Dòng ${l.accountCode}: chỉ được một bên Nợ hoặc Có`, 400);
   if (currency !== 'VND' && l.amountCurrency === undefined) throw new AppError('VALIDATION', `Dòng ${l.accountCode}: chứng từ ngoại tệ ${currency} phải có amountCurrency`, 400);
   return {
-    account_id: (await lookup('account', l.accountCode)) as number, currency_code: currency, fx_rate: l.fxRate ?? null,
+    account_id: (await lookup('account', l.accountCode)) as number, currency_code: currency, fx_rate: l.fxRate ?? (currency === 'VND' ? null : headerFxRate ?? null),
     amount_currency: currency === 'VND' ? debit.minus(credit).toString() : l.amountCurrency!,
     debit: debit.toString(), credit: credit.toString(),
     party_id: (await lookup('party', l.partyCode)) as string | null,
@@ -108,7 +108,7 @@ export async function getVoucher(trx: Trx, id: string): Promise<VoucherDto> {
 
 async function insertLines(trx: Trx, lookup: Lookup, tenantId: string, voucherId: string, input: VoucherInput) {
   const rows = [];
-  for (const [i, l] of input.lines.entries()) rows.push({ tenant_id: tenantId, voucher_id: voucherId, line_no: i + 1, posting_date: input.postingDate, ...(await resolveLine(lookup, l, input.currencyCode)) });
+  for (const [i, l] of input.lines.entries()) rows.push({ tenant_id: tenantId, voucher_id: voucherId, line_no: i + 1, posting_date: input.postingDate, ...(await resolveLine(lookup, l, input.currencyCode, input.fxRate)) });
   for (let i = 0; i < rows.length; i += 1000) await trx.insertInto('voucher_line').values(rows.slice(i, i + 1000)).execute(); // chia lô: một câu lệnh 5.000 dòng vượt 65.535 tham số bind
 }
 
