@@ -26,7 +26,8 @@ Tài liệu ngắn cho kế toán viên và kế toán trưởng: nhập Phiếu
 - Phiếu nháp chưa ghi sổ: sửa tự do; không cần nữa thì "Hủy" (số phiếu đã cấp được giữ lại, không dùng lại).
 - Phiếu đã ghi sổ, kỳ còn mở: chỉ sửa diễn giải và chiều phân tích (bộ phận, vụ việc, khoản mục) tại chỗ, có ghi nhật ký. Sửa số tiền, tài khoản hoặc ngày thì "Bỏ ghi sổ", sửa rồi ghi sổ lại; dòng cũ được lưu lại trong lịch sử. Cần quyền "sửa sau ghi sổ".
 - Kỳ đã khóa sổ: không bỏ ghi sổ được; lập phiếu "Đảo" (ghi sổ ngay với ngày hôm nay, đối ứng ngược phiếu gốc) rồi nhập phiếu đúng; ghi vào ngày thuộc kỳ khóa sổ thì cần quyền ghi lùi ngày. Không xóa được phiếu đã ghi sổ.
-- Kỳ khóa cứng: không sửa, không đảo, không ghi lùi vào kỳ đó; điều chỉnh bằng phiếu mới ở kỳ mở gần nhất.
+- Kỳ khóa cứng: không sửa, không đảo, không ghi lùi vào kỳ đó, không thêm hoặc xóa chứng từ gốc đính kèm (tải về vẫn được); điều chỉnh bằng phiếu mới ở kỳ mở gần nhất.
+- Phiếu do hệ thống sinh (KC/PB của màn hình Kết chuyển, DK của màn hình Số dư đầu kỳ) không bỏ ghi sổ, hủy, xóa hay sửa dòng được ở màn hình Phiếu kế toán, và không lập tay phiếu KC hay DK: kết chuyển dùng "Chạy lại (đảo cũ)", số dư đầu kỳ sửa ở màn hình Số dư đầu kỳ. Phiếu PB vẫn lập tay được. Một phiếu tối đa 5.000 dòng.
 
 ## Khóa sổ ba mức
 
@@ -38,12 +39,14 @@ Tài liệu ngắn cho kế toán viên và kế toán trưởng: nhập Phiếu
 
 - Vào Sổ cái → Kết chuyển cuối kỳ. Sơ đồ mặc định gồm: kết chuyển giảm trừ doanh thu, doanh thu và thu nhập khác, giá vốn và chi phí sang 911, rồi 911 sang 4212 (lợi nhuận năm nay); bước 4212 sang 4211 chạy ngày đầu năm sau. Sửa sơ đồ được (thêm bước chuyển hoặc phân bổ theo tỷ lệ), "Nạp lại mẫu" để quay về mặc định.
 - Chọn ngày kết chuyển (thường 31/12), bấm "Chạy tất cả bước cuối kỳ" hoặc "Chạy" từng bước. Mỗi bước sinh phiếu KC/PB thật, có số, đã ghi sổ.
-- Phát sinh thêm sau khi kết chuyển thì bấm "Chạy lại (đảo cũ)": phiếu cũ bị đảo rồi tính lại, không sửa đè. Trước khi kết chuyển nên ghi sổ hết phiếu nháp.
+- Phát sinh thêm sau khi kết chuyển thì bấm "Chạy lại (đảo cũ)": phiếu cũ của đúng bước đó bị đảo rồi tính lại, không sửa đè. Các bước sau của sơ đồ đã chạy cùng ngày không tự chạy lại (số của chúng còn theo số dư cũ): màn hình liệt kê tên các bước đó, hãy chạy lại từng bước hoặc bấm "Chạy tất cả bước cuối kỳ". Trước khi kết chuyển nên ghi sổ hết phiếu nháp.
 
 ## Xem và in sổ sách, báo cáo
 
 - Báo cáo → Sổ sách kế toán: Sổ Nhật ký chung, Sổ Cái (theo chứng từ, theo tài khoản con hoặc dạng chữ T), Sổ chi tiết tài khoản (lọc theo đối tượng, khoản mục, vụ việc, bộ phận), Bảng cân đối số phát sinh (tổng cộng ba cặp cột Nợ/Có phải cân). Nhấn đúp hoặc Enter trên một dòng để truy ngược về phiếu hoặc sổ của tài khoản.
 - "In PDF" và "Xuất Excel" theo mẫu của thông tư đang áp dụng; "In cả bộ sổ năm…" in liên tục nhiều sổ và báo cáo của cả năm thành một PDF hoặc một Excel nhiều sheet (cần các cờ xem công nợ và giá vốn).
+- Trong giai đoạn 1, ba cờ nhạy cảm (xem công nợ phải thu, công nợ phải trả, giá vốn) bảo vệ sổ sách, báo cáo và số dư: sổ của tài khoản công nợ hoặc 632 cần cờ tương ứng; Sổ Nhật ký chung, Bảng cân đối số phát sinh và bộ sổ năm có các sổ này cần cả ba cờ; số dư theo tài khoản bỏ các dòng bị che. Màn hình chứng từ, nhật ký kiểm toán và soát lỗi vẫn hiển thị dòng của các tài khoản đó.
+- Sổ Nhật ký chung trên màn hình hiện tối đa 50.000 dòng đầu (có thông báo; tổng phát sinh vẫn là của cả khoảng); in PDF hoặc xuất Excel không bị cắt ở mức này.
 - Báo cáo → Báo cáo tài chính (B01, B02, B03): mỗi dòng là công thức trên tài khoản. Bộ mẫu TT99 và TT133 chưa được nhập vì chờ văn bản gốc, nên công ty chưa có sẵn dòng báo cáo: tự định nghĩa ở "Sửa công thức" (cộng trừ tiền tố tài khoản `111+112`, loại trừ `131(1312)`, đối ứng `N911/C632`, dòng khác `[100]`) hoặc chờ bộ mẫu chính thức rồi "Nạp lại mẫu". Có cột so sánh năm trước và truy ngược từng chỉ tiêu về tài khoản.
 
 ## Soát lỗi dữ liệu
