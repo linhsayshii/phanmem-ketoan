@@ -26,7 +26,7 @@ export async function regimeOf(trx: Trx, f: { from: string; to: string }): Promi
   const r = await sql<{ regime: string }>`SELECT regime FROM fiscal_period
     ORDER BY (date_from <= ${f.from}::date AND date_to >= ${f.from}::date) DESC, (date_from <= ${f.to}::date AND date_to >= ${f.to}::date) DESC, date_from <= ${f.to}::date DESC,
              period_no = 0, fiscal_year DESC, period_no DESC LIMIT 1`.execute(trx);
-  if (!r.rows[0]) throw new AppError('PERIOD_NOT_FOUND', 'Chưa mở năm tài chính nào', 409);
+  if (!r.rows[0]) throw new AppError('PERIOD_NOT_FOUND', 'Chưa mở năm tài chính nào', 404);
   return r.rows[0].regime;
 }
 

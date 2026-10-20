@@ -303,6 +303,7 @@ Mọi tham số lưu trong bảng `legal_param(code, value, valid_from, valid_to
 - Nhật ký: `audit_event` đầy đủ trước/sau, không xóa được; nhật ký đăng nhập; chuỗi hash khi hard lock; xuất toàn bộ dữ liệu kế toán theo kỳ ra bộ file (CSV/XML/PDF sổ) cho cơ quan thẩm quyền.
 - Sao lưu `pg_dump` theo lịch, lưu nhiều phiên bản, phục hồi thử định kỳ; dữ liệu lưu tại Việt Nam khi chạy SaaS.
 - Dữ liệu cá nhân (CCCD, lương): mã hóa cột nhạy cảm, che theo quyền, nhật ký truy cập.
+- Quy ước mã lỗi: mã kết thúc `_NOT_FOUND` luôn 404 (đối tượng nêu tên không tồn tại hoặc không thấy được trong công ty), kể cả khi phát sinh từ `RAISE` trong SQL; trạng thái không cho thao tác (kỳ khóa, chứng từ đã ghi sổ) giữ 409 với mã riêng.
 
 ## 14. Kiểm thử
 

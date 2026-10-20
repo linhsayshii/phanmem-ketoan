@@ -205,7 +205,7 @@ describe('chứng từ', () => {
     const get = await ctx.app.inject({ method: 'GET', url: `/api/vouchers/${v.id}`, headers: { cookie: other.cookie } });
     expect(get.statusCode).toBe(404); expect(get.json().error.code).toBe('VOUCHER_NOT_FOUND');
     const posted = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${v.id}/post`, headers: { cookie: other.cookie } });
-    expect(posted.json().error.code).toBe('VOUCHER_NOT_FOUND'); // từ thủ tục SQL nên là 409 theo plugin lỗi (P0001)
+    expect([posted.statusCode, posted.json().error.code]).toEqual([404, 'VOUCHER_NOT_FOUND']); // từ thủ tục SQL (P0001), mã *_NOT_FOUND nên 404
     expect((await ctx.app.inject({ method: 'GET', url: `/api/vouchers/${v.id}`, headers: { cookie } })).json().state).toBe('draft');
   });
 

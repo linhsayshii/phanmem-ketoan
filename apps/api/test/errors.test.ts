@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
 import errorsPlugin from '../src/plugins/errors.js';
@@ -5,10 +8,27 @@ import errorsPlugin from '../src/plugins/errors.js';
 const app = Fastify();
 await app.register(errorsPlugin);
 const pgError = (code: string) => Object.assign(new Error('lỗi từ PostgreSQL'), { code });
+const raise = (message: string) => Object.assign(new Error(message), { code: 'P0001' });
 app.get('/deadlock', async () => { throw pgError('40P01'); });
 app.get('/serialization', async () => { throw pgError('40001'); });
 app.get('/duplicate', async () => { throw pgError('23505'); });
+app.get('/raise-not-found', async () => { throw raise('VOUCHER_NOT_FOUND: x'); });
+app.get('/raise-posted', async () => { throw raise('VOUCHER_POSTED: y'); });
 afterAll(async () => { await app.close(); });
+
+// Các đối số của lời gọi AppError(...) (bắt đầu tại dấu '('), bỏ qua chuỗi trong nháy để thông báo chứa ';' hay ')' không làm lệch.
+function appErrorArgs(src: string, open: number): string[] {
+  const args: string[] = []; let depth = 0; let start = open + 1; let quote: string | null = null;
+  for (let i = open; i < src.length; i++) {
+    const c = src[i]!;
+    if (quote) { if (c === '\\') i++; else if (c === quote) quote = null; continue; }
+    if (c === "'" || c === '"' || c === '`') quote = c;
+    else if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') { if (--depth === 0) return [...args, src.slice(start, i).trim()]; }
+    else if (c === ',' && depth === 1) { args.push(src.slice(start, i).trim()); start = i + 1; }
+  }
+  return args;
+}
 
 describe('ánh xạ lỗi PostgreSQL', () => {
   it.each(['/deadlock', '/serialization'])('%s -> 409 CONCURRENT_RETRY để người dùng thử lại', async (url) => {
@@ -18,5 +38,21 @@ describe('ánh xạ lỗi PostgreSQL', () => {
   });
   it('lỗi 23505 vẫn là DUPLICATE', async () => {
     expect((await app.inject({ method: 'GET', url: '/duplicate' })).json().error.code).toBe('DUPLICATE');
+  });
+  it('P0001 mã *_NOT_FOUND từ SQL trả 404, mã khác 409', async () => {
+    const nf = await app.inject({ method: 'GET', url: '/raise-not-found' });
+    expect([nf.statusCode, nf.json().error.code]).toEqual([404, 'VOUCHER_NOT_FOUND']);
+    const posted = await app.inject({ method: 'GET', url: '/raise-posted' });
+    expect([posted.statusCode, posted.json().error.code]).toEqual([409, 'VOUCHER_POSTED']);
+  });
+  it('mọi AppError *_NOT_FOUND trong mã nguồn dùng 404', () => {
+    const root = fileURLToPath(new URL('../src', import.meta.url));
+    const found: [file: string, code: string, status: string][] = [];
+    for (const f of (readdirSync(root, { recursive: true }) as string[]).filter((f) => f.endsWith('.ts'))) {
+      const src = readFileSync(join(root, f), 'utf8');
+      for (const m of src.matchAll(/AppError\(\s*'([A-Z_]+_NOT_FOUND)'/g)) found.push([f, m[1]!, appErrorArgs(src, m.index! + 'AppError'.length)[2]!]);
+    }
+    expect(found.length).toBeGreaterThan(5); // chốt rằng bộ quét thật sự thấy các lời gọi, không khớp rỗng
+    expect(found.filter(([, , status]) => status !== '404')).toEqual([]);
   });
 });

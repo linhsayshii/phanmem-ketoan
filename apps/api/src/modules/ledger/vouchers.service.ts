@@ -48,7 +48,7 @@ async function periodOf(trx: Trx, postingDate: string, voucherType: string): Pro
   const q = trx.selectFrom('fiscal_period').select(['regime', 'fiscal_year']);
   const p = await (voucherType === 'DK' ? q.where('period_no', '=', 0).where('date_from', '=', postingDate)
     : q.where('period_no', '>=', 1).where('period_no', '<=', 15).where('date_from', '<=', postingDate).where('date_to', '>=', postingDate)).executeTakeFirst();
-  if (!p) throw new AppError('PERIOD_NOT_FOUND', `Ngày ${postingDate} không thuộc kỳ kế toán nào đã mở`, 409);
+  if (!p) throw new AppError('PERIOD_NOT_FOUND', `Ngày ${postingDate} không thuộc kỳ kế toán nào đã mở`, 404);
   return p;
 }
 // Tra mã sang id, nhớ kết quả trong một lần ghi. Tài khoản tra theo mã VÀ chế độ (một công ty có thể giữ nhiều hệ tài khoản, mã trùng giữa các hệ).

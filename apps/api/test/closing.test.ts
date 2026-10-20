@@ -144,7 +144,7 @@ describe('kết chuyển: đồng thời và lịch sử chạy', () => {
     expect(runs[0]).toMatchObject({ stepName: 'Bước đã xóa', status: 'done' }); expect(runs[0]!.voucherNo).toMatch(/^KC/);
     // Màn hình mở từ trước khi nạp lại mẫu gửi mã bước cũ: bị từ chối, sơ đồ không bị xóa sạch.
     const stale = await call('PUT', '/api/closing/steps', { steps: [{ id: step2.id, stepOrder: 1, name: 'x', mode: 'transfer', fromAccounts: ['511'], toAccount: '911' }] });
-    expect([stale.statusCode, stale.json().error.code]).toEqual([409, 'CLOSING_STEP_NOT_FOUND']);
+    expect([stale.statusCode, stale.json().error.code]).toEqual([404, 'CLOSING_STEP_NOT_FOUND']);
     expect(await steps()).toHaveLength(5);
   }, 30_000);
 
@@ -214,11 +214,11 @@ describe('kết chuyển: phạm vi chế độ, đối tượng, lỗi', () => 
     const [a, b, c] = await (async () => (await call('GET', '/api/closing/steps')).json() as { id: string }[])();
     const run = (stepId: string, postingDate: string) => call('POST', '/api/closing/run', { stepId, postingDate });
     const code = async (stepId: string, date: string) => { const r = await run(stepId, date); return [r.statusCode, r.json().error?.code]; };
-    expect(await code('00000000-0000-4000-8000-000000000000', '2026-12-31')).toEqual([409, 'CLOSING_STEP_NOT_FOUND']);
+    expect(await code('00000000-0000-4000-8000-000000000000', '2026-12-31')).toEqual([404, 'CLOSING_STEP_NOT_FOUND']);
     expect(await code(a!.id, '2026-12-31')).toEqual([409, 'CLOSING_RATIO_INVALID']);
     expect(await code(b!.id, '2026-12-31')).toEqual([409, 'CLOSING_TO_ACCOUNT_INVALID']);
     expect(await code(c!.id, '2026-12-31')).toEqual([409, 'CLOSING_TO_ACCOUNT_INVALID']);
-    expect(await code(b!.id, '2030-12-31')).toEqual([409, 'PERIOD_NOT_FOUND']);
+    expect(await code(b!.id, '2030-12-31')).toEqual([404, 'PERIOD_NOT_FOUND']);
     expect((await run(b!.id, '31/12/2026')).statusCode).toBe(400);
   }, 30_000);
 });

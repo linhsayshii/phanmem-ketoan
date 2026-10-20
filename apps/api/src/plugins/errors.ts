@@ -17,7 +17,8 @@ export default fp(async (app) => {
     if (e.validation) return reply.status(400).send({ error: { code: 'VALIDATION', message: e.message } });
     if (e.code === 'P0001' && e.message.includes(':')) {
       const [code, ...rest] = e.message.split(':');
-      return reply.status(409).send({ error: { code: code!.trim(), message: rest.join(':').trim() } });
+      // Quy ước: mã *_NOT_FOUND là đối tượng không tồn tại/không thấy được (404); trạng thái không cho thao tác là 409.
+      return reply.status(code!.trim().endsWith('_NOT_FOUND') ? 404 : 409).send({ error: { code: code!.trim(), message: rest.join(':').trim() } });
     }
     // SQLSTATE lớp 22 (dữ liệu sai: tràn số, sai định dạng...), 23502 (NOT NULL) và 23514 (CHECK) là lỗi đầu vào, không phải lỗi hệ thống.
     if (e.code?.startsWith('22') || e.code === '23502' || e.code === '23514') return reply.status(400).send({ error: { code: 'VALIDATION', message: 'Dữ liệu không hợp lệ' } });
