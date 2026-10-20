@@ -47,11 +47,15 @@ describe('số dư đầu kỳ', () => {
     expect((await check()).json()).toEqual([]);
     const p = await post();
     expect(p.statusCode, p.body).toBe(200);
-    expect(p.json()).toMatchObject({ voucherType: 'DK', state: 'posted', postingDate: '2025-12-31', totalDebit: '530000000' });
+    const sourceDocId = (await sql<{ id: string }>`SELECT md5(${`${tenantId}:opening:2026`})::uuid AS id`.execute(ctx.t.admin)).rows[0]!.id; // uuid xác định theo (công ty, năm)
+    expect(p.json()).toMatchObject({ voucherType: 'DK', state: 'posted', postingDate: '2025-12-31', totalDebit: '530000000', sourceDocType: 'opening_balance', sourceDocId });
     expect(p.json().lines).toHaveLength(5);
     await put([R('1111', '120000000'), R('1121', '400000000'), R('131', '30000000', '0', 'KH001'), R('131', '0', '10000000', 'KH002'), R('4111', '0', '540000000')]);
     const p2 = await post();
-    expect(p2.json()).toMatchObject({ id: p.json().id, voucherNo: p.json().voucherNo, totalDebit: '550000000' });
+    expect(p2.json()).toMatchObject({ id: p.json().id, voucherNo: p.json().voucherNo, totalDebit: '550000000', sourceDocId });
+    // ghi lại: dòng cũ được lưu vào lịch sử trước khi thay
+    const hist = await sql<{ n: number; first: string }>`SELECT jsonb_array_length(lines) AS n, lines->0->>'debit' AS first FROM voucher_line_history WHERE voucher_id = ${p.json().id}::uuid ORDER BY id`.execute(ctx.t.admin);
+    expect(hist.rows).toEqual([{ n: 5, first: '100000000' }]);
     const n = await sql<{ n: number }>`SELECT count(*) AS n FROM voucher WHERE tenant_id = ${tenantId}::uuid AND voucher_type = 'DK' AND state <> 'cancelled'`.execute(ctx.t.admin);
     expect(n.rows[0]!.n).toBe(1);
     const period0 = await sql<{ period_no: number; fiscal_year: number }>`SELECT period_no, fiscal_year FROM voucher WHERE id = ${p.json().id}::uuid`.execute(ctx.t.admin);
@@ -89,11 +93,21 @@ describe('số dư đầu kỳ', () => {
     ws.addRow(['131', 'KH001', 'VND', 5, 0, 0, 0]);                 // dòng 5
     ws.addRow(['131', 'KH001', 'VND', 6, 0, 0, 0]);                 // dòng 6: trùng dòng 5
     ws.addRow(['131', 'KHX', 'VND', 6, 0, 0, 0]);                   // dòng 7: đối tượng không có
-    ws.addRow(['1122', null, 'EUR', 6, 0, 0, 0]);                   // dòng 8: loại tiền không có
+    ws.addRow(['1122', null, 'EUR', 6, 0, 1, 0]);                   // dòng 8: loại tiền không có
+    ws.addRow(['1122', null, 'USD', 6, 0, 0, 0]);                   // dòng 9: dòng ngoại tệ thiếu nguyên tệ
     const r = await upload(wb, 'validate'); expect(r.statusCode, r.body).toBe(200);
     const errs = r.json().errors as { row: number; column: string; message: string }[];
-    expect(errs.map((e) => `${e.row}:${e.column}`).sort()).toEqual(['3:credit', '3:debit', '4:debit', '6:account_code', '7:party_code', '8:currency_code']);
+    expect(errs.map((e) => `${e.row}:${e.column}`).sort()).toEqual(['3:credit', '3:debit', '4:debit', '6:account_code', '7:party_code', '8:currency_code', '9:debit_currency']);
     expect(r.json().inserted).toBe(0);
+  }, 30_000);
+
+  it('nhập Excel không có dòng nào (hoặc toàn số 0) bị 400 IMPORT_EMPTY và không xóa số dư đã lưu', async () => {
+    const before = (await list()).json().length; expect(before).toBeGreaterThan(0);
+    const empty = await sheet(); const zero = await sheet(); zero.ws.addRow(['1111', null, 'VND', 0, 0, 0, 0]);
+    for (const wb of [empty.wb, zero.wb]) for (const mode of ['validate', 'commit']) {
+      const r = await upload(wb, mode); expect(r.statusCode, r.body).toBe(400); expect(r.json().error.code).toBe('IMPORT_EMPTY');
+    }
+    expect((await list()).json()).toHaveLength(before);
   }, 30_000);
 
   it('PUT bỏ qua dòng toàn số 0; số tiền sai định dạng hoặc sai bên bị từ chối 400', async () => {
@@ -106,6 +120,9 @@ describe('số dư đầu kỳ', () => {
     await bad(R('1111', '100', '50'));                                                                   // hai bên Nợ Có
     await bad(R('1122', '0', '100', null, { currencyCode: 'USD', debitCurrency: '1' }));                 // nguyên tệ khác bên với VND
     await bad(R('1111', '100', '0', null, { debitCurrency: '1' }));                                      // dòng VND không có nguyên tệ
+    await bad(R('1122', '100', '0', null, { currencyCode: 'USD' }));                                     // dòng ngoại tệ phải có nguyên tệ cùng bên
+    await bad(R('1122', '0', '100', null, { currencyCode: 'USD', debitCurrency: '0', creditCurrency: '0' }));
+    await bad(R('1122', '0', '0', null, { currencyCode: 'USD', debitCurrency: '1' }));                   // dòng ngoại tệ phải có số VND quy đổi
     expect((await list()).json()).toHaveLength(2); // lần ghi lỗi không làm mất dữ liệu cũ
     const missing = await put([R('1111', '1', '0', 'KHONGCO')]);
     expect(missing.statusCode).toBe(404); expect(missing.json().error.code).toBe('LOOKUP_NOT_FOUND');
@@ -113,11 +130,22 @@ describe('số dư đầu kỳ', () => {
     expect(dup.statusCode).toBe(409); expect(dup.json().error.code).toBe('DUPLICATE');
   }, 30_000);
 
-  it('ghi sổ khi không còn dòng nào: 409 VOUCHER_EMPTY và chứng từ DK cũ vẫn ghi sổ nguyên vẹn', async () => {
+  it('ghi sổ khi không còn dòng nào: 409 OPENING_EMPTY và chứng từ DK cũ vẫn ghi sổ nguyên vẹn', async () => {
     expect((await put([])).json()).toEqual({ count: 0 });
-    const p = await post(); expect(p.statusCode).toBe(409); expect(p.json().error.code).toBe('VOUCHER_EMPTY');
+    const p = await post(); expect(p.statusCode).toBe(409); expect(p.json().error.code).toBe('OPENING_EMPTY');
     const dk = await sql<{ state: string; n: number }>`SELECT v.state, (SELECT count(*) FROM voucher_line l WHERE l.voucher_id = v.id) AS n FROM voucher v WHERE v.tenant_id = ${tenantId}::uuid AND v.voucher_type = 'DK'`.execute(ctx.t.admin);
-    expect(dk.rows).toEqual([{ state: 'posted', n: 5 }]); // giao dịch hoàn tác: bỏ ghi sổ và xóa dòng không có hiệu lực
+    expect(dk.rows).toEqual([{ state: 'posted', n: 5 }]); // không động tới chứng từ cũ
+  }, 30_000);
+
+  it('kiểm tra báo tài khoản đã ngừng dùng và tài khoản theo dõi vật tư/tài sản; ghi sổ không rơi xuống lỗi trigger', async () => {
+    const setActive = (active: boolean) => ctx.t.admin.updateTable('account').set({ is_active: active }).where('tenant_id', '=', tenantId).where('regime', '=', 'TT133').where('code', '=', '1121').execute();
+    await setActive(false);
+    try {
+      await put([R('1121', '5'), R('156', '10'), R('4111', '0', '15')]);
+      expect((await check()).json()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'ACCOUNT_INACTIVE', accountCode: '1121' }), expect.objectContaining({ code: 'SUBLEDGER_MODULE_REQUIRED', accountCode: '156' })]));
+      const p = await post(); expect(p.statusCode).toBe(409); expect(p.json().error.code).toBe('OPENING_INVALID');
+    } finally { await setActive(true); }
   }, 30_000);
 
   it('ghi sổ số dư có tài khoản ngoại tệ: chứng từ DK hỗn hợp VND và USD cân theo VND; PKT toàn USD lệch nguyên tệ vẫn bị từ chối', async () => {
@@ -187,4 +215,55 @@ describe('số dư đầu kỳ nhiều hệ tài khoản và nhiều năm', () =
     const n = await sql<{ n: number }>`SELECT count(*) AS n FROM voucher WHERE tenant_id = ${t2}::uuid AND voucher_type = 'DK' AND fiscal_year = 2027`.execute(ctx.t.admin);
     expect(n.rows[0]!.n).toBe(0);
   }, 30_000);
+});
+
+describe('chứng từ DK: không lập tay, không bị chiếm, số dư lớn', () => {
+  let c3: string; let t3: string; let u3: string;
+  const jobs = async () => (await sql<{ n: number }>`SELECT count(*) AS n FROM pgboss.job WHERE name = 'balance.recompute' AND data->>'tenantId' = ${t3}`.execute(ctx.t.admin)).rows[0]!.n;
+  const api = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object) => ctx.app.inject({ method, url, headers: { cookie: c3 }, payload });
+  const pkt = (voucherType: string) => ({ voucherType, postingDate: '2026-02-05', documentDate: '2026-02-05', lines: [{ accountCode: '1111', debit: '5', credit: '0' }, { accountCode: '4111', debit: '0', credit: '5' }] });
+  beforeAll(async () => {
+    ({ cookie: c3, tenantId: t3, userId: u3 } = await bootstrapTenant(ctx, { code: `OD${Date.now()}` }));
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c3 }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' } })).statusCode).toBe(201);
+  }, 60_000);
+
+  it('DK lập tay trong năm: ghi sổ số dư bị 409 OPENING_DK_FOREIGN và chứng từ lập tay còn nguyên; hủy rồi thì ghi sổ được', async () => {
+    const v = await sql<{ id: string }>`INSERT INTO voucher(tenant_id, voucher_type, posting_date, document_date, created_by, description) VALUES (${t3}::uuid, 'DK', DATE '2025-12-31', DATE '2025-12-31', ${u3}::uuid, 'DK lập tay') RETURNING id`.execute(ctx.t.admin);
+    const manual = v.rows[0]!.id;
+    await sql`INSERT INTO voucher_line(tenant_id, voucher_id, line_no, account_id, posting_date, debit, credit) SELECT ${t3}::uuid, ${manual}::uuid, x.n, a.id, DATE '2025-12-31', x.d, x.c
+      FROM (VALUES (1, '1111', 5, 0), (2, '4111', 0, 5)) AS x(n, code, d, c) JOIN account a ON a.tenant_id = ${t3}::uuid AND a.regime = 'TT133' AND a.code = x.code`.execute(ctx.t.admin);
+    const rows = [R('1111', '100'), R('4111', '0', '100')];
+    expect((await api('PUT', '/api/opening-balance/2026', { rows })).statusCode).toBe(200);
+    const p = await api('POST', '/api/opening-balance/2026/post');
+    expect(p.statusCode, p.body).toBe(409); expect(p.json().error.code).toBe('OPENING_DK_FOREIGN');
+    const dk = () => sql<{ id: string; state: string; n: number }>`SELECT v.id, v.state, (SELECT count(*) FROM voucher_line l WHERE l.voucher_id = v.id) AS n FROM voucher v WHERE v.tenant_id = ${t3}::uuid AND v.voucher_type = 'DK' ORDER BY v.created_at`.execute(ctx.t.admin);
+    expect((await dk()).rows).toEqual([{ id: manual, state: 'draft', n: 2 }]);
+    expect(await jobs()).toBe(0); // ghi sổ lỗi thì không báo worker
+    expect((await api('POST', `/api/vouchers/${manual}/discard`)).statusCode).toBe(200);
+    const ok = await api('POST', '/api/opening-balance/2026/post'); expect(ok.statusCode, ok.body).toBe(200);
+    expect(ok.json()).toMatchObject({ state: 'posted', totalDebit: '100' }); expect(ok.json().id).not.toBe(manual);
+    await expect.poll(jobs, { timeout: 5000 }).toBeGreaterThan(0); // ghi sổ số dư gửi việc tính lại số dư vào hàng đợi
+  }, 30_000);
+
+  it('API chứng từ không lập, sửa sang hoặc nhân bản loại DK: 409 VOUCHER_TYPE_SYSTEM', async () => {
+    const create = await api('POST', '/api/vouchers', { ...pkt('DK'), postingDate: '2025-12-31', documentDate: '2025-12-31' });
+    expect(create.statusCode, create.body).toBe(409); expect(create.json().error.code).toBe('VOUCHER_TYPE_SYSTEM');
+    const draft = (await api('POST', '/api/vouchers', pkt('PKT'))).json();
+    const edit = await api('PUT', `/api/vouchers/${draft.id}`, { ...pkt('DK'), postingDate: '2025-12-31', documentDate: '2025-12-31', version: draft.version });
+    expect(edit.statusCode, edit.body).toBe(409); expect(edit.json().error.code).toBe('VOUCHER_TYPE_SYSTEM');
+    const dkId = (await api('GET', '/api/vouchers?type=DK&state=posted')).json().rows[0].id as string;
+    const dup = await api('POST', `/api/vouchers/${dkId}/duplicate`, { postingDate: '2026-01-05' });
+    expect(dup.statusCode, dup.body).toBe(409); expect(dup.json().error.code).toBe('VOUCHER_TYPE_SYSTEM');
+  }, 30_000);
+
+  it('ghi sổ 6001 dòng: chia lô khi ghi dòng chứng từ (không vượt giới hạn tham số bind)', async () => {
+    const { tenantId: t4, cookie: c4 } = await bootstrapTenant(ctx, { code: `OE${Date.now()}` });
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c4 }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' } })).statusCode).toBe(201);
+    await sql`INSERT INTO party(tenant_id, code, name, is_customer) SELECT ${t4}::uuid, 'P' || g, 'P' || g, true FROM generate_series(1, 6001) g`.execute(ctx.t.admin);
+    await sql`INSERT INTO opening_balance(tenant_id, fiscal_year, account_id, party_id, debit) SELECT ${t4}::uuid, 2026, a.id, p.id, 1 FROM party p JOIN account a ON a.tenant_id = ${t4}::uuid AND a.regime = 'TT133' AND a.code = '131' WHERE p.tenant_id = ${t4}::uuid`.execute(ctx.t.admin);
+    await sql`INSERT INTO opening_balance(tenant_id, fiscal_year, account_id, credit) SELECT ${t4}::uuid, 2026, id, 6001 FROM account WHERE tenant_id = ${t4}::uuid AND regime = 'TT133' AND code = '4111'`.execute(ctx.t.admin);
+    const p = await ctx.app.inject({ method: 'POST', url: '/api/opening-balance/2026/post', headers: { cookie: c4 } });
+    expect(p.statusCode, p.body.slice(0, 300)).toBe(200);
+    expect(p.json()).toMatchObject({ state: 'posted', totalDebit: '6001' }); expect(p.json().lines).toHaveLength(6002);
+  }, 120_000);
 });

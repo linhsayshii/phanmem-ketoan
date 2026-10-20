@@ -2,8 +2,9 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { sql, type Transaction } from 'kysely';
-import { QUEUES, type Database } from '@kt/db';
+import type { Database } from '@kt/db';
 import * as S from './vouchers.service.js';
+import { notifyRecompute } from './notifyRecompute.js';
 import { AppError } from '../../plugins/errors.js';
 import { formNoFor } from '../reporting/print/forms.js';
 import { renderPdf } from '../reporting/print/pdf.js';
@@ -13,14 +14,6 @@ const idParam = z.object({ id: z.string().uuid() });
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   const ctx = (req: FastifyRequest) => ({ tenantId: req.auth!.tenantId!, userId: req.auth!.userId });
-  // Báo worker tính lại số dư sau khi giao dịch đã commit. Hàng đợi tạo một lần (như tenants.ts); lỗi chỉ ghi log, không làm hỏng thao tác đã commit.
-  let queueReady: Promise<void> | undefined;
-  const notify = (tenantId: string) => {
-    const boss = app.boss;
-    if (!boss) return;
-    queueReady ??= boss.createQueue(QUEUES.recomputeBalances);
-    queueReady.then(() => boss.send(QUEUES.recomputeBalances, { tenantId }, { singletonKey: tenantId, singletonSeconds: 5 })).catch((e) => { queueReady = undefined; app.log.error(e); });
-  };
   // Ghi vào kỳ khóa mềm chỉ khi có quyền; biến phiên được đặt trong transaction.
   const withOverride = <T>(req: FastifyRequest, fn: (trx: Transaction<Database>) => Promise<T>) => app.withTenant(req, async (trx) => {
     if (req.auth!.permissions.has('voucher.backdate_locked')) await sql`SELECT set_config('app.override_soft_lock', 'on', true)`.execute(trx);
@@ -58,7 +51,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       const v = await S.createVoucher(trx, ctx(req), input);
       return autoPost && v.state === 'draft' && v.version === 1 ? S.postVoucher(trx, v.id) : v;
     });
-    if (dto.state === 'posted') notify(req.auth!.tenantId!);
+    if (dto.state === 'posted') notifyRecompute(app, req.auth!.tenantId!);
     return reply.status(201).send(dto);
   });
 
@@ -68,12 +61,12 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.post('/api/vouchers/:id/post', { preHandler: app.requirePermission('voucher.post'), schema: { params: idParam } }, async (req) => {
-    const dto = await withOverride(req, (trx) => S.postVoucher(trx, req.params.id)); notify(req.auth!.tenantId!); return dto; });
+    const dto = await withOverride(req, (trx) => S.postVoucher(trx, req.params.id)); notifyRecompute(app, req.auth!.tenantId!); return dto; });
   app.post('/api/vouchers/:id/unpost', { preHandler: app.requirePermission('voucher.unpost'), schema: { params: idParam } }, async (req) => {
     if (!req.auth!.permissions.has('voucher.edit_posted')) throw new AppError('FORBIDDEN', 'Thiếu quyền sửa sau ghi sổ', 403);
-    const dto = await app.withTenant(req, (trx) => S.unpostVoucher(trx, req.params.id)); notify(req.auth!.tenantId!); return dto; });
+    const dto = await app.withTenant(req, (trx) => S.unpostVoucher(trx, req.params.id)); notifyRecompute(app, req.auth!.tenantId!); return dto; });
   app.post('/api/vouchers/:id/reverse', { preHandler: app.requirePermission('voucher.post'), schema: { params: idParam, body: z.object({ postingDate: S.dateIso, description: z.string().optional() }) } }, async (req, reply) => {
-    const dto = await withOverride(req, (trx) => S.reverseVoucher(trx, req.params.id, req.body)); notify(req.auth!.tenantId!); return reply.status(201).send(dto); });
+    const dto = await withOverride(req, (trx) => S.reverseVoucher(trx, req.params.id, req.body)); notifyRecompute(app, req.auth!.tenantId!); return reply.status(201).send(dto); });
   app.post('/api/vouchers/:id/discard', { preHandler: app.requirePermission('voucher.delete'), schema: { params: idParam } }, async (req) => app.withTenant(req, (trx) => S.discardVoucher(trx, req.params.id)));
   app.post('/api/vouchers/:id/duplicate', { preHandler: app.requirePermission('voucher.create'), schema: { params: idParam, body: z.object({ postingDate: S.dateIso }) } }, async (req, reply) =>
     reply.status(201).send(await withOverride(req, (trx) => S.duplicateVoucher(trx, ctx(req), req.params.id, req.body.postingDate))));

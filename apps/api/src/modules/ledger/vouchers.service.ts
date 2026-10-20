@@ -111,7 +111,13 @@ async function insertLines(trx: Trx, lookup: Lookup, tenantId: string, voucherId
   await trx.insertInto('voucher_line').values(rows).execute();
 }
 
+// Chứng từ DK chỉ do màn hình Số dư đầu kỳ tạo (source_doc_type = 'opening_balance'); lập tay thì số dư bị cộng đôi hoặc bị ghi đè khi ghi sổ số dư.
+const assertNotOpening = (voucherType: string) => {
+  if (voucherType === 'DK') throw new AppError('VOUCHER_TYPE_SYSTEM', 'Chứng từ số dư đầu kỳ chỉ lập qua màn hình Số dư đầu kỳ', 409);
+};
+
 export async function createVoucher(trx: Trx, ctx: { tenantId: string; userId: string }, input: VoucherInput): Promise<VoucherDto> {
+  assertNotOpening(input.voucherType); // cả nhân bản (duplicateVoucher gọi hàm này)
   if (input.idempotencyKey) {
     const existing = await trx.selectFrom('voucher').select('id').where('idempotency_key', '=', input.idempotencyKey).executeTakeFirst();
     if (existing) return getVoucher(trx, existing.id);
@@ -137,6 +143,7 @@ async function lockAndCheckVersion(trx: Trx, id: string, version: number) {
 }
 
 export async function updateDraft(trx: Trx, id: string, version: number, input: VoucherInput): Promise<VoucherDto> {
+  assertNotOpening(input.voucherType);
   const v = await lockAndCheckVersion(trx, id, version);
   if (v.state !== 'draft') throw new AppError('VOUCHER_POSTED_EDIT', 'Chứng từ đã ghi sổ: chỉ sửa được diễn giải/chiều phân tích, hoặc Bỏ ghi sổ trước', 409);
   const period = await periodOf(trx, input.postingDate, input.voucherType);

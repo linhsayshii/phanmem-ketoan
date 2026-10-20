@@ -56,9 +56,12 @@ export default function OpeningBalancePage() {
   const [rows, setRows] = useState<Row[]>([emptyRow()]);
   const rowsRef = useRef(rows); // bản mới nhất, đọc đồng bộ khi lưu (ô vừa chốt giá trị có thể chưa kịp render)
   const setAll = useCallback((r: Row[]) => { rowsRef.current = r; setRows(r); }, []);
-  useEffect(() => { if (saved.data) setAll([...saved.data, emptyRow()]); }, [saved.data, setAll]);
   const [issues, setIssues] = useState<Issue[] | null>(null);
   const [posted, setPosted] = useState<{ voucherNo: string | null; postingDate: string } | null>(null);
+  // Đổi năm: bỏ dòng và kết quả của năm cũ ngay (không để dòng năm cũ nằm đó trong lúc tải, rồi bị lưu đè lên năm mới); effect này đứng trước effect nạp dữ liệu.
+  useEffect(() => { setAll([emptyRow()]); setIssues(null); setPosted(null); }, [year, setAll]);
+  useEffect(() => { if (saved.data) setAll([...saved.data, emptyRow()]); }, [saved.data, setAll]);
+  const ready = saved.isSuccess && !saved.isFetching; // lưới đã khớp dữ liệu máy chủ của năm đang chọn
   const [busy, setBusy] = useState(false);
   const [importing, setImporting] = useState(false);
   const [lookup, setLookup] = useState<{ col: string; row: number } | null>(null);
@@ -83,7 +86,8 @@ export default function OpeningBalancePage() {
   };
   const run = async (fn: () => Promise<void>) => { setBusy(true); try { await fn(); } catch (e) { void message.error(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); } };
   const save = () => run(async () => { await persist(); setPosted(null); void message.success('Đã lưu'); });
-  const check = () => run(async () => { await persist(); setPosted(null); setIssues(await api<Issue[]>(`/api/opening-balance/${year}/check`)); });
+  // Người chỉ xem không lưu được (403): kiểm tra thẳng bản đã lưu.
+  const check = () => run(async () => { if (mayEdit) await persist(); setPosted(null); setIssues(await api<Issue[]>(`/api/opening-balance/${year}/check`)); });
   // Ghi sổ lưu trước rồi mới ghi, để không ghi sổ bản cũ trên máy chủ.
   const post = () => run(async () => {
     await persist(); setPosted(null);
@@ -98,7 +102,7 @@ export default function OpeningBalancePage() {
 
   const columns = useMemo<ColDef<Row>[]>(() => [
     codeCol('accountCode', 'accountName', 'TK (F4)', 110), { field: 'accountName', headerName: 'Tên tài khoản', flex: 1, editable: false },
-    codeCol('partyCode', 'partyName', 'Đối tượng (F4)', 130), { field: 'currencyCode', headerName: 'Loại tiền', width: 90 },
+    codeCol('partyCode', 'partyName', 'Đối tượng (F4)', 130), { field: 'currencyCode', headerName: 'Loại tiền', width: 90, valueParser: (p) => String(p.newValue ?? '').trim().toUpperCase() },
     numCol('debit', 'Dư Nợ', false), numCol('credit', 'Dư Có', false), numCol('debitCurrency', 'Dư Nợ NT', true), numCol('creditCurrency', 'Dư Có NT', true),
   ], []);
   const onLookup = useCallback((col: string, row: number) => { if (col in LOOKUP_CATALOG && mayEdit) setLookup({ col, row }); }, [mayEdit]);
@@ -107,9 +111,9 @@ export default function OpeningBalancePage() {
     <Card title="Số dư đầu kỳ" extra={<Space wrap>
       <Select style={{ width: 200 }} value={year} onChange={setPicked} loading={years.isLoading} placeholder="Chọn năm"
         options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
-      {mayEdit && <Button type="primary" onClick={() => void save()} loading={busy} disabled={year === undefined}>Lưu</Button>}
-      <Button onClick={() => void check()} disabled={busy || year === undefined}>Kiểm tra</Button>
-      {mayEdit && <Button onClick={() => void post()} disabled={busy || year === undefined}>Ghi sổ số dư đầu kỳ</Button>}
+      {mayEdit && <Button type="primary" onClick={() => void save()} loading={busy} disabled={!ready}>Lưu</Button>}
+      <Button onClick={() => void check()} disabled={busy || !ready}>Kiểm tra</Button>
+      {mayEdit && <Button onClick={() => void post()} disabled={busy || !ready}>Ghi sổ số dư đầu kỳ</Button>}
       <Button href="/api/opening-balance/template.xlsx">Tải mẫu Excel</Button>
       {mayEdit && <Button onClick={() => setImporting(true)} disabled={year === undefined}>Nhập Excel</Button>}
     </Space>}>

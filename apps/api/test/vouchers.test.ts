@@ -128,18 +128,16 @@ describe('chứng từ', () => {
     expect(list.json().total).toBeGreaterThanOrEqual(2);
   });
 
-  it('một công ty nhiều hệ tài khoản: mã tài khoản tra theo chế độ của kỳ chứa ngày ghi sổ, kể cả chứng từ DK ở kỳ 0', async () => {
+  it('một công ty nhiều hệ tài khoản: mã tài khoản tra theo chế độ của kỳ chứa ngày ghi sổ', async () => {
     const fy = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT200' } });
     expect(fy.statusCode, fy.body).toBe(201);
-    // 31/12/2026 vừa là kỳ 12 của năm 2026 (TT133) vừa là kỳ 0 của năm 2027 (TT200); mã 1111 và 5113 có ở cả hai hệ.
+    // Mã 1111 và 5113 có ở cả hai hệ. (Chứng từ DK ở kỳ 0 không lập qua API chứng từ nữa: xem openingBalance.test.ts.)
     const a = await create(pkt('2026-12-31', [L('1111', '5'), L('5113', '0', '5')], { autoPost: true }));
-    const b = await create({ voucherType: 'DK', postingDate: '2026-12-31', documentDate: '2026-12-31', lines: [L('1111', '7'), L('5113', '0', '7')], autoPost: true });
     // Loại PB (không phải PKT): số PKT00001 của năm 2027 sẽ trùng PKT00001 của năm 2026 vì tiền tố mặc định chưa có {YY} (thuộc Task 17).
     const c = await create({ ...pkt('2027-01-10', [L('1111', '9'), L('5113', '0', '9')], { autoPost: true }), voucherType: 'PB' });
-    expect([a.statusCode, b.statusCode, c.statusCode], `${a.body} ${b.body} ${c.body}`).toEqual([201, 201, 201]);
-    expect(b.json()).toMatchObject({ voucherNo: 'DK00001', state: 'posted' });
-    const regimes = await Promise.all([a, b, c].map(async (r) => (await sql<{ regime: string }>`SELECT DISTINCT a.regime FROM voucher_line l JOIN account a ON a.id = l.account_id WHERE l.voucher_id = ${r.json().id}::uuid`.execute(ctx.t.admin)).rows.map((x) => x.regime)));
-    expect(regimes).toEqual([['TT133'], ['TT200'], ['TT200']]);
+    expect([a.statusCode, c.statusCode], `${a.body} ${c.body}`).toEqual([201, 201]);
+    const regimes = await Promise.all([a, c].map(async (r) => (await sql<{ regime: string }>`SELECT DISTINCT a.regime FROM voucher_line l JOIN account a ON a.id = l.account_id WHERE l.voucher_id = ${r.json().id}::uuid`.execute(ctx.t.admin)).rows.map((x) => x.regime)));
+    expect(regimes).toEqual([['TT133'], ['TT200']]);
   });
 
   it('quyền và khóa kỳ: bỏ ghi sổ cần voucher.edit_posted; kỳ khóa mềm chỉ ghi được khi có voucher.backdate_locked; kỳ khóa không bỏ ghi sổ được nhưng đảo được', async () => {
