@@ -6,9 +6,9 @@ import { parseCoaCsv, splitCsvLine, type CoaTemplateRow, type Regime, type Side,
 const dataDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
 export const COA_REGIMES: Regime[] = ['TT133', 'TT200', 'TT99'];
 const SOURCE: Record<string, string> = {
-  TT133: 'SUNSOFT OrgDMTK (chưa đối chiếu Phụ lục 1 TT 133/2016/TT-BTC)',
+  TT133: 'Phụ lục 1 TT 133/2016/TT-BTC ngày 26/8/2016, Công báo số 1103 + 1104 ngày 12/10/2016, https://congbao.chinhphu.vn/van-ban/thong-tu-so-133-2016-tt-btc-21048/15522.htm',
   TT200: 'SUNSOFT OrgDMTK_200 (chưa đối chiếu Phụ lục 1 TT 200/2014/TT-BTC)',
-  TT99: 'Phụ lục II TT 99/2025/TT-BTC (chờ nhập)',
+  TT99: 'Phụ lục II TT 99/2025/TT-BTC ngày 27/10/2025, Công báo số 1565 + 1566 ngày 16/11/2025, https://congbao.chinhphu.vn/van-ban/thong-tu-so-99-2025-tt-btc-46529.htm',
 };
 export function dataPath(...p: string[]): string { return path.join(dataDir, ...p); }
 export function loadCoaTemplate(regime: Regime): CoaTemplateRow[] {
@@ -20,7 +20,8 @@ export function tt99Status(): { complete: boolean; source: string } {
 }
 
 export interface ClosingStepTemplate { stepOrder: number; name: string; mode: 'transfer' | 'allocate'; fromAccounts: string[]; toAccount: string | null; keepBalance?: string; byDimension?: 'project' | null; ratioSource?: { ratios: { account: string; percent: string }[] } | null; runAt: 'period_end' | 'next_year_start' }
-export function loadDefaultClosingSteps(): ClosingStepTemplate[] { return JSON.parse(readFileSync(dataPath('closing-steps', 'default.json'), 'utf8')) as ClosingStepTemplate[]; }
+// Sơ đồ kết chuyển mặc định theo chế độ (TT133 không có 521 và 641; TT99 giảm trừ doanh thu kết chuyển thẳng vào 511).
+export function loadDefaultClosingSteps(regime: Regime): ClosingStepTemplate[] { return JSON.parse(readFileSync(dataPath('closing-steps', `${regime.toLowerCase()}.json`), 'utf8')) as ClosingStepTemplate[]; }
 
 export interface ReportTemplateRow { regime: Regime; reportCode: string; lineCode: string; label: string; parentLineCode: string | null; source: Source; side: Side; formula: string | null; sortOrder: number; isBold: boolean; negate: boolean; noteRef: string | null }
 export type ReportStatus = Record<'tt99' | 'tt133', Record<string, boolean | string>>;

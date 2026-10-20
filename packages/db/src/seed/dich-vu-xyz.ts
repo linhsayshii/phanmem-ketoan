@@ -1,7 +1,7 @@
 import '../env.js';
 import pg from 'pg';
 import argon2 from 'argon2';
-import { tt99Status } from '@kt/coa-data';
+import { isReportComplete } from '@kt/coa-data';
 import type { Regime } from '@kt/domain';
 import { ensureTenant, ensureUser, generateAccountsSql, insertDefaultClosingSteps, insertFiscalYear, setTenantContext } from './common.js';
 
@@ -20,7 +20,7 @@ async function seedXyzData(c: pg.Client, tenantId: string, admin: string, regime
   await c.query(`UPDATE tenant SET address = '45 Trần Duy Hưng, Cầu Giấy, Hà Nội', legal_rep = 'Lê Minh Quân', chief_accountant = 'Phạm Thu Hà' WHERE id = $1`, [tenantId]);
   await insertFiscalYear(c, tenantId, { fiscalYear: FY, dateFrom: `${FY}-01-01`, months: 12, regime });
   await generateAccountsSql(c, tenantId, regime);
-  await insertDefaultClosingSteps(c, tenantId);
+  await insertDefaultClosingSteps(c, tenantId, regime);
   const acc = new Map<string, number>((await c.query('SELECT code, id FROM account WHERE tenant_id = $1 AND NOT is_group', [tenantId])).rows.map((r) => [r.code, r.id]));
   const pick = (cands: string[]) => { const f = cands.find((x) => acc.has(x)); if (!f) throw new Error(`Hệ ${regime} không có tài khoản nào trong ${cands.join(', ')}`); return f; };
   const A = (k: string) => pick(XYZ_ACCOUNT_CANDIDATES[k] ?? [k]);
@@ -78,8 +78,8 @@ export async function seedXyzTx(c: pg.Client, o: { code?: string; afterTenant?: 
     const t = await ensureTenant(c, { code: o.code ?? 'XYZ', name: 'Công ty TNHH Dịch vụ Tư vấn XYZ', taxCode: '0109876543', ownerUserId: admin });
     if (t.created) {
       await o.afterTenant?.();
-      const regime: Regime = tt99Status().complete ? 'TT99' : 'TT133';
-      if (regime === 'TT133') console.warn('CẢNH BÁO: tt99.csv chưa hoàn tất, công ty mẫu dùng TT133');
+      const regime: Regime = isReportComplete('TT99', 'B01') ? 'TT99' : 'TT133';
+      if (regime === 'TT133') console.warn('CẢNH BÁO: mẫu báo cáo TT99 (B01) chưa đối chiếu văn bản gốc, công ty mẫu dùng TT133');
       await setTenantContext(c, t.id, admin);
       await seedXyzData(c, t.id, admin, regime);
     }

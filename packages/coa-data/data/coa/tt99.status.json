@@ -1,1 +1,5 @@
-{ "complete": false, "source": "", "note": "Nhập toàn bộ Phụ lục II TT 99/2025/TT-BTC từ văn bản gốc (Công báo). Đối chiếu: cột TK của reference/sunsoft/DesBC_CDKT_B01_99.csv và TK_TI/TK_DU của DesBC_KQKD_LAILO_99.csv phải tồn tại trong tt99.csv; các tài khoản mới 137, 215, 2295, 246, 332, 351, 1383 phải có; các tài khoản bỏ 161, 417, 441, 461, 466, 611, 631 không được có. Khi xong đặt complete=true và ghi source. Các bảng DesBC_*_99 của SUNSOFT là bản sao định nghĩa TT200, không phải nguồn TT99; nguồn duy nhất là Phụ lục II TT 99/2025/TT-BTC." }
+{
+  "complete": true,
+  "source": "Phụ lục II (A - Danh mục tài khoản kế toán) Thông tư số 99/2025/TT-BTC ngày 27/10/2025 của Bộ Tài chính; Công báo số 1565 + 1566 ngày 16/11/2025, trang 35-45, https://congbao.chinhphu.vn/van-ban/thong-tu-so-99-2025-tt-btc-46529.htm",
+  "note": "184 tài khoản: 71 cấp 1, 101 cấp 2, 10 cấp 3, 2 cấp 4 (215121, 215122), đúng bảng danh mục của văn bản (không có tài khoản ngoài bảng). Số hiệu và tên lấy từ văn bản; normal_balance, track_currency, subledger_kind là thuộc tính phần mềm (suy từ tt200.csv và bản chất tài khoản). 137, 246, 351 là mã số chỉ tiêu của Báo cáo tình hình tài chính (B01), không phải số hiệu tài khoản, nên không nhập vào danh mục tài khoản; 1383 (Thuế TTĐB của hàng nhập khẩu), 215, 2295, 332 có. Các TK 161, 417, 441, 461, 466, 611, 631 không có trong bảng."
+}

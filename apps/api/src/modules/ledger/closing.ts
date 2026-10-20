@@ -3,7 +3,7 @@ import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
 import { loadDefaultClosingSteps } from '@kt/coa-data';
-import { VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
+import { VND_AMOUNT_MSG, VND_AMOUNT_RE, type Regime } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { dateIso } from './vouchers.service.js';
@@ -17,9 +17,9 @@ export const stepInput = z.object({ id: z.string().uuid().optional(), stepOrder:
 type Trx = Transaction<Database>;
 
 // Thay toàn bộ sơ đồ bằng mẫu. Nhật ký chạy (closing_run) không mất: step_id về NULL.
-export async function loadClosingTemplate(trx: Trx, tenantId: string): Promise<number> {
+export async function loadClosingTemplate(trx: Trx, tenantId: string, regime: Regime): Promise<number> {
   await trx.deleteFrom('closing_step').execute();
-  const tpl = loadDefaultClosingSteps();
+  const tpl = loadDefaultClosingSteps(regime);
   for (const s of tpl) await trx.insertInto('closing_step').values({ tenant_id: tenantId, step_order: s.stepOrder, name: s.name, mode: s.mode, from_accounts: s.fromAccounts, to_account: s.toAccount,
     keep_balance: s.keepBalance ?? '0', by_dimension: s.byDimension ?? null, ratio_source: s.ratioSource ? JSON.stringify(s.ratioSource) : null, run_at: s.runAt }).execute();
   return tpl.length;
@@ -62,7 +62,17 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     });
     return { ok: true };
   });
-  app.post('/api/closing/steps/reload', { preHandler: app.requirePermission('closing_step.update') }, async (req) => ({ count: await app.withTenant(req, (trx) => loadClosingTemplate(trx, req.auth!.tenantId!)) }));
+  // Nạp lại mẫu theo chế độ của năm chứa ngày hôm nay (giờ Việt Nam), không có thì theo năm gần nhất.
+  app.post('/api/closing/steps/reload', { preHandler: app.requirePermission('closing_step.update') }, async (req) => {
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const count = await app.withTenant(req, async (trx) => {
+      const year = await trx.selectFrom('fiscal_period').select('regime').where('period_no', '>', 0)
+        .orderBy(sql`(date_from <= ${today}::date and date_to >= ${today}::date)`, 'desc').orderBy('date_to', 'desc').executeTakeFirst();
+      if (!year) throw new AppError('NO_FISCAL_YEAR', 'Chưa có năm tài chính: tạo năm tài chính trước khi nạp lại các bước kết chuyển', 409);
+      return loadClosingTemplate(trx, req.auth!.tenantId!, year.regime as Regime);
+    });
+    return { count };
+  });
 
   app.post('/api/closing/run', { preHandler: app.requirePermission('closing.run'), schema: { body: runBody } }, async (req) => {
     const tenantId = req.auth!.tenantId!;

@@ -1,0 +1,7 @@
+[
+  { "stepOrder": 1, "name": "Kết chuyển các khoản giảm trừ doanh thu", "mode": "transfer", "fromAccounts": ["521"], "toAccount": "511", "runAt": "period_end" },
+  { "stepOrder": 2, "name": "Kết chuyển doanh thu, thu nhập khác", "mode": "transfer", "fromAccounts": ["511", "515", "711"], "toAccount": "911", "runAt": "period_end" },
+  { "stepOrder": 3, "name": "Kết chuyển giá vốn, chi phí", "mode": "transfer", "fromAccounts": ["632", "635", "641", "642", "811", "821"], "toAccount": "911", "runAt": "period_end" },
+  { "stepOrder": 4, "name": "Xác định kết quả kinh doanh", "mode": "transfer", "fromAccounts": ["911"], "toAccount": "4212", "runAt": "period_end" },
+  { "stepOrder": 5, "name": "Kết chuyển lợi nhuận năm nay sang năm trước (chạy ngày đầu năm sau)", "mode": "transfer", "fromAccounts": ["4212"], "toAccount": "4211", "runAt": "next_year_start" }
+]
