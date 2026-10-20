@@ -3,10 +3,16 @@ import { expect } from 'vitest';
 import { sql } from 'kysely';
 import { bootstrapTenant, type TestApp } from '../helpers.js';
 
-export interface Line { accountCode: string; debit?: string; credit?: string }
+export interface Line { accountCode: string; debit?: string; credit?: string; partyCode?: string }
 
-// Tài khoản chi tiết tồn tại ở cả TT133 và TT99, không theo dõi đối tượng.
-export const ACCOUNTS = ['1111', '1121', '5113', '6421', '6422', '242', '33311', '4111'];
+// Số lần chạy mỗi thuộc tính fast-check: mặc định theo từng kiểm thử, đặt FC_RUNS để chạy nhiều hơn (soak thủ công); thời gian chờ nới theo.
+export const runs = (dflt: number): number => (process.env.FC_RUNS ? Number(process.env.FC_RUNS) : dflt);
+export const timeoutFor = (dfltMs: number): number => (process.env.FC_RUNS ? 30 * 60_000 : dfltMs);
+
+// Tài khoản chi tiết tồn tại ở cả TT133 và TT99. 131 và 331 là tài khoản công nợ: dòng của chúng bắt buộc có đối tượng (chiều đối tượng của số dư).
+export const PARTY_ACCOUNTS = ['131', '331'];
+export const ACCOUNTS = ['1111', '1121', '5113', '6421', '6422', '242', '33311', '4111', ...PARTY_ACCOUNTS];
+export const PARTIES = ['KH001', 'KH002', 'NCC001'];
 
 export async function setupLedgerTenant(ctx: TestApp, code: string, regime: 'TT133' | 'TT99' = 'TT133') {
   const b = await bootstrapTenant(ctx, { code });
@@ -22,16 +28,31 @@ export async function setupLedgerTenant(ctx: TestApp, code: string, regime: 'TT1
 export const postVoucher = (ctx: TestApp, cookie: string, date: string, lines: object[], extra: object = {}) =>
   ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie }, payload: { voucherType: 'PKT', postingDate: date, documentDate: date, description: 'inv', autoPost: true, lines, ...extra } });
 
-// Số dư ròng (Nợ − Có) từng tài khoản đến hết `asOf`, cộng thẳng từ dòng chứng từ đã ghi sổ (không qua bảng số dư kỳ): nguồn đối chiếu độc lập.
+// Số dư ròng (Nợ − Có) đến hết `asOf` theo (tài khoản, đối tượng, loại tiền), khóa `mã TK|mã đối tượng|tiền tệ`, cộng thẳng từ dòng chứng từ đã ghi sổ
+// (không qua bảng số dư kỳ): nguồn đối chiếu độc lập. Dòng không có đối tượng có mã đối tượng rỗng.
 export async function sumFromLines(ctx: TestApp, tenantId: string, asOf: string): Promise<Record<string, string>> {
-  const r = await sql<{ code: string; net: string }>`SELECT a.code, sum(l.debit - l.credit)::text AS net FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
-    WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND l.posting_date <= ${asOf}::date GROUP BY a.code HAVING sum(l.debit - l.credit) <> 0`.execute(ctx.t.admin);
-  return Object.fromEntries(r.rows.map((x) => [x.code, x.net]));
+  const r = await sql<{ code: string; party: string | null; cur: string; net: string }>`SELECT a.code, p.code AS party, l.currency_code AS cur, sum(l.debit - l.credit)::text AS net
+    FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id LEFT JOIN party p ON p.id = l.party_id
+    WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND l.posting_date <= ${asOf}::date GROUP BY a.code, p.code, l.currency_code HAVING sum(l.debit - l.credit) <> 0`.execute(ctx.t.admin);
+  return Object.fromEntries(r.rows.map((x) => [`${x.code}|${x.party ?? ''}|${x.cur}`, x.net]));
 }
-// Số dư ròng từng tài khoản đến hết `asOf` theo API số dư (đường nhanh khi đã tính lại, đường chậm khi còn bẩn).
+// Cùng khóa và cùng số dư ròng, đọc qua API số dư tách theo đối tượng (đường nhanh khi đã tính lại, đường chậm khi còn bẩn).
 export async function snapshot(ctx: TestApp, cookie: string, asOf: string): Promise<Record<string, string>> {
+  const r = await ctx.app.inject({ method: 'GET', url: `/api/balances?asOf=${asOf}&byParty=true`, headers: { cookie } });
+  expect(r.statusCode, r.body).toBe(200);
+  return Object.fromEntries((r.json().rows as { accountCode: string; partyCode: string | null; currencyCode: string; debit: string; credit: string }[])
+    .map((x) => [`${x.accountCode}|${x.partyCode ?? ''}|${x.currencyCode}`, (BigInt(x.debit) - BigInt(x.credit)).toString()]));
+}
+// Số dư ròng từng tài khoản (gộp đối tượng) đọc qua API số dư theo tài khoản, và cùng phép gộp từ bảng khóa ở trên.
+export async function snapshotByAccount(ctx: TestApp, cookie: string, asOf: string): Promise<Record<string, string>> {
   const r = await ctx.app.inject({ method: 'GET', url: `/api/balances?asOf=${asOf}`, headers: { cookie } });
+  expect(r.statusCode, r.body).toBe(200);
   return Object.fromEntries((r.json().rows as { accountCode: string; debit: string; credit: string }[]).map((x) => [x.accountCode, (BigInt(x.debit) - BigInt(x.credit)).toString()]));
+}
+export function byAccount(keyed: Record<string, string>): Record<string, string> {
+  const m = new Map<string, bigint>();
+  for (const [k, v] of Object.entries(keyed)) { const code = k.split('|')[0]!; m.set(code, (m.get(code) ?? 0n) + BigInt(v)); }
+  return Object.fromEntries([...m].filter(([, v]) => v !== 0n).map(([k, v]) => [k, v.toString()]));
 }
 export const recompute = (ctx: TestApp, cookie: string) => ctx.app.inject({ method: 'POST', url: '/api/balances/recompute', headers: { cookie } });
 
@@ -47,18 +68,27 @@ export async function assertBalanceSheet(ctx: TestApp, cookie: string, to: strin
 }
 
 export const arbAmount = fc.bigInt({ min: 1n, max: 1_000_000_000n }).map(String);
+// Số tiền rất lớn: kiểm tra phép cộng chính xác của numeric(20,0), không bị làm tròn như số thực. Một dòng VND tối đa 10^16 − 1 đồng vì cột amount_currency
+// (numeric(20,4)) cũng mang giá trị Nợ − Có của dòng VND; mỗi dòng Nợ ≤ (10^16 − 1) / 4 để tổng tối đa 4 dòng Nợ, dồn vào một dòng Có, vẫn nằm trong giới hạn đó.
+export const MAX_LINE_VND = 10n ** 16n - 1n;
+export const arbWideAmount = fc.bigInt({ min: 1n, max: MAX_LINE_VND / 4n }).map(String);
 export const arbDate2026 = fc.record({ m: fc.integer({ min: 1, max: 12 }), d: fc.integer({ min: 1, max: 28 }) }).map(({ m, d }) => `2026-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
-// n dòng Nợ, m dòng Có, tổng Nợ = tổng Có (phần dư của phép chia đều dồn vào dòng Có đầu tiên).
-export const arbBalancedLines: fc.Arbitrary<Line[]> = fc.record({
-  debits: fc.array(fc.record({ acc: fc.constantFrom(...ACCOUNTS), amt: arbAmount }), { minLength: 1, maxLength: 4 }),
-  credits: fc.array(fc.constantFrom(...ACCOUNTS), { minLength: 1, maxLength: 4 }),
+// n dòng Nợ, m dòng Có, tổng Nợ = tổng Có (phần dư của phép chia đều dồn vào dòng Có đầu tiên); dòng 131/331 mang một đối tượng ngẫu nhiên.
+const balancedLines = (amount: fc.Arbitrary<string>): fc.Arbitrary<Line[]> => fc.record({
+  debits: fc.array(fc.record({ acc: fc.constantFrom(...ACCOUNTS), party: fc.constantFrom(...PARTIES), amt: amount }), { minLength: 1, maxLength: 4 }),
+  credits: fc.array(fc.record({ acc: fc.constantFrom(...ACCOUNTS), party: fc.constantFrom(...PARTIES) }), { minLength: 1, maxLength: 4 }),
 }).map(({ debits, credits }) => {
   const total = debits.reduce((s, d) => s + BigInt(d.amt), 0n); const each = total / BigInt(credits.length); const rest = total - each * BigInt(credits.length);
-  return [...debits.map((d): Line => ({ accountCode: d.acc, debit: d.amt })),
-    ...credits.map((c, i): Line => ({ accountCode: c, credit: (each + (i === 0 ? rest : 0n)).toString() })).filter((c) => c.credit !== '0')];
+  const party = (acc: string, p: string) => (PARTY_ACCOUNTS.includes(acc) ? { partyCode: p } : {});
+  return [...debits.map((d): Line => ({ accountCode: d.acc, debit: d.amt, ...party(d.acc, d.party) })),
+    ...credits.map((c, i): Line => ({ accountCode: c.acc, credit: (each + (i === 0 ? rest : 0n)).toString(), ...party(c.acc, c.party) })).filter((c) => c.credit !== '0')];
 });
 // Chứng từ lệch đúng một đồng ở một dòng bất kỳ.
-export const arbUnbalancedLines: fc.Arbitrary<Line[]> = fc.tuple(arbBalancedLines, fc.nat()).map(([lines, k]) => {
+const unbalancedOf = (balanced: fc.Arbitrary<Line[]>): fc.Arbitrary<Line[]> => fc.tuple(balanced, fc.nat()).map(([lines, k]) => {
   const i = k % lines.length;
   return lines.map((x, j): Line => j !== i ? x : x.debit !== undefined ? { ...x, debit: (BigInt(x.debit) + 1n).toString() } : { ...x, credit: (BigInt(x.credit!) + 1n).toString() });
 });
+export const arbBalancedLines = balancedLines(arbAmount);
+export const arbWideBalancedLines = balancedLines(arbWideAmount);
+export const arbUnbalancedLines = unbalancedOf(arbBalancedLines);
+export const arbWideUnbalancedLines = unbalancedOf(arbWideBalancedLines);

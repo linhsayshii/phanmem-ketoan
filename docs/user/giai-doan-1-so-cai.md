@@ -48,9 +48,19 @@ Tài liệu ngắn cho kế toán viên và kế toán trưởng: nhập Phiếu
 
 ## Soát lỗi dữ liệu
 
-- Tiện ích → Soát lỗi dữ liệu, chọn khoảng ngày ghi sổ rồi bấm "Soát lỗi". Các quy tắc có sẵn: chứng từ không cân, chứng từ nháp không có dòng, dòng công nợ thiếu đối tượng, tài khoản tổng hợp trên dòng định khoản, số dư trái loại dư, chứng từ nháp trong kỳ đã khóa.
-- Mỗi lỗi có thông điệp, mức (lỗi hoặc cảnh báo) và hướng dẫn sửa; bấm "Sửa chứng từ" để mở phiếu. Người có quyền quản lý quy tắc đổi được tên, mức, thông điệp và bật hoặc tắt từng quy tắc; câu SQL chỉ xem, không sửa.
+- Tiện ích → Soát lỗi dữ liệu (cần quyền chạy soát lỗi): chọn khoảng ngày ghi sổ rồi bấm "Soát lỗi". Các quy tắc có sẵn: chứng từ không cân, chứng từ nháp không có dòng, dòng công nợ thiếu đối tượng, tài khoản tổng hợp trên dòng định khoản, số dư trái loại dư, chứng từ nháp trong kỳ đã khóa. Bỏ tích quy tắc nào thì lần soát này không chạy quy tắc đó.
+- Kết quả gom theo quy tắc: mỗi dòng có chứng từ, tham chiếu, chi tiết, hướng dẫn sửa và liên kết "Sửa chứng từ" để mở phiếu. Mỗi quy tắc hiện tối đa 1.000 dòng đầu (có cảnh báo khi bị cắt); quy tắc tự báo lỗi thì hiện dòng "Quy tắc lỗi" thay vì làm hỏng cả lần soát; mỗi công ty chỉ soát một lần tại một thời điểm.
+- Quy tắc do hệ thống cung cấp: không thêm quy tắc mới bằng SQL, không xóa quy tắc (chỉ tắt), câu SQL chỉ để xem. Người có quyền quản lý quy tắc (`data_check.manage`) bật/tắt từng quy tắc bằng công tắc ở cột "Bật" hoặc sửa tên, mức (lỗi hay cảnh báo), thông điệp và hướng dẫn sửa; người khác chỉ xem.
 
 ## Xuất dữ liệu cho cơ quan thẩm quyền
 
-- Tiện ích → "Xuất dữ liệu cho cơ quan thẩm quyền": chọn khoảng ngày, tải gói zip gồm CSV, sổ PDF và bảng băm `MANIFEST.sha256`. Cần quyền xuất và đủ ba cờ nhạy cảm. Chi tiết và cách kiểm tra toàn vẹn xem `xuat-du-lieu-co-quan-thue.md`.
+- Tiện ích → "Xuất dữ liệu cho cơ quan thẩm quyền": chọn khoảng ngày, tải gói zip gồm CSV, sổ PDF và bảng băm `MANIFEST.sha256`. Cần quyền xuất dữ liệu và cả ba cờ nhạy cảm (xem công nợ phải thu, công nợ phải trả, giá vốn) vì gói chứa Sổ Nhật ký chung và Sổ Cái của mọi tài khoản; thiếu một cờ thì không xuất gì.
+- Một tệp PDF chỉ dựng được tối đa 40.000 dòng: tệp quá lớn được bỏ riêng khỏi gói (các tệp còn lại vẫn xuất) và `README.txt` có mục "CÁC TỆP BỊ BỎ KHỎI GÓI" liệt kê từng tệp kèm lý do. Khi đó in sổ đó riêng theo khoảng ngày ngắn hơn hoặc xuất Excel; các tệp CSV luôn đủ.
+- Mỗi lần xuất ghi hai dòng vào Nhật ký kiểm toán: `export` khi đọc xong dữ liệu và `export_completed` khi gói đã dựng xong, kèm mã băm SHA-256 của `MANIFEST.sha256` và của tệp zip để đối chiếu về sau. Chi tiết nội dung gói và cách kiểm tra toàn vẹn xem `xuat-du-lieu-co-quan-thue.md`.
+
+## Giới hạn của giai đoạn 1
+
+- Tài khoản theo dõi chi tiết vật tư hoặc tài sản cố định (hệ TT133 hiện có: 152–157 và 2111–2113) chưa ghi sổ được cho tới giai đoạn 2: định khoản vào đó bị từ chối vì thiếu vật tư/tài sản, và số dư đầu kỳ của chúng không nhập được ở màn hình Số dư đầu kỳ; sẽ nhập ở phân hệ kho và tài sản của giai đoạn 2.
+- Đổi chế độ kế toán giữa hai năm (ví dụ TT200 sang TT99) cần bước chuyển đổi số dư giữa hai hệ tài khoản, chưa có. Sau khi đổi, cột so sánh (số đầu năm của B01, năm trước của B02/B03) hiện "—" kèm cảnh báo thay vì số sai, và số dư cuối năm cũ không tự chuyển sang tài khoản của hệ mới.
+- Công ty mẫu XYZ dùng TT133 vì hệ tài khoản TT99 còn chờ văn bản gốc (Phụ lục II Thông tư 99/2025); khi bộ TT99 hoàn tất, công ty mẫu tạo mới sẽ dùng TT99.
+- Màn hình Phiếu kế toán chỉ nhập tiền Việt Nam đồng: dữ liệu đã có cột nguyên tệ và tỷ giá, nhưng màn hình nhập ngoại tệ theo dòng và bảng tỷ giá tự điền để giai đoạn 2. Một dòng VND tối đa 9.999.999.999.999.999 đồng (vượt thì bị từ chối).

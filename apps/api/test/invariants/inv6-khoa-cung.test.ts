@@ -4,7 +4,8 @@ import type { Database } from '@kt/db';
 import { createTestApp, type TestApp } from '../helpers.js';
 import { postVoucher, setupLedgerTenant } from './helpers.js';
 
-let ctx: TestApp; let cookie: string; let tenantId: string; let posted: string;
+let ctx: TestApp; let cookie: string; let tenantId: string; let posted: string; let before: { vouchers: number; lines: number };
+const counts = async () => (await sql<{ vouchers: number; lines: number }>`SELECT (SELECT count(*) FROM voucher WHERE tenant_id = ${tenantId}::uuid) AS vouchers, (SELECT count(*) FROM voucher_line WHERE tenant_id = ${tenantId}::uuid) AS lines`.execute(ctx.t.admin)).rows[0]!;
 beforeAll(async () => {
   ctx = await createTestApp(); ({ cookie, tenantId } = await setupLedgerTenant(ctx, `I6${Date.now()}`));
   const ob = await ctx.app.inject({ method: 'PUT', url: '/api/opening-balance/2026', headers: { cookie }, payload: { rows: [{ accountCode: '1111', debit: '1000' }, { accountCode: '4111', credit: '1000' }] } });
@@ -15,6 +16,7 @@ beforeAll(async () => {
   expect(v.statusCode, v.body).toBe(201); posted = v.json().id;
   // khóa cứng phải đi tuần tự: kỳ 0 (số dư đầu kỳ) rồi kỳ 1
   for (const no of [0, 1]) { const l = await ctx.app.inject({ method: 'POST', url: `/api/periods/2026/${no}/lock`, headers: { cookie }, payload: { level: 'hard' } }); expect(l.statusCode, l.body).toBe(200); }
+  before = await counts();
 }, 60_000);
 afterAll(async () => { await ctx.close(); });
 
@@ -38,5 +40,12 @@ describe('Bất biến 6: kỳ khóa cứng từ chối mọi ghi', () => {
     await expect(asApp((trx) => sql`INSERT INTO voucher_line(tenant_id, voucher_id, line_no, account_id, posting_date, debit, credit, amount_currency) SELECT tenant_id, voucher_id, 9, account_id, posting_date, 1, 0, 1 FROM voucher_line WHERE voucher_id = ${posted}::uuid LIMIT 1`.execute(trx))).rejects.toThrow(/LINE_IMMUTABLE/);
     await expect(asApp((trx) => sql`UPDATE voucher SET description = 'x' WHERE id = ${posted}::uuid`.execute(trx))).rejects.toThrow(/PERIOD_HARD_LOCKED/);
     await expect(asApp((trx) => sql`DELETE FROM voucher WHERE id = ${posted}::uuid`.execute(trx))).rejects.toThrow(/VOUCHER_DELETE_FORBIDDEN/);
+  });
+
+  it('sau mọi lần ghi bị từ chối: số chứng từ và số dòng không đổi, chuỗi hash của kỳ 1 vẫn khớp', async () => {
+    expect(await counts()).toEqual(before);
+    const h = await sql<{ voucher_id: string | null; ok: boolean }>`SELECT voucher_id, ok FROM verify_period_hash(${tenantId}::uuid, 2026, 1)`.execute(ctx.t.admin);
+    expect(h.rows.filter((r) => r.voucher_id !== null).length).toBeGreaterThan(0); // có chứng từ được kiểm tra (không rỗng)
+    expect(h.rows.filter((r) => !r.ok)).toEqual([]); // kể cả dòng so hash cuối chuỗi với hash_tail
   });
 });

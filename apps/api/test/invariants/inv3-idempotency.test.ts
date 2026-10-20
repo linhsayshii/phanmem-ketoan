@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { sql } from 'kysely';
 import { createTestApp, type TestApp } from '../helpers.js';
-import { arbBalancedLines, arbDate2026, postVoucher, setupLedgerTenant } from './helpers.js';
+import { arbBalancedLines, arbDate2026, postVoucher, runs, setupLedgerTenant, timeoutFor } from './helpers.js';
 
 let ctx: TestApp; let cookie: string; let tenantId: string;
 beforeAll(async () => { ctx = await createTestApp(); ({ cookie, tenantId } = await setupLedgerTenant(ctx, `I3${Date.now()}`)); }, 60_000);
@@ -20,6 +20,6 @@ describe('Bất biến 3: cùng idempotency_key lặp k lần', () => {
       expect(n.rows[0]!.n).toBe(1);
       const expected = BigInt(before) + lines.reduce((s, l) => s + BigInt(l.debit ?? '0'), 0n);
       expect(await sumDebit()).toBe(expected.toString());
-    }), { numRuns: 20 });
-  }, 120_000);
+    }), { numRuns: runs(20) });
+  }, timeoutFor(120_000));
 });
