@@ -33,7 +33,8 @@ import toolsRoutes from './modules/tools/routes.js';
 declare module 'fastify' { interface FastifyInstance { config: Config; boss: PgBoss | null } }
 
 export async function buildApp(opts: { db: Kysely<Database>; config: Config; boss?: PgBoss }) {
-  const app = Fastify({ logger: process.env.NODE_ENV !== 'test', trustProxy: true }).withTypeProvider<ZodTypeProvider>();
+  // cast: các overload http/http2 của Fastify không chấp nhận hợp boolean|number|string, giá trị thật vẫn giữ nguyên
+  const app = Fastify({ logger: process.env.NODE_ENV !== 'test', trustProxy: opts.config.TRUST_PROXY as boolean }).withTypeProvider<ZodTypeProvider>();
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.decorate('config', opts.config);

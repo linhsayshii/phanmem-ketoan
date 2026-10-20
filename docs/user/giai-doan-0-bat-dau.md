@@ -9,3 +9,8 @@
 - Người dùng và quyền: Hệ thống → Người dùng → "Thêm người dùng": nhập tên đăng nhập, họ tên, mật khẩu (tối thiểu 8 ký tự), chọn vai trò và tích các quyền xem dữ liệu nhạy cảm (giá vốn, công nợ phải thu, công nợ phải trả, lương). Vai trò quyết định menu và nút mà người dùng thấy được.
 - Nhật ký kiểm toán: Hệ thống → Nhật ký kiểm toán. Thẻ "Nhật ký thay đổi" ghi ai đã thêm, sửa, xóa dữ liệu nào, lúc nào, giá trị trước và sau (lọc theo thực thể, hành động, khoảng ngày); thẻ "Nhật ký đăng nhập" ghi các lần đăng nhập thành công và thất bại.
 - Sao lưu: hệ thống tự sao lưu mỗi ngày lúc 02:00; sao lưu ngay tại Hệ thống → Thông tin công ty → thẻ "Sao lưu". Cách phục hồi xem `docs/user/sao-luu-phuc-hoi.md`.
+
+## Cấu hình khi chạy production
+
+- `NODE_ENV=production`: API từ chối khởi động nếu `SESSION_SECRET` ngắn hơn 32 ký tự (hoặc còn là giá trị mẫu) hoặc `COOKIE_SECURE` khác `true`.
+- `TRUST_PROXY` (mặc định `false`): API không tin tiêu đề `X-Forwarded-For`, nên IP trong Nhật ký đăng nhập là IP kết nối thật. Khi chạy sau reverse proxy (nginx...) đặt `true`, số bước proxy (ví dụ `1`) hoặc danh sách IP/CIDR của proxy cách nhau dấu phẩy, nếu không IP ghi nhận sẽ là IP của proxy.

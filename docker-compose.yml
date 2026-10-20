@@ -25,6 +25,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-doi-chuoi-nay-khi-trien-khai}
       SESSION_TTL_HOURS: "12"
       COOKIE_SECURE: "false"
+      TRUST_PROXY: "false"
       PORT: "3000"
       WEB_ORIGIN: http://localhost:8080
       BACKUP_DIR: /backups

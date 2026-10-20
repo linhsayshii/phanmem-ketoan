@@ -15,6 +15,18 @@ const schema = z.object({
   BACKUP_DIR: z.string().default('./backups'),
   ATTACHMENT_DIR: z.string().default('./attachments').transform((p) => path.resolve(repoRoot, p)),
   PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: z.string().optional(),
+  NODE_ENV: z.string().default('development'),
+  // Mặc định không tin X-Forwarded-For (tránh giả IP ghi vào nhật ký đăng nhập); sau reverse proxy đặt 'true', số bước proxy hoặc danh sách IP/CIDR
+  TRUST_PROXY: z.string().default('false').transform((v): boolean | number | string => {
+    const t = v.trim();
+    if (t === '' || t === 'false') return false;
+    if (t === 'true') return true;
+    return /^\d+$/.test(t) ? Number(t) : t;
+  }),
+}).superRefine((c, ctx) => {
+  if (c.NODE_ENV !== 'production') return;
+  if (c.SESSION_SECRET.length < 32 || c.SESSION_SECRET === 'doi-chuoi-nay-khi-trien-khai') ctx.addIssue({ code: 'custom', path: ['SESSION_SECRET'], message: 'SESSION_SECRET phải dài ít nhất 32 ký tự và khác giá trị mẫu khi chạy production' });
+  if (c.COOKIE_SECURE !== 'true') ctx.addIssue({ code: 'custom', path: ['COOKIE_SECURE'], message: 'COOKIE_SECURE phải là true khi chạy production' });
 });
 export type Config = z.infer<typeof schema>;
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config { return schema.parse(env); }
