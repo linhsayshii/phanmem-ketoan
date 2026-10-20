@@ -173,6 +173,12 @@ export interface ReportLineTable {
   sort_order: number; is_bold: Generated<boolean>; negate: Generated<boolean>; note_ref: string | null;
 }
 
+// sql chỉ chủ sở hữu CSDL (migration/seed) ghi được; app_user chỉ UPDATE các cột thông điệp (xem 0014).
+export interface DataCheckRuleTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; severity: string; sql: string; message: string; fix_hint: string | null;
+  is_system: Generated<boolean>; is_enabled: Generated<boolean>;
+}
+
 export interface Database {
   tenant: TenantTable;
   app_user: AppUserTable;
@@ -219,4 +225,5 @@ export interface Database {
   report_template: ReportTemplateTable;
   report_def: ReportDefTable;
   report_line: ReportLineTable;
+  data_check_rule: DataCheckRuleTable;
 }

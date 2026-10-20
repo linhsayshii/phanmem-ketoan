@@ -28,6 +28,7 @@ import openingBalanceRoutes from './modules/ledger/openingBalance.js';
 import balanceRoutes from './modules/ledger/balances.js';
 import closingRoutes from './modules/ledger/closing.js';
 import reportingRoutes from './modules/reporting/routes.js';
+import toolsRoutes from './modules/tools/routes.js';
 
 declare module 'fastify' { interface FastifyInstance { config: Config; boss: PgBoss | null } }
 
@@ -61,6 +62,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(balanceRoutes);
   await app.register(closingRoutes);
   await app.register(reportingRoutes);
+  await app.register(toolsRoutes);
   app.get('/api/health', async () => ({ ok: true }));
   return app;
 }

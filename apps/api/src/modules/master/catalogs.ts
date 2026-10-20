@@ -11,7 +11,7 @@ const exRate = z.string().regex(/^\d{1,10}(\.\d{1,10})?$/).refine((v) => Number(
 // Thuế suất % numeric(5,2): không quá 100.
 const pct = z.string().regex(/^\d{1,3}(\.\d{1,2})?$/).refine((v) => Number(v) <= 100);
 // Ngày ISO hợp lệ: loại 2026-02-30 bằng cách dựng lại ngày UTC rồi so chuỗi.
-const dateIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => {
+export const dateIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => {
   const [y, m, d] = s.split('-').map(Number) as [number, number, number];
   const t = new Date(Date.UTC(y, m - 1, d));
   return !Number.isNaN(t.getTime()) && t.toISOString().slice(0, 10) === s;
