@@ -42,12 +42,13 @@ const ymd = (y: number, m: number, d: number): string | null => {
   return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d ? isoOf(t) : null;
 };
 
+// Công thức → kết quả đã tính; rich text và liên kết → chuỗi thuần (nếu không String(object) ghi "[object Object]" vào dữ liệu).
+export const plainCell = (raw: ExcelJS.CellValue): unknown => typeof raw === 'object' && raw !== null && !(raw instanceof Date)
+  ? ('result' in raw ? raw.result : 'richText' in raw ? raw.richText.map((t) => t.text).join('') : 'text' in raw ? raw.text : raw) : raw;
+
 // Đọc một ô theo kiểu cột; không bao giờ ném lỗi, ô sai trả { err }.
 function cellValue(c: ColumnDef, cell: ExcelJS.Cell): Parsed {
-  const raw = cell.value;
-  // Công thức → kết quả đã tính; rich text và liên kết → chuỗi thuần (nếu không String(object) ghi "[object Object]" vào dữ liệu).
-  const v: unknown = typeof raw === 'object' && raw !== null && !(raw instanceof Date)
-    ? ('result' in raw ? raw.result : 'richText' in raw ? raw.richText.map((t) => t.text).join('') : 'text' in raw ? raw.text : raw) : raw;
+  const v = plainCell(cell.value);
   if (v === null || v === undefined) return { v: null };
   if (typeof v === 'object' && !(v instanceof Date)) return { err: 'Ô lỗi' };
   const s = typeof v === 'string' ? v.trim() : null;

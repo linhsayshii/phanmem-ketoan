@@ -140,6 +140,10 @@ export interface VoucherPairTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; posting_date: DateOnly; debit_account_id: number; credit_account_id: number;
   debit_party_id: string | null; credit_party_id: string | null; amount: Numeric; is_closing: Generated<boolean>;
 }
+export interface OpeningBalanceTable {
+  id: Generated<number>; tenant_id: string; fiscal_year: number; account_id: number; party_id: string | null; currency_code: Generated<string>;
+  debit: NumericDefault; credit: NumericDefault; debit_currency: NumericDefault; credit_currency: NumericDefault;
+}
 export interface BalanceStaleTable { tenant_id: string; stale_year: number; stale_period: number; marked_at: Generated<string> }
 
 export interface Database {
@@ -181,4 +185,5 @@ export interface Database {
   voucher_attachment: VoucherAttachmentTable;
   voucher_pair: VoucherPairTable;
   balance_stale: BalanceStaleTable;
+  opening_balance: OpeningBalanceTable;
 }
