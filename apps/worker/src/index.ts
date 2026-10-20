@@ -1,6 +1,6 @@
 import './env.js';
 import { z } from 'zod';
-import { QUEUES, createDb, createPool, type RecomputeBalancesJob } from '@kt/db';
+import { QUEUES, createDb, createPool, ensureRecomputeQueue, type RecomputeBalancesJob } from '@kt/db';
 import { createBoss } from './boss.js';
 import { runBackup } from './jobs/backup.js';
 import { recomputeAndRequeue } from './jobs/recomputeBalances.js';
@@ -26,8 +26,8 @@ await boss.work(QUEUES.backup, async () => {
     throw e; // để pg-boss ghi nhận thất bại và thử lại
   }
 });
-await boss.createQueue(QUEUES.recomputeBalances);
-// batchSize 1: mỗi job là một công ty; singletonKey phía gửi đã gộp các lần gửi dồn dập. Lỗi để pg-boss thử lại (tính lại là idempotent).
+await ensureRecomputeQueue(boss); // chính sách short: tối đa một job chờ mỗi công ty (hàng đợi cũ được nâng cấp)
+// batchSize 1: mỗi job là một công ty; chính sách short đã gộp các lần gửi dồn dập (tối đa một job chờ mỗi công ty). Lỗi để pg-boss thử lại (tính lại là idempotent).
 await boss.work<RecomputeBalancesJob>(QUEUES.recomputeBalances, { batchSize: 1 }, async ([job]) => {
   try {
     const r = await recomputeAndRequeue(db, boss, job!.data);

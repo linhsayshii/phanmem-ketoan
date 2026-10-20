@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'kysely';
 import pg from 'pg';
 import type PgBoss from 'pg-boss';
-import { QUEUES, withTenant } from '@kt/db';
+import { QUEUES, ensureRecomputeQueue, withTenant } from '@kt/db';
 import { createTestTenant, setupTestDb, type TestDb } from '@kt/db/testing';
 import { createBoss } from '../src/boss.js';
 import { recomputeAndRequeue, recomputeBalances } from '../src/jobs/recomputeBalances.js';
@@ -48,7 +48,7 @@ describe('job tính lại số dư', () => {
 
 describe('tự xếp lại job khi còn mốc bẩn', () => {
   let boss: PgBoss;
-  beforeAll(async () => { boss = createBoss(process.env.DATABASE_ADMIN_URL!); await boss.start(); await boss.createQueue(QUEUES.recomputeBalances); }, 60_000);
+  beforeAll(async () => { boss = createBoss(process.env.DATABASE_ADMIN_URL!); await boss.start(); await ensureRecomputeQueue(boss); }, 60_000);
   afterAll(async () => { await boss.stop({ graceful: false }); });
   const queued = async (tid: string) => (await sql<{ singleton_key: string | null; secs: number }>`SELECT singleton_key, extract(epoch FROM start_after - now())::float8 AS secs FROM pgboss.job
     WHERE name = ${QUEUES.recomputeBalances} AND data->>'tenantId' = ${tid} AND state = 'created'`.execute(t.admin)).rows;
@@ -59,13 +59,12 @@ describe('tự xếp lại job khi còn mốc bẩn', () => {
     expect(await queued(tid)).toEqual([]);
   });
 
-  it('mốc bẩn bị đặt lại trong lúc tính (ghi sổ rơi vào khe singleton đã dùng nên job của nó bị bỏ) thì xếp lại job sau 5 giây; tính tiếp xong thì thôi', async () => {
-    const tid = await createTestTenant(t.admin, { code: `WR2${Date.now()}`, name: 'Worker xếp lại' });
-    await sql`INSERT INTO balance_stale(tenant_id, stale_year, stale_period) VALUES (${tid}::uuid, 2026, 1)`.execute(t.admin);
+  // Chạy recomputeAndRequeue trong khi phiên X đặt lại mốc bẩn nhưng chưa commit và giữ khóa dòng: bản tính lại chạy tới câu xóa mốc ở cuối thì chờ,
+  // sau đó thấy mốc mới (marked_at khác) nên giữ lại -- đúng tình huống có chứng từ ghi sổ trong lúc tính.
+  async function runWhileMarked(tid: string) {
+    await sql`INSERT INTO balance_stale(tenant_id, stale_year, stale_period) VALUES (${tid}::uuid, 2026, 1) ON CONFLICT (tenant_id) DO NOTHING`.execute(t.admin);
     const x = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL }); await x.connect();
-    let r: { periods: number; requeued: boolean };
     try {
-      // Phiên X đặt lại mốc nhưng chưa commit và giữ khóa dòng: bản tính lại chạy tới câu xóa mốc ở cuối thì chờ, sau đó thấy mốc mới (marked_at khác) nên giữ lại.
       await x.query('BEGIN'); await x.query('SELECT mark_balance_stale($1::uuid, 2026, 3)', [tid]);
       let settled = false; const run = recomputeAndRequeue(t.db, boss, { tenantId: tid }).finally(() => { settled = true; }); run.catch(() => undefined);
       let waiting = false;
@@ -74,9 +73,13 @@ describe('tự xếp lại job khi còn mốc bẩn', () => {
         if (!waiting) await new Promise((res) => setTimeout(res, 50));
       }
       expect(waiting, 'recompute_balances phải đang chờ khóa dòng balance_stale').toBe(true);
-      await x.query('COMMIT'); r = await run;
+      await x.query('COMMIT'); return await run;
     } finally { await x.end(); }
-    expect(r).toEqual({ periods: 0, requeued: true });
+  }
+
+  it('mốc bẩn bị đặt lại trong lúc tính (ghi sổ rơi vào khe singleton đã dùng nên job của nó bị bỏ) thì xếp lại job sau 5 giây; tính tiếp xong thì thôi', async () => {
+    const tid = await createTestTenant(t.admin, { code: `WR2${Date.now()}`, name: 'Worker xếp lại' });
+    expect(await runWhileMarked(tid)).toEqual({ periods: 0, requeued: true });
     const jobs = await queued(tid);
     expect(jobs).toHaveLength(1); expect(jobs[0]!.singleton_key).toBe(tid);
     expect(jobs[0]!.secs).toBeGreaterThan(3); expect(jobs[0]!.secs).toBeLessThanOrEqual(5);
@@ -84,4 +87,14 @@ describe('tự xếp lại job khi còn mốc bẩn', () => {
     expect(await recomputeAndRequeue(t.db, boss, { tenantId: tid })).toMatchObject({ requeued: false });
     expect(await queued(tid)).toHaveLength(1);
   }, 30_000);
+
+  it('chính sách short: đã có job chờ của công ty thì lần xếp lại sau không thêm job (không dồn chuỗi), công ty khác không bị ảnh hưởng', async () => {
+    const tid = await createTestTenant(t.admin, { code: `WR3${Date.now()}`, name: 'Worker không dồn' });
+    const other = await createTestTenant(t.admin, { code: `WR4${Date.now()}`, name: 'Worker công ty khác' });
+    expect(await runWhileMarked(tid)).toMatchObject({ requeued: true });
+    for (let i = 0; i < 3; i++) expect(await runWhileMarked(tid), `lần ${i + 2}`).toMatchObject({ requeued: false }); // vẫn bẩn nhưng đã có job chờ
+    expect(await queued(tid)).toHaveLength(1);
+    expect(await runWhileMarked(other)).toMatchObject({ requeued: true });
+    expect(await queued(other)).toHaveLength(1); expect(await queued(tid)).toHaveLength(1);
+  }, 60_000);
 });
