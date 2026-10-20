@@ -25,10 +25,15 @@ const META_COLS = ['description', 'departmentCode', 'projectCode', 'costItemCode
 const LOOKUP_CATALOG: Record<string, string> = { accountCode: 'account', partyCode: 'party', departmentCode: 'department', projectCode: 'project', costItemCode: 'cost_item' };
 const quickAdd = [{ key: 'code', label: 'Mã' }, { key: 'name', label: 'Tên' }];
 const iso = (d: Dayjs) => d.format('YYYY-MM-DD');
-// Chỉ nhận số nguyên không âm (tiền VND); chữ khác giữ nguyên giá trị cũ thay vì âm thầm thành 0.
+// Ô Nợ/Có: để trống (Backspace + Enter, Delete) là 0; chỉ nhận số nguyên không âm (tiền VND), chữ/số âm/số lẻ bị từ chối: giữ giá trị cũ.
+export function parseAmount(newValue: unknown, oldValue: unknown): string {
+  const text = String(newValue ?? '').trim();
+  if (text === '') return '0';
+  const n = parseVnNumber(text);
+  return n !== null && /^\d{1,20}$/.test(n) ? n : (oldValue as string | undefined) ?? '0';
+}
 const numCol = (field: 'debit' | 'credit', headerName: string): ColDef<Line> => ({ field, headerName, width: 150, cellClass: 'ag-right-aligned-cell',
-  valueFormatter: (p) => formatVnNumber((p.value as string) || '0'),
-  valueParser: (p) => { const n = parseVnNumber(String(p.newValue ?? '')); return n !== null && /^\d{1,20}$/.test(n) ? n : (p.oldValue as string | undefined) ?? '0'; } });
+  valueFormatter: (p) => formatVnNumber((p.value as string) || '0'), valueParser: (p) => parseAmount(p.newValue, p.oldValue) });
 
 export default function VoucherPage() {
   const { id } = useParams({ strict: false }) as { id: string };
@@ -58,8 +63,16 @@ function VoucherEditor({ id }: { id: string }) {
   const accountFetcher = useMemo(() => accountFetcherFor(postingIso), [postingIso]);
   const t = totals(lines); const balanced = isBalanced(cleanLines(lines).map((l) => ({ debit: l.debit, credit: l.credit })));
 
-  const invalidate = (voucherId = id) => { void qc.invalidateQueries({ queryKey: ['voucher', voucherId] }); void qc.invalidateQueries({ queryKey: ['vouchers'] }); };
-  const onErr = (e: unknown) => void message.error(e instanceof ApiError ? `${e.message} (${e.code})` : String(e));
+  const invalidate = (voucherId = id) => Promise.all([qc.invalidateQueries({ queryKey: ['voucher', voucherId] }), qc.invalidateQueries({ queryKey: ['vouchers'] })]);
+  const conflict = useRef<{ destroy(): void } | null>(null);
+  const onErr = (e: unknown) => {
+    if (e instanceof ApiError && e.code === 'VERSION_CONFLICT') { // người khác đã sửa: không tự tải lại (mất chữ đang nhập), để người dùng chọn
+      conflict.current?.destroy();
+      conflict.current = Modal.confirm({ title: 'Chứng từ đã được người khác sửa', content: `${e.message}. Tải lại sẽ bỏ phần bạn đang nhập.`, okText: 'Tải lại', cancelText: 'Giữ bản đang nhập', onOk: () => invalidate() });
+      return;
+    }
+    void message.error(e instanceof ApiError ? `${e.message} (${e.code})` : String(e));
+  };
   // Ô đang gõ dở chưa vào state: rời ô để lưới chốt giá trị trước khi lấy dòng (Ctrl+S/F9 khi con trỏ còn trong ô).
   const flushEditing = async () => { (document.activeElement as HTMLElement | null)?.blur(); await new Promise((r) => setTimeout(r, 0)); };
   const body = (f: { postingDate: Dayjs; documentDate: Dayjs; description?: string | null; partyCode?: string | null }) => ({
@@ -78,17 +91,22 @@ function VoucherEditor({ id }: { id: string }) {
     return api<Voucher>(`/api/vouchers/${id}/post`, { method: 'POST', json: {} }).catch((e: unknown) => { invalidate(); throw e; });
   };
   const save = useMutation({ mutationFn: (postAfter: boolean) => persist(postAfter), onError: onErr,
-    onSuccess: (r, postAfter) => {
+    // trả Promise: isPending giữ tới khi tải lại xong, để Ctrl+S liền sau không gửi version cũ
+    onSuccess: async (r, postAfter) => {
       void message.success(postAfter ? 'Đã ghi sổ' : 'Đã lưu');
-      invalidate(r.id); // luôn tải lại: một lần tải đang chạy từ trước khi ghi sổ không được ghi đè trạng thái mới
       if (isNew) void navigate({ to: '/chung-tu/phieu-ke-toan/$id', params: { id: r.id } });
+      await invalidate(r.id); // luôn tải lại: một lần tải đang chạy từ trước khi ghi sổ không được ghi đè trạng thái mới
     } });
   const action = useMutation({ mutationFn: (p: { act: string; body?: object }) => api<Voucher>(`/api/vouchers/${id}/${p.act}`, { method: 'POST', json: p.body ?? {} }), onError: onErr,
-    onSuccess: (r, p) => { void message.success({ unpost: 'Đã bỏ ghi sổ', reverse: `Đã tạo chứng từ đảo ${r.voucherNo}`, discard: 'Đã hủy', duplicate: 'Đã nhân bản' }[p.act] ?? 'Xong');
-      if (p.act === 'reverse' || p.act === 'duplicate') void navigate({ to: '/chung-tu/phieu-ke-toan/$id', params: { id: r.id } }); else invalidate(); } });
+    onSuccess: async (r, p) => { void message.success({ unpost: 'Đã bỏ ghi sổ', reverse: `Đã tạo chứng từ đảo ${r.voucherNo}`, discard: 'Đã hủy', duplicate: 'Đã nhân bản' }[p.act] ?? 'Xong');
+      if (p.act === 'reverse' || p.act === 'duplicate') void navigate({ to: '/chung-tu/phieu-ke-toan/$id', params: { id: r.id } }); else await invalidate(); } });
 
-  const canPost = (isNew || editable) && can('voucher.post');
-  const canSave = !locked && (isNew ? can('voucher.create') : can('voucher.update'));
+  // Chứng từ có sẵn phải tải xong (cần version, trạng thái, dòng) mới được lưu/ghi sổ; nút hiện sẵn nhưng khóa, phím tắt bị bỏ qua.
+  const ready = isNew || !!v.data;
+  const mayEdit = !locked && (isNew ? can('voucher.create') : can('voucher.update'));
+  const canSave = ready && mayEdit;
+  const mayPost = (isNew || editable) && can('voucher.post');
+  const canPost = ready && mayPost;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (canSave && !save.isPending) save.mutate(false); }
@@ -110,8 +128,8 @@ function VoucherEditor({ id }: { id: string }) {
   return (
     <Card title={<Space><span>Phiếu kế toán {v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}</span><Tag>{STATE_LABEL[state]}</Tag></Space>}
       extra={<Space>
-        {canSave && <Button onClick={() => save.mutate(false)} type="primary" loading={save.isPending}>Lưu (Ctrl+S)</Button>}
-        {canPost && canSave && <Button onClick={() => save.mutate(true)} disabled={!balanced || save.isPending}>Ghi sổ (F9)</Button>}
+        {mayEdit && <Button onClick={() => save.mutate(false)} type="primary" loading={save.isPending} disabled={!ready}>Lưu (Ctrl+S)</Button>}
+        {mayEdit && mayPost && <Button onClick={() => save.mutate(true)} disabled={!ready || !balanced || save.isPending}>Ghi sổ (F9)</Button>}
         {!isNew && state === 'posted' && can('voucher.unpost') && can('voucher.edit_posted') && <Button onClick={() => action.mutate({ act: 'unpost' })}>Bỏ ghi sổ</Button>}
         {!isNew && state === 'posted' && can('voucher.post') && <Button onClick={() => Modal.confirm({ title: 'Lập chứng từ đảo?', content: 'Chứng từ đảo ghi sổ ngay với ngày hôm nay.', onOk: () => action.mutate({ act: 'reverse', body: { postingDate: dayjs().format('YYYY-MM-DD') } }) })}>Đảo</Button>}
         {!isNew && editable && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy chứng từ?', content: 'Số chứng từ (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
@@ -127,7 +145,7 @@ function VoucherEditor({ id }: { id: string }) {
           <Col span={10}><Form.Item label="Diễn giải" name="description"><Input disabled={locked} /></Form.Item></Col>
         </Row>
       </Form>
-      <KeyboardGrid<Line> rows={lines} columns={columns} readOnly={locked} onRowsChange={onRowsChange} addRowTemplate={emptyLine} onLookup={onLookup} height={360} />
+      <KeyboardGrid<Line> rows={lines} columns={columns} readOnly={locked} lockRows={metaOnly} onRowsChange={onRowsChange} addRowTemplate={emptyLine} onLookup={onLookup} height={360} />
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, marginTop: 8 }}>
         <b>Tổng Nợ: {formatVnNumber(t.debit)}</b><b>Tổng Có: {formatVnNumber(t.credit)}</b>
         {!balanced && <Tag color="red">Chênh lệch {formatVnNumber(sum([t.debit, `-${t.credit}`]).toString())}</Tag>}
@@ -150,7 +168,7 @@ function Attachments({ voucherId, canEdit }: { voucherId: string; canEdit: boole
     <div style={{ marginTop: 16 }}>
       <Space wrap>
         <b>Đính kèm:</b>
-        {(list.data ?? []).map((a) => <span key={a.id}><a href={`/api/attachments/${a.id}`}>{a.fileName}</a> ({Math.ceil(a.bytes / 1024)} KB)
+        {(list.data ?? []).map((a) => <span key={a.id}><a href={`/api/attachments/${a.id}`} target="_blank" rel="noopener">{a.fileName}</a> ({Math.ceil(a.bytes / 1024)} KB)
           {canEdit && <Popconfirm title="Xóa tệp đính kèm?" okText="Xóa" cancelText="Không" onConfirm={() => remove(a.id)}><Button type="link" size="small" danger aria-label={`Xóa ${a.fileName}`}>✕</Button></Popconfirm>}</span>)}
         {canEdit && <Upload showUploadList={false} customRequest={async ({ file, onSuccess, onError }) => {
           const fd = new FormData(); fd.append('file', file as File);

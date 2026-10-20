@@ -15,6 +15,8 @@ export function nextCellOnTab(pos: CellPos, g: GridShape): Move {
   return m.addRow ? { ...pos, addRow: false } : m;
 }
 export const isLookupKey = (e: { key: string }): boolean => e.key === 'F4';
+// Đang soạn chữ bằng bộ gõ (Telex/VNI): Enter chốt chữ vừa soạn, không phải lệnh cho lưới. Safari gửi compositionend trước keydown nên chỉ còn keyCode 229.
+export const isImeComposing = (e: { isComposing?: boolean; keyCode?: number }): boolean => !!e.isComposing || e.keyCode === 229;
 
 export type GridKeyAction =
   | { type: 'none' }
@@ -23,15 +25,17 @@ export type GridKeyAction =
   | { type: 'deleteRow' }
   | { type: 'insertRow' };
 
-// Quyết định phím nào lưới tự xử lý. `none` = để AG Grid làm mặc định (kể cả Shift+Enter/Shift+Tab đi ngược, lưới chỉ đọc, ô không xác định).
-export function gridKeyAction(e: { key: string; ctrlKey: boolean; shiftKey: boolean }, pos: CellPos, g: GridShape & { readOnly: boolean }): GridKeyAction {
+// Quyết định phím nào lưới tự xử lý. `none` = để AG Grid làm mặc định (kể cả Shift+Enter/Shift+Tab đi ngược, lưới chỉ đọc, ô không xác định, đang soạn chữ bằng bộ gõ).
+// lockRows: số dòng cố định (chứng từ đã ghi sổ): Enter ở ô cuối không thêm dòng, Ctrl+Insert/Ctrl+Delete không làm gì; vẫn đi giữa các ô và tra cứu.
+export function gridKeyAction(e: { key: string; ctrlKey: boolean; shiftKey: boolean; isComposing?: boolean; keyCode?: number }, pos: CellPos, g: GridShape & { readOnly: boolean; lockRows?: boolean }): GridKeyAction {
   const none: GridKeyAction = { type: 'none' };
-  if (g.readOnly || pos.col < 0) return none;
+  if (g.readOnly || pos.col < 0 || isImeComposing(e)) return none;
   if (isLookupKey(e)) return { type: 'lookup' };
-  if (e.ctrlKey && e.key === 'Delete') return { type: 'deleteRow' };
-  if (e.ctrlKey && e.key === 'Insert') return { type: 'insertRow' };
+  if (e.ctrlKey && e.key === 'Delete') return g.lockRows ? none : { type: 'deleteRow' };
+  if (e.ctrlKey && e.key === 'Insert') return g.lockRows ? none : { type: 'insertRow' };
   if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey) {
     const m = e.key === 'Enter' ? nextCellOnEnter(pos, g) : nextCellOnTab(pos, g);
+    if (m.addRow && g.lockRows) return none;
     return { type: 'move', pos: { row: m.row, col: m.col }, addRow: m.addRow };
   }
   return none;

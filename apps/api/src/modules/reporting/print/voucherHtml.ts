@@ -1,4 +1,4 @@
-import { formatVnDate, formatVnNumber } from '@kt/domain';
+import { formatVnDate, formatVnNumber, sum } from '@kt/domain';
 import type { VoucherDto } from '../../ledger/vouchers.service.js';
 
 export interface CompanyInfo { name: string; address: string | null; taxCode: string | null; legalRep: string | null; chiefAccountant: string | null; formNo: string; issuedBy: string }
@@ -26,6 +26,7 @@ export function printShell(title: string, body: string): string {
 }
 
 export function renderVoucherHtml(v: VoucherDto, c: CompanyInfo): string {
+  const totalCredit = sum(v.lines.map((l) => l.credit)); // phiếu nháp có thể lệch: không lấy tổng Có theo tổng Nợ
   const rows = v.lines.map((l) => `<tr><td>${l.lineNo}</td><td>${esc(l.description ?? v.description)}</td><td>${esc(l.accountCode)}</td><td>${esc(l.partyCode ?? '')}</td>
       <td class="num">${formatVnNumber(l.debit)}</td><td class="num">${formatVnNumber(l.credit)}</td></tr>`).join('');
   const body = `
@@ -34,7 +35,7 @@ export function renderVoucherHtml(v: VoucherDto, c: CompanyInfo): string {
     <div class="sub">Ngày ${formatVnDate(v.postingDate)} &nbsp;&nbsp; Số: ${esc(v.voucherNo ?? '(chưa cấp số)')}</div>
     <p>Diễn giải: ${esc(v.description ?? '')}${v.partyName ? ` &nbsp;–&nbsp; Đối tượng: ${esc(v.partyName)}` : ''}</p>
     <table class="grid"><thead><tr><th>STT</th><th>Diễn giải</th><th>Tài khoản</th><th>Đối tượng</th><th class="num">Số tiền Nợ</th><th class="num">Số tiền Có</th></tr></thead>
-    <tbody>${rows}<tr><td colspan="4"><b>Cộng</b></td><td class="num"><b>${formatVnNumber(v.totalDebit)}</b></td><td class="num"><b>${formatVnNumber(v.totalDebit)}</b></td></tr></tbody></table>
+    <tbody>${rows}<tr><td colspan="4"><b>Cộng</b></td><td class="num"><b>${formatVnNumber(v.totalDebit)}</b></td><td class="num"><b>${formatVnNumber(totalCredit)}</b></td></tr></tbody></table>
     <p>Kèm theo: ……… chứng từ gốc.</p>
     <div class="sign"><div><b>Người lập</b><i>(Ký, họ tên)</i><div class="gap"></div></div><div><b>Kế toán trưởng</b><i>(Ký, họ tên)</i><div class="gap"></div>${esc(c.chiefAccountant ?? '')}</div><div><b>Giám đốc</b><i>(Ký, họ tên, đóng dấu)</i><div class="gap"></div>${esc(c.legalRep ?? '')}</div></div>`;
   return printShell(`Phiếu kế toán ${v.voucherNo ?? ''}`, body);

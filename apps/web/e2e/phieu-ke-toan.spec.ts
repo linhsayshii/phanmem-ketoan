@@ -35,7 +35,8 @@ test('nhập phiếu kế toán hoàn toàn bằng bàn phím rồi ghi sổ', a
   await page.keyboard.press('Control+s');
   await expect(page.locator('.ant-message').getByText('Đã lưu')).toBeVisible(); // thông báo nổi; nhãn trạng thái "Đã ghi sổ" cũng nằm trên trang nên không tìm theo chữ trần
   await expect(page).toHaveURL(/phieu-ke-toan\/[0-9a-f-]{36}$/);
-  await expect(page.locator('.ant-card-head-title')).toContainText('(chưa cấp số)'); // chờ trang chứng từ đã lưu dựng xong rồi mới bấm F9
+  // chờ chứng từ tải xong rồi mới bấm F9: trang vừa dựng lại, lưới trống tới khi GET trả về (tiêu đề "(chưa cấp số)" hiện trước đó)
+  await expect(page.locator('.ag-center-cols-container [col-id="accountCode"]', { hasText: '6422' })).toBeVisible(); // hasText: lưới có thể giữ tạm dòng trống cũ cạnh dòng mới nên không chọn theo row-index
   await page.keyboard.press('F9');
   await expect(page.locator('.ant-message').getByText('Đã ghi sổ')).toBeVisible();
   await expect(page.locator('.ant-card-head-title')).toContainText(/PKT\d+/);

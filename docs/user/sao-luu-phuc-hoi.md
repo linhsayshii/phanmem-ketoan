@@ -10,3 +10,9 @@
   - Phục hồi file do client 16 tạo: `docker/restore.sh` với client 16 trên máy chủ chạy lệnh, hoặc `docker compose exec -T postgres pg_restore --clean --if-exists --no-owner -U postgres -d ketoan < backups/<file>.dump`.
   - Lấy file từ volume sao lưu của Docker: `docker compose cp worker:/backups/<file>.dump ./backups/`.
   - Role `app_user` phải tồn tại trước khi phục hồi (được tạo bởi `docker/postgres/init/01-roles.sql`).
+- Tệp đính kèm chứng từ (thư mục `ATTACHMENT_DIR`, trong Docker là volume `attachments` gắn tại `/attachments`) **không nằm trong bản sao lưu `pg_dump`**: cơ sở dữ liệu chỉ giữ tên tệp và đường dẫn. Phải sao lưu và phục hồi riêng, cùng lúc với bản sao lưu cơ sở dữ liệu, nếu không sau khi phục hồi các chứng từ còn danh sách đính kèm nhưng tải về báo "Tệp đính kèm không còn trên máy chủ".
+  - Sao lưu volume Docker ra tệp nén (chạy ở thư mục chứa `docker-compose.yml`; tên volume là `<tên thư mục dự án>_attachments`, xem bằng `docker volume ls`):
+    `docker run --rm -v phanmem-ketoan_attachments:/attachments -v "$PWD/backups":/backup alpine tar czf /backup/attachments_$(date +%Y%m%dT%H%M%S).tar.gz -C /attachments .`
+  - Phục hồi (dừng API trước; lệnh giải nén ghi đè tệp trùng tên):
+    `docker run --rm -v phanmem-ketoan_attachments:/attachments -v "$PWD/backups":/backup alpine tar xzf /backup/attachments_YYYYMMDDTHHMMSS.tar.gz -C /attachments`
+  - Chạy ngoài Docker: sao chép thư mục `ATTACHMENT_DIR` (mặc định `./attachments` ở gốc dự án) bằng `rsync -a` hoặc `tar`.

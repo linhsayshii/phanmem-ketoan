@@ -1,7 +1,9 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { VoucherDto } from '../src/modules/ledger/vouchers.service.js';
 import { renderPdf } from '../src/modules/reporting/print/pdf.js';
+import { renderVoucherHtml } from '../src/modules/reporting/print/voucherHtml.js';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
 
 let ctx: TestApp; let cookie: string; let id: string;
@@ -23,6 +25,24 @@ describe('in phiếu kế toán', () => {
     expect(r.statusCode).toBe(200); expect(r.headers['content-type']).toBe('application/pdf'); expect(r.rawPayload.subarray(0, 4).toString()).toBe('%PDF');
     expect(r.headers['content-disposition']).toBe(`inline; filename*=UTF-8''${encodeURIComponent('PKT00001.pdf')}`);
   }, 60_000);
+});
+
+describe('in phiếu kế toán: nội dung', () => {
+  it('diễn giải có thẻ script được thoát ký tự trong HTML in', async () => {
+    const c = await ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie }, payload: { voucherType: 'PKT', postingDate: '2026-01-06', documentDate: '2026-01-06', description: '<script>alert(1)</script>', lines: [{ accountCode: '6422', debit: '10' }, { accountCode: '1111', credit: '10' }] } });
+    expect(c.statusCode, c.body).toBe(201);
+    const r = await ctx.app.inject({ method: 'GET', url: `/api/vouchers/${c.json().id}/print?format=html`, headers: { cookie } });
+    expect(r.statusCode).toBe(200);
+    expect(r.body).toContain('&lt;script&gt;'); expect(r.body).not.toContain('<script>alert');
+  }, 30_000);
+
+  it('phiếu nháp lệch: Cộng Nợ và Cộng Có tính riêng (Có không lấy theo Nợ)', () => {
+    const line = (lineNo: number, accountCode: string, debit: string, credit: string) => ({ lineNo, accountCode, accountName: 'x', debit, credit, partyCode: null, partyName: null, description: null });
+    const v = { id: 'x', voucherType: 'PKT', voucherNo: null, postingDate: '2026-01-05', state: 'draft', description: 'Nháp lệch', partyName: null, totalDebit: '1500000',
+      lines: [line(1, '6422', '1500000', '0'), line(2, '1111', '0', '1000000')] } as unknown as VoucherDto;
+    const html = renderVoucherHtml(v, { name: 'Cty', address: null, taxCode: null, legalRep: null, chiefAccountant: null, formNo: 'PKT', issuedBy: '' });
+    expect(html).toMatch(/<b>Cộng<\/b><\/td><td class="num"><b>1\.500\.000<\/b><\/td><td class="num"><b>1\.000\.000<\/b><\/td>/);
+  });
 });
 
 // Tiêu đề tài liệu nằm trong từ điển Info của PDF, dạng UTF-16BE (chuỗi hex) hoặc chuỗi thường.

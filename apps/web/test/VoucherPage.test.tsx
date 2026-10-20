@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import VoucherPage from '../src/pages/Voucher.js';
 
-const mocks = vi.hoisted(() => ({ api: vi.fn(), id: { v: 'moi' }, perms: { has: (_c: string): boolean => true } }));
-vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: class ApiError extends Error {} }));
+const mocks = vi.hoisted(() => {
+  class ApiError extends Error { constructor(public code: string, message: string, public status = 409) { super(message); } }
+  return { api: vi.fn(), ApiError, id: { v: 'moi' }, perms: { has: (_c: string): boolean => true } };
+});
+vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: mocks.ApiError }));
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: (c: string) => mocks.perms.has(c) }) }));
 // lưới AG Grid và ô tra danh mục nặng trong jsdom và không thuộc điều đang kiểm tra (nút theo trạng thái/quyền); đường nhập phím được kiểm bằng Playwright
 vi.mock('@kt/ui', () => ({ KeyboardGrid: () => null, LookupSelect: () => null }));
@@ -35,7 +39,7 @@ describe('Màn hình Phiếu kế toán: nút theo trạng thái và quyền', (
 
   it('nháp: Ghi sổ (F9), Hủy, Nhân bản; không có Bỏ ghi sổ/Đảo', async () => {
     stateOf('draft'); renderPage();
-    expect(await screen.findByRole('button', { name: 'Ghi sổ (F9)' })).toBeEnabled();
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Ghi sổ (F9)' })).toBeEnabled()); // nút khóa tới khi chứng từ tải xong
     expect(screen.getByRole('button', { name: 'Hủy' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Nhân bản' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Bỏ ghi sổ' })).not.toBeInTheDocument();
@@ -60,5 +64,57 @@ describe('Màn hình Phiếu kế toán: nút theo trạng thái và quyền', (
     await screen.findByText('Đã đảo');
     expect(screen.queryByRole('button', { name: /Lưu/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Nhân bản' })).toBeInTheDocument();
+  });
+
+  // lời gọi ghi (PUT/POST) tới máy chủ; GET không tính
+  const writes = () => mocks.api.mock.calls.filter(([, init]) => (init as { method?: string } | undefined)?.method);
+  const gets = () => mocks.api.mock.calls.filter(([p, init]) => p === '/api/vouchers/v1' && !(init as { method?: string } | undefined)?.method);
+
+  it('chưa tải xong chứng từ: Lưu và Ghi sổ bị khóa, Ctrl+S và F9 không gọi máy chủ', () => {
+    mocks.api.mockImplementation(() => new Promise(() => undefined)); // GET treo
+    renderPage();
+    expect(screen.getByRole('button', { name: /Lưu/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Ghi sổ/ })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true }); fireEvent.keyDown(window, { key: 'F9' });
+    expect(writes()).toHaveLength(0);
+  });
+
+  it('VERSION_CONFLICT: hiện hộp thoại có nút Tải lại, bấm thì tải lại chứng từ', async () => {
+    mocks.api.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (init?.method === 'PUT') throw new mocks.ApiError('VERSION_CONFLICT', 'Chứng từ đã được người khác sửa, hãy tải lại');
+      return path === '/api/vouchers/v1' ? voucher('draft') : [];
+    });
+    renderPage();
+    const save = await screen.findByRole('button', { name: /Lưu/ });
+    await vi.waitFor(() => expect(save).toBeEnabled());
+    await userEvent.click(save);
+    const reload = await screen.findByRole('button', { name: 'Tải lại' });
+    expect(gets()).toHaveLength(1);
+    await userEvent.click(reload);
+    await vi.waitFor(() => expect(gets()).toHaveLength(2));
+  });
+
+  it('lưu xong thì chờ tải lại xong mới nhận Ctrl+S tiếp (không gửi version cũ)', async () => {
+    let release: () => void = () => undefined;
+    let n = 0;
+    mocks.api.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (init?.method === 'PUT') return voucher('draft', { version: 4 });
+      if (path !== '/api/vouchers/v1') return [];
+      return ++n === 1 ? voucher('draft') : new Promise((r) => { release = () => r(voucher('draft', { version: 4 })); }); // lần tải lại sau khi lưu bị giữ
+    });
+    renderPage();
+    const save = await screen.findByRole('button', { name: /Lưu/ });
+    await vi.waitFor(() => expect(save).toBeEnabled());
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await vi.waitFor(() => expect(writes()).toHaveLength(1));
+    await vi.waitFor(() => expect(gets()).toHaveLength(2)); // đang tải lại
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(writes()).toHaveLength(1);
+    expect(save).toHaveClass('ant-btn-loading'); // vẫn đang chờ tải lại
+    release();
+    await vi.waitFor(() => expect(save).not.toHaveClass('ant-btn-loading'));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await vi.waitFor(() => expect(writes()).toHaveLength(2));
   });
 });

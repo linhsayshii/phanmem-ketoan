@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef, type GetRowIdParams, type GridApi } from 'ag-grid-community';
-import { gridKeyAction, type GridKeyAction } from '@kt/domain';
+import { gridKeyAction, isImeComposing, type GridKeyAction } from '@kt/domain';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 export interface KeyboardGridProps<T> {
   rows: T[]; columns: ColDef<T>[]; onRowsChange: (rows: T[]) => void; addRowTemplate: () => T;
   onLookup?: (colId: string, rowIndex: number) => void; height?: number | string; readOnly?: boolean;
+  lockRows?: boolean; // số dòng cố định: không thêm/chèn/xóa dòng bằng phím (vd. chứng từ đã ghi sổ), vẫn sửa được ô
 }
 
 // Chuyển ô sang (row, col) và vào chế độ sửa. Dòng mới thêm chỉ có sau khi chủ cập nhật `rows` và lưới áp dụng, nên chờ tới khi dòng xuất hiện.
@@ -16,7 +17,7 @@ function goTo<T>(api: GridApi<T>, row: number, col: string, tries = 10): void {
   api.setFocusedCell(row, col); api.startEditingCell({ rowIndex: row, colKey: col });
 }
 
-export function KeyboardGrid<T extends object>({ rows, columns, onRowsChange, addRowTemplate, onLookup, height = 320, readOnly }: KeyboardGridProps<T>) {
+export function KeyboardGrid<T extends object>({ rows, columns, onRowsChange, addRowTemplate, onLookup, height = 320, readOnly, lockRows }: KeyboardGridProps<T>) {
   const apiRef = useRef<GridApi<T> | null>(null);
   // Mã dòng theo danh tính đối tượng: có getRowId thì AG Grid cập nhật dòng tại chỗ thay vì dựng lại toàn bộ khi `rows` đổi, nên ô đang sửa (vừa chuyển sang bằng Enter) không bị hủy.
   // AG Grid ghi giá trị thẳng vào đối tượng dòng, nên onCellValueChanged giữ nguyên đối tượng (mã không đổi), chỉ thay mảng.
@@ -31,7 +32,7 @@ export function KeyboardGrid<T extends object>({ rows, columns, onRowsChange, ad
   // Mọi quyết định phím nằm ở gridKeyAction (hàm thuần trong @kt/domain); ở đây chỉ áp dụng kết quả.
   const decide = useCallback((ev: KeyboardEvent, rowIndex: number | null, id: string, api: GridApi<T>) =>
     gridKeyAction(ev, { row: rowIndex ?? 0, col: colDefs.findIndex((c) => (c.colId ?? c.field) === id) },
-      { rowCount: api.getDisplayedRowCount(), editableCols: editableIdx, readOnly: !!readOnly }), [colDefs, editableIdx, readOnly]);
+      { rowCount: api.getDisplayedRowCount(), editableCols: editableIdx, readOnly: !!readOnly, lockRows: !!lockRows }), [colDefs, editableIdx, readOnly, lockRows]);
   // Phím do lưới tự xử lý được áp dụng NGAY trong suppressKeyboardEvent (đồng bộ). Sự kiện cellKeyDown của AG Grid luôn tới trễ một nhịp (setTimeout), nên xử lý ở đó thì
   // phím gõ liền sau Enter (gõ nhanh, kịch bản tự động) rơi vào ô cũ. Hàm áp dụng đọc qua ref để defaultColDef không đổi mỗi lần `rows` đổi.
   const apply = (action: GridKeyAction, colIdOfCell: string, row: number, api: GridApi<T>) => {
@@ -54,6 +55,7 @@ export function KeyboardGrid<T extends object>({ rows, columns, onRowsChange, ad
   const defaultColDef = useMemo<ColDef<T>>(() => ({ resizable: true, sortable: false,
     suppressKeyboardEvent: (p) => {
       const ev = p.event as KeyboardEvent;
+      if (isImeComposing(ev)) return true; // đang soạn chữ (Telex/VNI): Enter chốt chữ, lưới không chạy lệnh nào; không preventDefault để ô sửa và trình duyệt tự xử lý
       const row = p.node.rowIndex ?? 0; const id = p.column.getColId();
       const action = decide(ev, p.node.rowIndex, id, p.api);
       if (action.type === 'none') return false;

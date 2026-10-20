@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gridKeyAction, isLookupKey, nextCellOnEnter, nextCellOnTab } from '../src/gridKeyboard.js';
+import { gridKeyAction, isImeComposing, isLookupKey, nextCellOnEnter, nextCellOnTab } from '../src/gridKeyboard.js';
 
 const g = { rowCount: 2, editableCols: [0, 2, 3] };
 describe('gridKeyboard', () => {
@@ -46,5 +46,30 @@ describe('gridKeyAction', () => {
     for (const k of [key('Enter'), key('Tab'), key('F4'), key('Delete', { ctrlKey: true }), key('Insert', { ctrlKey: true })]) {
       expect(gridKeyAction(k, { row: 0, col: -1 }, shape)).toEqual({ type: 'none' });
     }
+  });
+});
+
+describe('gridKeyAction: bộ gõ (IME) và khóa số dòng', () => {
+  const shape = { rowCount: 2, editableCols: [0, 2, 3], readOnly: false };
+  const key = (k: string, more: { ctrlKey?: boolean; shiftKey?: boolean; isComposing?: boolean; keyCode?: number } = {}) => ({ key: k, ctrlKey: false, shiftKey: false, ...more });
+  it('đang soạn chữ (isComposing hoặc keyCode 229): không phím nào được lưới xử lý', () => {
+    expect(isImeComposing({ isComposing: true })).toBe(true);
+    expect(isImeComposing({ keyCode: 229 })).toBe(true); // Safari: compositionend tới trước, keydown Enter chỉ còn keyCode 229
+    expect(isImeComposing({ isComposing: false, keyCode: 13 })).toBe(false);
+    expect(isImeComposing({})).toBe(false);
+    for (const more of [{ isComposing: true }, { keyCode: 229 }]) {
+      for (const k of ['Enter', 'Tab', 'F4']) expect(gridKeyAction(key(k, more), { row: 0, col: 0 }, shape)).toEqual({ type: 'none' });
+      expect(gridKeyAction(key('Delete', { ctrlKey: true, ...more }), { row: 0, col: 0 }, shape)).toEqual({ type: 'none' });
+    }
+    expect(gridKeyAction(key('Enter', { isComposing: false, keyCode: 13 }), { row: 0, col: 0 }, shape)).toEqual({ type: 'move', pos: { row: 0, col: 2 }, addRow: false });
+  });
+  it('lockRows: không thêm, chèn, xóa dòng; vẫn đi giữa các ô và tra cứu', () => {
+    const locked = { ...shape, lockRows: true };
+    expect(gridKeyAction(key('Enter'), { row: 1, col: 3 }, locked)).toEqual({ type: 'none' }); // cuối lưới: bình thường sẽ thêm dòng
+    expect(gridKeyAction(key('Insert', { ctrlKey: true }), { row: 0, col: 2 }, locked)).toEqual({ type: 'none' });
+    expect(gridKeyAction(key('Delete', { ctrlKey: true }), { row: 0, col: 2 }, locked)).toEqual({ type: 'none' });
+    expect(gridKeyAction(key('Enter'), { row: 0, col: 3 }, locked)).toEqual({ type: 'move', pos: { row: 1, col: 0 }, addRow: false });
+    expect(gridKeyAction(key('Tab'), { row: 1, col: 3 }, locked)).toEqual({ type: 'move', pos: { row: 1, col: 3 }, addRow: false });
+    expect(gridKeyAction(key('F4'), { row: 0, col: 2 }, locked)).toEqual({ type: 'lookup' });
   });
 });
