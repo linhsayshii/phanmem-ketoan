@@ -12,3 +12,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-20 22:41 | GĐ1.5 T6 (A5) | chặn tự nâng quyền, giữ quản trị viên cuối, không trao quyền mình không có | c48d80b, 3e9db9b | users/sensitiveFlags/auth 26 passed, lint+typecheck xanh
 2026-10-20 22:51 | GĐ1.5 T8 (A9) | mã lỗi *_NOT_FOUND thống nhất 404 | a344186 | api 292, web 62 passed
 2026-10-20 23:02 | GĐ1.5 T9 (A10) | khóa ngoại tổng hợp (tenant_id, id), 20 FK | 195ce46 | toàn bộ 497 passed, lint+typecheck xanh
+2026-10-20 23:16 | GĐ1.5 T10 (A11) | kiểm cân bằng theo câu lệnh, khóa ghi trực tiếp partition | 0757d64, ba4e289 | db 62, vouchers+DK 40, bất biến 18 passed; DK 6.002 dòng 25,9 s → 2,9 s
