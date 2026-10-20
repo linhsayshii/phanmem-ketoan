@@ -37,7 +37,8 @@ describe('Bất biến 2: chuỗi post/reverse/unpost/ghi lùi ngày ngẫu nhi�
           expect(p.statusCode, `repost: ${p.body}`).toBe(200); posted.push(v);
         }
       }
-      await recompute(ctx, cookie);
+      // phải tính lại thành công: lỗi ở đây làm /api/balances âm thầm rơi về đường chậm và kiểm thử không còn kiểm đường nhanh
+      expect((await recompute(ctx, cookie)).statusCode).toBe(200);
       for (const d of ['2026-01-15', '2026-03-31', '2026-07-31', '2026-12-31']) {
         const expected = await sumFromLines(ctx, tenantId, d);
         expect(await snapshot(ctx, cookie, d), d).toEqual(expected);

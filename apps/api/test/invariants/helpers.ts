@@ -6,8 +6,15 @@ import { bootstrapTenant, type TestApp } from '../helpers.js';
 export interface Line { accountCode: string; debit?: string; credit?: string; partyCode?: string }
 
 // Số lần chạy mỗi thuộc tính fast-check: mặc định theo từng kiểm thử, đặt FC_RUNS để chạy nhiều hơn (soak thủ công); thời gian chờ nới theo.
-export const runs = (dflt: number): number => (process.env.FC_RUNS ? Number(process.env.FC_RUNS) : dflt);
-export const timeoutFor = (dfltMs: number): number => (process.env.FC_RUNS ? 30 * 60_000 : dfltMs);
+// FC_RUNS phải là số nguyên dương: 0, âm, chữ hay số lẻ làm fast-check chạy 0 lần (kiểm thử xanh mà không kiểm gì) hoặc không dừng, nên báo lỗi ngay khi nạp tệp.
+const FC_RUNS = ((raw: string | undefined): number | undefined => {
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!Number.isSafeInteger(n) || n < 1) throw new Error(`FC_RUNS phải là số nguyên dương (nhận được "${raw}"); bỏ biến này để dùng số lần mặc định`);
+  return n;
+})(process.env.FC_RUNS);
+export const runs = (dflt: number): number => FC_RUNS ?? dflt;
+export const timeoutFor = (dfltMs: number): number => (FC_RUNS !== undefined ? 30 * 60_000 : dfltMs);
 
 // Tài khoản chi tiết tồn tại ở cả TT133 và TT99. 131 và 331 là tài khoản công nợ: dòng của chúng bắt buộc có đối tượng (chiều đối tượng của số dư).
 export const PARTY_ACCOUNTS = ['131', '331'];
