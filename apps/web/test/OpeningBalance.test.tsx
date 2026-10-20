@@ -35,8 +35,8 @@ describe('Màn hình Số dư đầu kỳ', () => {
     for (const name of ['Lưu', 'Ghi sổ số dư đầu kỳ', 'Nhập Excel']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
   });
 
-  it('Lưu, Kiểm tra, Ghi sổ bị khóa trong lúc tải số dư của năm và khi tải lỗi, mở khi đã tải xong', async () => {
-    const buttons = () => ['Lưu', 'Kiểm tra', 'Ghi sổ số dư đầu kỳ'].map((name) => screen.getByRole('button', { name }));
+  it('Lưu, Kiểm tra, Ghi sổ, Nhập Excel bị khóa trong lúc tải số dư của năm và khi tải lỗi, mở khi đã tải xong', async () => {
+    const buttons = () => ['Lưu', 'Kiểm tra', 'Ghi sổ số dư đầu kỳ', 'Nhập Excel'].map((name) => screen.getByRole('button', { name }));
     let done: ((v: unknown) => void) | undefined;
     apiFor(() => new Promise((r) => { done = r; }));
     renderPage();
@@ -50,6 +50,6 @@ describe('Màn hình Số dư đầu kỳ', () => {
     apiFor(() => Promise.reject(new Error('Không tải được')));
     renderPage();
     expect(await screen.findByText('Không tải được')).toBeInTheDocument();
-    for (const name of ['Lưu', 'Kiểm tra', 'Ghi sổ số dư đầu kỳ']) expect(screen.getByRole('button', { name })).toBeDisabled();
+    for (const name of ['Lưu', 'Kiểm tra', 'Ghi sổ số dư đầu kỳ', 'Nhập Excel']) expect(screen.getByRole('button', { name })).toBeDisabled();
   });
 });

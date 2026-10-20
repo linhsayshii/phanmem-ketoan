@@ -3,7 +3,7 @@ import { Alert, Button, Checkbox, DatePicker, Modal, Radio, Select, Space, Switc
 import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
-import { formatVnDate, formatVnNumber } from '@kt/domain';
+import { formatVnDate, formatVnNumber, SENSITIVE_FLAGS_ALL } from '@kt/domain';
 import { KeyboardGrid, LookupSelect, useRememberedFilter } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
@@ -38,7 +38,7 @@ const Grid = <T extends object>({ rows, columns }: { rows: T[]; columns: ColDef<
 
 const BOOKS = [{ value: 'journal', label: 'Sổ Nhật ký chung' }, { value: 'ledgers', label: 'Sổ Cái (mọi tài khoản có số liệu)' }, { value: 'trial', label: 'Bảng cân đối số phát sinh' },
   { value: 'B01', label: 'B01 - Báo cáo tình hình tài chính' }, { value: 'B02', label: 'B02 - Kết quả hoạt động kinh doanh' }, { value: 'B03', label: 'B03 - Lưu chuyển tiền tệ' }];
-const FULL_BOOK_FLAGS = ['view_receivable', 'view_payable', 'view_cost']; // Nhật ký chung và Sổ Cái in cả công nợ và giá vốn
+const FULL_BOOK_KEYS = ['journal', 'ledgers', 'trial']; // in mọi tài khoản, gồm công nợ và giá vốn: cần đủ ba cờ nhạy cảm
 const fileKind = { pdf: 'PDF', xlsx: 'Excel' } as const;
 
 // In liên tục cả bộ sổ của một năm tài chính: máy chủ trả một PDF nhiều phần hoặc một Excel nhiều sheet, tải về thành tệp.
@@ -50,8 +50,8 @@ export function BookSetModal({ open, onClose }: { open: boolean; onClose(): void
   const [format, setFormat] = useState<'pdf' | 'xlsx'>('pdf');
   const [busy, setBusy] = useState(false);
   const fiscalYear = year ?? years.data?.at(-1)?.fiscalYear;
-  const fullBooks = FULL_BOOK_FLAGS.every((f) => me?.sensitive.includes(f));
-  const picked = fullBooks ? include : include.filter((x) => x !== 'journal' && x !== 'ledgers'); // ô bị khóa không còn được tích nên không gửi lên (máy chủ trả 403)
+  const fullBooks = SENSITIVE_FLAGS_ALL.every((f) => me?.sensitive.includes(f));
+  const picked = fullBooks ? include : include.filter((x) => !FULL_BOOK_KEYS.includes(x)); // ô bị khóa không còn được tích nên không gửi lên (máy chủ trả 403)
   const run = async () => {
     setBusy(true);
     try {
@@ -67,8 +67,8 @@ export function BookSetModal({ open, onClose }: { open: boolean; onClose(): void
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
         <Select style={{ width: 200 }} placeholder="Năm tài chính" value={fiscalYear} onChange={setYear} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
         <Checkbox.Group value={picked} onChange={(v) => setInclude(v as string[])} style={{ display: 'grid', gap: 4 }}
-          options={BOOKS.map((b) => ({ ...b, disabled: !fullBooks && (b.value === 'journal' || b.value === 'ledgers') }))} />
-        {!fullBooks && <Alert type="info" showIcon message="Nhật ký chung và Sổ Cái cả năm cần đủ các quyền xem công nợ phải thu, phải trả và giá vốn." />}
+          options={BOOKS.map((b) => ({ ...b, disabled: !fullBooks && FULL_BOOK_KEYS.includes(b.value) }))} />
+        {!fullBooks && <Alert type="info" showIcon message="Nhật ký chung, Sổ Cái và Bảng cân đối số phát sinh cả năm cần đủ các quyền xem công nợ phải thu, phải trả và giá vốn." />}
         <Radio.Group optionType="button" value={format} onChange={(e) => setFormat(e.target.value as 'pdf' | 'xlsx')} options={Object.entries(fileKind).map(([value, label]) => ({ value, label }))} />
       </Space>
     </Modal>
@@ -114,7 +114,8 @@ export default function LedgersPage() {
     if (needAccount) return <Alert type="info" showIcon message="Chọn tài khoản để xem sổ" />;
     if (data.error) return <Alert type="error" showIcon message={(data.error as Error).message} />;
     if (!d) return null;
-    if (tab === 'journal') return <Space direction="vertical" style={{ width: '100%' }}><Summary items={[['Tổng phát sinh', { debit: d['totalDebit'] as string, credit: d['totalCredit'] as string }]]} />
+    if (tab === 'journal') return <Space direction="vertical" style={{ width: '100%' }}>
+      {d['truncated'] === true && <Alert type="warning" showIcon message="Chỉ hiển thị 50.000 dòng đầu của khoảng ngày này (tổng phát sinh vẫn là của cả khoảng). Thu hẹp khoảng ngày, hoặc dùng In PDF / Xuất Excel để có đủ các dòng." />}<Summary items={[['Tổng phát sinh', { debit: d['totalDebit'] as string, credit: d['totalCredit'] as string }]]} />
       <Grid<JournalRow> rows={d['rows'] as JournalRow[]} columns={columns.journal} /></Space>;
     if (tab === 'trial') {
       const t = d['totals'] as { opening: Side; period: Side; closing: Side };

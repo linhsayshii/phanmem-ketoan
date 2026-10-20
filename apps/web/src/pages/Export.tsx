@@ -1,16 +1,15 @@
 import { useState } from 'react';
 import { Alert, Button, Card, DatePicker, Space, message } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
+import { SENSITIVE_FLAGS_ALL } from '@kt/domain';
 import { useAuth } from '../auth.js';
-
-const FULL_BOOK_FLAGS = ['view_receivable', 'view_payable', 'view_cost']; // gói có Nhật ký chung và Sổ Cái: cả công nợ và giá vốn
 
 // Máy chủ trả một tệp zip (CSV + PDF sổ + bảng băm) cho khoảng ngày chọn; tải về thành tệp.
 export default function ExportPage() {
   const { me } = useAuth();
   const [range, setRange] = useState<[Dayjs, Dayjs]>(() => [dayjs().startOf('year'), dayjs().endOf('month')]);
   const [busy, setBusy] = useState(false);
-  const missing = FULL_BOOK_FLAGS.filter((f) => !me?.sensitive.includes(f));
+  const missing = SENSITIVE_FLAGS_ALL.filter((f) => !me?.sensitive.includes(f));
   const run = async () => {
     const from = range[0].format('YYYY-MM-DD'); const to = range[1].format('YYYY-MM-DD');
     setBusy(true);

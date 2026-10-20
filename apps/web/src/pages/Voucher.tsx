@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
 import dayjs, { type Dayjs } from 'dayjs';
-import { formatVnNumber, isBalanced, parseVnNumber, sum } from '@kt/domain';
+import { formatVnNumber, isBalanced, parseVnNumber, sum, VND_AMOUNT_RE } from '@kt/domain';
 import { KeyboardGrid, LookupSelect } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
@@ -30,7 +30,7 @@ export function parseAmount(newValue: unknown, oldValue: unknown): string {
   const text = String(newValue ?? '').trim();
   if (text === '') return '0';
   const n = parseVnNumber(text);
-  return n !== null && /^\d{1,20}$/.test(n) ? n : (oldValue as string | undefined) ?? '0';
+  return n !== null && VND_AMOUNT_RE.test(n) ? n : (oldValue as string | undefined) ?? '0';
 }
 const numCol = (field: 'debit' | 'credit', headerName: string): ColDef<Line> => ({ field, headerName, width: 150, cellClass: 'ag-right-aligned-cell',
   valueFormatter: (p) => formatVnNumber((p.value as string) || '0'), valueParser: (p) => parseAmount(p.newValue, p.oldValue) });

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Checkbox, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
+import { Alert, Button, Card, Checkbox, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import dayjs, { type Dayjs } from 'dayjs';
-import { sum } from '@kt/domain';
+import { sum, VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -57,10 +57,13 @@ export default function ClosingPage() {
   const onError = (e: unknown) => { void message.error((e as Error).message); };
   // Tải lại cả khi lỗi: chạy tất cả có thể đã xong vài bước trước khi gặp lỗi, nhật ký phải hiện đúng. Chạy bước không tải lại sơ đồ (biểu mẫu đang sửa dở sẽ bị đặt lại).
   const refresh = (...keys: string[]) => () => { for (const k of keys) void qc.invalidateQueries({ queryKey: [k] }); };
+  // Chạy lại một bước không tự chạy lại các bước sau đã chạy cùng ngày: giữ cảnh báo trên màn hình tới lần chạy kế tiếp (hoặc khi người dùng đóng).
+  const [laterDone, setLaterDone] = useState<string[]>([]);
   const exec = useMutation({
-    mutationFn: ({ path, json }: { path: 'run' | 'rerun' | 'run-all'; json: object }) => api<{ voucherIds?: string[]; steps?: { voucherIds: string[] }[] }>(`/api/closing/${path}`, { method: 'POST', json }),
+    mutationFn: ({ path, json }: { path: 'run' | 'rerun' | 'run-all'; json: object }) => api<{ voucherIds?: string[]; laterStepsDone?: string[]; steps?: { voucherIds: string[] }[] }>(`/api/closing/${path}`, { method: 'POST', json }),
+    onMutate: () => { setLaterDone([]); },
     onError, onSettled: refresh('closing-runs', 'vouchers'),
-    onSuccess: (r) => { const n = r.voucherIds?.length ?? r.steps?.reduce((a, s) => a + s.voucherIds.length, 0) ?? 0; void message.success(n ? `Đã sinh ${n} chứng từ` : 'Không có số dư cần xử lý'); },
+    onSuccess: (r) => { setLaterDone(r.laterStepsDone ?? []); const n = r.voucherIds?.length ?? r.steps?.reduce((a, s) => a + s.voucherIds.length, 0) ?? 0; void message.success(n ? `Đã sinh ${n} chứng từ` : 'Không có số dư cần xử lý'); },
   });
   const save = useMutation({ mutationFn: (v: FormStep[]) => api('/api/closing/steps', { method: 'PUT', json: { steps: v.map(toPayload) } }), onError, onSettled: refresh('closing-steps'),
     onSuccess: () => { void message.success('Đã lưu sơ đồ'); } });
@@ -69,7 +72,7 @@ export default function ClosingPage() {
   const confirm = (title: string, content: string, okText: string, fn: () => Promise<unknown>) =>
     Modal.confirm({ title, content, okText, cancelText: 'Hủy', onOk: () => fn().catch(() => undefined) });
   const runOne = (s: Step) => exec.mutateAsync({ path: 'run', json: { stepId: s.id, postingDate } });
-  const rerunOne = (s: Step) => confirm(`Chạy lại "${s.name}" ngày ${date.format('DD/MM/YYYY')}?`, 'Các chứng từ đã sinh của bước này tại ngày đó được đảo (không sửa đè), rồi bước được chạy lại theo số dư hiện tại.', 'Đảo và chạy lại',
+  const rerunOne = (s: Step) => confirm(`Chạy lại "${s.name}" ngày ${date.format('DD/MM/YYYY')}?`, 'Các chứng từ đã sinh của bước này tại ngày đó được đảo (không sửa đè), rồi bước được chạy lại theo số dư hiện tại. Các bước sau của sơ đồ đã chạy cùng ngày không tự chạy lại: hãy chạy lại các bước đó hoặc Chạy tất cả.', 'Đảo và chạy lại',
     () => exec.mutateAsync({ path: 'rerun', json: { stepId: s.id, postingDate } }));
   const periodEnd = (steps.data ?? []).filter((s) => s.isActive && s.runAt === 'period_end');
   const runAll = () => confirm(`Chạy ${periodEnd.length} bước cuối kỳ đến ngày ${date.format('DD/MM/YYYY')}?`, 'Các bước chạy lần lượt theo thứ tự và dừng ở bước lỗi đầu tiên; bước đã chạy được giữ lại.', 'Chạy tất cả',
@@ -87,6 +90,7 @@ export default function ClosingPage() {
         <DatePicker format="DD/MM/YYYY" allowClear={false} value={date} onChange={(d) => d && setDate(d)} />
         {can('closing.run') && <Button type="primary" disabled={!periodEnd.length} loading={exec.isPending} onClick={runAll}>Chạy tất cả bước cuối kỳ</Button>}
       </Space>
+      {laterDone.length > 0 && <Alert type="warning" showIcon closable onClose={() => setLaterDone([])} message={`Các bước sau đã chạy trước đó: ${laterDone.join(', ')}; hãy chạy lại các bước này hoặc Chạy tất cả`} />}
       <Card size="small" title="Các bước" extra="Bước &quot;Đầu năm sau&quot; chạy với ngày 01/01 của năm sau">
         <Table<Step> rowKey="id" size="small" pagination={false} loading={steps.isFetching} dataSource={steps.data ?? []} columns={[
           { title: 'Thứ tự', dataIndex: 'stepOrder', width: 80 },
@@ -135,7 +139,7 @@ export default function ClosingPage() {
                           {({ getFieldValue }) => (getFieldValue(['steps', f.name, 'mode']) === 'allocate' ? <RatioList name={f.name} />
                             : <Form.Item name={[f.name, 'toAccount']} label="TK đích" rules={[{ required: true, message: 'Nhập tài khoản đích' }]}><Input style={{ width: 120 }} /></Form.Item>)}
                         </Form.Item>
-                        <Form.Item name={[f.name, 'keepBalance']} label="Giữ lại số dư" rules={[{ pattern: /^\d+$/, message: 'Nhập số nguyên' }]}><Input style={{ width: 120 }} /></Form.Item>
+                        <Form.Item name={[f.name, 'keepBalance']} label="Giữ lại số dư" rules={[{ pattern: VND_AMOUNT_RE, message: VND_AMOUNT_MSG }]}><Input style={{ width: 120 }} /></Form.Item>
                         <Form.Item name={[f.name, 'byProject']} label=" " valuePropName="checked"><Checkbox>Theo vụ việc</Checkbox></Form.Item>
                       </Space>
                     </Card>))}
@@ -145,7 +149,7 @@ export default function ClosingPage() {
             </Form.List>
             <Space style={{ marginTop: 12 }}>
               <Button type="primary" htmlType="submit" loading={save.isPending}>Lưu sơ đồ</Button>
-              <Button loading={reload.isPending} onClick={() => confirm('Nạp lại sơ đồ mẫu?', 'Sơ đồ hiện tại bị thay bằng 5 bước mẫu. Nhật ký chạy được giữ lại.', 'Nạp lại mẫu', () => reload.mutateAsync())}>Nạp lại mẫu</Button>
+              <Button loading={reload.isPending} onClick={() => confirm('Nạp lại sơ đồ mẫu?', 'Sơ đồ hiện tại bị thay bằng sơ đồ mẫu. Nhật ký chạy được giữ lại.', 'Nạp lại mẫu', () => reload.mutateAsync())}>Nạp lại mẫu</Button>
             </Space>
           </Form>
         </Card>)}

@@ -64,6 +64,33 @@ describe('Màn hình kết chuyển cuối kỳ', () => {
     await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/closing/rerun', { method: 'POST', json: { stepId: 's1', postingDate: endOfMonth } }));
   }, 30_000);
 
+  it('Chạy lại: hộp xác nhận nhắc các bước sau không tự chạy lại; kết quả có laterStepsDone thì hiện cảnh báo liệt kê tên bước', async () => {
+    perms.has = (c) => c !== 'closing_step.update';
+    apiMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/closing/steps' && !init) return STEPS;
+      if (path.startsWith('/api/closing/runs')) return RUNS;
+      return { voucherIds: ['a'], laterStepsDone: ['Phân bổ chi phí trả trước', 'Kết chuyển lãi lỗ'] };
+    });
+    renderPage();
+    await screen.findByText('Phân bổ chi phí trả trước');
+    await userEvent.click(screen.getAllByRole('button', { name: 'Chạy lại (đảo cũ)' })[0]!);
+    expect(await screen.findByText(/Các bước sau của sơ đồ đã chạy cùng ngày không tự chạy lại/)).toBeInTheDocument();
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Đảo và chạy lại' })).at(-1)!);
+    expect(await screen.findByText('Các bước sau đã chạy trước đó: Phân bổ chi phí trả trước, Kết chuyển lãi lỗ; hãy chạy lại các bước này hoặc Chạy tất cả')).toBeInTheDocument();
+  }, 30_000);
+
+  it('Chạy lại không có bước sau nào đã chạy thì không hiện cảnh báo; Nạp lại mẫu không ghi cứng số bước', async () => {
+    renderPage(); // mặc định: { voucherIds: ['a'] }
+    await screen.findByText('Phân bổ chi phí trả trước');
+    await userEvent.click(screen.getAllByRole('button', { name: 'Chạy lại (đảo cũ)' })[0]!);
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Đảo và chạy lại' })).at(-1)!);
+    await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/closing/rerun', expect.anything()));
+    expect(screen.queryByText(/Các bước sau đã chạy trước đó/)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Nạp lại mẫu' }));
+    expect(await screen.findByText(/Sơ đồ hiện tại bị thay bằng sơ đồ mẫu/)).toBeInTheDocument();
+    expect(screen.queryByText(/5 bước/)).toBeNull();
+  }, 30_000);
+
   it('lưu sơ đồ: bước chuyển có TK đích, bước phân bổ gửi ratioSource và toAccount null, giữ mã bước; tổng tỷ lệ khác 100 bị chặn', async () => {
     renderPage();
     const save = await screen.findByRole('button', { name: 'Lưu sơ đồ' });

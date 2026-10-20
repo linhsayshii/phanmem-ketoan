@@ -21,4 +21,8 @@ describe('Phiếu kế toán: nhập số tiền ở ô Nợ/Có', () => {
     for (const bad of ['abc', '-5', '12,5', '1.5.5']) expect(parseAmount(bad, '100')).toBe('100');
     expect(parseAmount('abc', undefined)).toBe('0');
   });
+  it('tối đa 16 chữ số: 10^16 bị từ chối, giữ giá trị cũ', () => {
+    expect(parseAmount('9999999999999999', '0')).toBe('9999999999999999');
+    expect(parseAmount('10000000000000000', '100')).toBe('100');
+  });
 });

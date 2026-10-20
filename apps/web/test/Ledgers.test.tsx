@@ -2,12 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BookSetModal } from '../src/pages/Ledgers.js';
+import LedgersPage, { BookSetModal } from '../src/pages/Ledgers.js';
 
 const apiMock = vi.hoisted(() => vi.fn());
 const me = vi.hoisted(() => ({ sensitive: [] as string[] }));
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ me: { userId: 'u', tenantId: 't', sensitive: me.sensitive }, can: () => true }) }));
 vi.mock('../src/api/client.js', async (orig) => ({ ...(await orig<Record<string, unknown>>()), api: apiMock }));
+// lưới AG Grid và ô tra danh mục nặng trong jsdom, không thuộc điều đang kiểm tra; bộ lọc nhớ lại trả luôn giá trị mặc định
+vi.mock('@kt/ui', () => ({ KeyboardGrid: () => null, LookupSelect: () => null, useRememberedFilter: (_key: string, initial: unknown) => [initial, vi.fn()] }));
 
 describe('In cả bộ sổ năm', () => {
   const fetchMock = vi.fn();
@@ -25,22 +27,25 @@ describe('In cả bộ sổ năm', () => {
   });
   afterEach(() => { vi.unstubAllGlobals(); fetchMock.mockReset(); apiMock.mockReset(); });
 
-  it('người thiếu cờ nhạy cảm: Nhật ký chung và Sổ Cái bị khóa, không được tích và không gửi lên (tránh 403)', async () => {
+  it('người thiếu cờ nhạy cảm: Nhật ký chung, Sổ Cái và Bảng cân đối số phát sinh bị khóa, không được tích và không gửi lên (tránh 403)', async () => {
     me.sensitive = ['view_cost'];
     await renderModal();
-    for (const name of ['Sổ Nhật ký chung', 'Sổ Cái (mọi tài khoản có số liệu)']) {
+    for (const name of ['Sổ Nhật ký chung', 'Sổ Cái (mọi tài khoản có số liệu)', 'Bảng cân đối số phát sinh']) {
       const box = screen.getByRole('checkbox', { name }); expect(box).toBeDisabled(); expect(box).not.toBeChecked();
     }
-    expect(screen.getByRole('checkbox', { name: 'Bảng cân đối số phát sinh' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'In' })).toBeDisabled(); // mặc định chỉ chọn ba sổ bị khóa: chưa còn gì để in
+    await userEvent.click(screen.getByRole('checkbox', { name: /B01/ }));
     await userEvent.click(screen.getByRole('button', { name: 'In' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(sent()).toEqual({ fiscalYear: 2026, include: ['trial'], format: 'pdf' });
+    expect(sent()).toEqual({ fiscalYear: 2026, include: ['B01'], format: 'pdf' });
   });
 
   it('người thiếu cờ bỏ tích mục còn lại thì không còn gì để in: nút In bị khóa', async () => {
     me.sensitive = [];
     await renderModal();
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Bảng cân đối số phát sinh' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /B01/ }));
+    expect(screen.getByRole('button', { name: 'In' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('checkbox', { name: /B01/ }));
     expect(screen.getByRole('button', { name: 'In' })).toBeDisabled();
   });
 
@@ -52,5 +57,21 @@ describe('In cả bộ sổ năm', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(sent().include).toEqual(['journal', 'ledgers', 'trial']);
     await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:x'));
+  });
+});
+
+describe('Sổ sách: Nhật ký chung', () => {
+  const renderPage = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><LedgersPage /></QueryClientProvider>);
+  const journal = (truncated: boolean) => ({ rows: [], totalDebit: '0', totalCredit: '0', truncated });
+  afterEach(() => { apiMock.mockReset(); });
+  it('trả bị cắt (truncated) thì báo chỉ hiện 50.000 dòng đầu; không bị cắt thì không báo', async () => {
+    apiMock.mockResolvedValue(journal(true));
+    const first = renderPage();
+    expect(await screen.findByText(/Chỉ hiển thị 50\.000 dòng đầu/)).toBeInTheDocument();
+    first.unmount();
+    apiMock.mockResolvedValue(journal(false));
+    renderPage();
+    await screen.findByText(/Tổng phát sinh/);
+    expect(screen.queryByText(/Chỉ hiển thị 50\.000 dòng đầu/)).not.toBeInTheDocument();
   });
 });
