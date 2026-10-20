@@ -78,6 +78,7 @@ describe('in sổ: nội dung, hệ tài khoản, quyền', () => {
     expect((await pkt('2026-01-05', '<script>alert(1)</script>', [{ accountCode: '6421', debit: '100000' }, { accountCode: '1111', credit: '100000' }])).statusCode).toBe(201);
     expect((await pkt('2026-01-06', 'Bán chịu', [{ accountCode: '131', debit: '500000', partyCode: 'KH001' }, { accountCode: '5113', credit: '500000' }])).statusCode).toBe(201);
     expect((await ctx.app.inject({ method: 'PUT', url: '/api/report-defs/B01', headers: { cookie: c2 }, payload: { regime: 'TT133', lines: MINI_B01 } })).statusCode).toBe(200);
+    await ctx.t.admin.deleteFrom('report_def').where('tenant_id', '=', tenant2).where('report_code', 'in', ['B02', 'B03']).execute(); // mẫu hệ thống đã sao chép khi tạo năm: bỏ để có báo cáo chưa định nghĩa
     restricted = await userCookie('ketoan_truong', []);
   });
 

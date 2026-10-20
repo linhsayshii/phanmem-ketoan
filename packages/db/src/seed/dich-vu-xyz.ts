@@ -1,7 +1,6 @@
 import '../env.js';
 import pg from 'pg';
 import argon2 from 'argon2';
-import { isReportComplete } from '@kt/coa-data';
 import type { Regime } from '@kt/domain';
 import { ensureTenant, ensureUser, generateAccountsSql, insertDefaultClosingSteps, insertFiscalYear, setTenantContext } from './common.js';
 
@@ -78,8 +77,7 @@ export async function seedXyzTx(c: pg.Client, o: { code?: string; afterTenant?: 
     const t = await ensureTenant(c, { code: o.code ?? 'XYZ', name: 'Công ty TNHH Dịch vụ Tư vấn XYZ', taxCode: '0109876543', ownerUserId: admin });
     if (t.created) {
       await o.afterTenant?.();
-      const regime: Regime = isReportComplete('TT99', 'B01') ? 'TT99' : 'TT133';
-      if (regime === 'TT133') console.warn('CẢNH BÁO: mẫu báo cáo TT99 (B01) chưa đối chiếu văn bản gốc, công ty mẫu dùng TT133');
+      const regime: Regime = 'TT133'; // dữ liệu mẫu dùng tài khoản TT133 (1111, 5113...), bộ tài khoản TT99 khác nên chưa dùng
       await setTenantContext(c, t.id, admin);
       await seedXyzData(c, t.id, admin, regime);
     }

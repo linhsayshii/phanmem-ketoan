@@ -4,7 +4,7 @@ import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
 import { shiftYear } from '../src/modules/reporting/financial.js';
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 }); // máy chủ DB có lúc bận: mỗi kiểm thử gọi nhiều API
-let ctx: TestApp; let cookie: string;
+let ctx: TestApp; let cookie: string; let tenantId: string;
 const pkt = (date: string, lines: object[], c = cookie) => ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie: c }, payload: { voucherType: 'PKT', postingDate: date, documentDate: date, description: 'x', autoPost: true, lines } });
 const get = (url: string, c = cookie) => ctx.app.inject({ method: 'GET', url, headers: { cookie: c } });
 const put = (code: string, regime: string, lines: object[], c = cookie) => ctx.app.inject({ method: 'PUT', url: `/api/report-defs/${code}`, headers: { cookie: c }, payload: { regime, lines } });
@@ -35,13 +35,14 @@ const MINI_B02 = [
 ];
 
 beforeAll(async () => {
-  ctx = await createTestApp(); ({ cookie } = await bootstrapTenant(ctx, { code: `FR${Date.now()}` }));
+  ctx = await createTestApp(); ({ cookie, tenantId } = await bootstrapTenant(ctx, { code: `FR${Date.now()}` }));
   await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' } });
   await ctx.app.inject({ method: 'POST', url: '/api/catalogs/party', headers: { cookie }, payload: { code: 'KH001', name: 'K1', is_customer: true } });
   await ctx.app.inject({ method: 'POST', url: '/api/catalogs/party', headers: { cookie }, payload: { code: 'KH002', name: 'K2', is_customer: true } });
-  // PUT tự tạo report_def nếu chưa có (mẫu CSV còn chờ văn bản nên chưa có mẫu hệ thống để sao chép).
+  // Thay mẫu hệ thống bằng định nghĩa nhỏ để số liệu kiểm thử dễ tính; B03 xóa đi để có báo cáo chưa định nghĩa.
   expect((await put('B01', 'TT133', MINI_B01)).statusCode).toBe(200);
   expect((await put('B02', 'TT133', MINI_B02)).statusCode).toBe(200);
+  await ctx.t.admin.deleteFrom('report_def').where('tenant_id', '=', tenantId).where('report_code', '=', 'B03').execute();
   await ctx.app.inject({ method: 'PUT', url: '/api/opening-balance/2026', headers: { cookie }, payload: { rows: [{ accountCode: '1111', currencyCode: 'VND', debit: '1000', credit: '0', debitCurrency: '0', creditCurrency: '0', partyCode: null }, { accountCode: '4111', currencyCode: 'VND', debit: '0', credit: '1000', debitCurrency: '0', creditCurrency: '0', partyCode: null }] } });
   await ctx.app.inject({ method: 'POST', url: '/api/opening-balance/2026/post', headers: { cookie } });
   await ok(pkt('2026-02-01', [{ accountCode: '131', debit: '500', partyCode: 'KH001' }, { accountCode: '5113', credit: '500' }]));
@@ -152,7 +153,8 @@ describe('báo cáo tài chính theo dòng', () => {
     expect(await calls(await login())).toEqual([200, 403, 403]);
     await setRole(['report.view', 'report_def.view', 'report_def.update']);
     expect(await calls(await login())).toEqual([200, 200, 200]);
-    expect((await get('/api/report-defs/B01?regime=TT133')).json().lines).toHaveLength(MINI_B01.length); // PUT của người dùng thử giữ nguyên định nghĩa
+    expect((await put('B01', 'TT133', MINI_B01)).statusCode).toBe(200); // lần nạp lại ở trên đã đưa mẫu hệ thống về: trả lại định nghĩa nhỏ
+    expect((await get('/api/report-defs/B01?regime=TT133')).json().lines).toHaveLength(MINI_B01.length);
   });
   it('danh sách báo cáo theo hệ hoặc theo năm', async () => {
     const byRegime = await get('/api/reports/financial?regime=TT133');
@@ -162,10 +164,11 @@ describe('báo cáo tài chính theo dòng', () => {
     expect((await get('/api/reports/financial?regime=TT200')).json()).toEqual([]);
     expect((await get('/api/reports/financial?year=1999')).json()).toEqual([]);
   });
-  it('mẫu chờ văn bản: nạp lại mẫu không sao chép gì và không xóa định nghĩa đã sửa', async () => {
+  it('nạp lại mẫu hệ thống thay định nghĩa đã sửa của đúng báo cáo đó; hệ lạ bị 400', async () => {
     const r = await post('/api/report-defs/B01/reload', { regime: 'TT133' });
-    expect([r.statusCode, r.json()]).toEqual([200, { lines: 0 }]);
-    expect((await get('/api/report-defs/B01?regime=TT133')).json().lines).toHaveLength(MINI_B01.length);
+    expect([r.statusCode, r.json()]).toEqual([200, { lines: 47 }]);
+    expect((await get('/api/report-defs/B01?regime=TT133')).json().lines).toHaveLength(47);
+    expect((await put('B01', 'TT133', MINI_B01)).statusCode).toBe(200); // trả lại định nghĩa nhỏ cho các kiểm thử sau
     expect((await post('/api/report-defs/B01/reload', { regime: 'TT999' })).statusCode).toBe(400);
   });
   it('người thiếu cờ xem công nợ xem được báo cáo nhưng không truy ngược được 131 theo đối tượng', async () => {
@@ -176,6 +179,25 @@ describe('báo cáo tài chính theo dòng', () => {
     expect((await get('/api/reports/financial/B01?from=2026-01-01&to=2026-03-31', c2)).statusCode).toBe(200);
     expect((await get('/api/reports/financial/B01/lines/131?from=2026-01-01&to=2026-03-31', c2)).statusCode).toBe(403);
     expect((await get('/api/reports/financial/B01/lines/111?from=2026-01-01&to=2026-03-31', c2)).statusCode).toBe(200);
+  });
+});
+
+describe('B03 tiền đầu kỳ', () => {
+  it('dòng 60 là số dư đầu kỳ thật (kể cả khi kỳ báo cáo bắt đầu giữa năm), tiền chuyển giữa 111 và 112 triệt tiêu; 50 + 60 + 61 = 70', async () => {
+    const { cookie: c } = await bootstrapTenant(ctx, { code: `B3${Date.now()}` });
+    await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' } });
+    const row = (accountCode: string, debit: string, credit: string) => ({ accountCode, currencyCode: 'VND', debit, credit, debitCurrency: '0', creditCurrency: '0', partyCode: null });
+    await ctx.app.inject({ method: 'PUT', url: '/api/opening-balance/2026', headers: { cookie: c }, payload: { rows: [row('1111', '1000', '0'), row('4111', '0', '1000')] } });
+    await ctx.app.inject({ method: 'POST', url: '/api/opening-balance/2026/post', headers: { cookie: c } });
+    await ok(pkt('2026-02-01', [{ accountCode: '1111', debit: '500' }, { accountCode: '5113', credit: '500' }], c));
+    await ok(pkt('2026-02-10', [{ accountCode: '1121', debit: '400' }, { accountCode: '1111', credit: '400' }], c)); // tiền sang tiền
+    await ok(pkt('2026-03-01', [{ accountCode: '6422', debit: '300' }, { accountCode: '1121', credit: '300' }], c));
+    const val = (r: { json(): { rows: Row[] } }, code: string) => rowOf(r, code).current;
+    const full = await get('/api/reports/financial/B03?from=2026-01-01&to=2026-03-31', c);
+    expect(full.statusCode, full.body).toBe(200);
+    expect([val(full, '60'), val(full, '70'), val(full, '50'), val(full, '61')]).toEqual(['1000', '1200', '200', '0']);
+    const mid = await get('/api/reports/financial/B03?from=2026-02-05&to=2026-03-31', c);
+    expect([val(mid, '60'), val(mid, '70'), val(mid, '50')]).toEqual(['1500', '1200', '-300']);
   });
 });
 

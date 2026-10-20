@@ -66,7 +66,7 @@ describe('xuất dữ liệu cho cơ quan thẩm quyền', () => {
     try {
       const files = readdirSync(out);
       expect(files).toEqual(expect.arrayContaining(['README.txt', 'chung_tu.csv', 'dong_chung_tu.csv', 'he_thong_tai_khoan.csv', 'doi_tuong.csv', 'ky_ke_toan.csv', 'nhat_ky_kiem_toan.csv', 'so_nhat_ky_chung.pdf', 'so_cai.pdf', 'bang_can_doi_so_phat_sinh.pdf', 'MANIFEST.sha256']));
-      expect(files).not.toContain('B01.pdf'); // chưa có định nghĩa báo cáo thì bỏ qua
+      expect(files).toContain('B01.pdf'); // năm tài chính mới đã sao chép mẫu B01 hệ thống
       const ct = readFileSync(`${out}/chung_tu.csv`, 'utf8'); expect(ct.charCodeAt(0)).toBe(0xfeff); expect(ct.trim().split('\n')).toHaveLength(4);
       const lines = readFileSync(`${out}/dong_chung_tu.csv`, 'utf8').trim().split('\n');
       expect(lines).toHaveLength(7); // 3 chứng từ trong kỳ x 2 dòng, không nháp, không chứng từ tháng 2
