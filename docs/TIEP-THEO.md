@@ -29,12 +29,17 @@ Phân loại đầy đủ (nhóm A–D, lý do, mục đã kiểm trên mã): `d
 
 **Nhóm C, để sau**: chuyển số dư khi đổi chế độ (đặc tả 7.2, sau khi có TT99), xuất XML cơ quan thẩm quyền (mục 13), bất biến 7 đầy đủ; mời người dùng đã có vào công ty khác; phạm vi khóa tạo partition; việc chuẩn bị production (Docker, sao lưu, seed). Nhóm D (không làm) có lý do trong đề xuất.
 
-## 2. Dữ liệu pháp lý còn thiếu (cổng `*.status.json` trong `packages/coa-data`)
+## 2. Dữ liệu pháp lý (cổng `*.status.json` trong `packages/coa-data`)
 
-- [ ] Hệ thống tài khoản TT 99/2025 (Phụ lục II) và chỉ tiêu B01-DN, B02-DN, B03-DN (Phụ lục IV): hiện `complete=false`, mặc định công ty mới dùng TT133. Thử lấy văn bản gốc từ nguồn chính thức (vbpl.vn, congbao.chinhphu.vn, mof.gov.vn, datafiles chinhphu.vn; PDF đọc bằng `pdftotext` của `poppler-utils`). Nhập theo hướng dẫn trong `tt99.status.json`, chạy kiểm thử đối chiếu, đặt `complete=true` và ghi `source`. Không lấy được thì chuyển sang mục 4.
-- [ ] Chỉ tiêu B01a-DNN, B02-DNN, B03-DNN theo TT 133/2016 (Phụ lục 2): cùng cách.
-- [ ] Hai hệ thống tài khoản TT133 và TT200 hiện lấy từ SUNSOFT, ghi "chưa đối chiếu Phụ lục 1": đối chiếu với văn bản gốc, bổ sung tài khoản ngoài bảng nếu thiếu.
-- [ ] Mẫu tờ khai theo TT 89/2026 (Phụ lục I) và ký hiệu hóa đơn theo TT 91/2026 (Phụ lục I): cần cho GĐ2 và GĐ5.
+Văn bản gốc tải về `~/legal-docs/` trên VPS (ngoài repo): TT 99/2025 và TT 133/2016 từ Công báo (có chữ), TT 91/2026 (Công báo, có chữ), TT 89/2026 (datafiles.chinhphu.vn, bản scan 839 trang, cần OCR).
+
+- [x] Hệ thống tài khoản TT 99/2025 (Phụ lục II, 184 tài khoản), `complete=true`, nguồn ghi trong `tt99.status.json` (2026-10-20).
+- [x] Đối chiếu hệ thống tài khoản TT133 với Phụ lục 1 TT 133/2016: bỏ 521, sửa 18 tên (2026-10-20).
+- [x] Sơ đồ kết chuyển theo chế độ (`closing-steps/tt200|tt133|tt99.json`); tạo năm tài chính đổi chế độ thì nạp lại sơ đồ.
+- [ ] Chỉ tiêu B01-DN, B02-DN, B03-DN (Phụ lục IV TT 99/2025) và B01a-DNN, B02-DNN, B03-DNN (Phụ lục 2 TT 133/2016): đang nhập.
+- [ ] Hệ thống tài khoản TT200 vẫn lấy từ SUNSOFT, chưa đối chiếu Phụ lục 1 TT 200/2014 (TT200 đã bị TT99 thay từ 2026; ưu tiên thấp).
+- [ ] Mẫu tờ khai 01/GTGT theo TT 89/2026 (Phụ lục I): bản PDF là ảnh scan, cần OCR (`tesseract-ocr-vie`) rồi đối chiếu bằng mắt; làm khi bắt đầu GĐ2.
+- [ ] Ký hiệu hóa đơn theo TT 91/2026 (Phụ lục I, đã có chữ): dùng cho GĐ5.
 
 ## 3. Các giai đoạn tiếp theo
 
@@ -52,7 +57,7 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
 | Việc | Vì sao cần người dùng | Ảnh hưởng nếu chưa có |
 |---|---|---|
 | Kiểm tay gõ Telex/VNI trong lưới nhập liệu (Chrome và Safari trên máy thật) | Bộ gõ tiếng Việt không giả lập được trong Playwright headless | Có thể lỗi mất dấu khi nhập diễn giải |
-| Văn bản gốc TT 99/2025 (Phụ lục II, IV), TT 89/2026 Phụ lục I, TT 91/2026, QĐ 1450/QĐ-TCT + 1510 (phụ lục XML) nếu agent không tải được | Trang luật chặn tải tự động | Công ty mới phải dùng TT133; tờ khai/HĐĐT chưa đúng mẫu mới |
+| Văn bản gốc QĐ 1450/QĐ-TCT (07/10/2021) và QĐ 1510/QĐ-TCT (định dạng XML hóa đơn điện tử), hoặc quyết định mới thay thế nếu đã có: gdt.gov.vn không truy cập được từ VPS (timeout), vbpl.vn chặn bằng JavaScript, thuvienphapluat 403. Cần tải bằng trình duyệt ở Việt Nam, chép vào `~/legal-docs/qd1450/` | Trang luật chặn tải tự động | XML hóa đơn GĐ5 chỉ theo tài liệu thứ cấp, chưa kiểm chứng |
 | Bộ XML mẫu kết xuất từ HTKK 5.x (01/GTGT, 03/TNDN, 05/KK-TNCN, BCTC) | HTKK chạy trên Windows, không có XSD công khai | XML tờ khai GĐ2 chưa kiểm chứng được |
 | Tài khoản thử Viettel SInvoice; SePay hoặc Casso; chứng thư số thử (USB token hoặc VNPT SmartCA) | Đăng ký tài khoản và ký hợp đồng là việc của người dùng | GĐ5 chỉ có adapter giả lập |
 | Remote GitHub (nếu muốn CI chạy) | Tạo repo và quyền push là quyết định của người dùng | CI trong `.github/workflows` chưa chạy |
