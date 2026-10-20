@@ -36,19 +36,41 @@ describe('mẫu hệ thống tài khoản', () => {
     const rows = loadCoaTemplate('TT133'); const by = new Map(rows.map((r) => [r.code, r]));
     expect(by.get('131')?.normalBalance).toBe('both'); expect(by.get('131')?.subledgerKind).toBe('receivable');
     expect(by.get('331')?.subledgerKind).toBe('payable'); expect(by.get('1112')?.trackCurrency).toBe(true);
-    for (const c of refCodes('OrgDMTK_133.csv', 'TK_TI')) expect(by.has(c), `thiếu ${c}`).toBe(true);
+    // 521 có trong SUNSOFT nhưng không có trong Phụ lục 1 TT 133/2016 (giảm trừ doanh thu ghi thẳng vào 511).
+    for (const c of refCodes('OrgDMTK_133.csv', 'TK_TI').filter((x) => x !== '521')) expect(by.has(c), `thiếu ${c}`).toBe(true);
   });
   it('TT200 đủ tài khoản SUNSOFT OrgDMTK_200', () => {
     const by = new Set(loadCoaTemplate('TT200').map((r) => r.code));
     for (const c of refCodes('OrgDMTK_200.csv', 'TK_TI')) expect(by.has(c), `thiếu ${c}`).toBe(true);
   });
-  it('TT99: đối chiếu Phụ lục II và DesBC_*_99 (chỉ chạy khi complete=true)', (t) => {
+  it('TT99: nhập từ Phụ lục II, đã hoàn tất, có nguồn Công báo', () => {
     const st = tt99Status();
-    if (!st.complete) { console.warn('CẢNH BÁO: tt99.csv chưa hoàn tất, bỏ qua kiểm tra đối chiếu TT99'); t.skip(); return; }
+    expect(st.complete).toBe(true);
+    expect(st.source).toContain('congbao.chinhphu.vn');
+    expect(loadCoaTemplate('TT99')).toHaveLength(184);
+  });
+  it('TT99: có TK mới, không có TK đã bỏ, cha tồn tại, tên khớp văn bản', () => {
+    const rows = loadCoaTemplate('TT99'); const by = new Map(rows.map((r) => [r.code, r]));
+    // 137, 246, 351 không có trong bảng danh mục Phụ lục II TT 99/2025 nên không đòi hỏi.
+    for (const c of ['215', '2295', '332', '1383', '215121', '215122', '82111', '82112']) expect(by.has(c), `thiếu TK mới ${c}`).toBe(true);
+    for (const c of [...TT99_REMOVED, '137', '246', '351']) expect(by.has(c), `TK ${c} không có trong Phụ lục II TT99`).toBe(false);
+    for (const r of rows) if (r.parentCode) expect(by.has(r.parentCode), `${r.code}: thiếu cha ${r.parentCode}`).toBe(true);
+    expect(by.get('112')?.name).toBe('Tiền gửi không kỳ hạn');
+    expect(by.get('1383')?.name).toBe('Thuế TTĐB của hàng nhập khẩu');
+    expect(by.get('131')?.subledgerKind).toBe('receivable'); expect(by.get('331')?.subledgerKind).toBe('payable');
+  });
+  it('TT99: cột TK của DesBC_*_99 (bản sao TT200 của SUNSOFT) có trong tt99, trừ ngoại lệ có lý do', () => {
     const by = new Set(loadCoaTemplate('TT99').map((r) => r.code));
-    for (const c of ['137', '215', '2295', '246', '332', '351', '1383']) expect(by.has(c), `thiếu TK mới ${c}`).toBe(true);
-    for (const c of TT99_REMOVED) expect(by.has(c), `TK ${c} đã bỏ theo TT99`).toBe(false);
-    for (const c of kept(refCodes('DesBC_CDKT_B01_99.csv', 'TK'))) expect(by.has(c), `B01 tham chiếu ${c}`).toBe(true);
-    for (const c of kept([...refCodes('DesBC_KQKD_LAILO_99.csv', 'TK_TI'), ...refCodes('DesBC_KQKD_LAILO_99.csv', 'TK_DU')])) expect(by.has(c), `B02 tham chiếu ${c}`).toBe(true);
+    // Ngoại lệ: 142, 342, 5211-5213 chỉ có trong TT200; TT99 dùng 242, 341 (3412) và 521 không chia cấp 2. Các bảng này không phải nguồn TT99.
+    const TT200_ONLY = ['142', '342', '5211', '5212', '5213'];
+    const refs = [...refCodes('DesBC_CDKT_B01_99.csv', 'TK'), ...refCodes('DesBC_KQKD_LAILO_99.csv', 'TK_TI'), ...refCodes('DesBC_KQKD_LAILO_99.csv', 'TK_DU')];
+    const missing = [...new Set(kept(refs))].filter((c) => !by.has(c)).sort();
+    expect(missing, 'TK tham chiếu không có trong tt99').toEqual(TT200_ONLY);
+  });
+  it('TT133: khớp Phụ lục 1 (không có 521; 642 có 6421, 6422; 1386 ký quỹ)', () => {
+    const by = new Map(loadCoaTemplate('TT133').map((r) => [r.code, r]));
+    expect(loadCoaTemplate('TT133')).toHaveLength(123);
+    expect(by.has('521')).toBe(false); expect(by.get('642')?.name).toBe('Chi phí quản lý kinh doanh');
+    expect(by.get('1386')?.name).toBe('Cầm cố, thế chấp, ký quỹ, ký cược'); expect(by.get('3562')?.name).toContain('khoa học');
   });
 });

@@ -67,14 +67,14 @@ describe('sinh tài khoản từ mẫu', () => {
     expect((await list(cookie, 'TT200')).length).toBe(await templateCount('TT200'));
   });
 
-  it('TT99 chưa có mẫu: tạo năm tài chính bị 409 COA_TEMPLATE_PENDING và không để lại kỳ nào', async ({ skip }) => {
-    if ((await templateCount('TT99')) > 0) skip('Mẫu TT99 đã có dữ liệu, trường hợp chờ văn bản gốc không còn áp dụng');
+  it('TT99 đã có mẫu từ Phụ lục II: tạo năm tài chính TT99 sinh đủ tài khoản', async () => {
+    expect(await templateCount('TT99')).toBe(184);
     const { cookie } = await bootstrapTenant(ctx, { code: `CE${Date.now()}` });
     const r = await post(cookie, '/api/fiscal-years', { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT99' });
-    expect(r.statusCode).toBe(409); expect(r.json().error.code).toBe('COA_TEMPLATE_PENDING');
-    expect((await ctx.app.inject({ method: 'GET', url: '/api/fiscal-years', headers: { cookie } })).json()).toEqual([]);
-    const g = await post(cookie, '/api/accounts/generate', { regime: 'TT99' });
-    expect(g.statusCode).toBe(409); expect(g.json().error.code).toBe('COA_TEMPLATE_PENDING');
+    expect(r.statusCode).toBe(201);
+    const rows = await list(cookie, 'TT99');
+    expect(rows.length).toBe(184);
+    expect(rows.some((x) => x.code === '1383')).toBe(true); expect(rows.some((x) => x.code === '161')).toBe(false);
   });
 
   it('năm thứ hai cùng chế độ không sinh lại tài khoản', async () => {
