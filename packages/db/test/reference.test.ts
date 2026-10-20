@@ -15,7 +15,7 @@ const baseAdmin = process.env.DATABASE_ADMIN_URL!;
 const adminUrl = withDb(baseAdmin);
 const admin = async (text: string): Promise<void> => { const c = new pg.Client({ connectionString: baseAdmin }); await c.connect(); try { await c.query(text); } finally { await c.end(); } };
 
-let t: TestDb;
+let t: TestDb; // beforeAll có thể hỏng trước khi gán: afterAll dùng t?. để vẫn xóa DB tạm
 beforeAll(async () => {
   await admin(`CREATE DATABASE ${dbName}`);
   await migrate(adminUrl);
@@ -24,7 +24,7 @@ beforeAll(async () => {
   const appPool = createPool(withDb(process.env.DATABASE_URL!));
   t = { admin: createDb(adminPool), db: createDb(appPool), close: async () => { await adminPool.end(); await appPool.end(); } };
 });
-afterAll(async () => { await t.close(); await admin(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`); });
+afterAll(async () => { await t?.close(); await admin(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`); });
 
 const count = async (regime: string): Promise<number> =>
   Number((await sql<{ n: string }>`SELECT count(*) AS n FROM coa_template WHERE regime = ${regime}`.execute(t.admin)).rows[0]!.n);

@@ -6,6 +6,8 @@ Kiểm thử API, cơ sở dữ liệu và worker chạy trên PostgreSQL thật
 
 Mỗi lần `pnpm test` (hoặc `pnpm -F <gói> test`) tự tạo cơ sở dữ liệu `ketoan_t_<8 hex>` trên cùng máy chủ với `DATABASE_ADMIN_URL`, chạy migration và nạp dữ liệu tham chiếu vào đó, trỏ `DATABASE_URL` và `DATABASE_ADMIN_URL` của kiểm thử sang nó, rồi xóa khi xong (`packages/db/src/test-global-setup.ts`). Cơ sở dữ liệu phát triển `ketoan` không bị ghi; không cần tạo hay xóa DB thủ công. Vai trò `app_user` là vai trò của cả cụm nên không cần tạo lại. Hai biến gốc lấy từ môi trường hoặc `.env`; thiếu thì kiểm thử báo lỗi ngay.
 
+Tiến trình kiểm thử bị giết (SIGKILL, mất điện) để lại `ketoan_t_*` hoặc `ketoan_ref_*`. Liệt kê bằng `psql "$DATABASE_ADMIN_URL" -Atc "SELECT datname FROM pg_database WHERE datname ~ '^ketoan_(t|ref)_'"` rồi xóa từng cái bằng `dropdb --force <tên>`.
+
 - `KT_TEST_KEEP_DB=1`: giữ lại cơ sở dữ liệu tạm khi xong (tên in ra stderr) để điều tra; tự xóa bằng `dropdb`.
 - Kiểm thử vẫn chạy tuần tự (`--no-file-parallelism`) vì máy chỉ 2 CPU.
 
