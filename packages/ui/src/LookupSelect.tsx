@@ -34,13 +34,17 @@ export function LookupSelect({ catalog, value, onChange, valueField = 'code', qu
   const timer = useRef<ReturnType<typeof setTimeout>>();
   const ctrl = useRef<AbortController>();
   const seq = useRef(0);
-  // Chỉ kết quả của lần gõ mới nhất được áp dụng: phản hồi về muộn của lần cũ bị bỏ (và yêu cầu cũ bị hủy).
-  const load = useCallback((q: string) => {
-    const mine = ++seq.current; ctrl.current?.abort(); const c = new AbortController(); ctrl.current = c;
-    find(q, c.signal).then((r) => { if (mine === seq.current) setRows(r); }).catch(() => { if (mine === seq.current) setRows([]); });
+  // Mỗi lần gõ tăng seq; chỉ kết quả của lần gõ mới nhất được áp dụng (phản hồi về muộn của lần cũ bị bỏ, yêu cầu cũ bị hủy).
+  const load = useCallback((q: string, mine: number) => {
+    ctrl.current?.abort(); const c = new AbortController(); ctrl.current = c;
+    find(q, c.signal).then((r) => { if (mine === seq.current) setRows(r); }).catch((e: unknown) => {
+      if (c.signal.aborted || (e as { name?: string } | null)?.name === 'AbortError') return; // bị hủy vì lần gõ sau hoặc gỡ thành phần: không đụng danh sách
+      console.error(e);
+      if (mine === seq.current) setRows([]);
+    });
   }, [find]);
-  const search = (q: string) => { clearTimeout(timer.current); timer.current = setTimeout(() => load(q), 250); };
-  useEffect(() => { load(''); return () => { clearTimeout(timer.current); ctrl.current?.abort(); seq.current++; }; }, [load]);
+  const search = (q: string) => { const mine = ++seq.current; clearTimeout(timer.current); timer.current = setTimeout(() => load(q, mine), 250); };
+  useEffect(() => { load('', ++seq.current); return () => { clearTimeout(timer.current); ctrl.current?.abort(); seq.current++; }; }, [load]);
   const options = [...rows.map((r) => ({ value: String(r[valueField]), label: `${r.code} - ${r.name}${r.inactive ? ' (ngưng dùng)' : ''}` })), ...(quickAddFields ? [{ value: QUICK, label: '+ Thêm nhanh…' }] : [])];
   return (
     <>

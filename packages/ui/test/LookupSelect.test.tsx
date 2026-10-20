@@ -101,6 +101,17 @@ describe('LookupSelect', () => {
     expect(signals[1]!.aborted).toBe(true);
   });
 
+  it('lỗi tải (không phải hủy) thì danh sách rỗng, ghi log và không làm sập', async () => {
+    const err = new Error('Mất kết nối');
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const fetcher = vi.fn().mockRejectedValue(err);
+    render(<LookupSelect catalog="party" fetcher={fetcher} />);
+    await waitFor(() => expect(log).toHaveBeenCalledWith(err));
+    await userEvent.click(screen.getByRole('combobox'));
+    expect(screen.queryAllByRole('option')).toHaveLength(0);
+    log.mockRestore();
+  });
+
   describe('mặc định gọi API danh mục', () => {
     afterEach(() => { vi.unstubAllGlobals(); });
     const stub = () => { const f = vi.fn(async () => ({ ok: true, json: async () => ({ rows: [{ id: '1', code: 'KH1', name: 'Còn dùng', is_active: true }, { id: '2', code: 'KH2', name: 'Cũ', is_active: false }] }) })); vi.stubGlobal('fetch', f); return f; };

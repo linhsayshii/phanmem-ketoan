@@ -65,7 +65,7 @@ export default function CatalogPage() {
       {can('catalog.delete') && <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: `Xóa ${def.label.toLowerCase()} này?`, onOk: () => remove.mutate(idOf(p.data!)) })}>Xóa</Button>}</Space>) : null }] : [],
   [def, can, form, remove.mutate, toggleActive.mutate]);
   const add = () => { setEditing('new'); form.resetFields(); };
-  useHotkeys({ Insert: () => { if (def && can('catalog.create')) add(); } });
+  useHotkeys({ Insert: () => { if (def && can('catalog.create') && !editing) add(); } }); // đang mở hộp thoại thì không xóa form đang sửa
   if (!def) return null;
   return (
     <>

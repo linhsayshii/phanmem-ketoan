@@ -10,11 +10,6 @@ export function nextCellOnEnter(pos: CellPos, g: GridShape): Move {
   if (pos.row + 1 < g.rowCount) return { row: pos.row + 1, col: first, addRow: false };
   return { row: pos.row + 1, col: first, addRow: true };
 }
-// Ô kế tiếp nhưng không thêm dòng ở cuối lưới. gridKeyAction không còn gọi hàm này (Tab giống Enter, kể cả thêm dòng).
-export function nextCellOnTab(pos: CellPos, g: GridShape): Move {
-  const m = nextCellOnEnter(pos, g);
-  return m.addRow ? { ...pos, addRow: false } : m;
-}
 export const isLookupKey = (e: { key: string }): boolean => e.key === 'F4';
 // Đang soạn chữ bằng bộ gõ (Telex/VNI): Enter chốt chữ vừa soạn, không phải lệnh cho lưới. Safari gửi compositionend trước keydown nên chỉ còn keyCode 229.
 export const isImeComposing = (e: { isComposing?: boolean; keyCode?: number }): boolean => !!e.isComposing || e.keyCode === 229;
