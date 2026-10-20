@@ -27,9 +27,11 @@ services:
       PORT: "3000"
       WEB_ORIGIN: http://localhost:8080
       BACKUP_DIR: /backups
+      ATTACHMENT_DIR: /attachments
     ports: ["3000:3000"]
     volumes:
       - backups:/backups:ro
+      - attachments:/attachments
     depends_on:
       postgres: { condition: service_healthy }
     command: ["sh", "-c", "node --import tsx packages/db/src/migrate-cli.ts && exec node --import tsx apps/api/src/server.ts"]
@@ -56,3 +58,4 @@ services:
 volumes:
   pgdata:
   backups:
+  attachments:

@@ -1,0 +1,64 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import VoucherPage from '../src/pages/Voucher.js';
+
+const mocks = vi.hoisted(() => ({ api: vi.fn(), id: { v: 'moi' }, perms: { has: (_c: string): boolean => true } }));
+vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: class ApiError extends Error {} }));
+vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: (c: string) => mocks.perms.has(c) }) }));
+// lưới AG Grid và ô tra danh mục nặng trong jsdom và không thuộc điều đang kiểm tra (nút theo trạng thái/quyền); đường nhập phím được kiểm bằng Playwright
+vi.mock('@kt/ui', () => ({ KeyboardGrid: () => null, LookupSelect: () => null }));
+vi.mock('@tanstack/react-router', () => ({ useParams: () => ({ id: mocks.id.v }), useNavigate: () => vi.fn() }));
+
+const voucher = (state: string, extra: object = {}) => ({ id: 'v1', voucherType: 'PKT', voucherNo: state === 'draft' ? null : 'PKT00001', postingDate: '2026-01-05', documentDate: '2026-01-05', state, description: 'Chi VPP',
+  partyCode: null, currencyCode: 'VND', fxRate: null, version: 3, totalDebit: '1500000',
+  lines: [{ lineNo: 1, accountCode: '6422', accountName: 'CP QLDN', debit: '1500000', credit: '0', description: null, partyCode: null, departmentCode: null, projectCode: null, costItemCode: null },
+    { lineNo: 2, accountCode: '1111', accountName: 'Tiền mặt', debit: '0', credit: '1500000', description: null, partyCode: null, departmentCode: null, projectCode: null, costItemCode: null }], ...extra });
+
+vi.setConfig({ testTimeout: 30_000 }); // antd Form + DatePicker trong jsdom chậm khi máy bận
+
+describe('Màn hình Phiếu kế toán: nút theo trạng thái và quyền', () => {
+  const renderPage = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><VoucherPage /></QueryClientProvider>);
+  const stateOf = (state: string) => mocks.api.mockImplementation(async (path: string) => (path === '/api/vouchers/v1' ? voucher(state) : []));
+  beforeEach(() => { mocks.perms.has = () => true; mocks.id.v = 'v1'; });
+  afterEach(() => { mocks.api.mockReset(); });
+
+  it('chứng từ mới: có Lưu và Ghi sổ, chưa có Nhân bản/In/Đính kèm', () => {
+    mocks.id.v = 'moi';
+    renderPage();
+    expect(screen.getByText('Phiếu kế toán (mới)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Lưu/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ghi sổ/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nhân bản' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Đính kèm:')).not.toBeInTheDocument();
+  });
+
+  it('nháp: Ghi sổ (F9), Hủy, Nhân bản; không có Bỏ ghi sổ/Đảo', async () => {
+    stateOf('draft'); renderPage();
+    expect(await screen.findByRole('button', { name: 'Ghi sổ (F9)' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Hủy' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nhân bản' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Bỏ ghi sổ' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Đảo' })).not.toBeInTheDocument();
+    expect(await screen.findByText('Tổng Nợ: 1.500.000')).toBeInTheDocument();
+  });
+
+  it('đã ghi sổ: Bỏ ghi sổ cần cả unpost và edit_posted; không còn Ghi sổ/Hủy', async () => {
+    stateOf('posted'); renderPage();
+    expect(await screen.findByRole('button', { name: 'Bỏ ghi sổ' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Đảo' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Ghi sổ \(F9\)/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Hủy' })).not.toBeInTheDocument();
+  });
+  it('đã ghi sổ, thiếu quyền sửa sau ghi sổ: không có Bỏ ghi sổ', async () => {
+    mocks.perms.has = (c) => c !== 'voucher.edit_posted'; stateOf('posted'); renderPage();
+    await screen.findByRole('button', { name: 'Đảo' });
+    expect(screen.queryByRole('button', { name: 'Bỏ ghi sổ' })).not.toBeInTheDocument();
+  });
+  it('đã đảo: chỉ xem (không Lưu)', async () => {
+    stateOf('reversed'); renderPage();
+    await screen.findByText('Đã đảo');
+    expect(screen.queryByRole('button', { name: /Lưu/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nhân bản' })).toBeInTheDocument();
+  });
+});

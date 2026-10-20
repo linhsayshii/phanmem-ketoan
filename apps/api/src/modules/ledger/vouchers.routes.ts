@@ -5,6 +5,9 @@ import { sql, type Transaction } from 'kysely';
 import { QUEUES, type Database } from '@kt/db';
 import * as S from './vouchers.service.js';
 import { AppError } from '../../plugins/errors.js';
+import { formNoFor } from '../reporting/print/forms.js';
+import { renderPdf } from '../reporting/print/pdf.js';
+import { renderVoucherHtml } from '../reporting/print/voucherHtml.js';
 
 const idParam = z.object({ id: z.string().uuid() });
 
@@ -30,6 +33,21 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       state: z.enum(['draft', 'posted', 'reversed', 'cancelled']).optional(), q: z.string().optional(), page: z.coerce.number().int().min(1).default(1), size: z.coerce.number().int().min(1).max(500).default(50) }) } },
     async (req) => app.withTenant(req, (trx) => S.listVouchers(trx, req.query)));
   app.get('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.view'), schema: { params: idParam } }, async (req) => app.withTenant(req, (trx) => S.getVoucher(trx, req.params.id)));
+
+  app.get('/api/vouchers/:id/print', { preHandler: app.requirePermission('voucher.print'), schema: { params: idParam, querystring: z.object({ format: z.enum(['html', 'pdf']).default('html') }) } }, async (req, reply) => {
+    const { v, c } = await app.withTenant(req, async (trx) => {
+      const v = await S.getVoucher(trx, req.params.id);
+      const t = await trx.selectFrom('tenant').selectAll().where('id', '=', req.auth!.tenantId!).executeTakeFirstOrThrow();
+      // chế độ kế toán gắn với năm tài chính của chứng từ (một công ty có thể giữ nhiều chế độ)
+      const { regime } = await trx.selectFrom('voucher as v').innerJoin('fiscal_period as p', 'p.fiscal_year', 'v.fiscal_year').select('p.regime').where('v.id', '=', v.id).executeTakeFirstOrThrow();
+      const f = formNoFor(regime, 'PKT');
+      return { v, c: { name: t.name, address: t.address, taxCode: t.tax_code, legalRep: t.legal_rep, chiefAccountant: t.chief_accountant, formNo: f.formNo, issuedBy: f.issuedBy } };
+    });
+    const html = renderVoucherHtml(v, c);
+    if (req.query.format === 'html') return reply.type('text/html; charset=utf-8').send(html);
+    // số chứng từ lấy từ tiền tố/hậu tố người dùng cấu hình nên phải mã hóa (RFC 5987), không đưa thẳng vào tiêu đề
+    return reply.type('application/pdf').header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(`${v.voucherNo ?? 'phieu-ke-toan'}.pdf`)}`).send(await renderPdf(html));
+  });
 
   app.post('/api/vouchers', { preHandler: app.requirePermission('voucher.create'), schema: { body: S.voucherInput.extend({ autoPost: z.boolean().optional() }) } }, async (req, reply) => {
     if (req.body.autoPost && !req.auth!.permissions.has('voucher.post')) throw new AppError('FORBIDDEN', 'Thiếu quyền voucher.post', 403);

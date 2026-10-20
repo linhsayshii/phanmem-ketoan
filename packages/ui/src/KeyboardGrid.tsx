@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeQuartz, type CellKeyDownEvent, type ColDef, type GridApi } from 'ag-grid-community';
-import { gridKeyAction } from '@kt/domain';
+import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef, type GetRowIdParams, type GridApi } from 'ag-grid-community';
+import { gridKeyAction, type GridKeyAction } from '@kt/domain';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -10,8 +10,21 @@ export interface KeyboardGridProps<T> {
   onLookup?: (colId: string, rowIndex: number) => void; height?: number | string; readOnly?: boolean;
 }
 
+// Chuyển ô sang (row, col) và vào chế độ sửa. Dòng mới thêm chỉ có sau khi chủ cập nhật `rows` và lưới áp dụng, nên chờ tới khi dòng xuất hiện.
+function goTo<T>(api: GridApi<T>, row: number, col: string, tries = 10): void {
+  if (row >= api.getDisplayedRowCount() && tries > 0) { setTimeout(() => goTo(api, row, col, tries - 1), 20); return; }
+  api.setFocusedCell(row, col); api.startEditingCell({ rowIndex: row, colKey: col });
+}
+
 export function KeyboardGrid<T extends object>({ rows, columns, onRowsChange, addRowTemplate, onLookup, height = 320, readOnly }: KeyboardGridProps<T>) {
   const apiRef = useRef<GridApi<T> | null>(null);
+  // Mã dòng theo danh tính đối tượng: có getRowId thì AG Grid cập nhật dòng tại chỗ thay vì dựng lại toàn bộ khi `rows` đổi, nên ô đang sửa (vừa chuyển sang bằng Enter) không bị hủy.
+  // AG Grid ghi giá trị thẳng vào đối tượng dòng, nên onCellValueChanged giữ nguyên đối tượng (mã không đổi), chỉ thay mảng.
+  const rowIds = useRef(new WeakMap<object, string>()); const rowSeq = useRef(0);
+  const getRowId = useCallback((p: GetRowIdParams<T>) => { let id = rowIds.current.get(p.data); if (id === undefined) { id = String(++rowSeq.current); rowIds.current.set(p.data, id); } return id; }, []);
+  // rowsRef: bản mới nhất, kể cả thay đổi chủ chưa kịp render lại (cellValueChanged tới trễ, sau khi Enter đã thêm dòng); emit cập nhật nó ngay.
+  const rowsRef = useRef(rows); rowsRef.current = rows;
+  const emit = (next: T[]) => { rowsRef.current = next; onRowsChange(next); };
   const colDefs = useMemo(() => columns.map((c) => ({ ...c, editable: readOnly ? false : c.editable ?? true })), [columns, readOnly]);
   const editableIdx = useMemo(() => colDefs.map((c, i) => (c.editable ? i : -1)).filter((i) => i >= 0), [colDefs]);
   const colId = (i: number) => (colDefs[i]?.colId ?? colDefs[i]?.field) as string | undefined;
@@ -19,40 +32,41 @@ export function KeyboardGrid<T extends object>({ rows, columns, onRowsChange, ad
   const decide = useCallback((ev: KeyboardEvent, rowIndex: number | null, id: string, api: GridApi<T>) =>
     gridKeyAction(ev, { row: rowIndex ?? 0, col: colDefs.findIndex((c) => (c.colId ?? c.field) === id) },
       { rowCount: api.getDisplayedRowCount(), editableCols: editableIdx, readOnly: !!readOnly }), [colDefs, editableIdx, readOnly]);
+  // Phím do lưới tự xử lý được áp dụng NGAY trong suppressKeyboardEvent (đồng bộ). Sự kiện cellKeyDown của AG Grid luôn tới trễ một nhịp (setTimeout), nên xử lý ở đó thì
+  // phím gõ liền sau Enter (gõ nhanh, kịch bản tự động) rơi vào ô cũ. Hàm áp dụng đọc qua ref để defaultColDef không đổi mỗi lần `rows` đổi.
+  const apply = (action: GridKeyAction, colIdOfCell: string, row: number, api: GridApi<T>) => {
+    switch (action.type) {
+      case 'lookup': onLookup?.(colIdOfCell, row); return;
+      case 'deleteRow': emit(rowsRef.current.filter((_, i) => i !== row)); return;
+      case 'insertRow': { const copy = [...rowsRef.current]; copy.splice(row, 0, addRowTemplate()); emit(copy); return; }
+      case 'move': {
+        api.stopEditing();
+        if (action.addRow) emit([...rowsRef.current, addRowTemplate()]);
+        const target = action.pos.col >= 0 ? colId(action.pos.col) : undefined;
+        if (target !== undefined) goTo(api, action.pos.row, target);
+      }
+    }
+  };
+  const applyRef = useRef(apply); applyRef.current = apply;
   // Chỉ chặn xử lý mặc định của AG Grid (và của trình duyệt, vd. Tab rời lưới) với phím mà lưới tự xử lý (không phải `none`);
-  // Shift+Tab/Shift+Enter, lưới chỉ đọc... vẫn mặc định. preventDefault phải gọi ở đây (đồng bộ): cellKeyDown của AG Grid tới trễ, sau khi phím đã xử lý xong.
+  // Shift+Tab/Shift+Enter, lưới chỉ đọc... vẫn mặc định. preventDefault phải gọi ở đây (đồng bộ).
   // sortable=false vì dòng được nhận diện theo chỉ số hiển thị.
   const defaultColDef = useMemo<ColDef<T>>(() => ({ resizable: true, sortable: false,
     suppressKeyboardEvent: (p) => {
       const ev = p.event as KeyboardEvent;
-      if (decide(ev, p.node.rowIndex, p.column.getColId(), p.api).type === 'none') return false;
-      ev.preventDefault(); return true;
+      const row = p.node.rowIndex ?? 0; const id = p.column.getColId();
+      const action = decide(ev, p.node.rowIndex, id, p.api);
+      if (action.type === 'none') return false;
+      ev.preventDefault();
+      if (ev.type === 'keydown') applyRef.current(action, id, row, p.api); // suppress cũng được gọi cho keyup
+      return true;
     } }), [decide]);
-
-  const onCellKeyDown = useCallback((e: CellKeyDownEvent<T>) => {
-    const ev = e.event as KeyboardEvent | undefined; const api = e.api; if (!ev) return;
-    const action = decide(ev, e.rowIndex, e.column.getColId(), api);
-    if (action.type === 'none') return;
-    const row = e.rowIndex ?? 0;
-    switch (action.type) {
-      case 'lookup': onLookup?.(e.column.getColId(), row); return;
-      case 'deleteRow': onRowsChange(rows.filter((_, i) => i !== row)); return;
-      case 'insertRow': { const copy = [...rows]; copy.splice(row, 0, addRowTemplate()); onRowsChange(copy); return; }
-      case 'move': {
-        api.stopEditing();
-        if (action.addRow) onRowsChange([...rows, addRowTemplate()]);
-        const target = action.pos.col >= 0 ? colId(action.pos.col) : undefined;
-        if (target === undefined) return;
-        setTimeout(() => { api.setFocusedCell(action.pos.row, target); api.startEditingCell({ rowIndex: action.pos.row, colKey: target }); }, 0);
-      }
-    }
-  }, [decide, colDefs, rows, onRowsChange, addRowTemplate, onLookup]);
 
   return (
     <div style={{ height }}>
-      <AgGridReact<T> theme={themeQuartz} rowData={rows} columnDefs={colDefs} singleClickEdit stopEditingWhenCellsLoseFocus suppressClickEdit={false}
-        onGridReady={(e) => { apiRef.current = e.api; }} onCellKeyDown={onCellKeyDown}
-        onCellValueChanged={(e) => { const copy = [...rows]; copy[e.rowIndex ?? 0] = { ...(e.data as T) }; onRowsChange(copy); }}
+      <AgGridReact<T> theme={themeQuartz} rowData={rows} getRowId={getRowId} columnDefs={colDefs} singleClickEdit stopEditingWhenCellsLoseFocus suppressClickEdit={false}
+        onGridReady={(e) => { apiRef.current = e.api; }}
+        onCellValueChanged={(e) => { const copy = [...rowsRef.current]; copy[e.rowIndex ?? 0] = e.data as T; emit(copy); }}
         defaultColDef={defaultColDef} />
     </div>
   );

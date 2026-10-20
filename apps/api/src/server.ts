@@ -3,6 +3,7 @@ import PgBoss from 'pg-boss';
 import { createDb, createPool } from '@kt/db';
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
+import { closePdfBrowser } from './modules/reporting/print/pdf.js';
 
 const config = loadConfig();
 const db = createDb(createPool(config.DATABASE_URL));
@@ -13,4 +14,4 @@ await boss.start();
 const app = await buildApp({ db, config, boss });
 await app.listen({ port: config.PORT, host: '0.0.0.0' });
 // dừng êm khi nhận SIGTERM/SIGINT (docker stop): đóng HTTP rồi mới ngắt hàng đợi
-for (const s of ['SIGTERM', 'SIGINT'] as const) process.once(s, () => { void app.close().then(() => boss.stop({ graceful: false, wait: false })).finally(() => process.exit(0)); });
+for (const s of ['SIGTERM', 'SIGINT'] as const) process.once(s, () => { void app.close().then(() => Promise.all([boss.stop({ graceful: false, wait: false }), closePdfBrowser()])).finally(() => process.exit(0)); });
