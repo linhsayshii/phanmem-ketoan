@@ -10,7 +10,7 @@ import { toCsv } from '../src/modules/tools/exportAuthority.js';
 import type * as Html from '../src/modules/reporting/print/html.js';
 import { assertPrintable, MAX_PRINT_ROWS, type ReportDoc } from '../src/modules/reporting/print/html.js';
 
-// Bọc assertPrintable bằng vi.fn nhưng mặc định gọi hàm thật: chỉ ca 413 mới ép nó ném lỗi.
+// Bọc assertPrintable bằng vi.fn nhưng mặc định gọi hàm thật: chỉ ca PDF quá lớn mới ép nó ném lỗi, ca năm tài chính đọc các lần gọi để biết sổ của năm nào.
 vi.mock('../src/modules/reporting/print/html.js', async (importOriginal) => {
   const m = await importOriginal<typeof Html>();
   return { ...m, assertPrintable: vi.fn(m.assertPrintable) };
@@ -21,6 +21,8 @@ let ctx: TestApp; let cookie: string; let tenantId: string;
 const exportBody = { from: '2026-01-01', to: '2026-01-31' };
 const post = (payload: object, c = cookie) => ctx.app.inject({ method: 'POST', url: '/api/export/authority', headers: { cookie: c }, payload });
 const exportCount = async () => (await sql<{ n: number }>`SELECT count(*) AS n FROM audit_event WHERE tenant_id = ${tenantId}::uuid AND action = 'export'`.execute(ctx.t.admin)).rows[0]!.n;
+const completedCount = async () => (await sql<{ n: number }>`SELECT count(*) AS n FROM audit_event WHERE tenant_id = ${tenantId}::uuid AND action = 'export_completed'`.execute(ctx.t.admin)).rows[0]!.n;
+const sha256 = (b: Buffer | string) => createHash('sha256').update(b).digest('hex');
 // Giải nén gói zip vào thư mục tạm, trả thư mục chứa các tệp.
 const unzip = (buf: Buffer) => {
   const dir = mkdtempSync(path.join(tmpdir(), 'kt-export-')); const zip = path.join(dir, 'x.zip'); writeFileSync(zip, buf);
@@ -60,13 +62,15 @@ describe('xuất dữ liệu cho cơ quan thẩm quyền', () => {
     const r = await post(exportBody);
     expect(r.statusCode, r.body).toBe(200); expect(r.headers['content-type']).toBe('application/zip');
     expect(r.headers['content-disposition']).toBe(`attachment; filename*=UTF-8''${encodeURIComponent('xuat-du-lieu-2026-01-01-2026-01-31.zip')}`);
-    const { dir, out } = unzip(r.rawPayload);
+    const { dir, out } = unzip(r.rawPayload); let manifestSha = '';
     try {
       const files = readdirSync(out);
       expect(files).toEqual(expect.arrayContaining(['README.txt', 'chung_tu.csv', 'dong_chung_tu.csv', 'he_thong_tai_khoan.csv', 'doi_tuong.csv', 'ky_ke_toan.csv', 'nhat_ky_kiem_toan.csv', 'so_nhat_ky_chung.pdf', 'so_cai.pdf', 'bang_can_doi_so_phat_sinh.pdf', 'MANIFEST.sha256']));
       expect(files).not.toContain('B01.pdf'); // chưa có định nghĩa báo cáo thì bỏ qua
       const ct = readFileSync(`${out}/chung_tu.csv`, 'utf8'); expect(ct.charCodeAt(0)).toBe(0xfeff); expect(ct.trim().split('\n')).toHaveLength(4);
-      expect(readFileSync(`${out}/dong_chung_tu.csv`, 'utf8').trim().split('\n')).toHaveLength(7); // 3 chứng từ trong kỳ x 2 dòng, không nháp, không chứng từ tháng 2
+      const lines = readFileSync(`${out}/dong_chung_tu.csv`, 'utf8').trim().split('\n');
+      expect(lines).toHaveLength(7); // 3 chứng từ trong kỳ x 2 dòng, không nháp, không chứng từ tháng 2
+      expect(lines[0]).toContain(';voucher_no;state;line_no;'); expect(lines.slice(1).map((l) => l.split(';')[2])).toEqual(Array(6).fill('posted')); // mỗi dòng mang trạng thái chứng từ
       for (const f of files.filter((x) => x.endsWith('.pdf'))) expect(readFileSync(`${out}/${f}`).subarray(0, 4).toString()).toBe('%PDF');
       const manifest = readFileSync(`${out}/MANIFEST.sha256`, 'utf8').trim().split('\n');
       expect(manifest.map((l) => l.split(/\s+/)[1]).sort()).toEqual(files.filter((f) => f !== 'MANIFEST.sha256').sort());
@@ -75,12 +79,17 @@ describe('xuất dữ liệu cho cơ quan thẩm quyền', () => {
       }
       expect(execSync('shasum -a 256 -c MANIFEST.sha256', { cwd: out }).toString()).toContain('README.txt: OK');
       const readme = readFileSync(`${out}/README.txt`, 'utf8');
-      expect(readme).toContain(`Công ty EX`); expect(readme).toContain('2026-01-01 đến 2026-01-31');
+      expect(readme).toContain(`Công ty EX`); expect(readme).toContain('2026-01-01 đến 2026-01-31'); expect(readme).toContain('giờ Việt Nam'); expect(readme).not.toContain('BỎ KHỎI GÓI'); // không PDF nào bị bỏ thì không có mục này
+      manifestSha = sha256(readFileSync(`${out}/MANIFEST.sha256`));
       expect(readFileSync(`${out}/doi_tuong.csv`, 'utf8')).toContain('KH001;"Công ty ""A""; B"');
     } finally { rmSync(dir, { recursive: true, force: true }); }
     expect(await exportCount()).toBe(1);
     const ev = await sql<{ after: { from: string; to: string }; entity: string; entity_id: string }>`SELECT entity, entity_id, after FROM audit_event WHERE tenant_id = ${tenantId}::uuid AND action = 'export'`.execute(ctx.t.admin);
     expect(ev.rows[0]).toMatchObject({ entity: 'tenant', entity_id: tenantId, after: exportBody });
+    // Dòng thứ hai ghi sau khi zip dựng xong: khoảng kỳ cùng băm của MANIFEST.sha256 và của chính tệp zip trả về.
+    const done = await sql<{ after: object; entity: string; entity_id: string }>`SELECT entity, entity_id, after FROM audit_event WHERE tenant_id = ${tenantId}::uuid AND action = 'export_completed'`.execute(ctx.t.admin);
+    expect(done.rows).toHaveLength(1);
+    expect(done.rows[0]).toMatchObject({ entity: 'tenant', entity_id: tenantId, after: { ...exportBody, manifestSha256: manifestSha, zipSha256: sha256(r.rawPayload) } });
   });
 
   it('có B01 khi công ty đã định nghĩa; hệ tài khoản liệt kê đủ mọi hệ; nhật ký kiểm toán chỉ trong khoảng kỳ; kỳ kế toán có hash_tail', async () => {
@@ -108,6 +117,33 @@ describe('xuất dữ liệu cho cơ quan thẩm quyền', () => {
     expect(await exportCount()).toBe(before + 1); // mỗi lần xuất một dòng audit; dòng của lần này không nằm trong gói của chính nó
   });
 
+  it('nhật ký kiểm toán tính khoảng kỳ theo giờ Việt Nam: từ 00:00 ngày bắt đầu đến 23:59:59 ngày kết thúc', async () => {
+    const probe = (ts: string, action: string) => sql`INSERT INTO audit_event(tenant_id, ts, action, entity, entity_id) VALUES (${tenantId}::uuid, ${ts}::timestamptz, ${action}, 'probe', 'p')`.execute(ctx.t.admin);
+    await probe('2025-12-31 16:59:59+00', 'bien_truoc'); // 23:59:59 ngày 31/12 giờ Việt Nam: ngoài
+    await probe('2025-12-31 17:00:00+00', 'bien_dau'); // 00:00:00 ngày 01/01: trong
+    await probe('2026-01-31 16:59:59+00', 'bien_cuoi'); // 23:59:59 ngày 31/01: trong
+    await probe('2026-01-31 17:00:00+00', 'bien_sau'); // 00:00:00 ngày 01/02: ngoài
+    const r = await post(exportBody); expect(r.statusCode, r.body).toBe(200);
+    const { dir, out } = unzip(r.rawPayload);
+    try {
+      const audit = readFileSync(`${out}/nhat_ky_kiem_toan.csv`, 'utf8');
+      expect(audit).toContain('bien_dau'); expect(audit).toContain('bien_cuoi'); expect(audit).not.toContain('bien_truoc'); expect(audit).not.toContain('bien_sau');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('chứng từ nháp đã hủy (cancelled): dòng vẫn có trong dong_chung_tu.csv kèm trạng thái, README nói rõ không thuộc sổ', async () => {
+    const draft = (await pkt('2026-01-12', 6, false)).json().id as string;
+    expect((await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${draft}/discard`, headers: { cookie } })).statusCode).toBe(200);
+    const r = await post(exportBody); expect(r.statusCode, r.body).toBe(200);
+    const { dir, out } = unzip(r.rawPayload);
+    try {
+      const rowsOf = (f: string) => readFileSync(`${out}/${f}`, 'utf8').trim().split('\n').map((l) => l.split(';')).filter((c) => c[0] === draft);
+      expect(rowsOf('dong_chung_tu.csv').map((c) => c[2])).toEqual(['cancelled', 'cancelled']);
+      expect(rowsOf('chung_tu.csv').map((c) => c[6])).toEqual(['cancelled']);
+      expect(readFileSync(`${out}/README.txt`, 'utf8')).toContain('nháp đã hủy bỏ');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('cần quyền export.authority và đủ ba cờ nhạy cảm (gói gồm Nhật ký chung và Sổ Cái); thiếu thì 403 và không ghi audit', async () => {
     const before = await exportCount();
     const noFlags = await post(exportBody, await userCookie('ketoan_truong', []));
@@ -129,13 +165,51 @@ describe('xuất dữ liệu cho cơ quan thẩm quyền', () => {
     expect(await exportCount()).toBe(before);
   });
 
-  it('sổ quá lớn để in PDF: 413 PRINT_TOO_LARGE trước khi dựng PDF, không ghi audit', async () => {
-    const before = await exportCount();
-    // Giả lập sổ vượt ngưỡng bằng chính hàm chặn thật (tạo hơn 40.000 dòng sổ trong kiểm thử là quá nặng).
+  it('PDF vượt 40.000 dòng: bỏ riêng tệp đó, gói vẫn 200 kèm ghi chú trong README, vẫn ghi audit', async () => {
+    const before = await exportCount(); const doneBefore = await completedCount();
+    // Giả lập sổ vượt ngưỡng bằng chính hàm chặn thật (tạo hơn 40.000 dòng sổ trong kiểm thử là quá nặng); lần gọi đầu là Sổ Nhật ký chung.
     const real = await vi.importActual<typeof Html>('../src/modules/reporting/print/html.js');
     vi.mocked(assertPrintable).mockImplementationOnce(() => real.assertPrintable([{ rows: new Array(MAX_PRINT_ROWS + 1) } as unknown as ReportDoc]));
-    const r = await post(exportBody);
-    expect([r.statusCode, r.json().error.code]).toEqual([413, 'PRINT_TOO_LARGE']);
-    expect(await exportCount()).toBe(before);
+    const r = await post(exportBody); expect(r.statusCode, r.body).toBe(200); expect(r.headers['content-type']).toBe('application/zip');
+    const { dir, out } = unzip(r.rawPayload);
+    try {
+      const files = readdirSync(out);
+      expect(files).not.toContain('so_nhat_ky_chung.pdf'); expect(files).toEqual(expect.arrayContaining(['so_cai.pdf', 'bang_can_doi_so_phat_sinh.pdf', 'chung_tu.csv', 'MANIFEST.sha256'])); // CSV không bị giới hạn
+      const readme = readFileSync(`${out}/README.txt`, 'utf8');
+      expect(readme).toContain('BỎ KHỎI GÓI'); expect(readme).toContain('so_nhat_ky_chung.pdf: vượt 40.000 dòng, in theo từng phần'); expect(readme).not.toContain('so_cai.pdf: vượt');
+      expect(readFileSync(`${out}/MANIFEST.sha256`, 'utf8')).not.toContain('so_nhat_ky_chung.pdf');
+      expect(execSync('shasum -a 256 -c MANIFEST.sha256', { cwd: out }).toString()).toContain('README.txt: OK');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+    expect(await exportCount()).toBe(before + 1); expect(await completedCount()).toBe(doneBefore + 1);
+  });
+
+  it('PDF là sổ của năm tài chính chứa ngày kết thúc, kể cả năm tài chính bắt đầu từ tháng 4; ngày kết thúc ngoài mọi kỳ thì 404', async () => {
+    const { cookie: c } = await bootstrapTenant(ctx, { code: `EA${Date.now()}` });
+    const api = (url: string, payload: object) => ctx.app.inject({ method: 'POST', url, headers: { cookie: c }, payload });
+    expect((await api('/api/fiscal-years', { fiscalYear: 2026, dateFrom: '2026-04-01', months: 12, regime: 'TT133' })).statusCode).toBe(201); // năm 2026 chạy 01/04/2026 đến 31/03/2027
+    for (const date of ['2026-05-10', '2027-02-10']) expect((await api('/api/vouchers', { voucherType: 'PKT', postingDate: date, documentDate: date, description: 'CT', autoPost: true, lines: [{ accountCode: '6422', debit: '1000' }, { accountCode: '1111', credit: '1000' }] })).statusCode).toBe(201);
+    vi.mocked(assertPrintable).mockClear();
+    const r = await post({ from: '2027-02-01', to: '2027-02-28' }, c); expect(r.statusCode, r.body).toBe(200); // lấy 2027 từ chuỗi ngày thì không có năm 2027: 404
+    const journal = vi.mocked(assertPrintable).mock.calls[0]![0][0]!; // nhóm PDF đầu tiên: Sổ Nhật ký chung
+    expect(journal.title).toBe('Sổ Nhật ký chung'); expect(journal.subtitle).toContain('01/04/2026'); expect(journal.subtitle).toContain('31/03/2027');
+    expect(journal.rows.map((x) => x['description'])).toEqual(expect.arrayContaining(['CT'])); expect(journal.rows).toHaveLength(4); // cả hai chứng từ của năm 2026, không chỉ tháng 2/2027
+    const { dir, out } = unzip(r.rawPayload);
+    try { expect(readFileSync(`${out}/chung_tu.csv`, 'utf8').trim().split('\n')).toHaveLength(2); } finally { rmSync(dir, { recursive: true, force: true }); } // CSV chỉ tháng 2/2027
+    const gap = await post({ from: '2026-03-01', to: '2026-03-31' }, c); // trước ngày bắt đầu năm tài chính
+    expect([gap.statusCode, gap.json().error.code]).toEqual([404, 'PERIOD_NOT_FOUND']);
+  });
+
+  it('ghi dòng export_completed không được thì không trả tệp (500), dòng export đã ghi ở bước đọc vẫn còn', async () => {
+    const before = await exportCount(); const doneBefore = await completedCount();
+    await sql`CREATE FUNCTION kt_test_fail_completed() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'kt_test: ghi audit thất bại' USING ERRCODE = 'XX000'; END $$`.execute(ctx.t.admin);
+    await sql.raw(`CREATE TRIGGER kt_test_fail_completed BEFORE INSERT ON audit_event FOR EACH ROW WHEN (NEW.action = 'export_completed' AND NEW.tenant_id = '${tenantId}') EXECUTE FUNCTION kt_test_fail_completed()`).execute(ctx.t.admin);
+    try {
+      const r = await post(exportBody);
+      expect(r.statusCode).toBe(500); expect(r.headers['content-type']).not.toContain('zip'); expect(r.rawPayload.subarray(0, 2).toString()).not.toBe('PK');
+    } finally {
+      await sql.raw('DROP TRIGGER kt_test_fail_completed ON audit_event').execute(ctx.t.admin);
+      await sql.raw('DROP FUNCTION kt_test_fail_completed()').execute(ctx.t.admin);
+    }
+    expect(await exportCount()).toBe(before + 1); expect(await completedCount()).toBe(doneBefore);
   });
 });

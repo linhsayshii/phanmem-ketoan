@@ -6,7 +6,7 @@ Mục đích: khi cơ quan thuế hoặc cơ quan có thẩm quyền yêu cầu 
 
 1. Vào menu Tiện ích → "Xuất dữ liệu cho cơ quan thẩm quyền".
 2. Chọn khoảng ngày ghi sổ, bấm "Xuất gói dữ liệu". Trình duyệt tải về tệp `xuat-du-lieu-<từ ngày>-<đến ngày>.zip`.
-3. Mỗi lần xuất được ghi vào Nhật ký kiểm toán (hành động `export`, kèm khoảng ngày và người xuất).
+3. Mỗi lần xuất được ghi vào Nhật ký kiểm toán hai dòng, kèm người xuất: `export` (khi đọc xong dữ liệu, có khoảng ngày) và `export_completed` (khi gói đã dựng xong, có thêm mã băm SHA-256 của `MANIFEST.sha256` và của chính tệp zip). Không ghi được dòng thứ hai thì máy chủ không trả tệp; dòng `export` đã ghi vẫn còn, nghĩa là lần xuất đó không hoàn tất.
 
 Quyền cần có:
 - Quyền "Xuất dữ liệu cho cơ quan thẩm quyền" (`export.authority`). Vai trò Kế toán viên mặc định không có quyền này.
@@ -19,19 +19,22 @@ Các tệp CSV mã hóa UTF-8 có BOM (Excel mở đúng tiếng Việt), phân 
 | Tệp | Nội dung |
 | --- | --- |
 | `README.txt` | Tên công ty, mã số thuế, khoảng kỳ, thời điểm xuất, mô tả từng tệp và cột |
-| `chung_tu.csv` | Phần đầu các chứng từ đã ghi sổ có ngày ghi sổ trong khoảng kỳ (gồm đã đảo, đã hủy; không có nháp), kèm `row_hash` |
-| `dong_chung_tu.csv` | Dòng định khoản của các chứng từ trên: tài khoản, Nợ/Có, ngoại tệ, đối tượng và các chiều phân tích |
+| `chung_tu.csv` | Phần đầu các chứng từ có ngày ghi sổ trong khoảng kỳ, gồm đã ghi sổ (`posted`), đã đảo (`reversed`) và nháp đã hủy bỏ (`cancelled`); không có nháp chưa hủy. Kèm `row_hash` |
+| `dong_chung_tu.csv` | Dòng định khoản của các chứng từ trên: trạng thái chứng từ (`state`), tài khoản, Nợ/Có, ngoại tệ, đối tượng và các chiều phân tích |
 | `he_thong_tai_khoan.csv` | Mọi hệ tài khoản của công ty (cột `regime`: TT99, TT133, TT200, TT58) |
 | `doi_tuong.csv` | Danh mục đối tượng |
 | `ky_ke_toan.csv` | Các kỳ kế toán, trạng thái khóa, `hash_tail` của kỳ khóa cứng |
-| `nhat_ky_kiem_toan.csv` | Mọi sự kiện trong khoảng kỳ (theo thời điểm xảy ra) với giá trị trước/sau dạng JSON |
+| `nhat_ky_kiem_toan.csv` | Mọi sự kiện trong khoảng kỳ, tính theo giờ Việt Nam (từ 00:00 ngày bắt đầu đến hết ngày kết thúc), với giá trị trước/sau dạng JSON |
 | `so_nhat_ky_chung.pdf`, `so_cai.pdf`, `bang_can_doi_so_phat_sinh.pdf` | Sổ Nhật ký chung, Sổ Cái (mọi tài khoản có số liệu), Bảng cân đối số phát sinh |
 | `B01.pdf`, `B02.pdf`, `B03.pdf` | Báo cáo tài chính; chỉ có khi công ty đã định nghĩa báo cáo đó |
 | `MANIFEST.sha256` | Mã băm SHA-256 của từng tệp trên (trừ chính nó) |
 
-Lưu ý: tệp CSV chỉ có dữ liệu trong khoảng ngày chọn, còn các tệp PDF là sổ và báo cáo của **cả năm tài chính chứa ngày kết thúc**. Khoảng ngày phải thuộc một năm tài chính đã tạo, nếu không máy chủ báo không có năm tài chính.
+Lưu ý về phạm vi:
+- Tệp CSV chỉ có dữ liệu trong khoảng ngày chọn. Các tệp PDF là sổ và báo cáo của **cả năm tài chính có kỳ chứa ngày kết thúc** (kỳ thường, không tính kỳ mở sổ). Năm tài chính không nhất thiết trùng năm dương lịch: năm tài chính bắt đầu 01/04/2026 và kết thúc 31/03/2027 thì ngày kết thúc 28/02/2027 cho ra sổ của cả năm đó.
+- Ngày kết thúc phải nằm trong một kỳ kế toán đã tạo, nếu không máy chủ báo không có kỳ kế toán chứa ngày đó (404) và không xuất gì.
+- Dòng của chứng từ có `state = cancelled` (nháp đã hủy bỏ, chưa từng ghi sổ) được giữ trong `dong_chung_tu.csv` để đối chiếu nhưng không thuộc sổ kế toán; muốn chỉ lấy dòng trong sổ thì lọc `state` là `posted` hoặc `reversed`.
 
-Giới hạn: PDF chỉ dựng được tới 40.000 dòng mỗi tệp. Năm có sổ lớn hơn bị từ chối (413 `PRINT_TOO_LARGE`) và không xuất gì; khi đó in từng sổ theo khoảng ngày ngắn hơn ở Báo cáo → Sổ sách kế toán hoặc xuất Excel. Tệp CSV không bị giới hạn.
+Giới hạn: một tệp PDF dựng được tối đa 40.000 dòng. Tệp PDF vượt ngưỡng được **bỏ riêng khỏi gói**, các tệp còn lại vẫn xuất bình thường (HTTP 200, vẫn ghi nhật ký kiểm toán). `README.txt` có mục "CÁC TỆP BỊ BỎ KHỎI GÓI" liệt kê từng tệp bị bỏ kèm lý do, ví dụ `so_cai.pdf: vượt 40.000 dòng, in theo từng phần`; khi đó in sổ đó riêng theo khoảng ngày ngắn hơn ở Báo cáo → Sổ sách kế toán hoặc xuất Excel. Tệp CSV không bị giới hạn nên luôn đủ trong gói. `MANIFEST.sha256` chỉ liệt kê các tệp có trong gói.
 
 ## Kiểm tra toàn vẹn
 
@@ -41,7 +44,7 @@ Giải nén gói, trong thư mục vừa giải nén chạy:
 shasum -a 256 -c MANIFEST.sha256
 ```
 
-Mỗi tệp báo `OK` thì không bị sửa kể từ lúc xuất (Windows: `certutil -hashfile <tệp> SHA256` rồi so với dòng tương ứng trong `MANIFEST.sha256`). Bản thân `MANIFEST.sha256` nên gửi qua kênh riêng hoặc ghi lại giá trị băm của nó khi bàn giao.
+Mỗi tệp báo `OK` thì không bị sửa kể từ lúc xuất (Windows: `certutil -hashfile <tệp> SHA256` rồi so với dòng tương ứng trong `MANIFEST.sha256`). Bản thân `MANIFEST.sha256` nên gửi qua kênh riêng hoặc ghi lại giá trị băm của nó khi bàn giao; hệ thống đã lưu sẵn giá trị này (và băm của cả tệp zip) trong dòng `export_completed` của Nhật ký kiểm toán để đối chiếu.
 
 Chuỗi hash của kỳ khóa cứng (cột `row_hash` ở `chung_tu.csv`, `hash_tail` ở `ky_ke_toan.csv`) kiểm tra được trên hệ thống nguồn bằng dòng lệnh, cần `DATABASE_ADMIN_URL` (chỉ người quản trị hệ thống):
 

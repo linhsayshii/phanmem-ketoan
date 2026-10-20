@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
-import { sql } from 'kysely';
+import { sql, type Transaction } from 'kysely';
+import type { Database } from '@kt/db';
 import { z } from 'zod';
 import { AppError } from '../../plugins/errors.js';
 import { dateIso, type CatalogDef } from '../master/catalogs.js';
@@ -33,17 +34,22 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
 
   // Gói xuất gồm Nhật ký chung và Sổ Cái (mọi tài khoản, kể cả công nợ và giá vốn): cần đủ các cờ nhạy cảm như khi in bộ sổ năm (/api/print/book-set).
-  // Đọc dữ liệu và ghi audit trong cùng một giao dịch; dựng PDF và nén zip ngoài giao dịch.
+  // Đọc dữ liệu và ghi dòng audit `export` trong cùng một giao dịch; dựng PDF và nén zip ngoài giao dịch; zip dựng xong mới ghi dòng `export_completed` (kèm băm) ở giao dịch ngắn riêng,
+  // ghi không được thì không trả tệp.
   app.post('/api/export/authority', { preHandler: app.requirePermission('export.authority'), schema: { body: z.object({ from: dateIso, to: dateIso }).refine((b) => b.from <= b.to, { message: 'Từ ngày phải trước hoặc bằng đến ngày' }) } }, async (req, reply) => {
     for (const flag of ['view_receivable', 'view_payable', 'view_cost']) if (!req.auth!.sensitive.has(flag)) throw new AppError('FORBIDDEN', `Xuất dữ liệu cho cơ quan thẩm quyền gồm Nhật ký chung và Sổ Cái, cần cờ nhạy cảm ${flag}`, 403);
     const tenantId = req.auth!.tenantId!;
+    const audit = (trx: Transaction<Database>, action: string, after: object) =>
+      sql`INSERT INTO audit_event(tenant_id, user_id, action, entity, entity_id, after, ip) VALUES (${tenantId}::uuid, app_user_id(), ${action}, 'tenant', ${tenantId}, ${JSON.stringify(after)}::jsonb, ${req.ip})`.execute(trx);
     const data = await app.withTenant(req, async (trx) => {
       const d = await collectAuthorityData(trx, tenantId, req.body);
-      await sql`INSERT INTO audit_event(tenant_id, user_id, action, entity, entity_id, after, ip) VALUES (${tenantId}::uuid, app_user_id(), 'export', 'tenant', ${tenantId}, ${JSON.stringify(req.body)}::jsonb, ${req.ip})`.execute(trx);
+      await audit(trx, 'export', req.body);
       return d;
     });
+    const pkg = await buildAuthorityPackage(data);
+    await app.withTenant(req, (trx) => audit(trx, 'export_completed', { ...req.body, manifestSha256: pkg.manifestSha256, zipSha256: pkg.zipSha256 }));
     const name = encodeURIComponent(`xuat-du-lieu-${req.body.from}-${req.body.to}.zip`);
-    return reply.type('application/zip').header('content-disposition', `attachment; filename*=UTF-8''${name}`).send(await buildAuthorityPackage(data));
+    return reply.type('application/zip').header('content-disposition', `attachment; filename*=UTF-8''${name}`).send(pkg.zip);
   });
 };
 export default routes;

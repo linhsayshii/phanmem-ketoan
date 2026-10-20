@@ -27,7 +27,7 @@ export default function ExportPage() {
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
         <Alert type="info" showIcon message="Gói dữ liệu theo Điều 28 Thông tư 99/2025 (tệp zip)" description={<ul style={{ margin: 0, paddingLeft: 20 }}>
           <li>Tệp CSV (UTF-8 có BOM, phân cách dấu ;) trong khoảng ngày chọn: chứng từ và dòng định khoản đã ghi sổ, nhật ký kiểm toán; kèm hệ thống tài khoản, đối tượng, kỳ kế toán.</li>
-          <li>Tệp PDF của cả năm tài chính chứa ngày kết thúc: Sổ Nhật ký chung, Sổ Cái, Bảng cân đối số phát sinh và báo cáo tài chính B01, B02, B03 (nếu công ty đã định nghĩa).</li>
+          <li>Tệp PDF của cả năm tài chính có kỳ chứa ngày kết thúc: Sổ Nhật ký chung, Sổ Cái, Bảng cân đối số phát sinh và báo cáo tài chính B01, B02, B03 (nếu công ty đã định nghĩa). Tệp PDF vượt 40.000 dòng bị bỏ khỏi gói và được ghi trong README.txt; hãy in riêng từng sổ theo khoảng ngày ngắn hơn.</li>
           <li>MANIFEST.sha256 ghi mã băm từng tệp để cơ quan nhận kiểm tra toàn vẹn; README.txt mô tả từng tệp và cột.</li></ul>} />
         {missing.length > 0 && <Alert type="warning" showIcon message={`Gói có Nhật ký chung và Sổ Cái nên cần đủ các cờ xem công nợ phải thu, phải trả và giá vốn (còn thiếu: ${missing.join(', ')}).`} />}
         <Space wrap>
