@@ -19,7 +19,7 @@ Các tệp CSV mã hóa UTF-8 có BOM (Excel mở đúng tiếng Việt), phân 
 | Tệp | Nội dung |
 | --- | --- |
 | `README.txt` | Tên công ty, mã số thuế, khoảng kỳ, thời điểm xuất, mô tả từng tệp và cột |
-| `chung_tu.csv` | Phần đầu các chứng từ có ngày ghi sổ trong khoảng kỳ, gồm đã ghi sổ (`posted`), đã đảo (`reversed`) và nháp đã hủy bỏ (`cancelled`); không có nháp chưa hủy. Kèm `row_hash` |
+| `chung_tu.csv` | Phần đầu các chứng từ có ngày ghi sổ trong khoảng kỳ, gồm đã ghi sổ (`posted`), đã đảo (`reversed`) và chứng từ đã hủy khi còn là nháp (`cancelled`); không có nháp chưa hủy. Kèm `row_hash` |
 | `dong_chung_tu.csv` | Dòng định khoản của các chứng từ trên: trạng thái chứng từ (`state`), tài khoản, Nợ/Có, ngoại tệ, đối tượng và các chiều phân tích |
 | `he_thong_tai_khoan.csv` | Mọi hệ tài khoản của công ty (cột `regime`: TT99, TT133, TT200, TT58) |
 | `doi_tuong.csv` | Danh mục đối tượng |
@@ -32,7 +32,7 @@ Các tệp CSV mã hóa UTF-8 có BOM (Excel mở đúng tiếng Việt), phân 
 Lưu ý về phạm vi:
 - Tệp CSV chỉ có dữ liệu trong khoảng ngày chọn. Các tệp PDF là sổ và báo cáo của **cả năm tài chính có kỳ chứa ngày kết thúc** (kỳ thường, không tính kỳ mở sổ). Năm tài chính không nhất thiết trùng năm dương lịch: năm tài chính bắt đầu 01/04/2026 và kết thúc 31/03/2027 thì ngày kết thúc 28/02/2027 cho ra sổ của cả năm đó.
 - Ngày kết thúc phải nằm trong một kỳ kế toán đã tạo, nếu không máy chủ báo không có kỳ kế toán chứa ngày đó (404) và không xuất gì.
-- Dòng của chứng từ có `state = cancelled` (nháp đã hủy bỏ, chưa từng ghi sổ) được giữ trong `dong_chung_tu.csv` để đối chiếu nhưng không thuộc sổ kế toán; muốn chỉ lấy dòng trong sổ thì lọc `state` là `posted` hoặc `reversed`.
+- Dòng của chứng từ có `state = cancelled` (đã hủy khi còn là nháp, không thuộc sổ kế toán) được giữ trong `dong_chung_tu.csv` để đối chiếu; chứng từ có thể từng ghi sổ rồi bỏ ghi sổ trước khi hủy, lịch sử đó nằm trong `nhat_ky_kiem_toan.csv`; muốn chỉ lấy dòng trong sổ thì lọc `state` là `posted` hoặc `reversed`.
 
 Giới hạn: một tệp PDF dựng được tối đa 40.000 dòng. Tệp PDF vượt ngưỡng được **bỏ riêng khỏi gói**, các tệp còn lại vẫn xuất bình thường (HTTP 200, vẫn ghi nhật ký kiểm toán). `README.txt` có mục "CÁC TỆP BỊ BỎ KHỎI GÓI" liệt kê từng tệp bị bỏ kèm lý do, ví dụ `so_cai.pdf: vượt 40.000 dòng, in theo từng phần`; khi đó in sổ đó riêng theo khoảng ngày ngắn hơn ở Báo cáo → Sổ sách kế toán hoặc xuất Excel. Tệp CSV không bị giới hạn nên luôn đủ trong gói. `MANIFEST.sha256` chỉ liệt kê các tệp có trong gói.
 

@@ -140,7 +140,8 @@ describe('xuất dữ liệu cho cơ quan thẩm quyền', () => {
       const rowsOf = (f: string) => readFileSync(`${out}/${f}`, 'utf8').trim().split('\n').map((l) => l.split(';')).filter((c) => c[0] === draft);
       expect(rowsOf('dong_chung_tu.csv').map((c) => c[2])).toEqual(['cancelled', 'cancelled']);
       expect(rowsOf('chung_tu.csv').map((c) => c[6])).toEqual(['cancelled']);
-      expect(readFileSync(`${out}/README.txt`, 'utf8')).toContain('nháp đã hủy bỏ');
+      const readme = readFileSync(`${out}/README.txt`, 'utf8');
+      expect(readme).toContain('đã hủy khi còn là nháp, không thuộc sổ kế toán'); expect(readme).not.toContain('chưa từng ghi sổ'); // chứng từ có thể từng ghi sổ rồi bỏ ghi sổ trước khi hủy
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
@@ -201,14 +202,15 @@ describe('xuất dữ liệu cho cơ quan thẩm quyền', () => {
 
   it('ghi dòng export_completed không được thì không trả tệp (500), dòng export đã ghi ở bước đọc vẫn còn', async () => {
     const before = await exportCount(); const doneBefore = await completedCount();
-    await sql`CREATE FUNCTION kt_test_fail_completed() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'kt_test: ghi audit thất bại' USING ERRCODE = 'XX000'; END $$`.execute(ctx.t.admin);
-    await sql.raw(`CREATE TRIGGER kt_test_fail_completed BEFORE INSERT ON audit_event FOR EACH ROW WHEN (NEW.action = 'export_completed' AND NEW.tenant_id = '${tenantId}') EXECUTE FUNCTION kt_test_fail_completed()`).execute(ctx.t.admin);
-    try {
+    try { // tạo cả hàm lẫn trigger trong try: CREATE TRIGGER hỏng giữa chừng cũng không để lại hàm cho các lần chạy sau
+      await sql`CREATE OR REPLACE FUNCTION kt_test_fail_completed() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'kt_test: ghi audit thất bại' USING ERRCODE = 'XX000'; END $$`.execute(ctx.t.admin);
+      await sql.raw('DROP TRIGGER IF EXISTS kt_test_fail_completed ON audit_event').execute(ctx.t.admin);
+      await sql.raw(`CREATE TRIGGER kt_test_fail_completed BEFORE INSERT ON audit_event FOR EACH ROW WHEN (NEW.action = 'export_completed' AND NEW.tenant_id = '${tenantId}') EXECUTE FUNCTION kt_test_fail_completed()`).execute(ctx.t.admin);
       const r = await post(exportBody);
       expect(r.statusCode).toBe(500); expect(r.headers['content-type']).not.toContain('zip'); expect(r.rawPayload.subarray(0, 2).toString()).not.toBe('PK');
     } finally {
-      await sql.raw('DROP TRIGGER kt_test_fail_completed ON audit_event').execute(ctx.t.admin);
-      await sql.raw('DROP FUNCTION kt_test_fail_completed()').execute(ctx.t.admin);
+      await sql.raw('DROP TRIGGER IF EXISTS kt_test_fail_completed ON audit_event').execute(ctx.t.admin);
+      await sql.raw('DROP FUNCTION IF EXISTS kt_test_fail_completed()').execute(ctx.t.admin);
     }
     expect(await exportCount()).toBe(before + 1); expect(await completedCount()).toBe(doneBefore);
   });
