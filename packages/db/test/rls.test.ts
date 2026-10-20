@@ -75,6 +75,41 @@ describe('RLS', () => {
     expect(Number((await upd(a)).numUpdatedRows)).toBe(1);
   });
 
+  it('thành viên nhiều công ty không xóa hay sửa được dòng tenant_user của công ty khác', async () => {
+    const u = await createTestUser(t.admin, { username: `n_${newId().slice(0, 8)}`, passwordHash: 'x' });
+    const a = await createTestTenant(t.admin, { code: `I${Date.now()}`, name: 'I', ownerUserId: u });
+    const b = await createTestTenant(t.admin, { code: `J${Date.now()}`, name: 'J', ownerUserId: u });
+    const del = await withTenant(t.db, { tenantId: a, userId: u }, (trx) => trx.deleteFrom('tenant_user').where('tenant_id', '=', b).executeTakeFirst());
+    expect(Number(del.numDeletedRows)).toBe(0);
+    const upd = await withTenant(t.db, { tenantId: a, userId: u }, (trx) => trx.updateTable('tenant_user').set({ is_active: false }).where('tenant_id', '=', b).executeTakeFirst());
+    expect(Number(upd.numUpdatedRows)).toBe(0);
+    const seen = await withTenant(t.db, { tenantId: a, userId: u }, (trx) => trx.selectFrom('tenant_user').select('tenant_id').where('user_id', '=', u).execute());
+    expect(seen.map((x) => x.tenant_id).sort()).toEqual([a, b].sort());
+  });
+
+  it('create_tenant trả lại app.current_tenant của người gọi', async () => {
+    const u = await createTestUser(t.admin, { username: `o_${newId().slice(0, 8)}`, passwordHash: 'x' });
+    const a = await createTestTenant(t.admin, { code: `K${Date.now()}`, name: 'K', ownerUserId: u });
+    const cur = await t.admin.transaction().execute(async (trx) => {
+      await sql`SELECT set_config('app.current_tenant', ${a}, true)`.execute(trx);
+      await sql`SELECT create_tenant(${`L${Date.now()}`}, 'L', NULL, ${u}::uuid)`.execute(trx);
+      return (await sql<{ v: string }>`SELECT current_setting('app.current_tenant') AS v`.execute(trx)).rows[0]!.v;
+    });
+    expect(cur).toBe(a);
+  });
+
+  it('công ty mới: ketoan_vien không có quyền kết chuyển/định nghĩa báo cáo/số dư đầu kỳ, ketoan_truong có', async () => {
+    const a = await createTestTenant(t.admin, { code: `M${Date.now()}`, name: 'M' });
+    const has = async (code: string) => (await sql<{ n: number }>`
+      SELECT count(*)::int AS n FROM role_permission rp JOIN role r ON r.id = rp.role_id
+      WHERE rp.tenant_id = ${a} AND r.code = ${code} AND rp.permission_code IN ('closing.run','closing_step.update','report_def.update','opening_balance.update')`.execute(t.admin)).rows[0]!.n;
+    expect(await has('ketoan_vien')).toBe(0);
+    expect(await has('ketoan_truong')).toBe(4);
+    const view = await sql<{ n: number }>`SELECT count(*)::int AS n FROM role_permission rp JOIN role r ON r.id = rp.role_id
+      WHERE rp.tenant_id = ${a} AND r.code = 'ketoan_vien' AND rp.permission_code = 'closing_step.view'`.execute(t.admin);
+    expect(view.rows[0]!.n).toBe(1);
+  });
+
   it('khoá ngoại theo tenant: không gắn tài khoản cha hay vai trò của công ty khác', async () => {
     const a = await createTestTenant(t.admin, { code: `G${Date.now()}`, name: 'G' });
     const b = await createTestTenant(t.admin, { code: `H${Date.now()}`, name: 'H' });
