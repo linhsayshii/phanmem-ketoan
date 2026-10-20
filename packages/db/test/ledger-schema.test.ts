@@ -278,6 +278,13 @@ describe('lược đồ sổ cái', () => {
       } finally { await admin.query('ROLLBACK'); }
     });
 
+    it('app_user không xóa trực tiếp được hàng đợi; trigger hoãn (definer) vẫn dọn', async () => {
+      await expect(run(async (trx) => { await sql`DELETE FROM voucher_balance_pending`.execute(trx); })).rejects.toThrow(/permission denied/);
+      const id = await newVoucher('2026-05-12', [{ code: '1111', debit: '4' }, { code: '5113', credit: '4' }]);
+      expect(id).toBeTruthy();
+      expect(Number((await admin.query('SELECT count(*) FROM voucher_balance_pending')).rows[0].count)).toBe(0);
+    });
+
     it('chứng từ đã ghi sổ: xóa dòng bị chặn và hàng đợi rỗng sau giao dịch lỗi', async () => {
       const id = await newVoucher('2026-05-11', [{ code: '1111', debit: '3' }, { code: '5113', credit: '3' }]);
       await setState(id, 'posted');

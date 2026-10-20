@@ -172,4 +172,23 @@ describe('người dùng và vai trò', () => {
     expect((await grant(mid.cookie, ['user.view'])).statusCode).toBe(200); // đối chứng: quyền mình có
     expect((await grant(admin.cookie, ['voucher.post'])).statusCode).toBe(200);
   });
+
+  it('PUT /api/roles/:id/permissions với vai trò không tồn tại hoặc của công ty khác trả 404', async () => {
+    const a = await bootstrapTenant(ctx, { code: `RN${Date.now()}` });
+    const b = await bootstrapTenant(ctx, { code: `RM${Date.now()}` });
+    const foreign = (await ctx.app.inject({ method: 'GET', url: '/api/roles', headers: { cookie: b.cookie } })).json()[0].id as string;
+    for (const id of [foreign, '00000000-0000-4000-8000-000000000000'])
+      for (const permissions of [[], ['voucher.view']]) {
+        const r = await ctx.app.inject({ method: 'PUT', url: `/api/roles/${id}/permissions`, headers: { cookie: a.cookie }, payload: { permissions } });
+        expect([r.statusCode, r.json().error.code]).toEqual([404, 'ROLE_NOT_FOUND']);
+      }
+  });
+
+  it('người dùng bị khóa ở công ty kia vẫn tính là thành viên: không đặt lại mật khẩu', async () => {
+    const a = await bootstrapTenant(ctx, { code: `SJ${Date.now()}` });
+    const b = await bootstrapTenant(ctx, { code: `SK${Date.now()}` });
+    const u = await mk(a, 'xem');
+    await sql`INSERT INTO tenant_user(tenant_id, user_id, role_id, is_active) SELECT ${b.tenantId}::uuid, ${u.id}::uuid, id, false FROM role WHERE tenant_id = ${b.tenantId}::uuid AND code = 'xem'`.execute(ctx.t.admin);
+    expect((await put(a.cookie, u.id, { password: 'Doimatkhau1!' })).json().error.code).toBe('USER_SHARED');
+  });
 });

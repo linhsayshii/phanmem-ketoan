@@ -16,4 +16,4 @@ Tiến trình kiểm thử bị giết (SIGKILL, mất điện) để lại `ket
 - `pnpm test`: chạy toàn bộ (mỗi gói tuần tự, `--no-file-parallelism`); một gói: `pnpm -F @kt/api test -- test/vouchers.test.ts`.
 - `INVARIANTS=1`: chạy thêm các kiểm thử bất biến (fast-check) trong `apps/api/test/invariants` và bộ dữ liệu mẫu XYZ, mặc định bị bỏ qua: `INVARIANTS=1 pnpm -F @kt/api test -- test/invariants test/sample-xyz.test.ts`.
 - `FC_RUNS=<số nguyên dương>`: số lần chạy mỗi thuộc tính fast-check (mặc định theo từng kiểm thử); đặt lớn hơn để chạy dài thủ công, thời gian chờ nới theo.
-- E2E (Playwright, `pnpm -F @kt/web e2e`): cổng mặc định 3000 và 5173; nếu đang có tiến trình khác chiếm, đặt `E2E_API_PORT` và `E2E_WEB_PORT` sang cổng trống.
+- E2E (Playwright, `pnpm -F @kt/web e2e`): cổng mặc định 3000 và 5173; nếu đang có tiến trình khác chiếm, đặt `E2E_API_PORT` và `E2E_WEB_PORT` sang cổng trống. Điều kiện trước (chạy một lần trên DB phát triển): `pnpm -F @kt/api cli create-admin --username e2e --password 'Matkhau1!' --tenant-code E2E --tenant-name "Công ty E2E"`. `pnpm -F @kt/web e2e -- <spec>` không lọc theo tệp: dùng `pnpm -F @kt/web exec playwright test e2e/<spec>`.

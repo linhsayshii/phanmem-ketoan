@@ -14,20 +14,29 @@ export const hashSessionToken = (token: string) => createHash('sha256').update(t
 
 export interface LoginResult { sessionToken: string; userId: string; tenantId: string | null; tenants: { id: string; code: string; name: string }[] }
 
-export async function login(db: Kysely<Database>, input: { username: string; password: string; ip: string; ttlHours: number; limits: { maxFailsUser: number; maxFailsIp: number; lockMinutes: number } }): Promise<LoginResult | null | 'throttled'> {
-  const { maxFailsUser, maxFailsIp, lockMinutes } = input.limits;
-  // Đếm cả tên không tồn tại (không lộ tên có tồn tại); lần đúng gần nhất xóa bộ đếm theo tên
-  const cnt = await sql<{ u: string; i: string }>`
-    SELECT (SELECT count(*) FROM login_event WHERE username = ${input.username} AND NOT success
-              AND ts > now() - make_interval(mins => ${lockMinutes})
-              AND ts > coalesce((SELECT max(ts) FROM login_event WHERE username = ${input.username} AND success), '-infinity')) AS u,
-           (SELECT count(*) FROM login_event WHERE ip = ${input.ip} AND NOT success AND ts > now() - make_interval(mins => ${lockMinutes})) AS i`.execute(db);
-  // Lần bị chặn không ghi login_event (route ghi log máy chủ): nếu ghi thì cứ thử tiếp là khóa kéo dài mãi, kẻ xấu giữ khóa được tài khoản người khác
-  if (Number(cnt.rows[0]!.u) >= maxFailsUser || Number(cnt.rows[0]!.i) >= maxFailsIp) return 'throttled';
-  const user = await db.selectFrom('app_user').selectAll().where('username', '=', input.username).executeTakeFirst();
-  const verified = await verifyPassword(user?.is_active ? user.password_hash : await getDummyHash(), input.password);
-  const ok = verified && !!user?.is_active;
-  await db.insertInto('login_event').values({ username: input.username, user_id: user?.id ?? null, success: ok, ip: input.ip }).execute();
+export async function login(db: Kysely<Database>, input: { username: string; password: string; ip: string; ttlHours: number; limits: { maxFailsUser: number; maxFailsUserAll: number; maxFailsIp: number; lockMinutes: number } }): Promise<LoginResult | null | 'throttled'> {
+  const { maxFailsUser, maxFailsUserAll, maxFailsIp, lockMinutes } = input.limits;
+  // Đếm, xác minh, ghi trong một giao dịch giữ khóa theo tên: các yêu cầu song song cùng tên xếp hàng nên không vượt ngưỡng
+  const outcome = await db.transaction().execute(async (trx) => {
+    await sql`SELECT pg_advisory_xact_lock(hashtext(${'login:' + input.username.toLowerCase()}))`.execute(trx);
+    // Đếm cả tên không tồn tại (không lộ tên có tồn tại); lần đúng gần nhất xóa bộ đếm theo tên.
+    // Theo (tên, IP): ngưỡng thấp, người ngoài không khóa được tài khoản của người khác từ IP khác; theo tên mọi IP: ngưỡng cao; theo IP: mọi tên.
+    const cnt = await sql<{ ui: string; u: string; i: string }>`
+      WITH last_ok AS (SELECT coalesce(max(ts), '-infinity') AS t FROM login_event WHERE username = ${input.username} AND success),
+           f AS (SELECT e.username, e.ip FROM login_event e, last_ok WHERE NOT e.success AND e.ts > now() - make_interval(mins => ${lockMinutes})
+                   AND (e.username = ${input.username} OR e.ip = ${input.ip}) AND (e.username <> ${input.username} OR e.ts > last_ok.t))
+      SELECT count(*) FILTER (WHERE username = ${input.username} AND ip = ${input.ip}) AS ui, count(*) FILTER (WHERE username = ${input.username}) AS u, count(*) FILTER (WHERE ip = ${input.ip}) AS i FROM f`.execute(trx);
+    const c = cnt.rows[0]!;
+    // Lần bị chặn không ghi login_event (route ghi log máy chủ): nếu ghi thì cứ thử tiếp là khóa kéo dài mãi
+    if (Number(c.ui) >= maxFailsUser || Number(c.u) >= maxFailsUserAll || Number(c.i) >= maxFailsIp) return 'throttled' as const;
+    const user = await trx.selectFrom('app_user').selectAll().where('username', '=', input.username).executeTakeFirst();
+    const verified = await verifyPassword(user?.is_active ? user.password_hash : await getDummyHash(), input.password);
+    const ok = verified && !!user?.is_active;
+    await trx.insertInto('login_event').values({ username: input.username, user_id: user?.id ?? null, success: ok, ip: input.ip }).execute();
+    return ok ? user! : null;
+  });
+  if (outcome === 'throttled') return 'throttled';
+  const user = outcome; const ok = !!user;
   if (!user || !ok) return null;
   const tenants = await listTenantsOf(db, user.id);
   const tenantId = tenants.length === 1 ? tenants[0]!.id : null;

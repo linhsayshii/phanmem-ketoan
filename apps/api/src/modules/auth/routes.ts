@@ -9,7 +9,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
 
   app.post('/api/auth/login', { schema: { body: z.object({ username: z.string().min(1), password: z.string().min(1) }) } }, async (req, reply) => {
     const r = await login(app.db, { ...req.body, ip: req.ip, ttlHours: cfg.SESSION_TTL_HOURS,
-      limits: { maxFailsUser: cfg.LOGIN_MAX_FAILS_USER, maxFailsIp: cfg.LOGIN_MAX_FAILS_IP, lockMinutes: cfg.LOGIN_LOCK_MINUTES } });
+      limits: { maxFailsUser: cfg.LOGIN_MAX_FAILS_USER, maxFailsUserAll: cfg.LOGIN_MAX_FAILS_USER_ALL, maxFailsIp: cfg.LOGIN_MAX_FAILS_IP, lockMinutes: cfg.LOGIN_LOCK_MINUTES } });
     if (r === 'throttled') {
       req.log.warn({ username: req.body.username, ip: req.ip }, 'đăng nhập bị chặn tạm');
       throw new AppError('LOGIN_THROTTLED', `Đăng nhập sai quá nhiều lần, thử lại sau ${cfg.LOGIN_LOCK_MINUTES} phút`, 429);

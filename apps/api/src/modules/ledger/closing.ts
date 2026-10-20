@@ -57,7 +57,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         if (!s.id) { await trx.insertInto('closing_step').values(row).execute(); continue; }
         // Mã bước cũ (màn hình mở từ trước khi nạp lại mẫu) không còn: dừng, không để sơ đồ bị xóa sạch rồi lưu rỗng.
         const r = await trx.updateTable('closing_step').set(row).where('id', '=', s.id).executeTakeFirst();
-        if (r.numUpdatedRows === 0n) throw new AppError('CLOSING_STEP_NOT_FOUND', 'Sơ đồ đã thay đổi, hãy tải lại trang', 404);
+        if (r.numUpdatedRows === 0n) throw new AppError('CLOSING_STEP_STALE', 'Sơ đồ đã thay đổi, hãy tải lại trang', 409);
       }
     });
     return { ok: true };

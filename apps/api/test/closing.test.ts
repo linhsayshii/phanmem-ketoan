@@ -144,7 +144,7 @@ describe('kết chuyển: đồng thời và lịch sử chạy', () => {
     expect(runs[0]).toMatchObject({ stepName: 'Bước đã xóa', status: 'done' }); expect(runs[0]!.voucherNo).toMatch(/^KC/);
     // Màn hình mở từ trước khi nạp lại mẫu gửi mã bước cũ: bị từ chối, sơ đồ không bị xóa sạch.
     const stale = await call('PUT', '/api/closing/steps', { steps: [{ id: step2.id, stepOrder: 1, name: 'x', mode: 'transfer', fromAccounts: ['511'], toAccount: '911' }] });
-    expect([stale.statusCode, stale.json().error.code]).toEqual([404, 'CLOSING_STEP_NOT_FOUND']);
+    expect([stale.statusCode, stale.json().error.code]).toEqual([409, 'CLOSING_STEP_STALE']);
     expect(await steps()).toHaveLength(5);
   }, 30_000);
 

@@ -101,6 +101,32 @@ describe('xác thực', () => {
     });
   });
 
+  describe('khóa theo (tên, IP) và theo tên toàn cục', () => {
+    let tp: TestApp;
+    beforeAll(async () => { tp = await createTestApp({ TRUST_PROXY: 'true', LOGIN_MAX_FAILS_USER: '3', LOGIN_MAX_FAILS_USER_ALL: '6' }); });
+    afterAll(async () => { await tp.close(); });
+    const ipH = (n: number) => ({ 'x-forwarded-for': `10.9.${n}.${Math.floor(Math.random() * 250)}` });
+
+    it('sai đủ ngưỡng từ IP A thì IP B vẫn đăng nhập được', async () => {
+      const u = await mk('ipab'); const a = ipH(1); const b = ipH(2);
+      for (let i = 0; i < 3; i++) expect((await login(tp.app, u, 'sai', a)).statusCode).toBe(401);
+      expect((await login(tp.app, u, TEST_PASSWORD, a)).statusCode).toBe(429);
+      expect((await login(tp.app, u, TEST_PASSWORD, b)).statusCode).toBe(200);
+    });
+    it('sai từ nhiều IP khác nhau đủ ngưỡng toàn cục thì khóa tên với mọi IP', async () => {
+      const u = await mk('all');
+      for (let i = 0; i < 6; i++) expect((await login(tp.app, u, 'sai', ipH(10 + i))).statusCode).toBe(401);
+      expect((await login(tp.app, u, TEST_PASSWORD, ipH(50))).statusCode).toBe(429);
+    });
+    it('10 lần sai song song cùng một tên: chỉ 3 lần được xét, còn lại bị chặn', async () => {
+      const u = await mk('par'); const h = ipH(70);
+      const rs = await Promise.all(Array.from({ length: 10 }, () => login(tp.app, u, 'sai', h)));
+      expect(rs.filter((r) => r.statusCode === 401)).toHaveLength(3);
+      expect(rs.filter((r) => r.statusCode === 429)).toHaveLength(7);
+      expect((await sql<{ n: number }>`SELECT count(*)::int AS n FROM login_event WHERE username = ${u}`.execute(tp.t.admin)).rows[0]!.n).toBe(3);
+    });
+  });
+
   it('quá ngưỡng theo IP thì khóa mọi tên từ IP đó', async () => {
     const ipApp = await createTestApp({ TRUST_PROXY: 'true', LOGIN_MAX_FAILS_IP: '4' });
     try {

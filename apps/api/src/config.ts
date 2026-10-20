@@ -16,6 +16,7 @@ const schema = z.object({
   ATTACHMENT_DIR: z.string().default('./attachments').transform((p) => path.resolve(repoRoot, p)),
   PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: z.string().optional(),
   LOGIN_MAX_FAILS_USER: z.coerce.number().int().positive().default(5),
+  LOGIN_MAX_FAILS_USER_ALL: z.coerce.number().int().positive().default(50),
   LOGIN_MAX_FAILS_IP: z.coerce.number().int().positive().default(20),
   LOGIN_LOCK_MINUTES: z.coerce.number().int().positive().default(15),
   NODE_ENV: z.string().default('development'),
