@@ -35,4 +35,4 @@ Kiểm thử: `pnpm lint && pnpm typecheck && pnpm test` (chi tiết `docs/dev/k
 
 ## Bước tiếp theo
 
-Xem `docs/TIEP-THEO.md`: tồn đọng GĐ0–1, dữ liệu pháp lý còn thiếu (TT 99/2025 Phụ lục II và IV), GĐ2 → GĐ7, việc chờ người dùng.
+Xem `docs/TIEP-THEO.md`: tồn đọng GĐ0–1, dữ liệu pháp lý còn thiếu (mẫu tờ khai TT 89/2026, QĐ 1450/1510), GĐ2 → GĐ7, việc chờ người dùng.

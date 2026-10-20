@@ -1,33 +1,16 @@
 # Việc tiếp theo
 
-Cập nhật: 2026-10-20, sau khi xong GĐ0–1 (tag `gd0-hoan-tat`, `gd1-hoan-tat`, `main` tại thời điểm bàn giao lên VPS oracle). Agent cập nhật file này cuối mỗi giai đoạn và mỗi khi có việc chờ người dùng.
+Cập nhật: 2026-10-21, sau khi xong GĐ1.5 (tag `gd0-hoan-tat`, `gd1-hoan-tat`, `gd1-5-hoan-tat`). Việc đang làm: GĐ2 theo `docs/superpowers/plans/2026-10-21-giai-doan-2-chi-tiet.md`. Agent cập nhật file này cuối mỗi giai đoạn và mỗi khi có việc chờ người dùng.
 
-Thứ tự làm: mục 1 → 2 → 3 (GĐ2 → GĐ7). Mục 4 là việc chờ người dùng, không chặn các mục khác.
+Thứ tự làm: mục 2 (phần còn lại) song song mục 3 (GĐ2 → GĐ7). Mục 4 là việc chờ người dùng, không chặn các mục khác.
 
-## 1. Tồn đọng của GĐ0–1: kế hoạch nhỏ "GĐ1.5" (làm trước GĐ2)
+## 1. GĐ1.5 (tồn đọng GĐ0–1): xong 2026-10-21, tag `gd1-5-hoan-tat`
 
-Phân loại đầy đủ (nhóm A–D, lý do, mục đã kiểm trên mã): `docs/superpowers/plans/2026-10-20-gd1-5-de-xuat.md`. Nguồn: `2026-10-20-gd1-viec-hoan-lai.md` và phần "Final" của `2026-10-19-giai-doan-0-1-quyet-dinh.md`.
+Kế hoạch `docs/superpowers/plans/2026-10-20-giai-doan-1-5-chi-tiet.md`, sổ quyết định `2026-10-20-giai-doan-1-5-quyet-dinh.md` (gồm mục "Để lại"). Nhóm A (A1–A12) xong: DB kiểm thử tạm mỗi lần chạy, typecheck cả kiểm thử, `TRUST_PROXY` và cấu hình production, khóa đăng nhập sai theo tên/IP, băm mã phiên, chặn tự nâng quyền, RLS `tenant_user`, thu hẹp `ketoan_vien`, `*_NOT_FOUND` = 404, khóa ngoại tổng hợp `(tenant_id, id)`, kiểm cân bằng theo câu lệnh (khóa ghi trực tiếp partition), script đo 100.000 dòng (BCĐPS năm 175 ms). Migration 0016–0023.
 
-Đã xong (lệnh 01, 2026-10-20): checksum migration chuẩn hóa CRLF/BOM + `.gitattributes`; chữ báo cắt Nhật ký chung chỉ hướng sang Excel; `testTimeout` web 30 giây.
+**Nhóm B** đã gộp vào kế hoạch GĐ2 (`2026-10-21-giai-doan-2-chi-tiet.md`, bảng "Đối chiếu nhóm B").
 
-**Nhóm A, làm trước GĐ2** (viết kế hoạch `GĐ1.5` theo khuôn GĐ0–1 rồi thực hiện; thứ tự gợi ý A1 → A2 trước để các mục sau có kiểm thử sạch):
-
-- [ ] A1 (vừa) Cơ sở dữ liệu kiểm thử riêng tự tạo/xóa; cô lập `packages/db/test/reference.test.ts`; bật lại chạy song song file kiểm thử nếu ổn định.
-- [ ] A2 (vừa) Typecheck kiểm thử mọi gói, sửa lỗi kiểu phát sinh.
-- [ ] A3 (vừa) Đăng nhập: giới hạn tần suất và khóa tạm sau nhiều lần sai.
-- [ ] A4 (nhỏ) `trustProxy` chỉ khi cấu hình; production bắt buộc `COOKIE_SECURE=true`, `SESSION_SECRET` ≥ 32 ký tự.
-- [ ] A5 (vừa) Chặn tự nâng quyền: không tự sửa vai trò/cờ nhạy cảm của mình, không gán cờ mình không có, giữ ít nhất một quản trị viên, vai trò hệ thống không bị tước quyền.
-- [ ] A6 (nhỏ) RLS `tenant_user`: tách chính sách SELECT và ghi; `create_tenant` trả lại `app.current_tenant`.
-- [ ] A7 (vừa) Lưu băm mã phiên; dọn phiên hết hạn.
-- [ ] A8 (nhỏ) Thu hẹp vai trò mặc định `ketoan_vien`.
-- [ ] A9 (nhỏ) Quy ước lỗi `*_NOT_FOUND` (404/409) thống nhất toàn API.
-- [ ] A10 (vừa) Khóa ngoại tổng hợp `(tenant_id, id)` cho các bảng sau 0001 và quy ước cho bảng mới.
-- [ ] A11 (lớn) Trigger cân bằng/số dư cấp câu lệnh, bỏ hoặc nâng giới hạn 5.000 dòng/chứng từ.
-- [ ] A12 (vừa) Đo lại hiệu năng 100.000 dòng (BCĐPS năm < 2 giây); thêm chỉ mục/phân trang nếu chưa đạt.
-
-**Nhóm B, làm cùng GĐ2** (đưa vào kế hoạch GĐ2): màn hình chứng từ dùng chung thay `PKT` viết cứng và "Đảo" chọn ngày; nhập Excel; danh mục dùng chung; lưới nhập liệu và F4; múi giờ Việt Nam cho bộ lọc ngày; cờ nhạy cảm cho dữ liệu GĐ2; siết cân bằng đa tiền tệ. Chi tiết trong đề xuất.
-
-**Nhóm C, để sau**: chuyển số dư khi đổi chế độ (đặc tả 7.2, sau khi có TT99), xuất XML cơ quan thẩm quyền (mục 13), bất biến 7 đầy đủ; mời người dùng đã có vào công ty khác; phạm vi khóa tạo partition; việc chuẩn bị production (Docker, sao lưu, seed). Nhóm D (không làm) có lý do trong đề xuất.
+**Nhóm C, để sau**: chuyển số dư khi đổi chế độ (đặc tả 7.2), xuất XML cơ quan thẩm quyền (mục 13), bất biến 7 đầy đủ; mời người dùng đã có vào công ty khác; phạm vi khóa tạo partition; việc chuẩn bị production (Docker, sao lưu, seed); giới hạn số đăng nhập đồng thời dưới kích thước pool kết nối (lũ đăng nhập từ nhiều IP chiếm pool khoảng 0,5 giây); `role.update` gỡ được quyền của vai trò cao hơn (từ chối dịch vụ). Nhóm D (không làm) có lý do trong `2026-10-20-gd1-5-de-xuat.md`.
 
 ## 2. Dữ liệu pháp lý (cổng `*.status.json` trong `packages/coa-data`)
 
@@ -40,7 +23,7 @@ Văn bản gốc tải về `~/legal-docs/` trên VPS (ngoài repo): TT 99/2025 
 - [ ] Kế toán trưởng rà soát một lượt việc gán tài khoản cho từng chỉ tiêu TT99 (xem mục 4).
 - [ ] GĐ2/GĐ3: thêm thuộc tính kỳ hạn (ngắn/dài hạn) cho công nợ, tiền gửi, vay để tách dòng dài hạn B01 TT99; B03 phân loại dòng tiền theo mã luồng tiền trên chứng từ thay vì chỉ theo cặp tài khoản.
 - [ ] Hệ thống tài khoản TT200 vẫn lấy từ SUNSOFT, chưa đối chiếu Phụ lục 1 TT 200/2014 (TT200 đã bị TT99 thay từ 2026; ưu tiên thấp).
-- [ ] Mẫu tờ khai 01/GTGT theo TT 89/2026 (Phụ lục I): bản PDF là ảnh scan, cần OCR (`tesseract-ocr-vie`) rồi đối chiếu bằng mắt; làm khi bắt đầu GĐ2.
+- [ ] Mẫu tờ khai 01/GTGT theo TT 89/2026 (Phụ lục I): đã OCR trang 241–243 (`~/legal-docs/tt89-2026/ocr/SUMMARY.md`, ảnh 300 dpi kèm theo); đối chiếu bằng mắt và nhập dữ liệu mẫu ở GĐ2 Task 21.
 - [ ] Ký hiệu hóa đơn theo TT 91/2026 (Phụ lục I, đã có chữ): dùng cho GĐ5.
 
 ## 3. Các giai đoạn tiếp theo
@@ -71,5 +54,5 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
 - VPS oracle: repo ở `~/phanmem-ketoan`, remote `origin` = `~/git/phanmem-ketoan.git` (bare). Trên máy Mac của người dùng, remote `oracle` trỏ tới repo bare đó: `git pull oracle main` để lấy về.
 - Xem ứng dụng từ máy Mac: `ssh -L 5173:127.0.0.1:5173 -L 3000:127.0.0.1:3000 oracle` rồi mở `http://localhost:5173`.
 - Playwright trên VPS oracle (aarch64, cài 2026-10-20): `playwright install --with-deps` lỗi vì kho apt bên thứ ba `packagecloud.io/ookla/speedtest-cli` trả 404 làm `apt-get update` thất bại (không sửa vì là cấu hình hệ thống ngoài dự án). Cách cài: `pnpm -F @kt/api exec playwright install-deps --dry-run chromium` lấy danh sách gói, `sudo apt-get install -y --no-install-recommends <các gói>` (đã cài: phông `fonts-*`, `libgbm1`, mesa, `xvfb`, `xauth`…; thêm `unzip` cho `exportAuthority.test.ts`), rồi `pnpm -F @kt/api exec playwright install chromium` và tương tự cho `@kt/web` (trình duyệt ở `~/.cache/ms-playwright`).
-- Gói hệ thống đã cài thêm cho dự án (2026-10-20): `unzip`, `postgresql-client-16` (`pg_dump` cho kiểm thử sao lưu), `poppler-utils` (`pdftotext` cho văn bản pháp lý). Khi `apt-get update` lỗi vì kho ookla: `sudo apt-get update -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=-`.
+- Gói hệ thống đã cài thêm cho dự án (2026-10-20): `unzip`, `postgresql-client-16` (`pg_dump` cho kiểm thử sao lưu), `poppler-utils` (`pdftotext` cho văn bản pháp lý), `tesseract-ocr` + `tesseract-ocr-vie` (OCR bản scan TT 89/2026, 2026-10-20). Khi `apt-get update` lỗi vì kho ookla: `sudo apt-get update -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=-`.
 - Kiểm thử trên VPS chạy với cơ sở dữ liệu tạm `ketoan_test` theo `docs/dev/kiem-thu.md` (Docker cần `sudo`: `sudo docker compose exec -T postgres createdb -U postgres ketoan_test`).

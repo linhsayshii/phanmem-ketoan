@@ -20,7 +20,7 @@ const schema = z.object({
   LOGIN_MAX_FAILS_IP: z.coerce.number().int().positive().default(20),
   LOGIN_LOCK_MINUTES: z.coerce.number().int().positive().default(15),
   NODE_ENV: z.string().default('development'),
-  // Mặc định không tin X-Forwarded-For (tránh giả IP ghi vào nhật ký đăng nhập); sau reverse proxy đặt 'true', số bước proxy hoặc danh sách IP/CIDR
+  // Mặc định không tin X-Forwarded-For (tránh giả IP ghi vào nhật ký đăng nhập); sau reverse proxy đặt số bước proxy hoặc danh sách IP/CIDR của proxy; không đặt 'true' (người gọi giả được IP)
   TRUST_PROXY: z.string().default('false').transform((v): boolean | number | string => {
     const t = v.trim();
     if (t === '' || t === 'false') return false;
