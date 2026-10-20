@@ -67,7 +67,7 @@ describe('Sổ sách: Nhật ký chung', () => {
   it('trả bị cắt (truncated) thì báo chỉ hiện 50.000 dòng đầu; không bị cắt thì không báo', async () => {
     apiMock.mockResolvedValue(journal(true));
     const first = renderPage();
-    expect(await screen.findByText(/Chỉ hiển thị 50\.000 dòng đầu/)).toBeInTheDocument();
+    expect(await screen.findByText(/Chỉ hiển thị 50\.000 dòng đầu.*dùng Xuất Excel/)).toBeInTheDocument(); // PDF chỉ dựng 40.000 dòng nên không hướng sang In PDF
     first.unmount();
     apiMock.mockResolvedValue(journal(false));
     renderPage();

@@ -115,7 +115,7 @@ export default function LedgersPage() {
     if (data.error) return <Alert type="error" showIcon message={(data.error as Error).message} />;
     if (!d) return null;
     if (tab === 'journal') return <Space direction="vertical" style={{ width: '100%' }}>
-      {d['truncated'] === true && <Alert type="warning" showIcon message="Chỉ hiển thị 50.000 dòng đầu của khoảng ngày này (tổng phát sinh vẫn là của cả khoảng). Thu hẹp khoảng ngày, hoặc dùng In PDF / Xuất Excel để có đủ các dòng." />}<Summary items={[['Tổng phát sinh', { debit: d['totalDebit'] as string, credit: d['totalCredit'] as string }]]} />
+      {d['truncated'] === true && <Alert type="warning" showIcon message="Chỉ hiển thị 50.000 dòng đầu của khoảng ngày này (tổng phát sinh vẫn là của cả khoảng). Thu hẹp khoảng ngày, hoặc dùng Xuất Excel để có đủ các dòng (In PDF chỉ dựng tối đa 40.000 dòng)." />}<Summary items={[['Tổng phát sinh', { debit: d['totalDebit'] as string, credit: d['totalCredit'] as string }]]} />
       <Grid<JournalRow> rows={d['rows'] as JournalRow[]} columns={columns.journal} /></Space>;
     if (tab === 'trial') {
       const t = d['totals'] as { opening: Side; period: Side; closing: Side };
