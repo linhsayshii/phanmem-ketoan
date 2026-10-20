@@ -1,6 +1,6 @@
 # Phần mềm kế toán doanh nghiệp Việt Nam
 
-Dự án xây dựng phần mềm kế toán đầy đủ chức năng cho doanh nghiệp Việt Nam (TT 99/2025, TT 133/2016, hóa đơn điện tử 2026). Trạng thái 2026-10-19: hoàn tất nghiên cứu thị trường và đặc tả thiết kế, chưa có mã.
+Dự án xây dựng phần mềm kế toán đầy đủ chức năng cho doanh nghiệp Việt Nam (TT 99/2025, TT 133/2016, hóa đơn điện tử 2026). Trạng thái 2026-10-20: xong Giai đoạn 0 (nền tảng) và Giai đoạn 1 (lõi sổ cái: Phiếu kế toán, ghi sổ/đảo/khóa sổ ba mức, số dư theo kỳ, kết chuyển, Nhật ký chung, Sổ cái, Bảng cân đối số phát sinh, BCTC theo dòng, in PDF/Excel, soát lỗi, xuất dữ liệu cho cơ quan thẩm quyền). Việc tiếp theo: `docs/TIEP-THEO.md`. Hướng dẫn cho agent: `CLAUDE.md`.
 
 ## Tài liệu
 
@@ -14,11 +14,25 @@ Dự án xây dựng phần mềm kế toán đầy đủ chức năng cho doanh
 | `research_notes/Nghiệp vụ phần mềm kế toán/ma-nguon-mo-viet-nam-va-tich-hop.md` | Odoo `l10n_vn`/Viindoo, dự án GitHub Việt Nam, API hóa đơn điện tử, XML QĐ 1450, HTKK, ngân hàng (SePay/Casso/VietinBank/BIDV), VietQR, ký số, BHXH |
 | `research_notes/Nghiệp vụ phần mềm kế toán/phap-ly-viet-nam.md` | Luật Kế toán, TT 99/2025, TT 133, TT 58/2026, TT 152/2025, hóa đơn điện tử, GTGT/TNDN/TNCN/BHXH 2026, tờ khai, dữ liệu cá nhân |
 | `research_notes/Nghiệp vụ phần mềm kế toán/thiet-ke-so-cai.md` | Mẫu hình thiết kế sổ cái kép: lược đồ, máy trạng thái sửa chứng từ, số dư theo kỳ, giá vốn, thuế, sai lầm thường gặp, PostgreSQL |
-| `docs/superpowers/specs/2026-10-19-phan-mem-ke-toan-design.md` | **Đặc tả thiết kế** (chờ duyệt): giả định, hướng tiếp cận, kiến trúc, ngăn xếp, mô hình dữ liệu, quy tắc nghiệp vụ, danh sách phân hệ, tham số pháp lý, tích hợp, kiểm thử, rủi ro |
+| `docs/superpowers/specs/2026-10-19-phan-mem-ke-toan-design.md` | **Đặc tả thiết kế** (đã duyệt 2026-10-19): giả định, hướng tiếp cận, kiến trúc, ngăn xếp, mô hình dữ liệu, quy tắc nghiệp vụ, danh sách phân hệ, tham số pháp lý, tích hợp, kiểm thử, rủi ro |
 | `docs/superpowers/plans/2026-10-19-lo-trinh-thuc-hien.md` | **Lộ trình thực hiện** theo 8 giai đoạn với công việc, tiêu chí nghiệm thu, ước lượng |
+| `docs/superpowers/plans/2026-10-19-giai-doan-0-1-chi-tiet.md`, `…-quyet-dinh.md` | Kế hoạch chi tiết GĐ0–1 đã thực hiện và 244 quyết định khi thực hiện |
+| `CLAUDE.md`, `docs/TIEP-THEO.md` | Hướng dẫn cho agent và hàng đợi việc tiếp theo |
+| `docs/user/`, `docs/dev/` | Tài liệu người dùng từng giai đoạn, hướng dẫn kiểm thử |
+
+## Chạy thử
+
+```bash
+cp .env.example .env
+pnpm install
+docker compose up -d postgres
+pnpm db:migrate && pnpm db:seed:xyz
+pnpm -F @kt/api dev    # API :3000
+pnpm -F @kt/web dev    # web :5173, đăng nhập admin / Matkhau1!
+```
+
+Kiểm thử: `pnpm lint && pnpm typecheck && pnpm test` (chi tiết `docs/dev/kiem-thu.md`). Tài liệu người dùng: `docs/user/`.
 
 ## Bước tiếp theo
 
-1. Duyệt đặc tả (giả định G1–G7, ngăn xếp công nghệ, hướng tiếp cận A).
-2. Thu thập văn bản gốc và môi trường thử theo mục "Việc cần làm trước giai đoạn 0" của lộ trình.
-3. Viết kế hoạch chi tiết từng tác vụ cho giai đoạn 0 và 1, rồi bắt đầu lập trình.
+Xem `docs/TIEP-THEO.md`: tồn đọng GĐ0–1, dữ liệu pháp lý còn thiếu (TT 99/2025 Phụ lục II và IV), GĐ2 → GĐ7, việc chờ người dùng.
