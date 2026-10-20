@@ -19,6 +19,9 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     await app.withTenant(req, async (trx) => {
       const role = await trx.selectFrom('role').select('code').where('id', '=', req.params.id).executeTakeFirst();
       if (role?.code === 'admin') throw new AppError('SYSTEM_ROLE_LOCKED', 'Vai trò quản trị viên luôn có mọi quyền, không sửa được', 409);
+      const old = (await trx.selectFrom('role_permission').select('permission_code').where('role_id', '=', req.params.id).execute()).map((r) => r.permission_code);
+      const missing = req.body.permissions.filter((p) => !old.includes(p) && !req.auth!.permissions.has(p));
+      if (missing.length) throw new AppError('PERMISSION_NOT_HELD', `Không cấp được quyền bạn không có: ${missing.join(', ')}`, 403);
       await trx.deleteFrom('role_permission').where('role_id', '=', req.params.id).execute();
       if (req.body.permissions.length)
         await trx.insertInto('role_permission').values(req.body.permissions.map((p) => ({ tenant_id: tenantId, role_id: req.params.id, permission_code: p }))).execute();

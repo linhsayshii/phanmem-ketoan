@@ -93,7 +93,7 @@ describe('người dùng và vai trò', () => {
   it('người có user.update không tự nâng mình lên admin, không tự gán cờ nhạy cảm', async () => {
     const admin = await bootstrapTenant(ctx, { code: `SP${Date.now()}` });
     await sql`INSERT INTO role(tenant_id, code, name) VALUES (${admin.tenantId}::uuid, 'qt_phu', 'Quản trị phụ')`.execute(ctx.t.admin);
-    await sql`INSERT INTO role_permission(tenant_id, role_id, permission_code) SELECT ${admin.tenantId}::uuid, id, p FROM role, unnest(ARRAY['user.view','user.update']) p WHERE tenant_id = ${admin.tenantId}::uuid AND code = 'qt_phu'`.execute(ctx.t.admin);
+    await sql`INSERT INTO role_permission(tenant_id, role_id, permission_code) SELECT ${admin.tenantId}::uuid, (SELECT id FROM role WHERE tenant_id = ${admin.tenantId}::uuid AND code = 'qt_phu'), p FROM (SELECT permission_code p FROM role_permission rp JOIN role r ON r.id = rp.role_id WHERE r.tenant_id = ${admin.tenantId}::uuid AND r.code IN ('ketoan_vien', 'xem') UNION SELECT unnest(ARRAY['user.view','user.update'])) x`.execute(ctx.t.admin);
     const self = await mk(admin, 'qt_phu'); const other = await mk(admin, 'xem');
     expect((await put(self.cookie, self.id, { roleCode: 'admin' })).json().error.code).toBe('SELF_PRIVILEGE_CHANGE');
     expect((await put(self.cookie, self.id, { sensitiveFlags: ['view_cost'] })).json().error.code).toBe('SELF_PRIVILEGE_CHANGE');
@@ -111,8 +111,9 @@ describe('người dùng và vai trò', () => {
     expect((await toggle(a1.cookie, a2.id, true)).statusCode).toBe(200);
     expect((await put(a2.cookie, a1.userId, { roleCode: 'xem' })).statusCode).toBe(200); // đối chứng: hạ a1, còn a2
     // a2 là admin duy nhất: người khác có quyền cũng không hạ được
-    await sql`INSERT INTO role_permission(tenant_id, role_id, permission_code) SELECT tenant_id, id, 'user.update' FROM role WHERE tenant_id = ${a1.tenantId}::uuid AND code = 'ketoan_vien'`.execute(ctx.t.admin);
-    const kv = await mk(a2, 'ketoan_vien');
+    await sql`INSERT INTO role(tenant_id, code, name) VALUES (${a1.tenantId}::uuid, 'qt_full', 'Quyền như admin')`.execute(ctx.t.admin);
+    await sql`INSERT INTO role_permission(tenant_id, role_id, permission_code) SELECT ${a1.tenantId}::uuid, (SELECT id FROM role WHERE tenant_id = ${a1.tenantId}::uuid AND code = 'qt_full'), code FROM permission`.execute(ctx.t.admin);
+    const kv = await mk(a2, 'qt_full');
     const res = await put(kv.cookie, a2.id, { roleCode: 'xem' });
     expect(res.statusCode).toBe(409); expect(res.json().error.code).toBe('LAST_ADMIN');
     expect((await toggle(kv.cookie, a2.id, false)).json().error.code).toBe('LAST_ADMIN');
@@ -144,5 +145,31 @@ describe('người dùng và vai trò', () => {
     const b = await bootstrapTenant(ctx, { code: `NB${Date.now()}` });
     const r = await ctx.app.inject({ method: 'PUT', url: `/api/users/${b.userId}/active`, headers: { cookie: a.cookie }, payload: { isActive: false } });
     expect(r.statusCode).toBe(404); expect(r.json().error.code).toBe('USER_NOT_FOUND');
+  });
+
+  it('ROLE_EXCEEDS_ACTOR, TARGET_EXCEEDS_ACTOR, PERMISSION_NOT_HELD: không trao quyền mình không có, không sửa người hơn quyền', async () => {
+    const admin = await bootstrapTenant(ctx, { code: `EX${Date.now()}` });
+    await sql`INSERT INTO role(tenant_id, code, name) VALUES (${admin.tenantId}::uuid, 'qt_nho', 'Quản trị nhỏ')`.execute(ctx.t.admin);
+    await sql`INSERT INTO role_permission(tenant_id, role_id, permission_code) SELECT ${admin.tenantId}::uuid, (SELECT id FROM role WHERE tenant_id = ${admin.tenantId}::uuid AND code = 'qt_nho'), p FROM (SELECT permission_code p FROM role_permission rp JOIN role r ON r.id = rp.role_id WHERE r.tenant_id = ${admin.tenantId}::uuid AND r.code = 'xem' UNION SELECT unnest(ARRAY['user.view','user.update','user.create','role.view','role.update'])) x`.execute(ctx.t.admin);
+    const mid = await mk(admin, 'qt_nho'); const victim = await mk(admin, 'xem');
+    const post = (cookie: string, roleCode: string) => ctx.app.inject({ method: 'POST', url: '/api/users', headers: { cookie }, payload: { username: `n_${Math.random().toString(36).slice(2, 10)}`, fullName: 'N', password: 'Matkhau1!', roleCode } });
+    // A
+    expect((await post(mid.cookie, 'admin')).json().error.code).toBe('ROLE_EXCEEDS_ACTOR');
+    expect((await put(mid.cookie, victim.id, { roleCode: 'admin' })).json().error.code).toBe('ROLE_EXCEEDS_ACTOR');
+    expect((await post(admin.cookie, 'admin')).statusCode).toBe(201); // đối chứng
+    // B
+    const r = await put(mid.cookie, admin.userId, { password: 'Chiemquyen1!' });
+    expect(r.statusCode).toBe(403); expect(r.json().error.code).toBe('TARGET_EXCEEDS_ACTOR');
+    const act = await ctx.app.inject({ method: 'PUT', url: `/api/users/${admin.userId}/active`, headers: { cookie: mid.cookie }, payload: { isActive: false } });
+    expect(act.json().error.code).toBe('TARGET_EXCEEDS_ACTOR');
+    expect((await put(admin.cookie, mid.id, { fullName: 'Đối chứng' })).statusCode).toBe(200);
+    // C
+    const roles = (await ctx.app.inject({ method: 'GET', url: '/api/roles', headers: { cookie: mid.cookie } })).json() as { id: string; code: string }[];
+    const xemId = roles.find((x) => x.code === 'xem')!.id;
+    const grant = (cookie: string, permissions: string[]) => ctx.app.inject({ method: 'PUT', url: `/api/roles/${xemId}/permissions`, headers: { cookie }, payload: { permissions } });
+    const g = await grant(mid.cookie, ['voucher.post']);
+    expect(g.statusCode).toBe(403); expect(g.json().error.code).toBe('PERMISSION_NOT_HELD');
+    expect((await grant(mid.cookie, ['user.view'])).statusCode).toBe(200); // đối chứng: quyền mình có
+    expect((await grant(admin.cookie, ['voucher.post'])).statusCode).toBe(200);
   });
 });
