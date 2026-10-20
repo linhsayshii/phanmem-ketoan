@@ -1,12 +1,30 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'kysely';
 import { isReportComplete, loadCoaTemplate, loadReportTemplates, REPORT_CODES, REPORT_REGIMES } from '@kt/coa-data';
-import { setupTestDb, type TestDb } from '../src/testing.js';
+import { randomBytes } from 'node:crypto';
+import pg from 'pg';
+import { createDb, createPool } from '../src/client.js';
+import { migrate } from '../src/migrate.js';
+import type { TestDb } from '../src/testing.js';
 import { syncReferenceData } from '../src/reference.js';
 
+// File này sửa coa_template/report_template toàn cục nên chạy trên DB tạm riêng, không dùng chung DB của lần chạy.
+const dbName = `ketoan_ref_${randomBytes(4).toString('hex')}`;
+const withDb = (url: string): string => { const u = new URL(url); u.pathname = `/${dbName}`; return u.toString(); };
+const baseAdmin = process.env.DATABASE_ADMIN_URL!;
+const adminUrl = withDb(baseAdmin);
+const admin = async (text: string): Promise<void> => { const c = new pg.Client({ connectionString: baseAdmin }); await c.connect(); try { await c.query(text); } finally { await c.end(); } };
+
 let t: TestDb;
-beforeAll(async () => { t = await setupTestDb(); });
-afterAll(async () => { await t.close(); });
+beforeAll(async () => {
+  await admin(`CREATE DATABASE ${dbName}`);
+  await migrate(adminUrl);
+  await syncReferenceData(adminUrl);
+  const adminPool = createPool(adminUrl);
+  const appPool = createPool(withDb(process.env.DATABASE_URL!));
+  t = { admin: createDb(adminPool), db: createDb(appPool), close: async () => { await adminPool.end(); await appPool.end(); } };
+});
+afterAll(async () => { await t.close(); await admin(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`); });
 
 const count = async (regime: string): Promise<number> =>
   Number((await sql<{ n: string }>`SELECT count(*) AS n FROM coa_template WHERE regime = ${regime}`.execute(t.admin)).rows[0]!.n);
@@ -26,7 +44,7 @@ describe('dữ liệu tham chiếu', () => {
     const expected = loadCoaTemplate('TT133').length;
     await sql`UPDATE coa_template SET name = 'sai' WHERE regime = 'TT133' AND code = '111'`.execute(t.admin);
     await sql`INSERT INTO coa_template(regime, code, name, root_type, normal_balance, source) VALUES ('TT133','999','thừa','asset','debit','x'), ('TT99','111','thừa','asset','debit','x')`.execute(t.admin);
-    await syncReferenceData(process.env.DATABASE_ADMIN_URL!);
+    await syncReferenceData(adminUrl);
     expect(await count('TT133')).toBe(expected);
     expect(await count('TT99')).toBe(0);
     const r = await sql<{ name: string }>`SELECT name FROM coa_template WHERE regime = 'TT133' AND code = '111'`.execute(t.admin);
@@ -36,7 +54,7 @@ describe('dữ liệu tham chiếu', () => {
     const n = async (regime: string, code: string): Promise<number> =>
       Number((await sql<{ n: string }>`SELECT count(*) AS n FROM report_template WHERE regime = ${regime} AND report_code = ${code}`.execute(t.admin)).rows[0]!.n);
     await sql`INSERT INTO report_template(regime, report_code, line_code, label, source, side, sort_order) VALUES ('TT133','B01','999','thừa','balance','net_debit',1), ('TT200','B02','999','thừa','balance','net_debit',1)`.execute(t.admin);
-    await syncReferenceData(process.env.DATABASE_ADMIN_URL!);
+    await syncReferenceData(adminUrl);
     for (const regime of REPORT_REGIMES) for (const code of REPORT_CODES) {
       const expected = isReportComplete(regime, code) ? loadReportTemplates({ onlyComplete: true }).filter((r) => r.regime === regime && r.reportCode === code).length : 0;
       expect(await n(regime, code), `${regime}/${code}`).toBe(expected);

@@ -1,20 +1,13 @@
 # Chạy kiểm thử
 
-Kiểm thử API, cơ sở dữ liệu và worker chạy trên PostgreSQL thật (`docker compose up -d postgres`). Mỗi file kiểm thử tạo công ty riêng nên không cần dọn dữ liệu, nhưng dữ liệu tích lũy dần trong cơ sở dữ liệu phát triển (hàng trăm MB: sao lưu `pg_dump` và truy vấn chậm dần).
+Kiểm thử API, cơ sở dữ liệu và worker chạy trên PostgreSQL thật (`docker compose up -d postgres`). Mỗi file kiểm thử tạo công ty riêng; cả bộ chạy trong một cơ sở dữ liệu tạm nên không tích lũy dữ liệu vào cơ sở dữ liệu phát triển.
 
-## Chạy trên cơ sở dữ liệu tạm
+## Cơ sở dữ liệu tạm theo lần chạy
 
-Biến môi trường đã đặt sẵn thắng tệp `.env`, nên trỏ hai biến sau vào một cơ sở dữ liệu mới là đủ; kiểm thử tự chạy migration vào đó:
+Mỗi lần `pnpm test` (hoặc `pnpm -F <gói> test`) tự tạo cơ sở dữ liệu `ketoan_t_<8 hex>` trên cùng máy chủ với `DATABASE_ADMIN_URL`, chạy migration và nạp dữ liệu tham chiếu vào đó, trỏ `DATABASE_URL` và `DATABASE_ADMIN_URL` của kiểm thử sang nó, rồi xóa khi xong (`packages/db/src/test-global-setup.ts`). Cơ sở dữ liệu phát triển `ketoan` không bị ghi; không cần tạo hay xóa DB thủ công. Vai trò `app_user` là vai trò của cả cụm nên không cần tạo lại. Hai biến gốc lấy từ môi trường hoặc `.env`; thiếu thì kiểm thử báo lỗi ngay.
 
-```sh
-docker compose exec postgres createdb -U postgres ketoan_test
-export DATABASE_URL=postgres://app_user:app_pass@localhost:5432/ketoan_test
-export DATABASE_ADMIN_URL=postgres://postgres:postgres@localhost:5432/ketoan_test
-pnpm test
-docker compose exec postgres dropdb -U postgres ketoan_test   # xong thì bỏ
-```
-
-Vai trò `app_user` là vai trò của cả cụm nên không cần tạo lại. Cơ sở dữ liệu `ketoan` của môi trường phát triển không bị ảnh hưởng.
+- `KT_TEST_KEEP_DB=1`: giữ lại cơ sở dữ liệu tạm khi xong (tên in ra stderr) để điều tra; tự xóa bằng `dropdb`.
+- Kiểm thử vẫn chạy tuần tự (`--no-file-parallelism`) vì máy chỉ 2 CPU.
 
 ## Các biến thường dùng
 
