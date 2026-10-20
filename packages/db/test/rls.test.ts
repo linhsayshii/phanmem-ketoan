@@ -119,12 +119,18 @@ describe('RLS', () => {
       'voucher.import', 'dedupe.run', 'amortization.view', 'amortization.create', 'amortization.update', 'amortization.delete', 'amortization.run'];
     const noVien = ['fx.run', 'tax_return.finalize', 'tax.offset', 'amortization.run', 'dedupe.run'];
     const held = async (code: string) => new Set((await sql<{ c: string }>`SELECT rp.permission_code AS c FROM role_permission rp JOIN role r ON r.id = rp.role_id WHERE rp.tenant_id = ${a} AND r.code = ${code} AND rp.permission_code = ANY(${gd2}::text[])`.execute(t.admin)).rows.map((x) => x.c));
-    // Công ty tạo mới đã đúng; giả lập công ty tạo trước 0024 bằng cách gỡ quyền mới (tắt audit như migration).
+    // Công ty tạo mới đã đúng; giả lập công ty tạo trước 0024 bằng cách gỡ quyền mới (tắt audit như migration, luôn bật lại).
     await sql`ALTER TABLE role_permission DISABLE TRIGGER trg_audit`.execute(t.admin);
-    await sql`DELETE FROM role_permission WHERE tenant_id = ${a} AND permission_code = ANY(${gd2}::text[])`.execute(t.admin);
-    await sql`ALTER TABLE role_permission ENABLE TRIGGER trg_audit`.execute(t.admin);
+    try { await sql`DELETE FROM role_permission WHERE tenant_id = ${a} AND permission_code = ANY(${gd2}::text[])`.execute(t.admin); }
+    finally { await sql`ALTER TABLE role_permission ENABLE TRIGGER trg_audit`.execute(t.admin); }
     expect((await held('admin')).size).toBe(0);
-    await sql.raw(await readFile(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'migrations', '0024_quyen_gd2.sql'), 'utf8')).execute(t.admin);
+    // Chỉ chạy đoạn chèn bù (không chạy lại CREATE OR REPLACE FUNCTION: tránh hoàn nguyên hàm khi migration sau định nghĩa lại create_tenant trong DB kiểm thử dùng chung).
+    const text = await readFile(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'migrations', '0024_quyen_gd2.sql'), 'utf8');
+    const endMark = 'ALTER TABLE role_permission ENABLE TRIGGER trg_audit;';
+    const from = text.indexOf('-- Công ty đã có:'), to = text.indexOf(endMark);
+    expect(from, 'thiếu mốc đầu đoạn chèn bù trong 0024').toBeGreaterThanOrEqual(0);
+    expect(to, 'thiếu mốc cuối đoạn chèn bù trong 0024').toBeGreaterThan(from);
+    await sql.raw(text.slice(from, to + endMark.length)).execute(t.admin);
     expect([...await held('admin')].sort()).toEqual([...gd2].sort());
     expect([...await held('ketoan_truong')].sort()).toEqual([...gd2].sort());
     expect([...await held('ketoan_vien')].sort()).toEqual(gd2.filter((c) => !noVien.includes(c)).sort());

@@ -3,12 +3,13 @@ import { z } from 'zod';
 import { sql } from 'kysely';
 import { vnDayEnd, vnDayStart } from '../core/vnTime.js';
 
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const paging = { page: z.coerce.number().int().min(1).default(1), size: z.coerce.number().int().min(1).max(500).default(50) };
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   app.get('/api/audit', { preHandler: app.requirePermission('audit.view'), schema: { querystring: z.object({
       entity: z.string().optional(), entityId: z.string().optional(), userId: z.string().uuid().optional(), action: z.string().optional(),
-      from: z.string().optional(), to: z.string().optional(), ...paging }) } }, async (req) =>
+      from: day.optional(), to: day.optional(), ...paging }) } }, async (req) =>
     app.withTenant(req, async (trx) => {
       const q = req.query;
       let base = trx.selectFrom('audit_event as a').leftJoin('app_user as u', 'u.id', 'a.user_id');
@@ -24,7 +25,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       return { rows, total };
     }));
 
-  app.get('/api/audit/logins', { preHandler: app.requirePermission('audit.view'), schema: { querystring: z.object({ from: z.string().optional(), to: z.string().optional(), ...paging }) } }, async (req) =>
+  app.get('/api/audit/logins', { preHandler: app.requirePermission('audit.view'), schema: { querystring: z.object({ from: day.optional(), to: day.optional(), ...paging }) } }, async (req) =>
     app.withTenant(req, async (trx) => {
       const tenantId = req.auth!.tenantId!;
       let base = trx.selectFrom('login_event as l').where('l.username', 'in', trx.selectFrom('tenant_user').innerJoin('app_user', 'app_user.id', 'tenant_user.user_id').select('app_user.username').where('tenant_user.tenant_id', '=', tenantId));

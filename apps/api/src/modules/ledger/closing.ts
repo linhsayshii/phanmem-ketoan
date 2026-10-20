@@ -3,7 +3,7 @@ import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
 import { loadDefaultClosingSteps } from '@kt/coa-data';
-import { VND_AMOUNT_MSG, VND_AMOUNT_RE, type Regime } from '@kt/domain';
+import { todayVn, VND_AMOUNT_MSG, VND_AMOUNT_RE, type Regime } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { dateIso } from './vouchers.service.js';
@@ -27,7 +27,7 @@ export async function loadClosingTemplate(trx: Trx, tenantId: string, regime: Re
 // Chế độ của sơ đồ cần dùng: nêu rõ, hoặc theo kỳ chứa ngày (mặc định hôm nay, giờ Việt Nam), không có thì theo năm gần nhất.
 export async function resolveRegime(trx: Trx, regime?: string, date?: string): Promise<Regime> {
   if (regime) return regime as Regime;
-  const day = date ?? new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
+  const day = date ?? todayVn();
   const year = await trx.selectFrom('fiscal_period').select('regime').where('period_no', '>', 0)
     .orderBy(sql`(date_from <= ${day}::date and date_to >= ${day}::date)`, 'desc').orderBy('date_to', 'desc').executeTakeFirst();
   if (!year) throw new AppError('NO_FISCAL_YEAR', 'Chưa có năm tài chính: tạo năm tài chính trước khi thao tác với các bước kết chuyển', 409);

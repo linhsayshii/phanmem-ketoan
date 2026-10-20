@@ -287,7 +287,10 @@ describe('lược đồ sổ cái', () => {
 
     it('dòng hàng đợi trỏ chứng từ công ty khác bị bỏ qua và dọn, không lộ tổng Nợ/Có qua thông báo lỗi; khác tenant_id bị RLS chặn', async () => {
       const other = await createTestTenant(t.admin, { code: `LO${Date.now()}`, name: 'Công ty khác' });
-      const account = await acc('1111');
+      // Tài khoản của chính công ty kia (admin đang trỏ app.current_tenant về công ty chính, đặt lại sau khi sinh).
+      await admin.query(`SELECT set_config('app.current_tenant', $1, false)`, [other]);
+      try { await generateAccountsSql(admin, other, 'TT133'); } finally { await admin.query(`SELECT set_config('app.current_tenant', $1, false)`, [tenantId]); }
+      const account = (await admin.query(`SELECT id FROM account WHERE tenant_id = $1 AND regime = 'TT133' AND code = '1111'`, [other])).rows[0].id;
       let otherVoucher = '';
       // Chứng từ lệch (Nợ 777, Có 0) của công ty khác chỉ dựng được khi tắt trigger bằng quyền siêu người dùng.
       await admin.query('SET session_replication_role = replica');

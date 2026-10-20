@@ -71,6 +71,13 @@ describe('nhật ký kiểm toán', () => {
     expect(await total('2026-03-02')).toBe(1);
     expect(await total('2026-03-01')).toBe(0);
   });
+  it('from/to sai dạng ngày bị từ chối 400 ở cả hai route, không phải 500', async () => {
+    const a = await bootstrapTenant(ctx, { code: `AD${Date.now()}` });
+    for (const url of ['/api/audit?from=abc', '/api/audit?to=2026-3-1', '/api/audit/logins?from=01/03/2026', '/api/audit/logins?to=2026-03-01T00:00:00']) {
+      const r = await ctx.app.inject({ method: 'GET', url, headers: { cookie: a.cookie } });
+      expect(r.statusCode, url).toBe(400);
+    }
+  });
   it('người không có quyền audit.view bị 403', async () => {
     const a = await bootstrapTenant(ctx, { code: `AI${Date.now()}` });
     const roles = (await ctx.app.inject({ method: 'GET', url: '/api/roles', headers: { cookie: a.cookie } })).json() as { id: string; code: string; permissions: string[] }[];
