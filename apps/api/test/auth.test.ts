@@ -64,6 +64,8 @@ describe('xác thực', () => {
       const r = await login(lim.app, u, TEST_PASSWORD);
       expect(r.statusCode).toBe(429);
       expect(r.json().error.code).toBe('LOGIN_THROTTLED');
+      // lần bị chặn không tính thêm: khóa hết hạn sau lần sai thật cuối cùng, không kéo dài theo số lần thử
+      expect((await sql<{ n: number }>`SELECT count(*) AS n FROM login_event WHERE username = ${u}`.execute(lim.t.admin)).rows[0]!.n).toEqual(3);
       expect((await login(lim.app, other, TEST_PASSWORD)).statusCode).toBe(200);
     });
     it('tên không tồn tại cũng bị khóa như nhau, không lộ tên có tồn tại', async () => {

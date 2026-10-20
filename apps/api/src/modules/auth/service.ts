@@ -20,10 +20,8 @@ export async function login(db: Kysely<Database>, input: { username: string; pas
               AND ts > now() - make_interval(mins => ${lockMinutes})
               AND ts > coalesce((SELECT max(ts) FROM login_event WHERE username = ${input.username} AND success), '-infinity')) AS u,
            (SELECT count(*) FROM login_event WHERE ip = ${input.ip} AND NOT success AND ts > now() - make_interval(mins => ${lockMinutes})) AS i`.execute(db);
-  if (Number(cnt.rows[0]!.u) >= maxFailsUser || Number(cnt.rows[0]!.i) >= maxFailsIp) {
-    await db.insertInto('login_event').values({ username: input.username, user_id: null, success: false, ip: input.ip }).execute();
-    return 'throttled';
-  }
+  // Lần bị chặn không ghi login_event (route ghi log máy chủ): nếu ghi thì cứ thử tiếp là khóa kéo dài mãi, kẻ xấu giữ khóa được tài khoản người khác
+  if (Number(cnt.rows[0]!.u) >= maxFailsUser || Number(cnt.rows[0]!.i) >= maxFailsIp) return 'throttled';
   const user = await db.selectFrom('app_user').selectAll().where('username', '=', input.username).executeTakeFirst();
   const verified = await verifyPassword(user?.is_active ? user.password_hash : await getDummyHash(), input.password);
   const ok = verified && !!user?.is_active;
