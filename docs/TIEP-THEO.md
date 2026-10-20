@@ -4,27 +4,30 @@ Cập nhật: 2026-10-20, sau khi xong GĐ0–1 (tag `gd0-hoan-tat`, `gd1-hoan-t
 
 Thứ tự làm: mục 1 → 2 → 3 (GĐ2 → GĐ7). Mục 4 là việc chờ người dùng, không chặn các mục khác.
 
-## 1. Tồn đọng của GĐ0–1 (làm trước GĐ2, gộp thành một kế hoạch nhỏ "GĐ1.5")
+## 1. Tồn đọng của GĐ0–1: kế hoạch nhỏ "GĐ1.5" (làm trước GĐ2)
 
-Nguồn: phần "Final" của `docs/superpowers/plans/2026-10-19-giai-doan-0-1-quyet-dinh.md` và danh sách việc hoãn theo từng tác vụ `docs/superpowers/plans/2026-10-20-gd1-viec-hoan-lai.md` (sổ theo dõi đầy đủ: `2026-10-20-gd0-gd1-so-theo-doi-sdd.md`).
+Phân loại đầy đủ (nhóm A–D, lý do, mục đã kiểm trên mã): `docs/superpowers/plans/2026-10-20-gd1-5-de-xuat.md`. Nguồn: `2026-10-20-gd1-viec-hoan-lai.md` và phần "Final" của `2026-10-19-giai-doan-0-1-quyet-dinh.md`.
 
-**Làm đầu tiên** (ba mục đầu dưới đây và phân loại `gd1-viec-hoan-lai.md` thành đề xuất GĐ1.5), rồi mới tới các mục còn lại.
+Đã xong (lệnh 01, 2026-10-20): checksum migration chuẩn hóa CRLF/BOM + `.gitattributes`; chữ báo cắt Nhật ký chung chỉ hướng sang Excel; `testTimeout` web 30 giây.
 
-- [ ] **Checksum migration lỗi với CRLF**: chuẩn hóa `text.replace(/\r\n/g, '\n')` trước khi băm trong migrator (`packages/db`) và thêm `.gitattributes` `*.sql text eol=lf`; hash LF đã lưu vẫn hợp lệ; thêm kiểm thử.
-- [ ] Bộ kiểm thử dùng cơ sở dữ liệu kiểm thử riêng (tự tạo/xóa) thay vì DB phát triển; cô lập `packages/db/test/reference.test.ts` (ghi `coa_template` toàn cục) để bật lại chạy song song file kiểm thử.
-- [ ] Kiểm thử chưa được typecheck (`tsconfig include: ["src"]`): thêm `tsconfig.test.json` hoặc mở rộng include, sửa lỗi kiểu phát sinh.
-- [ ] Đăng nhập: giới hạn tần suất và khóa tạm sau nhiều lần sai; `trustProxy` chỉ khi cấu hình; mặc định production: `COOKIE_SECURE=true`, `SESSION_SECRET` tối thiểu 32 ký tự (báo lỗi khi khởi động nếu không đạt).
-- [ ] Một tài khoản dùng cho nhiều công ty: luồng mời người dùng đã có vào công ty khác (hiện chỉ CLI `create-admin`).
-- [ ] Màn hình Phiếu kế toán: bỏ viết cứng loại `PKT` (dùng chung cho các loại chứng từ sau), "Đảo" cho chọn ngày đảo thay vì luôn là hôm nay.
-- [ ] Vai trò mặc định `ketoan_vien` quá rộng (`closing.run`, `closing_step.update`, `report_def.update`, `opening_balance.update`): thu hẹp, để kế toán trưởng giữ.
-- [ ] Quy ước lỗi `PERIOD_NOT_FOUND` (404 hay 409) thống nhất toàn API.
-- [ ] Trigger cân bằng/số dư theo dòng là O(n²) (đã giới hạn 5.000 dòng/chứng từ): chuyển sang trigger cấp câu lệnh.
-- [ ] Phạm vi khóa khi tạo partition `voucher_line` theo kỳ.
-- [ ] Khóa ngoại tổng hợp `(tenant_id, id)` cho các bảng sau 0001 (hiện chỉ dựa RLS).
-- [ ] Nhỏ: chữ báo cắt Nhật ký chung trong `apps/web/src/pages/Ledgers.tsx` (khoảng dòng 118) và đoạn Nhật ký chung trong `docs/user/giai-doan-1-so-cai.md` bảo "In PDF / Xuất Excel" khi quá 50.000 dòng, nhưng PDF giới hạn 40.000 dòng (`MAX_PRINT_ROWS`): chỉ hướng sang Excel.
-- [ ] Nhỏ: `testTimeout` của vitest web đang bằng `asyncUtilTimeout` (5 giây): nâng lên 30 giây.
-- [ ] Đo lại hiệu năng 100.000 dòng (BCĐPS năm < 2 giây theo tiêu chí GĐ1); nếu chưa đạt, thêm chỉ mục/phân trang.
-- [ ] Khoảng trống đặc tả còn lại: chuyển số dư sang năm sau khi đổi chế độ (mục 7.2), xuất XML cho cơ quan thẩm quyền (mục 13), bất biến 7 đầy đủ khi đã có mẫu B01/B02/B03.
+**Nhóm A, làm trước GĐ2** (viết kế hoạch `GĐ1.5` theo khuôn GĐ0–1 rồi thực hiện; thứ tự gợi ý A1 → A2 trước để các mục sau có kiểm thử sạch):
+
+- [ ] A1 (vừa) Cơ sở dữ liệu kiểm thử riêng tự tạo/xóa; cô lập `packages/db/test/reference.test.ts`; bật lại chạy song song file kiểm thử nếu ổn định.
+- [ ] A2 (vừa) Typecheck kiểm thử mọi gói, sửa lỗi kiểu phát sinh.
+- [ ] A3 (vừa) Đăng nhập: giới hạn tần suất và khóa tạm sau nhiều lần sai.
+- [ ] A4 (nhỏ) `trustProxy` chỉ khi cấu hình; production bắt buộc `COOKIE_SECURE=true`, `SESSION_SECRET` ≥ 32 ký tự.
+- [ ] A5 (vừa) Chặn tự nâng quyền: không tự sửa vai trò/cờ nhạy cảm của mình, không gán cờ mình không có, giữ ít nhất một quản trị viên, vai trò hệ thống không bị tước quyền.
+- [ ] A6 (nhỏ) RLS `tenant_user`: tách chính sách SELECT và ghi; `create_tenant` trả lại `app.current_tenant`.
+- [ ] A7 (vừa) Lưu băm mã phiên; dọn phiên hết hạn.
+- [ ] A8 (nhỏ) Thu hẹp vai trò mặc định `ketoan_vien`.
+- [ ] A9 (nhỏ) Quy ước lỗi `*_NOT_FOUND` (404/409) thống nhất toàn API.
+- [ ] A10 (vừa) Khóa ngoại tổng hợp `(tenant_id, id)` cho các bảng sau 0001 và quy ước cho bảng mới.
+- [ ] A11 (lớn) Trigger cân bằng/số dư cấp câu lệnh, bỏ hoặc nâng giới hạn 5.000 dòng/chứng từ.
+- [ ] A12 (vừa) Đo lại hiệu năng 100.000 dòng (BCĐPS năm < 2 giây); thêm chỉ mục/phân trang nếu chưa đạt.
+
+**Nhóm B, làm cùng GĐ2** (đưa vào kế hoạch GĐ2): màn hình chứng từ dùng chung thay `PKT` viết cứng và "Đảo" chọn ngày; nhập Excel; danh mục dùng chung; lưới nhập liệu và F4; múi giờ Việt Nam cho bộ lọc ngày; cờ nhạy cảm cho dữ liệu GĐ2; siết cân bằng đa tiền tệ. Chi tiết trong đề xuất.
+
+**Nhóm C, để sau**: chuyển số dư khi đổi chế độ (đặc tả 7.2, sau khi có TT99), xuất XML cơ quan thẩm quyền (mục 13), bất biến 7 đầy đủ; mời người dùng đã có vào công ty khác; phạm vi khóa tạo partition; việc chuẩn bị production (Docker, sao lưu, seed). Nhóm D (không làm) có lý do trong đề xuất.
 
 ## 2. Dữ liệu pháp lý còn thiếu (cổng `*.status.json` trong `packages/coa-data`)
 
@@ -59,3 +62,6 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
 
 - VPS oracle: repo ở `~/phanmem-ketoan`, remote `origin` = `~/git/phanmem-ketoan.git` (bare). Trên máy Mac của người dùng, remote `oracle` trỏ tới repo bare đó: `git pull oracle main` để lấy về.
 - Xem ứng dụng từ máy Mac: `ssh -L 5173:127.0.0.1:5173 -L 3000:127.0.0.1:3000 oracle` rồi mở `http://localhost:5173`.
+- Playwright trên VPS oracle (aarch64, cài 2026-10-20): `playwright install --with-deps` lỗi vì kho apt bên thứ ba `packagecloud.io/ookla/speedtest-cli` trả 404 làm `apt-get update` thất bại (không sửa vì là cấu hình hệ thống ngoài dự án). Cách cài: `pnpm -F @kt/api exec playwright install-deps --dry-run chromium` lấy danh sách gói, `sudo apt-get install -y --no-install-recommends <các gói>` (đã cài: phông `fonts-*`, `libgbm1`, mesa, `xvfb`, `xauth`…; thêm `unzip` cho `exportAuthority.test.ts`), rồi `pnpm -F @kt/api exec playwright install chromium` và tương tự cho `@kt/web` (trình duyệt ở `~/.cache/ms-playwright`).
+- Gói hệ thống đã cài thêm cho dự án (2026-10-20): `unzip`, `postgresql-client-16` (`pg_dump` cho kiểm thử sao lưu), `poppler-utils` (`pdftotext` cho văn bản pháp lý). Khi `apt-get update` lỗi vì kho ookla: `sudo apt-get update -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=-`.
+- Kiểm thử trên VPS chạy với cơ sở dữ liệu tạm `ketoan_test` theo `docs/dev/kiem-thu.md` (Docker cần `sudo`: `sudo docker compose exec -T postgres createdb -U postgres ketoan_test`).
