@@ -6,7 +6,9 @@ Thứ tự làm: mục 1 → 2 → 3 (GĐ2 → GĐ7). Mục 4 là việc chờ n
 
 ## 1. Tồn đọng của GĐ0–1 (làm trước GĐ2, gộp thành một kế hoạch nhỏ "GĐ1.5")
 
-Nguồn: phần "Final" của `docs/superpowers/plans/2026-10-19-giai-doan-0-1-quyet-dinh.md`.
+Nguồn: phần "Final" của `docs/superpowers/plans/2026-10-19-giai-doan-0-1-quyet-dinh.md` và danh sách việc hoãn theo từng tác vụ `docs/superpowers/plans/2026-10-20-gd1-viec-hoan-lai.md` (sổ theo dõi đầy đủ: `2026-10-20-gd0-gd1-so-theo-doi-sdd.md`).
+
+**Làm đầu tiên** (ba mục đầu dưới đây và phân loại `gd1-viec-hoan-lai.md` thành đề xuất GĐ1.5), rồi mới tới các mục còn lại.
 
 - [ ] **Checksum migration lỗi với CRLF**: chuẩn hóa `text.replace(/\r\n/g, '\n')` trước khi băm trong migrator (`packages/db`) và thêm `.gitattributes` `*.sql text eol=lf`; hash LF đã lưu vẫn hợp lệ; thêm kiểm thử.
 - [ ] Bộ kiểm thử dùng cơ sở dữ liệu kiểm thử riêng (tự tạo/xóa) thay vì DB phát triển; cô lập `packages/db/test/reference.test.ts` (ghi `coa_template` toàn cục) để bật lại chạy song song file kiểm thử.
@@ -19,7 +21,8 @@ Nguồn: phần "Final" của `docs/superpowers/plans/2026-10-19-giai-doan-0-1-q
 - [ ] Trigger cân bằng/số dư theo dòng là O(n²) (đã giới hạn 5.000 dòng/chứng từ): chuyển sang trigger cấp câu lệnh.
 - [ ] Phạm vi khóa khi tạo partition `voucher_line` theo kỳ.
 - [ ] Khóa ngoại tổng hợp `(tenant_id, id)` cho các bảng sau 0001 (hiện chỉ dựa RLS).
-- [ ] Nhỏ: chữ báo cắt Nhật ký chung (PDF và Excel nói khác nhau) khi quá 50.000 dòng; `testTimeout` của web.
+- [ ] Nhỏ: chữ báo cắt Nhật ký chung trong `apps/web/src/pages/Ledgers.tsx` (khoảng dòng 118) và đoạn Nhật ký chung trong `docs/user/giai-doan-1-so-cai.md` bảo "In PDF / Xuất Excel" khi quá 50.000 dòng, nhưng PDF giới hạn 40.000 dòng (`MAX_PRINT_ROWS`): chỉ hướng sang Excel.
+- [ ] Nhỏ: `testTimeout` của vitest web đang bằng `asyncUtilTimeout` (5 giây): nâng lên 30 giây.
 - [ ] Đo lại hiệu năng 100.000 dòng (BCĐPS năm < 2 giây theo tiêu chí GĐ1); nếu chưa đạt, thêm chỉ mục/phân trang.
 - [ ] Khoảng trống đặc tả còn lại: chuyển số dư sang năm sau khi đổi chế độ (mục 7.2), xuất XML cho cơ quan thẩm quyền (mục 13), bất biến 7 đầy đủ khi đã có mẫu B01/B02/B03.
 
