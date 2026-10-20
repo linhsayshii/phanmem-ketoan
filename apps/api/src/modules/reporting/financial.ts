@@ -35,7 +35,7 @@ interface Unit { code: string; name: string; kind: string | null; partyCode: str
 interface PairUnit { dcode: string; dname: string; dkind: string | null; ccode: string; cname: string; ckind: string | null; amount: Decimal }
 const once = <T>(f: () => Promise<T>): (() => Promise<T>) => { let v: Promise<T> | undefined; return () => (v ??= f()); };
 
-function reportData(trx: Trx, tenantId: string, regime: string, p: { from: string; to: string }) {
+export function reportData(trx: Trx, tenantId: string, regime: string, p: { from: string; to: string }) {
   return {
     // Đơn vị số dư: tài khoản công nợ theo từng đối tượng, tài khoản khác theo tài khoản; dư ròng gộp loại tiền. Nợ/Có của đơn vị là phần dư một bên.
     balance: once(async (): Promise<Unit[]> => (await sql<{ code: string; name: string; kind: string | null; partyCode: string | null; net: string }>`
@@ -66,7 +66,7 @@ const matches = (code: string, ref: { prefix: string; exclude: string[] }) => co
 const pick = (side: Side, u: { d: Decimal; c: Decimal }): Decimal => side === 'debit' ? u.d : side === 'credit' ? u.c : side === 'net_debit' ? u.d.minus(u.c) : u.c.minus(u.d);
 const pairMatches = (r: PairUnit, debit: string[], credit: string[]) => underAny(r.dcode, debit) && underAny(r.ccode, credit);
 
-function sqlResolver(data: ReportData): Resolver {
+export function sqlResolver(data: ReportData): Resolver {
   return {
     async account(ref, source, side) { return sum((await data[source]()).filter((u) => matches(u.code, ref)).map((u) => pick(side, u))); },
     async pair(debit, credit) { return sum((await data.pair()).filter((r) => pairMatches(r, debit, credit)).map((r) => r.amount)); },

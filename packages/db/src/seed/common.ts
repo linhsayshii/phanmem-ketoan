@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { loadDefaultClosingSteps } from '@kt/coa-data';
 import { buildFiscalPeriods, type Regime } from '@kt/domain';
 
 export async function ensureUser(c: pg.Client, username: string, passwordHash: string, fullName: string): Promise<string> {
@@ -36,4 +37,12 @@ export async function generateAccountsSql(c: pg.Client, tenantId: string, regime
     idByCode.set(t.code, r.rows[0].id);
   }
   return tpl.rows.length;
+}
+// Sơ đồ kết chuyển mặc định (giống loadClosingTemplate của API, nhưng bằng SQL thuần cho seed); chỉ gọi khi công ty chưa có bước nào.
+export async function insertDefaultClosingSteps(c: pg.Client, tenantId: string): Promise<number> {
+  const steps = loadDefaultClosingSteps();
+  for (const s of steps)
+    await c.query(`INSERT INTO closing_step(tenant_id, step_order, name, mode, from_accounts, to_account, keep_balance, by_dimension, ratio_source, run_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [tenantId, s.stepOrder, s.name, s.mode, s.fromAccounts, s.toAccount, s.keepBalance ?? '0', s.byDimension ?? null, s.ratioSource ? JSON.stringify(s.ratioSource) : null, s.runAt]);
+  return steps.length;
 }
