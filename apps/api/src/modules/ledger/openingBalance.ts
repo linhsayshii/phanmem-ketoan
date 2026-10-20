@@ -44,7 +44,7 @@ async function openingPeriod(trx: Trx, year: number) {
 
 const openingRows = (trx: Trx, year: number, regime: string) =>
   trx.selectFrom('opening_balance as o').innerJoin('account as a', 'a.id', 'o.account_id').leftJoin('party as p', 'p.id', 'o.party_id')
-    .select(['o.id', 'o.account_id', 'o.party_id', 'o.currency_code', 'o.debit', 'o.credit', 'o.debit_currency', 'o.credit_currency',
+    .select(['o.id', 'o.account_id', 'o.party_id', 'o.bank_account_id', 'o.currency_code', 'o.debit', 'o.credit', 'o.debit_currency', 'o.credit_currency',
       'a.code as accountCode', 'a.name as accountName', 'a.is_group', 'a.is_active', 'a.normal_balance', 'a.subledger_kind', 'a.track_currency', 'a.root_type', 'p.code as partyCode', 'p.name as partyName'])
     .where('o.fiscal_year', '=', year).where('a.regime', '=', regime).orderBy('a.code').orderBy('p.code').orderBy('o.id').execute();
 type DbRow = Awaited<ReturnType<typeof openingRows>>[number];
@@ -142,7 +142,7 @@ export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: str
   const lines = rows.map((r, i) => ({
     tenant_id: ctx.tenantId, voucher_id: id, line_no: i + 1, account_id: r.account_id, posting_date: p0.date_from, currency_code: r.currency_code, debit: r.debit, credit: r.credit,
     // có dấu: + Nợ, − Có (dòng VND được trigger đặt lại bằng Nợ − Có)
-    amount_currency: D(r.debit_currency).minus(r.credit_currency).toString(), party_id: r.party_id, description: 'Số dư đầu kỳ' }));
+    amount_currency: D(r.debit_currency).minus(r.credit_currency).toString(), party_id: r.party_id, bank_account_id: r.bank_account_id, description: 'Số dư đầu kỳ' }));
   for (const c of chunks(lines)) await trx.insertInto('voucher_line').values(c).execute();
   return postVoucher(trx, id);
 }

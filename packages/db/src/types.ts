@@ -144,7 +144,7 @@ export interface VoucherPairTable {
   debit_line_id: number | null; credit_line_id: number | null;
 }
 export interface OpeningBalanceTable {
-  id: Generated<number>; tenant_id: string; fiscal_year: number; account_id: number; party_id: string | null; currency_code: Generated<string>;
+  id: Generated<number>; tenant_id: string; fiscal_year: number; account_id: number; party_id: string | null; bank_account_id: number | null; currency_code: Generated<string>;
   debit: NumericDefault; credit: NumericDefault; debit_currency: NumericDefault; credit_currency: NumericDefault;
 }
 export interface BalanceStaleTable { tenant_id: string; stale_year: number; stale_period: number; marked_at: Generated<string> }

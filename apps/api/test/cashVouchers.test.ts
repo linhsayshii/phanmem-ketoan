@@ -202,3 +202,24 @@ describe('danh sách và trạng thái kỳ', () => {
     await sql`UPDATE fiscal_period SET status = 'open' WHERE tenant_id = ${tenantId}::uuid AND fiscal_year = 2026 AND period_no = 9`.execute(ctx.t.admin);
   });
 });
+
+describe('đảo chứng từ giữ thông tin tiêu đề', () => {
+  it('chứng từ đảo của Giấy báo Nợ giữ người nhận, địa chỉ, chứng từ gốc kèm theo, tài khoản ngân hàng, hạn thanh toán, mục đích', async () => {
+    const lines = [L('331', '90', '0', { partyCode: 'NCC001' }), L('1121', '0', '90')];
+    const src = await create(voucher('BN', '2026-05-04', lines, { bankAccountNo: '0011001', partyCode: 'NCC001', partyBankAccountNo: '19001', personName: 'Trần Thị B', personAddress: '5 Hai Bà Trưng', attachmentsCount: 3, dueDate: '2026-06-01', purpose: 'chi_tra_ncc', autoPost: true }));
+    expect(src.statusCode, src.body).toBe(201);
+    const rev = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${src.json().id}/reverse`, headers: { cookie }, payload: { postingDate: '2026-05-05' } });
+    expect(rev.statusCode, rev.body).toBe(201);
+    const got = (await ctx.app.inject({ method: 'GET', url: `/api/vouchers/${rev.json().id}`, headers: { cookie } })).json();
+    expect(got).toMatchObject({ voucherType: 'BN', reversalOfId: src.json().id, personName: 'Trần Thị B', personAddress: '5 Hai Bà Trưng', attachmentsCount: 3,
+      bankAccountNo: '0011001', partyBankAccountNo: '19001', dueDate: '2026-06-01', purpose: 'chi_tra_ncc' });
+  });
+
+  it('chứng từ đảo của Chuyển tiền nội bộ giữ tài khoản ngân hàng đối ứng', async () => {
+    const src = await create(voucher('CT', '2026-05-06', [L('1121', '100'), L('1121', '0', '100')], { bankAccountNo: '0011001', counterBankAccountNo: '0011002', autoPost: true }));
+    expect(src.statusCode, src.body).toBe(201);
+    const rev = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${src.json().id}/reverse`, headers: { cookie }, payload: { postingDate: '2026-05-07' } });
+    expect(rev.statusCode, rev.body).toBe(201);
+    expect(rev.json()).toMatchObject({ bankAccountNo: '0011001', counterBankAccountNo: '0011002' });
+  });
+});

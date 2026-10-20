@@ -322,3 +322,34 @@ describe('chứng từ DK: không lập tay, không bị chiếm, số dư lớn
     expect(p.json()).toMatchObject({ state: 'posted', totalDebit: '6001' }); expect(p.json().lines).toHaveLength(6002);
   }, 120_000);
 });
+
+describe('số dư đầu kỳ theo tài khoản ngân hàng', () => {
+  let c5: string; let t5: string; let bankA: number; let bankB: number;
+  beforeAll(async () => {
+    ({ cookie: c5, tenantId: t5 } = await bootstrapTenant(ctx, { code: `OK${Date.now()}` }));
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c5 }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' } })).statusCode).toBe(201);
+    const cat = (name: string, payload: object) => ctx.app.inject({ method: 'POST', url: `/api/catalogs/${name}`, headers: { cookie: c5 }, payload });
+    expect((await cat('bank', { code: 'VCB', name: 'Vietcombank' })).statusCode).toBe(201);
+    for (const no of ['0011001', '0011002']) expect((await cat('bank_account', { bank_code: 'VCB', account_no: no, gl_account_code: '1121' })).statusCode).toBe(201);
+    const ids = await sql<{ id: number; account_no: string }>`SELECT id, account_no FROM bank_account WHERE tenant_id = ${t5}::uuid ORDER BY account_no`.execute(ctx.t.admin);
+    [bankA, bankB] = [ids.rows[0]!.id, ids.rows[1]!.id];
+  }, 60_000);
+  const insert = (bank: number | null, account: string, debit: string, credit: string) =>
+    sql`INSERT INTO opening_balance(tenant_id, fiscal_year, account_id, bank_account_id, debit, credit)
+      SELECT ${t5}::uuid, 2026, id, ${bank}::bigint, ${debit}::numeric, ${credit}::numeric FROM account WHERE tenant_id = ${t5}::uuid AND regime = 'TT133' AND code = ${account}`.execute(ctx.t.admin);
+
+  it('cùng tài khoản 1121 nhưng khác tài khoản ngân hàng thì khác dòng; trùng tài khoản ngân hàng, hay cùng không gán, bị khóa duy nhất chặn', async () => {
+    await insert(bankA, '1121', '100', '0'); await insert(bankB, '1121', '200', '0'); await insert(null, '1121', '300', '0');
+    await expect(insert(bankA, '1121', '1', '0')).rejects.toThrow(/opening_balance_key/);
+    await expect(insert(null, '1121', '1', '0')).rejects.toThrow(/opening_balance_key/);
+    await insert(null, '4111', '0', '600');
+  });
+
+  it('ghi sổ số dư đầu kỳ chép tài khoản ngân hàng sang dòng chứng từ DK', async () => {
+    const p = await ctx.app.inject({ method: 'POST', url: '/api/opening-balance/2026/post', headers: { cookie: c5 } });
+    expect(p.statusCode, p.body).toBe(200);
+    const r = await sql<{ bank: string | null; debit: string }>`SELECT b.account_no AS bank, l.debit::text FROM voucher_line l JOIN account a ON a.id = l.account_id LEFT JOIN bank_account b ON b.id = l.bank_account_id
+      WHERE l.voucher_id = ${p.json().id}::uuid AND a.code = '1121' ORDER BY l.debit`.execute(ctx.t.admin);
+    expect(r.rows).toEqual([{ bank: '0011001', debit: '100' }, { bank: '0011002', debit: '200' }, { bank: null, debit: '300' }]);
+  });
+});
