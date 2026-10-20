@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Alert, Button, Card, Col, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Spin, Tag, Upload, message } from 'antd';
+import { Alert, Button, Card, Col, DatePicker, Dropdown, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Spin, Tag, Upload, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
@@ -22,6 +22,9 @@ interface Voucher { id: string; voucherType: string; voucherNo: string | null; p
   currencyCode: string; fxRate: string | null; version: number; totalDebit: string; lines: Line[] }
 interface FormValues { postingDate: Dayjs; documentDate: Dayjs; description?: string | null; partyCode?: string | null; personName?: string | null; personAddress?: string | null; attachmentsCount?: number | null;
   bankAccountNo?: string | null; counterBankAccountNo?: string | null; partyBankAccountNo?: string | null; dueDate?: Dayjs | null; purpose?: string | null; currencyCode?: string; fxRate?: string | null }
+
+// Tên mẫu in trong menu In của loại chứng từ có nhiều mẫu (printForms của loại; mẫu đầu là mẫu mặc định).
+const PRINT_FORM_LABELS: Record<string, string> = { '01-TT': 'Phiếu thu', '02-TT': 'Phiếu chi', 'giay-bao': 'Giấy báo ngân hàng', unc: 'Ủy nhiệm chi' };
 
 export const emptyLine = (): Line => ({ accountCode: '', description: null, debit: '0', credit: '0', partyCode: null, departmentCode: null, projectCode: null, costItemCode: null });
 export const totals = (lines: Line[]) => ({ debit: sum(lines.map((l) => l.debit || '0')).toString(), credit: sum(lines.map((l) => l.credit || '0')).toString() });
@@ -280,7 +283,9 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
         {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo} ngày ${formatVnDate(p)}` }); })}>Đảo</Button>}
         {!isNew && !viewOnly && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy chứng từ?', content: 'Số chứng từ (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
         {!isNew && mayDuplicate && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'duplicate', body: { postingDate: todayVn() } }))}>{decision === 'adjust_in_open_period' ? 'Nhân bản sang kỳ mở' : 'Nhân bản'}</Button>}
-        {!isNew && can('voucher.print') && <Button href={`/api/vouchers/${id}/print?format=pdf`} target="_blank">In</Button>}
+        {!isNew && can('voucher.print') && (eff.printForms.length > 1
+          ? <Dropdown trigger={['click']} menu={{ items: eff.printForms.map((f) => ({ key: f, label: <a href={`/api/vouchers/${id}/print?format=pdf&form=${f}`} target="_blank" rel="noreferrer">{PRINT_FORM_LABELS[f] ?? f}</a> })) }}><Button>In ▾</Button></Dropdown>
+          : <Button href={`/api/vouchers/${id}/print?format=pdf`} target="_blank">In</Button>)}
       </Space>}>
       {v.error && <Alert type="error" showIcon message={(v.error as Error).message} style={{ marginBottom: 12 }} />}
       <Form form={form} layout="vertical" initialValues={{ postingDate: dayjs(todayVn()), documentDate: dayjs(todayVn()), currencyCode: 'VND' }} onValuesChange={onValuesChange}>

@@ -19,6 +19,16 @@ export const PRINT_CSS = `
   .sign i { display: block; font-size: 10pt; }
   .sign .gap { height: 64px; }
   .pb { page-break-after: always; }
+  .cv { line-height: 1.8; }
+  .cv p { margin: 4px 0; }
+  .cv .head { font-size: 11pt; line-height: 1.4; }
+  .cv .head b { display: inline; }
+  .cv .head > div:last-child { max-width: 48%; }
+  .cv-top { display: flex; align-items: flex-start; }
+  .cv-mid { flex: 1; }
+  .cv-ref { width: 32%; font-size: 11pt; line-height: 1.5; margin-top: 12px; }
+  .cv .sign { margin-bottom: 14px; }
+  .cv .note { font-size: 10pt; }
 `;
 
 export function printShell(title: string, body: string): string {

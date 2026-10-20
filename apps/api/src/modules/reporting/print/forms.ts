@@ -15,7 +15,21 @@ const FORMS: Record<string, Record<string, string>> = {
   B01: { TT99: 'B01-DN', TT133: 'B01a-DNN', TT200: 'B01-DN' },
   B02: { TT99: 'B02-DN', TT133: 'B02-DNN', TT200: 'B02-DN' },
   B03: { TT99: 'B03-DN', TT133: 'B03-DNN', TT200: 'B03-DN' },
+  // Chứng từ tiền mặt: chép từ mẫu trong văn bản gốc của TT 133/2016 và TT 99/2025 (~/legal-docs); TT200 và TT58 chưa có văn bản gốc đối chiếu nên không có mục (xem voucherFormFor).
+  '01-TT': { TT99: '01 - TT', TT133: '01 - TT' },
+  '02-TT': { TT99: '02 - TT', TT133: '02 - TT' },
+};
+// Chú thích dưới "Mẫu số" của chứng từ, đúng chữ trên mẫu (khác chú thích của sổ: TT99 ghi "Kèm theo", TT133 ghi "Ban hành theo").
+const VOUCHER_LEGEND: Record<string, string> = {
+  TT99: '(Kèm theo Thông tư số 99/2025/TT-BTC ngày 27 tháng 10 năm 2025 của Bộ trưởng Bộ Tài chính)',
+  TT133: '(Ban hành theo Thông tư số 133/2016/TT-BTC ngày 26/8/2016 của Bộ Tài chính)',
 };
 export function formNoFor(regime: string, key: string): FormRef {
   return { formNo: FORMS[key]?.[regime] ?? key, issuedBy: ISSUED[regime] ?? '' };
+}
+
+// Mẫu chứng từ có trong văn bản gốc của chế độ; null thì in không có dòng "Mẫu số" (mẫu nội bộ như Giấy báo, Ủy nhiệm chi, hoặc chế độ chưa có văn bản gốc).
+export function voucherFormFor(regime: string, key: string): FormRef | null {
+  const formNo = Object.hasOwn(FORMS, key) ? FORMS[key]![regime] : undefined;
+  return formNo && VOUCHER_LEGEND[regime] ? { formNo, issuedBy: VOUCHER_LEGEND[regime] } : null;
 }

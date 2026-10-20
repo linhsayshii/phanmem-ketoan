@@ -47,4 +47,11 @@ test('lập Phiếu thu bằng bàn phím, ghi sổ F9', async ({ page, request 
   await expect(page.locator('.ant-message').getByText('Đã ghi sổ')).toBeVisible();
   await expect(page.locator('.ant-card-head-title')).toContainText(/PT\d+/);
   await expect(page.getByRole('button', { name: 'Đảo' })).toBeVisible();
+
+  // Mẫu in: công ty thử dùng chế độ TT133 nên in theo mẫu 01 - TT của TT 133/2016, có người nộp tiền và số tiền bằng chữ
+  const id = /PT\/([0-9a-f-]{36})$/.exec(page.url())![1];
+  const printed = await request.get(`/api/vouchers/${id}/print?format=html`);
+  expect(printed.ok()).toBeTruthy();
+  const html = await printed.text();
+  for (const t of ['Mẫu số 01 - TT', 'PHIẾU THU', 'Nguyễn Văn A', '5.000.000 đồng', 'Năm triệu đồng']) expect(html).toContain(t);
 });

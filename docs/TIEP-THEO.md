@@ -47,6 +47,8 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
 | Bộ XML mẫu kết xuất từ HTKK 5.x (01/GTGT, 03/TNDN, 05/KK-TNCN, BCTC) | HTKK chạy trên Windows, không có XSD công khai | XML tờ khai GĐ2 chưa kiểm chứng được |
 | Tài khoản thử Viettel SInvoice; SePay hoặc Casso; chứng thư số thử (USB token hoặc VNPT SmartCA) | Đăng ký tài khoản và ký hợp đồng là việc của người dùng | GĐ5 chỉ có adapter giả lập |
 | Remote GitHub (nếu muốn CI chạy) | Tạo repo và quyền push là quyết định của người dùng | CI trong `.github/workflows` chưa chạy |
+| Mẫu Ủy nhiệm chi giấy của từng ngân hàng (Vietcombank, BIDV, VietinBank, Agribank, Techcombank, MB, ACB… theo ngân hàng công ty đang dùng): file PDF hoặc ảnh quét mẫu trắng, chép vào `~/legal-docs/unc-ngan-hang/<mã ngân hàng>.pdf` | Mẫu giấy là tài sản của từng ngân hàng, không tải công khai được; cần đối chiếu bố cục từng ô để in đúng lên giấy in sẵn | Ủy nhiệm chi chỉ có một bố cục chung nội bộ (đơn vị trả tiền, đơn vị thụ hưởng, số tiền bằng số và chữ, nội dung), chưa in vừa mẫu giấy của ngân hàng |
+| Văn bản gốc TT 200/2014/TT-BTC (Mẫu 01-TT, 02-TT) và văn bản chế độ TT 58 (nếu có mẫu chứng từ), chép vào `~/legal-docs/tt200-2014/`, `~/legal-docs/tt58/` | Chưa tải về VPS; luật dự án không cho chép mẫu từ trí nhớ | Phiếu thu, Phiếu chi của công ty theo TT200 hoặc TT58 in đúng bố cục nhưng không có dòng "Mẫu số" và chú thích ban hành |
 | Tên miền và cách triển khai thật (qua nginx proxy manager sẵn có hay không) | Đụng dịch vụ đang chạy trên VPS | Chỉ chạy được nội bộ qua SSH tunnel |
 
 ## 5. Ghi chú môi trường

@@ -3,16 +3,29 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { sql, type Transaction } from 'kysely';
 import { READ_SNAPSHOT, type Database } from '@kt/db';
+import { voucherTypeDef } from '@kt/domain';
 import * as S from './vouchers.service.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { AppError } from '../../plugins/errors.js';
-import { formNoFor } from '../reporting/print/forms.js';
+import { formNoFor, voucherFormFor } from '../reporting/print/forms.js';
+import { renderCashVoucherHtml, type BankInfo } from '../reporting/print/cashVoucherHtml.js';
 import { renderPdf } from '../reporting/print/pdf.js';
 import { renderVoucherHtml } from '../reporting/print/voucherHtml.js';
 
 const idParam = z.object({ id: z.string().uuid() });
 // Sửa chứng từ đã ghi sổ: phải có diễn giải hoặc ít nhất một dòng cần sửa (thân {} hay chỉ { version } không đổi gì).
 const metaBody = S.metaInput.extend({ version: z.number().int() }).refine((b) => b.description !== undefined || !!b.lines?.length, 'Không có nội dung cần sửa');
+
+// Tài khoản ngân hàng của công ty (tiêu đề chứng từ) và của đối tượng, cho Giấy báo và Ủy nhiệm chi.
+async function bankInfos(trx: Transaction<Database>, voucherId: string): Promise<{ own: BankInfo | null; party: BankInfo | null }> {
+  const info = (r: { account_no: string; account_name: string | null; branch: string | null; bank_name: string } | undefined): BankInfo | null =>
+    r ? { accountNo: r.account_no, accountName: r.account_name, bankName: r.bank_name, branch: r.branch } : null;
+  const own = await trx.selectFrom('voucher as v').innerJoin('bank_account as a', 'a.id', 'v.bank_account_id').innerJoin('bank as b', 'b.id', 'a.bank_id')
+    .select(['a.account_no', 'a.account_name', 'a.branch', 'b.name as bank_name']).where('v.id', '=', voucherId).executeTakeFirst();
+  const party = await trx.selectFrom('voucher as v').innerJoin('party_bank_account as p', 'p.id', 'v.party_bank_account_id')
+    .select(['p.account_no', 'p.account_name', 'p.branch', 'p.bank_name']).where('v.id', '=', voucherId).executeTakeFirst();
+  return { own: info(own), party: info(party) };
+}
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   const ctx = (req: FastifyRequest) => ({ tenantId: req.auth!.tenantId!, userId: req.auth!.userId });
@@ -29,19 +42,24 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     async (req) => app.withTenant(req, (trx) => S.listVouchers(trx, req.query)));
   app.get('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.view'), schema: { params: idParam } }, async (req) => app.withTenant(req, (trx) => S.getVoucher(trx, req.params.id)));
 
-  app.get('/api/vouchers/:id/print', { preHandler: app.requirePermission('voucher.print'), schema: { params: idParam, querystring: z.object({ format: z.enum(['html', 'pdf']).default('html') }) } }, async (req, reply) => {
-    const { v, c } = await app.withTenant(req, async (trx) => {
+  app.get('/api/vouchers/:id/print', { preHandler: app.requirePermission('voucher.print'), schema: { params: idParam, querystring: z.object({ format: z.enum(['html', 'pdf']).default('html'), form: z.string().default('default') }) } }, async (req, reply) => {
+    const { html, v, form } = await app.withTenant(req, async (trx) => {
       const v = await S.getVoucher(trx, req.params.id);
+      // Mẫu in hợp lệ lấy từ cấu hình loại chứng từ; 'default' là mẫu đầu của loại, loại không có mẫu riêng (Phiếu kế toán) in phiếu kế toán.
+      const allowed = voucherTypeDef(v.voucherType)?.printForms ?? [];
+      const form = req.query.form === 'default' ? allowed[0] : req.query.form;
+      if (form !== undefined && !allowed.includes(form)) throw new AppError('PRINT_FORM_INVALID', `Mẫu in "${req.query.form}" không dùng được cho chứng từ loại ${v.voucherType}`, 400);
       const t = await trx.selectFrom('tenant').selectAll().where('id', '=', req.auth!.tenantId!).executeTakeFirstOrThrow();
       // chế độ kế toán gắn với năm tài chính của chứng từ (một công ty có thể giữ nhiều chế độ)
       const { regime } = await trx.selectFrom('voucher as v').innerJoin('fiscal_period as p', 'p.fiscal_year', 'v.fiscal_year').select('p.regime').where('v.id', '=', v.id).executeTakeFirstOrThrow();
-      const f = formNoFor(regime, 'PKT');
-      return { v, c: { name: t.name, address: t.address, taxCode: t.tax_code, legalRep: t.legal_rep, chiefAccountant: t.chief_accountant, formNo: f.formNo, issuedBy: f.issuedBy } };
+      const f = form ? voucherFormFor(regime, form) : formNoFor(regime, 'PKT');
+      const c = { name: t.name, address: t.address, taxCode: t.tax_code, legalRep: t.legal_rep, chiefAccountant: t.chief_accountant, formNo: f?.formNo ?? '', issuedBy: f?.issuedBy ?? '' };
+      const banks = form === 'giay-bao' || form === 'unc' ? await bankInfos(trx, v.id) : {};
+      return { v, form, html: form ? renderCashVoucherHtml(v, c, { form, regime, ...banks }) : renderVoucherHtml(v, c) };
     }, READ_SNAPSHOT);
-    const html = renderVoucherHtml(v, c);
     if (req.query.format === 'html') return reply.type('text/html; charset=utf-8').send(html);
     // số chứng từ lấy từ tiền tố/hậu tố người dùng cấu hình nên phải mã hóa (RFC 5987), không đưa thẳng vào tiêu đề
-    return reply.type('application/pdf').header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(`${v.voucherNo ?? 'phieu-ke-toan'}.pdf`)}`).send(await renderPdf(html));
+    return reply.type('application/pdf').header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(`${v.voucherNo ?? 'phieu-ke-toan'}${form === 'unc' ? '-unc' : ''}.pdf`)}`).send(await renderPdf(html));
   });
 
   app.post('/api/vouchers', { preHandler: app.requirePermission('voucher.create'), schema: { body: S.voucherInput.extend({ autoPost: z.boolean().optional() }) } }, async (req, reply) => {
