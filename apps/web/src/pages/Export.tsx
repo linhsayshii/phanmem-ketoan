@@ -1,0 +1,41 @@
+import { useState } from 'react';
+import { Alert, Button, Card, DatePicker, Space, message } from 'antd';
+import dayjs, { type Dayjs } from 'dayjs';
+import { useAuth } from '../auth.js';
+
+const FULL_BOOK_FLAGS = ['view_receivable', 'view_payable', 'view_cost']; // gói có Nhật ký chung và Sổ Cái: cả công nợ và giá vốn
+
+// Máy chủ trả một tệp zip (CSV + PDF sổ + bảng băm) cho khoảng ngày chọn; tải về thành tệp.
+export default function ExportPage() {
+  const { me } = useAuth();
+  const [range, setRange] = useState<[Dayjs, Dayjs]>(() => [dayjs().startOf('year'), dayjs().endOf('month')]);
+  const [busy, setBusy] = useState(false);
+  const missing = FULL_BOOK_FLAGS.filter((f) => !me?.sensitive.includes(f));
+  const run = async () => {
+    const from = range[0].format('YYYY-MM-DD'); const to = range[1].format('YYYY-MM-DD');
+    setBusy(true);
+    try {
+      const res = await fetch('/api/export/authority', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from, to }) });
+      if (!res.ok) { const b = await res.json().catch(() => null) as { error?: { message?: string } } | null; throw new Error(b?.error?.message ?? `Lỗi hệ thống (${res.status})`); }
+      const url = URL.createObjectURL(await res.blob());
+      const a = Object.assign(document.createElement('a'), { href: url, download: `xuat-du-lieu-${from}-${to}.zip` });
+      a.click(); setTimeout(() => URL.revokeObjectURL(url), 0); // thu hồi sau khi trình duyệt đã bắt đầu tải
+    } catch (e) { void message.error((e as Error).message); } finally { setBusy(false); }
+  };
+  return (
+    <Card title="Xuất dữ liệu cho cơ quan thẩm quyền">
+      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Alert type="info" showIcon message="Gói dữ liệu theo Điều 28 Thông tư 99/2025 (tệp zip)" description={<ul style={{ margin: 0, paddingLeft: 20 }}>
+          <li>Tệp CSV (UTF-8 có BOM, phân cách dấu ;) trong khoảng ngày chọn: chứng từ và dòng định khoản đã ghi sổ, nhật ký kiểm toán; kèm hệ thống tài khoản, đối tượng, kỳ kế toán.</li>
+          <li>Tệp PDF của cả năm tài chính chứa ngày kết thúc: Sổ Nhật ký chung, Sổ Cái, Bảng cân đối số phát sinh và báo cáo tài chính B01, B02, B03 (nếu công ty đã định nghĩa).</li>
+          <li>MANIFEST.sha256 ghi mã băm từng tệp để cơ quan nhận kiểm tra toàn vẹn; README.txt mô tả từng tệp và cột.</li></ul>} />
+        {missing.length > 0 && <Alert type="warning" showIcon message={`Gói có Nhật ký chung và Sổ Cái nên cần đủ các cờ xem công nợ phải thu, phải trả và giá vốn (còn thiếu: ${missing.join(', ')}).`} />}
+        <Space wrap>
+          <span>Khoảng ngày ghi sổ</span>
+          <DatePicker.RangePicker allowClear={false} format="DD/MM/YYYY" value={range} onChange={(v) => { if (v?.[0] && v[1]) setRange([v[0], v[1]]); }} />
+          <Button type="primary" loading={busy} disabled={missing.length > 0} onClick={() => void run()}>Xuất gói dữ liệu</Button>
+        </Space>
+      </Space>
+    </Card>
+  );
+}

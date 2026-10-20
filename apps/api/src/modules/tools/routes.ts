@@ -1,9 +1,11 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import { sql } from 'kysely';
 import { z } from 'zod';
 import { AppError } from '../../plugins/errors.js';
 import { dateIso, type CatalogDef } from '../master/catalogs.js';
 import { getRow, listRows, updateRow } from '../master/crud.js';
 import { runDataChecks } from './dataCheck.js';
+import { buildAuthorityPackage, collectAuthorityData } from './exportAuthority.js';
 
 // Quy tắc soát lỗi dùng lại khung danh mục để liệt kê/sửa nhưng KHÔNG nằm trong CATALOGS: thêm mới, xóa và nhập Excel đều đóng, còn lại do DB quyết định (0014: app_user chỉ UPDATE
 // name, severity, message, fix_hint, is_enabled). Cột `code` và `sql` không có trong schema (strict) nên API từ chối kể cả khi quyền DB đã chặn. Sửa/bật tắt cần quyền riêng data_check.manage.
@@ -28,6 +30,20 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.delete(`${base}/:id`, { preHandler: app.requirePermission('catalog.delete'), schema: { params } }, async (req) => {
     await app.withTenant(req, (trx) => getRow(trx, ruleDef, req.params.id)); // id không có (hoặc của công ty khác) vẫn là 404
     throw new AppError('RULE_SYSTEM', 'Không xóa được quy tắc hệ thống, chỉ tắt', 409);
+  });
+
+  // Gói xuất gồm Nhật ký chung và Sổ Cái (mọi tài khoản, kể cả công nợ và giá vốn): cần đủ các cờ nhạy cảm như khi in bộ sổ năm (/api/print/book-set).
+  // Đọc dữ liệu và ghi audit trong cùng một giao dịch; dựng PDF và nén zip ngoài giao dịch.
+  app.post('/api/export/authority', { preHandler: app.requirePermission('export.authority'), schema: { body: z.object({ from: dateIso, to: dateIso }).refine((b) => b.from <= b.to, { message: 'Từ ngày phải trước hoặc bằng đến ngày' }) } }, async (req, reply) => {
+    for (const flag of ['view_receivable', 'view_payable', 'view_cost']) if (!req.auth!.sensitive.has(flag)) throw new AppError('FORBIDDEN', `Xuất dữ liệu cho cơ quan thẩm quyền gồm Nhật ký chung và Sổ Cái, cần cờ nhạy cảm ${flag}`, 403);
+    const tenantId = req.auth!.tenantId!;
+    const data = await app.withTenant(req, async (trx) => {
+      const d = await collectAuthorityData(trx, tenantId, req.body);
+      await sql`INSERT INTO audit_event(tenant_id, user_id, action, entity, entity_id, after, ip) VALUES (${tenantId}::uuid, app_user_id(), 'export', 'tenant', ${tenantId}, ${JSON.stringify(req.body)}::jsonb, ${req.ip})`.execute(trx);
+      return d;
+    });
+    const name = encodeURIComponent(`xuat-du-lieu-${req.body.from}-${req.body.to}.zip`);
+    return reply.type('application/zip').header('content-disposition', `attachment; filename*=UTF-8''${name}`).send(await buildAuthorityPackage(data));
   });
 };
 export default routes;
