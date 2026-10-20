@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
-import { migrate } from '../src/migrate.js';
+import { checksum, migrate } from '../src/migrate.js';
 
 const adminUrl = process.env.DATABASE_ADMIN_URL!;
 
@@ -59,6 +59,21 @@ describe('migrate: checksum', () => {
     await expect(migrate(url, dir)).rejects.toThrow(/0001_a\.sql.*(sửa|checksum)/s);
     expect(Object.keys(await stored())).toEqual(['0001_a.sql']); // 0002 chưa chạy
     expect((await pool.query(`SELECT to_regclass('t2') AS t`)).rows[0].t).toBeNull();
+  });
+
+  it('checksum bỏ qua CRLF và BOM UTF-8, vẫn bằng sha256 của bản LF đã lưu', () => {
+    const lf = 'CREATE TABLE t1(a int);\n-- dòng hai\n';
+    expect(checksum(lf)).toBe(sha(lf));
+    expect(checksum(lf.replace(/\n/g, '\r\n'))).toBe(sha(lf));
+    expect(checksum('\uFEFF' + lf.replace(/\n/g, '\r\n'))).toBe(sha(lf));
+  });
+
+  it('áp dụng bản LF rồi checkout lại thành CRLF có BOM: không báo lỗi, không đổi checksum', async () => {
+    await fresh(); put('0001_a.sql', 'CREATE TABLE t1(a int);\n');
+    await migrate(url, dir);
+    put('0001_a.sql', '\uFEFFCREATE TABLE t1(a int);\r\n');
+    expect(await migrate(url, dir)).toEqual([]);
+    expect(await stored()).toEqual({ '0001_a.sql': sha('CREATE TABLE t1(a int);\n') });
   });
 
   it('MIGRATE_ALLOW_CHECKSUM_CHANGE=1 chấp nhận tệp đã sửa, ghi checksum mới, rồi chạy tiếp migration mới', async () => {
