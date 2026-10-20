@@ -177,6 +177,19 @@ describe('kết chuyển: phạm vi chế độ, đối tượng, lỗi', () => 
     expect(lines).toEqual([['5113', '500', '0'], ['911', '0', '500']]);
   }, 30_000);
 
+  it('chế độ TT99: 521 kết chuyển vào 511, rồi 511 vào 911, 911 vào 4212', async () => {
+    const { call } = await newTenant('KC99', [[2026, 'TT99']]);
+    expect((await post(call, '2026-03-05', [{ accountCode: '111', debit: '1000' }, { accountCode: '511', credit: '1000' }])).statusCode).toBe(201);
+    expect((await post(call, '2026-03-06', [{ accountCode: '521', debit: '100' }, { accountCode: '111', credit: '100' }])).statusCode).toBe(201);
+    const r = await call('POST', '/api/closing/run-all', { postingDate: '2026-12-31' });
+    expect(r.statusCode, r.body).toBe(200);
+    const kc = (await call('GET', '/api/vouchers?type=KC&from=2026-12-31&to=2026-12-31')).json();
+    expect(kc.total).toBe(3); // 521→511, 511→911, 911→4212
+    const lines: string[] = [];
+    for (const v of kc.rows as { id: string }[])
+      for (const l of (await call('GET', `/api/vouchers/${v.id}`)).json().lines as { accountCode: string; debit: string; credit: string }[]) lines.push(`${l.accountCode} ${l.debit}/${l.credit}`);
+    expect(lines.sort()).toEqual(['4212 0/900', '511 100/0', '511 900/0', '521 0/100', '911 0/900', '911 900/0']);
+  }, 30_000);
   it('nguồn là tài khoản công nợ: dòng kết chuyển mang theo đối tượng', async () => {
     const { call } = await newTenant('KCDT', [[2026, 'TT200']]);
     expect((await call('POST', '/api/catalogs/party', { code: 'KH1', name: 'Khách 1', is_customer: true })).statusCode).toBe(201);

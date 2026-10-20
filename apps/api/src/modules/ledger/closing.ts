@@ -4,7 +4,6 @@ import { z } from 'zod';
 import type { Database } from '@kt/db';
 import { loadDefaultClosingSteps } from '@kt/coa-data';
 import { VND_AMOUNT_MSG, VND_AMOUNT_RE, type Regime } from '@kt/domain';
-import { regimeOf } from '../reporting/ledgers.js';
 import { AppError } from '../../plugins/errors.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { dateIso } from './vouchers.service.js';
@@ -63,7 +62,17 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     });
     return { ok: true };
   });
-  app.post('/api/closing/steps/reload', { preHandler: app.requirePermission('closing_step.update') }, async (req) => ({ count: await app.withTenant(req, async (trx) => loadClosingTemplate(trx, req.auth!.tenantId!, (await regimeOf(trx, { from: new Date().toISOString().slice(0, 10), to: new Date().toISOString().slice(0, 10) })) as Regime)) }));
+  // Nạp lại mẫu theo chế độ của năm chứa ngày hôm nay (giờ Việt Nam), không có thì theo năm gần nhất.
+  app.post('/api/closing/steps/reload', { preHandler: app.requirePermission('closing_step.update') }, async (req) => {
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const count = await app.withTenant(req, async (trx) => {
+      const year = await trx.selectFrom('fiscal_period').select('regime').where('period_no', '>', 0)
+        .orderBy(sql`(date_from <= ${today}::date and date_to >= ${today}::date)`, 'desc').orderBy('date_to', 'desc').executeTakeFirst();
+      if (!year) throw new AppError('NO_FISCAL_YEAR', 'Chưa có năm tài chính: tạo năm tài chính trước khi nạp lại các bước kết chuyển', 409);
+      return loadClosingTemplate(trx, req.auth!.tenantId!, year.regime as Regime);
+    });
+    return { count };
+  });
 
   app.post('/api/closing/run', { preHandler: app.requirePermission('closing.run'), schema: { body: runBody } }, async (req) => {
     const tenantId = req.auth!.tenantId!;
