@@ -1,11 +1,20 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { sql } from 'kysely';
-import { withTenant } from '@kt/db';
+import { sql, type Transaction } from 'kysely';
+import { withTenant, type Database } from '@kt/db';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
 
 let ctx: TestApp; let cookie: string; let tenantId: string;
 const pkt = (date: string, amount: string, more: object = {}) => ({ voucherType: 'PKT', postingDate: date, documentDate: date, description: 'x', autoPost: true, lines: [{ accountCode: '6422', debit: amount }, { accountCode: '1111', credit: amount }], ...more });
 const create = (body: object, c: string = cookie) => ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie: c }, payload: body });
+// Giữ một giao dịch mở (khóa của nó còn nguyên) tới khi gọi release(); ready xong khi fn chạy xong.
+const hold = (tenant: string, user: string, fn: (trx: Transaction<Database>) => Promise<unknown>) => {
+  let release!: () => void; let ready!: () => void;
+  const gate = new Promise<void>((r) => { release = r; }); const readyP = new Promise<void>((r) => { ready = r; });
+  const done = withTenant(ctx.t.db, { tenantId: tenant, userId: user }, async (trx) => { await fn(trx); ready(); await gate; });
+  return { release, done, ready: Promise.race([readyP, done]) };
+};
+const renumber2026 = (c: string) => ctx.app.inject({ method: 'POST', url: '/api/vouchers/renumber', headers: { cookie: c }, payload: { voucherType: 'PKT', fiscalYear: 2026 } });
+const stillWaiting = async (p: Promise<unknown>) => (await Promise.race([p.then(() => 'done'), new Promise((r) => setTimeout(() => r('waiting'), 500))])) === 'waiting';
 const addYear = (c: string, fiscalYear: number, dateFrom: string) => ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear, dateFrom, months: 12, regime: 'TT133' } });
 
 beforeAll(async () => {
@@ -40,8 +49,15 @@ describe('đánh số', () => {
     expect(rows.rows[0]!.voucher_no).toBe('PKT26-0001');
     const counter = await sql<{ last_no: number }>`SELECT last_no FROM voucher_counter WHERE tenant_id = ${tenantId}::uuid AND voucher_type = 'PKT' AND fiscal_year = 2026`.execute(ctx.t.admin);
     expect(counter.rows[0]!.last_no).toBe(4);
-    const audit = await sql<{ ip: string | null }>`SELECT ip FROM audit_event WHERE tenant_id = ${tenantId}::uuid AND action = 'renumber'`.execute(ctx.t.admin);
+    const audit = await sql<{ ip: string | null; before: { id: string; voucher_no: string }[]; after: { year: number; count: number; map: { id: string; old: string; new: string }[] } }>`SELECT ip, before, after FROM audit_event WHERE tenant_id = ${tenantId}::uuid AND action = 'renumber'`.execute(ctx.t.admin);
     expect(audit.rows).toHaveLength(1); expect(audit.rows[0]!.ip).toBeTruthy();
+    // Ánh xạ id -> số cũ -> số mới giữ đủ để khôi phục số gốc: chứng từ ngày 2026-01-02 đứng số 4 trước khi đánh lại, thành số 1 sau đó.
+    const { before, after } = audit.rows[0]!;
+    expect(after).toMatchObject({ year: 2026, count: 4 }); expect(before).toHaveLength(4); expect(after.map).toHaveLength(4);
+    expect(before.map((b) => b.voucher_no).sort()).toEqual(['PKT26-0001', 'PKT26-0002', 'PKT26-0003', 'PKT26-0004']);
+    const first = await sql<{ id: string }>`SELECT id FROM voucher WHERE tenant_id = ${tenantId}::uuid AND voucher_type = 'PKT' AND posting_date = '2026-01-02'`.execute(ctx.t.admin);
+    expect(after.map.find((m) => m.id === first.rows[0]!.id)).toEqual({ id: first.rows[0]!.id, old: 'PKT26-0004', new: 'PKT26-0001' });
+    expect(new Set(after.map.map((m) => m.id))).toEqual(new Set(before.map((b) => b.id)));
     await ctx.app.inject({ method: 'POST', url: '/api/periods/2026/1/lock', headers: { cookie }, payload: { level: 'soft' } });
     expect((await ctx.app.inject({ method: 'POST', url: '/api/vouchers/renumber', headers: { cookie }, payload: { voucherType: 'PKT', fiscalYear: 2026 } })).json().error.code).toBe('RENUMBER_PERIOD_LOCKED');
   });
@@ -83,18 +99,35 @@ describe('đánh số theo năm tài chính', () => {
   });
   it('đánh lại số chờ lượt ghi sổ đang giữ bộ đếm, không để mất số', async () => {
     const draft = (await create(pkt('2026-03-03', '1', { autoPost: false }), c2)).json();
-    let release!: () => void; let held!: () => void;
-    const gate = new Promise<void>((r) => { release = r; }); const holding = new Promise<void>((r) => { held = r; });
-    const poster = withTenant(ctx.t.db, { tenantId: t2, userId: u2 }, async (trx) => {
-      await sql`SELECT post_voucher(${draft.id}::uuid)`.execute(trx); held(); await gate;  // giữ khóa bộ đếm tới khi commit
-    });
-    await holding;
-    const renum = ctx.app.inject({ method: 'POST', url: '/api/vouchers/renumber', headers: { cookie: c2 }, payload: { voucherType: 'PKT', fiscalYear: 2026 } });
-    expect(await Promise.race([renum.then(() => 'done'), new Promise((r) => setTimeout(() => r('waiting'), 500))])).toBe('waiting');
-    release(); await poster;
-    const r = await renum; expect(r.statusCode, r.body).toBe(200); expect(r.json().count).toBe(3);
+    const h = hold(t2, u2, (trx) => sql`SELECT post_voucher(${draft.id}::uuid)`.execute(trx));  // giữ khóa bộ đếm tới khi commit
+    try {
+      await h.ready;
+      const renum = renumber2026(c2);
+      expect(await stillWaiting(renum)).toBe(true);
+      h.release(); await h.done;
+      const r = await renum; expect(r.statusCode, r.body).toBe(200); expect(r.json().count).toBe(3);
+    } finally { h.release(); await h.done.catch(() => undefined); }
     const seqs = await sql<{ seq_no: number }>`SELECT seq_no FROM voucher WHERE tenant_id = ${t2}::uuid AND voucher_type = 'PKT' AND fiscal_year = 2026 AND seq_no IS NOT NULL ORDER BY seq_no`.execute(ctx.t.admin);
     expect(seqs.rows.map((x) => x.seq_no)).toEqual([1, 2, 3]);
     expect((await create(pkt('2026-03-04', '1'), c2)).json().voucherNo).toBe('PKT00004');
+  });
+  it('kỳ có khóa phần hành của loại chứng từ thì không đánh lại số', async () => {
+    const mod = (modules: string[]) => ctx.app.inject({ method: 'PUT', url: '/api/periods/2026/3/modules', headers: { cookie: c2 }, payload: { modules } });
+    expect((await mod(['general'])).statusCode).toBe(200);
+    expect((await renumber2026(c2)).json().error.code).toBe('RENUMBER_PERIOD_LOCKED');
+    expect((await mod(['cash'])).statusCode).toBe(200);  // khóa phần hành khác loại thì vẫn đánh lại được
+    expect((await renumber2026(c2)).json().count).toBe(4);
+    await mod([]);
+  });
+  it('khóa mềm kỳ đang commit song song: đánh lại số đợi rồi bị từ chối', async () => {
+    const h = hold(t2, u2, (trx) => sql`SELECT lock_period(${t2}::uuid, 2026, 3, 'soft')`.execute(trx));
+    try {
+      await h.ready;
+      const renum = renumber2026(c2);
+      expect(await stillWaiting(renum)).toBe(true);
+      h.release(); await h.done;
+      expect((await renum).json().error.code).toBe('RENUMBER_PERIOD_LOCKED');
+    } finally { h.release(); await h.done.catch(() => undefined); }
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/periods/2026/3/unlock', headers: { cookie: c2 } })).statusCode).toBe(200);
   });
 });
