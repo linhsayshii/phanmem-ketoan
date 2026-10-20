@@ -78,6 +78,8 @@ Modular monolith, một tiến trình API và một ứng dụng web, một cơ 
 
 ## 6. Mô hình dữ liệu lõi
 
+Quy ước khóa ngoại: giữa hai bảng cùng có `tenant_id` luôn là khóa tổng hợp `(tenant_id, x_id)` tham chiếu `cha (tenant_id, id)` (migration 0019), để không tham chiếu chéo công ty.
+
 Các bảng dưới đây là xương sống; mọi bảng nghiệp vụ đều có `tenant_id` (công ty) và tham gia row-level security. Tiền hạch toán VND lưu `NUMERIC(20,0)`; ngoại tệ `NUMERIC(20,4)`; không dùng `float`/`money`.
 
 ```sql

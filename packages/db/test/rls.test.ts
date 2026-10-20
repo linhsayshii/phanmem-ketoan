@@ -125,4 +125,23 @@ describe('RLS', () => {
     await expect(t.admin.insertInto('tenant_user').values({ tenant_id: b, user_id: u, role_id: roleA.id, sensitive_flags: '[]' }).execute())
       .rejects.toThrow(/foreign key/);
   });
+
+  it('mọi khóa ngoại giữa hai bảng có tenant_id đều gồm tenant_id', async () => {
+    const r = await sql<{ fk: string }>`
+      SELECT c.conname AS fk FROM pg_constraint c
+      WHERE c.contype = 'f' AND c.conrelid::regclass::text NOT LIKE 'voucher_line_y%'
+        AND EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = c.conrelid AND attname = 'tenant_id')
+        AND EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = c.confrelid AND attname = 'tenant_id')
+        AND c.confrelid <> 'tenant'::regclass
+        AND NOT EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey) AND a.attname = 'tenant_id')`.execute(t.admin);
+    expect(r.rows.map((x) => x.fk)).toEqual([]);
+  });
+
+  it('không tham chiếu được dòng của công ty khác (kể cả bằng quyền quản trị)', async () => {
+    const a = await createTestTenant(t.admin, { code: `FA${Date.now()}`, name: 'Công ty FA' });
+    const b = await createTestTenant(t.admin, { code: `FB${Date.now()}`, name: 'Công ty FB' });
+    const dep = await sql<{ id: string }>`INSERT INTO department (tenant_id, code, name) VALUES (${b}, 'P1', 'Phòng B') RETURNING id`.execute(t.admin);
+    await expect(sql`INSERT INTO department (tenant_id, code, name, parent_id) VALUES (${a}, 'P2', 'Phòng A', ${dep.rows[0]!.id})`.execute(t.admin))
+      .rejects.toMatchObject({ code: '23503' });
+  });
 });

@@ -51,6 +51,7 @@ Một gói: `pnpm -F @kt/api test -- test/vouchers.test.ts`. Kiểm thử chạy
 - Không `UPDATE`/`DELETE` dòng sổ cái đã ghi sổ. Sửa theo máy trạng thái draft → posted → reversed / cancelled (đặc tả mục 7.1): kỳ mở dùng `unpost`, kỳ khóa sổ dùng đảo, kỳ khóa cứng dùng chứng từ điều chỉnh ở kỳ mở.
 - Chứng từ tự động (giá vốn, khấu hao, phân bổ, kết chuyển, chênh lệch tỷ giá, lương) là chứng từ thật có số, ngày, người lập và `source_doc_*`; chạy lại bằng đảo cũ, sinh mới. Loại chứng từ hệ thống (KC, DK) không sửa/xóa qua route chung.
 - Mọi bảng nghiệp vụ có `tenant_id`, row-level security bật, mọi `UNIQUE` có `tenant_id`. Hàm `SECURITY DEFINER` phải `SET search_path = public, pg_temp`.
+- Khóa ngoại giữa hai bảng cùng có `tenant_id` là tổng hợp `(tenant_id, x_id) REFERENCES cha (tenant_id, id)`; bảng cha có `UNIQUE (tenant_id, id)`; `ON DELETE SET NULL` chỉ xóa cột `x_id`: `SET NULL (x_id)`.
 - Migration 0001–0015 đã đóng băng: thay đổi lược đồ luôn bằng migration mới số tiếp theo, định nghĩa lại hàm từ thân cuối cùng của nó.
 - Tham số pháp lý theo ngày hiệu lực trong `legal_param`; chế độ kế toán gắn với năm tài chính; định nghĩa báo cáo và sơ đồ kết chuyển là dữ liệu (`packages/coa-data`), không viết cứng.
 - Không bịa dữ liệu pháp lý. Hệ thống tài khoản TT99 và chỉ tiêu B01/B02/B03 chỉ nhập từ văn bản gốc; khi chưa có, giữ `complete=false` trong `*.status.json`.
