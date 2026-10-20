@@ -1,12 +1,12 @@
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
-import { D, sum } from '@kt/domain';
+import { D, sum, VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 
 export const dateIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 // Tiền hạch toán là đồng nguyên (numeric(20,0) sẽ âm thầm làm tròn '100.5'); nguyên tệ numeric(20,4); tỷ giá numeric(20,10) và phải dương.
-const vndAmount = z.string().regex(/^\d{1,20}$/);
+const vndAmount = z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG);
 const foreignAmount = z.string().regex(/^-?\d{1,16}(\.\d{1,4})?$/);
 const fxRate = z.string().regex(/^\d{1,10}(\.\d{1,10})?$/).refine((s) => Number(s) > 0, 'Tỷ giá phải lớn hơn 0');
 
@@ -19,7 +19,7 @@ export const lineInput = z.object({
 export const voucherInput = z.object({
   voucherType: z.string().min(1), postingDate: dateIso, documentDate: dateIso, description: z.string().nullable().optional(),
   partyCode: z.string().nullable().optional(), currencyCode: z.string().length(3).default('VND'), fxRate: fxRate.optional(), idempotencyKey: z.string().max(100).optional(),
-  lines: z.array(lineInput).min(1),
+  lines: z.array(lineInput).min(1).max(5000, 'Tối đa 5.000 dòng mỗi chứng từ'), // 5.000 × 16 chữ số vẫn vừa numeric(20,0) khi cộng; cũng giữ số tham số bind của một lần ghi
 });
 export const metaInput = z.object({
   description: z.string().nullable().optional(),
@@ -112,12 +112,27 @@ async function insertLines(trx: Trx, lookup: Lookup, tenantId: string, voucherId
 }
 
 // Chứng từ DK chỉ do màn hình Số dư đầu kỳ tạo (source_doc_type = 'opening_balance'); lập tay thì số dư bị cộng đôi hoặc bị ghi đè khi ghi sổ số dư.
-const assertNotOpening = (voucherType: string) => {
+// Chứng từ KC chỉ do màn hình Kết chuyển sinh (source_doc_type = 'closing_step'); PB lập tay vẫn được.
+const assertNotSystemType = (voucherType: string) => {
   if (voucherType === 'DK') throw new AppError('VOUCHER_TYPE_SYSTEM', 'Chứng từ số dư đầu kỳ chỉ lập qua màn hình Số dư đầu kỳ', 409);
+  if (voucherType === 'KC') throw new AppError('VOUCHER_TYPE_SYSTEM', 'Chứng từ kết chuyển do hệ thống sinh ở màn hình Kết chuyển, không lập tay', 409);
 };
 
+// Chứng từ đã sinh ra từ màn hình Kết chuyển/Số dư đầu kỳ chỉ đổi qua màn hình đó (chạy lại đảo cũ, ghi sổ số dư): không sửa dòng, bỏ ghi sổ, hủy hay xóa tay. Khớp kiểm tra trong unpost_voucher/discard_voucher (0015).
+const SYSTEM_MSG: Record<string, string> = {
+  closing_step: 'Chứng từ do hệ thống sinh (kết chuyển/phân bổ); dùng Chạy lại (đảo cũ) ở màn hình Kết chuyển',
+  opening_balance: 'Chứng từ số dư đầu kỳ chỉ sửa ở màn hình Số dư đầu kỳ',
+};
+const failIfSystem = (sourceDocType: string | null) => {
+  const msg = sourceDocType ? SYSTEM_MSG[sourceDocType] : undefined;
+  if (msg) throw new AppError('VOUCHER_SYSTEM_GENERATED', msg, 409);
+};
+async function assertNotSystemGenerated(trx: Trx, id: string) {
+  failIfSystem((await trx.selectFrom('voucher').select('source_doc_type').where('id', '=', id).executeTakeFirst())?.source_doc_type ?? null);
+}
+
 export async function createVoucher(trx: Trx, ctx: { tenantId: string; userId: string }, input: VoucherInput): Promise<VoucherDto> {
-  assertNotOpening(input.voucherType); // cả nhân bản (duplicateVoucher gọi hàm này)
+  assertNotSystemType(input.voucherType); // cả nhân bản (duplicateVoucher gọi hàm này)
   if (input.idempotencyKey) {
     const existing = await trx.selectFrom('voucher').select('id').where('idempotency_key', '=', input.idempotencyKey).executeTakeFirst();
     if (existing) return getVoucher(trx, existing.id);
@@ -136,15 +151,16 @@ export async function createVoucher(trx: Trx, ctx: { tenantId: string; userId: s
 }
 
 async function lockAndCheckVersion(trx: Trx, id: string, version: number) {
-  const v = await trx.selectFrom('voucher').select(['id', 'version', 'state', 'tenant_id', 'voucher_no', 'voucher_type', 'fiscal_year']).where('id', '=', id).forUpdate().executeTakeFirst();
+  const v = await trx.selectFrom('voucher').select(['id', 'version', 'state', 'tenant_id', 'voucher_no', 'voucher_type', 'fiscal_year', 'source_doc_type']).where('id', '=', id).forUpdate().executeTakeFirst();
   if (!v) throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy chứng từ', 404);
   if (v.version !== version) throw new AppError('VERSION_CONFLICT', 'Chứng từ đã được người khác sửa, hãy tải lại', 409);
   return v;
 }
 
 export async function updateDraft(trx: Trx, id: string, version: number, input: VoucherInput): Promise<VoucherDto> {
-  assertNotOpening(input.voucherType);
+  assertNotSystemType(input.voucherType);
   const v = await lockAndCheckVersion(trx, id, version);
+  failIfSystem(v.source_doc_type);
   if (v.state !== 'draft') throw new AppError('VOUCHER_POSTED_EDIT', 'Chứng từ đã ghi sổ: chỉ sửa được diễn giải/chiều phân tích, hoặc Bỏ ghi sổ trước', 409);
   const period = await periodOf(trx, input.postingDate, input.voucherType);
   // Số đã cấp gắn với loại chứng từ và năm tài chính (bộ đếm theo năm): đổi một trong hai sẽ cấp số trùng hoặc lệch.
@@ -163,6 +179,7 @@ export async function updatePostedMeta(trx: Trx, id: string, version: number, in
   const v = await lockAndCheckVersion(trx, id, version);
   if (v.state === 'draft') throw new AppError('VALIDATION', 'Chứng từ nháp phải gửi đầy đủ nội dung', 400);
   if (input.description === undefined && !input.lines?.length) return getVoucher(trx, id);
+  if (input.lines?.length) failIfSystem(v.source_doc_type); // diễn giải ở đầu chứng từ vẫn sửa được; dòng thì không
   const lookup = lookupIn(trx);
   for (const l of input.lines ?? []) {
     const set: Record<string, unknown> = {};
@@ -182,8 +199,8 @@ export async function updatePostedMeta(trx: Trx, id: string, version: number, in
 }
 
 export const postVoucher = async (trx: Trx, id: string) => { await sql`SELECT post_voucher(${id}::uuid)`.execute(trx); return getVoucher(trx, id); };
-export const unpostVoucher = async (trx: Trx, id: string) => { await sql`SELECT unpost_voucher(${id}::uuid)`.execute(trx); return getVoucher(trx, id); };
-export const discardVoucher = async (trx: Trx, id: string) => { await sql`SELECT discard_voucher(${id}::uuid)`.execute(trx); return getVoucher(trx, id); };
+export const unpostVoucher = async (trx: Trx, id: string) => { await assertNotSystemGenerated(trx, id); await sql`SELECT unpost_voucher(${id}::uuid)`.execute(trx); return getVoucher(trx, id); };
+export const discardVoucher = async (trx: Trx, id: string) => { await assertNotSystemGenerated(trx, id); await sql`SELECT discard_voucher(${id}::uuid)`.execute(trx); return getVoucher(trx, id); };
 export async function reverseVoucher(trx: Trx, id: string, input: { postingDate: string; description?: string | undefined }): Promise<VoucherDto> {
   const r = await sql<{ id: string }>`SELECT reverse_voucher(${id}::uuid, ${input.postingDate}::date, ${input.description ?? null}) AS id`.execute(trx);
   return getVoucher(trx, r.rows[0]!.id);
@@ -196,6 +213,7 @@ export async function duplicateVoucher(trx: Trx, ctx: { tenantId: string; userId
       departmentCode: l.departmentCode, projectCode: l.projectCode, costItemCode: l.costItemCode, employeeCode: l.employeeCode, description: l.description, dueDate: l.dueDate, extraDims: l.extraDims })) });
 }
 export async function deleteDraft(trx: Trx, id: string): Promise<void> {
+  await assertNotSystemGenerated(trx, id);
   await trx.deleteFrom('voucher_line').where('voucher_id', '=', id).execute(); // chứng từ đã ghi sổ: trigger dòng chặn (LINE_IMMUTABLE); nháp đã có số: trigger chứng từ chặn
   if (!(await trx.deleteFrom('voucher').where('id', '=', id).returning('id').executeTakeFirst())) throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy chứng từ', 404);
 }

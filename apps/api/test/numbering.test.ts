@@ -75,6 +75,17 @@ describe('đánh số', () => {
     expect((await ctx.app.inject({ method: 'GET', url: '/api/voucher-types/KHONGCO/next-no?year=2026', headers: { cookie } })).statusCode).toBe(404);
     expect((await ctx.app.inject({ method: 'PUT', url: '/api/voucher-types/PKT', payload: { name: 'x' } })).statusCode).toBe(401);
   });
+  it('xem trước số tiếp theo cần voucher.view: thiếu quyền thì 403', async () => {
+    const roles = (await ctx.app.inject({ method: 'GET', url: '/api/roles', headers: { cookie } })).json() as { id: string; code: string; permissions: string[] }[];
+    const xem = roles.find((r) => r.code === 'xem')!;
+    await ctx.app.inject({ method: 'PUT', url: `/api/roles/${xem.id}/permissions`, headers: { cookie }, payload: { permissions: xem.permissions.filter((p) => p !== 'voucher.view') } });
+    const username = `nn_${Date.now()}`;
+    await ctx.app.inject({ method: 'POST', url: '/api/users', headers: { cookie }, payload: { username, fullName: 'X', password: 'Matkhau1!', roleCode: 'xem' } });
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+    const r = await ctx.app.inject({ method: 'GET', url: '/api/voucher-types/PKT/next-no?year=2026', headers: { cookie: `sid=${login.cookies.find((c) => c.name === 'sid')!.value}` } });
+    expect([r.statusCode, r.json().error.code]).toEqual([403, 'FORBIDDEN']);
+    await ctx.app.inject({ method: 'PUT', url: `/api/roles/${xem.id}/permissions`, headers: { cookie }, payload: { permissions: xem.permissions } });
+  });
 });
 
 describe('đánh số theo năm tài chính', () => {

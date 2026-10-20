@@ -46,6 +46,27 @@ describe('đính kèm', () => {
     expect(existsSync(path.join(ctx.app.config.ATTACHMENT_DIR, tenantId, id))).toBe(false);
   }, 30_000);
 
+  it('kỳ khóa cứng: không thêm cũng không xóa được tệp đính kèm (409 PERIOD_HARD_LOCKED), vẫn tải về được; kỳ mở thì được', async () => {
+    const { cookie: c, tenantId: t } = await bootstrapTenant(ctx, { code: `AV${Date.now()}` }); // công ty riêng: khóa cứng kỳ 1 không ảnh hưởng các kiểm thử khác
+    await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' } });
+    const v = (await ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie: c }, payload: { voucherType: 'PKT', postingDate: '2026-01-05', documentDate: '2026-01-05', description: 'x', autoPost: true,
+      lines: [{ accountCode: '6422', debit: '10', credit: '0' }, { accountCode: '1111', debit: '0', credit: '10' }] } })).json();
+    const url = `/api/vouchers/${v.id}/attachments`;
+    const up = await upload(url, 'truoc-khoa.txt', 'truoc khoa', 'text/plain', c);
+    expect(up.statusCode, up.body).toBe(201); // kỳ đang mở: được
+    for (const no of [0, 1]) expect((await ctx.app.inject({ method: 'POST', url: `/api/periods/2026/${no}/lock`, headers: { cookie: c }, payload: { level: 'hard' } })).statusCode).toBe(200); // kỳ 0 (số dư đầu kỳ) khóa trước
+    const MSG = 'Kỳ đã khóa cứng: không thêm hoặc xóa chứng từ gốc đính kèm';
+    const add = await upload(url, 'sau-khoa.txt', 'sau khoa', 'text/plain', c);
+    expect([add.statusCode, add.json().error.code, add.json().error.message]).toEqual([409, 'PERIOD_HARD_LOCKED', MSG]);
+    expect(readdirSync(path.join(ctx.app.config.ATTACHMENT_DIR, t, v.id))).toHaveLength(1); // tệp bị từ chối không để lại
+    const del = await ctx.app.inject({ method: 'DELETE', url: `/api/attachments/${up.json().id}`, headers: { cookie: c } });
+    expect([del.statusCode, del.json().error.code, del.json().error.message]).toEqual([409, 'PERIOD_HARD_LOCKED', MSG]);
+    const dl = await ctx.app.inject({ method: 'GET', url: `/api/attachments/${up.json().id}`, headers: { cookie: c } });
+    expect([dl.statusCode, dl.body]).toEqual([200, 'truoc khoa']);
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/periods/2026/1/unlock', headers: { cookie: c } })).json().status).toBe('soft_locked');
+    expect((await ctx.app.inject({ method: 'DELETE', url: `/api/attachments/${up.json().id}`, headers: { cookie: c } })).statusCode).toBe(204); // hết khóa cứng: xóa được
+  }, 30_000);
+
   it('công ty khác không tải được tệp', async () => {
     const up = await upload(`/api/vouchers/${voucherId}/attachments`, 'mat.txt', 'bi mat');
     const other = await bootstrapTenant(ctx, { code: `AU${Date.now()}` });

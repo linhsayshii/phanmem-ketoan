@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
 import FormData from 'form-data';
 import { sql } from 'kysely';
+import { withTenant } from '@kt/db';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
 
 let ctx: TestApp; let cookie: string; let tenantId: string;
@@ -32,6 +33,12 @@ beforeAll(async () => {
 afterAll(async () => { await ctx.close(); });
 
 describe('số dư đầu kỳ', () => {
+  it('số tiền VND tối đa 16 chữ số: 10^16-1 được nhận, 10^16 bị 400 kèm thông điệp', async () => {
+    expect((await put([R('1111', '9999999999999999'), R('4111', '0', '9999999999999999')])).statusCode).toBe(200);
+    const big = await put([R('1111', '10000000000000000'), R('4111', '0', '10000000000000000')]);
+    expect(big.statusCode).toBe(400); expect(big.body).toContain('Số tiền VND phải là số nguyên tối đa 16 chữ số');
+    await put([]); // trả về trạng thái trống cho các kiểm thử sau
+  });
   it('kiểm tra báo lệch, tài khoản tổng hợp, sai loại dư, thiếu đối tượng, tài khoản loại 5–9', async () => {
     await put([R('1111', '100000000'), R('111', '1'), R('331', '5', '0', null), R('5113', '0', '7'), R('1121', '0', '1'), R('4111', '0', '90000000')]);
     const c = await check();
@@ -254,6 +261,24 @@ describe('chứng từ DK: không lập tay, không bị chiếm, số dư lớn
     const dkId = (await api('GET', '/api/vouchers?type=DK&state=posted')).json().rows[0].id as string;
     const dup = await api('POST', `/api/vouchers/${dkId}/duplicate`, { postingDate: '2026-01-05' });
     expect(dup.statusCode, dup.body).toBe(409); expect(dup.json().error.code).toBe('VOUCHER_TYPE_SYSTEM');
+  }, 30_000);
+
+  it('DK do màn hình Số dư đầu kỳ sinh: bỏ ghi sổ/hủy/xóa/sửa dòng ở màn hình chứng từ và SQL trực tiếp đều bị chặn; ghi sổ lại từ màn hình số dư vẫn chạy', async () => {
+    const dkId = (await api('GET', '/api/vouchers?type=DK&state=posted')).json().rows[0].id as string;
+    const MSG = 'Chứng từ số dư đầu kỳ chỉ sửa ở màn hình Số dư đầu kỳ';
+    const refused = (r: { statusCode: number; json(): { error: { code: string; message: string } } }, what: string) => expect([what, r.statusCode, r.json().error.code, r.json().error.message]).toEqual([what, 409, 'VOUCHER_SYSTEM_GENERATED', MSG]);
+    refused(await api('POST', `/api/vouchers/${dkId}/unpost`), 'unpost');
+    refused(await api('POST', `/api/vouchers/${dkId}/discard`), 'discard');
+    refused(await ctx.app.inject({ method: 'DELETE', url: `/api/vouchers/${dkId}`, headers: { cookie: c3 } }), 'delete');
+    const dk = (await api('GET', `/api/vouchers/${dkId}`)).json();
+    refused(await api('PUT', `/api/vouchers/${dkId}`, { version: dk.version, lines: [{ lineNo: 1, description: 'sửa dòng' }] }), 'sửa dòng');
+    expect((await api('PUT', `/api/vouchers/${dkId}`, { version: dk.version, description: 'Số dư đầu kỳ (đã chú thích)' })).statusCode).toBe(200); // diễn giải ở đầu chứng từ vẫn sửa được
+    const direct = withTenant(ctx.t.db, { tenantId: t3, userId: u3 }, (trx) => sql`SELECT unpost_voucher(${dkId}::uuid)`.execute(trx));
+    await expect(direct).rejects.toMatchObject({ code: 'P0001', message: `VOUCHER_SYSTEM_GENERATED: ${MSG}` });
+    const again = await api('POST', '/api/opening-balance/2026/post');
+    expect(again.statusCode, again.body).toBe(200); expect(again.json()).toMatchObject({ id: dkId, state: 'posted' });
+    // cờ cho phép bỏ ghi sổ chỉ sống trong giao dịch của postOpening: sau đó SQL trực tiếp lại bị chặn
+    await expect(withTenant(ctx.t.db, { tenantId: t3, userId: u3 }, (trx) => sql`SELECT unpost_voucher(${dkId}::uuid)`.execute(trx))).rejects.toMatchObject({ message: `VOUCHER_SYSTEM_GENERATED: ${MSG}` });
   }, 30_000);
 
   it('ghi sổ 6001 dòng: chia lô khi ghi dòng chứng từ (không vượt giới hạn tham số bind)', async () => {

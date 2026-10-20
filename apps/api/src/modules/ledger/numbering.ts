@@ -16,7 +16,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     if (r.numUpdatedRows === 0n) throw notFound(req.params.code);
     return { ok: true };
   });
-  app.get('/api/voucher-types/:code/next-no', { preHandler: app.requireAuth, schema: { params: z.object({ code: z.string() }), querystring: z.object({ year: z.coerce.number().int() }) } }, async (req) =>
+  app.get('/api/voucher-types/:code/next-no', { preHandler: app.requirePermission('voucher.view'), schema: { params: z.object({ code: z.string() }), querystring: z.object({ year: z.coerce.number().int() }) } }, async (req) =>
     app.withTenant(req, async (trx) => {
       const vt = await trx.selectFrom('voucher_type').selectAll().where('code', '=', req.params.code).executeTakeFirst();
       if (!vt) throw notFound(req.params.code);

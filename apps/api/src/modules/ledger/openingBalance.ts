@@ -3,14 +3,14 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
-import { D, formatVnNumber, parseVnNumber, sum } from '@kt/domain';
+import { D, formatVnNumber, parseVnNumber, sum, VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { MAX_ERRORS, MAX_ROWS, plainCell, type ImportError } from '../master/importExcel.js';
 import { notifyRecompute } from './notifyRecompute.js';
-import { postVoucher, unpostVoucher, type VoucherDto } from './vouchers.service.js';
+import { postVoucher, type VoucherDto } from './vouchers.service.js';
 
 // Tiền VND là đồng nguyên (numeric(20,0) sẽ âm thầm làm tròn '100.5'); nguyên tệ numeric(20,4).
-const vnd = z.string().regex(/^\d{1,20}$/, 'Số tiền VND phải là số nguyên đồng, không âm');
+const vnd = z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG);
 const foreign = z.string().regex(/^\d{1,16}(\.\d{1,4})?$/, 'Nguyên tệ không âm, tối đa 4 chữ số thập phân');
 export const openingRow = z.object({
   accountCode: z.string().min(1, 'Thiếu số hiệu tài khoản'), partyCode: z.string().nullable().default(null), currencyCode: z.string().length(3).default('VND'),
@@ -106,6 +106,13 @@ export async function checkOpening(trx: Trx, year: number): Promise<OpeningIssue
   return issuesOf(await openingRows(trx, year, regime));
 }
 
+// Chỉ ghi sổ số dư mới bỏ ghi sổ được chứng từ DK của chính nó: cờ app.opening_repost (xem unpost_voucher, 0015) chỉ bật quanh đúng lệnh này rồi đặt lại.
+async function unpostOpeningVoucher(trx: Trx, id: string) {
+  await sql`SELECT set_config('app.opening_repost', 'on', true)`.execute(trx);
+  await sql`SELECT unpost_voucher(${id}::uuid)`.execute(trx);
+  await sql`SELECT set_config('app.opening_repost', 'off', true)`.execute(trx);
+}
+
 // Tạo hoặc ghi lại chứng từ DK của năm: chứng từ cũ được bỏ ghi sổ rồi thay dòng, giữ nguyên số chứng từ.
 export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: string }, year: number): Promise<VoucherDto> {
   const p0 = await openingPeriod(trx, year);
@@ -126,7 +133,7 @@ export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: str
   let id: string;
   if (old) {
     id = old.id;
-    if (old.state === 'posted') await unpostVoucher(trx, id);
+    if (old.state === 'posted') await unpostOpeningVoucher(trx, id);
     await trx.deleteFrom('voucher_line').where('voucher_id', '=', id).where('posting_date', '=', p0.date_from).execute();
   } else {
     id = (await trx.insertInto('voucher').values({ tenant_id: ctx.tenantId, voucher_type: 'DK', posting_date: p0.date_from, document_date: p0.date_from, description: `Số dư đầu kỳ năm ${year}`,

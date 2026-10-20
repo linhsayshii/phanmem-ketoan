@@ -49,6 +49,28 @@ describe('chứng từ', () => {
     expect(noParty.statusCode).toBe(404); expect(noParty.json().error.code).toBe('LOOKUP_NOT_FOUND');
   });
 
+  it('không lập tay chứng từ kết chuyển KC (409 VOUCHER_TYPE_SYSTEM); phân bổ PB lập tay vẫn được', async () => {
+    const kc = await create(pkt('2026-01-08', [L('911', '10'), L('5113', '0', '10')], { voucherType: 'KC' }));
+    expect(kc.statusCode, kc.body).toBe(409); expect(kc.json().error.code).toBe('VOUCHER_TYPE_SYSTEM');
+    const draft = (await create(pkt('2026-01-08', [L('6421', '10'), L('1111', '0', '10')]))).json();
+    const edit = await ctx.app.inject({ method: 'PUT', url: `/api/vouchers/${draft.id}`, headers: { cookie }, payload: { ...pkt('2026-01-08', [L('6421', '10'), L('1111', '0', '10')], { voucherType: 'KC' }), version: draft.version } });
+    expect(edit.statusCode, edit.body).toBe(409); expect(edit.json().error.code).toBe('VOUCHER_TYPE_SYSTEM');
+    expect((await create(pkt('2026-01-08', [L('6421', '10'), L('1111', '0', '10')], { voucherType: 'PB' }))).statusCode).toBe(201);
+  });
+
+  it('tối đa 5.000 dòng mỗi chứng từ: 5.001 dòng bị 400 kèm thông điệp', async () => {
+    const lines = Array.from({ length: 5001 }, (_, i) => L(i % 2 ? '1111' : '6422', i % 2 ? '0' : '1', i % 2 ? '1' : '0'));
+    const r = await create(pkt('2026-01-09', lines));
+    expect(r.statusCode).toBe(400); expect(r.json().error.code).toBe('VALIDATION'); expect(r.body).toContain('Tối đa 5.000 dòng mỗi chứng từ');
+  });
+
+  it('số tiền VND tối đa 16 chữ số: 10^16-1 được nhận, 10^16 bị 400 kèm thông điệp', async () => {
+    const ok = await create(pkt('2026-01-07', [L('1111', '9999999999999999'), L('5113', '0', '9999999999999999')]));
+    expect(ok.statusCode, ok.body).toBe(201); expect(ok.json().totalDebit).toBe('9999999999999999');
+    const big = await create(pkt('2026-01-07', [L('1111', '10000000000000000'), L('5113', '0', '10000000000000000')]));
+    expect(big.statusCode).toBe(400); expect(big.json().error.code).toBe('VALIDATION'); expect(big.body).toContain('Số tiền VND phải là số nguyên tối đa 16 chữ số');
+  });
+
   it('sửa chứng từ đã ghi sổ: diễn giải và chiều phân tích tại chỗ; số tiền phải bỏ ghi sổ', async () => {
     await ctx.app.inject({ method: 'POST', url: '/api/catalogs/department', headers: { cookie }, payload: { code: 'KD', name: 'Kinh doanh' } });
     const v = (await create(pkt('2026-02-01', [L('6421', '500'), L('1111', '0', '500')], { autoPost: true }))).json();
@@ -155,6 +177,12 @@ describe('chứng từ', () => {
     expect(ok.statusCode, ok.body).toBe(201); expect(ok.json().state).toBe('posted');
 
     expect((await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${v.id}/unpost`, headers: { cookie } })).json().error.code).toBe('UNPOST_PERIOD_NOT_OPEN');
+    // kỳ khóa cứng (đặt thẳng trạng thái, chứng từ chưa có hash): thông điệp chỉ hướng lập bút toán điều chỉnh ở kỳ đang mở
+    const setStatus = (status: string) => sql`UPDATE fiscal_period SET status = ${status} WHERE tenant_id = ${tenantId}::uuid AND fiscal_year = 2026 AND period_no = 5`.execute(ctx.t.admin);
+    await setStatus('hard_locked');
+    const hard = (await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${v.id}/unpost`, headers: { cookie } })).json().error;
+    expect([hard.code, hard.message]).toEqual(['UNPOST_PERIOD_NOT_OPEN', 'kỳ đã khóa cứng; lập bút toán điều chỉnh ở kỳ đang mở']);
+    await setStatus('soft_locked');
     const rev = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${v.id}/reverse`, headers: { cookie }, payload: { postingDate: '2026-05-10' } });
     expect(rev.statusCode, rev.body).toBe(201); expect(rev.json()).toMatchObject({ state: 'posted', reversalOfId: v.id });
   });

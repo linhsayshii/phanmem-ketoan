@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'kysely';
 import pg from 'pg';
+import { withTenant } from '@kt/db';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
 
 let ctx: TestApp; let cookie: string; let tenantId: string;
@@ -179,8 +180,13 @@ describe('hash chuỗi: múi giờ phiên và đua với khóa cứng', () => {
     await ctx.app.inject({ method: 'POST', url: '/api/users', headers: { cookie: c }, payload: { username, fullName: 'KT', password: 'Matkhau1!', roleCode: 'ketoan_vien' } });
     const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
     const r = await ctx.app.inject({ method: 'POST', url: '/api/periods/2026/3/unlock', headers: { cookie: `sid=${login.cookies.find((x) => x.name === 'sid')!.value}` } });
-    expect(r.statusCode).toBe(409); expect(r.json().error.code).toBe('PERIOD_UNLOCK_HARD_FORBIDDEN');
+    expect(r.statusCode).toBe(403); expect(r.json().error.code).toBe('FORBIDDEN'); // chặn ở route trước khi gọi SQL
     expect((await sql<{ status: string }>`SELECT status FROM fiscal_period WHERE tenant_id = ${tid}::uuid AND period_no = 3`.execute(ctx.t.admin)).rows[0]!.status).toBe('hard_locked');
+    // kỳ chỉ khóa mềm thì period.unlock đủ: route không chặn nhầm
+    expect((await lock(5, 'soft', c)).statusCode).toBe(200);
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/periods/2026/5/unlock', headers: { cookie: `sid=${login.cookies.find((x) => x.name === 'sid')!.value}` } })).json()).toEqual({ status: 'open' });
+    // lớp bảo vệ trong SQL vẫn còn: gọi thẳng unlock_period không có cờ app.unlock_hard
+    await expect(withTenant(ctx.t.db, { tenantId: tid, userId: uid }, (trx) => sql`SELECT unlock_period(${tid}::uuid, 2026, 3)`.execute(trx))).rejects.toMatchObject({ message: expect.stringMatching(/^PERIOD_UNLOCK_HARD_FORBIDDEN/) });
   });
 
   it('khóa và bỏ khóa cứng đi tuần tự theo công ty: bỏ khóa kỳ 3 đợi khóa cứng kỳ 4 rồi bị từ chối', async () => {

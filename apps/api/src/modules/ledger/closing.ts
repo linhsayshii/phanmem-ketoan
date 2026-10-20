@@ -3,12 +3,13 @@ import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
 import { loadDefaultClosingSteps } from '@kt/coa-data';
+import { VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { dateIso } from './vouchers.service.js';
 
 export const stepInput = z.object({ id: z.string().uuid().optional(), stepOrder: z.number().int(), name: z.string().min(1), mode: z.enum(['transfer', 'allocate']),
-  fromAccounts: z.array(z.string().min(1)).min(1), toAccount: z.string().nullable().optional(), keepBalance: z.string().regex(/^\d+$/).default('0'),
+  fromAccounts: z.array(z.string().min(1)).min(1), toAccount: z.string().nullable().optional(), keepBalance: z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG).default('0'),
   byDimension: z.enum(['project']).nullable().optional(),
   ratioSource: z.object({ ratios: z.array(z.object({ account: z.string().min(1), percent: z.string().regex(/^\d+(\.\d+)?$/) })) }).nullable().optional(),
   runAt: z.enum(['period_end', 'next_year_start']).default('period_end'), isActive: z.boolean().default(true) });
@@ -32,6 +33,15 @@ const ids = async (trx: Trx, fn: 'run_closing_step' | 'rerun_closing_step', tena
 export const runStep = (trx: Trx, tenantId: string, stepId: string, date: string) => ids(trx, 'run_closing_step', tenantId, stepId, date);
 export const rerunStep = (trx: Trx, tenantId: string, stepId: string, date: string) => ids(trx, 'rerun_closing_step', tenantId, stepId, date);
 
+// Chạy lại một bước chỉ đảo và chạy lại đúng bước đó. Các bước đang dùng ở sau (theo thứ tự) đã chạy xong tại cùng ngày vẫn giữ số cũ, không còn khớp số dư mới:
+// trả tên chúng để màn hình nhắc chạy lại.
+export async function laterStepsDone(trx: Trx, stepId: string, date: string): Promise<string[]> {
+  return (await trx.selectFrom('closing_step as s').select('s.name').where('s.is_active', '=', true)
+    .where('s.step_order', '>', trx.selectFrom('closing_step').select('step_order').where('id', '=', stepId))
+    .where((eb) => eb.exists(eb.selectFrom('closing_run as r').select('r.id').whereRef('r.step_id', '=', 's.id').where('r.posting_date', '=', date).where('r.status', '=', 'done')))
+    .orderBy('s.step_order').execute()).map((s) => s.name);
+}
+
 const runBody = z.object({ stepId: z.string().uuid(), postingDate: dateIso });
 
 const routes: FastifyPluginAsyncZod = async (app) => {
@@ -54,14 +64,18 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
   app.post('/api/closing/steps/reload', { preHandler: app.requirePermission('closing_step.update') }, async (req) => ({ count: await app.withTenant(req, (trx) => loadClosingTemplate(trx, req.auth!.tenantId!)) }));
 
-  for (const [path, fn] of [['run', runStep], ['rerun', rerunStep]] as const) {
-    app.post(`/api/closing/${path}`, { preHandler: app.requirePermission('closing.run'), schema: { body: runBody } }, async (req) => {
-      const tenantId = req.auth!.tenantId!;
-      const voucherIds = await app.withTenant(req, (trx) => fn(trx, tenantId, req.body.stepId, req.body.postingDate));
-      notifyRecompute(app, tenantId);
-      return { voucherIds };
-    });
-  }
+  app.post('/api/closing/run', { preHandler: app.requirePermission('closing.run'), schema: { body: runBody } }, async (req) => {
+    const tenantId = req.auth!.tenantId!;
+    const voucherIds = await app.withTenant(req, (trx) => runStep(trx, tenantId, req.body.stepId, req.body.postingDate));
+    notifyRecompute(app, tenantId);
+    return { voucherIds };
+  });
+  app.post('/api/closing/rerun', { preHandler: app.requirePermission('closing.run'), schema: { body: runBody } }, async (req) => {
+    const tenantId = req.auth!.tenantId!;
+    const out = await app.withTenant(req, async (trx) => ({ voucherIds: await rerunStep(trx, tenantId, req.body.stepId, req.body.postingDate), laterStepsDone: await laterStepsDone(trx, req.body.stepId, req.body.postingDate) }));
+    notifyRecompute(app, tenantId);
+    return out;
+  });
   // Mỗi bước một giao dịch, dừng ở lỗi đầu tiên: các bước đã chạy giữ nguyên (xem nhật ký chạy), chạy lại thì bước xong trước đó không có gì để kết chuyển nữa.
   app.post('/api/closing/run-all', { preHandler: app.requirePermission('closing.run'), schema: { body: z.object({ postingDate: dateIso }) } }, async (req) => {
     const tenantId = req.auth!.tenantId!;

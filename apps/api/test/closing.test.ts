@@ -1,14 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { sql } from 'kysely';
 import { withTenant } from '@kt/db';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
 import { runStep } from '../src/modules/ledger/closing.js';
 
-let ctx: TestApp; let cookie: string;
+let ctx: TestApp; let cookie: string; let tenantId: string; let userId: string;
 const pkt = (date: string, lines: object[]) => ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie }, payload: { voucherType: 'PKT', postingDate: date, documentDate: date, description: 'x', autoPost: true, lines } });
 const bal = async (asOf: string) => { const r = await ctx.app.inject({ method: 'GET', url: `/api/balances?asOf=${asOf}`, headers: { cookie } }); return Object.fromEntries((r.json().rows as { accountCode: string; debit: string; credit: string }[]).map((x) => [x.accountCode, { d: x.debit, c: x.credit }])); };
 
 beforeAll(async () => {
-  ctx = await createTestApp(); ({ cookie } = await bootstrapTenant(ctx, { code: `KC${Date.now()}` }));
+  ctx = await createTestApp(); ({ cookie, tenantId, userId } = await bootstrapTenant(ctx, { code: `KC${Date.now()}` }));
   await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' } });
   await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT133' } });
   await pkt('2026-03-05', [{ accountCode: '1121', debit: '1000' }, { accountCode: '5113', credit: '1000' }]);
@@ -18,6 +19,14 @@ beforeAll(async () => {
 afterAll(async () => { await ctx.close(); });
 
 describe('kết chuyển', () => {
+  it('keepBalance tối đa 16 chữ số', async () => {
+    const cur = (await ctx.app.inject({ method: 'GET', url: '/api/closing/steps', headers: { cookie } })).json() as { id: string; stepOrder: number; name: string; mode: string; fromAccounts: string[]; toAccount: string | null; runAt: string }[];
+    const put = (keepBalance: string) => ctx.app.inject({ method: 'PUT', url: '/api/closing/steps', headers: { cookie }, payload: { steps: cur.map((s, i) => ({ ...s, keepBalance: i === 0 ? keepBalance : '0' })) } });
+    const bad = await put('10000000000000000');
+    expect(bad.statusCode).toBe(400); expect(bad.body).toContain('Số tiền VND phải là số nguyên tối đa 16 chữ số');
+    expect((await put('9999999999999999')).statusCode).toBe(200);
+    expect((await put('0')).statusCode).toBe(200);
+  });
   it('sơ đồ mặc định được nạp khi tạo năm', async () => {
     const steps = (await ctx.app.inject({ method: 'GET', url: '/api/closing/steps', headers: { cookie } })).json() as { stepOrder: number; name: string; toAccount: string }[];
     expect(steps.map((s) => s.toAccount)).toEqual(['5111', '911', '911', '4212', '4211']);
@@ -33,13 +42,31 @@ describe('kết chuyển', () => {
     const first = (await ctx.app.inject({ method: 'GET', url: `/api/vouchers/${kc.json().rows.at(-1).id}`, headers: { cookie } })).json();
     expect(first.isClosing).toBe(true); expect(first.sourceDocType).toBe('closing_step');
   });
+  it('chứng từ KC/PB do hệ thống sinh: bỏ ghi sổ, hủy, xóa, sửa dòng, nhân bản đều bị chặn (API và SQL trực tiếp)', async () => {
+    const kcId = (await ctx.app.inject({ method: 'GET', url: '/api/vouchers?type=KC&from=2026-12-31&to=2026-12-31', headers: { cookie } })).json().rows[0].id as string;
+    const MSG = 'Chứng từ do hệ thống sinh (kết chuyển/phân bổ); dùng Chạy lại (đảo cũ) ở màn hình Kết chuyển';
+    const call = (method: 'GET' | 'POST' | 'DELETE' | 'PUT', url: string, payload?: object) => ctx.app.inject({ method, url, headers: { cookie }, payload });
+    const version = (await call('GET', `/api/vouchers/${kcId}`)).json().version as number;
+    for (const [what, r] of [['unpost', await call('POST', `/api/vouchers/${kcId}/unpost`)], ['discard', await call('POST', `/api/vouchers/${kcId}/discard`)], ['delete', await call('DELETE', `/api/vouchers/${kcId}`)],
+      ['sửa dòng', await call('PUT', `/api/vouchers/${kcId}`, { version, lines: [{ lineNo: 1, description: 'sửa' }] })]] as const)
+      expect([what, r.statusCode, r.json().error.code, r.json().error.message]).toEqual([what, 409, 'VOUCHER_SYSTEM_GENERATED', MSG]);
+    const dup = await call('POST', `/api/vouchers/${kcId}/duplicate`, { postingDate: '2026-12-31' });
+    expect([dup.statusCode, dup.json().error.code]).toEqual([409, 'VOUCHER_TYPE_SYSTEM']);
+    for (const fn of ['unpost_voucher', 'discard_voucher'])
+      await expect(withTenant(ctx.t.db, { tenantId, userId }, (trx) => sql`SELECT ${sql.id(fn)}(${kcId}::uuid)`.execute(trx))).rejects.toMatchObject({ code: 'P0001', message: `VOUCHER_SYSTEM_GENERATED: ${MSG}` });
+    expect((await ctx.app.inject({ method: 'GET', url: `/api/vouchers/${kcId}`, headers: { cookie } })).json().state).toBe('posted');
+  });
   it('phát sinh thêm rồi chạy lại: KC cũ bị đảo, số dư 4212 đúng 320; không sửa đè', async () => {
     await pkt('2026-12-20', [{ accountCode: '1121', debit: '20' }, { accountCode: '5113', credit: '20' }]);
-    const steps = (await ctx.app.inject({ method: 'GET', url: '/api/closing/steps', headers: { cookie } })).json() as { id: string; toAccount: string; stepOrder: number }[];
+    const steps = (await ctx.app.inject({ method: 'GET', url: '/api/closing/steps', headers: { cookie } })).json() as { id: string; name: string; toAccount: string; stepOrder: number }[];
     for (const s of steps.filter((x) => x.stepOrder <= 4)) {
       const rr = await ctx.app.inject({ method: 'POST', url: '/api/closing/rerun', headers: { cookie }, payload: { stepId: s.id, postingDate: '2026-12-31' } });
       expect(rr.statusCode, rr.body).toBe(200);
+      // các bước sau (theo thứ tự) đã chạy cùng ngày không tự chạy lại: báo tên để người dùng chạy lại; bước 5 (đầu năm sau) chưa chạy nên không có
+      expect(rr.json().laterStepsDone, `rerun bước ${s.stepOrder}`).toEqual(steps.filter((x) => x.stepOrder > s.stepOrder && x.stepOrder <= 4).map((x) => x.name));
     }
+    const run = await ctx.app.inject({ method: 'POST', url: '/api/closing/run', headers: { cookie }, payload: { stepId: steps[0]!.id, postingDate: '2026-12-31' } });
+    expect(run.json()).not.toHaveProperty('laterStepsDone'); // chỉ chạy lại mới có
     expect((await bal('2026-12-31'))['4212']).toEqual({ d: '0', c: '320' });
     const runs = (await ctx.app.inject({ method: 'GET', url: '/api/closing/runs?year=2026', headers: { cookie } })).json() as { status: string }[];
     expect(runs.filter((x) => x.status === 'reversed').length).toBe(3);

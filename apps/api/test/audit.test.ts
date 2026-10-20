@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { sql } from 'kysely';
 import { bootstrapTenant, createTestApp, TEST_PASSWORD, type TestApp } from './helpers.js';
 
 let ctx: TestApp;
@@ -49,6 +50,19 @@ describe('nhật ký kiểm toán', () => {
     expect(all.rows.some((x) => x.username === b.username)).toBe(false);
     expect((await logins('?from=2000-01-01&to=2000-01-02')).total).toBe(0);
     expect((await logins('?size=1&page=2')).rows).toHaveLength(1);
+  });
+  it('lọc khoảng ngày theo giờ Việt Nam (UTC+7): 00:00 ngày bắt đầu đến 23:59:59 ngày kết thúc, cả nhật ký kiểm toán lẫn nhật ký đăng nhập', async () => {
+    const a = await bootstrapTenant(ctx, { code: `AB${Date.now()}` });
+    const audit = (ts: string, action: string) => sql`INSERT INTO audit_event(tenant_id, ts, action, entity, entity_id) VALUES (${a.tenantId}::uuid, ${ts}::timestamptz, ${action}, 'probe', 'p')`.execute(ctx.t.admin);
+    const login = (ts: string) => sql`INSERT INTO login_event(ts, username, user_id, success) VALUES (${ts}::timestamptz, ${a.username}, ${a.userId}::uuid, true)`.execute(ctx.t.admin);
+    const stamps: [string, string][] = [['2026-03-09 16:59:59+00', 'bien_truoc'], ['2026-03-09 17:00:00+00', 'bien_dau'], ['2026-03-10 16:59:59+00', 'bien_cuoi'], ['2026-03-10 17:00:00+00', 'bien_sau']];
+    for (const [ts, action] of stamps) { await audit(ts, action); await login(ts); }
+    const get = async (url: string) => (await ctx.app.inject({ method: 'GET', url, headers: { cookie: a.cookie } })).json() as { rows: { action?: string; ts: string }[]; total: number };
+    const r = await get('/api/audit?entity=probe&from=2026-03-10&to=2026-03-10');
+    expect(r.rows.map((x) => x.action)).toEqual(['bien_cuoi', 'bien_dau']); expect(r.total).toBe(2);
+    const l = await get('/api/audit/logins?from=2026-03-10&to=2026-03-10');
+    expect(l.total).toBe(2); // đúng hai mốc 2026-03-09 17:00:00Z và 2026-03-10 16:59:59Z
+    expect(l.rows.map((x) => new Date(x.ts.replace(' ', 'T').replace(/\+00$/, 'Z')).toISOString())).toEqual(['2026-03-10T16:59:59.000Z', '2026-03-09T17:00:00.000Z']);
   });
   it('người không có quyền audit.view bị 403', async () => {
     const a = await bootstrapTenant(ctx, { code: `AI${Date.now()}` });

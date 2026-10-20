@@ -1,5 +1,6 @@
 import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
+import { AppError } from '../../plugins/errors.js';
 
 export async function listPeriods(trx: Transaction<Database>, year?: number) {
   let q = trx.selectFrom('fiscal_period as p').select(['p.fiscal_year as fiscalYear', 'p.period_no as periodNo', 'p.date_from as dateFrom', 'p.date_to as dateTo', 'p.regime', 'p.status', 'p.locked_modules as lockedModules',
@@ -11,6 +12,9 @@ export async function listPeriods(trx: Transaction<Database>, year?: number) {
 export const lockPeriod = (trx: Transaction<Database>, tenantId: string, year: number, no: number, level: 'soft' | 'hard') => sql`SELECT lock_period(${tenantId}::uuid, ${year}, ${no}, ${level})`.execute(trx);
 export async function unlockPeriod(trx: Transaction<Database>, tenantId: string, year: number, no: number, allowHard: boolean) {
   if (allowHard) await sql`SELECT set_config('app.unlock_hard', 'on', true)`.execute(trx);
+  // Thiếu period.unlock_hard là lỗi quyền (403), không phải xung đột trạng thái: chặn tại đây; unlock_period vẫn giữ kiểm tra riêng (PERIOD_UNLOCK_HARD_FORBIDDEN) làm lớp bảo vệ.
+  else if ((await trx.selectFrom('fiscal_period').select('status').where('fiscal_year', '=', year).where('period_no', '=', no).executeTakeFirst())?.status === 'hard_locked')
+    throw new AppError('FORBIDDEN', 'Thiếu quyền period.unlock_hard để bỏ khóa cứng', 403);
   return (await sql<{ s: string }>`SELECT unlock_period(${tenantId}::uuid, ${year}, ${no}) AS s`.execute(trx)).rows[0]!.s;
 }
 export const setPeriodModules = (trx: Transaction<Database>, tenantId: string, year: number, no: number, modules: string[]) => sql`SELECT set_period_modules(${tenantId}::uuid, ${year}, ${no}, ${sql.val(modules)}::text[])`.execute(trx);

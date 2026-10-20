@@ -3,7 +3,16 @@ import { mkdir, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import type { Transaction } from 'kysely';
+import type { Database } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
+
+// Chứng từ gốc đính kèm là một phần bằng chứng của kỳ đã khóa cứng (chuỗi băm): kỳ khóa cứng thì không thêm hoặc xóa; tải về không bị ảnh hưởng.
+async function assertPeriodNotHardLocked(trx: Transaction<Database>, voucherId: string) {
+  const p = await trx.selectFrom('voucher as v').innerJoin('fiscal_period as p', (j) => j.onRef('p.tenant_id', '=', 'v.tenant_id').onRef('p.fiscal_year', '=', 'v.fiscal_year').onRef('p.period_no', '=', 'v.period_no'))
+    .select('p.status').where('v.id', '=', voucherId).executeTakeFirst();
+  if (p?.status === 'hard_locked') throw new AppError('PERIOD_HARD_LOCKED', 'Kỳ đã khóa cứng: không thêm hoặc xóa chứng từ gốc đính kèm', 409);
+}
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   const dirOf = (tenantId: string, voucherId: string) => path.join(app.config.ATTACHMENT_DIR, tenantId, voucherId);
@@ -16,6 +25,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       const row = await app.withTenant(req, async (trx) => {
         const v = await trx.selectFrom('voucher').select('id').where('id', '=', req.params.id).executeTakeFirst();
         if (!v) throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy chứng từ', 404);
+        await assertPeriodNotHardLocked(trx, v.id);
         const r = await trx.insertInto('voucher_attachment').values({ tenant_id: tenantId, voucher_id: v.id, file_name: file.filename, mime: file.mimetype, bytes: buf.length, storage_key: '', uploaded_by: req.auth!.userId })
           .returning(['id', 'file_name', 'bytes']).executeTakeFirstOrThrow();
         const key = path.join(dirOf(tenantId, v.id), r.id); written.push(key);
@@ -45,7 +55,11 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.delete('/api/attachments/:attId', { preHandler: app.requirePermission('voucher.update'), schema: { params: z.object({ attId: z.string().uuid() }) } }, async (req, reply) => {
-    const a = await app.withTenant(req, (trx) => trx.deleteFrom('voucher_attachment').where('id', '=', req.params.attId).returning('storage_key').executeTakeFirst());
+    const a = await app.withTenant(req, async (trx) => {
+      const att = await trx.selectFrom('voucher_attachment').select('voucher_id').where('id', '=', req.params.attId).executeTakeFirst();
+      if (att) await assertPeriodNotHardLocked(trx, att.voucher_id);
+      return trx.deleteFrom('voucher_attachment').where('id', '=', req.params.attId).returning('storage_key').executeTakeFirst();
+    });
     if (!a) throw new AppError('NOT_FOUND', 'Không có tệp', 404);
     await unlink(a.storage_key).catch(() => undefined);
     return reply.status(204).send();
