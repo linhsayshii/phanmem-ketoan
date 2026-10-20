@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { message } from 'antd';
@@ -32,11 +32,11 @@ describe('Màn hình kỳ kế toán', () => {
     expect(screen.getAllByRole('button', { name: 'Kiểm tra hash' })).toHaveLength(1); // chỉ kỳ khóa cứng
   });
 
-  it('kỳ khóa cứng chỉ bỏ khóa được với quyền riêng', async () => {
-    perms.has = (c) => c !== 'period.unlock_hard';
-    renderPage();
-    await screen.findByText('ab12cd34');
-    expect(screen.queryByRole('button', { name: 'Bỏ khóa' })).not.toBeInTheDocument();
+  it('bỏ khóa kỳ khóa cứng cần cả period.unlock và period.unlock_hard', async () => {
+    const unlockButtons = async (can: (c: string) => boolean) => { perms.has = can; renderPage(); await screen.findByText('ab12cd34'); const n = screen.queryAllByRole('button', { name: 'Bỏ khóa' }).length; cleanup(); return n; };
+    expect(await unlockButtons((c) => c !== 'period.unlock_hard')).toBe(0);
+    expect(await unlockButtons((c) => c !== 'period.unlock')).toBe(0);
+    expect(await unlockButtons(() => true)).toBe(1);
   });
 
   it('kiểm tra hash khớp báo số chứng từ', async () => {
@@ -46,5 +46,17 @@ describe('Màn hình kỳ kế toán', () => {
     await vi.waitFor(() => expect(ok).toHaveBeenCalledWith('Toàn bộ 3 chứng từ khớp'));
     expect(apiMock).toHaveBeenCalledWith('/api/periods/2026/2/verify-hash');
     ok.mockRestore();
+  });
+
+  it('kiểm tra hash lệch hiện bảng chứng từ lệch, chịu được dòng không có mã chứng từ (so hash_tail)', async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === '/api/fiscal-years') return [{ fiscalYear: 2026 }];
+      if (path === '/api/periods?year=2026') return [row(2, 'hard_locked', { hashTail: 'ab12cd34ef56'.repeat(5) })];
+      return { total: 1, mismatched: [{ voucherId: null, voucherNo: '(hash_tail)', stored: 'aa'.repeat(32), computed: 'bb'.repeat(32) }, { voucherId: 'v1', voucherNo: null, stored: null, computed: 'cc'.repeat(32) }] };
+    });
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'Kiểm tra hash' }));
+    expect(await screen.findByText('(hash_tail)')).toBeInTheDocument();
+    expect(screen.getByText('(chưa số)')).toBeInTheDocument();
   });
 });

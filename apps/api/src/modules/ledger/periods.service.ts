@@ -15,6 +15,7 @@ export async function unlockPeriod(trx: Transaction<Database>, tenantId: string,
 }
 export const setPeriodModules = (trx: Transaction<Database>, tenantId: string, year: number, no: number, modules: string[]) => sql`SELECT set_period_modules(${tenantId}::uuid, ${year}, ${no}, ${sql.val(modules)}::text[])`.execute(trx);
 export async function verifyPeriodHash(trx: Transaction<Database>, tenantId: string, year: number, no: number) {
-  const r = await sql<{ voucher_id: string; voucher_no: string; stored: Buffer | null; computed: Buffer; ok: boolean }>`SELECT * FROM verify_period_hash(${tenantId}::uuid, ${year}, ${no})`.execute(trx);
-  return { total: r.rows.length, mismatched: r.rows.filter((x) => !x.ok).map((x) => ({ voucherId: x.voucher_id, voucherNo: x.voucher_no, stored: x.stored?.toString('hex') ?? null, computed: x.computed.toString('hex') })) };
+  // voucher_id NULL là dòng so hash cuối chuỗi với hash_tail của kỳ (phát hiện chứng từ bị xóa); dòng đó không tính vào total.
+  const r = await sql<{ voucher_id: string | null; voucher_no: string | null; stored: Buffer | null; computed: Buffer; ok: boolean }>`SELECT * FROM verify_period_hash(${tenantId}::uuid, ${year}, ${no})`.execute(trx);
+  return { total: r.rows.filter((x) => x.voucher_id).length, mismatched: r.rows.filter((x) => !x.ok).map((x) => ({ voucherId: x.voucher_id, voucherNo: x.voucher_no, stored: x.stored?.toString('hex') ?? null, computed: x.computed.toString('hex') })) };
 }

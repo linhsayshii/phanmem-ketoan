@@ -1,15 +1,18 @@
 -- 0006_khoa_ky.sql: khóa kỳ ba mức, khóa theo phần hành, chuỗi hash khi khóa cứng và hàm kiểm tra hash. Chạy với quyền người gọi (app_user, có RLS), không SECURITY DEFINER.
-ALTER TABLE fiscal_period ADD COLUMN hash_tail bytea, ADD COLUMN locked_by uuid, ADD COLUMN locked_at timestamptz;
+ALTER TABLE fiscal_period ADD COLUMN IF NOT EXISTS hash_tail bytea, ADD COLUMN IF NOT EXISTS locked_by uuid, ADD COLUMN IF NOT EXISTS locked_at timestamptz;
 
 -- Chuỗi chuẩn hóa của một chứng từ để băm. Mọi giá trị phải cố định theo dữ liệu, không theo phiên: ngày (date) và số (numeric) trong jsonb luôn ở dạng ISO/thập phân,
 -- còn timestamptz sẽ bị jsonb in theo TimeZone của phiên nên posted_at được in cố định theo UTC.
+-- ĐỊNH DẠNG NÀY ĐÓNG BĂNG khi có kỳ đầu tiên bị khóa cứng: thêm/bớt/đổi tên khóa làm hash đã lưu không còn khớp (phải bỏ khóa cứng rồi khóa lại).
 CREATE OR REPLACE FUNCTION fn_voucher_canonical(p_id uuid) RETURNS text LANGUAGE sql STABLE AS $$
   SELECT (jsonb_build_object(
     'id', v.id, 'type', v.voucher_type, 'no', v.voucher_no, 'seq', v.seq_no, 'posting_date', v.posting_date, 'document_date', v.document_date,
     'state', v.state, 'description', v.description, 'party_id', v.party_id, 'currency', v.currency_code, 'fx_rate', v.fx_rate,
     'reversal_of', v.reversal_of_id, 'is_closing', v.is_closing, 'posted_at', to_char(v.posted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
-    'lines', coalesce((SELECT jsonb_agg(jsonb_build_object('n', l.line_no, 'acc', a.code, 'd', l.debit, 'c', l.credit, 'ac', l.amount_currency, 'cur', l.currency_code,
-        'party', l.party_id, 'dept', l.department_id, 'proj', l.project_id, 'ci', l.cost_item_id, 'emp', l.employee_id, 'desc', l.description, 'due', l.due_date) ORDER BY l.line_no)
+    'reversed_by_id', v.reversed_by_id, 'created_by', v.created_by, 'posted_by', v.posted_by, 'source_doc_type', v.source_doc_type, 'source_doc_id', v.source_doc_id,
+    'lines', coalesce((SELECT jsonb_agg(jsonb_build_object('n', l.line_no, 'acc', a.code, 'd', l.debit, 'c', l.credit, 'ac', l.amount_currency, 'cur', l.currency_code, 'fx_rate', l.fx_rate,
+        'party', l.party_id, 'dept', l.department_id, 'proj', l.project_id, 'ci', l.cost_item_id, 'emp', l.employee_id, 'desc', l.description, 'due', l.due_date,
+        'item_id', l.item_id, 'warehouse_id', l.warehouse_id, 'contract_id', l.contract_id, 'asset_id', l.asset_id, 'extra_dims', l.extra_dims) ORDER BY l.line_no)
       -- posting_date của dòng luôn bằng của chứng từ (fn_line_before): chỉ quét partition của tháng chứng từ.
       FROM voucher_line l JOIN account a ON a.id = l.account_id WHERE l.voucher_id = v.id AND l.posting_date = v.posting_date), '[]'::jsonb)))::text
   FROM voucher v WHERE v.id = p_id;
@@ -78,6 +81,8 @@ $$;
 CREATE OR REPLACE FUNCTION lock_period(p_tenant uuid, p_year int, p_period int, p_level text) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE p fiscal_period; prev bytea; h bytea; r record; n_draft int;
 BEGIN
+  -- Khóa/bỏ khóa cứng các kỳ của một công ty đi tuần tự: kiểm tra thứ tự kỳ (kỳ trước đã khóa cứng, không có kỳ sau khóa cứng) và chuỗi hash phụ thuộc trạng thái kỳ khác.
+  PERFORM pg_advisory_xact_lock(hashtextextended('fiscal_period_chain:' || p_tenant::text, 0));
   SELECT * INTO p FROM fiscal_period WHERE tenant_id = p_tenant AND fiscal_year = p_year AND period_no = p_period FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'PERIOD_NOT_FOUND: kỳ %/%', p_period, p_year USING ERRCODE = 'P0001'; END IF;
   IF p_level = 'soft' THEN
@@ -97,7 +102,7 @@ BEGIN
   prev := coalesce(prev, '\x00'::bytea);
   PERFORM set_config('app.locking', 'on', true);
   FOR r IN SELECT id FROM voucher WHERE tenant_id = p_tenant AND fiscal_year = p_year AND period_no = p_period AND state IN ('posted','reversed','cancelled')
-           ORDER BY posting_date, voucher_type, seq_no, id LOOP
+           ORDER BY posting_date, voucher_type COLLATE "C", seq_no, id LOOP
     h := digest(prev || convert_to(fn_voucher_canonical(r.id), 'UTF8'), 'sha256');
     UPDATE voucher SET prev_hash = prev, row_hash = h WHERE id = r.id;
     prev := h;
@@ -110,6 +115,7 @@ END $$;
 CREATE OR REPLACE FUNCTION unlock_period(p_tenant uuid, p_year int, p_period int) RETURNS text LANGUAGE plpgsql AS $$
 DECLARE p fiscal_period; v_new text;
 BEGIN
+  PERFORM pg_advisory_xact_lock(hashtextextended('fiscal_period_chain:' || p_tenant::text, 0));
   SELECT * INTO p FROM fiscal_period WHERE tenant_id = p_tenant AND fiscal_year = p_year AND period_no = p_period FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'PERIOD_NOT_FOUND: kỳ %/%', p_period, p_year USING ERRCODE = 'P0001'; END IF;
   IF p.status = 'open' THEN RAISE EXCEPTION 'PERIOD_STATE_INVALID: kỳ đang mở' USING ERRCODE = 'P0001'; END IF;
@@ -138,21 +144,26 @@ BEGIN
 END $$;
 
 -- Chỉ kiểm tra được kỳ đã khóa cứng: kỳ chưa khóa cứng không có hash, báo lệch từng chứng từ sẽ chỉ gây nhiễu.
+-- Sau vòng lặp so hash cuối chuỗi với hash_tail của kỳ: chứng từ bị xóa ở cuối kỳ (hoặc cả kỳ) không còn dòng nào để báo lệch, chỉ lộ ra ở đây.
 CREATE OR REPLACE FUNCTION verify_period_hash(p_tenant uuid, p_year int, p_period int)
 RETURNS TABLE(voucher_id uuid, voucher_no text, stored bytea, computed bytea, ok boolean) LANGUAGE plpgsql STABLE AS $$
 #variable_conflict use_column
-DECLARE prev bytea; r record; h bytea; v_status text;
+DECLARE prev bytea; r record; h bytea; v_status text; v_tail bytea;
 BEGIN
-  SELECT q.status INTO v_status FROM fiscal_period q WHERE q.tenant_id = p_tenant AND q.fiscal_year = p_year AND q.period_no = p_period;
+  SELECT q.status, q.hash_tail INTO v_status, v_tail FROM fiscal_period q WHERE q.tenant_id = p_tenant AND q.fiscal_year = p_year AND q.period_no = p_period;
   IF NOT FOUND THEN RAISE EXCEPTION 'PERIOD_NOT_FOUND: kỳ %/%', p_period, p_year USING ERRCODE = 'P0001'; END IF;
   IF v_status <> 'hard_locked' THEN RAISE EXCEPTION 'PERIOD_STATE_INVALID: kỳ %/% chưa khóa cứng nên chưa có hash', p_period, p_year USING ERRCODE = 'P0001'; END IF;
   SELECT hash_tail INTO prev FROM fiscal_period q WHERE q.tenant_id = p_tenant AND (q.fiscal_year, q.period_no) < (p_year, p_period) AND q.hash_tail IS NOT NULL ORDER BY q.fiscal_year DESC, q.period_no DESC LIMIT 1;
   prev := coalesce(prev, '\x00'::bytea);
   FOR r IN SELECT v.id, v.voucher_no, v.row_hash FROM voucher v WHERE v.tenant_id = p_tenant AND v.fiscal_year = p_year AND v.period_no = p_period AND v.state IN ('posted','reversed','cancelled')
-           ORDER BY v.posting_date, v.voucher_type, v.seq_no, v.id LOOP
+           ORDER BY v.posting_date, v.voucher_type COLLATE "C", v.seq_no, v.id LOOP
     h := digest(prev || convert_to(fn_voucher_canonical(r.id), 'UTF8'), 'sha256');
     voucher_id := r.id; voucher_no := r.voucher_no; stored := r.row_hash; computed := h; ok := coalesce(r.row_hash = h, false);
     RETURN NEXT;
     prev := h;
   END LOOP;
+  IF prev IS DISTINCT FROM v_tail THEN
+    voucher_id := NULL; voucher_no := '(hash_tail)'; stored := v_tail; computed := prev; ok := false;
+    RETURN NEXT;
+  END IF;
 END $$;

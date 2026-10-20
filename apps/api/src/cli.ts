@@ -17,10 +17,11 @@ if (positionals[0] === 'verify-hash') {
     const t = await db.query('SELECT id FROM tenant WHERE code = $1', [code]);
     if (!t.rows[0]) { console.error(`Không có công ty mã ${code}`); process.exit(1); }
     await db.query("SELECT set_config('app.current_tenant', $1, false)", [t.rows[0].id]);
-    const r = await db.query(`SELECT voucher_no, ok, encode(stored, 'hex') AS stored, encode(computed, 'hex') AS computed FROM verify_period_hash($1::uuid, $2::int, $3::int)`, [t.rows[0].id, year, period]);
+    const r = await db.query(`SELECT voucher_id, voucher_no, ok, encode(stored, 'hex') AS stored, encode(computed, 'hex') AS computed FROM verify_period_hash($1::uuid, $2::int, $3::int)`, [t.rows[0].id, year, period]);
     const bad = r.rows.filter((x) => !x.ok);
-    for (const x of bad) console.log(`LỆCH ${x.voucher_no}: lưu ${x.stored ?? '(trống)'}, tính lại ${x.computed}`);
-    console.log(bad.length ? `Kỳ ${period}/${year}: ${bad.length}/${r.rows.length} chứng từ lệch hash` : `Kỳ ${period}/${year}: toàn bộ ${r.rows.length} chứng từ khớp`);
+    const total = r.rows.filter((x) => x.voucher_id).length; // dòng voucher_id NULL là so hash cuối chuỗi với hash_tail (chứng từ bị xóa)
+    for (const x of bad) console.log(`LỆCH ${x.voucher_no ?? '(chưa số)'}: lưu ${x.stored ?? '(trống)'}, tính lại ${x.computed}`);
+    console.log(bad.length ? `Kỳ ${period}/${year}: ${bad.length} điểm lệch hash trong ${total} chứng từ` : `Kỳ ${period}/${year}: toàn bộ ${total} chứng từ khớp`);
     process.exitCode = bad.length ? 1 : 0;
   } catch (e) { console.error((e as Error).message); process.exitCode = 1; } finally { await db.end(); }
   process.exit();

@@ -83,11 +83,12 @@ describe('khóa kỳ', () => {
 });
 
 describe('hash chuỗi: múi giờ phiên và đua với khóa cứng', () => {
-  let c: string; let tid: string; let uid: string; let draftId: string; let postedId: string;
+  let c: string; let tid: string; let uid: string; let draftId: string; let postedId: string; let lastP1Id: string;
   beforeAll(async () => {
     ({ cookie: c, tenantId: tid, userId: uid } = await bootstrapTenant(ctx, { code: `PH${Date.now()}` }));
     await newYear(c);
     expect((await create(pkt('2026-01-15', '10'), c)).statusCode).toBe(201);
+    lastP1Id = (await create(pkt('2026-01-20', '15'), c)).json().id; // chứng từ cuối chuỗi hash của kỳ 1
     draftId = (await create({ ...pkt('2026-02-10', '20'), autoPost: false }, c)).json().id;
     postedId = (await create(pkt('2026-03-10', '30'), c)).json().id;
     expect((await lock(0, 'hard', c)).statusCode).toBe(200);
@@ -108,24 +109,29 @@ describe('hash chuỗi: múi giờ phiên và đua với khóa cứng', () => {
     expect(r.json().error.code).toBe('PERIOD_STATE_INVALID');
   });
 
-  // Hai phiên thật (app_user, có RLS): A sửa và chưa commit, B khóa cứng cùng kỳ. B phải đợi A (khóa chia sẻ trên kỳ) rồi tính hash trên dữ liệu A đã commit.
+  // Phiên thật (app_user, có RLS) trong giao dịch tường minh, đã đặt công ty và người dùng như withTenant.
+  const openTx = async () => {
+    const cl = new pg.Client({ connectionString: process.env.DATABASE_URL }); await cl.connect(); await cl.query('BEGIN');
+    await cl.query(`SELECT set_config('app.current_tenant', $1, true), set_config('app.current_user', $2, true)`, [tid, uid]);
+    return cl;
+  };
+  // Đợi tới khi phiên pid bị chặn bởi một khóa (true) hoặc câu lệnh của nó đã xong (false).
+  async function waitBlocked(pid: number, finished: () => boolean) {
+    for (let i = 0; i < 100 && !finished(); i++) {
+      if ((await sql<{ n: number }>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE pid = ${pid} AND wait_event_type = 'Lock'`.execute(ctx.t.admin)).rows[0]!.n === 1) return true;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return false;
+  }
+  // A sửa và chưa commit, B khóa cứng cùng kỳ. B phải đợi A (khóa chia sẻ trên kỳ) rồi tính hash trên dữ liệu A đã commit.
   async function race(periodNo: number, work: (a: pg.Client) => Promise<unknown>) {
-    const open = async () => {
-      const cl = new pg.Client({ connectionString: process.env.DATABASE_URL }); await cl.connect(); await cl.query('BEGIN');
-      await cl.query(`SELECT set_config('app.current_tenant', $1, true), set_config('app.current_user', $2, true)`, [tid, uid]);
-      return cl;
-    };
-    const a = await open(); const b = await open();
+    const a = await openTx(); const b = await openTx();
     try {
       await work(a);
       const pid = (await b.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]!.pid;
       let done = false;
       const locked = b.query('SELECT lock_period($1::uuid, 2026, $2, $3)', [tid, periodNo, 'hard']).then(() => null, (e: Error) => e).finally(() => { done = true; });
-      let waiting = false;
-      for (let i = 0; i < 100 && !waiting && !done; i++) {
-        waiting = (await sql<{ n: number }>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE pid = ${pid} AND wait_event_type = 'Lock'`.execute(ctx.t.admin)).rows[0]!.n === 1;
-        if (!waiting) await new Promise((r) => setTimeout(r, 50));
-      }
+      const waiting = await waitBlocked(pid, () => done);
       await a.query('COMMIT');
       const err = await locked;
       await b.query(err ? 'ROLLBACK' : 'COMMIT');
@@ -152,5 +158,64 @@ describe('hash chuỗi: múi giờ phiên và đua với khóa cứng', () => {
     const r = await race(3, (a) => a.query(`UPDATE voucher_line SET description = 'sửa lúc khóa' WHERE voucher_id = $1::uuid`, [postedId]));
     expect(r.waiting).toBe(true);
     await afterRace(3, postedId, r.err);
+  });
+
+  it('bỏ khóa cứng rồi khóa cứng lại cho đúng các row_hash và hash_tail cũ', async () => {
+    const snap = async () => (await sql<{ id: string; prev_hash: Buffer | null; row_hash: Buffer | null }>`SELECT id, prev_hash, row_hash FROM voucher WHERE tenant_id = ${tid}::uuid AND period_no = 3 ORDER BY id`.execute(ctx.t.admin))
+      .rows.map((v) => ({ id: v.id, prev: v.prev_hash?.toString('hex') ?? null, row: v.row_hash?.toString('hex') ?? null }));
+    const tailOf = async () => ((await ctx.app.inject({ method: 'GET', url: '/api/periods?year=2026', headers: { cookie: c } })).json() as { periodNo: number; hashTail: string | null }[]).find((p) => p.periodNo === 3)!.hashTail;
+    const before = await snap(); const tailBefore = await tailOf();
+    expect(before.length).toBeGreaterThan(0); expect(before.every((v) => v.row && v.prev)).toBe(true);
+    const un = await ctx.app.inject({ method: 'POST', url: '/api/periods/2026/3/unlock', headers: { cookie: c } });
+    expect(un.json().status).toBe('soft_locked'); expect((await snap()).every((v) => v.row === null && v.prev === null)).toBe(true);
+    expect((await lock(3, 'hard', c)).statusCode).toBe(200);
+    expect(await snap()).toEqual(before); expect(await tailOf()).toBe(tailBefore);
+  });
+
+  it('chỉ có period.unlock (không có period.unlock_hard) thì bỏ khóa cứng bị từ chối', async () => {
+    const roles = (await ctx.app.inject({ method: 'GET', url: '/api/roles', headers: { cookie: c } })).json() as { id: string; code: string }[];
+    await ctx.app.inject({ method: 'PUT', url: `/api/roles/${roles.find((r) => r.code === 'ketoan_vien')!.id}/permissions`, headers: { cookie: c }, payload: { permissions: ['period.view', 'period.unlock'] } });
+    const username = `ku_${Date.now()}`;
+    await ctx.app.inject({ method: 'POST', url: '/api/users', headers: { cookie: c }, payload: { username, fullName: 'KT', password: 'Matkhau1!', roleCode: 'ketoan_vien' } });
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+    const r = await ctx.app.inject({ method: 'POST', url: '/api/periods/2026/3/unlock', headers: { cookie: `sid=${login.cookies.find((x) => x.name === 'sid')!.value}` } });
+    expect(r.statusCode).toBe(409); expect(r.json().error.code).toBe('PERIOD_UNLOCK_HARD_FORBIDDEN');
+    expect((await sql<{ status: string }>`SELECT status FROM fiscal_period WHERE tenant_id = ${tid}::uuid AND period_no = 3`.execute(ctx.t.admin)).rows[0]!.status).toBe('hard_locked');
+  });
+
+  it('khóa và bỏ khóa cứng đi tuần tự theo công ty: bỏ khóa kỳ 3 đợi khóa cứng kỳ 4 rồi bị từ chối', async () => {
+    const b = await openTx(); const a = await openTx();
+    try {
+      await b.query('SELECT lock_period($1::uuid, 2026, 4, $2)', [tid, 'hard']); // B giữ khóa tuần tự, chưa commit
+      await a.query(`SELECT set_config('app.unlock_hard', 'on', true)`);
+      const pid = (await a.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]!.pid;
+      let done = false;
+      const unlocked = a.query('SELECT unlock_period($1::uuid, 2026, 3)', [tid]).then(() => null, (e: Error) => e).finally(() => { done = true; });
+      const waiting = await waitBlocked(pid, () => done);
+      await b.query('COMMIT');
+      const err = await unlocked;
+      await a.query('ROLLBACK');
+      expect(waiting).toBe(true);
+      expect(err?.message).toMatch(/^PERIOD_LATER_HARD_LOCKED/);
+      const st = (await sql<{ period_no: number; status: string }>`SELECT period_no, status FROM fiscal_period WHERE tenant_id = ${tid}::uuid AND period_no IN (3, 4) ORDER BY period_no`.execute(ctx.t.admin)).rows.map((x) => x.status);
+      expect(st).toEqual(['hard_locked', 'hard_locked']);
+    } finally { await a.end(); await b.end(); }
+  });
+
+  // Chạy cuối: làm hỏng chuỗi hash của kỳ 1 và 3 của công ty này.
+  it('xóa chứng từ cuối kỳ hoặc cả kỳ bằng SQL (bỏ qua trigger) vẫn bị phát hiện qua hash_tail', async () => {
+    await ctx.t.admin.transaction().execute(async (trx) => {
+      await sql`SET LOCAL session_replication_role = replica`.execute(trx); // owner là superuser: tắt trigger và kiểm tra khóa ngoại
+      const p3 = (await sql<{ id: string }>`SELECT id FROM voucher WHERE tenant_id = ${tid}::uuid AND period_no = 3`.execute(trx)).rows.map((x) => x.id);
+      for (const id of [lastP1Id, ...p3]) {
+        await sql`DELETE FROM voucher_pair WHERE voucher_id = ${id}::uuid`.execute(trx);
+        await sql`DELETE FROM voucher_line WHERE voucher_id = ${id}::uuid`.execute(trx);
+        await sql`DELETE FROM voucher WHERE id = ${id}::uuid`.execute(trx);
+      }
+    });
+    const verify = async (no: number) => (await ctx.app.inject({ method: 'GET', url: `/api/periods/2026/${no}/verify-hash`, headers: { cookie: c } })).json();
+    // Kỳ 1: chứng từ còn lại vẫn khớp, chỉ dòng so hash_tail báo lệch. Kỳ 3: mất sạch chứng từ.
+    expect(await verify(1)).toMatchObject({ total: 1, mismatched: [{ voucherId: null, voucherNo: '(hash_tail)' }] });
+    expect(await verify(3)).toMatchObject({ total: 0, mismatched: [{ voucherId: null, voucherNo: '(hash_tail)' }] });
   });
 });

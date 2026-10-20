@@ -19,6 +19,8 @@ export default fp(async (app) => {
     }
     // SQLSTATE lớp 22 (dữ liệu sai: tràn số, sai định dạng...), 23502 (NOT NULL) và 23514 (CHECK) là lỗi đầu vào, không phải lỗi hệ thống.
     if (e.code?.startsWith('22') || e.code === '23502' || e.code === '23514') return reply.status(400).send({ error: { code: 'VALIDATION', message: 'Dữ liệu không hợp lệ' } });
+    // Bế tắc (40P01) và lỗi tuần tự hóa (40001): PostgreSQL đã hủy giao dịch này, chưa ghi gì; người dùng thử lại được.
+    if (e.code === '40P01' || e.code === '40001') return reply.status(409).send({ error: { code: 'CONCURRENT_RETRY', message: 'Thao tác đồng thời bị xung đột, hãy thử lại' } });
     if (e.code === '23505') return reply.status(409).send({ error: { code: 'DUPLICATE', message: `Trùng dữ liệu (${e.constraint ?? ''})` } });
     if (e.code === '23503') return reply.status(409).send({ error: { code: 'REFERENCED', message: 'Dữ liệu đang được tham chiếu' } });
     if (e.code === '42501') return reply.status(403).send({ error: { code: 'FORBIDDEN', message: 'Không có quyền trên dữ liệu' } });

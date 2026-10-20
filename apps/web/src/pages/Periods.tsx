@@ -9,7 +9,8 @@ interface PeriodRow {
   fiscalYear: number; periodNo: number; dateFrom: string; dateTo: string; regime: string; status: 'open' | 'soft_locked' | 'hard_locked';
   lockedModules: string[]; hashTail: string | null; lockedAt: string | null; draftCount: number;
 }
-interface Mismatch { voucherId: string; voucherNo: string; stored: string | null; computed: string }
+// voucherId null: dòng so hash cuối chuỗi với hash_tail của kỳ (chứng từ bị xóa)
+interface Mismatch { voucherId: string | null; voucherNo: string | null; stored: string | null; computed: string }
 const STATUS = { open: { color: 'green', label: 'Mở' }, soft_locked: { color: 'orange', label: 'Khóa sổ' }, hard_locked: { color: 'red', label: 'Khóa cứng' } } as const;
 const MODULES = [{ value: 'general', label: 'Tổng hợp' }, { value: 'cash', label: 'Tiền mặt' }, { value: 'bank', label: 'Ngân hàng' }, { value: 'inventory', label: 'Kho' },
   { value: 'arap', label: 'Công nợ' }, { value: 'assets', label: 'Tài sản cố định' }, { value: 'payroll', label: 'Lương' }];
@@ -56,13 +57,13 @@ export default function PeriodsPage() {
           <Space>
             {r.status === 'open' && can('period.lock') && <Button size="small" onClick={() => run.mutate(() => api(url(r.periodNo, 'lock'), { method: 'POST', json: { level: 'soft' } }))}>Khóa sổ</Button>}
             {r.status !== 'hard_locked' && can('period.lock') && <Button size="small" danger onClick={() => hardLock(r)}>Khóa cứng</Button>}
-            {r.status !== 'open' && can(r.status === 'hard_locked' ? 'period.unlock_hard' : 'period.unlock') && <Button size="small" onClick={() => run.mutate(() => api(url(r.periodNo, 'unlock'), { method: 'POST' }))}>Bỏ khóa</Button>}
+            {r.status !== 'open' && can('period.unlock') && (r.status !== 'hard_locked' || can('period.unlock_hard')) && <Button size="small" onClick={() => run.mutate(() => api(url(r.periodNo, 'unlock'), { method: 'POST' }))}>Bỏ khóa</Button>}
             {r.status === 'hard_locked' && <Button size="small" onClick={() => run.mutate(() => verify(r.periodNo))}>Kiểm tra hash</Button>}
           </Space>) },
       ]} />
       <Modal open={!!bad} title={`Chứng từ lệch hash - ${bad ? periodLabel(bad.periodNo) : ''}`} width={900} footer={null} onCancel={() => setBad(null)}>
-        <Table<Mismatch> rowKey="voucherId" size="small" pagination={false} dataSource={bad?.rows ?? []} columns={[
-          { title: 'Số chứng từ', dataIndex: 'voucherNo', width: 130 },
+        <Table<Mismatch> rowKey={(r) => r.voucherId ?? 'hash_tail'} size="small" pagination={false} dataSource={bad?.rows ?? []} columns={[
+          { title: 'Số chứng từ', dataIndex: 'voucherNo', width: 130, render: (n: string | null) => n ?? '(chưa số)' },
           { title: 'Hash lưu', dataIndex: 'stored', render: (h: string | null) => <code>{h?.slice(0, 16) ?? '(trống)'}</code> },
           { title: 'Hash tính lại', dataIndex: 'computed', render: (h: string) => <code>{h.slice(0, 16)}</code> }]} />
       </Modal>
