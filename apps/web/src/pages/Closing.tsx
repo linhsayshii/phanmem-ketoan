@@ -70,7 +70,7 @@ export default function ClosingPage() {
     onSuccess: (r) => { setLaterDone(r.laterStepsDone ?? []); const n = r.voucherIds?.length ?? r.steps?.reduce((a, s) => a + s.voucherIds.length, 0) ?? 0; void message.success(n ? `Đã sinh ${n} chứng từ` : 'Không có số dư cần xử lý'); },
   });
   const save = useMutation({ mutationFn: (v: FormStep[]) => api('/api/closing/steps', { method: 'PUT', json: { steps: v.map(toPayload), date: postingDate } }), onError, onSettled: refresh('closing-steps'),
-    onSuccess: () => { void message.success('Đã lưu sơ đồ'); } });
+    onSuccess: () => { setDirty(false); void message.success('Đã lưu sơ đồ'); } });
   const reload = useMutation({ mutationFn: () => api('/api/closing/steps/reload', { method: 'POST', json: { date: postingDate } }), onError, onSettled: refresh('closing-steps', 'closing-runs'), onSuccess: () => { void message.success('Đã nạp lại sơ đồ mẫu'); } });
 
   const confirm = (title: string, content: string, okText: string, fn: () => Promise<unknown>) =>

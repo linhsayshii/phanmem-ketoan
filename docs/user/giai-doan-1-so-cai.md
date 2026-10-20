@@ -20,7 +20,7 @@ Tài liệu ngắn cho kế toán viên và kế toán trưởng: nhập Phiếu
 
 - Vào Sổ cái → Số dư đầu kỳ, chọn năm tài chính đầu tiên của công ty, nhập số dư từng tài khoản chi tiết (công nợ nhập theo từng đối tượng) hoặc "Nhập Excel" bằng "Tải mẫu Excel".
 - Bấm "Kiểm tra" để xem lỗi (tổng Nợ khác tổng Có, nhập sai bên, thiếu đối tượng, tài khoản loại 5–9), sửa hết lỗi rồi bấm "Ghi sổ số dư đầu kỳ": hệ thống tạo một phiếu loại DK đã ghi sổ.
-- Chỉ nhập cho năm đầu tiên; các năm sau số dư tự chuyển từ cuối năm trước. Muốn sửa, nhập lại rồi ghi sổ lần nữa (phiếu DK cũ được thay, giữ nguyên số), hoặc bấm "Bỏ ghi sổ số dư đầu kỳ" (cần quyền sửa số dư đầu kỳ và quyền bỏ ghi sổ) để đưa phiếu DK về nháp, sửa số dư rồi ghi sổ lại. Đây là cách duy nhất bỏ ghi sổ phiếu DK; màn hình chứng từ chung không bỏ ghi sổ phiếu DK.
+- Chỉ nhập cho năm đầu tiên; các năm sau số dư tự chuyển từ cuối năm trước. Muốn sửa, nhập lại rồi ghi sổ lần nữa (phiếu DK cũ được thay, giữ nguyên số), hoặc bấm "Bỏ ghi sổ số dư đầu kỳ" (cần quyền sửa số dư đầu kỳ và quyền bỏ ghi sổ; nút chỉ hiện khi phiếu DK của năm đang ghi sổ) để đưa phiếu DK về nháp, sửa số dư rồi ghi sổ lại. Đây là cách duy nhất bỏ ghi sổ phiếu DK; màn hình chứng từ chung không bỏ ghi sổ phiếu DK.
 
 ## Ghi sổ, bỏ ghi sổ, đảo, hủy: dùng cái nào
 
@@ -70,4 +70,4 @@ Tài liệu ngắn cho kế toán viên và kế toán trưởng: nhập Phiếu
 - Tài khoản theo dõi chi tiết vật tư hoặc tài sản cố định (hệ TT133 hiện có: 152–157 và 2111–2113) chưa ghi sổ được cho tới giai đoạn 2: định khoản vào đó bị từ chối vì thiếu vật tư/tài sản, và số dư đầu kỳ của chúng không nhập được ở màn hình Số dư đầu kỳ; sẽ nhập ở phân hệ kho và tài sản của giai đoạn 2.
 - Đổi chế độ kế toán giữa hai năm (ví dụ TT200 sang TT99) cần bước chuyển đổi số dư giữa hai hệ tài khoản, chưa có. Sau khi đổi, cột so sánh (số đầu năm của B01, năm trước của B02/B03) hiện "—" kèm cảnh báo thay vì số sai, và số dư cuối năm cũ không tự chuyển sang tài khoản của hệ mới.
 - Hệ tài khoản TT99 đã nhập từ Phụ lục II Thông tư 99/2025 (công ty mới chọn TT99 được ngay); công ty mẫu XYZ vẫn dùng TT133 vì dữ liệu mẫu dùng tài khoản của TT133.
-- Chọn loại tiền khác VND ở tiêu đề chứng từ thì hiện ô Tỷ giá và cột Nguyên tệ (Nợ dương, Có âm) để nhập; bảng tỷ giá tự điền theo ngày chưa có (làm trong giai đoạn 2). Một dòng VND tối đa 9.999.999.999.999.999 đồng (vượt thì bị từ chối).
+- Chọn loại tiền khác VND ở tiêu đề chứng từ thì hiện ô Tỷ giá (nhập tới 10 chữ số lẻ) và cột Nguyên tệ (Nợ dương, Có âm) để nhập; bảng tỷ giá tự điền theo ngày chưa có (làm trong giai đoạn 2). Một dòng VND tối đa 9.999.999.999.999.999 đồng (vượt thì bị từ chối).

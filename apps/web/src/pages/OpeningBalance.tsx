@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Card, Modal, Select, Space, Table, Tag, Upload, message } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import type { ColDef } from 'ag-grid-community';
 import { D, formatVnNumber, parseVnNumber, sum } from '@kt/domain';
 import { KeyboardGrid, LookupSelect } from '@kt/ui';
@@ -53,6 +54,12 @@ export default function OpeningBalancePage() {
   const fy = years.data?.find((y) => y.fiscalYear === picked) ?? years.data?.[0]; // mặc định năm đầu tiên: số dư đầu kỳ chỉ nhập cho năm đầu
   const year = fy?.fiscalYear;
   const saved = useQuery({ queryKey: ['opening', year], queryFn: () => api<Row[]>(`/api/opening-balance/${year}`), enabled: year !== undefined });
+  // Chứng từ số dư đầu kỳ (loại DK) hạch toán vào ngày liền trước ngày đầu năm (kỳ 0); có chứng từ đã ghi sổ thì mới có gì để bỏ ghi sổ.
+  const dkDate = fy ? dayjs(fy.dateFrom).subtract(1, 'day').format('YYYY-MM-DD') : undefined;
+  const canSeeDk = can('voucher.view');
+  const dk = useQuery({ queryKey: ['opening-dk', year], enabled: dkDate !== undefined && canSeeDk,
+    queryFn: () => api<{ total: number }>(`/api/vouchers?type=DK&state=posted&from=${dkDate}&to=${dkDate}&size=1`) });
+  const refreshDk = () => qc.invalidateQueries({ queryKey: ['opening-dk', year] });
   const [rows, setRows] = useState<Row[]>([emptyRow()]);
   const rowsRef = useRef(rows); // bản mới nhất, đọc đồng bộ khi lưu (ô vừa chốt giá trị có thể chưa kịp render)
   const setAll = useCallback((r: Row[]) => { rowsRef.current = r; setRows(r); }, []);
@@ -93,7 +100,7 @@ export default function OpeningBalancePage() {
     await persist(); setPosted(null);
     try {
       const v = await api<{ voucherNo: string | null; postingDate: string }>(`/api/opening-balance/${year}/post`, { method: 'POST', json: {} });
-      setIssues(null); setPosted(v); void message.success(`Đã ghi sổ chứng từ ${v.voucherNo}`);
+      setIssues(null); setPosted(v); void message.success(`Đã ghi sổ chứng từ ${v.voucherNo}`); await refreshDk();
     } catch (e) {
       if (e instanceof ApiError && e.code === 'OPENING_INVALID') { setIssues(e.details as Issue[]); throw new Error('Số dư đầu kỳ chưa hợp lệ, xem danh sách lỗi'); }
       throw e;
@@ -103,7 +110,7 @@ export default function OpeningBalancePage() {
   // Bỏ ghi sổ chứng từ DK của năm để sửa số dư; đây là thao tác bỏ ghi sổ tại màn hình này (chứng từ loại DK không sửa qua route chung).
   const unpost = () => Modal.confirm({ title: 'Bỏ ghi sổ số dư đầu kỳ?', content: `Chứng từ số dư đầu kỳ năm ${year} trở về nháp để sửa; sổ cái và số dư được tính lại. Ghi sổ lại sau khi sửa.`, okText: 'Bỏ ghi sổ', cancelText: 'Không',
     onOk: () => run(async () => { await api(`/api/opening-balance/${year}/unpost`, { method: 'POST', json: {} }); setPosted(null); setIssues(null);
-      await qc.invalidateQueries({ queryKey: ['opening', year] }); void message.success('Đã bỏ ghi sổ số dư đầu kỳ, sửa số dư rồi ghi sổ lại'); }) });
+      await Promise.all([qc.invalidateQueries({ queryKey: ['opening', year] }), refreshDk()]); void message.success('Đã bỏ ghi sổ số dư đầu kỳ, sửa số dư rồi ghi sổ lại'); }) });
 
   const columns = useMemo<ColDef<Row>[]>(() => [
     codeCol('accountCode', 'accountName', 'TK (F4)', 110), { field: 'accountName', headerName: 'Tên tài khoản', flex: 1, editable: false },
@@ -119,7 +126,7 @@ export default function OpeningBalancePage() {
       {mayEdit && <Button type="primary" onClick={() => void save()} loading={busy} disabled={!ready}>Lưu</Button>}
       <Button onClick={() => void check()} disabled={busy || !ready}>Kiểm tra</Button>
       {mayEdit && <Button onClick={() => void post()} disabled={busy || !ready}>Ghi sổ số dư đầu kỳ</Button>}
-      {mayEdit && can('voucher.unpost') && <Button onClick={unpost} disabled={busy || !ready}>Bỏ ghi sổ số dư đầu kỳ</Button>}
+      {mayEdit && can('voucher.unpost') && (!canSeeDk || (dk.data?.total ?? 0) > 0) && <Button onClick={unpost} disabled={busy || !ready}>Bỏ ghi sổ số dư đầu kỳ</Button>}
       <Button href="/api/opening-balance/template.xlsx">Tải mẫu Excel</Button>
       {mayEdit && <Button onClick={() => setImporting(true)} disabled={!ready}>Nhập Excel</Button>}
     </Space>}>

@@ -192,12 +192,16 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const ready = isNew || !!v.data;
   const mayEdit = !viewOnly && !locked && (isNew ? can('voucher.create') : can('voucher.update'));
   const canSave = ready && mayEdit;
-  const mayPost = !viewOnly && (isNew || editable) && can('voucher.post');
+  const mayPost = !viewOnly && (isNew || canTransition(state, 'post')) && can('voucher.post');
   const canPost = ready && mayPost;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (canSave && !save.isPending) save.mutate(false); }
-      if (e.key === 'F9') { e.preventDefault(); if (canPost && canSave && !save.isPending) save.mutate(true); }
+      const isSave = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's'; const isPost = e.key === 'F9';
+      if (!isSave && !isPost) return;
+      e.preventDefault(); // chặn hộp "Lưu trang" của trình duyệt cả khi đang mở hộp thoại
+      if ((e.target as Element | null)?.closest?.('.ant-modal-root')) return; // hộp thoại (Đảo, tra danh mục, xác nhận) mở: phím tắt không lưu chứng từ phía sau nó
+      if (isSave && canSave && !save.isPending) save.mutate(false);
+      if (isPost && canPost && canSave && !save.isPending) save.mutate(true);
     };
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
   }, [save, canSave, canPost]);
@@ -261,7 +265,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
       case 'purpose': return item(8, 'purpose', <Select allowClear disabled={!editable} placeholder="Chọn mục đích" options={purposes.map((p) => ({ value: p.code, label: p.label }))} />);
       case 'currency': return (<>
         {item(4, 'currencyCode', <LookupSelect catalog="currency" disabled={!editable} />)}
-        {currency !== 'VND' && <Col span={4}><Form.Item label="Tỷ giá" name="fxRate" rules={[{ required: true, message: 'Nhập tỷ giá' }]}><VnNumberInput scale={4} disabled={!editable} /></Form.Item></Col>}
+        {currency !== 'VND' && <Col span={6}><Form.Item label="Tỷ giá" name="fxRate" rules={[{ required: true, message: 'Nhập tỷ giá' }]}><VnNumberInput scale={10} disabled={!editable} /></Form.Item></Col>}
       </>);
     }
   };
@@ -274,7 +278,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
         {mayEdit && mayPost && <Button onClick={() => save.mutate(true)} disabled={!ready || !balanced || save.isPending}>Ghi sổ (F9)</Button>}
         {!isNew && mayUnpost && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'unpost' }))}>Bỏ ghi sổ</Button>}
         {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo} ngày ${formatVnDate(p)}` }); })}>Đảo</Button>}
-        {!isNew && editable && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy chứng từ?', content: 'Số chứng từ (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
+        {!isNew && !viewOnly && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy chứng từ?', content: 'Số chứng từ (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
         {!isNew && mayDuplicate && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'duplicate', body: { postingDate: todayVn() } }))}>{decision === 'adjust_in_open_period' ? 'Nhân bản sang kỳ mở' : 'Nhân bản'}</Button>}
         {!isNew && can('voucher.print') && <Button href={`/api/vouchers/${id}/print?format=pdf`} target="_blank">In</Button>}
       </Space>}>

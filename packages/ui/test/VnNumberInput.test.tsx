@@ -70,6 +70,19 @@ describe('VnNumberInput', () => {
     expect(onChange).toHaveBeenLastCalledWith('1500001'); expect(input.value).toBe('1.500.001');
   });
 
+  it('scale 10 (tỷ giá NUMERIC(20,10)): gõ đủ 10 chữ số lẻ phát nguyên văn, hiển thị đủ 10 số lẻ, không mất số', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<VnNumberInput value="25000.0000000000" onChange={onChange} scale={10} aria-label="so" />);
+    const input = screen.getByLabelText('so') as HTMLInputElement;
+    expect(input.value).toBe('25.000,0000000000');
+    fireEvent.focus(input); fireEvent.change(input, { target: { value: '25123,1234567891' } }); fireEvent.blur(input);
+    expect(onChange).toHaveBeenLastCalledWith('25123.1234567891'); expect(input.value).toBe('25.123,1234567891');
+    fireEvent.focus(input); fireEvent.change(input, { target: { value: '26000,5' } }); fireEvent.blur(input);
+    expect(onChange).toHaveBeenLastCalledWith('26000.5000000000'); expect(input.value).toBe('26.000,5000000000');
+    rerender(<VnNumberInput value="26000.5000000000" onChange={onChange} scale={10} aria-label="so" />);
+    expect(input.value).toBe('26.000,5000000000');
+  });
+
   it('đổi prop value khi không đang gõ thì cập nhật chữ hiển thị', () => {
     const { rerender } = render(<VnNumberInput value="1500000" aria-label="so" />);
     const input = screen.getByLabelText('so') as HTMLInputElement;

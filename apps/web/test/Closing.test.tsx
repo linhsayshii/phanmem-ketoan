@@ -134,6 +134,20 @@ describe('Màn hình kết chuyển cuối kỳ', () => {
     await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith(`/api/closing/steps?date=${newDay.format('YYYY-MM-DD')}`));
   }, 60_000);
 
+  it('sửa sơ đồ rồi lưu xong: đổi ngày không còn hỏi, kể cả khi máy chủ trả lại đúng dữ liệu cũ', async () => {
+    renderPage();
+    const name = (await screen.findAllByDisplayValue('Kết chuyển doanh thu'))[0]!;
+    await userEvent.clear(name); await userEvent.type(name, 'Kết chuyển doanh thu sửa');
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu sơ đồ' }));
+    await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/closing/steps', expect.objectContaining({ method: 'PUT' })));
+    expect(await screen.findByText('Đã lưu sơ đồ')).toBeInTheDocument();
+    const picker = document.querySelector<HTMLInputElement>('.ant-picker input')!;
+    const newDay = dayjs().endOf('month').subtract(1, 'month').endOf('month');
+    await userEvent.clear(picker); await userEvent.type(picker, `${newDay.format('DD/MM/YYYY')}{Enter}`);
+    await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith(`/api/closing/steps?date=${newDay.format('YYYY-MM-DD')}`));
+    expect(screen.queryByText('Bỏ thay đổi chưa lưu?', { selector: '.ant-modal-confirm-title' })).not.toBeInTheDocument();
+  }, 60_000);
+
   it('đổi ngày khi chưa sửa gì: đổi ngay, không hỏi', async () => {
     renderPage();
     await screen.findAllByDisplayValue('Kết chuyển doanh thu');

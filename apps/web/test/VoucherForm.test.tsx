@@ -6,6 +6,7 @@ import { createMemoryHistory, createRouter } from '@tanstack/react-router';
 import type * as ReactRouter from '@tanstack/react-router';
 import { todayVn } from '@kt/domain';
 import VoucherForm from '../src/pages/VoucherForm.js';
+import VoucherList from '../src/pages/VoucherList.js';
 import { routeTree } from '../src/router.js';
 
 const mocks = vi.hoisted(() => {
@@ -17,7 +18,7 @@ vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: () => true, loading: f
 // Lưới AG Grid nặng trong jsdom: thay bằng danh sách mã tài khoản để quan sát dòng đối ứng được điền.
 vi.mock('@kt/ui', () => ({
   KeyboardGrid: ({ rows }: { rows: { accountCode: string }[] }) => <ul>{rows.map((r, i) => <li key={i} data-testid={`tk-${i}`}>{r.accountCode}</li>)}</ul>,
-  LookupSelect: () => null, useHotkeys: () => undefined, useRememberedFilter: (_k: string, init: unknown) => [init, () => undefined],
+  LookupSelect: () => null, VnNumberInput: ({ scale, ...p }: { scale?: number; value?: string }) => <input {...p} value={p.value ?? ''} readOnly data-scale={scale} />, useHotkeys: () => undefined, useRememberedFilter: (_k: string, init: unknown) => [init, () => undefined],
   useUnsavedChanges: () => (proceed: () => void) => proceed(),
 }));
 vi.mock('@tanstack/react-router', async (orig) => ({ ...(await orig<typeof ReactRouter>()), useParams: () => mocks.route, useNavigate: () => mocks.navigate }));
@@ -76,6 +77,52 @@ describe('Màn hình chứng từ theo loại', () => {
     expect(await screen.findByRole('button', { name: 'Nhân bản sang kỳ mở' }, slow)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Bỏ ghi sổ' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Đảo' })).not.toBeInTheDocument();
+  });
+
+  it('chứng từ đã vào chuỗi băm dù kỳ còn mở: không Bỏ ghi sổ, không Đảo, không sửa, chỉ Nhân bản sang kỳ mở', async () => {
+    mocks.route.type = 'PKT'; mocks.route.id = 'v1';
+    mocks.api.mockImplementation(async (path: string) => (path === '/api/vouchers/v1' ? posted({ hashed: true, periodStatus: 'open' }) : path === '/api/fiscal-years' ? years : []));
+    renderForm();
+    expect(await screen.findByRole('button', { name: 'Nhân bản sang kỳ mở' }, slow)).toBeInTheDocument();
+    for (const name of ['Bỏ ghi sổ', 'Đảo', 'Hủy']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Lưu/ })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Diễn giải')).toBeDisabled();
+  });
+
+  it('Ctrl+S và F9 không lưu hay ghi sổ khi đang mở hộp thoại Đảo', async () => {
+    mocks.route.type = 'PKT'; mocks.route.id = 'v1';
+    mocks.api.mockImplementation(async (path: string) => (path === '/api/vouchers/v1' ? posted({ periodStatus: 'soft_locked' }) : path === '/api/fiscal-years' ? years : []));
+    renderForm();
+    await userEvent.click(await screen.findByRole('button', { name: 'Đảo' }, slow));
+    const dialog = await screen.findByRole('dialog', {}, slow);
+    await userEvent.click(within(dialog).getByLabelText('Diễn giải chứng từ đảo'));
+    await userEvent.keyboard('{Control>}s{/Control}{F9}');
+    expect(mocks.api.mock.calls.filter(([p, init]) => p.startsWith('/api/vouchers/v1') && init?.method)).toEqual([]);
+    // Đóng hộp thoại thì phím tắt hoạt động lại: kỳ khóa mềm sửa được diễn giải tại chỗ.
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Không' }));
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument(), slow);
+    await userEvent.click(screen.getByLabelText('Diễn giải'));
+    await userEvent.keyboard('{Control>}s{/Control}');
+    await vi.waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/vouchers/v1', expect.objectContaining({ method: 'PUT' })), slow);
+  });
+
+  it('chứng từ ngoại tệ: tỷ giá nhập được tới 10 chữ số lẻ', async () => {
+    mocks.route.type = 'PKT'; mocks.route.id = 'v1';
+    mocks.api.mockImplementation(async (path: string) => (path === '/api/vouchers/v1' ? posted({ state: 'draft', currencyCode: 'USD', fxRate: '25000.0000000000' }) : path === '/api/fiscal-years' ? years : []));
+    renderForm();
+    expect(await screen.findByLabelText('Tỷ giá', {}, slow)).toHaveAttribute('data-scale', '10');
+  });
+});
+
+describe('Loại chứng từ không có', () => {
+  beforeEach(() => { mocks.route.id = 'moi'; });
+  afterEach(() => { mocks.api.mockReset(); });
+
+  it.each(['constructor', '__proto__', 'pt'])('/chung-tu/%s: màn hình nhập và danh sách báo "Không có loại chứng từ"', (type) => {
+    mocks.route.type = type; mocks.api.mockResolvedValue([]);
+    const msg = `Không có loại chứng từ "${type}"`;
+    const form = renderForm(); expect(screen.getByText(msg)).toBeInTheDocument(); form.unmount();
+    render(<QueryClientProvider client={new QueryClient()}><VoucherList /></QueryClientProvider>); expect(screen.getByText(msg)).toBeInTheDocument();
   });
 });
 
