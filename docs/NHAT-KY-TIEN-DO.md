@@ -19,3 +19,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-21 01:07 | GĐ2 | T2 sửa bàn phím, tra cứu, ô số, Insert/F9 + sửa Minor | ec2601b, ca4b7fd | domain 40, ui 27, web 66, e2e phieu-ke-toan 2; lint/typecheck sạch
 2026-10-21 01:30 | GĐ2 | T3 quyền GĐ2 (0024), cờ nhạy cảm dùng chung, todayVn/vnDayStart, chặn lộ số tiền qua hàng đợi kiểm cân bằng | fef28ed, bf279b8 | domain 48, db 65, api 308, worker 11, web 66; lint/typecheck sạch
 2026-10-21 01:53 | GĐ2 | T4 loại chứng từ GĐ2 (0025), cột tiêu đề chứng từ, siết tỷ giá dòng ngoại tệ, VOUCHER_TYPES/CASH_PURPOSES | 9785790 | domain 54, coa-data 22, db 72, api 309, bất biến 18; lint/typecheck sạch
+2026-10-21 02:21 | GĐ2 | T5 API chứng từ theo loại (PT/PC/BC/BN/CT), quy tắc theo loại, DTO periodStatus/hashed | 3181813, c16e9dc, 4f152d9 | api 330, domain 55, db 73, coa-data 22; lint/typecheck sạch
