@@ -19,7 +19,7 @@ export const lineInput = z.object({
 export const voucherInput = z.object({
   voucherType: z.string().min(1), postingDate: dateIso, documentDate: dateIso, description: z.string().nullable().optional(),
   partyCode: z.string().nullable().optional(), currencyCode: z.string().length(3).default('VND'), fxRate: fxRate.optional(), idempotencyKey: z.string().max(100).optional(),
-  lines: z.array(lineInput).min(1).max(5000, 'Tối đa 5.000 dòng mỗi chứng từ'), // 5.000 × 16 chữ số vẫn vừa numeric(20,0) khi cộng; cũng giữ số tham số bind của một lần ghi
+  lines: z.array(lineInput).min(1).max(5000, 'Tối đa 5.000 dòng mỗi chứng từ'), // 5.000 × 16 chữ số vẫn vừa numeric(20,0) khi cộng; insertLines chia lô nên không còn bị giới hạn tham số bind
 });
 export const metaInput = z.object({
   description: z.string().nullable().optional(),
@@ -108,7 +108,7 @@ export async function getVoucher(trx: Trx, id: string): Promise<VoucherDto> {
 async function insertLines(trx: Trx, lookup: Lookup, tenantId: string, voucherId: string, input: VoucherInput) {
   const rows = [];
   for (const [i, l] of input.lines.entries()) rows.push({ tenant_id: tenantId, voucher_id: voucherId, line_no: i + 1, posting_date: input.postingDate, ...(await resolveLine(lookup, l, input.currencyCode)) });
-  await trx.insertInto('voucher_line').values(rows).execute();
+  for (let i = 0; i < rows.length; i += 1000) await trx.insertInto('voucher_line').values(rows.slice(i, i + 1000)).execute(); // chia lô: một câu lệnh 5.000 dòng vượt 65.535 tham số bind
 }
 
 // Chứng từ DK chỉ do màn hình Số dư đầu kỳ tạo (source_doc_type = 'opening_balance'); lập tay thì số dư bị cộng đôi hoặc bị ghi đè khi ghi sổ số dư.

@@ -200,4 +200,69 @@ describe('lược đồ sổ cái', () => {
     await generateAccountsSql(admin, tenantId, 'TT200'); // công ty giữ cả hai hệ tài khoản, nhưng năm 2026 dùng TT133
     await expect(newVoucher('2026-04-01', [{ code: '1111', debit: '1', regime: 'TT200' }, { code: '5113', credit: '1' }])).rejects.toThrow(/ACCOUNT_REGIME_MISMATCH/);
   });
+  describe('kiểm cân bằng theo câu lệnh (hàng đợi voucher_balance_pending)', () => {
+    const lineRow = (voucherId: string, no: number, code: string, debit: string, credit: string, date = '2026-05-10') =>
+      acc(code).then((account_id) => ({ tenant_id: tenantId, voucher_id: voucherId, line_no: no, account_id, posting_date: date, currency_code: 'VND', debit, credit, amount_currency: debit !== '0' ? debit : `-${credit}` }));
+    const header = (trx: Transaction<Database>, date = '2026-05-10') => trx.insertInto('voucher').values({ tenant_id: tenantId, voucher_type: 'PKT', posting_date: date, document_date: date, state: 'draft', description: 't', currency_code: 'VND', created_by: userId }).returning('id').executeTakeFirstOrThrow();
+    const pending = (trx: Transaction<Database>) => sql<{ n: number }>`SELECT count(*)::int AS n FROM voucher_balance_pending`.execute(trx).then((r) => r.rows[0]!.n);
+
+    it('nhiều câu lệnh trong một giao dịch: lệch ở trạng thái cuối bị bắt, cân ở trạng thái cuối thì qua; hàng đợi rỗng sau đó', async () => {
+      await expect(run(async (trx) => {
+        const v = await header(trx);
+        await trx.insertInto('voucher_line').values([await lineRow(v.id, 1, '1111', '100', '0'), await lineRow(v.id, 2, '5113', '0', '100')]).execute();
+        await trx.insertInto('voucher_line').values(await lineRow(v.id, 3, '5113', '0', '30')).execute();
+        await trx.deleteFrom('voucher_line').where('voucher_id', '=', v.id).where('line_no', '=', 3).execute();
+        await trx.insertInto('voucher_line').values(await lineRow(v.id, 4, '5113', '0', '7')).execute(); // lệch ở trạng thái cuối
+      })).rejects.toThrow(/VOUCHER_UNBALANCED/);
+      await run(async (trx) => {
+        const v = await header(trx);
+        await trx.insertInto('voucher_line').values(await lineRow(v.id, 1, '1111', '100', '0')).execute(); // lệch tạm thời
+        await trx.insertInto('voucher_line').values(await lineRow(v.id, 2, '5113', '0', '100')).execute();
+        expect(await pending(trx)).toBe(1); // hai câu lệnh, một dòng hàng đợi
+      });
+      expect(Number((await admin.query('SELECT count(*) FROM voucher_balance_pending')).rows[0].count)).toBe(0);
+    });
+
+    it('chứng từ nháp bị xóa cùng giao dịch sau khi sửa dòng: kiểm im lặng; app_user và quản trị đều chạy trigger', async () => {
+      await run(async (trx) => {
+        const v = await header(trx);
+        await trx.insertInto('voucher_line').values(await lineRow(v.id, 1, '1111', '100', '0')).execute();
+        await trx.deleteFrom('voucher_line').where('voucher_id', '=', v.id).execute();
+        await trx.deleteFrom('voucher').where('id', '=', v.id).execute();
+      });
+      // quản trị (không qua withTenant): vẫn có trigger và hàng đợi
+      await admin.query('BEGIN');
+      try {
+        const v = (await admin.query(`INSERT INTO voucher(tenant_id, voucher_type, posting_date, document_date, state, description, currency_code, created_by) VALUES ($1,'PKT','2026-05-10','2026-05-10','draft','t','VND',$2) RETURNING id`, [tenantId, userId])).rows[0].id;
+        await admin.query(`INSERT INTO voucher_line(tenant_id, voucher_id, line_no, account_id, posting_date, currency_code, debit, credit, amount_currency) VALUES ($1,$2,1,$3,'2026-05-10','VND',50,0,50)`, [tenantId, v, await acc('1111')]);
+        await expect(admin.query('COMMIT')).rejects.toThrow(/VOUCHER_UNBALANCED/);
+      } finally { await admin.query('ROLLBACK'); }
+    });
+
+    it('UPDATE dòng trên bảng gốc làm dòng chuyển partition vẫn vào hàng đợi; SET CONSTRAINTS IMMEDIATE giữa giao dịch kiểm ngay rồi tiếp tục theo dõi', async () => {
+      const id = await newVoucher('2026-05-10', [{ code: '1111', debit: '10' }, { code: '5113', credit: '10' }]);
+      await expect(run(async (trx) => {
+        await trx.updateTable('voucher_line').set({ posting_date: '2026-06-10', debit: '11', amount_currency: '11' }).where('voucher_id', '=', id).where('line_no', '=', 1).execute();
+        expect(await pending(trx)).toBe(1);
+      })).rejects.toThrow(/VOUCHER_UNBALANCED/);
+      await run(async (trx) => {
+        await sql`SET CONSTRAINTS ALL IMMEDIATE`.execute(trx);
+        const parts = await sql<{ part: string }>`SELECT tableoid::regclass::text AS part FROM voucher_line WHERE voucher_id = ${id}::uuid ORDER BY line_no`.execute(trx);
+        expect(parts.rows.length).toBe(2);
+        await expect(trx.insertInto('voucher_line').values(await lineRow(id, 3, '1111', '5', '0')).execute()).rejects.toThrow(/VOUCHER_UNBALANCED/);
+      });
+      await run(async (trx) => { // sau IMMEDIATE, tạm lệch rồi cân lại vẫn phải kiểm ngay: chèn một dòng lệch bị bắt tức thì
+        await sql`SET CONSTRAINTS ALL DEFERRED`.execute(trx);
+        await trx.insertInto('voucher_line').values(await lineRow(id, 4, '1111', '5', '0')).execute();
+        await trx.insertInto('voucher_line').values(await lineRow(id, 5, '5113', '0', '5')).execute();
+      });
+    });
+
+    it('chứng từ đã ghi sổ: xóa dòng bị chặn và hàng đợi rỗng sau giao dịch lỗi', async () => {
+      const id = await newVoucher('2026-05-11', [{ code: '1111', debit: '3' }, { code: '5113', credit: '3' }]);
+      await setState(id, 'posted');
+      await expect(run(async (trx) => { await sql`SELECT set_config('app.state_change','on',true)`.execute(trx); await trx.deleteFrom('voucher_line').where('voucher_id', '=', id).execute(); })).rejects.toThrow();
+      expect(await run((trx) => pending(trx))).toBe(0);
+    });
+  });
 });
