@@ -6,7 +6,9 @@ import { loadConfig } from './config.js';
 import { closePdfBrowser } from './modules/reporting/print/pdf.js';
 
 const config = loadConfig();
-const db = createDb(createPool(config.DATABASE_URL));
+const pool = createPool(config.DATABASE_URL);
+pool.on('error', (e) => console.error('db pool', e)); // không có bộ nghe 'error' thì kết nối nhàn rỗi bị ngắt làm sập tiến trình
+const db = createDb(pool);
 // pg-boss tạo schema pgboss nên cần quyền quản trị, không dùng app_user
 const boss = new PgBoss({ connectionString: process.env.DATABASE_ADMIN_URL!, schema: 'pgboss' });
 boss.on('error', (e) => console.error('pg-boss', e)); // không có bộ nghe 'error' thì lỗi kết nối làm sập tiến trình

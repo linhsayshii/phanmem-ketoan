@@ -40,6 +40,18 @@ async function useTenant(code: string, years: { fiscalYear: number; dateFrom: st
   for (const y of years) await insertFiscalYear(admin, tenantId, { ...y, months: 12, regime: 'TT133' });
   await generateAccountsSql(admin, tenantId, 'TT133');
 }
+// Chứng từ PKT nhiều dòng; party là id đối tượng; cur/amt/fx cho dòng ngoại tệ (amt có dấu: Nợ dương, Có âm).
+type L = { code: string; d?: string; c?: string; party?: string; cur?: string; amt?: string; fx?: string };
+async function postLines(date: string, lines: L[], type = 'PKT') {
+  return withTenant(t.db, ctx(), async (trx) => {
+    const v = await trx.insertInto('voucher').values({ tenant_id: tenantId, voucher_type: type, posting_date: date, document_date: date, created_by: userId }).returning('id').executeTakeFirstOrThrow();
+    let n = 0;
+    for (const l of lines) await trx.insertInto('voucher_line').values({ tenant_id: tenantId, voucher_id: v.id, line_no: ++n, account_id: await accId(l.code), posting_date: date,
+      debit: l.d ?? '0', credit: l.c ?? '0', amount_currency: l.amt ?? l.d ?? `-${l.c}`, currency_code: l.cur ?? 'VND', fx_rate: l.fx ?? null, party_id: l.party ?? null }).execute();
+    await sql`SELECT post_voucher(${v.id}::uuid)`.execute(trx);
+    return v.id;
+  });
+}
 const staleOf = async (id = tenantId) => (await sql<{ stale_year: number; stale_period: number }>`SELECT stale_year, stale_period FROM balance_stale WHERE tenant_id = ${id}::uuid`.execute(t.admin)).rows[0];
 const periodsOf = async (value: unknown) => (value as { rows: { recompute_balances: number }[] }).rows[0]!.recompute_balances;
 
@@ -148,16 +160,6 @@ describe('số dư theo đối tượng', () => {
     a = ids.rows.find((r) => r.code === 'KH001')!.id; b = ids.rows.find((r) => r.code === 'KH002')!.id;
   }, 60_000);
 
-  type L = { code: string; d?: string; c?: string; party?: string };
-  async function postLines(date: string, lines: L[]) {
-    return withTenant(t.db, ctx(), async (trx) => {
-      const v = await trx.insertInto('voucher').values({ tenant_id: tenantId, voucher_type: 'PKT', posting_date: date, document_date: date, created_by: userId }).returning('id').executeTakeFirstOrThrow();
-      let n = 0;
-      for (const l of lines) await trx.insertInto('voucher_line').values({ tenant_id: tenantId, voucher_id: v.id, line_no: ++n, account_id: await accId(l.code), posting_date: date,
-        debit: l.d ?? '0', credit: l.c ?? '0', amount_currency: l.d ?? `-${l.c}`, party_id: l.party ?? null }).execute();
-      await sql`SELECT post_voucher(${v.id}::uuid)`.execute(trx);
-    });
-  }
   const by131 = async (asOf: string) => (await withTenant(t.db, ctx(), (trx) => sql<{ party: string | null; debit: string; credit: string }>`SELECT p.code AS party, b.debit::text AS debit, b.credit::text AS credit
     FROM fn_balances_at(${tenantId}::uuid, ${asOf}::date) b JOIN account x ON x.id = b.account_id LEFT JOIN party p ON p.id = b.party_id WHERE x.code = '131' ORDER BY p.code`.execute(trx))).rows;
 
@@ -207,5 +209,65 @@ describe('kỳ chưa từng tính và cách ly công ty', () => {
     expect((await sql`SELECT 1 FROM account_period_balance WHERE tenant_id = ${other}::uuid`.execute(t.admin)).rows).toHaveLength(0);
     const rows = await withTenant(t.db, ctx(), (trx) => sql`SELECT * FROM fn_balances_at(${other}::uuid, ${'2026-12-31'}::date)`.execute(trx));
     expect(rows.rows).toHaveLength(0);
+  }, 30_000);
+});
+
+// Số dư theo từng loại tiền: tiền hạch toán (VND) và nguyên tệ có thể lệch nhau (tỷ giá đổi), kể cả ngược bên.
+const curRows = async (asOf: string, code: string) => (await withTenant(t.db, ctx(), (trx) => sql<{ currency: string; debit: string; credit: string; debit_cur: string; credit_cur: string }>`SELECT b.currency_code AS currency, b.debit::text AS debit,
+  b.credit::text AS credit, b.debit_cur::text AS debit_cur, b.credit_cur::text AS credit_cur FROM fn_balances_at(${tenantId}::uuid, ${asOf}::date) b JOIN account a ON a.id = b.account_id WHERE a.code = ${code} ORDER BY 1`.execute(trx)))
+  .rows.map((r) => ({ currency: r.currency, debit: r.debit, credit: r.credit, debit_cur: Number(r.debit_cur), credit_cur: Number(r.credit_cur) }));
+
+describe('ngoại tệ: nguyên tệ lệch tiền hạch toán', () => {
+  beforeAll(() => useTenant('BU'), 60_000);
+
+  it('Nợ VND nhưng Có nguyên tệ (tỷ giá giảm); cột _cur tách bên độc lập với VND; đường chậm = snapshot', async () => {
+    // 5/3: nhận 1.000 USD tỷ giá 23.000 (Nợ 1122 23.000.000). 10/4: chi 1.100 USD tỷ giá 20.000 (Có 1122 22.000.000)
+    // -> 1122/USD còn Nợ 1.000.000 VND nhưng Có 100 USD; 1122 phát sinh thêm một dòng VND để có hai loại tiền cùng một tài khoản.
+    await postLines('2026-03-05', [{ code: '1122', d: '23000000', cur: 'USD', amt: '1000', fx: '23000' }, { code: '5113', c: '23000000' }]);
+    await postLines('2026-04-10', [{ code: '6422', d: '22000000' }, { code: '1122', c: '22000000', cur: 'USD', amt: '-1100', fx: '20000' }]);
+    await postLines('2026-04-12', [{ code: '1122', d: '5000' }, { code: '5113', c: '5000' }]);
+    const expected = {
+      '2026-03-31': [{ currency: 'USD', debit: '23000000', credit: '0', debit_cur: 1000, credit_cur: 0 }],
+      '2026-04-30': [{ currency: 'USD', debit: '1000000', credit: '0', debit_cur: 0, credit_cur: 100 }, { currency: 'VND', debit: '5000', credit: '0', debit_cur: 5000, credit_cur: 0 }],
+    };
+    for (const [d, rows] of Object.entries(expected)) expect(await curRows(d, '1122'), `đường chậm ${d}`).toEqual(rows);
+    await recompute();
+    for (const [d, rows] of Object.entries(expected)) expect(await curRows(d, '1122'), `snapshot ${d}`).toEqual(rows);
+    // dòng snapshot kỳ 4: đầu kỳ Nợ 23.000.000 / 1.000 USD, phát sinh Có 22.000.000 / 1.100 USD, cuối kỳ Nợ 1.000.000 VND và Có 100 USD
+    const s = await sql<Record<string, string>>`SELECT b.opening_debit, b.opening_debit_cur, b.period_credit, b.period_credit_cur, b.closing_debit, b.closing_credit, b.closing_debit_cur, b.closing_credit_cur
+      FROM account_period_balance b JOIN account a ON a.id = b.account_id WHERE b.tenant_id = ${tenantId}::uuid AND a.code = '1122' AND b.currency_code = 'USD' AND b.period_no = 4`.execute(t.admin);
+    const r = s.rows[0]!;
+    expect([r.opening_debit, r.period_credit, r.closing_debit, r.closing_credit].map(Number)).toEqual([23000000, 22000000, 1000000, 0]);
+    expect([r.opening_debit_cur, r.period_credit_cur, r.closing_debit_cur, r.closing_credit_cur].map(Number)).toEqual([1000, 1100, 0, 100]);
+    // snapshot kỳ sau nhận đầy đủ cả hai bên đã tách
+    expect(await curRows('2026-12-31', '1122')).toEqual(expected['2026-04-30']);
+  }, 30_000);
+});
+
+describe('chứng từ DK ở kỳ 0', () => {
+  beforeAll(() => useTenant('BK'), 60_000);
+
+  it('số dư đầu kỳ của DK (ngày 31/12 năm trước) nằm trong kỳ 0, kết chuyển sang kỳ 1 và các kỳ sau; đường chậm = snapshot', async () => {
+    const dk = await postLines('2025-12-31', [{ code: '1111', d: '5000' }, { code: '4111', c: '5000' }], 'DK');
+    expect((await sql<{ period_no: number; fiscal_year: number; state: string }>`SELECT period_no, fiscal_year, state FROM voucher WHERE id = ${dk}::uuid`.execute(t.admin)).rows[0]).toEqual({ period_no: 0, fiscal_year: 2026, state: 'posted' });
+    expect(await staleOf()).toMatchObject({ stale_year: 2026, stale_period: 0 });
+    const expected = { '2025-12-31': { 1111: '5000', 4111: '-5000' }, '2026-01-01': { 1111: '5000', 4111: '-5000' } };
+    for (const [d, net] of Object.entries(expected)) { expect(await fromSnapshot(d), `đường chậm ${d}`).toEqual(net); expect(await fromLines(d)).toEqual(net); }
+    await recompute();
+    expect(await staleOf()).toBeUndefined();
+    for (const [d, net] of Object.entries(expected)) expect(await fromSnapshot(d), `snapshot ${d}`).toEqual(net);
+    // kỳ 0: phát sinh = DK, đầu kỳ 0; kỳ 1: đầu kỳ = cuối kỳ 0, không phát sinh
+    const rows = await sql<{ period_no: number; code: string; opening_debit: string; opening_credit: string; period_debit: string; period_credit: string; closing_debit: string; closing_credit: string }>`SELECT b.period_no, a.code,
+      b.opening_debit, b.opening_credit, b.period_debit, b.period_credit, b.closing_debit, b.closing_credit FROM account_period_balance b JOIN account a ON a.id = b.account_id
+      WHERE b.tenant_id = ${tenantId}::uuid AND a.code IN ('1111', '4111') AND b.period_no IN (0, 1) ORDER BY b.period_no, a.code`.execute(t.admin);
+    expect(rows.rows.map((x) => [x.period_no, x.code, x.opening_debit, x.opening_credit, x.period_debit, x.period_credit, x.closing_debit, x.closing_credit])).toEqual([
+      [0, '1111', '0', '0', '5000', '0', '5000', '0'], [0, '4111', '0', '0', '0', '5000', '0', '5000'],
+      [1, '1111', '5000', '0', '0', '0', '5000', '0'], [1, '4111', '0', '5000', '0', '0', '0', '5000']]);
+    // phát sinh thường sau DK cộng dồn lên số dư mở sổ
+    await postPkt('2026-01-10', '1111', '5113', '700');
+    for (const d of ['2025-12-31', '2026-01-09', '2026-01-10', '2026-12-31']) expect(await fromSnapshot(d), d).toEqual(await fromLines(d));
+    await recompute();
+    for (const d of ['2025-12-31', '2026-01-09', '2026-01-10', '2026-12-31']) expect(await fromSnapshot(d), d).toEqual(await fromLines(d));
+    expect(await fromSnapshot('2026-01-31')).toEqual({ 1111: '5700', 4111: '-5000', 5113: '-700' });
   }, 30_000);
 });

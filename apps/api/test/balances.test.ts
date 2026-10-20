@@ -3,8 +3,8 @@ import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
 
 let ctx: TestApp; let cookie: string;
 const L = (accountCode: string, debit = '0', credit = '0', more: object = {}) => ({ accountCode, debit, credit, ...more });
-async function voucher(date: string, lines: object[]) {
-  const r = await ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie }, payload: { voucherType: 'PKT', postingDate: date, documentDate: date, description: 'Phiếu thử số dư', lines, autoPost: true } });
+async function voucher(date: string, lines: object[], extra: object = {}) {
+  const r = await ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie }, payload: { voucherType: 'PKT', postingDate: date, documentDate: date, description: 'Phiếu thử số dư', lines, autoPost: true, ...extra } });
   expect(r.statusCode, r.body).toBe(201);
 }
 const get = (qs: string, c = cookie) => ctx.app.inject({ method: 'GET', url: `/api/balances?${qs}`, headers: { cookie: c } });
@@ -81,5 +81,15 @@ describe('GET /api/balances', () => {
     expect((await get('asOf=2026-05-31', xem)).statusCode).toBe(403);
     expect((await recompute(xem)).statusCode).toBe(403);
     expect((await ctx.app.inject({ method: 'GET', url: '/api/balances?asOf=2026-05-31' })).statusCode).toBe(401);
+  });
+
+  it('thứ tự ổn định: cùng tài khoản nhiều loại tiền sắp theo mã tiền, kể cả khi gộp hay tách theo đối tượng', async () => {
+    await voucher('2026-06-10', [L('1122', '25400000', '0', { amountCurrency: '1000' }), L('5113', '0', '25400000', { amountCurrency: '-1000' })], { currencyCode: 'USD', fxRate: '25400' });
+    await voucher('2026-06-11', [L('1122', '1000'), L('5113', '0', '1000')]);
+    for (const qs of ['asOf=2026-06-30&accountCode=1122', 'asOf=2026-06-30&accountCode=1122&byParty=true']) {
+      const rows = await rowsOf(qs);
+      expect(rows.map((r) => [r.accountCode, r.currencyCode, r.debit]), qs).toEqual([['1122', 'USD', '25400000'], ['1122', 'VND', '1000']]);
+      expect(Number(rows[0]!.debitCur)).toBe(1000); expect(Number(rows[1]!.debitCur)).toBe(1000);
+    }
   });
 });

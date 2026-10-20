@@ -1,8 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'kysely';
-import { withTenant } from '@kt/db';
+import pg from 'pg';
+import type PgBoss from 'pg-boss';
+import { QUEUES, withTenant } from '@kt/db';
 import { createTestTenant, setupTestDb, type TestDb } from '@kt/db/testing';
-import { recomputeBalances } from '../src/jobs/recomputeBalances.js';
+import { createBoss } from '../src/boss.js';
+import { recomputeAndRequeue, recomputeBalances } from '../src/jobs/recomputeBalances.js';
 
 let t: TestDb; let tenantId: string;
 beforeAll(async () => { t = await setupTestDb(); tenantId = await createTestTenant(t.admin, { code: `WR${Date.now()}`, name: 'Worker' }); }, 60_000);
@@ -40,5 +43,45 @@ describe('job tính lại số dư', () => {
       { period_no: 2, code: '1111', closing_debit: '1000', closing_credit: '0' }, { period_no: 2, code: '5113', closing_debit: '0', closing_credit: '1000' }]);
     expect((await sql`SELECT 1 FROM balance_stale WHERE tenant_id = ${tid}::uuid`.execute(t.admin)).rows).toHaveLength(0);
     expect(await recomputeBalances(t.db, { tenantId: tid })).toBe(0);
+  }, 30_000);
+});
+
+describe('tự xếp lại job khi còn mốc bẩn', () => {
+  let boss: PgBoss;
+  beforeAll(async () => { boss = createBoss(process.env.DATABASE_ADMIN_URL!); await boss.start(); await boss.createQueue(QUEUES.recomputeBalances); }, 60_000);
+  afterAll(async () => { await boss.stop({ graceful: false }); });
+  const queued = async (tid: string) => (await sql<{ singleton_key: string | null; secs: number }>`SELECT singleton_key, extract(epoch FROM start_after - now())::float8 AS secs FROM pgboss.job
+    WHERE name = ${QUEUES.recomputeBalances} AND data->>'tenantId' = ${tid} AND state = 'created'`.execute(t.admin)).rows;
+
+  it('xong mà không còn mốc bẩn thì không gửi job nữa', async () => {
+    const tid = await createTestTenant(t.admin, { code: `WQ${Date.now()}`, name: 'Worker không bẩn' });
+    expect(await recomputeAndRequeue(t.db, boss, { tenantId: tid })).toEqual({ periods: 0, requeued: false });
+    expect(await queued(tid)).toEqual([]);
+  });
+
+  it('mốc bẩn bị đặt lại trong lúc tính (ghi sổ rơi vào khe singleton đã dùng nên job của nó bị bỏ) thì xếp lại job sau 5 giây; tính tiếp xong thì thôi', async () => {
+    const tid = await createTestTenant(t.admin, { code: `WR2${Date.now()}`, name: 'Worker xếp lại' });
+    await sql`INSERT INTO balance_stale(tenant_id, stale_year, stale_period) VALUES (${tid}::uuid, 2026, 1)`.execute(t.admin);
+    const x = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL }); await x.connect();
+    let r: { periods: number; requeued: boolean };
+    try {
+      // Phiên X đặt lại mốc nhưng chưa commit và giữ khóa dòng: bản tính lại chạy tới câu xóa mốc ở cuối thì chờ, sau đó thấy mốc mới (marked_at khác) nên giữ lại.
+      await x.query('BEGIN'); await x.query('SELECT mark_balance_stale($1::uuid, 2026, 3)', [tid]);
+      let settled = false; const run = recomputeAndRequeue(t.db, boss, { tenantId: tid }).finally(() => { settled = true; }); run.catch(() => undefined);
+      let waiting = false;
+      for (let i = 0; i < 400 && !waiting && !settled; i++) {
+        waiting = (await sql`SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%recompute_balances%' AND pid <> pg_backend_pid()`.execute(t.admin)).rows.length > 0;
+        if (!waiting) await new Promise((res) => setTimeout(res, 50));
+      }
+      expect(waiting, 'recompute_balances phải đang chờ khóa dòng balance_stale').toBe(true);
+      await x.query('COMMIT'); r = await run;
+    } finally { await x.end(); }
+    expect(r).toEqual({ periods: 0, requeued: true });
+    const jobs = await queued(tid);
+    expect(jobs).toHaveLength(1); expect(jobs[0]!.singleton_key).toBe(tid);
+    expect(jobs[0]!.secs).toBeGreaterThan(3); expect(jobs[0]!.secs).toBeLessThanOrEqual(5);
+    // lần chạy sau (job xếp lại) xóa được mốc, không xếp lại thêm
+    expect(await recomputeAndRequeue(t.db, boss, { tenantId: tid })).toMatchObject({ requeued: false });
+    expect(await queued(tid)).toHaveLength(1);
   }, 30_000);
 });

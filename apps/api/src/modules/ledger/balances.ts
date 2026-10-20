@@ -21,7 +21,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         WHERE ${prefix ? sql`a.code LIKE ${prefix}` : sql`true`}
         GROUP BY a.code, a.name, b.currency_code ${byParty ? sql`, p.code, p.name` : sql``}
         ${byParty ? sql`` : sql`HAVING sum(b.debit - b.credit) <> 0 OR sum(b.debit_cur - b.credit_cur) <> 0`}
-        ORDER BY a.code, 3`.execute(trx);
+        ORDER BY a.code, 3, b.currency_code`.execute(trx);
       return { rows: rows.rows, stale };
     }));
   app.post('/api/balances/recompute', { preHandler: app.requirePermission('report.view') }, async (req) =>

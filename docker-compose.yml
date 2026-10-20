@@ -17,6 +17,7 @@ services:
 
   api:
     build: { context: ., dockerfile: docker/api.Dockerfile }
+    restart: unless-stopped
     init: true # tiến trình init chuyển SIGTERM cho lệnh con; lệnh chạy qua sh -c nên không có init thì tín hiệu dừng không tới node
     environment:
       DATABASE_URL: postgres://app_user:app_pass@postgres:5432/ketoan
@@ -38,6 +39,7 @@ services:
 
   worker:
     build: { context: ., dockerfile: docker/worker.Dockerfile }
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgres://app_user:app_pass@postgres:5432/ketoan
       DATABASE_ADMIN_URL: postgres://postgres:postgres@postgres:5432/ketoan
