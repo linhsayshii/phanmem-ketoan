@@ -8,3 +8,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-20 21:58 | GĐ1.5 T3 (A4) | TRUST_PROXY, chặn cấu hình production yếu | 2691b8f | api 277 passed, lint+typecheck xanh
 2026-10-20 22:16 | GĐ1.5 T4 (A3) | khóa tạm đăng nhập sai (5 lần/tên, 20 lần/IP, 15 phút) | 3ccb1a8, ddfeebb | api 281 passed; web Periods.test chậm do máy bận
 2026-10-20 22:22 | GĐ1.5 T5 (A7) | lưu băm mã phiên, dọn phiên hết hạn | 4b17252 | api 283 passed, e2e in-so 2/2
+2026-10-20 22:29 | GĐ1.5 T7 (A6+A8) + pháp lý | RLS tenant_user tách đọc/ghi, create_tenant trả biến phiên, thu hẹp ketoan_vien; chỉ tiêu B01/B02/B03 TT99 và TT133 | 01d2352, 982796f | db 54, api 283 passed; coa-data 19, báo cáo 84 passed

@@ -36,7 +36,9 @@ Văn bản gốc tải về `~/legal-docs/` trên VPS (ngoài repo): TT 99/2025 
 - [x] Hệ thống tài khoản TT 99/2025 (Phụ lục II, 184 tài khoản), `complete=true`, nguồn ghi trong `tt99.status.json` (2026-10-20).
 - [x] Đối chiếu hệ thống tài khoản TT133 với Phụ lục 1 TT 133/2016: bỏ 521, sửa 18 tên (2026-10-20).
 - [x] Sơ đồ kết chuyển theo chế độ (`closing-steps/tt200|tt133|tt99.json`); tạo năm tài chính đổi chế độ thì nạp lại sơ đồ.
-- [ ] Chỉ tiêu B01-DN, B02-DN, B03-DN (Phụ lục IV TT 99/2025) và B01a-DNN, B02-DNN, B03-DNN (Phụ lục 2 TT 133/2016): đang nhập.
+- [x] Chỉ tiêu B01-DN, B02-DN, B03-DN (Phụ lục IV TT 99/2025) và B01a-DNN, B02-DNN, B03-DNN (Phụ lục 2 TT 133/2016), cả sáu cờ `true` (2026-10-20). Các chỗ gần đúng (dòng dài hạn TT99 bằng 0 vì sổ cái chưa có kỳ hạn còn lại; B03 tiền tệ phân loại theo cặp đối ứng; lãi trên cổ phiếu nhập tay) ghi trong `note` của `data/reports/status.json`.
+- [ ] Kế toán trưởng rà soát một lượt việc gán tài khoản cho từng chỉ tiêu TT99 (xem mục 4).
+- [ ] GĐ2/GĐ3: thêm thuộc tính kỳ hạn (ngắn/dài hạn) cho công nợ, tiền gửi, vay để tách dòng dài hạn B01 TT99; B03 phân loại dòng tiền theo mã luồng tiền trên chứng từ thay vì chỉ theo cặp tài khoản.
 - [ ] Hệ thống tài khoản TT200 vẫn lấy từ SUNSOFT, chưa đối chiếu Phụ lục 1 TT 200/2014 (TT200 đã bị TT99 thay từ 2026; ưu tiên thấp).
 - [ ] Mẫu tờ khai 01/GTGT theo TT 89/2026 (Phụ lục I): bản PDF là ảnh scan, cần OCR (`tesseract-ocr-vie`) rồi đối chiếu bằng mắt; làm khi bắt đầu GĐ2.
 - [ ] Ký hiệu hóa đơn theo TT 91/2026 (Phụ lục I, đã có chữ): dùng cho GĐ5.
@@ -56,6 +58,7 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
 
 | Việc | Vì sao cần người dùng | Ảnh hưởng nếu chưa có |
 |---|---|---|
+| Kế toán trưởng rà soát chỉ tiêu B01/B02/B03 TT99 và TT133 (`packages/coa-data/data/reports/*/B0*.csv`, ghi chú gần đúng trong `status.json`) | Gán tài khoản cho chỉ tiêu cần phán đoán nghề nghiệp | Số trên BCTC có thể lệch ở các dòng gần đúng |
 | Kiểm tay gõ Telex/VNI trong lưới nhập liệu (Chrome và Safari trên máy thật) | Bộ gõ tiếng Việt không giả lập được trong Playwright headless | Có thể lỗi mất dấu khi nhập diễn giải |
 | Văn bản gốc QĐ 1450/QĐ-TCT (07/10/2021) và QĐ 1510/QĐ-TCT (định dạng XML hóa đơn điện tử), hoặc quyết định mới thay thế nếu đã có: gdt.gov.vn không truy cập được từ VPS (timeout), vbpl.vn chặn bằng JavaScript, thuvienphapluat 403. Cần tải bằng trình duyệt ở Việt Nam, chép vào `~/legal-docs/qd1450/` | Trang luật chặn tải tự động | XML hóa đơn GĐ5 chỉ theo tài liệu thứ cấp, chưa kiểm chứng |
 | Bộ XML mẫu kết xuất từ HTKK 5.x (01/GTGT, 03/TNDN, 05/KK-TNCN, BCTC) | HTKK chạy trên Windows, không có XSD công khai | XML tờ khai GĐ2 chưa kiểm chứng được |
