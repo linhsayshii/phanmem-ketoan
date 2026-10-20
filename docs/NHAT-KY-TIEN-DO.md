@@ -17,3 +17,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-21 00:12 | GĐ1.5 kết thúc | rà soát toàn nhánh (Opus), hai đợt sửa (0022 đăng nhập/hàng đợi, 0023 kết chuyển theo chế độ), nginx X-Forwarded-For, tài liệu; tag gd1-5-hoan-tat | f972086, 1f7b6e0, 3315ffb | lint+typecheck xanh, 511 passed, bất biến 18 passed, e2e 4 passed
 2026-10-21 00:39 | GĐ2 T1 | danh mục: thoát ký tự tìm kiếm, cắt khoảng trắng, ngưng dùng, lỗi trùng mã | 3bf4325, 9ac2ee8 | api 306, web 62 passed
 2026-10-21 01:07 | GĐ2 | T2 sửa bàn phím, tra cứu, ô số, Insert/F9 + sửa Minor | ec2601b, ca4b7fd | domain 40, ui 27, web 66, e2e phieu-ke-toan 2; lint/typecheck sạch
+2026-10-21 01:30 | GĐ2 | T3 quyền GĐ2 (0024), cờ nhạy cảm dùng chung, todayVn/vnDayStart, chặn lộ số tiền qua hàng đợi kiểm cân bằng | fef28ed, bf279b8 | domain 48, db 65, api 308, worker 11, web 66; lint/typecheck sạch
