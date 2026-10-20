@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { AppError } from '../../plugins/errors.js';
 import { PERMISSIONS } from '@kt/domain';
 
 const routes: FastifyPluginAsyncZod = async (app) => {
@@ -16,6 +17,8 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     schema: { params: z.object({ id: z.string().uuid() }), body: z.object({ permissions: z.array(z.string()) }) } }, async (req) => {
     const tenantId = req.auth!.tenantId!;
     await app.withTenant(req, async (trx) => {
+      const role = await trx.selectFrom('role').select('code').where('id', '=', req.params.id).executeTakeFirst();
+      if (role?.code === 'admin') throw new AppError('SYSTEM_ROLE_LOCKED', 'Vai trò quản trị viên luôn có mọi quyền, không sửa được', 409);
       await trx.deleteFrom('role_permission').where('role_id', '=', req.params.id).execute();
       if (req.body.permissions.length)
         await trx.insertInto('role_permission').values(req.body.permissions.map((p) => ({ tenant_id: tenantId, role_id: req.params.id, permission_code: p }))).execute();

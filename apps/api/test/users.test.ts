@@ -1,7 +1,17 @@
+import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bootstrapTenant, createTestApp, TEST_PASSWORD, type TestApp } from './helpers.js';
 
 let ctx: TestApp;
+const put = (cookie: string, id: string, payload: object) => ctx.app.inject({ method: 'PUT', url: `/api/users/${id}`, headers: { cookie }, payload });
+// tạo thành viên mới của công ty `by` và đăng nhập
+async function mk(by: { cookie: string }, roleCode: string) {
+  const username = `u_${Math.random().toString(36).slice(2, 10)}`;
+  const c = await ctx.app.inject({ method: 'POST', url: '/api/users', headers: { cookie: by.cookie }, payload: { username, fullName: 'N', password: 'Matkhau1!', roleCode } });
+  if (c.statusCode !== 201) throw new Error(c.body);
+  const l = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+  return { id: c.json().id as string, username, cookie: `sid=${l.cookies.find((x) => x.name === 'sid')!.value}` };
+}
 beforeAll(async () => { ctx = await createTestApp(); });
 afterAll(async () => { await ctx.close(); });
 
@@ -74,8 +84,65 @@ describe('người dùng và vai trò', () => {
 
   it('PUT với roleCode không tồn tại trả 404 ROLE_NOT_FOUND', async () => {
     const admin = await bootstrapTenant(ctx, { code: `UT${Date.now()}` });
-    const res = await ctx.app.inject({ method: 'PUT', url: `/api/users/${admin.userId}`, headers: { cookie: admin.cookie }, payload: { roleCode: 'khong_ton_tai' } });
+    const other = await mk(admin, 'xem');
+    const res = await put(admin.cookie, other.id, { roleCode: 'khong_ton_tai' });
     expect(res.statusCode).toBe(404);
     expect(res.json().error.code).toBe('ROLE_NOT_FOUND');
+  });
+
+  it('người có user.update không tự nâng mình lên admin, không tự gán cờ nhạy cảm', async () => {
+    const admin = await bootstrapTenant(ctx, { code: `SP${Date.now()}` });
+    await sql`INSERT INTO role(tenant_id, code, name) VALUES (${admin.tenantId}::uuid, 'qt_phu', 'Quản trị phụ')`.execute(ctx.t.admin);
+    await sql`INSERT INTO role_permission(tenant_id, role_id, permission_code) SELECT ${admin.tenantId}::uuid, id, p FROM role, unnest(ARRAY['user.view','user.update']) p WHERE tenant_id = ${admin.tenantId}::uuid AND code = 'qt_phu'`.execute(ctx.t.admin);
+    const self = await mk(admin, 'qt_phu'); const other = await mk(admin, 'xem');
+    expect((await put(self.cookie, self.id, { roleCode: 'admin' })).json().error.code).toBe('SELF_PRIVILEGE_CHANGE');
+    expect((await put(self.cookie, self.id, { sensitiveFlags: ['view_cost'] })).json().error.code).toBe('SELF_PRIVILEGE_CHANGE');
+    expect((await ctx.app.inject({ method: 'PUT', url: `/api/users/${self.id}/active`, headers: { cookie: self.cookie }, payload: { isActive: false } })).json().error.code).toBe('SELF_PRIVILEGE_CHANGE');
+    expect((await put(self.cookie, other.id, { sensitiveFlags: ['view_cost'] })).statusCode).toBe(403);
+    expect((await put(self.cookie, other.id, { roleCode: 'ketoan_vien' })).statusCode).toBe(200); // đối chứng
+    expect((await put(self.cookie, self.id, { fullName: 'Tên mới' })).statusCode).toBe(200); // tự đổi họ tên được
+  });
+
+  it('không bỏ kích hoạt hay hạ vai trò quản trị viên cuối cùng', async () => {
+    const a1 = await bootstrapTenant(ctx, { code: `LA${Date.now()}` });
+    const a2 = await mk(a1, 'admin');
+    const toggle = (cookie: string, id: string, isActive: boolean) => ctx.app.inject({ method: 'PUT', url: `/api/users/${id}/active`, headers: { cookie }, payload: { isActive } });
+    expect((await toggle(a1.cookie, a2.id, false)).statusCode).toBe(200); // còn a1 nên được
+    expect((await toggle(a1.cookie, a2.id, true)).statusCode).toBe(200);
+    expect((await put(a2.cookie, a1.userId, { roleCode: 'xem' })).statusCode).toBe(200); // đối chứng: hạ a1, còn a2
+    // a2 là admin duy nhất: người khác có quyền cũng không hạ được
+    await sql`INSERT INTO role_permission(tenant_id, role_id, permission_code) SELECT tenant_id, id, 'user.update' FROM role WHERE tenant_id = ${a1.tenantId}::uuid AND code = 'ketoan_vien'`.execute(ctx.t.admin);
+    const kv = await mk(a2, 'ketoan_vien');
+    const res = await put(kv.cookie, a2.id, { roleCode: 'xem' });
+    expect(res.statusCode).toBe(409); expect(res.json().error.code).toBe('LAST_ADMIN');
+    expect((await toggle(kv.cookie, a2.id, false)).json().error.code).toBe('LAST_ADMIN');
+  });
+
+  it('không đặt lại mật khẩu người dùng thuộc hai công ty', async () => {
+    const a = await bootstrapTenant(ctx, { code: `SH${Date.now()}` });
+    const b = await bootstrapTenant(ctx, { code: `SI${Date.now()}` });
+    const u = await mk(a, 'xem');
+    await sql`INSERT INTO tenant_user(tenant_id, user_id, role_id) SELECT ${b.tenantId}::uuid, ${u.id}::uuid, id FROM role WHERE tenant_id = ${b.tenantId}::uuid AND code = 'xem'`.execute(ctx.t.admin);
+    const r = await put(a.cookie, u.id, { password: 'Doimatkhau1!' });
+    expect(r.statusCode).toBe(409); expect(r.json().error.code).toBe('USER_SHARED');
+    expect((await put(a.cookie, u.id, { fullName: 'Đổi' })).json().error.code).toBe('USER_SHARED');
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: u.username, password: 'Matkhau1!' } })).statusCode).toBe(200);
+    expect((await put(u.cookie, u.id, { fullName: 'Tự đổi' })).statusCode).toBe(403); // thiếu quyền, không phải USER_SHARED
+  });
+
+  it('vai trò admin không bị sửa quyền', async () => {
+    const a = await bootstrapTenant(ctx, { code: `SR${Date.now()}` });
+    const roles = (await ctx.app.inject({ method: 'GET', url: '/api/roles', headers: { cookie: a.cookie } })).json() as { id: string; code: string }[];
+    const call = (code: string) => ctx.app.inject({ method: 'PUT', url: `/api/roles/${roles.find((r) => r.code === code)!.id}/permissions`, headers: { cookie: a.cookie }, payload: { permissions: ['voucher.view'] } });
+    const r = await call('admin');
+    expect(r.statusCode).toBe(409); expect(r.json().error.code).toBe('SYSTEM_ROLE_LOCKED');
+    expect((await call('xem')).statusCode).toBe(200);
+  });
+
+  it('PUT /active cho người ngoài công ty trả 404', async () => {
+    const a = await bootstrapTenant(ctx, { code: `NA${Date.now()}` });
+    const b = await bootstrapTenant(ctx, { code: `NB${Date.now()}` });
+    const r = await ctx.app.inject({ method: 'PUT', url: `/api/users/${b.userId}/active`, headers: { cookie: a.cookie }, payload: { isActive: false } });
+    expect(r.statusCode).toBe(404); expect(r.json().error.code).toBe('USER_NOT_FOUND');
   });
 });
