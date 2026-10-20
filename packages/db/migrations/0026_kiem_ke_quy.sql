@@ -37,3 +37,30 @@ ALTER TABLE opening_balance ADD COLUMN bank_account_id bigint,
   ADD FOREIGN KEY (tenant_id, bank_account_id) REFERENCES bank_account(tenant_id, id);
 DROP INDEX opening_balance_key;
 CREATE UNIQUE INDEX opening_balance_key ON opening_balance (tenant_id, fiscal_year, account_id, coalesce(party_id, '00000000-0000-0000-0000-000000000000'::uuid), currency_code, coalesce(bank_account_id, 0));
+
+-- 3) Kiểm kê quỹ: một lần kiểm đếm tiền mặt tại một ngày, theo mệnh giá. Số dư sổ và chênh lệch chốt tại lúc lập (không tính lại khi sổ đổi sau đó).
+-- VND: book_balance, counted_total, difference tính bằng đồng. Ngoại tệ: book_balance là giá trị sổ bằng đồng, book_balance_currency là số dư nguyên tệ;
+-- counted_total và difference tính bằng nguyên tệ (difference = thực tế - sổ: âm là thiếu, dương là thừa).
+-- voucher_id là Phiếu thu/Phiếu chi xử lý chênh lệch; xóa chứng từ nháp đó thì kiểm kê trở lại chưa xử lý.
+CREATE TABLE cash_count (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id uuid NOT NULL REFERENCES tenant(id),
+  count_date date NOT NULL,
+  account_id bigint NOT NULL,
+  currency_code char(3) NOT NULL DEFAULT 'VND',
+  book_balance numeric(20,0) NOT NULL,
+  book_balance_currency numeric(20,4) NOT NULL DEFAULT 0,
+  denominations jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(denominations) = 'array'),  -- [{ "value": "500000", "qty": 3 }]
+  counted_total numeric(20,4) NOT NULL,
+  difference numeric(20,4) NOT NULL,
+  members jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(members) = 'array'),               -- [{ "name": "...", "role": "..." }]
+  note text,
+  voucher_id uuid,
+  created_by uuid REFERENCES app_user(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id, id),
+  FOREIGN KEY (tenant_id, account_id) REFERENCES account(tenant_id, id),
+  FOREIGN KEY (tenant_id, currency_code) REFERENCES currency(tenant_id, code),
+  FOREIGN KEY (tenant_id, voucher_id) REFERENCES voucher(tenant_id, id) ON DELETE SET NULL (voucher_id));
+CREATE INDEX cash_count_date ON cash_count (tenant_id, count_date DESC, id DESC);
+SELECT rls_enable('cash_count'), audit_enable('cash_count');

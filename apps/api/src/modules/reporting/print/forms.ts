@@ -21,6 +21,9 @@ const FORMS: Record<string, Record<string, string>> = {
   'so-tien-gui': { TT99: 'S08-DN', TT133: 'S05-DNN' },
   '01-TT': { TT99: '01 - TT', TT133: '01 - TT' },
   '02-TT': { TT99: '02 - TT', TT133: '02 - TT' },
+  // Bảng kiểm kê quỹ: 08a - TT (VND) và 08b - TT (ngoại tệ), có trong văn bản gốc của cả TT 133/2016 và TT 99/2025.
+  '08a-TT': { TT99: '08a - TT', TT133: '08a - TT' },
+  '08b-TT': { TT99: '08b - TT', TT133: '08b - TT' },
 };
 // Chú thích dưới "Mẫu số" của chứng từ, đúng chữ trên mẫu (khác chú thích của sổ: TT99 ghi "Kèm theo", TT133 ghi "Ban hành theo").
 const VOUCHER_LEGEND: Record<string, string> = {

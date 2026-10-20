@@ -147,6 +147,12 @@ export interface OpeningBalanceTable {
   id: Generated<number>; tenant_id: string; fiscal_year: number; account_id: number; party_id: string | null; bank_account_id: number | null; currency_code: Generated<string>;
   debit: NumericDefault; credit: NumericDefault; debit_currency: NumericDefault; credit_currency: NumericDefault;
 }
+export interface CashCountTable {
+  id: Generated<number>; tenant_id: string; count_date: DateOnly; account_id: number; currency_code: Generated<string>;
+  book_balance: Numeric; book_balance_currency: NumericDefault; denominations: JSONColumnType<{ value: string; qty: number }[]>;
+  counted_total: Numeric; difference: Numeric; members: JSONColumnType<{ name: string; role?: string }[]>; note: string | null;
+  voucher_id: string | null; created_by: string | null; created_at: Generated<string>;
+}
 export interface BalanceStaleTable { tenant_id: string; stale_year: number; stale_period: number; marked_at: Generated<string> }
 export interface AccountPeriodBalanceTable {
   tenant_id: string; account_id: number; fiscal_year: number; period_no: number; currency_code: string; party_id: Generated<string>;
@@ -222,6 +228,7 @@ export interface Database {
   balance_stale: BalanceStaleTable;
   account_period_balance: AccountPeriodBalanceTable;
   opening_balance: OpeningBalanceTable;
+  cash_count: CashCountTable;
   closing_step: ClosingStepTable;
   closing_run: ClosingRunTable;
   report_template: ReportTemplateTable;
