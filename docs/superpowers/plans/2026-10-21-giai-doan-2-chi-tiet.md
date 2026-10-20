@@ -16,7 +16,7 @@
 - Không `UPDATE`/`DELETE` dòng sổ cái đã ghi sổ. `settlement` không phải sổ cái: hủy đối trừ xóa dòng `settlement` (có `audit_event`) và đảo chứng từ chênh lệch tỷ giá đi kèm.
 - Chứng từ tự động (`CL` chênh lệch tỷ giá đối trừ, `DG` đánh giá lại, `XQ` điều chỉnh tỷ giá xuất quỹ, `KTT` khấu trừ thuế GTGT, `PB` phân bổ doanh thu nhận trước) có số, ngày, người lập, `source_doc_type/source_doc_id`; chạy lại bằng đảo cũ sinh mới; không lập tay, không bỏ ghi sổ/hủy/sửa qua route chung.
 - Bảng mới: `tenant_id uuid NOT NULL REFERENCES tenant(id)`, `SELECT rls_enable('<bảng>')`; bảng do người dùng thao tác thêm `audit_enable`; mọi `UNIQUE` có `tenant_id`; khóa ngoại giữa hai bảng có `tenant_id` là tổng hợp `(tenant_id, x_id) REFERENCES cha (tenant_id, id)` (kiểm thử bất biến khóa ngoại của GĐ1.5 Task 9 tự bắt vi phạm). Hàm `SECURITY DEFINER` (nếu có) `SET search_path = public, pg_temp`; mặc định hàm chạy quyền người gọi như 0005.
-- Migration 0001–0021 đóng băng (0016–0021 thuộc GĐ1.5; 0021 khóa ghi trực tiếp vào partition `voucher_line`). GĐ2 bắt đầu ở **0022**, đánh số theo thứ tự thực hiện (bảng "Thứ tự thực hiện" cuối file); nếu số đã bị dùng khi thực hiện thì dịch các số còn lại lên. Định nghĩa lại hàm luôn lấy thân hiện hành bằng `SELECT pg_get_functiondef('<hàm>'::regproc)` trên DB đã migrate, không chép từ migration cũ.
+- Migration 0001–0023 đóng băng (0016–0023 thuộc GĐ1.5; 0021 khóa ghi trực tiếp vào partition `voucher_line`, 0022 sửa cuối GĐ1.5 về đăng nhập và hàng đợi cân bằng, 0023 thêm `closing_step.regime`: sơ đồ kết chuyển theo chế độ). GĐ2 bắt đầu ở **0024**, đánh số theo thứ tự thực hiện (bảng "Thứ tự thực hiện" cuối file); nếu số đã bị dùng khi thực hiện thì dịch các số còn lại lên. Định nghĩa lại hàm luôn lấy thân hiện hành bằng `SELECT pg_get_functiondef('<hàm>'::regproc)` trên DB đã migrate, không chép từ migration cũ.
 - `app_user` không có quyền ghi trực tiếp lên partition `voucher_line_YYYY_MM` (GĐ1.5, 0021): mọi `INSERT`/`UPDATE`/`DELETE` dòng chứng từ, trong mã TypeScript, hàm SQL, seed và kiểm thử, đi qua bảng gốc `voucher_line`. Đọc thì vẫn lọc `posting_date` để chỉ quét partition cần thiết. Khóa ngoại và chỉ mục mới trên dòng chứng từ khai báo trên bảng gốc.
 - Báo cáo, sổ, tờ khai đọc trong `READ_SNAPSHOT` (`REPEATABLE READ READ ONLY`). Mã lỗi kết thúc `_NOT_FOUND` luôn 404; trạng thái không cho thao tác 409 với mã riêng; đầu vào sai 400.
 - Cờ nhạy cảm chặn ở API (403 `FORBIDDEN` kèm thông báo nêu cờ), không chỉ ẩn ở giao diện.
@@ -39,7 +39,7 @@
 ## Cấu trúc file
 
 - `packages/domain/src/`: `voucherTypes.ts` (cấu hình loại chứng từ, mục đích thu/chi, danh sách loại hệ thống), `fx.ts` (quy đổi, bình quân di động), `tax.ts` (động cơ thuế), `invoiceLedger.ts` (dựng bút toán hóa đơn), `vatFormula.ts` (công thức tờ khai), `vnTime.ts` (ngày hôm nay giờ Việt Nam), `permissions.ts` (thêm quyền, `sensitiveDenial` chuyển về đây).
-- `packages/db/migrations/0022_quyen_gd2.sql` … `0033_soat_loi_gd2.sql` (bảng "Thứ tự thực hiện").
+- `packages/db/migrations/0024_quyen_gd2.sql` … `0035_soat_loi_gd2.sql` (bảng "Thứ tự thực hiện").
 - `apps/api/src/modules/ledger/`: `vouchers.service.ts`, `vouchers.routes.ts` (chứng từ dùng chung theo loại), `openingBalance.ts` (số dư công nợ theo hóa đơn, bỏ ghi sổ số dư).
 - `apps/api/src/modules/cash/` (mới): `books.ts` (số dư tại ngày, sổ quỹ, sổ tiền gửi), `cashCount.ts`, `fx.ts` (tỷ giá theo ngày, tỷ giá xuất quỹ, đánh giá lại), `routes.ts`.
 - `apps/api/src/modules/arap/` (mới): `openItems.ts`, `settlement.ts`, `reports.ts` (sổ chi tiết, tổng hợp, tuổi nợ, đối chiếu, nhắc nợ), `routes.ts`.
@@ -147,13 +147,13 @@ it('thiếu ngày hạch toán: thông báo là chữ lỗi của trường, kh�
 Model: sonnet.
 
 **Files:**
-- Create: `packages/db/migrations/0022_quyen_gd2.sql`, `packages/domain/src/vnTime.ts`, `apps/api/src/modules/core/vnTime.ts`
+- Create: `packages/db/migrations/0024_quyen_gd2.sql`, `packages/domain/src/vnTime.ts`, `apps/api/src/modules/core/vnTime.ts`
 - Modify: `packages/domain/src/permissions.ts`, `packages/domain/src/index.ts`, `apps/api/src/modules/reporting/ledgers.ts` (`sensitiveDenial` chuyển sang domain), `apps/api/src/modules/ledger/balances.ts`, `apps/api/src/modules/audit/routes.ts` (dùng helper chung cho cả `/api/audit/logins`), `apps/web/src/pages/AuditLog.tsx` (nếu có lọc ngày đăng nhập)
 - Test: `packages/domain/test/permissions.test.ts`, `packages/domain/test/vnTime.test.ts`, `apps/api/test/audit.test.ts`, `apps/api/test/users.test.ts`
 
 **Interfaces:**
 - Quyền mới trong `PERMISSIONS`: `...crud('settlement', 'đối trừ công nợ', 'Công nợ')` (dùng `view/create/delete`, bỏ `update`), `{ code: 'fx.run', name: 'Chạy tỷ giá xuất quỹ, đánh giá lại ngoại tệ', group: 'Công nợ' }`, `...crud('cash_count', 'kiểm kê quỹ', 'Quỹ')`, `{ code: 'tax.view', … 'Thuế' }`, `...crud('tax_return', 'tờ khai thuế', 'Thuế', [['finalize', 'Chốt']])`, `{ code: 'tax.offset', name: 'Khấu trừ thuế GTGT cuối kỳ', group: 'Thuế' }`, `{ code: 'voucher.import', name: 'Nhập chứng từ từ Excel', group: 'Chứng từ' }`, `{ code: 'dedupe.run', name: 'Khử trùng chứng từ', group: 'Tiện ích' }`, `...crud('amortization', 'lịch phân bổ', 'Cuối kỳ', [['run', 'Chạy']])`. Bảng `permission` được đồng bộ bởi `syncReferenceData` (`packages/db/src/reference.ts`).
-- `0022`: `create_tenant` định nghĩa lại từ thân hiện hành (lấy bằng `pg_get_functiondef`, hiện là bản 0018), danh sách loại trừ của `ketoan_vien` thêm `'fx.run','tax_return.finalize','tax.offset','amortization.run','dedupe.run'`. Công ty đã có: chèn quyền mới cho `admin` (mọi quyền mới), `ketoan_truong` (mọi quyền mới), `ketoan_vien` (quyền mới trừ danh sách loại trừ), `xem` (`settlement.view`, `cash_count.view`, `tax.view`, `tax_return.view`, `amortization.view`); tắt `trg_audit` của `role_permission` khi chèn bù như 0018. Migration chạy sau `syncReferenceData` nên phải tự `INSERT INTO permission … ON CONFLICT DO NOTHING` các mã mới trước.
+- `0024`: `create_tenant` định nghĩa lại từ thân hiện hành (lấy bằng `pg_get_functiondef`, hiện là bản 0018 hoặc mới hơn), danh sách loại trừ của `ketoan_vien` thêm `'fx.run','tax_return.finalize','tax.offset','amortization.run','dedupe.run'`. Công ty đã có: chèn quyền mới cho `admin` (mọi quyền mới), `ketoan_truong` (mọi quyền mới), `ketoan_vien` (quyền mới trừ danh sách loại trừ), `xem` (`settlement.view`, `cash_count.view`, `tax.view`, `tax_return.view`, `amortization.view`); tắt `trg_audit` của `role_permission` khi chèn bù như 0018. Migration chạy sau `syncReferenceData` nên phải tự `INSERT INTO permission … ON CONFLICT DO NOTHING` các mã mới trước.
 - Domain: `export const SENSITIVE_BY_SUBLEDGER = { receivable: 'view_receivable', payable: 'view_payable' } as const;` `export function sensitiveDenial(auth: { sensitive: Set<string> }, acc: { subledger_kind: string | null; code: string }): string | null` (chuyển nguyên thân từ `ledgers.ts`), `export function flagsForAccounts(accs: { subledger_kind: string | null; code: string }[]): SensitiveFlag[]`. Mọi nơi dùng danh sách cờ lấy từ `@kt/domain` (`grep -rn "view_receivable\|view_payable\|view_cost" apps/api/src` chỉ còn trong domain).
 - `vnTime.ts` (domain): `export function todayVn(now = new Date()): string` → `YYYY-MM-DD` theo `Asia/Ho_Chi_Minh` (dùng `Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })`).
 - `vnTime.ts` (api): `export const vnDayStart = (d: string) => sql\`(${d}::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')\``, `export const vnDayEnd = (d: string) => sql\`((${d}::date + 1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')\``; `audit/routes.ts` và `tools/exportAuthority.ts` dùng lại thay biểu thức tại chỗ.
@@ -168,7 +168,7 @@ it('nhật ký đăng nhập lọc theo ngày giờ Việt Nam', async () => {
   // chèn login_event ts = '2026-03-01T17:30:00Z' (00:30 ngày 02/03 giờ VN) → from=to=2026-03-02 thấy, from=to=2026-03-01 không thấy
 });
 it('công ty mới: ketoan_vien có settlement.create, không có fx.run, tax_return.finalize; xem có tax.view', async () => {});
-it('công ty tạo trước 0022 cũng được cấp quyền mới cho admin', async () => { /* kiểm trên tenant tạo bằng create_tenant rồi chạy lại phần chèn bù: admin có đủ PERMISSION_CODES */ });
+it('công ty tạo trước 0024 cũng được cấp quyền mới cho admin', async () => { /* kiểm trên tenant tạo bằng create_tenant rồi chạy lại phần chèn bù: admin có đủ PERMISSION_CODES */ });
 ```
 
 - [ ] **Step 2:** FAIL. **Step 3:** Cài đặt. **Step 4:** `pnpm db:migrate` trên DB dev; `pnpm -F @kt/domain test`, `pnpm -F @kt/api test`, `pnpm -F @kt/db test` xanh.
@@ -179,7 +179,7 @@ it('công ty tạo trước 0022 cũng được cấp quyền mới cho admin', 
 Model: sonnet (phần SQL cân bằng ngoại tệ rà soát bằng opus).
 
 **Files:**
-- Create: `packages/db/migrations/0023_chung_tu_tien.sql`, `packages/domain/src/voucherTypes.ts`
+- Create: `packages/db/migrations/0025_chung_tu_tien.sql`, `packages/domain/src/voucherTypes.ts`
 - Modify: `packages/db/src/types.ts`, `packages/domain/src/index.ts`
 - Test: `packages/db/test/ledger-schema.test.ts`, `packages/domain/test/voucherTypes.test.ts`
 
@@ -392,7 +392,7 @@ it('chi quá tồn quỹ: warn trả cảnh báo; block trả 409 CASH_NEGATIVE 
 Model: sonnet.
 
 **Files:**
-- Create: `packages/db/migrations/0024_kiem_ke_quy.sql`, `apps/api/src/modules/cash/cashCount.ts`, `apps/web/src/pages/CashCount.tsx`, `apps/web/e2e/kiem-ke-quy.spec.ts`
+- Create: `packages/db/migrations/0026_kiem_ke_quy.sql`, `apps/api/src/modules/cash/cashCount.ts`, `apps/web/src/pages/CashCount.tsx`, `apps/web/e2e/kiem-ke-quy.spec.ts`
 - Modify: `apps/api/src/modules/cash/routes.ts`, `packages/db/src/types.ts`, `apps/web/src/router.tsx`
 - Test: `apps/api/test/cashCount.test.ts`
 
@@ -411,7 +411,7 @@ Model: sonnet.
 Model: **opus**.
 
 **Files:**
-- Create: `packages/db/migrations/0025_ty_gia_xuat_quy.sql`, `packages/domain/src/fx.ts`, `apps/api/src/modules/cash/fx.ts`
+- Create: `packages/db/migrations/0027_ty_gia_xuat_quy.sql`, `packages/domain/src/fx.ts`, `apps/api/src/modules/cash/fx.ts`
 - Modify: `apps/api/src/modules/cash/routes.ts`, `apps/api/src/modules/core/settings.ts`, `packages/domain/src/index.ts`
 - Test: `packages/domain/test/fx.test.ts`, `apps/api/test/fxOutflow.test.ts`
 
@@ -453,7 +453,7 @@ it('thiếu tỷ giá ngày → 409 FX_RATE_MISSING', async () => {});
 Model: **opus**.
 
 **Files:**
-- Create: `packages/db/migrations/0026_cong_no.sql`, `apps/api/src/modules/arap/openItems.ts`, `apps/api/src/modules/arap/routes.ts`
+- Create: `packages/db/migrations/0028_cong_no.sql`, `apps/api/src/modules/arap/openItems.ts`, `apps/api/src/modules/arap/routes.ts`
 - Modify: `packages/db/src/types.ts`, `apps/api/src/app.ts`, `apps/api/src/modules/ledger/openingBalance.ts` (cột chứng từ/hạn), `apps/web/src/pages/OpeningBalance.tsx` (cột Số chứng từ, Ngày chứng từ, Hạn thanh toán cho tài khoản công nợ)
 - Test: `packages/db/test/openItem.test.ts`, `apps/api/test/openItems.test.ts`, `apps/api/test/openingBalance.test.ts`
 
@@ -479,7 +479,7 @@ it('chứng từ đã đối trừ: bỏ ghi sổ và đảo đều 409 OPEN_ITE
 it('đảo chứng từ chưa đối trừ: khoản gốc và khoản đảo tự đối trừ, dư còn lại 0', async () => {});
 it('tổng dư open_item = số dư 131/331 theo đối tượng tại mỗi cuối tháng sau một chuỗi thao tác cố định', async () => {});
 it('số dư đầu kỳ công nợ theo từng hóa đơn: hai hóa đơn cùng khách sinh hai open_item có hạn riêng', async () => {});
-it('backfill: DB có chứng từ GĐ1 (seed XYZ) sau migration có open_item khớp số dư', async () => { /* kiểm trên DB tạm đã seed XYZ trước khi áp 0025: dùng migrate tới 0024, seed, migrate tiếp */ });
+it('backfill: DB có chứng từ GĐ1 (seed XYZ) sau migration có open_item khớp số dư', async () => { /* kiểm trên DB tạm đã seed XYZ trước khi áp 0027: dùng migrate tới 0026, seed, migrate tiếp */ });
 it('người không có view_receivable không xem được open-items của 131', async () => {});
 ```
 
@@ -492,7 +492,7 @@ it('người không có view_receivable không xem được open-items của 131
 Model: **opus**.
 
 **Files:**
-- Create: `packages/db/migrations/0027_doi_tru.sql`, `apps/api/src/modules/arap/settlement.ts`
+- Create: `packages/db/migrations/0029_doi_tru.sql`, `apps/api/src/modules/arap/settlement.ts`
 - Modify: `apps/api/src/modules/arap/routes.ts`, `apps/api/src/modules/ledger/vouchers.service.ts` (kế hoạch đối trừ gửi kèm chứng từ), `packages/db/src/types.ts`
 - Test: `apps/api/test/settlement.test.ts`
 
@@ -637,12 +637,12 @@ Model: sonnet.
 Model: **opus**.
 
 **Files:**
-- Create: `packages/db/migrations/0028_dong_co_thue.sql`, `packages/domain/src/tax.ts`
+- Create: `packages/db/migrations/0030_dong_co_thue.sql`, `packages/domain/src/tax.ts`
 - Modify: `packages/db/src/types.ts`, `packages/domain/src/index.ts`, `apps/api/src/modules/master/catalogs.ts` (danh mục `tax_code` thêm cột, danh mục mới `tax_distribution`), `packages/db/src/reference.ts` (nạp `legal_param`)
 - Test: `packages/domain/test/tax.test.ts`, `packages/db/test/tax.test.ts`
 
 **Interfaces:**
-- Quyết định: bảng `tax_code` hiện có là bảng `tax` của đặc tả (không tạo bảng trùng). `0028`: `ALTER TABLE tax_code ADD COLUMN scope text NOT NULL DEFAULT 'both' CHECK (scope IN ('sale','purchase','both')), ADD COLUMN method text NOT NULL DEFAULT 'deduct' CHECK (method IN ('deduct','direct','none')), ADD COLUMN price_include boolean NOT NULL DEFAULT false`; `kind` thêm giá trị `'pit'` (đổi CHECK); thêm `UNIQUE (tenant_id, id)`.
+- Quyết định: bảng `tax_code` hiện có là bảng `tax` của đặc tả (không tạo bảng trùng). `0030`: `ALTER TABLE tax_code ADD COLUMN scope text NOT NULL DEFAULT 'both' CHECK (scope IN ('sale','purchase','both')), ADD COLUMN method text NOT NULL DEFAULT 'deduct' CHECK (method IN ('deduct','direct','none')), ADD COLUMN price_include boolean NOT NULL DEFAULT false`; `kind` thêm giá trị `'pit'` (đổi CHECK); thêm `UNIQUE (tenant_id, id)`.
 - `tax_distribution (id bigint identity PK, tenant_id, tax_code_id bigint NOT NULL, document_type text CHECK (document_type IN ('invoice','refund')), scope text CHECK (scope IN ('sale','purchase')), line_type text CHECK (line_type IN ('base','tax')), factor_percent numeric(7,4) NOT NULL, account_code text, report_tag text, UNIQUE (tenant_id, tax_code_id, document_type, scope, line_type, account_code))`; FK tổng hợp; RLS + audit.
 - `seed_tenant_defaults` định nghĩa lại (thân hiện hành) và chèn bù cho công ty đã có: phân bổ mặc định cho V0/V5/V8/V10: mua → tax 100% `1331`, tag `purchase_tax`; bán → tax 100% `33311`, tag `sale_tax`; refund cùng tài khoản. Mã mới `TNCN_KT` "Khấu trừ thuế TNCN tại nguồn" `kind='pit'`, `rate NULL` (người dùng nhập thuế suất; văn bản Luật 109/2025 chưa có trong máy → "Chờ người dùng" xác nhận), `scope='purchase'`, phân bổ tax `factor_percent = -100` vào `3335`. Mã trực tiếp không gieo thuế suất (người dùng tự tạo mã `method='direct'` và nhập tỷ lệ).
 - `legal_param` (qua `syncReferenceData`, nguồn ghi đúng mục 10 đặc tả): `vat_reduced_rate` `{ "from": 10, "to": 8 }` hiệu lực 2025-07-01 → 2026-12-31, nguồn "NQ 204/2025, NĐ 174/2025"; `vat_noncash_threshold` `"5000000"` từ 2025-07-01, nguồn "Luật 48/2024, NĐ 181/2025"; `vat_return_template` `"TT80"` hiệu lực đến 2026-06-30 và `"TT89"` từ 2026-07-01, nguồn "TT 89/2026 Đ22, Đ100". Hàm `export async function legalParam<T>(trx, code: string, date: string): Promise<T | null>` trong `apps/api/src/modules/core/legal.ts`.
@@ -680,7 +680,7 @@ it('công ty mới có phân bổ thuế mặc định; legalParam vat_return_te
 Model: sonnet (rà soát opus vì dựng bút toán).
 
 **Files:**
-- Create: `packages/db/migrations/0029_hoa_don.sql`, `packages/domain/src/invoiceLedger.ts`, `apps/api/src/modules/invoices/service.ts`, `apps/api/src/modules/invoices/routes.ts`
+- Create: `packages/db/migrations/0031_hoa_don.sql`, `packages/domain/src/invoiceLedger.ts`, `apps/api/src/modules/invoices/service.ts`, `apps/api/src/modules/invoices/routes.ts`
 - Modify: `packages/db/src/types.ts`, `apps/api/src/app.ts`, `apps/api/src/modules/ledger/vouchers.service.ts` (`voucher_invoice` trên PC/BN/PKT qua `invoices` trong thân chứng từ), `apps/api/src/modules/ledger/vouchers.routes.ts`
 - Test: `packages/domain/test/invoiceLedger.test.ts`, `apps/api/test/invoices.test.ts`
 
@@ -742,7 +742,7 @@ Model: sonnet.
 Model: sonnet.
 
 **Files:**
-- Create: `packages/db/migrations/0030_phan_bo.sql`, `apps/api/src/modules/invoices/amortization.ts`, `apps/web/src/pages/Amortization.tsx`, `apps/web/e2e/phan-bo-doanh-thu.spec.ts`
+- Create: `packages/db/migrations/0032_phan_bo.sql`, `apps/api/src/modules/invoices/amortization.ts`, `apps/web/src/pages/Amortization.tsx`, `apps/web/e2e/phan-bo-doanh-thu.spec.ts`
 - Modify: `apps/api/src/modules/invoices/routes.ts`, `packages/db/src/types.ts`, `apps/web/src/router.tsx`
 - Test: `apps/api/test/amortization.test.ts`
 
@@ -807,13 +807,13 @@ Model: sonnet.
 Model: **opus**.
 
 **Files:**
-- Create: `packages/db/migrations/0031_to_khai_thue.sql`, `packages/domain/src/vatFormula.ts`, `apps/api/src/modules/tax/vatReturn.ts`, `apps/api/src/modules/tax/vatOffset.ts`
+- Create: `packages/db/migrations/0033_to_khai_thue.sql`, `packages/domain/src/vatFormula.ts`, `apps/api/src/modules/tax/vatReturn.ts`, `apps/api/src/modules/tax/vatOffset.ts`
 - Modify: `apps/api/src/modules/tax/routes.ts`, `packages/db/src/types.ts`
 - Test: `packages/domain/test/vatFormula.test.ts`, `apps/api/test/vatReturn.test.ts`, `apps/api/test/vatOffset.test.ts`
 
 **Interfaces:**
 - `tax_return (id bigint identity PK, tenant_id, form_code text NOT NULL /* '01/GTGT' */, template_version text NOT NULL, period_kind text CHECK (period_kind IN ('month','quarter')), year int, period int, revision int NOT NULL DEFAULT 0 /* 0 lần đầu, n bổ sung lần n */, status text CHECK (status IN ('draft','final')), values jsonb NOT NULL, overrides jsonb NOT NULL DEFAULT '{}', created_by uuid, created_at timestamptz, finalized_by uuid, finalized_at timestamptz, UNIQUE (tenant_id, form_code, year, period_kind, period, revision))`; RLS + audit; trigger chặn sửa dòng `final` (`TAX_RETURN_FINAL`).
-- `0031` cũng gieo nhóm bán `KKK` "Không kê khai, tính nộp thuế GTGT", `KTGT` "Không tính vào giá tính thuế GTGT", `NPV` "Không thuộc phạm vi điều chỉnh của pháp luật thuế GTGT" (định nghĩa lại `seed_tenant_defaults`, chèn bù công ty đã có).
+- `0033` cũng gieo nhóm bán `KKK` "Không kê khai, tính nộp thuế GTGT", `KTGT` "Không tính vào giá tính thuế GTGT", `NPV` "Không thuộc phạm vi điều chỉnh của pháp luật thuế GTGT" (định nghĩa lại `seed_tenant_defaults`, chèn bù công ty đã có).
 - Domain: `export function evalVatReturn(t: VatTemplate, inputs: { invoice: Record<string, string>; carry: string; manual: Record<string, string>; overrides: Record<string, string> }): Record<string, string>` (tính theo thứ tự phụ thuộc; `clamp`; số nguyên VND dạng chuỗi; `flag` [21] = `'X'` khi không có hóa đơn nào).
 - `POST /api/tax/vat-returns` (quyền `tax_return.create`) thân `{ year, periodKind, period, revision?, manual?: Record<string,string>, overrides?: Record<string,string> }`:
   - Mẫu theo `legalParam('vat_return_template', ngày đầu kỳ)`; mẫu chưa `complete` → 409 `VAT_TEMPLATE_UNAVAILABLE` (thông báo nêu văn bản còn thiếu).
@@ -905,7 +905,7 @@ it('bảng kê mua vào: trùng hóa đơn trong tệp và với hóa đơn đã
 Model: sonnet.
 
 **Files:**
-- Create: `packages/db/migrations/0032_khu_trung.sql`, `apps/api/src/modules/tools/dedupe.ts`, `apps/web/src/pages/Dedupe.tsx`, `apps/web/e2e/khu-trung.spec.ts`
+- Create: `packages/db/migrations/0034_khu_trung.sql`, `apps/api/src/modules/tools/dedupe.ts`, `apps/web/src/pages/Dedupe.tsx`, `apps/web/e2e/khu-trung.spec.ts`
 - Modify: `apps/api/src/modules/tools/routes.ts`, `packages/db/src/types.ts`, `apps/web/src/router.tsx`
 - Test: `apps/api/test/dedupe.test.ts`
 
@@ -925,7 +925,7 @@ Model: sonnet.
 Model: sonnet.
 
 **Files:**
-- Create: `packages/db/migrations/0033_soat_loi_gd2.sql`
+- Create: `packages/db/migrations/0035_soat_loi_gd2.sql`
 - Modify: `apps/api/src/modules/tools/dataCheck.ts`, `apps/api/src/modules/tools/routes.ts`
 - Test: `apps/api/test/dataCheck.test.ts`
 
@@ -1003,18 +1003,18 @@ Phụ thuộc chính: T4 trước mọi tác vụ dùng loại chứng từ mớ
 
 | Migration | Tác vụ |
 |---|---|
-| 0022_quyen_gd2.sql | T3 |
-| 0023_chung_tu_tien.sql | T4 |
-| 0024_kiem_ke_quy.sql | T9 |
-| 0025_ty_gia_xuat_quy.sql | T10 |
-| 0026_cong_no.sql | T11 |
-| 0027_doi_tru.sql | T12 |
-| 0028_dong_co_thue.sql | T17 |
-| 0029_hoa_don.sql | T18 |
-| 0030_phan_bo.sql | T20 |
-| 0031_to_khai_thue.sql | T23 |
-| 0032_khu_trung.sql | T26 |
-| 0033_soat_loi_gd2.sql | T27 |
+| 0024_quyen_gd2.sql | T3 |
+| 0025_chung_tu_tien.sql | T4 |
+| 0026_kiem_ke_quy.sql | T9 |
+| 0027_ty_gia_xuat_quy.sql | T10 |
+| 0028_cong_no.sql | T11 |
+| 0029_doi_tru.sql | T12 |
+| 0030_dong_co_thue.sql | T17 |
+| 0031_hoa_don.sql | T18 |
+| 0032_phan_bo.sql | T20 |
+| 0033_to_khai_thue.sql | T23 |
+| 0034_khu_trung.sql | T26 |
+| 0035_soat_loi_gd2.sql | T27 |
 
 ## Đối chiếu nhóm B
 
