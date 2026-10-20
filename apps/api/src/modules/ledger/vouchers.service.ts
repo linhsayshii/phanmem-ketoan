@@ -151,7 +151,8 @@ function assertTypeRules(def: VoucherTypeDef, input: VoucherInput, lines: Resolv
     if (!lines.some((l) => D(l[side]).gt(0) && kindOf(l) === def.moneyKind))
       throw new AppError('VOUCHER_CASH_LINE_REQUIRED', `${def.name} phải có dòng ${side === 'debit' ? 'Nợ' : 'Có'} tài khoản ${MONEY_LABEL[def.moneyKind]}`, 400);
   }
-  if (def.header.includes('counterBankAccount')) { // chuyển tiền nội bộ: dòng Nợ trên tài khoản ngân hàng là tài khoản nhận
+  if (def.header.includes('counterBankAccount')) { // chuyển tiền nội bộ: dòng Có trên tài khoản ngân hàng là tài khoản chuyển đi, dòng Nợ là tài khoản nhận
+    if (!input.bankAccountNo && lines.some((l) => D(l.credit).gt(0) && kindOf(l) === 'bank')) throw new AppError('VOUCHER_FIELD_REQUIRED', `${def.name}: thiếu ${HEADER_FIELD_LABELS.bankAccount}`, 400);
     if (!input.counterBankAccountNo && lines.some((l) => D(l.debit).gt(0) && kindOf(l) === 'bank')) throw new AppError('VOUCHER_FIELD_REQUIRED', `${def.name}: thiếu ${HEADER_FIELD_LABELS.counterBankAccount}`, 400);
     if (input.bankAccountNo && input.bankAccountNo === input.counterBankAccountNo) throw new AppError('BANK_TRANSFER_SAME_ACCOUNT', `${def.name}: tài khoản chuyển đi và tài khoản nhận phải khác nhau`, 400);
   }

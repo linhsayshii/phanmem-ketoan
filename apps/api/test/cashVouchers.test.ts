@@ -113,6 +113,9 @@ describe('giấy báo Nợ, giấy báo Có, chuyển tiền nội bộ', () => 
     expect(same.statusCode).toBe(400); expect(code(same)).toBe('BANK_TRANSFER_SAME_ACCOUNT');
     // rút tiền gửi về quỹ (Nợ 1111, Có 1121) không có dòng Nợ ngân hàng nên không cần tài khoản nhận
     expect((await create(voucher('CT', '2026-02-05', [L('1111', '100'), L('1121', '0', '100')], { bankAccountNo: '0011001' }))).statusCode).toBe(201);
+    // đối xứng: có dòng Có ngân hàng thì bắt buộc tài khoản chuyển đi
+    const noFrom = await create(voucher('CT', '2026-02-05', [L('1111', '100'), L('1121', '0', '100')]));
+    expect(noFrom.statusCode).toBe(400); expect(code(noFrom)).toBe('VOUCHER_FIELD_REQUIRED'); expect(noFrom.json().error.message).toBe('Chuyển tiền nội bộ: thiếu Tài khoản ngân hàng');
   });
 
   it('tài khoản ngân hàng của đối tượng phải thuộc đối tượng của chứng từ: 404 PARTY_BANK_ACCOUNT_NOT_FOUND', async () => {
