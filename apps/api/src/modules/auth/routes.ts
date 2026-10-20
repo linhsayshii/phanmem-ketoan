@@ -15,7 +15,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       throw new AppError('LOGIN_THROTTLED', `Đăng nhập sai quá nhiều lần, thử lại sau ${cfg.LOGIN_LOCK_MINUTES} phút`, 429);
     }
     if (!r) throw new AppError('BAD_CREDENTIALS', 'Sai tên đăng nhập hoặc mật khẩu', 401);
-    reply.setCookie('sid', r.sessionId, cookieOpts);
+    reply.setCookie('sid', r.sessionToken, cookieOpts);
     return { userId: r.userId, tenantId: r.tenantId, tenants: r.tenants };
   });
 

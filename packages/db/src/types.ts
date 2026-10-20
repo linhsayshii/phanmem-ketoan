@@ -35,7 +35,7 @@ export interface TenantUserTable {
   tenant_id: string; user_id: string; role_id: string;
   sensitive_flags: JSONColumnType<string[]>; is_active: Generated<boolean>;
 }
-export interface UserSessionTable { id: Generated<string>; user_id: string; tenant_id: string | null; expires_at: Timestamp; created_at: Generated<string>; ip: string | null }
+export interface UserSessionTable { id: Generated<string>; user_id: string;  token_hash: string; tenant_id: string | null; expires_at: Timestamp; created_at: Generated<string>; ip: string | null }
 export interface LoginEventTable { id: Generated<number>; ts: Generated<string>; username: string; user_id: string | null; success: boolean; ip: string | null }
 export interface AuditEventTable {
   id: Generated<number>; tenant_id: string; ts: Generated<string>; user_id: string | null;

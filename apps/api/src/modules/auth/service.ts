@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import argon2 from 'argon2';
 import { sql, type Kysely } from 'kysely';
 import { withTenant, type Database } from '@kt/db';
@@ -10,7 +10,9 @@ export const verifyPassword = (hash: string, pw: string) => argon2.verify(hash, 
 let dummyHash: Promise<string> | undefined;
 const getDummyHash = () => (dummyHash ??= hashPassword(randomUUID()));
 
-export interface LoginResult { sessionId: string; userId: string; tenantId: string | null; tenants: { id: string; code: string; name: string }[] }
+export const hashSessionToken = (token: string) => createHash('sha256').update(token).digest('hex');
+
+export interface LoginResult { sessionToken: string; userId: string; tenantId: string | null; tenants: { id: string; code: string; name: string }[] }
 
 export async function login(db: Kysely<Database>, input: { username: string; password: string; ip: string; ttlHours: number; limits: { maxFailsUser: number; maxFailsIp: number; lockMinutes: number } }): Promise<LoginResult | null | 'throttled'> {
   const { maxFailsUser, maxFailsIp, lockMinutes } = input.limits;
@@ -29,10 +31,14 @@ export async function login(db: Kysely<Database>, input: { username: string; pas
   if (!user || !ok) return null;
   const tenants = await listTenantsOf(db, user.id);
   const tenantId = tenants.length === 1 ? tenants[0]!.id : null;
-  const s = await db.insertInto('user_session')
-    .values({ user_id: user.id, tenant_id: tenantId, ip: input.ip, expires_at: sql`now() + make_interval(hours => ${input.ttlHours})` })
-    .returning('id').executeTakeFirstOrThrow();
-  return { sessionId: s.id, userId: user.id, tenantId, tenants };
+  const sessionToken = randomBytes(32).toString('base64url');
+  await db.transaction().execute(async (trx) => {
+    await trx.deleteFrom('user_session').where('expires_at', '<', sql<string>`now()`).execute();
+    await trx.insertInto('user_session')
+      .values({ user_id: user.id, tenant_id: tenantId, ip: input.ip, token_hash: hashSessionToken(sessionToken), expires_at: sql`now() + make_interval(hours => ${input.ttlHours})` })
+      .execute();
+  });
+  return { sessionToken, userId: user.id, tenantId, tenants };
 }
 
 export async function listTenantsOf(db: Kysely<Database>, userId: string) {

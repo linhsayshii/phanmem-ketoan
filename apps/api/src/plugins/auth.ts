@@ -1,6 +1,7 @@
 import fp from 'fastify-plugin';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { withTenant } from '@kt/db';
+import { hashSessionToken } from '../modules/auth/service.js';
 import { AppError } from './errors.js';
 
 export interface AuthCtx {
@@ -25,7 +26,7 @@ export default fp(async (app) => {
     if (!unsigned.valid || !unsigned.value) return;
     const s = await app.db.selectFrom('user_session').innerJoin('app_user', 'app_user.id', 'user_session.user_id')
       .select(['user_session.id', 'user_session.user_id', 'user_session.tenant_id', 'user_session.expires_at', 'app_user.username', 'app_user.is_active'])
-      .where('user_session.id', '=', unsigned.value).executeTakeFirst();
+      .where('user_session.token_hash', '=', hashSessionToken(unsigned.value)).executeTakeFirst();
     if (!s || !s.is_active || new Date(s.expires_at) < new Date()) return;
     const ctx: AuthCtx = { sessionId: s.id, userId: s.user_id, username: s.username, tenantId: s.tenant_id, permissions: new Set(), sensitive: new Set() };
     if (s.tenant_id) {

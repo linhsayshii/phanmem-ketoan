@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import { sql } from 'kysely';
 import { createTestUser } from '@kt/db/testing';
 import { bootstrapTenant, createTestApp, TEST_PASSWORD, type TestApp } from './helpers.js';
@@ -52,6 +53,24 @@ describe('xác thực', () => {
   const login = (app: TestApp['app'], username: string, password: string, headers: Record<string, string> = {}) =>
     app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password }, headers });
   const mk = async (p: string) => { const username = `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`; await createTestUser(ctx.t.admin, { username, passwordHash: await hashPassword(TEST_PASSWORD) }); return username; };
+
+  it('cookie phiên không trùng bất kỳ giá trị nào lưu trong user_session', async () => {
+    const { cookie, userId } = await bootstrapTenant(ctx, { code: 'SESS1' });
+    const token = ctx.app.unsignCookie(cookie.replace(/^sid=/, '')).value!;
+    const rows = await ctx.t.admin.selectFrom('user_session').selectAll().where('user_id', '=', userId).execute();
+    expect(rows).toHaveLength(1);
+    expect(Object.values(rows[0]!).map(String)).not.toContain(token);
+    expect(rows[0]!.token_hash).toBe(createHash('sha256').update(token).digest('hex'));
+  });
+
+  it('đăng nhập dọn phiên đã hết hạn', async () => {
+    const { userId } = await bootstrapTenant(ctx, { code: 'SESS2' });
+    const old = await ctx.t.admin.insertInto('user_session')
+      .values({ user_id: userId, token_hash: 'het-han-' + Date.now(), expires_at: sql`now() - interval '1 day'` }).returning('id').executeTakeFirstOrThrow();
+    await bootstrapTenant(ctx, { code: 'SESS3' });
+    const left = await ctx.t.admin.selectFrom('user_session').select('id').where('id', '=', old.id).execute();
+    expect(left).toHaveLength(0);
+  });
 
   describe('giới hạn đăng nhập sai', () => {
     let lim: TestApp;
