@@ -5,3 +5,4 @@ export * from './permissions.js';
 export * from './period.js';
 export * from './coaTemplate.js';
 export * from './gridKeyboard.js';
+export * from './voucherState.js';
