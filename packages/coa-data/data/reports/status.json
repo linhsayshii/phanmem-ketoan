@@ -1,2 +1,12 @@
-{ "tt99": { "B01": false, "B02": false, "B03": false, "source": "" }, "tt133": { "B01": false, "B02": false, "B03": false, "source": "" },
-  "note": "Nhập đủ chỉ tiêu từ Phụ lục IV TT 99/2025 (B01-DN, B02-DN, B03-DN trực tiếp) và Phụ lục 2 TT 133/2016 (B01a-DNN, B02-DNN, B03-DNN). Đối chiếu từng dòng với reference/sunsoft/DesBC_CDKT_B01_99.csv, DesBC_KQKD_LAILO_99.csv, DesBC_LCTT_TTIEP_99.csv (và bản _133). Khi xong đặt true và ghi source." }
+{
+  "tt99": {
+    "B01": true, "B02": true, "B03": true,
+    "source": "Thông tư 99/2025/TT-BTC ngày 27/10/2025, Phụ lục IV mục 1 (mẫu B01-DN, B02-DN, B03-DN trực tiếp) và phần hướng dẫn lập từng chỉ tiêu",
+    "note": "Gần đúng: sổ cái không có kỳ hạn còn lại nên chỉ tiêu ngắn hạn/dài hạn dùng chung một tài khoản được ghi vào dòng ngắn hạn, dòng dài hạn tương ứng để 0 (B01: 112, 124-126, 165, 211-212, 214-216, 236-238, 251, 265-266, 271, 273, 331-334, 336-339, 341, 343); B01 chưa kết chuyển thì tổng tài sản lệch nguồn vốn bằng lãi lỗ chưa kết chuyển. B02: 21 và 24 để 0 (không có tài khoản chi tiết), bỏ 70-71 (lãi trên cổ phiếu). B03: trực tiếp theo cặp đối ứng, 60 suy ra = 70 - 50 - 61 vì không có số dư đầu kỳ; tiền thu thanh lý qua 711 nằm ở 06."
+  },
+  "tt133": {
+    "B01": true, "B02": true, "B03": true,
+    "source": "Thông tư 133/2016/TT-BTC ngày 26/8/2016, Phụ lục 2 (mẫu B01a-DNN, B02-DNN, B03-DNN trực tiếp) và hướng dẫn lập tại Điều 81",
+    "note": "Gần đúng: B01 122 gồm cả tiền gửi có kỳ hạn dưới 3 tháng (110 chỉ lấy 111+112); 316 không tách cổ phiếu ưu đãi; 415 lấy TK 413 vì văn bản không nêu tài khoản. B02: 02 lấy theo cặp N511/C111,112,131; 23 lấy N635/C111,112,335. B03: 60 suy ra = 70 - 50 - 61 vì không có số dư đầu kỳ; 61 gần 0 vì TT133 ghi chênh lệch tỷ giá qua 515/635; tiền thu thanh lý qua 711 nằm ở 06; cổ tức chi qua 3388 nằm ở 07."
+  }
+}

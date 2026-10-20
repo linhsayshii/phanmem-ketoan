@@ -29,12 +29,21 @@ describe('mẫu báo cáo tài chính', () => {
       }
     }
   });
-  it('dòng ví dụ TT99 đúng định dạng: đối ứng có dấu phẩy được bọc nháy', () => {
-    const b03 = rows.filter((r) => r.regime === 'TT99' && r.reportCode === 'B03');
-    expect(b03.map((r) => r.formula)).toEqual(['N111,112/C511,131', 'N331,152,153,156,641,642/C111,112', 'N334/C111,112']);
-    expect(b03.map((r) => r.negate)).toEqual([false, true, true]);
-    const b01 = rows.filter((r) => r.regime === 'TT99' && r.reportCode === 'B01');
-    expect(b01.find((r) => r.lineCode === '136')).toMatchObject({ formula: '1388+334+338(3387)', source: 'balance', side: 'debit', parentLineCode: '130', sortOrder: 7 });
+  it('định dạng: đối ứng có dấu phẩy được bọc nháy; chỉ tiêu tiêu biểu đúng văn bản gốc', () => {
+    const get = (r: Regime, c: string, l: string) => rows.find((x) => x.regime === r && x.reportCode === c && x.lineCode === l);
+    expect(get('TT99', 'B03', '03')).toMatchObject({ formula: 'N334/C111,112,113', negate: true, source: 'pair' });
+    expect(get('TT99', 'B01', '135')).toMatchObject({ formula: '1388+334+338+141+244', source: 'balance', side: 'debit', parentLineCode: '130' });
+    expect(get('TT133', 'B01', '124')).toMatchObject({ formula: '2291+2292', side: 'credit', negate: true });
+  });
+  it('cây tổng khép kín: tổng tài sản, tổng nguồn vốn, lợi nhuận sau thuế, lưu chuyển tiền thuần', () => {
+    const f = (r: Regime, c: string, l: string) => rows.find((x) => x.regime === r && x.reportCode === c && x.lineCode === l)?.formula;
+    expect(f('TT99', 'B01', '280')).toBe('[100]+[200]');
+    expect(f('TT99', 'B01', '440')).toBe('[300]+[400]');
+    expect(f('TT133', 'B01', '200')).toBe('[110]+[120]+[130]+[140]+[150]+[160]+[170]+[180]');
+    expect(f('TT133', 'B01', '500')).toBe('[300]+[400]');
+    expect(f('TT99', 'B02', '60')).toBe('[50]-[51]-[52]');
+    expect(f('TT133', 'B02', '60')).toBe('[50]-[51]');
+    for (const r of REGIMES) expect(f(r, 'B03', '50')).toBe('[20]+[30]+[40]');
   });
   it('bộ chưa hoàn tất không được nạp vào bảng mẫu hệ thống; bộ đã hoàn tất phải ghi nguồn', () => {
     const st = reportStatus();
@@ -54,7 +63,7 @@ describe('mẫu báo cáo tài chính', () => {
       for (const code of CODES) {
         if (!complete(regime, code)) { pending.push(`${regime}/${code}`); continue; }
         for (const l of rows.filter((r) => r.regime === regime && r.reportCode === code)) if (l.formula)
-          for (const a of formulaRefs(parseFormula(l.formula)).accounts) expect([...coa].some((c) => c.startsWith(a) || a.startsWith(c)), `${regime}/${code}/${l.lineCode}: TK ${a}`).toBe(true);
+          for (const a of formulaRefs(parseFormula(l.formula)).accounts) expect(coa.has(a) || [...coa].some((c) => c.startsWith(a)), `${regime}/${code}/${l.lineCode}: TK ${a}`).toBe(true);
       }
     }
     if (pending.length) console.warn(`CẢNH BÁO: ${pending.length} bộ báo cáo chưa hoàn tất (chờ văn bản), bỏ qua đối chiếu tài khoản: ${pending.join(', ')}`);
