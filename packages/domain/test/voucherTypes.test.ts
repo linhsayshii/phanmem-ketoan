@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { CASH_PURPOSES, SYSTEM_VOUCHER_TYPES, VOUCHER_TYPES } from '../src/index.js';
+import { CASH_PURPOSES, SYSTEM_VOUCHER_TYPES, VOUCHER_TYPES, voucherTypeDef } from '../src/index.js';
 
 const GD2_TYPES = ['PT', 'PC', 'BC', 'BN', 'CT', 'QTU', 'BT', 'HDB', 'HDM', 'GGB', 'GGM', 'CL', 'DG', 'XQ', 'KTT'];
 
 describe('VOUCHER_TYPES', () => {
+  it('voucherTypeDef: mã có trong danh sách trả cấu hình; khóa của Object.prototype và mã lạ trả undefined', () => {
+    expect(voucherTypeDef('PT')).toBe(VOUCHER_TYPES['PT']);
+    for (const k of ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'ZZ']) expect(voucherTypeDef(k), k).toBeUndefined();
+  });
+
   it('đủ 15 loại GĐ2 và 4 loại có sẵn; khóa trùng mã', () => {
     expect(Object.keys(VOUCHER_TYPES).sort()).toEqual([...GD2_TYPES, 'PKT', 'DK', 'KC', 'PB'].sort());
     for (const [k, d] of Object.entries(VOUCHER_TYPES)) expect(d.code).toBe(k);

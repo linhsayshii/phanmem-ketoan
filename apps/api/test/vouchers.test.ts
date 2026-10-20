@@ -299,6 +299,8 @@ describe('chứng từ', () => {
     const before = await lastNo();
     const [a, b] = await Promise.all([post(v.id), post(v.id)]);
     expect([a.statusCode, b.statusCode].sort()).toEqual([200, 409]);
+    const loser = [a, b].find((r) => r.statusCode === 409)!;
+    expect(['STATE_INVALID', 'CONCURRENT_RETRY']).toContain(loser.json().error.code); // người thua thua vì tranh chấp ghi sổ, không vì lý do khác
     expect(await lastNo()).toBe(before + 1);
   });
 

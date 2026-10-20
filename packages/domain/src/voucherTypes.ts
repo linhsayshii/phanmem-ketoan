@@ -44,6 +44,9 @@ export const VOUCHER_TYPES: Record<string, VoucherTypeDef> = Object.fromEntries(
   def({ code: 'KTT', name: 'Khấu trừ thuế GTGT', module: 'general' }),
 ]);
 
+// Tra theo mã người dùng nhập: Object.hasOwn để 'constructor', '__proto__'... không ra thành viên của Object.prototype.
+export const voucherTypeDef = (code: string): VoucherTypeDef | undefined => (Object.hasOwn(VOUCHER_TYPES, code) ? VOUCHER_TYPES[code] : undefined);
+
 type PurposeRegime = Extract<Regime, 'TT133' | 'TT99' | 'TT200'>;
 export interface CashPurpose {
   code: string; label: string; types: ('PT' | 'PC' | 'BC' | 'BN')[]; counterAccounts: Record<PurposeRegime, string[]>; partyRequired: boolean;

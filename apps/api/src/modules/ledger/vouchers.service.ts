@@ -1,7 +1,7 @@
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
-import { CASH_PURPOSES, D, HEADER_FIELD_LABELS, sum, SYSTEM_VOUCHER_TYPES, VND_AMOUNT_MSG, VND_AMOUNT_RE, VOUCHER_TYPES, type HeaderField, type VoucherTypeDef } from '@kt/domain';
+import { CASH_PURPOSES, D, HEADER_FIELD_LABELS, sum, SYSTEM_VOUCHER_TYPES, VND_AMOUNT_MSG, VND_AMOUNT_RE, voucherTypeDef, type CashPurpose, type HeaderField, type VoucherTypeDef } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { likePattern } from '../master/crud.js';
 
@@ -138,7 +138,7 @@ const HEADER_VALUE: Record<HeaderField, (i: VoucherInput) => unknown> = {
 const MONEY_LABEL = { cash: 'tiền mặt', bank: 'tiền gửi ngân hàng' } as const;
 
 // Quy tắc theo loại chứng từ (VOUCHER_TYPES): trường bắt buộc, mục đích, dòng tiền đúng chiều, đối tượng ở dòng đối ứng. Loại không có trong VOUCHER_TYPES (loại tự thêm) không bị kiểm.
-function assertTypeRules(def: VoucherTypeDef, input: VoucherInput, lines: ResolvedLine[], accounts: Lookup['accounts']): void {
+function assertTypeRules(def: VoucherTypeDef, input: VoucherInput, lines: ResolvedLine[], accounts: Lookup['accounts'], regime: string): void {
   for (const f of def.required) {
     const v = HEADER_VALUE[f](input);
     if (v === null || v === undefined || v === '') throw new AppError('VOUCHER_FIELD_REQUIRED', `${def.name}: thiếu ${HEADER_FIELD_LABELS[f]}`, 400);
@@ -151,9 +151,13 @@ function assertTypeRules(def: VoucherTypeDef, input: VoucherInput, lines: Resolv
     if (!lines.some((l) => D(l[side]).gt(0) && kindOf(l) === def.moneyKind))
       throw new AppError('VOUCHER_CASH_LINE_REQUIRED', `${def.name} phải có dòng ${side === 'debit' ? 'Nợ' : 'Có'} tài khoản ${MONEY_LABEL[def.moneyKind]}`, 400);
   }
-  if (purpose?.partyRequired) { // dòng đối ứng: bên ngược chiều với dòng tiền, không phải tài khoản tiền
-    const side = def.cashSide === 'in' ? 'credit' : 'debit';
-    const bad = lines.find((l) => D(l[side]).gt(0) && kindOf(l) !== 'cash' && kindOf(l) !== 'bank' && l.party_id === null);
+  if (def.header.includes('counterBankAccount')) { // chuyển tiền nội bộ: dòng Nợ trên tài khoản ngân hàng là tài khoản nhận
+    if (!input.counterBankAccountNo && lines.some((l) => D(l.debit).gt(0) && kindOf(l) === 'bank')) throw new AppError('VOUCHER_FIELD_REQUIRED', `${def.name}: thiếu ${HEADER_FIELD_LABELS.counterBankAccount}`, 400);
+    if (input.bankAccountNo && input.bankAccountNo === input.counterBankAccountNo) throw new AppError('BANK_TRANSFER_SAME_ACCOUNT', `${def.name}: tài khoản chuyển đi và tài khoản nhận phải khác nhau`, 400);
+  }
+  if (purpose?.partyRequired) { // chỉ dòng trên tài khoản đối ứng của mục đích (ví dụ 131); dòng thuế, chênh lệch tỷ giá... không bắt buộc đối tượng
+    const counter = purpose.counterAccounts[regime as keyof CashPurpose['counterAccounts']] ?? []; // TT58 không có mục đích: không dòng nào bị đòi
+    const bad = lines.find((l) => (D(l.debit).gt(0) || D(l.credit).gt(0)) && counter.includes(accounts.get(l.account_id)!.code) && l.party_id === null);
     if (bad) throw new AppError('LINE_PARTY_REQUIRED', `Mục đích "${purpose.label}": dòng tài khoản ${accounts.get(bad.account_id)!.code} phải có đối tượng`, 400);
   }
 }
@@ -182,7 +186,7 @@ async function partyBankId(trx: Trx, partyId: string | null, no: string | null |
 }
 
 // Tra cứu, kiểm quy tắc theo loại và gán tài khoản ngân hàng cho dòng; dùng chung cho tạo mới và sửa nháp.
-async function prepareVoucher(trx: Trx, lookup: Lookup, input: VoucherInput) {
+async function prepareVoucher(trx: Trx, lookup: Lookup, input: VoucherInput, regime: string) {
   const bank = bankLookup(trx);
   const partyId = (await lookup('party', input.partyCode)) as string | null;
   const headerBank = await bank(input.bankAccountNo); const counterBank = await bank(input.counterBankAccountNo);
@@ -193,8 +197,8 @@ async function prepareVoucher(trx: Trx, lookup: Lookup, input: VoucherInput) {
   };
   const lines: ResolvedLine[] = [];
   for (const l of input.lines) lines.push(await resolveLine(lookup, l, input.currencyCode, input.fxRate));
-  const def = VOUCHER_TYPES[input.voucherType];
-  if (def) assertTypeRules(def, input, lines, lookup.accounts);
+  const def = voucherTypeDef(input.voucherType);
+  if (def) assertTypeRules(def, input, lines, lookup.accounts, regime);
   // Dòng riêng ghi tài khoản ngân hàng thì dùng; dòng trên tài khoản ngân hàng không ghi thì lấy của tiêu đề. Chuyển tiền nội bộ: dòng Có là tài khoản chuyển đi (bankAccountNo), dòng Nợ là tài khoản nhận (counterBankAccountNo).
   const transfer = def?.header.includes('counterBankAccount') ?? false;
   for (const [i, r] of lines.entries()) {
@@ -214,7 +218,7 @@ const SYSTEM_TYPE_MSG: Record<string, string> = {
 };
 // Loại do hệ thống sinh (SYSTEM_VOUCHER_TYPES) không lập tay; hóa đơn, giảm giá, trả lại lập ở /api/invoices.
 const assertNotSystemType = (voucherType: string) => {
-  const def = VOUCHER_TYPES[voucherType];
+  const def = voucherTypeDef(voucherType);
   if (SYSTEM_VOUCHER_TYPES.includes(voucherType) || def?.manual === false) throw new AppError('VOUCHER_TYPE_SYSTEM', SYSTEM_TYPE_MSG[voucherType] ?? `${def?.name ?? voucherType} do hệ thống sinh, không lập tay`, 409);
   if (def?.hasItems) throw new AppError('VOUCHER_TYPE_USE_INVOICE', `${def.name} lập ở màn hình Hóa đơn, không lập qua chứng từ chung`, 409);
 };
@@ -243,8 +247,8 @@ export async function createVoucher(trx: Trx, ctx: { tenantId: string; userId: s
     const existing = await trx.selectFrom('voucher').select('id').where('idempotency_key', '=', input.idempotencyKey).executeTakeFirst();
     if (existing) return getVoucher(trx, existing.id);
   }
-  const lookup = lookupIn(trx, (await periodOf(trx, input.postingDate, input.voucherType)).regime);
-  const { header, lines } = await prepareVoucher(trx, lookup, input);
+  const { regime } = await periodOf(trx, input.postingDate, input.voucherType);
+  const { header, lines } = await prepareVoucher(trx, lookupIn(trx, regime), input, regime);
   const v = await trx.insertInto('voucher').values({
     tenant_id: ctx.tenantId, voucher_type: input.voucherType, posting_date: input.postingDate, document_date: input.documentDate, description: input.description ?? null,
     ...header, currency_code: input.currencyCode, fx_rate: input.fxRate ?? null, idempotency_key: input.idempotencyKey ?? null, created_by: ctx.userId,
@@ -273,7 +277,7 @@ export async function updateDraft(trx: Trx, id: string, version: number, input: 
   // Số đã cấp gắn với loại chứng từ và năm tài chính (bộ đếm theo năm): đổi một trong hai sẽ cấp số trùng hoặc lệch.
   if (v.voucher_no !== null && (input.voucherType !== v.voucher_type || period.fiscal_year !== v.fiscal_year))
     throw new AppError('VOUCHER_NUMBER_LOCKED', 'Chứng từ đã có số: không đổi loại chứng từ hoặc năm tài chính; hãy Hủy và lập mới', 409);
-  const { header, lines } = await prepareVoucher(trx, lookupIn(trx, period.regime), input);
+  const { header, lines } = await prepareVoucher(trx, lookupIn(trx, period.regime), input, period.regime);
   await trx.deleteFrom('voucher_line').where('voucher_id', '=', id).execute();
   await trx.updateTable('voucher').set({ voucher_type: input.voucherType, posting_date: input.postingDate, document_date: input.documentDate, description: input.description ?? null,
     ...header, currency_code: input.currencyCode, fx_rate: input.fxRate ?? null }).where('id', '=', id).execute();
@@ -326,7 +330,7 @@ export async function deleteDraft(trx: Trx, id: string): Promise<void> {
 }
 export async function listVouchers(trx: Trx, f: { type?: string | undefined; from?: string | undefined; to?: string | undefined; state?: string | undefined; q?: string | undefined; page: number; size: number }): Promise<{ rows: VoucherListRow[]; total: number }> {
   let q = trx.selectFrom('voucher as v').leftJoin('party as p', 'p.id', 'v.party_id');
-  const types = f.type?.split(',').filter(Boolean) ?? []; // type nhận danh sách mã cách nhau dấu phẩy
+  const types = f.type?.split(',').map((t) => t.trim()).filter(Boolean) ?? []; // type nhận danh sách mã cách nhau dấu phẩy
   if (types.length) q = q.where('v.voucher_type', 'in', types);
   if (f.from) q = q.where('v.posting_date', '>=', f.from);
   if (f.to) q = q.where('v.posting_date', '<=', f.to);

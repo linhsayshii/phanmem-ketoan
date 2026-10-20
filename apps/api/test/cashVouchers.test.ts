@@ -43,8 +43,10 @@ describe('phiếu thu, phiếu chi', () => {
     const wrong = await create(voucher('PT', '2026-01-07', [L('1111', '10'), L('5113', '0', '10')], { purpose: 'chi_tra_ncc' }));
     expect(wrong.statusCode).toBe(400); expect(code(wrong)).toBe('VOUCHER_PURPOSE_INVALID');
     expect(code(await create(voucher('PKT', '2026-01-07', [L('1111', '10'), L('5113', '0', '10')], { purpose: 'thu_khac' })))).toBe('VOUCHER_PURPOSE_INVALID'); // PKT không có mục đích
-    const noParty = await create(voucher('PT', '2026-01-07', [L('1111', '10'), L('5113', '0', '10')], { purpose: 'thu_khach_hang' }));
+    const noParty = await create(voucher('PT', '2026-01-07', [L('1111', '10'), L('131', '0', '10')], { purpose: 'thu_khach_hang' }));
     expect(noParty.statusCode).toBe(400); expect(code(noParty)).toBe('LINE_PARTY_REQUIRED');
+    // chỉ dòng trên tài khoản đối ứng của mục đích (131) bắt buộc đối tượng; dòng khác (thuế GTGT, doanh thu) thì không
+    expect((await create(voucher('PT', '2026-01-07', [L('1111', '11'), L('131', '0', '10', { partyCode: 'KH001' }), L('33311', '0', '1')], { purpose: 'thu_khach_hang' }))).statusCode).toBe(201);
     expect((await create(voucher('PT', '2026-01-07', [L('1111', '10'), L('5113', '0', '10')], { purpose: 'thu_khac' }))).statusCode).toBe(201);
   });
 
@@ -103,6 +105,16 @@ describe('giấy báo Nợ, giấy báo Có, chuyển tiền nội bộ', () => 
     expect(r.json().lines.map((l: { bankAccountNo: string }) => l.bankAccountNo)).toEqual(['0011002', '0011001']);
   });
 
+  it('Chuyển tiền nội bộ: có dòng Nợ ngân hàng thì bắt buộc tài khoản nhận; tài khoản chuyển đi và nhận phải khác nhau', async () => {
+    const lines = [L('1121', '100'), L('1121', '0', '100')];
+    const noCounter = await create(voucher('CT', '2026-02-05', lines, { bankAccountNo: '0011001' }));
+    expect(noCounter.statusCode).toBe(400); expect(code(noCounter)).toBe('VOUCHER_FIELD_REQUIRED'); expect(noCounter.json().error.message).toContain('Tài khoản ngân hàng nhận');
+    const same = await create(voucher('CT', '2026-02-05', lines, { bankAccountNo: '0011001', counterBankAccountNo: '0011001' }));
+    expect(same.statusCode).toBe(400); expect(code(same)).toBe('BANK_TRANSFER_SAME_ACCOUNT');
+    // rút tiền gửi về quỹ (Nợ 1111, Có 1121) không có dòng Nợ ngân hàng nên không cần tài khoản nhận
+    expect((await create(voucher('CT', '2026-02-05', [L('1111', '100'), L('1121', '0', '100')], { bankAccountNo: '0011001' }))).statusCode).toBe(201);
+  });
+
   it('tài khoản ngân hàng của đối tượng phải thuộc đối tượng của chứng từ: 404 PARTY_BANK_ACCOUNT_NOT_FOUND', async () => {
     const lines = [L('331', '8', '0', { partyCode: 'NCC001' }), L('1121', '0', '8')];
     const base = { bankAccountNo: '0011001', purpose: 'chi_tra_ncc' };
@@ -129,6 +141,31 @@ describe('loại chứng từ do hệ thống sinh và hóa đơn', () => {
     expect([put.statusCode, code(put)]).toEqual([409, 'VOUCHER_TYPE_USE_INVOICE']);
   });
 
+  it('mã loại trùng khóa của Object.prototype: 404 VOUCHER_TYPE_NOT_FOUND (POST và PUT), không 500', async () => {
+    const lines = [L('6422', '1'), L('1111', '0', '1')];
+    for (const t of ['constructor', 'toString', '__proto__']) {
+      const r = await create(voucher(t, '2026-03-02', lines)); expect([t, r.statusCode, code(r)]).toEqual([t, 404, 'VOUCHER_TYPE_NOT_FOUND']);
+    }
+    const draft = (await create(voucher('PKT', '2026-03-02', lines))).json();
+    const put = await ctx.app.inject({ method: 'PUT', url: `/api/vouchers/${draft.id}`, headers: { cookie }, payload: { ...voucher('constructor', '2026-03-02', lines), version: draft.version } });
+    expect([put.statusCode, code(put)]).toEqual([404, 'VOUCHER_TYPE_NOT_FOUND']);
+  });
+
+  it('PUT nháp đổi loại cũng chịu quy tắc theo loại và không làm hỏng nháp khi bị từ chối', async () => {
+    const lines = [L('6422', '1'), L('1111', '0', '1')];
+    const draft = (await create(voucher('PKT', '2026-03-04', lines))).json();
+    const put = (type: string, more: object = {}) => ctx.app.inject({ method: 'PUT', url: `/api/vouchers/${draft.id}`, headers: { cookie }, payload: { ...voucher(type, '2026-03-04', lines, more), version: draft.version } });
+    const toPt = await put('PT'); // không có dòng Nợ tiền mặt
+    expect([toPt.statusCode, code(toPt)]).toEqual([400, 'VOUCHER_CASH_LINE_REQUIRED']);
+    const toBn = await put('BN', { description: 'x' }); // thiếu bankAccountNo
+    expect([toBn.statusCode, code(toBn)]).toEqual([400, 'VOUCHER_FIELD_REQUIRED']);
+    const toCl = await put('CL');
+    expect([toCl.statusCode, code(toCl)]).toEqual([409, 'VOUCHER_TYPE_SYSTEM']);
+    const cur = (await ctx.app.inject({ method: 'GET', url: `/api/vouchers/${draft.id}`, headers: { cookie } })).json();
+    expect(cur).toMatchObject({ voucherType: 'PKT', version: draft.version });
+    expect(cur.lines).toHaveLength(2);
+  });
+
   it('chứng từ sinh từ đối trừ, đánh giá lại, xuất quỹ, khấu trừ GTGT, phân bổ: không sửa, hủy, xóa tay (VOUCHER_SYSTEM_GENERATED)', async () => {
     for (const src of ['settlement_fx', 'fx_revaluation', 'fx_outflow', 'vat_offset', 'amortization']) {
       const v = (await create(voucher('PKT', '2026-03-03', [L('6422', '2'), L('1111', '0', '2')]))).json();
@@ -148,6 +185,8 @@ describe('danh sách và trạng thái kỳ', () => {
     await create(voucher('PT', '2026-04-02', lines)); await create(voucher('PC', '2026-04-02', [L('6422', '6'), L('1111', '0', '6')])); await create(voucher('PKT', '2026-04-02', lines));
     const both = (await ctx.app.inject({ method: 'GET', url: '/api/vouchers?type=PT,PC&from=2026-04-02&to=2026-04-02', headers: { cookie } })).json();
     expect(both.total).toBe(2); expect(both.rows.map((r: { voucherType: string }) => r.voucherType).sort()).toEqual(['PC', 'PT']);
+    const spaced = (await ctx.app.inject({ method: 'GET', url: '/api/vouchers?type=PT,%20PC&from=2026-04-02&to=2026-04-02', headers: { cookie } })).json();
+    expect(spaced.total).toBe(2); // khoảng trắng quanh mã được bỏ
     const one = (await ctx.app.inject({ method: 'GET', url: '/api/vouchers?type=PKT&from=2026-04-02&to=2026-04-02', headers: { cookie } })).json();
     expect(one.total).toBe(1);
   });
