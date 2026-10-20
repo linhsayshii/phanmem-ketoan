@@ -152,6 +152,48 @@ describe('in phiếu thu, phiếu chi, giấy báo, ủy nhiệm chi', () => {
     expect(pdf.rawPayload.subarray(0, 4).toString()).toBe('%PDF'); expect(pdf.headers['content-disposition']).toContain(encodeURIComponent('-unc.pdf'));
   }, 60_000);
 
+  it('Phiếu thu ngoại tệ: Số tiền là nguyên tệ kèm mã tiền và đọc bằng chữ theo tên tiền; Số tiền quy đổi là VND kèm chữ', async () => {
+    const usd = await mk(c133, 'PT', [L('1112', '30492700', '0', { amountCurrency: '1200.50' }), L('131', '0', '30492700', { amountCurrency: '-1200.50', partyCode: 'KH001' })],
+      { currencyCode: 'USD', fxRate: '25400', partyCode: 'KH001', personName: 'John Smith' });
+    const r = await print(c133, usd); expect(r.statusCode, r.body).toBe(200);
+    for (const t of ['Số tiền: <b>1.200,50 USD</b>', '(Viết bằng chữ): <b>Một nghìn hai trăm đô la Mỹ phẩy năm mươi</b>', '+ Tỷ giá ngoại tệ: <b>25.400 (USD)</b>',
+      '+ Số tiền quy đổi: <b>30.492.700 đồng</b> (<b>Ba mươi triệu bốn trăm chín mươi hai nghìn bảy trăm đồng</b>)']) expect(r.body, t).toContain(t);
+    expect(r.body).not.toContain('Số tiền: <b>30.492.700');
+  }, 30_000);
+
+  it('Giấy báo và Ủy nhiệm chi ngoại tệ: số tiền nguyên tệ, chữ theo tên tiền, dòng quy đổi VND', () => {
+    const line = (lineNo: number, accountCode: string, debit: string, credit: string, amountCurrency: string) => ({ lineNo, accountCode, debit, credit, amountCurrency });
+    const v = { voucherType: 'BN', voucherNo: 'BN00001', postingDate: '2026-03-15', description: 'x', totalDebit: '38100', currencyCode: 'USD', fxRate: '25400', personName: null, personAddress: null, partyName: 'NCC', attachmentsCount: null,
+      lines: [line(1, '331', '38100', '0', '1.5000'), line(2, '1122', '0', '38100', '-1.5000')] } as unknown as VoucherDto;
+    const co = { name: 'Cty', address: null, taxCode: null, legalRep: null, chiefAccountant: null, formNo: '', issuedBy: '' };
+    for (const form of ['giay-bao', 'unc']) {
+      const html = renderCashVoucherHtml(v, co, { form, regime: 'TT133', kinds: { '1122': 'bank' }, currencyName: 'Đô la Mỹ' });
+      for (const t of ['<b>1,50 USD</b>', 'Một đô la Mỹ phẩy năm mươi', '<b>38.100 đồng</b> (<b>Ba mươi tám nghìn một trăm đồng</b>)', '25.400 (USD)']) expect(html, `${form}: ${t}`).toContain(t);
+    }
+  });
+
+  it('Số tiền lấy theo dòng quỹ/ngân hàng ở bên tiền của loại chứng từ, không cộng mọi dòng Nợ', async () => {
+    const vk = { partyCode: 'KH001' };
+    const a = await print(c133, await mk(c133, 'PT', [L('1111', '1000000'), L('131', '0', '900000', vk), L('33311', '0', '100000')], vk)); // một dòng quỹ: bằng tổng Nợ
+    expect(a.body).toContain('Số tiền: <b>1.000.000 đồng</b>'); expect(a.body).toContain('Một triệu đồng');
+    const b = await print(c133, await mk(c133, 'PT', [L('1111', '950000'), L('635', '50000'), L('131', '0', '1000000', vk)], vk)); // Nợ 635 chiết khấu: tổng Nợ 1.000.000 nhưng tiền thu 950.000
+    expect(b.body).toContain('Số tiền: <b>950.000 đồng</b>'); expect(b.body).toContain('Chín trăm năm mươi nghìn đồng'); expect(b.body).not.toContain('1.000.000');
+    const c = await print(c133, await mk(c133, 'PC', [L('6422', '1000000'), L('1111', '0', '900000'), L('3388', '0', '100000')])); // Phiếu chi: dòng Có quỹ
+    expect(c.body).toContain('Số tiền: <b>900.000 đồng</b>'); expect(c.body).toContain('Chín trăm nghìn đồng'); expect(c.body).not.toContain('1.000.000');
+    const u = await print(c133, await mk(c133, 'BN', [L('331', '90000000', '0', { partyCode: 'NCC001' }), L('1121', '0', '89000000'), L('3388', '0', '1000000')], { bankAccountNo: '0011001', partyCode: 'NCC001', partyBankAccountNo: '19001' }), '&form=unc');
+    expect(u.body).toContain('Số tiền bằng số: <b>89.000.000 đồng</b>'); expect(u.body).toContain('Tám mươi chín triệu đồng'); expect(u.body).not.toContain('90.000.000');
+  }, 60_000);
+
+  it.each(['01-TT', '02-TT', 'giay-bao', 'unc'].flatMap((f) => [[f, false], [f, true]] as const))('mẫu %s (ngoại tệ: %s) thoát HTML mọi trường người dùng nhập', (form, fx) => {
+    const evil = '<script>alert(1)</script>';
+    const line = (lineNo: number, debit: string, credit: string, amountCurrency: string) => ({ lineNo, accountCode: evil, debit, credit, amountCurrency });
+    const v = { voucherType: form === '01-TT' ? 'PT' : form === '02-TT' ? 'PC' : 'BN', voucherNo: evil, postingDate: '2026-03-15', description: evil, totalDebit: '10', currencyCode: fx ? 'USD' : 'VND', fxRate: fx ? '25400' : null,
+      personName: evil, personAddress: evil, partyName: evil, partyBankAccountNo: evil, attachmentsCount: null, lines: [line(1, '10', '0', '1.5'), line(2, '0', '10', '-1.5')] } as unknown as VoucherDto;
+    const bank = { accountNo: evil, accountName: evil, bankName: evil, branch: evil };
+    const html = renderCashVoucherHtml(v, { name: evil, address: evil, taxCode: evil, legalRep: evil, chiefAccountant: evil, formNo: evil, issuedBy: evil }, { form, regime: 'TT133', own: bank, party: bank, kinds: { [evil]: 'bank' }, currencyName: evil });
+    expect(html).not.toContain('<script>alert'); expect(html).toContain('&lt;script&gt;');
+  });
+
   it('mẫu in không thuộc loại chứng từ: 400 PRINT_FORM_INVALID (Ủy nhiệm chi cho Phiếu thu, mẫu lạ, Phiếu kế toán)', async () => {
     const cases: [string, string, string][] = [[c133, pt, 'unc'], [c133, pt, 'giay-bao'], [c133, pc, '01-TT'], [c133, bn, '02-TT'], [c133, bn, 'khong-co'], [cookie, id, '01-TT'], [cookie, id, 'unc']];
     for (const [ck, vid, form] of cases) {

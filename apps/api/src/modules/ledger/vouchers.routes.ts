@@ -54,8 +54,12 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       const { regime } = await trx.selectFrom('voucher as v').innerJoin('fiscal_period as p', 'p.fiscal_year', 'v.fiscal_year').select('p.regime').where('v.id', '=', v.id).executeTakeFirstOrThrow();
       const f = form ? voucherFormFor(regime, form) : formNoFor(regime, 'PKT');
       const c = { name: t.name, address: t.address, taxCode: t.tax_code, legalRep: t.legal_rep, chiefAccountant: t.chief_accountant, formNo: f?.formNo ?? '', issuedBy: f?.issuedBy ?? '' };
+      if (!form) return { v, form, html: renderVoucherHtml(v, c) };
       const banks = form === 'giay-bao' || form === 'unc' ? await bankInfos(trx, v.id) : {};
-      return { v, form, html: form ? renderCashVoucherHtml(v, c, { form, regime, ...banks }) : renderVoucherHtml(v, c) };
+      // loại sổ chi tiết của tài khoản (tìm dòng quỹ/ngân hàng) và tên tiền ngoại tệ, cho số tiền trên phiếu
+      const kinds = Object.fromEntries((await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', regime).where('code', 'in', [...new Set(v.lines.map((l) => l.accountCode))]).execute()).map((a) => [a.code, a.subledger_kind]));
+      const currencyName = v.currencyCode === 'VND' ? null : (await trx.selectFrom('currency').select('name').where('code', '=', v.currencyCode).executeTakeFirst())?.name;
+      return { v, form, html: renderCashVoucherHtml(v, c, { form, regime, kinds, currencyName, ...banks }) };
     }, READ_SNAPSHOT);
     if (req.query.format === 'html') return reply.type('text/html; charset=utf-8').send(html);
     // số chứng từ lấy từ tiền tố/hậu tố người dùng cấu hình nên phải mã hóa (RFC 5987), không đưa thẳng vào tiêu đề

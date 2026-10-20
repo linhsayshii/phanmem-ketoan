@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, vndInWords } from '../src/format.js';
+import { amountInWords, formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, vndInWords } from '../src/format.js';
 
 describe('format', () => {
   it('số kiểu Việt Nam', () => {
@@ -41,3 +41,13 @@ describe('vndInWords', () => {
   it.each(['-5', '1.5', '', ' 1', '1e3', '12345678901234567', 'abc'])('từ chối %j (âm, không nguyên, quá 16 chữ số)', (a) => expect(() => vndInWords(a)).toThrow());
 });
 
+
+describe('amountInWords', () => {
+  it.each([
+    ['1200.50', 'đô la Mỹ', 'Một nghìn hai trăm đô la Mỹ phẩy năm mươi'], ['1200.5000', 'đô la Mỹ', 'Một nghìn hai trăm đô la Mỹ phẩy năm mươi'], ['1200', 'đô la Mỹ', 'Một nghìn hai trăm đô la Mỹ'],
+    ['1200.00', 'USD', 'Một nghìn hai trăm USD'], ['0.05', 'euro', 'Không euro phẩy không năm'], ['10.5', 'euro', 'Mười euro phẩy năm mươi'], ['3.25', 'euro', 'Ba euro phẩy hai mươi lăm'],
+    ['21.01', 'euro', 'Hai mươi mốt euro phẩy không một'], ['7.1234', 'euro', 'Bảy euro phẩy một nghìn hai trăm ba mươi tư'], ['7.0125', 'euro', 'Bảy euro phẩy không một trăm hai mươi lăm'], ['0', 'euro', 'Không euro'],
+    ['1500000', 'đồng', 'Một triệu năm trăm nghìn đồng'],
+  ])('amountInWords(%s, %s)', (a, u, w) => expect(amountInWords(a, u)).toBe(w));
+  it.each(['-5', '1.', '.5', '1.12345', '', ' 1', '1e3', '12345678901234567', 'abc'])('từ chối %j', (a) => expect(() => amountInWords(a, 'euro')).toThrow());
+});

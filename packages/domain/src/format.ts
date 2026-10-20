@@ -44,14 +44,28 @@ function readGroup(g: string, full: boolean): string {
   if (u) w.push(t > 1 && u === 1 ? 'mốt' : t && u === 5 ? 'lăm' : t > 1 && u === 4 ? 'tư' : DIGIT_WORDS[u]!);
   return w.join(' ');
 }
-// Số tiền VND nguyên (chuỗi thập phân, tối đa 16 chữ số) thành chữ, ví dụ "1500000" -> "Một triệu năm trăm nghìn đồng". Âm hoặc không nguyên: lỗi.
-export function vndInWords(amount: string): string {
-  if (!VND_AMOUNT_RE.test(amount)) throw new Error(`Số tiền VND phải là số nguyên không âm tối đa 16 chữ số: "${amount}"`);
-  const s = amount.padStart(18, '0'); const parts: string[] = [];
+// Đọc số nguyên không âm (chuỗi tối đa 16 chữ số) thành chữ thường: "1500000" -> "một triệu năm trăm nghìn", "0" -> "không".
+function readInt(digits: string): string {
+  const s = digits.padStart(18, '0'); const parts: string[] = [];
   for (let i = 0; i < 6; i++) {
     const g = s.slice(i * 3, i * 3 + 3);
     if (g !== '000') parts.push(readGroup(g, parts.length > 0), GROUP_NAMES[5 - i]!);
   }
-  const words = parts.filter(Boolean).join(' ') || 'không';
-  return `${words[0]!.toUpperCase()}${words.slice(1)} đồng`;
+  return parts.filter(Boolean).join(' ') || 'không';
+}
+const AMOUNT_RE = /^\d{1,16}(\.\d{1,4})?$/;
+// Số tiền (chuỗi thập phân, tối đa 16 chữ số nguyên và 4 chữ số lẻ) thành chữ kèm tên đơn vị: ("1200.50", "đô la Mỹ") -> "Một nghìn hai trăm đô la Mỹ phẩy năm mươi".
+// Phần lẻ khác 0 đọc sau "phẩy", tối thiểu hai chữ số (".5" = "năm mươi", ".05" = "không năm"). Âm hoặc sai dạng: lỗi.
+export function amountInWords(amount: string, unit: string): string {
+  if (!AMOUNT_RE.test(amount)) throw new Error(`Số tiền phải là số không âm tối đa 16 chữ số nguyên, 4 chữ số lẻ: "${amount}"`);
+  const [int, frac = ''] = amount.split('.');
+  let words = `${readInt(int!)} ${unit}`;
+  const f = frac.replace(/0+$/, '').padEnd(2, '0');
+  if (/[1-9]/.test(f)) { const lead = f.length - f.replace(/^0+/, '').length; words += ` phẩy ${'không '.repeat(lead)}${readInt(f.slice(lead))}`; }
+  return `${words[0]!.toUpperCase()}${words.slice(1)}`;
+}
+// Số tiền VND nguyên (chuỗi thập phân, tối đa 16 chữ số) thành chữ, ví dụ "1500000" -> "Một triệu năm trăm nghìn đồng". Âm hoặc không nguyên: lỗi.
+export function vndInWords(amount: string): string {
+  if (!VND_AMOUNT_RE.test(amount)) throw new Error(`Số tiền VND phải là số nguyên không âm tối đa 16 chữ số: "${amount}"`);
+  return amountInWords(amount, 'đồng');
 }
