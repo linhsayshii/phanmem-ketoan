@@ -49,7 +49,8 @@ describe('Màn hình kết chuyển cuối kỳ', () => {
     await screen.findByText('Phân bổ chi phí trả trước');
     await userEvent.click(screen.getAllByRole('button', { name: 'Chạy' })[1]!);
     await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/closing/run', { method: 'POST', json: { stepId: 's2', postingDate: endOfMonth } }));
-    await userEvent.click(screen.getByRole('button', { name: 'Chạy tất cả bước cuối kỳ' }));
+    // findBy: nút còn loading (tên có thêm "loading") tới khi lần chạy trước trả về
+    await userEvent.click(await screen.findByRole('button', { name: 'Chạy tất cả bước cuối kỳ' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Chạy tất cả' }));
     await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/closing/run-all', { method: 'POST', json: { postingDate: endOfMonth } }));
   }, 30_000);
@@ -89,7 +90,7 @@ describe('Màn hình kết chuyển cuối kỳ', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Nạp lại mẫu' }));
     expect(await screen.findByText(/Sơ đồ hiện tại bị thay bằng sơ đồ mẫu/)).toBeInTheDocument();
     expect(screen.queryByText(/5 bước/)).toBeNull();
-  }, 30_000);
+  }, 60_000); // dựng cả biểu mẫu sơ đồ: truy vấn role chậm trên máy 2 CPU
 
   it('lưu sơ đồ: bước chuyển có TK đích, bước phân bổ gửi ratioSource và toAccount null, giữ mã bước; tổng tỷ lệ khác 100 bị chặn', async () => {
     renderPage();
