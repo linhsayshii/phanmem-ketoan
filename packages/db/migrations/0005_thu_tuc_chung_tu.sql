@@ -39,6 +39,7 @@ BEGIN
   SELECT * INTO v FROM voucher WHERE id = p_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'VOUCHER_NOT_FOUND: %', p_id USING ERRCODE = 'P0001'; END IF;
   IF v.state <> 'posted' THEN RAISE EXCEPTION 'STATE_INVALID: chỉ bỏ ghi sổ được chứng từ đang ghi sổ (hiện tại: %)', v.state USING ERRCODE = 'P0001'; END IF;
+  IF v.reversal_of_id IS NOT NULL THEN RAISE EXCEPTION 'STATE_INVALID: chứng từ đảo không bỏ ghi sổ được; hãy đảo lại chứng từ này' USING ERRCODE = 'P0001'; END IF;
   IF v.row_hash IS NOT NULL THEN RAISE EXCEPTION 'VOUCHER_HASHED: chứng từ đã nằm trong chuỗi khóa cứng' USING ERRCODE = 'P0001'; END IF;
   p := fn_period_of(v.tenant_id, v.posting_date, v.voucher_type = 'DK');
   IF p.status <> 'open' THEN RAISE EXCEPTION 'UNPOST_PERIOD_NOT_OPEN: kỳ %/% đã khóa, hãy lập chứng từ đảo', p.period_no, p.fiscal_year USING ERRCODE = 'P0001'; END IF;
@@ -86,3 +87,15 @@ BEGIN
   PERFORM set_config('app.state_change', 'off', true);
   PERFORM fn_audit_voucher(v.tenant_id, 'discard', p_id, jsonb_build_object('voucher_no', v.voucher_no));
 END $$;
+
+-- Sửa diễn giải chứng từ đã ghi sổ (cho phép tại chỗ theo mục 7.1) phải để lại dấu vết; dòng chứng từ đã có trigger audit riêng (fn_line_immutable).
+CREATE OR REPLACE FUNCTION fn_voucher_description_audit() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO audit_event(tenant_id, user_id, action, entity, entity_id, before, after, ip)
+    VALUES (NEW.tenant_id, app_user_id(), 'update', 'voucher', NEW.id::text, jsonb_build_object('description', OLD.description), jsonb_build_object('description', NEW.description),
+            nullif(current_setting('app.client_ip', true), ''));
+  RETURN NULL;
+END $$;
+DROP TRIGGER IF EXISTS trg_voucher_description_audit ON voucher;
+CREATE TRIGGER trg_voucher_description_audit AFTER UPDATE OF description ON voucher FOR EACH ROW
+  WHEN (OLD.state <> 'draft' AND NEW.description IS DISTINCT FROM OLD.description) EXECUTE FUNCTION fn_voucher_description_audit();

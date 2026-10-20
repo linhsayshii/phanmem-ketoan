@@ -43,13 +43,13 @@ type Trx = Transaction<Database>;
 const LABEL = { account: 'tài khoản', party: 'đối tượng', department: 'bộ phận', project: 'vụ việc', cost_item: 'khoản mục chi phí', employee: 'nhân viên' } as const;
 type Lookup = (table: keyof typeof LABEL, code: string | null | undefined) => Promise<number | string | null>;
 
-// Chế độ kế toán của kỳ chứa ngày ghi sổ (chứng từ DK: kỳ 0 bắt đầu đúng ngày đó), giống fn_period_of. Tra một lần cho cả chứng từ.
-async function regimeOf(trx: Trx, postingDate: string, voucherType: string): Promise<string> {
-  const q = trx.selectFrom('fiscal_period').select('regime');
+// Kỳ chứa ngày ghi sổ (chứng từ DK: kỳ 0 bắt đầu đúng ngày đó), giống fn_period_of; lấy chế độ kế toán để tra tài khoản và năm tài chính. Tra một lần cho cả chứng từ.
+async function periodOf(trx: Trx, postingDate: string, voucherType: string): Promise<{ regime: string; fiscal_year: number }> {
+  const q = trx.selectFrom('fiscal_period').select(['regime', 'fiscal_year']);
   const p = await (voucherType === 'DK' ? q.where('period_no', '=', 0).where('date_from', '=', postingDate)
     : q.where('period_no', '>=', 1).where('period_no', '<=', 15).where('date_from', '<=', postingDate).where('date_to', '>=', postingDate)).executeTakeFirst();
   if (!p) throw new AppError('PERIOD_NOT_FOUND', `Ngày ${postingDate} không thuộc kỳ kế toán nào đã mở`, 409);
-  return p.regime;
+  return p;
 }
 // Tra mã sang id, nhớ kết quả trong một lần ghi. Tài khoản tra theo mã VÀ chế độ (một công ty có thể giữ nhiều hệ tài khoản, mã trùng giữa các hệ).
 function lookupIn(trx: Trx, regime?: string): Lookup {
@@ -71,9 +71,10 @@ function lookupIn(trx: Trx, regime?: string): Lookup {
 async function resolveLine(lookup: Lookup, l: LineInput, currency: string) {
   const debit = D(l.debit); const credit = D(l.credit);
   if (debit.gt(0) && credit.gt(0)) throw new AppError('LINE_BOTH_SIDES', `Dòng ${l.accountCode}: chỉ được một bên Nợ hoặc Có`, 400);
+  if (currency !== 'VND' && l.amountCurrency === undefined) throw new AppError('VALIDATION', `Dòng ${l.accountCode}: chứng từ ngoại tệ ${currency} phải có amountCurrency`, 400);
   return {
     account_id: (await lookup('account', l.accountCode)) as number, currency_code: currency, fx_rate: l.fxRate ?? null,
-    amount_currency: currency === 'VND' ? debit.minus(credit).toString() : (l.amountCurrency ?? debit.minus(credit).toString()),
+    amount_currency: currency === 'VND' ? debit.minus(credit).toString() : l.amountCurrency!,
     debit: debit.toString(), credit: credit.toString(),
     party_id: (await lookup('party', l.partyCode)) as string | null,
     department_id: (await lookup('department', l.departmentCode)) as number | null,
@@ -92,7 +93,7 @@ export async function getVoucher(trx: Trx, id: string): Promise<VoucherDto> {
     .leftJoin('cost_item as ci', 'ci.id', 'l.cost_item_id').leftJoin('employee as e', 'e.id', 'l.employee_id')
     .select(['l.line_no', 'a.code as account_code', 'a.name as account_name', 'l.debit', 'l.credit', 'l.amount_currency', 'l.fx_rate', 'p.code as party_code', 'p.name as party_name',
       'd.code as department_code', 'pr.code as project_code', 'ci.code as cost_item_code', 'e.code as employee_code', 'l.description', 'l.due_date', 'l.extra_dims'])
-    .where('l.voucher_id', '=', id).orderBy('l.line_no').execute();
+    .where('l.voucher_id', '=', id).where('l.posting_date', '=', v.posting_date).orderBy('l.line_no').execute(); // posting_date: chỉ quét partition của tháng chứng từ
   return {
     id: v.id, voucherType: v.voucher_type, voucherNo: v.voucher_no, seqNo: v.seq_no, postingDate: v.posting_date, documentDate: v.document_date, state: v.state, description: v.description,
     partyCode: v.party_code, partyName: v.party_name, currencyCode: v.currency_code, fxRate: v.fx_rate, isClosing: v.is_closing, reversalOfId: v.reversal_of_id, reversedById: v.reversed_by_id,
@@ -115,7 +116,7 @@ export async function createVoucher(trx: Trx, ctx: { tenantId: string; userId: s
     const existing = await trx.selectFrom('voucher').select('id').where('idempotency_key', '=', input.idempotencyKey).executeTakeFirst();
     if (existing) return getVoucher(trx, existing.id);
   }
-  const lookup = lookupIn(trx, await regimeOf(trx, input.postingDate, input.voucherType));
+  const lookup = lookupIn(trx, (await periodOf(trx, input.postingDate, input.voucherType)).regime);
   const v = await trx.insertInto('voucher').values({
     tenant_id: ctx.tenantId, voucher_type: input.voucherType, posting_date: input.postingDate, document_date: input.documentDate, description: input.description ?? null,
     party_id: (await lookup('party', input.partyCode)) as string | null, currency_code: input.currencyCode, fx_rate: input.fxRate ?? null, idempotency_key: input.idempotencyKey ?? null, created_by: ctx.userId,
@@ -129,7 +130,7 @@ export async function createVoucher(trx: Trx, ctx: { tenantId: string; userId: s
 }
 
 async function lockAndCheckVersion(trx: Trx, id: string, version: number) {
-  const v = await trx.selectFrom('voucher').select(['id', 'version', 'state', 'tenant_id']).where('id', '=', id).forUpdate().executeTakeFirst();
+  const v = await trx.selectFrom('voucher').select(['id', 'version', 'state', 'tenant_id', 'voucher_no', 'voucher_type', 'fiscal_year']).where('id', '=', id).forUpdate().executeTakeFirst();
   if (!v) throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy chứng từ', 404);
   if (v.version !== version) throw new AppError('VERSION_CONFLICT', 'Chứng từ đã được người khác sửa, hãy tải lại', 409);
   return v;
@@ -138,7 +139,11 @@ async function lockAndCheckVersion(trx: Trx, id: string, version: number) {
 export async function updateDraft(trx: Trx, id: string, version: number, input: VoucherInput): Promise<VoucherDto> {
   const v = await lockAndCheckVersion(trx, id, version);
   if (v.state !== 'draft') throw new AppError('VOUCHER_POSTED_EDIT', 'Chứng từ đã ghi sổ: chỉ sửa được diễn giải/chiều phân tích, hoặc Bỏ ghi sổ trước', 409);
-  const lookup = lookupIn(trx, await regimeOf(trx, input.postingDate, input.voucherType));
+  const period = await periodOf(trx, input.postingDate, input.voucherType);
+  // Số đã cấp gắn với loại chứng từ và năm tài chính (bộ đếm theo năm): đổi một trong hai sẽ cấp số trùng hoặc lệch.
+  if (v.voucher_no !== null && (input.voucherType !== v.voucher_type || period.fiscal_year !== v.fiscal_year))
+    throw new AppError('VOUCHER_NUMBER_LOCKED', 'Chứng từ đã có số: không đổi loại chứng từ hoặc năm tài chính; hãy Hủy và lập mới', 409);
+  const lookup = lookupIn(trx, period.regime);
   const partyId = (await lookup('party', input.partyCode)) as string | null;
   await trx.deleteFrom('voucher_line').where('voucher_id', '=', id).execute();
   await trx.updateTable('voucher').set({ voucher_type: input.voucherType, posting_date: input.postingDate, document_date: input.documentDate, description: input.description ?? null,
@@ -196,7 +201,7 @@ export async function listVouchers(trx: Trx, f: { type?: string | undefined; fro
   if (f.q) q = q.where((eb) => eb.or([eb('v.voucher_no', 'ilike', `%${f.q}%`), eb('v.description', 'ilike', `%${f.q}%`), eb('p.name', 'ilike', `%${f.q}%`)]));
   const total = Number((await q.select(sql<string>`count(*)`.as('n')).executeTakeFirstOrThrow()).n);
   const rows = await q.select(['v.id', 'v.voucher_type as voucherType', 'v.voucher_no as voucherNo', 'v.posting_date as postingDate', 'v.state', 'v.description', 'p.name as partyName',
-      sql<string>`(SELECT coalesce(sum(debit),0) FROM voucher_line l WHERE l.voucher_id = v.id)`.as('totalDebit')])
+      sql<string>`(SELECT coalesce(sum(debit),0) FROM voucher_line l WHERE l.voucher_id = v.id AND l.posting_date = v.posting_date)`.as('totalDebit')])
     .orderBy('v.posting_date', 'desc').orderBy('v.seq_no', 'desc').orderBy('v.created_at', 'desc').limit(f.size).offset((f.page - 1) * f.size).execute();
   return { rows, total };
 }

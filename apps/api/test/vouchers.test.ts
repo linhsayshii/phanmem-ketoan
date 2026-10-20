@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'kysely';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
 
-let ctx: TestApp; let cookie: string; let tenantId: string;
+let ctx: TestApp; let cookie: string; let tenantId: string; let userId: string;
 beforeAll(async () => {
-  ctx = await createTestApp(); ({ cookie, tenantId } = await bootstrapTenant(ctx, { code: `VC${Date.now()}` }));
+  ctx = await createTestApp(); ({ cookie, tenantId, userId } = await bootstrapTenant(ctx, { code: `VC${Date.now()}` }));
   await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' } });
   await ctx.app.inject({ method: 'POST', url: '/api/catalogs/party', headers: { cookie }, payload: { code: 'KH001', name: 'Khách A', is_customer: true } });
 });
@@ -14,6 +14,16 @@ const pkt = (date: string, lines: object[], extra: object = {}) => ({ voucherTyp
 const L = (accountCode: string, debit = '0', credit = '0', more: object = {}) => ({ accountCode, debit, credit, ...more });
 const post = (id: string) => ctx.app.inject({ method: 'POST', url: `/api/vouchers/${id}/post`, headers: { cookie } });
 const create = (body: object) => ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie }, payload: body });
+const reverse = (id: string, postingDate: string) => ctx.app.inject({ method: 'POST', url: `/api/vouchers/${id}/reverse`, headers: { cookie }, payload: { postingDate } });
+// Đặt quyền của một vai trò trong công ty rồi tạo người dùng thuộc vai trò đó; trả cookie đăng nhập. Quyền được đọc lại ở mỗi yêu cầu nên có hiệu lực ngay.
+async function userWith(roleCode: string, permissions: string[]) {
+  const roles = (await ctx.app.inject({ method: 'GET', url: '/api/roles', headers: { cookie } })).json() as { id: string; code: string }[];
+  await ctx.app.inject({ method: 'PUT', url: `/api/roles/${roles.find((r) => r.code === roleCode)!.id}/permissions`, headers: { cookie }, payload: { permissions } });
+  const username = `${roleCode}_${Date.now()}`;
+  await ctx.app.inject({ method: 'POST', url: '/api/users', headers: { cookie }, payload: { username, fullName: 'Thử quyền', password: 'Matkhau1!', roleCode } });
+  const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+  return `sid=${login.cookies.find((c) => c.name === 'sid')!.value}`;
+}
 
 describe('chứng từ', () => {
   it('tạo nháp, ghi sổ cấp số PKT00001, lần sau PKT00002', async () => {
@@ -133,13 +143,7 @@ describe('chứng từ', () => {
   });
 
   it('quyền và khóa kỳ: bỏ ghi sổ cần voucher.edit_posted; kỳ khóa mềm chỉ ghi được khi có voucher.backdate_locked; kỳ khóa không bỏ ghi sổ được nhưng đảo được', async () => {
-    const roles = (await ctx.app.inject({ method: 'GET', url: '/api/roles', headers: { cookie } })).json() as { id: string; code: string }[];
-    const kv = roles.find((r) => r.code === 'ketoan_vien')!;
-    await ctx.app.inject({ method: 'PUT', url: `/api/roles/${kv.id}/permissions`, headers: { cookie }, payload: { permissions: ['voucher.view', 'voucher.create', 'voucher.post', 'voucher.unpost'] } });
-    const username = `kv_${Date.now()}`;
-    await ctx.app.inject({ method: 'POST', url: '/api/users', headers: { cookie }, payload: { username, fullName: 'Kế toán viên', password: 'Matkhau1!', roleCode: 'ketoan_vien' } });
-    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
-    const kvCookie = `sid=${login.cookies.find((c) => c.name === 'sid')!.value}`;
+    const kvCookie = await userWith('ketoan_vien', ['voucher.view', 'voucher.create', 'voucher.post', 'voucher.unpost']);
     const mine = (body: object) => ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie: kvCookie }, payload: body });
 
     const v = (await create(pkt('2026-05-04', [L('6422', '3'), L('1111', '0', '3')], { autoPost: true }))).json();
@@ -155,6 +159,76 @@ describe('chứng từ', () => {
     expect((await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${v.id}/unpost`, headers: { cookie } })).json().error.code).toBe('UNPOST_PERIOD_NOT_OPEN');
     const rev = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${v.id}/reverse`, headers: { cookie }, payload: { postingDate: '2026-05-10' } });
     expect(rev.statusCode, rev.body).toBe(201); expect(rev.json()).toMatchObject({ state: 'posted', reversalOfId: v.id });
+  });
+
+  it('autoPost cần voucher.post: người chỉ có voucher.create bị 403 và không có gì được tạo; tạo nháp vẫn được', async () => {
+    const xem = await userWith('xem', ['voucher.view', 'voucher.create']);
+    const body = pkt('2026-06-02', [L('6422', '2'), L('1111', '0', '2')]);
+    const key = `deny-${Date.now()}`;
+    const denied = await ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie: xem }, payload: { ...body, idempotencyKey: key, autoPost: true } });
+    expect(denied.statusCode).toBe(403); expect(denied.json().error.code).toBe('FORBIDDEN');
+    const n = await sql<{ n: number }>`SELECT count(*) AS n FROM voucher WHERE tenant_id = ${tenantId}::uuid AND idempotency_key = ${key}`.execute(ctx.t.admin);
+    expect(n.rows[0]!.n).toBe(0);
+    const draft = await ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie: xem }, payload: body });
+    expect(draft.statusCode, draft.body).toBe(201); expect(draft.json().state).toBe('draft');
+  });
+
+  it('chứng từ của công ty khác: xem được 404, ghi sổ báo VOUCHER_NOT_FOUND và chứng từ không đổi', async () => {
+    const other = await bootstrapTenant(ctx, { code: `VX${Date.now()}` });
+    const v = (await create(pkt('2026-06-03', [L('6422', '2'), L('1111', '0', '2')]))).json();
+    const get = await ctx.app.inject({ method: 'GET', url: `/api/vouchers/${v.id}`, headers: { cookie: other.cookie } });
+    expect(get.statusCode).toBe(404); expect(get.json().error.code).toBe('VOUCHER_NOT_FOUND');
+    const posted = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${v.id}/post`, headers: { cookie: other.cookie } });
+    expect(posted.json().error.code).toBe('VOUCHER_NOT_FOUND'); // từ thủ tục SQL nên là 409 theo plugin lỗi (P0001)
+    expect((await ctx.app.inject({ method: 'GET', url: `/api/vouchers/${v.id}`, headers: { cookie } })).json().state).toBe('draft');
+  });
+
+  it('chứng từ đảo không bỏ ghi sổ được (gốc sẽ kẹt ở reversed); đảo lại chứng từ đảo thì được', async () => {
+    const o = (await create(pkt('2026-06-10', [L('6422', '8'), L('1111', '0', '8')], { autoPost: true }))).json();
+    const r = (await reverse(o.id, '2026-06-11')).json();
+    const u = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${r.id}/unpost`, headers: { cookie } });
+    expect(u.statusCode).toBe(409); expect(u.json().error.code).toBe('STATE_INVALID');
+    expect((await ctx.app.inject({ method: 'GET', url: `/api/vouchers/${r.id}`, headers: { cookie } })).json().state).toBe('posted');
+    const rr = await reverse(r.id, '2026-06-12');
+    expect(rr.statusCode, rr.body).toBe(201); expect(rr.json()).toMatchObject({ state: 'posted', reversalOfId: r.id });
+    expect((await ctx.app.inject({ method: 'GET', url: `/api/vouchers/${o.id}`, headers: { cookie } })).json().state).toBe('reversed');
+  });
+
+  it('sửa diễn giải chứng từ đã ghi sổ ghi đúng một dòng audit (trước/sau); sửa chiều phân tích của dòng không ghi thêm dòng audit chứng từ', async () => {
+    const v = (await create(pkt('2026-06-15', [L('6422', '9'), L('1111', '0', '9')], { autoPost: true }))).json();
+    const audits = async () => (await sql<{ user_id: string; before: unknown; after: unknown }>`SELECT user_id, before, after FROM audit_event WHERE tenant_id = ${tenantId}::uuid AND entity = 'voucher' AND entity_id = ${v.id} AND action = 'update'`.execute(ctx.t.admin)).rows;
+    expect(await audits()).toHaveLength(0);
+    const e = await ctx.app.inject({ method: 'PUT', url: `/api/vouchers/${v.id}`, headers: { cookie }, payload: { version: v.version, description: 'Diễn giải mới' } });
+    expect(e.statusCode, e.body).toBe(200);
+    expect(await audits()).toEqual([{ user_id: userId, before: { description: 'Phiếu kế toán thử' }, after: { description: 'Diễn giải mới' } }]);
+    const l = await ctx.app.inject({ method: 'PUT', url: `/api/vouchers/${v.id}`, headers: { cookie }, payload: { version: e.json().version, lines: [{ lineNo: 1, description: 'Dòng 1' }] } });
+    expect(l.statusCode, l.body).toBe(200);
+    expect(await audits()).toHaveLength(1);
+  });
+
+  it('chứng từ nháp đã có số: không đổi loại hoặc năm tài chính (VOUCHER_NUMBER_LOCKED); đổi ngày trong cùng năm thì được', async () => {
+    const v = (await create(pkt('2026-06-20', [L('6422', '11'), L('1111', '0', '11')], { autoPost: true }))).json();
+    const u = (await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${v.id}/unpost`, headers: { cookie } })).json();
+    const put = (body: object) => ctx.app.inject({ method: 'PUT', url: `/api/vouchers/${v.id}`, headers: { cookie }, payload: { ...body, version: u.version } });
+    const lines = [L('6422', '11'), L('1111', '0', '11')];
+    const type = await put({ ...pkt('2026-06-20', lines), voucherType: 'PB' });
+    expect(type.statusCode).toBe(409); expect(type.json().error.code).toBe('VOUCHER_NUMBER_LOCKED');
+    const year = await put(pkt('2027-01-05', lines)); // năm tài chính 2027 đã tạo ở test nhiều hệ tài khoản
+    expect(year.statusCode).toBe(409); expect(year.json().error.code).toBe('VOUCHER_NUMBER_LOCKED');
+    const same = await put(pkt('2026-06-25', lines));
+    expect(same.statusCode, same.body).toBe(200); expect(same.json()).toMatchObject({ voucherNo: v.voucherNo, postingDate: '2026-06-25', state: 'draft' });
+  });
+
+  it('ngoại tệ: dòng thiếu amountCurrency bị 400 VALIDATION; đủ amountCurrency thì ghi sổ được và đảo chiều nguyên tệ', async () => {
+    const usd = (lines: object[]) => create(pkt('2026-06-05', lines, { currencyCode: 'USD', fxRate: '25400', autoPost: true }));
+    const bad = await usd([L('1111', '25400000'), L('5113', '0', '25400000')]);
+    expect(bad.statusCode).toBe(400); expect(bad.json().error.code).toBe('VALIDATION');
+    const ok = await usd([L('1111', '25400000', '0', { amountCurrency: '1000' }), L('5113', '0', '25400000', { amountCurrency: '-1000' })]);
+    expect(ok.statusCode, ok.body).toBe(201);
+    expect(ok.json().lines.map((l: { amountCurrency: string }) => l.amountCurrency)).toEqual(['1000.0000', '-1000.0000']);
+    const r = await reverse(ok.json().id, '2026-06-06');
+    expect(r.statusCode, r.body).toBe(201);
+    expect(r.json().lines.map((l: { amountCurrency: string }) => l.amountCurrency)).toEqual(['-1000.0000', '1000.0000']);
   });
 
   it('ghi sổ gửi việc tính lại số dư vào hàng đợi cho worker', async () => {
