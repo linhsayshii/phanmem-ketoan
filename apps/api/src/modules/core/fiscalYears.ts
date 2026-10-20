@@ -5,6 +5,7 @@ import { buildFiscalPeriods, type Regime } from '@kt/domain';
 import type { Database } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
 import { generateAccounts } from '../coa/service.js';
+import { loadClosingTemplate } from '../ledger/closing.js';
 
 export const fiscalYearBody = z.object({
   fiscalYear: z.number().int().min(2000).max(2100), dateFrom: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-01$/, 'Ngày bắt đầu phải là ngày đầu tháng (YYYY-MM-01)'),
@@ -26,6 +27,8 @@ export async function createFiscalYear(trx: Transaction<Database>, tenantId: str
   await trx.insertInto('fiscal_period').values(periods.map((p) => ({ tenant_id: tenantId, fiscal_year: p.fiscalYear, period_no: p.periodNo, date_from: p.dateFrom, date_to: p.dateTo, regime: p.regime }))).execute();
   const hasAccounts = await trx.selectFrom('account').select('id').where('regime', '=', input.regime).limit(1).executeTakeFirst();
   if (!hasAccounts) await generateAccounts(trx, tenantId, input.regime as Regime);
+  // Sơ đồ kết chuyển mặc định chỉ nạp khi công ty chưa có bước nào (năm sau không ghi đè sơ đồ đã sửa).
+  if (!(await trx.selectFrom('closing_step').select('id').limit(1).executeTakeFirst())) await loadClosingTemplate(trx, tenantId);
   return periods.length;
 }
 

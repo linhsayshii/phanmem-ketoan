@@ -152,6 +152,15 @@ export interface AccountPeriodBalanceTable {
   computed_at: Generated<string>;
 }
 
+export interface ClosingStepTable {
+  id: Generated<string>; tenant_id: string; step_order: number; name: string; mode: string; from_accounts: string[]; to_account: string | null;
+  keep_balance: NumericDefault; by_dimension: string | null; ratio_source: JSONColumnType<unknown> | null; run_at: Generated<string>; is_active: Generated<boolean>;
+}
+// step_id NULL khi bước đã bị xóa khỏi sơ đồ: nhật ký chạy vẫn còn để lần ra chứng từ KC/PB.
+export interface ClosingRunTable {
+  id: Generated<number>; tenant_id: string; step_id: string | null; posting_date: DateOnly; voucher_id: string; status: Generated<string>; created_at: Generated<string>; created_by: string | null;
+}
+
 export interface Database {
   tenant: TenantTable;
   app_user: AppUserTable;
@@ -193,4 +202,6 @@ export interface Database {
   balance_stale: BalanceStaleTable;
   account_period_balance: AccountPeriodBalanceTable;
   opening_balance: OpeningBalanceTable;
+  closing_step: ClosingStepTable;
+  closing_run: ClosingRunTable;
 }

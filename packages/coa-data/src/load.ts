@@ -18,3 +18,6 @@ export function tt99Status(): { complete: boolean; source: string } {
   const p = dataPath('coa', 'tt99.status.json');
   return existsSync(p) ? (JSON.parse(readFileSync(p, 'utf8')) as { complete: boolean; source: string }) : { complete: false, source: '' };
 }
+
+export interface ClosingStepTemplate { stepOrder: number; name: string; mode: 'transfer' | 'allocate'; fromAccounts: string[]; toAccount: string | null; keepBalance?: string; byDimension?: 'project' | null; ratioSource?: { ratios: { account: string; percent: string }[] } | null; runAt: 'period_end' | 'next_year_start' }
+export function loadDefaultClosingSteps(): ClosingStepTemplate[] { return JSON.parse(readFileSync(dataPath('closing-steps', 'default.json'), 'utf8')) as ClosingStepTemplate[]; }
