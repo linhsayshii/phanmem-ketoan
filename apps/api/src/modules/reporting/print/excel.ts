@@ -22,7 +22,10 @@ export async function renderReportXlsx(docs: ReportDoc[]): Promise<Buffer> {
     for (const r of d.rows) { const row = ws.addRow(d.columns.map((c) => val(c, r[c.key]))); if (r['isBold']) row.font = { bold: true }; }
     if (d.footer) ws.addRow(d.columns.map((c) => val(c, d.footer![c.key]))).font = { bold: true };
     d.columns.forEach((c, i) => {
-      const col = ws.getColumn(i + 1); col.width = c.type === 'number' ? 18 : c.key === 'description' || c.key === 'label' ? 48 : 16;
+      // Rộng theo ô dài nhất của cột (tiêu đề, dòng, dòng cộng), tối đa 60; số tính thêm dấu phân cách hàng nghìn.
+      const shown = (v: unknown) => { const t = String(v ?? ''); return typeof v === 'number' ? t.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : t; };
+      const longest = Math.max(c.label.length, ...[...d.rows, ...(d.footer ? [d.footer] : [])].map((r) => shown(val(c, r[c.key])).length));
+      const col = ws.getColumn(i + 1); col.width = Math.min(60, Math.max(10, longest + 2));
       if (c.type === 'number') { col.numFmt = '#,##0;[Red]-#,##0'; col.alignment = { horizontal: 'right' }; }
     });
   }

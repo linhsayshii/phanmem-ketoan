@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import ExcelJS from 'exceljs';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
 import { renderReportXlsx } from '../src/modules/reporting/print/excel.js';
-import type { ReportDoc } from '../src/modules/reporting/print/html.js';
+import { assertPrintable, MAX_PRINT_ROWS, renderReportBody, type ReportDoc } from '../src/modules/reporting/print/html.js';
+import { closePdfBrowser, limitConcurrency, renderPdf } from '../src/modules/reporting/print/pdf.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 }); // PDF dựng bằng Chromium và nhiều lần gọi DB
 let ctx: TestApp; let cookie: string;
@@ -17,6 +18,7 @@ afterAll(async () => { await ctx.close(); });
 describe('in sổ', () => {
   it('Nhật ký chung HTML có mẫu số S03a-DNN, tên công ty, số tiền; PDF hợp lệ', async () => {
     const h = await ctx.app.inject({ method: 'GET', url: '/api/reports/ledgers/general-journal?from=2026-01-01&to=2026-01-31&format=html', headers: { cookie } });
+    expect(h.body).not.toContain('<td class="num">0</td>'); // dòng dữ liệu: số 0 để trống như sổ giấy; dòng cộng giữ nguyên
     expect(h.body).toContain('S03a-DNN'); expect(h.body).toContain('Công ty TNHH In Thử'); expect(h.body).toContain('SỔ NHẬT KÝ CHUNG'); expect(h.body).toContain('2.500.000'); expect(h.body).toContain('Phạm Thị D');
     const p = await ctx.app.inject({ method: 'GET', url: '/api/reports/ledgers/general-journal?from=2026-01-01&to=2026-01-31&format=pdf', headers: { cookie } });
     expect(p.rawPayload.subarray(0, 4).toString()).toBe('%PDF');
@@ -129,6 +131,14 @@ describe('in sổ: nội dung, hệ tài khoản, quyền', () => {
     expect((await post('/api/print/book-set', { fiscalYear: 2026, include: ['trial'], format: 'xlsx' }, c)).statusCode).toBe(403);
   });
 
+  it('bộ sổ năm cần cả report.view lẫn report.print', async () => {
+    const c = await userCookie('ketoan_vien', ['view_receivable', 'view_payable', 'view_cost']);
+    const body = { fiscalYear: 2026, include: ['trial'], format: 'xlsx' };
+    expect((await post('/api/print/book-set', body, c)).statusCode).toBe(200);
+    await ctx.t.admin.deleteFrom('role_permission').where('tenant_id', '=', tenant2).where('permission_code', '=', 'report.view').where('role_id', 'in', ctx.t.admin.selectFrom('role').select('id').where('tenant_id', '=', tenant2).where('code', '=', 'ketoan_vien')).execute();
+    expect((await post('/api/print/book-set', body, c)).statusCode).toBe(403); // còn report.print nhưng không còn report.view
+  });
+
   it('người thiếu cờ công nợ/giá vốn: sổ 131 và 632 không in được, bộ sổ có Sổ Cái hoặc Nhật ký chung bị 403', async () => {
     expect((await get('/api/reports/ledgers/account?accountCode=131&from=2026-01-01&to=2026-01-31&format=html', restricted)).statusCode).toBe(403);
     expect((await get('/api/reports/ledgers/detail?accountCode=632&from=2026-01-01&to=2026-01-31&format=html', restricted)).statusCode).toBe(403);
@@ -152,5 +162,48 @@ describe('Excel: ô tiền', () => {
     expect(await read('9007199254740993')).toBe('9007199254740993'); // 2^53 + 1: Number() sẽ làm tròn thành ...992
     expect(await read('1234.5')).toBe('1234.5');
     expect(await read(null)).toBeNull();
+  });
+});
+
+describe('in sổ: nội dung ô, kích thước, PDF', () => {
+  const company = { name: 'C', address: null, taxCode: null, legalRep: null, chiefAccountant: null, formNo: 'X', issuedBy: '' };
+  const doc = (over: Partial<ReportDoc>): ReportDoc => ({ title: 'T', formNo: 'X', issuedBy: '', company, subtitle: '', columns: [{ key: 'd', label: 'Ngày', type: 'date' }, { key: 'm', label: 'Tiền', type: 'number' }], rows: [], ...over });
+
+  it('số 0 để trống ở dòng dữ liệu, giữ ở dòng đậm (số dư, cộng) và dòng cộng cuối bảng; ô ngày được thoát ký tự', () => {
+    const html = renderReportBody(doc({ rows: [{ d: '2026-01-05', m: '0' }, { d: '2026-01-06', m: '0.0000' }, { d: '<b>x</b>', m: '1500' }, { m: '0', isBold: true }], footer: { m: '0' } }));
+    const cells = [...html.matchAll(/<td class="num">([^<]*)<\/td>/g)].map((m) => m[1]);
+    expect(cells).toEqual(['', '', '1.500', '0', '0']);
+    expect(html).toContain('&lt;b&gt;x&lt;/b&gt;'); expect(html).not.toContain('<b>x</b>');
+  });
+
+  it('PDF/HTML quá 40.000 dòng bị chặn 413 PRINT_TOO_LARGE, đúng ngưỡng thì cho qua', () => {
+    const rows = (n: number) => Array.from({ length: n }, () => ({}));
+    expect(() => assertPrintable([doc({ rows: rows(MAX_PRINT_ROWS - 10) }), doc({ rows: rows(10) })])).not.toThrow();
+    expect(() => assertPrintable([doc({ rows: rows(MAX_PRINT_ROWS) }), doc({ rows: rows(1) })])).toThrow(expect.objectContaining({ code: 'PRINT_TOO_LARGE', status: 413, message: 'Sổ quá lớn để in PDF một lần; hãy xuất Excel hoặc in theo từng sổ/khoảng ngày' }));
+  });
+
+  it('Excel: cột rộng theo ô dài nhất, tối đa 60', async () => {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await renderReportXlsx([doc({ sheetName: 'W', columns: [{ key: 'tk', label: 'TK' }, { key: 'description', label: 'Diễn giải' }, { key: 'm', label: 'Tiền', type: 'number' }],
+      rows: [{ tk: '1111', description: 'x'.repeat(100), m: '2500000' }, { tk: '6422', description: 'ngắn', m: '3' }] })])) as unknown as ArrayBuffer);
+    const w = (i: number) => wb.worksheets[0]!.getColumn(i).width;
+    expect([w(1), w(2), w(3)]).toEqual([10, 60, 11]); // TK: tối thiểu 10; Diễn giải: bị chặn ở 60; Tiền: "2,500,000" + 2
+  });
+
+  it('semaphore: tối đa 2 tác vụ chạy cùng lúc, tác vụ lỗi vẫn trả chỗ cho người chờ', async () => {
+    const run = limitConcurrency(2); let live = 0; let peak = 0; const done: number[] = [];
+    const task = (i: number, fail = false) => run(async () => { live++; peak = Math.max(peak, live); await new Promise((r) => setTimeout(r, 15)); live--; done.push(i); if (fail) throw new Error('lỗi'); return i; });
+    const results = await Promise.allSettled([task(0), task(1, true), task(2), task(3), task(4, true), task(5)]);
+    expect(peak).toBe(2);
+    expect(results.map((r) => r.status)).toEqual(['fulfilled', 'rejected', 'fulfilled', 'fulfilled', 'rejected', 'fulfilled']);
+    expect(done).toHaveLength(6);
+  });
+
+  it('Chromium không chạy được: renderPdf báo PDF_RENDER_FAILED (500) với thông báo chung, lần sau vẫn dựng được', async () => {
+    const saved = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH; const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await closePdfBrowser(); process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = '/khong/co/chromium';
+    try { await expect(renderPdf('<p>x</p>')).rejects.toMatchObject({ code: 'PDF_RENDER_FAILED', status: 500, message: 'Không tạo được tệp PDF; hãy thử in theo từng phần hoặc xuất Excel' }); }
+    finally { if (saved === undefined) delete process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH; else process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = saved; err.mockRestore(); }
+    expect((await renderPdf('<p>x</p>')).subarray(0, 4).toString()).toBe('%PDF');
   });
 });

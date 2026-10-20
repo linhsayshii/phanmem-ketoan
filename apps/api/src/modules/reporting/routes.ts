@@ -8,7 +8,7 @@ import { accountDetail, accountLedger, assertCanView, generalJournal, regimeOf, 
 import { copyReportTemplates, drillLine, evaluateFinancialReport, saveReportDef } from './financial.js';
 import { bookSetDocs, detailDoc, financialDoc, journalDoc, ledgerDoc, trialBalanceDoc } from './print/bookSet.js';
 import { renderReportXlsx } from './print/excel.js';
-import { renderReportsHtml, type ReportDoc } from './print/html.js';
+import { assertPrintable, renderReportsHtml, type ReportDoc } from './print/html.js';
 import { renderPdf } from './print/pdf.js';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => !Number.isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s, 'Ngày không hợp lệ');
@@ -23,6 +23,7 @@ type PrintFormat = 'html' | 'pdf' | 'xlsx';
 // Tên tệp mã hóa theo RFC 5987 (tên có thể chứa mã tài khoản/báo cáo do người dùng gõ). PDF mở trong tab, Excel tải về. Khổ giấy từng sổ do renderReportsHtml quyết định (CSS), không qua tùy chọn landscape của renderPdf.
 async function respondReport(reply: FastifyReply, docs: ReportDoc[], format: PrintFormat, fileName: string) {
   const name = encodeURIComponent(fileName);
+  if (format !== 'xlsx') assertPrintable(docs); // HTML/PDF dựng cả bộ trong một trang: chặn sổ quá lớn, Excel không bị giới hạn
   if (format === 'html') return reply.type('text/html; charset=utf-8').send(renderReportsHtml(docs));
   if (format === 'pdf') return reply.type('application/pdf').header('content-disposition', `inline; filename*=UTF-8''${name}.pdf`).send(await renderPdf(renderReportsHtml(docs)));
   return reply.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').header('content-disposition', `attachment; filename*=UTF-8''${name}.xlsx`).send(await renderReportXlsx(docs));
@@ -90,7 +91,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     ({ lines: await app.withTenant(req, (trx) => copyReportTemplates(trx, req.auth!.tenantId!, req.body.regime, req.params.code)) }));
 
   // ---- In liên tục cả bộ sổ năm: một PDF nhiều phần hoặc một Excel nhiều sheet ----
-  app.post('/api/print/book-set', { preHandler: app.requirePermission('report.print'), schema: { body: z.object({ fiscalYear: z.number().int(), include: z.array(z.enum(['journal', 'ledgers', 'trial', 'B01', 'B02', 'B03'])).min(1), format: z.enum(['pdf', 'xlsx']) }) } }, async (req, reply) => {
+  app.post('/api/print/book-set', { preHandler: [view, app.requirePermission('report.print')], schema: { body: z.object({ fiscalYear: z.number().int(), include: z.array(z.enum(['journal', 'ledgers', 'trial', 'B01', 'B02', 'B03'])).min(1), format: z.enum(['pdf', 'xlsx']) }) } }, async (req, reply) => {
     // Nhật ký chung và Sổ Cái in mọi tài khoản, gồm công nợ và giá vốn: cần đủ các cờ nhạy cảm như khi xem từng sổ đó.
     if (req.body.include.some((x) => x === 'journal' || x === 'ledgers')) for (const flag of ['view_receivable', 'view_payable', 'view_cost']) if (!req.auth!.sensitive.has(flag)) throw new AppError('FORBIDDEN', `In Nhật ký chung và Sổ Cái cả năm cần cờ nhạy cảm ${flag}`, 403);
     const docs = await app.withTenant(req, (trx) => bookSetDocs(trx, req.auth!.tenantId!, req.body.fiscalYear, req.body.include));

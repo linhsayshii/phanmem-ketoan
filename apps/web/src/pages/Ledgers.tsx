@@ -42,7 +42,7 @@ const FULL_BOOK_FLAGS = ['view_receivable', 'view_payable', 'view_cost']; // Nh�
 const fileKind = { pdf: 'PDF', xlsx: 'Excel' } as const;
 
 // In liên tục cả bộ sổ của một năm tài chính: máy chủ trả một PDF nhiều phần hoặc một Excel nhiều sheet, tải về thành tệp.
-function BookSetModal({ open, onClose }: { open: boolean; onClose(): void }) {
+export function BookSetModal({ open, onClose }: { open: boolean; onClose(): void }) {
   const { me } = useAuth();
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<{ fiscalYear: number; regime: string }[]>('/api/fiscal-years'), enabled: open });
   const [year, setYear] = useState<number | undefined>();
@@ -51,21 +51,22 @@ function BookSetModal({ open, onClose }: { open: boolean; onClose(): void }) {
   const [busy, setBusy] = useState(false);
   const fiscalYear = year ?? years.data?.at(-1)?.fiscalYear;
   const fullBooks = FULL_BOOK_FLAGS.every((f) => me?.sensitive.includes(f));
+  const picked = fullBooks ? include : include.filter((x) => x !== 'journal' && x !== 'ledgers'); // ô bị khóa không còn được tích nên không gửi lên (máy chủ trả 403)
   const run = async () => {
     setBusy(true);
     try {
-      const res = await fetch('/api/print/book-set', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fiscalYear, include, format }) });
+      const res = await fetch('/api/print/book-set', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fiscalYear, include: picked, format }) });
       if (!res.ok) { const b = await res.json().catch(() => null) as { error?: { message?: string } } | null; throw new ApiError('HTTP_' + res.status, b?.error?.message ?? `Lỗi hệ thống (${res.status})`, res.status); }
       const url = URL.createObjectURL(await res.blob());
       const a = Object.assign(document.createElement('a'), { href: url, download: `bo-so-${fiscalYear}.${format}` });
-      a.click(); URL.revokeObjectURL(url); onClose();
+      a.click(); setTimeout(() => URL.revokeObjectURL(url), 0); onClose(); // thu hồi sau khi trình duyệt đã bắt đầu tải
     } catch (e) { void message.error((e as Error).message); } finally { setBusy(false); }
   };
   return (
-    <Modal open={open} onCancel={onClose} title="In cả bộ sổ năm" okText="In" cancelText="Đóng" confirmLoading={busy} okButtonProps={{ disabled: !fiscalYear || !include.length }} onOk={() => void run()}>
+    <Modal open={open} onCancel={onClose} title="In cả bộ sổ năm" okText="In" cancelText="Đóng" confirmLoading={busy} okButtonProps={{ disabled: !fiscalYear || !picked.length }} onOk={() => void run()}>
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
         <Select style={{ width: 200 }} placeholder="Năm tài chính" value={fiscalYear} onChange={setYear} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
-        <Checkbox.Group value={include} onChange={(v) => setInclude(v as string[])} style={{ display: 'grid', gap: 4 }}
+        <Checkbox.Group value={picked} onChange={(v) => setInclude(v as string[])} style={{ display: 'grid', gap: 4 }}
           options={BOOKS.map((b) => ({ ...b, disabled: !fullBooks && (b.value === 'journal' || b.value === 'ledgers') }))} />
         {!fullBooks && <Alert type="info" showIcon message="Nhật ký chung và Sổ Cái cả năm cần đủ các quyền xem công nợ phải thu, phải trả và giá vốn." />}
         <Radio.Group optionType="button" value={format} onChange={(e) => setFormat(e.target.value as 'pdf' | 'xlsx')} options={Object.entries(fileKind).map(([value, label]) => ({ value, label }))} />
