@@ -45,6 +45,7 @@ export interface LegalParamTable { id: Generated<number>; code: string; value: J
 export interface FiscalPeriodTable {
   id: Generated<number>; tenant_id: string; fiscal_year: number; period_no: number;
   date_from: DateOnly; date_to: DateOnly; regime: string; status: Generated<string>; locked_modules: Generated<string[]>;
+  hash_tail: Buffer | null; locked_by: string | null; locked_at: Timestamp | null;
 }
 export interface AccountTable {
   id: Generated<number>; tenant_id: string; regime: string; code: string; name: string; name_en: string | null;

@@ -21,6 +21,7 @@ import coaRoutes from './modules/coa/routes.js';
 import masterRoutes from './modules/master/routes.js';
 import auditRoutes from './modules/audit/routes.js';
 import voucherRoutes from './modules/ledger/vouchers.routes.js';
+import periodRoutes from './modules/ledger/periods.routes.js';
 
 declare module 'fastify' { interface FastifyInstance { config: Config; boss: PgBoss | null } }
 
@@ -47,6 +48,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(masterRoutes);
   await app.register(auditRoutes);
   await app.register(voucherRoutes);
+  await app.register(periodRoutes);
   app.get('/api/health', async () => ({ ok: true }));
   return app;
 }
