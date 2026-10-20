@@ -22,7 +22,7 @@ export function defaultNormalBalance(code: string): 'debit' | 'credit' {
 }
 
 // CSV đơn giản: không có dấu phẩy trong tên; nếu cần thì bọc bằng dấu nháy kép.
-function splitCsvLine(line: string): string[] {
+export function splitCsvLine(line: string): string[] {
   const out: string[] = []; let cur = ''; let q = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i]!;

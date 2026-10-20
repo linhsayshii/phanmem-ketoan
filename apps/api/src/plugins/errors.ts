@@ -1,5 +1,6 @@
 import fp from 'fastify-plugin';
 import { ZodError } from 'zod';
+import { FormulaError } from '@kt/domain';
 
 export class AppError extends Error {
   constructor(public code: string, message: string, public status = 400, public details?: unknown) { super(message); }
@@ -10,6 +11,7 @@ interface PgError extends Error { code?: string; detail?: string; constraint?: s
 export default fp(async (app) => {
   app.setErrorHandler((err: unknown, _req, reply) => {
     if (err instanceof AppError) return reply.status(err.status).send({ error: { code: err.code, message: err.message, ...(err.details !== undefined && { details: err.details }) } });
+    if (err instanceof FormulaError) return reply.status(400).send({ error: { code: 'FORMULA_INVALID', message: err.message } });
     if (err instanceof ZodError) return reply.status(400).send({ error: { code: 'VALIDATION', message: 'Dữ liệu không hợp lệ', details: err.issues } });
     const e = err as PgError & { validation?: unknown; statusCode?: number };
     if (e.validation) return reply.status(400).send({ error: { code: 'VALIDATION', message: e.message } });

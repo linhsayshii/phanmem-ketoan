@@ -7,3 +7,4 @@ export * from './coaTemplate.js';
 export * from './gridKeyboard.js';
 export * from './voucherState.js';
 export * from './numbering.js';
+export * from './reportFormula.js';

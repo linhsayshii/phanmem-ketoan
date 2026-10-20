@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { PERMISSIONS } from '@kt/domain';
-import { COA_REGIMES, loadCoaTemplate } from '@kt/coa-data';
+import { COA_REGIMES, loadCoaTemplate, loadReportTemplates } from '@kt/coa-data';
 
 export async function syncReferenceData(adminUrl: string): Promise<void> {
   const client = new pg.Client({ connectionString: adminUrl });
@@ -27,6 +27,19 @@ export async function syncReferenceData(adminUrl: string): Promise<void> {
       }
       await client.query('DELETE FROM coa_template WHERE regime = $1 AND code <> ALL($2::text[])', [regime, rows.map((r) => r.code)]);
     }
+    // Mẫu báo cáo: chỉ bộ đã đối chiếu văn bản gốc (status.json = true) mới thành mẫu hệ thống; bộ chờ văn bản thì bảng rỗng và công ty tự định nghĩa trong trình sửa.
+    const tpl = loadReportTemplates({ onlyComplete: true });
+    for (const r of tpl) {
+      await client.query(
+        `INSERT INTO report_template(regime, report_code, line_code, label, parent_line_code, source, side, formula, sort_order, is_bold, negate, note_ref)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         ON CONFLICT (regime, report_code, line_code) DO UPDATE SET label = EXCLUDED.label, parent_line_code = EXCLUDED.parent_line_code, source = EXCLUDED.source, side = EXCLUDED.side,
+           formula = EXCLUDED.formula, sort_order = EXCLUDED.sort_order, is_bold = EXCLUDED.is_bold, negate = EXCLUDED.negate, note_ref = EXCLUDED.note_ref`,
+        [r.regime, r.reportCode, r.lineCode, r.label, r.parentLineCode, r.source, r.side, r.formula, r.sortOrder, r.isBold, r.negate, r.noteRef]);
+    }
+    await client.query(
+      `DELETE FROM report_template WHERE (regime, report_code, line_code) NOT IN (SELECT a, b, c FROM unnest($1::text[], $2::text[], $3::text[]) AS t(a, b, c))`,
+      [tpl.map((r) => r.regime), tpl.map((r) => r.reportCode), tpl.map((r) => r.lineCode)]);
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { await client.end(); }
 }

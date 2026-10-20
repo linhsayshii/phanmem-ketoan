@@ -1,0 +1,4 @@
+line_code,label,parent_line_code,source,side,formula,is_bold,negate,note_ref
+01,1. Tiền thu từ bán hàng cung cấp dịch vụ và doanh thu khác,,pair,net_debit,"N111,112/C511,131",0,0,
+02,2. Tiền chi trả cho người cung cấp hàng hóa và dịch vụ,,pair,net_debit,"N331,152,153,156,641,642/C111,112",0,1,
+03,3. Tiền chi trả cho người lao động,,pair,net_debit,"N334/C111,112",0,1,

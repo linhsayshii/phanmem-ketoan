@@ -162,6 +162,17 @@ export interface ClosingRunTable {
   id: Generated<number>; tenant_id: string; step_id: string | null; posting_date: DateOnly; voucher_id: string; status: Generated<string>; created_at: Generated<string>; created_by: string | null;
 }
 
+// Mẫu báo cáo hệ thống (toàn cục) và bản của công ty; source/side/formula: xem packages/domain/src/reportFormula.ts.
+export interface ReportTemplateTable {
+  regime: string; report_code: string; line_code: string; label: string; parent_line_code: string | null; source: string; side: string; formula: string | null;
+  sort_order: number; is_bold: Generated<boolean>; negate: Generated<boolean>; note_ref: string | null;
+}
+export interface ReportDefTable { id: Generated<string>; tenant_id: string; regime: string; report_code: string; name: string; form_no: string; issued_by: string }
+export interface ReportLineTable {
+  id: Generated<number>; tenant_id: string; report_def_id: string; line_code: string; label: string; parent_line_code: string | null; source: string; side: string; formula: string | null;
+  sort_order: number; is_bold: Generated<boolean>; negate: Generated<boolean>; note_ref: string | null;
+}
+
 export interface Database {
   tenant: TenantTable;
   app_user: AppUserTable;
@@ -205,4 +216,7 @@ export interface Database {
   opening_balance: OpeningBalanceTable;
   closing_step: ClosingStepTable;
   closing_run: ClosingRunTable;
+  report_template: ReportTemplateTable;
+  report_def: ReportDefTable;
+  report_line: ReportLineTable;
 }

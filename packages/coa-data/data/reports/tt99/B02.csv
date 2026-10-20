@@ -1,0 +1,6 @@
+line_code,label,parent_line_code,source,side,formula,is_bold,negate,note_ref
+01,1. Doanh thu bán hàng và cung cấp dịch vụ,,movement,net_credit,511,0,0,
+02,2. Các khoản giảm trừ doanh thu,,movement,net_debit,521,0,0,
+10,3. Doanh thu thuần về bán hàng và cung cấp dịch vụ,,lines,net_debit,[01]-[02],1,0,
+11,4. Giá vốn hàng bán,,movement,net_debit,632,0,0,
+20,5. Lợi nhuận gộp về bán hàng và cung cấp dịch vụ,,lines,net_debit,[10]-[11],1,0,

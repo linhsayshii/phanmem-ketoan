@@ -1,0 +1,2 @@
+{ "tt99": { "B01": false, "B02": false, "B03": false, "source": "" }, "tt133": { "B01": false, "B02": false, "B03": false, "source": "" },
+  "note": "Nhập đủ chỉ tiêu từ Phụ lục IV TT 99/2025 (B01-DN, B02-DN, B03-DN trực tiếp) và Phụ lục 2 TT 133/2016 (B01a-DNN, B02-DNN, B03-DNN). Đối chiếu từng dòng với reference/sunsoft/DesBC_CDKT_B01_99.csv, DesBC_KQKD_LAILO_99.csv, DesBC_LCTT_TTIEP_99.csv (và bản _133). Khi xong đặt true và ghi source." }
