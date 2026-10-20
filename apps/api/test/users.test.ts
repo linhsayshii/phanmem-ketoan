@@ -1,5 +1,6 @@
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PERMISSION_CODES } from '@kt/domain';
 import { bootstrapTenant, createTestApp, TEST_PASSWORD, type TestApp } from './helpers.js';
 
 let ctx: TestApp;
@@ -28,6 +29,22 @@ describe('người dùng và vai trò', () => {
     expect(kt.permissions).toContain('voucher.post');
     expect(kt.permissions).not.toContain('voucher.unpost');
     expect(kt.permissions).not.toContain('user.create');
+  });
+
+  it('công ty mới: quyền GĐ2 theo vai trò (kế toán viên có settlement.create, không có fx.run, tax_return.finalize; xem có tax.view)', async () => {
+    const admin = await bootstrapTenant(ctx, { code: `UG${Date.now()}` });
+    const roles = (await ctx.app.inject({ method: 'GET', url: '/api/roles', headers: { cookie: admin.cookie } })).json() as { code: string; permissions: string[] }[];
+    const perms = (code: string) => new Set(roles.find((r) => r.code === code)!.permissions);
+    const noKetoanVien = ['fx.run', 'tax_return.finalize', 'tax.offset', 'amortization.run', 'dedupe.run'];
+    const gd2 = ['settlement.view', 'settlement.create', 'settlement.delete', 'fx.run', 'cash_count.view', 'cash_count.create', 'cash_count.update', 'cash_count.delete', 'tax.view', 'tax_return.view', 'tax_return.create', 'tax_return.update', 'tax_return.delete', 'tax_return.finalize', 'tax.offset',
+      'voucher.import', 'dedupe.run', 'amortization.view', 'amortization.create', 'amortization.update', 'amortization.delete', 'amortization.run'];
+    expect([...perms('admin')].sort()).toEqual([...PERMISSION_CODES].sort());
+    expect([...perms('ketoan_truong')].sort()).toEqual(PERMISSION_CODES.filter((c) => !/^(user|role)\./.test(c)).sort());
+    const kv = perms('ketoan_vien');
+    for (const c of gd2) expect(kv.has(c), c).toBe(!noKetoanVien.includes(c));
+    const xem = perms('xem');
+    for (const c of ['settlement.view', 'cash_count.view', 'tax.view', 'tax_return.view', 'amortization.view']) expect(xem.has(c), c).toBe(true);
+    for (const c of gd2.filter((c) => !c.endsWith('.view'))) expect(xem.has(c), c).toBe(false);
   });
 
   it('người không có quyền bị 403', async () => {

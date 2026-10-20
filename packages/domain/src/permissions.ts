@@ -3,6 +3,26 @@ export type SensitiveFlag = (typeof SENSITIVE_FLAGS)[number];
 // Ba cờ bảo vệ số liệu công nợ/giá vốn: sổ tổng hợp (Nhật ký chung, Bảng cân đối số phát sinh), bộ sổ năm và gói xuất cho cơ quan thẩm quyền cần đủ cả ba.
 export const SENSITIVE_FLAGS_ALL = ['view_receivable', 'view_payable', 'view_cost'] as const;
 
+// Cờ cần để xem tài khoản theo loại sổ chi tiết; tài khoản giá vốn (632*) cần view_cost. Dùng chung cho sổ sách, số dư và các màn công nợ ở API.
+export const SENSITIVE_BY_SUBLEDGER = { receivable: 'view_receivable', payable: 'view_payable' } as const;
+type SensitiveAccount = { subledger_kind: string | null; code: string };
+const DENIAL: Record<'view_receivable' | 'view_payable' | 'view_cost', string> = {
+  view_receivable: 'Không có quyền xem công nợ phải thu', view_payable: 'Không có quyền xem công nợ phải trả', view_cost: 'Không có quyền xem giá vốn',
+};
+const flagsOf = (acc: SensitiveAccount): (keyof typeof DENIAL)[] => [
+  ...(acc.subledger_kind === 'receivable' || acc.subledger_kind === 'payable' ? [SENSITIVE_BY_SUBLEDGER[acc.subledger_kind]] : []),
+  ...(acc.code.startsWith('632') ? ['view_cost' as const] : []),
+];
+// Lý do cờ nhạy cảm che tài khoản này với người dùng; null là được xem.
+export function sensitiveDenial(auth: { sensitive: Set<string> }, acc: SensitiveAccount): string | null {
+  const missing = flagsOf(acc).find((f) => !auth.sensitive.has(f));
+  return missing ? DENIAL[missing] : null;
+}
+// Mọi cờ cần có để xem hết các tài khoản này (không trùng).
+export function flagsForAccounts(accs: SensitiveAccount[]): SensitiveFlag[] {
+  return [...new Set(accs.flatMap(flagsOf))];
+}
+
 const crud = (res: string, name: string, group: string, extra: [string, string][] = []) => [
   { code: `${res}.view`, name: `Xem ${name}`, group },
   { code: `${res}.create`, name: `Thêm ${name}`, group },
@@ -31,5 +51,15 @@ export const PERMISSIONS: readonly { code: string; name: string; group: string }
   ...crud('report_def', 'định nghĩa báo cáo', 'Báo cáo'),
   { code: 'data_check.run', name: 'Soát lỗi dữ liệu', group: 'Tiện ích' },
   { code: 'data_check.manage', name: 'Quản lý quy tắc soát lỗi', group: 'Tiện ích' },
+  // GĐ2: đối trừ công nợ không có "sửa" (xóa rồi đối trừ lại).
+  ...crud('settlement', 'đối trừ công nợ', 'Công nợ').filter((p) => p.code !== 'settlement.update'),
+  { code: 'fx.run', name: 'Chạy tỷ giá xuất quỹ, đánh giá lại ngoại tệ', group: 'Công nợ' },
+  ...crud('cash_count', 'kiểm kê quỹ', 'Quỹ'),
+  { code: 'tax.view', name: 'Xem sổ và bảng kê thuế', group: 'Thuế' },
+  ...crud('tax_return', 'tờ khai thuế', 'Thuế', [['finalize', 'Chốt']]),
+  { code: 'tax.offset', name: 'Khấu trừ thuế GTGT cuối kỳ', group: 'Thuế' },
+  { code: 'voucher.import', name: 'Nhập chứng từ từ Excel', group: 'Chứng từ' },
+  { code: 'dedupe.run', name: 'Khử trùng chứng từ', group: 'Tiện ích' },
+  ...crud('amortization', 'lịch phân bổ', 'Cuối kỳ', [['run', 'Chạy']]),
 ];
 export const PERMISSION_CODES: readonly string[] = PERMISSIONS.map((p) => p.code);

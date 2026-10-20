@@ -4,6 +4,7 @@ import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
 import { formatVnNumber } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
+import { vnDayEnd, vnDayStart } from '../core/vnTime.js';
 import { renderPdf } from '../reporting/print/pdf.js';
 import { assertPrintable, MAX_PRINT_ROWS, renderReportsHtml, type ReportDoc } from '../reporting/print/html.js';
 import { bookSetDocs } from '../reporting/print/bookSet.js';
@@ -57,7 +58,7 @@ export async function collectAuthorityData(trx: Trx, tenantId: string, p: { from
   const auditCols = ['ts', 'username', 'action', 'entity', 'entity_id', 'before', 'after', 'ip'];
   add('nhat_ky_kiem_toan.csv', await trx.selectFrom('audit_event as a').leftJoin('app_user as u', 'u.id', 'a.user_id')
     .select(['a.ts', 'u.username', 'a.action', 'a.entity', 'a.entity_id', sql<string>`a.before::text`.as('before'), sql<string>`a.after::text`.as('after'), 'a.ip'])
-    .where('a.ts', '>=', sql<string>`(${p.from}::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')`).where('a.ts', '<', sql<string>`((${p.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')`).orderBy('a.id').execute(), auditCols);
+    .where('a.ts', '>=', vnDayStart(p.from)).where('a.ts', '<', vnDayEnd(p.to)).orderBy('a.id').execute(), auditCols);
   return { from: p.from, to: p.to, company: { name: t.name, taxCode: t.tax_code }, csv, pdfs, omitted };
 }
 

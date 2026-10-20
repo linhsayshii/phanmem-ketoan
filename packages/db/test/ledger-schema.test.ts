@@ -285,6 +285,26 @@ describe('lược đồ sổ cái', () => {
       expect(Number((await admin.query('SELECT count(*) FROM voucher_balance_pending')).rows[0].count)).toBe(0);
     });
 
+    it('dòng hàng đợi trỏ chứng từ công ty khác bị bỏ qua và dọn, không lộ tổng Nợ/Có qua thông báo lỗi; khác tenant_id bị RLS chặn', async () => {
+      const other = await createTestTenant(t.admin, { code: `LO${Date.now()}`, name: 'Công ty khác' });
+      const account = await acc('1111');
+      let otherVoucher = '';
+      // Chứng từ lệch (Nợ 777, Có 0) của công ty khác chỉ dựng được khi tắt trigger bằng quyền siêu người dùng.
+      await admin.query('SET session_replication_role = replica');
+      try {
+        otherVoucher = (await admin.query(`INSERT INTO voucher(tenant_id, voucher_type, posting_date, document_date, state, description, currency_code, created_by) VALUES ($1,'PKT','2026-05-10','2026-05-10','draft','b','VND',$2) RETURNING id`, [other, userId])).rows[0].id;
+        await admin.query(`INSERT INTO voucher_line(tenant_id, voucher_id, line_no, account_id, posting_date, currency_code, debit, credit, amount_currency) VALUES ($1,$2,1,$3,'2026-05-10','VND',777,0,777)`, [other, otherVoucher, account]);
+      } finally { await admin.query('SET session_replication_role = DEFAULT'); }
+      try {
+        await run(async (trx) => { await sql`INSERT INTO voucher_balance_pending(tenant_id, voucher_id) VALUES (${tenantId}::uuid, ${otherVoucher}::uuid)`.execute(trx); });
+        expect(Number((await admin.query('SELECT count(*) FROM voucher_balance_pending')).rows[0].count)).toBe(0);
+        await expect(run(async (trx) => { await sql`INSERT INTO voucher_balance_pending(tenant_id, voucher_id) VALUES (${other}::uuid, ${otherVoucher}::uuid)`.execute(trx); })).rejects.toThrow(/row-level security/);
+      } finally {
+        await admin.query('SET session_replication_role = replica');
+        try { await admin.query('DELETE FROM voucher_line WHERE voucher_id = $1', [otherVoucher]); await admin.query('DELETE FROM voucher WHERE id = $1', [otherVoucher]); } finally { await admin.query('SET session_replication_role = DEFAULT'); }
+      }
+    });
+
     it('chứng từ đã ghi sổ: xóa dòng bị chặn và hàng đợi rỗng sau giao dịch lỗi', async () => {
       const id = await newVoucher('2026-05-11', [{ code: '1111', debit: '3' }, { code: '5113', credit: '3' }]);
       await setState(id, 'posted');

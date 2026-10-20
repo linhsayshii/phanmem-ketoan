@@ -2,8 +2,8 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { sql } from 'kysely';
 import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
+import { sensitiveDenial } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
-import { sensitiveDenial } from '../reporting/ledgers.js';
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   app.get('/api/balances', { preHandler: app.requirePermission('report.view'), schema: { querystring: z.object({ asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), accountCode: z.string().optional(), byParty: z.enum(['true', 'false']).default('false') }) } }, async (req) =>

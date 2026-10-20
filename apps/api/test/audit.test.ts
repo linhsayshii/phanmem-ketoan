@@ -64,6 +64,13 @@ describe('nhật ký kiểm toán', () => {
     expect(l.total).toBe(2); // đúng hai mốc 2026-03-09 17:00:00Z và 2026-03-10 16:59:59Z
     expect(l.rows.map((x) => new Date(x.ts.replace(' ', 'T').replace(/\+00$/, 'Z')).toISOString())).toEqual(['2026-03-10T16:59:59.000Z', '2026-03-09T17:00:00.000Z']);
   });
+  it('nhật ký đăng nhập: 17:30 UTC ngày 01/03 là ngày 02/03 giờ Việt Nam', async () => {
+    const a = await bootstrapTenant(ctx, { code: `AV${Date.now()}` });
+    await sql`INSERT INTO login_event(ts, username, user_id, success) VALUES ('2026-03-01T17:30:00Z'::timestamptz, ${a.username}, ${a.userId}::uuid, true)`.execute(ctx.t.admin);
+    const total = async (day: string) => ((await ctx.app.inject({ method: 'GET', url: `/api/audit/logins?from=${day}&to=${day}`, headers: { cookie: a.cookie } })).json() as { total: number }).total;
+    expect(await total('2026-03-02')).toBe(1);
+    expect(await total('2026-03-01')).toBe(0);
+  });
   it('người không có quyền audit.view bị 403', async () => {
     const a = await bootstrapTenant(ctx, { code: `AI${Date.now()}` });
     const roles = (await ctx.app.inject({ method: 'GET', url: '/api/roles', headers: { cookie: a.cookie } })).json() as { id: string; code: string; permissions: string[] }[];

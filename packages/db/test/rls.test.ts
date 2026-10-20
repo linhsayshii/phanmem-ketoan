@@ -1,3 +1,6 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'kysely';
 import { withTenant } from '../src/client.js';
@@ -108,6 +111,24 @@ describe('RLS', () => {
     const view = await sql<{ n: number }>`SELECT count(*)::int AS n FROM role_permission rp JOIN role r ON r.id = rp.role_id
       WHERE rp.tenant_id = ${a} AND r.code = 'ketoan_vien' AND rp.permission_code = 'closing_step.view'`.execute(t.admin);
     expect(view.rows[0]!.n).toBe(1);
+  });
+
+  it('0024: chèn bù quyền GĐ2 cho công ty có sẵn (gỡ quyền mới rồi chạy lại migration): admin và kế toán trưởng đủ, kế toán viên trừ danh sách loại trừ, xem chỉ .view', async () => {
+    const a = await createTestTenant(t.admin, { code: `Q${Date.now()}`, name: 'Q' });
+    const gd2 = ['settlement.view', 'settlement.create', 'settlement.delete', 'fx.run', 'cash_count.view', 'cash_count.create', 'cash_count.update', 'cash_count.delete', 'tax.view', 'tax_return.view', 'tax_return.create', 'tax_return.update', 'tax_return.delete', 'tax_return.finalize', 'tax.offset',
+      'voucher.import', 'dedupe.run', 'amortization.view', 'amortization.create', 'amortization.update', 'amortization.delete', 'amortization.run'];
+    const noVien = ['fx.run', 'tax_return.finalize', 'tax.offset', 'amortization.run', 'dedupe.run'];
+    const held = async (code: string) => new Set((await sql<{ c: string }>`SELECT rp.permission_code AS c FROM role_permission rp JOIN role r ON r.id = rp.role_id WHERE rp.tenant_id = ${a} AND r.code = ${code} AND rp.permission_code = ANY(${gd2}::text[])`.execute(t.admin)).rows.map((x) => x.c));
+    // Công ty tạo mới đã đúng; giả lập công ty tạo trước 0024 bằng cách gỡ quyền mới (tắt audit như migration).
+    await sql`ALTER TABLE role_permission DISABLE TRIGGER trg_audit`.execute(t.admin);
+    await sql`DELETE FROM role_permission WHERE tenant_id = ${a} AND permission_code = ANY(${gd2}::text[])`.execute(t.admin);
+    await sql`ALTER TABLE role_permission ENABLE TRIGGER trg_audit`.execute(t.admin);
+    expect((await held('admin')).size).toBe(0);
+    await sql.raw(await readFile(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'migrations', '0024_quyen_gd2.sql'), 'utf8')).execute(t.admin);
+    expect([...await held('admin')].sort()).toEqual([...gd2].sort());
+    expect([...await held('ketoan_truong')].sort()).toEqual([...gd2].sort());
+    expect([...await held('ketoan_vien')].sort()).toEqual(gd2.filter((c) => !noVien.includes(c)).sort());
+    expect([...await held('xem')].sort()).toEqual(gd2.filter((c) => c.endsWith('.view')).sort());
   });
 
   it('khoá ngoại theo tenant: không gắn tài khoản cha hay vai trò của công ty khác', async () => {

@@ -1,6 +1,6 @@
 import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
-import { D, sum, SENSITIVE_FLAGS_ALL, ZERO, type Decimal } from '@kt/domain';
+import { D, sensitiveDenial, sum, SENSITIVE_FLAGS_ALL, ZERO, type Decimal } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 
 type Trx = Transaction<Database>;
@@ -172,13 +172,7 @@ export async function trialBalance(trx: Trx, tenantId: string, f: { from: string
   return { rows, totals };
 }
 
-// Lý do cờ nhạy cảm che tài khoản này với người dùng; null là được xem. Dùng cho cả chặn (assertSensitive) lẫn lọc (số dư).
-export function sensitiveDenial(auth: { sensitive: Set<string> }, acc: { subledger_kind: string | null; code: string }): string | null {
-  if (acc.subledger_kind === 'receivable' && !auth.sensitive.has('view_receivable')) return 'Không có quyền xem công nợ phải thu';
-  if (acc.subledger_kind === 'payable' && !auth.sensitive.has('view_payable')) return 'Không có quyền xem công nợ phải trả';
-  if (acc.code.startsWith('632') && !auth.sensitive.has('view_cost')) return 'Không có quyền xem giá vốn';
-  return null;
-}
+// Chặn khi cờ nhạy cảm che tài khoản này (lý do lấy từ sensitiveDenial của domain, dùng chung với lọc số dư).
 export function assertSensitive(auth: { sensitive: Set<string> }, acc: { subledger_kind: string | null; code: string }) {
   const denied = sensitiveDenial(auth, acc);
   if (denied) throw new AppError('FORBIDDEN', denied, 403);
