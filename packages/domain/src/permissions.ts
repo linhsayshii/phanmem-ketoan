@@ -1,5 +1,7 @@
 export const SENSITIVE_FLAGS = ['view_cost', 'view_receivable', 'view_payable', 'view_salary'] as const;
 export type SensitiveFlag = (typeof SENSITIVE_FLAGS)[number];
+// Ba cờ bảo vệ số liệu công nợ/giá vốn: sổ tổng hợp (Nhật ký chung, Bảng cân đối số phát sinh), bộ sổ năm và gói xuất cho cơ quan thẩm quyền cần đủ cả ba.
+export const SENSITIVE_FLAGS_ALL = ['view_receivable', 'view_payable', 'view_cost'] as const;
 
 const crud = (res: string, name: string, group: string, extra: [string, string][] = []) => [
   { code: `${res}.view`, name: `Xem ${name}`, group },

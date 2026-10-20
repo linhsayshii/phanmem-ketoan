@@ -24,12 +24,20 @@ export function createDb(pool: pg.Pool): Kysely<Database> {
   return new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
 }
 
+// Mức cô lập và chế độ truy cập của giao dịch. Mặc định read committed, đọc ghi.
+export interface TxOptions { isolation?: 'repeatable read'; readOnly?: boolean }
+// Báo cáo/sổ chạy nhiều truy vấn: một ảnh chụp dữ liệu duy nhất (repeatable read) và chỉ đọc, để các phần của cùng báo cáo luôn khớp nhau.
+export const READ_SNAPSHOT: TxOptions = { isolation: 'repeatable read', readOnly: true };
+
 export async function withTenant<T>(
   db: Kysely<Database>,
   ctx: TenantCtx,
   fn: (trx: Transaction<Database>) => Promise<T>,
+  opts: TxOptions = {},
 ): Promise<T> {
-  return db.transaction().execute(async (trx) => {
+  const tx = db.transaction();
+  return (opts.isolation ? tx.setIsolationLevel(opts.isolation) : tx).execute(async (trx) => {
+    if (opts.readOnly) await sql`SET TRANSACTION READ ONLY`.execute(trx); // phải đứng trước truy vấn đầu tiên
     await sql`SELECT set_config('app.current_tenant', ${ctx.tenantId}, true),
                      set_config('app.current_user', ${ctx.userId ?? ''}, true),
                      set_config('app.client_ip', ${ctx.ip ?? ''}, true)`.execute(trx);
