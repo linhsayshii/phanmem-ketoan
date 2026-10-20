@@ -81,7 +81,7 @@ export default function LedgersPage() {
   const [tab, setTab] = useState<TabKey>('journal');
   const [f, setF] = useRememberedFilter('ledgers', { from: dayjs().startOf('month').format('YYYY-MM-DD'), to: dayjs().endOf('month').format('YYYY-MM-DD'), accountCode: '', mode: 'voucher' as Mode, level: 0,
     splitParty: true, partyCode: '', costItemCode: '', projectCode: '', departmentCode: '' }, `${me?.tenantId}:${me?.userId}`);
-  const accountFetcher = useMemo(() => accountFetcherFor(f.from, true), [f.from]); // gồm tài khoản tổng hợp: sổ Cái của cả nhóm
+  const accountFetcher = useMemo(() => accountFetcherFor(f.from, true, true), [f.from]); // gồm tài khoản tổng hợp (sổ Cái của cả nhóm) và tài khoản đã ngưng dùng nhưng còn phát sinh
   const drillToAccount = (accountCode: string, mode: Mode = 'voucher') => { setF({ ...f, accountCode, mode }); setTab('ledger'); };
 
   const range = { from: f.from, to: f.to };
@@ -136,7 +136,7 @@ export default function LedgersPage() {
   };
 
   const lookup = (catalog: string, field: 'partyCode' | 'costItemCode' | 'projectCode' | 'departmentCode', placeholder: string) =>
-    <LookupSelect catalog={catalog} placeholder={placeholder} style={{ width: 200 }} value={f[field] || null} onChange={(code) => setF({ ...f, [field]: code ?? '' })} />;
+    <LookupSelect catalog={catalog} includeInactive placeholder={placeholder} style={{ width: 200 }} value={f[field] || null} onChange={(code) => setF({ ...f, [field]: code ?? '' })} />;
   return (
     <Space direction="vertical" size={8} style={{ width: '100%' }}>
       <Space wrap>

@@ -117,4 +117,27 @@ describe('Màn hình Phiếu kế toán: nút theo trạng thái và quyền', (
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await vi.waitFor(() => expect(writes()).toHaveLength(2));
   });
+
+  it('F9 khi chưa cân không gọi API ghi sổ và báo lệch', async () => {
+    const line = (lineNo: number, accountCode: string, debit: string, credit: string) => ({ lineNo, accountCode, accountName: accountCode, debit, credit, description: null, partyCode: null, departmentCode: null, projectCode: null, costItemCode: null });
+    mocks.api.mockImplementation(async (path: string) => (path === '/api/vouchers/v1' ? voucher('draft', { lines: [line(1, '6422', '1500000', '0'), line(2, '1111', '0', '1000000')] }) : []));
+    renderPage();
+    expect(await screen.findByText('Tổng Nợ: 1.500.000')).toBeInTheDocument();
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: /Lưu/ })).toBeEnabled());
+    fireEvent.keyDown(window, { key: 'F9' });
+    expect(await screen.findByText('Chứng từ chưa cân: tổng Nợ 1.500.000 khác tổng Có 1.000.000')).toBeInTheDocument();
+    expect(writes()).toHaveLength(0);
+  });
+
+  it('thiếu ngày hạch toán: thông báo là chữ lỗi của trường, không phải [object Object]', async () => {
+    mocks.id.v = 'moi';
+    renderPage();
+    const date = screen.getByLabelText('Ngày hạch toán');
+    fireEvent.click(date.closest('.ant-picker')!.querySelector('.ant-picker-clear')!); // nút xóa ngày: trường rỗng
+    await vi.waitFor(() => expect(date).toHaveValue(''));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    expect(await screen.findByText('Nhập ngày hạch toán', { selector: '.ant-message-custom-content span' })).toBeInTheDocument();
+    expect(screen.queryByText(/object Object/)).not.toBeInTheDocument();
+    expect(writes()).toHaveLength(0);
+  });
 });

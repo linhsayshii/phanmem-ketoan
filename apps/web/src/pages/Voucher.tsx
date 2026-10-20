@@ -35,6 +35,10 @@ export function parseAmount(newValue: unknown, oldValue: unknown): string {
 const numCol = (field: 'debit' | 'credit', headerName: string): ColDef<Line> => ({ field, headerName, width: 150, cellClass: 'ag-right-aligned-cell',
   valueFormatter: (p) => formatVnNumber((p.value as string) || '0'), valueParser: (p) => parseAmount(p.newValue, p.oldValue) });
 
+// Lỗi hiển thị cho người dùng: lỗi máy chủ kèm mã; lỗi form.validateFields() là đối tượng { errorFields } nên lấy chữ lỗi của trường đầu tiên (không để "[object Object]").
+const errorText = (e: unknown): string => e instanceof ApiError ? `${e.message} (${e.code})`
+  : (e as { errorFields?: { errors: string[] }[] } | null)?.errorFields?.[0]?.errors[0] ?? (e instanceof Error ? e.message : String(e));
+
 export default function VoucherPage() {
   const { id } = useParams({ strict: false }) as { id: string };
   return <VoucherEditor key={id} id={id} />; // đổi chứng từ (kể cả moi -> id sau khi lưu) thì dựng lại toàn bộ trạng thái nhập
@@ -71,7 +75,7 @@ function VoucherEditor({ id }: { id: string }) {
       conflict.current = Modal.confirm({ title: 'Chứng từ đã được người khác sửa', content: `${e.message}. Tải lại sẽ bỏ phần bạn đang nhập.`, okText: 'Tải lại', cancelText: 'Giữ bản đang nhập', onOk: () => invalidate() });
       return;
     }
-    void message.error(e instanceof ApiError ? `${e.message} (${e.code})` : String(e));
+    void message.error(errorText(e));
   };
   // Ô đang gõ dở chưa vào state: rời ô để lưới chốt giá trị trước khi lấy dòng (Ctrl+S/F9 khi con trỏ còn trong ô).
   const flushEditing = async () => { (document.activeElement as HTMLElement | null)?.blur(); await new Promise((r) => setTimeout(r, 0)); };
@@ -82,6 +86,10 @@ function VoucherEditor({ id }: { id: string }) {
   const persist = async (postAfter: boolean): Promise<Voucher> => {
     await flushEditing();
     const f = await form.validateFields();
+    if (postAfter) { // kiểm tra trên dòng vừa chốt (không phải state có thể chưa kịp render), trước mọi lời gọi máy chủ
+      const rows = cleanLines(linesRef.current);
+      if (!isBalanced(rows)) throw new Error(`Chứng từ chưa cân: tổng Nợ ${formatVnNumber(sum(rows.map((l) => l.debit)).toString())} khác tổng Có ${formatVnNumber(sum(rows.map((l) => l.credit)).toString())}`);
+    }
     if (isNew) return api<Voucher>('/api/vouchers', { method: 'POST', json: { ...body(f), idempotencyKey, ...(postAfter ? { autoPost: true } : {}) } });
     // sửa chứng từ đã ghi sổ: định vị dòng theo lineNo của máy chủ, không theo vị trí trên lưới
     const meta = linesRef.current.filter((l) => l.lineNo !== undefined).map((l) => ({ lineNo: l.lineNo!, description: l.description, departmentCode: l.departmentCode, projectCode: l.projectCode, costItemCode: l.costItemCode }));
@@ -139,8 +147,8 @@ function VoucherEditor({ id }: { id: string }) {
       {v.error && <Alert type="error" showIcon message={(v.error as Error).message} style={{ marginBottom: 12 }} />}
       <Form form={form} layout="vertical" initialValues={{ postingDate: dayjs(), documentDate: dayjs() }}>
         <Row gutter={12}>
-          <Col span={4}><Form.Item label="Ngày hạch toán" name="postingDate" rules={[{ required: true }]}><DatePicker format="DD/MM/YYYY" disabled={!editable} /></Form.Item></Col>
-          <Col span={4}><Form.Item label="Ngày chứng từ" name="documentDate" rules={[{ required: true }]}><DatePicker format="DD/MM/YYYY" disabled={!editable} /></Form.Item></Col>
+          <Col span={4}><Form.Item label="Ngày hạch toán" name="postingDate" rules={[{ required: true, message: 'Nhập ngày hạch toán' }]}><DatePicker format="DD/MM/YYYY" disabled={!editable} /></Form.Item></Col>
+          <Col span={4}><Form.Item label="Ngày chứng từ" name="documentDate" rules={[{ required: true, message: 'Nhập ngày chứng từ' }]}><DatePicker format="DD/MM/YYYY" disabled={!editable} /></Form.Item></Col>
           <Col span={6}><Form.Item label="Đối tượng" name="partyCode"><LookupSelect catalog="party" disabled={!editable} quickAddFields={quickAdd} /></Form.Item></Col>
           <Col span={10}><Form.Item label="Diễn giải" name="description"><Input disabled={locked} /></Form.Item></Col>
         </Row>

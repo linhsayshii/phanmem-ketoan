@@ -9,7 +9,7 @@ describe('gridKeyboard', () => {
     expect(nextCellOnEnter({ row: 1, col: 3 }, g)).toEqual({ row: 2, col: 0, addRow: true });
     expect(nextCellOnEnter({ row: 0, col: 1 }, g)).toEqual({ row: 0, col: 2, addRow: false });
   });
-  it('Tab giống Enter nhưng không thêm dòng ở cuối', () => {
+  it('nextCellOnTab giống Enter nhưng không thêm dòng ở cuối', () => {
     expect(nextCellOnTab({ row: 1, col: 3 }, g)).toEqual({ row: 1, col: 3, addRow: false });
   });
   it('F4 là phím tra cứu', () => { expect(isLookupKey({ key: 'F4' })).toBe(true); expect(isLookupKey({ key: 'F2' })).toBe(false); });
@@ -18,11 +18,15 @@ describe('gridKeyboard', () => {
 describe('gridKeyAction', () => {
   const shape = { rowCount: 2, editableCols: [0, 2, 3], readOnly: false };
   const key = (k: string, mods: { ctrlKey?: boolean; shiftKey?: boolean } = {}) => ({ key: k, ctrlKey: false, shiftKey: false, ...mods });
-  it('Enter/Tab di chuyển theo nextCellOnEnter/nextCellOnTab', () => {
+  it('Enter/Tab di chuyển theo nextCellOnEnter', () => {
     expect(gridKeyAction(key('Enter'), { row: 0, col: 0 }, shape)).toEqual({ type: 'move', pos: { row: 0, col: 2 }, addRow: false });
     expect(gridKeyAction(key('Enter'), { row: 1, col: 3 }, shape)).toEqual({ type: 'move', pos: { row: 2, col: 0 }, addRow: true });
     expect(gridKeyAction(key('Tab'), { row: 0, col: 3 }, shape)).toEqual({ type: 'move', pos: { row: 1, col: 0 }, addRow: false });
-    expect(gridKeyAction(key('Tab'), { row: 1, col: 3 }, shape)).toEqual({ type: 'move', pos: { row: 1, col: 3 }, addRow: false });
+  });
+  it('Tab ở ô cuối của dòng cuối thêm dòng mới; khóa dòng thì nhả cho trình duyệt', () => {
+    const ctx = { rowCount: 2, editableCols: [0, 2, 3], readOnly: false, lockRows: false };
+    expect(gridKeyAction(key('Tab'), { row: 1, col: 3 }, ctx)).toEqual({ type: 'move', addRow: true, pos: { row: 2, col: 0 } });
+    expect(gridKeyAction(key('Tab'), { row: 1, col: 3 }, { ...ctx, lockRows: true })).toEqual({ type: 'none' });
   });
   it('Shift+Enter và Shift+Tab để AG Grid xử lý (đi ngược)', () => {
     expect(gridKeyAction(key('Enter', { shiftKey: true }), { row: 0, col: 0 }, shape)).toEqual({ type: 'none' });
@@ -69,7 +73,7 @@ describe('gridKeyAction: bộ gõ (IME) và khóa số dòng', () => {
     expect(gridKeyAction(key('Insert', { ctrlKey: true }), { row: 0, col: 2 }, locked)).toEqual({ type: 'none' });
     expect(gridKeyAction(key('Delete', { ctrlKey: true }), { row: 0, col: 2 }, locked)).toEqual({ type: 'none' });
     expect(gridKeyAction(key('Enter'), { row: 0, col: 3 }, locked)).toEqual({ type: 'move', pos: { row: 1, col: 0 }, addRow: false });
-    expect(gridKeyAction(key('Tab'), { row: 1, col: 3 }, locked)).toEqual({ type: 'move', pos: { row: 1, col: 3 }, addRow: false });
+    expect(gridKeyAction(key('Tab'), { row: 1, col: 3 }, locked)).toEqual({ type: 'none' });
     expect(gridKeyAction(key('F4'), { row: 0, col: 2 }, locked)).toEqual({ type: 'lookup' });
   });
 });

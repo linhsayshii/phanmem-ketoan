@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Form, Input, Modal, Select, Space, Table, Tag, message } from 'antd';
+import { Button, Form, Input, Modal, Select, Space, Table, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
@@ -41,10 +41,10 @@ export default function AccountsPage() {
         { title: 'Số hiệu', dataIndex: 'code', width: 140 }, { title: 'Tên tài khoản', dataIndex: 'name' },
         { title: 'Loại dư', dataIndex: 'normalBalance', width: 110, render: (v: string) => NB[v] },
         { title: 'Theo dõi', width: 200, render: (_, a) => <>{a.subledgerKind && <Tag>{SK[a.subledgerKind]}</Tag>}{a.trackCurrency && <Tag>Ngoại tệ</Tag>}{a.isGroup && <Tag color="blue">Tổng hợp</Tag>}</> },
-        { title: '', width: 260, render: (_, a) => (<Space>
-          {can('account.create') && <a onClick={() => setModal({ kind: 'sub', code: a.code })}>Thêm tiểu khoản</a>}
-          {can('account.update') && <a onClick={() => setModal({ kind: 'rename', code: a.code })}>Đổi số hiệu</a>}
-          {can('account.update') && !a.isGroup && <a onClick={() => setModal({ kind: 'merge', code: a.code })}>Ghép</a>}</Space>) }]} />
+        { title: '', width: 300, render: (_, a) => (<Space size={0}>
+          {can('account.create') && <Button type="link" size="small" onClick={() => setModal({ kind: 'sub', code: a.code })}>Thêm tiểu khoản</Button>}
+          {can('account.update') && <Button type="link" size="small" onClick={() => setModal({ kind: 'rename', code: a.code })}>Đổi số hiệu</Button>}
+          {can('account.update') && !a.isGroup && <Button type="link" size="small" onClick={() => setModal({ kind: 'merge', code: a.code })}>Ghép</Button>}</Space>) }]} />
       <Modal open={!!modal} onCancel={() => setModal(null)} onOk={() => form.submit()} destroyOnHidden
         title={modal?.kind === 'sub' ? `Thêm tiểu khoản của ${modal.code}` : modal?.kind === 'rename' ? `Đổi số hiệu ${modal.code}` : `Ghép ${modal?.code} vào tài khoản khác`}>
         <Form form={form} layout="vertical" onFinish={(v) => run.mutate(v)}>

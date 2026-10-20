@@ -10,6 +10,7 @@ export function nextCellOnEnter(pos: CellPos, g: GridShape): Move {
   if (pos.row + 1 < g.rowCount) return { row: pos.row + 1, col: first, addRow: false };
   return { row: pos.row + 1, col: first, addRow: true };
 }
+// Ô kế tiếp nhưng không thêm dòng ở cuối lưới. gridKeyAction không còn gọi hàm này (Tab giống Enter, kể cả thêm dòng).
 export function nextCellOnTab(pos: CellPos, g: GridShape): Move {
   const m = nextCellOnEnter(pos, g);
   return m.addRow ? { ...pos, addRow: false } : m;
@@ -34,7 +35,8 @@ export function gridKeyAction(e: { key: string; ctrlKey: boolean; shiftKey: bool
   if (e.ctrlKey && e.key === 'Delete') return g.lockRows ? none : { type: 'deleteRow' };
   if (e.ctrlKey && e.key === 'Insert') return g.lockRows ? none : { type: 'insertRow' };
   if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey) {
-    const m = e.key === 'Enter' ? nextCellOnEnter(pos, g) : nextCellOnTab(pos, g);
+    // Tab giống Enter (kể cả thêm dòng ở ô cuối); khóa dòng thì nhả cho trình duyệt chuyển tiêu điểm ra khỏi lưới
+    const m = nextCellOnEnter(pos, g);
     if (m.addRow && g.lockRows) return none;
     return { type: 'move', pos: { row: m.row, col: m.col }, addRow: m.addRow };
   }

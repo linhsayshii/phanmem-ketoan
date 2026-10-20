@@ -30,4 +30,10 @@ describe('Màn hình hệ thống tài khoản', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Expand row' }));
     expect(await screen.findByText('VND')).toBeInTheDocument();
   });
+  it('thao tác trên dòng là nút (tới được bằng Tab), không phải liên kết trần', async () => {
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><AccountsPage /></QueryClientProvider>);
+    await screen.findByText('Tiền mặt');
+    for (const name of ['Thêm tiểu khoản', 'Đổi số hiệu']) expect(screen.getAllByRole('button', { name }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'Ghép' })).not.toBeInTheDocument(); // 111 là tài khoản tổng hợp: chưa mở rộng thì chưa có dòng 1111
+  });
 });

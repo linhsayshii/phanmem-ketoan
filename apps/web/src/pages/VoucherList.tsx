@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Button, DatePicker, Input, Select, Space, Tag } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import type { ColDef, SuppressKeyboardEventParams } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber } from '@kt/domain';
-import { KeyboardGrid, useRememberedFilter } from '@kt/ui';
+import { KeyboardGrid, useHotkeys, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -19,10 +19,7 @@ export default function VoucherListPage() {
   const [f, setF] = useRememberedFilter('vouchers:PKT', { from: dayjs().startOf('month').format('YYYY-MM-DD'), to: dayjs().endOf('month').format('YYYY-MM-DD'), state: '' as string, q: '' }, `${me?.tenantId}:${me?.userId}`);
   const qs = new URLSearchParams({ type: 'PKT', from: f.from, to: f.to, size: '500', ...(f.state ? { state: f.state } : {}), ...(f.q ? { q: f.q } : {}) }).toString();
   const data = useQuery({ queryKey: ['vouchers', qs], queryFn: () => api<{ rows: Row[]; total: number }>(`/api/vouchers?${qs}`) });
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Insert' && !e.ctrlKey && !(e.target as HTMLElement).closest('input, textarea')) open('moi'); };
-    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
+  useHotkeys({ Insert: () => open('moi') });
   // Enter trên dòng đang chọn = mở chứng từ (lưới chỉ đọc nên KeyboardGrid không xử lý Enter)
   const openOnEnter = (p: SuppressKeyboardEventParams<Row>) => { if (p.event.type === 'keydown' && p.event.key === 'Enter' && p.data) { p.event.preventDefault(); open(p.data.id); return true; } return false; };
   const columns = useMemo(() => ([

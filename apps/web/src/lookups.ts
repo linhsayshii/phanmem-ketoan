@@ -24,13 +24,14 @@ function accountsOf(regime: string): Promise<AccountRow[]> {
 }
 
 // Bộ tìm tài khoản cho LookupSelect, theo chế độ của năm tài chính chứa ngày hạch toán. Tạo một lần cho mỗi ngày (useMemo): LookupSelect nạp lại khi `fetcher` đổi.
-// Chỉ tài khoản chi tiết đang dùng (nhập chứng từ); `includeGroups` thêm tài khoản tổng hợp (xem sổ Cái của cả nhóm).
-export function accountFetcherFor(postingDate?: string, includeGroups = false): (catalog: string, q: string) => Promise<LookupRow[]> {
+// Chỉ tài khoản chi tiết đang dùng (nhập chứng từ); `includeGroups` thêm tài khoản tổng hợp (xem sổ Cái của cả nhóm);
+// `includeInactive` thêm tài khoản đã ngưng dùng (bộ lọc báo cáo: tài khoản cũ vẫn còn phát sinh).
+export function accountFetcherFor(postingDate?: string, includeGroups = false, includeInactive = false): (q: string) => Promise<LookupRow[]> { // đọc từ bộ nhớ đệm nên không cần tín hiệu hủy
   let regime: Promise<string> | undefined;
-  return async (_catalog, q) => {
+  return async (q) => {
     regime ??= api<FiscalYearRef[]>('/api/fiscal-years').then((ys) => regimeFor(ys, postingDate)).catch((e: unknown) => { regime = undefined; throw e; });
     const k = q.trim().toLowerCase();
-    return (await accountsOf(await regime)).filter((a) => a.isActive && (includeGroups || !a.isGroup)).map((a) => ({ id: a.id, code: a.code, name: a.name }))
+    return (await accountsOf(await regime)).filter((a) => (includeInactive || a.isActive) && (includeGroups || !a.isGroup)).map((a) => ({ id: a.id, code: a.code, name: a.name, ...(a.isActive ? {} : { inactive: true }) }))
       .filter((r) => !k || r.code.startsWith(k) || r.name.toLowerCase().includes(k)).slice(0, 50);
   };
 }

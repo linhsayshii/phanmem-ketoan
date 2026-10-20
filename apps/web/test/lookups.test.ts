@@ -28,9 +28,9 @@ describe('accountFetcherFor', () => {
       throw new Error(path);
     });
     const f = accountFetcherFor('2025-03-01');
-    expect((await f('account', '')).map((r) => r.code)).toEqual(['6422', '1111']);
-    expect((await f('account', '64')).map((r) => r.code)).toEqual(['6422']);
-    expect((await f('account', 'tiền')).map((r) => r.code)).toEqual(['1111']);
+    expect((await f('')).map((r) => r.code)).toEqual(['6422', '1111']);
+    expect((await f('64')).map((r) => r.code)).toEqual(['6422']);
+    expect((await f('tiền')).map((r) => r.code)).toEqual(['1111']);
     expect(apiMock).toHaveBeenCalledWith('/api/accounts?regime=TT133');
     expect(apiMock.mock.calls.filter(([p]) => p === '/api/accounts?regime=TT133')).toHaveLength(1); // đã nhớ
   });
@@ -38,6 +38,15 @@ describe('accountFetcherFor', () => {
     const acc = (id: number, code: string, extra: object = {}) => ({ id, code, name: `TK ${code}`, isGroup: false, isActive: true, ...extra });
     apiMock.mockImplementation(async (path: string) => (path === '/api/fiscal-years' ? years : [acc(1, '6422'), acc(2, '642', { isGroup: true }), acc(3, '6423', { isActive: false })]));
     const f = accountFetcherFor('2026-03-01', true);
-    expect((await f('account', '642')).map((r) => r.code)).toEqual(['6422', '642']);
+    expect((await f('642')).map((r) => r.code)).toEqual(['6422', '642']);
+  });
+  it('includeInactive: thêm tài khoản ngưng dùng và đánh dấu inactive; mặc định thì không có', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(Date.now() + 60_000); // quá hạn bộ nhớ đệm 30 giây của các phép thử trước
+    try {
+      const acc = (id: number, code: string, extra: object = {}) => ({ id, code, name: `TK ${code}`, isGroup: false, isActive: true, ...extra });
+      apiMock.mockImplementation(async (path: string) => (path === '/api/fiscal-years' ? years : [acc(1, '6422'), acc(3, '6423', { isActive: false })]));
+      expect((await accountFetcherFor('2026-03-01', true, true)('64')).map((r) => [r.code, r.inactive])).toEqual([['6422', undefined], ['6423', true]]);
+      expect((await accountFetcherFor('2026-03-01', true)('64')).map((r) => r.code)).toEqual(['6422']);
+    } finally { vi.useRealTimers(); }
   });
 });
