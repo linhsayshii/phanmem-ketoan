@@ -42,7 +42,7 @@ export async function generateAccountsSql(c: pg.Client, tenantId: string, regime
 export async function insertDefaultClosingSteps(c: pg.Client, tenantId: string, regime: Regime): Promise<number> {
   const steps = loadDefaultClosingSteps(regime);
   for (const s of steps)
-    await c.query(`INSERT INTO closing_step(tenant_id, step_order, name, mode, from_accounts, to_account, keep_balance, by_dimension, ratio_source, run_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [tenantId, s.stepOrder, s.name, s.mode, s.fromAccounts, s.toAccount, s.keepBalance ?? '0', s.byDimension ?? null, s.ratioSource ? JSON.stringify(s.ratioSource) : null, s.runAt]);
+    await c.query(`INSERT INTO closing_step(tenant_id, regime, step_order, name, mode, from_accounts, to_account, keep_balance, by_dimension, ratio_source, run_at) VALUES ($1,$11,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [tenantId, s.stepOrder, s.name, s.mode, s.fromAccounts, s.toAccount, s.keepBalance ?? '0', s.byDimension ?? null, s.ratioSource ? JSON.stringify(s.ratioSource) : null, s.runAt, regime]);
   return steps.length;
 }

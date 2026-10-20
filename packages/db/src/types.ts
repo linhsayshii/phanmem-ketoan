@@ -154,7 +154,7 @@ export interface AccountPeriodBalanceTable {
 }
 
 export interface ClosingStepTable {
-  id: Generated<string>; tenant_id: string; step_order: number; name: string; mode: string; from_accounts: string[]; to_account: string | null;
+  id: Generated<string>; tenant_id: string; regime: string; step_order: number; name: string; mode: string; from_accounts: string[]; to_account: string | null;
   keep_balance: NumericDefault; by_dimension: string | null; ratio_source: JSONColumnType<unknown> | null; run_at: Generated<string>; is_active: Generated<boolean>;
 }
 // step_id NULL khi bước đã bị xóa khỏi sơ đồ: nhật ký chạy vẫn còn để lần ra chứng từ KC/PB.

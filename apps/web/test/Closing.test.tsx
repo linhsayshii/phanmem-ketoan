@@ -12,8 +12,8 @@ vi.mock('../src/api/client.js', () => ({ api: apiMock }));
 vi.mock('@tanstack/react-router', () => ({ Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a> }));
 
 const STEPS = [
-  { id: 's1', stepOrder: 1, name: 'Kết chuyển doanh thu', mode: 'transfer', fromAccounts: ['511', '515'], toAccount: '911', keepBalance: '0', byDimension: null, ratioSource: null, runAt: 'period_end', isActive: true },
-  { id: 's2', stepOrder: 2, name: 'Phân bổ chi phí trả trước', mode: 'allocate', fromAccounts: ['242'], toAccount: null, keepBalance: '0', byDimension: null, runAt: 'period_end', isActive: true,
+  { id: 's1', regime: 'TT200', stepOrder: 1, name: 'Kết chuyển doanh thu', mode: 'transfer', fromAccounts: ['511', '515'], toAccount: '911', keepBalance: '0', byDimension: null, ratioSource: null, runAt: 'period_end', isActive: true },
+  { id: 's2', regime: 'TT200', stepOrder: 2, name: 'Phân bổ chi phí trả trước', mode: 'allocate', fromAccounts: ['242'], toAccount: null, keepBalance: '0', byDimension: null, runAt: 'period_end', isActive: true,
     ratioSource: { ratios: [{ account: '6421', percent: '60' }, { account: '6422', percent: '40' }] } },
 ];
 const RUNS = [{ id: 2, stepName: 'Bước đã xóa', postingDate: '2026-12-31', voucherNo: 'KC00001', voucherId: 'v1', status: 'reversed', createdAt: '2027-01-02T03:04:05Z' }];
@@ -25,7 +25,7 @@ describe('Màn hình kết chuyển cuối kỳ', () => {
   beforeEach(() => {
     perms.has = () => true;
     apiMock.mockImplementation(async (path: string, init?: { method?: string }) => {
-      if (path === '/api/closing/steps' && !init) return STEPS;
+      if (path.startsWith('/api/closing/steps?') && !init) return STEPS;
       if (path.startsWith('/api/closing/runs')) return RUNS;
       if (path === '/api/closing/run-all') return { steps: [{ stepId: 's1', voucherIds: ['a', 'b'] }, { stepId: 's2', voucherIds: [] }] };
       return init?.method === 'PUT' ? { ok: true } : { voucherIds: ['a'] };
@@ -36,6 +36,8 @@ describe('Màn hình kết chuyển cuối kỳ', () => {
   it('hiện bước (đích hoặc tỷ lệ phân bổ) và nhật ký chạy, bước đã xóa vẫn có tên', async () => {
     renderPage();
     expect(await screen.findByText('Phân bổ chi phí trả trước')).toBeInTheDocument();
+    expect(screen.getByText('Sơ đồ TT200')).toBeInTheDocument();
+    expect(apiMock).toHaveBeenCalledWith(`/api/closing/steps?date=${endOfMonth}`);
     expect(screen.getByText('511, 515')).toBeInTheDocument();
     expect(screen.getByText('6421 60%, 6422 40%')).toBeInTheDocument();
     expect(await screen.findByText('Bước đã xóa')).toBeInTheDocument();
@@ -68,7 +70,7 @@ describe('Màn hình kết chuyển cuối kỳ', () => {
   it('Chạy lại: hộp xác nhận nhắc các bước sau không tự chạy lại; kết quả có laterStepsDone thì hiện cảnh báo liệt kê tên bước', async () => {
     perms.has = (c) => c !== 'closing_step.update';
     apiMock.mockImplementation(async (path: string, init?: { method?: string }) => {
-      if (path === '/api/closing/steps' && !init) return STEPS;
+      if (path.startsWith('/api/closing/steps?') && !init) return STEPS;
       if (path.startsWith('/api/closing/runs')) return RUNS;
       return { voucherIds: ['a'], laterStepsDone: ['Phân bổ chi phí trả trước', 'Kết chuyển lãi lỗ'] };
     });
@@ -88,7 +90,7 @@ describe('Màn hình kết chuyển cuối kỳ', () => {
     await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/closing/rerun', expect.anything()));
     expect(screen.queryByText(/Các bước sau đã chạy trước đó/)).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Nạp lại mẫu' }));
-    expect(await screen.findByText(/Sơ đồ hiện tại bị thay bằng sơ đồ mẫu/)).toBeInTheDocument();
+    expect(await screen.findByText(/hiện tại bị thay bằng sơ đồ mẫu/)).toBeInTheDocument();
     expect(screen.queryByText(/5 bước/)).toBeNull();
   }, 60_000); // dựng cả biểu mẫu sơ đồ: truy vấn role chậm trên máy 2 CPU
 
@@ -99,7 +101,7 @@ describe('Màn hình kết chuyển cuối kỳ', () => {
     await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/closing/steps', { method: 'PUT', json: { steps: [
       { id: 's1', stepOrder: 1, name: 'Kết chuyển doanh thu', mode: 'transfer', fromAccounts: ['511', '515'], toAccount: '911', keepBalance: '0', byDimension: null, ratioSource: null, runAt: 'period_end', isActive: true },
       { id: 's2', stepOrder: 2, name: 'Phân bổ chi phí trả trước', mode: 'allocate', fromAccounts: ['242'], toAccount: null, keepBalance: '0', byDimension: null, runAt: 'period_end', isActive: true,
-        ratioSource: { ratios: [{ account: '6421', percent: '60' }, { account: '6422', percent: '40' }] } }] } }));
+        ratioSource: { ratios: [{ account: '6421', percent: '60' }, { account: '6422', percent: '40' }] } }], date: endOfMonth } }));
     apiMock.mockClear();
     const percent = screen.getAllByPlaceholderText('Tỷ lệ')[1]!; // 40
     await userEvent.clear(percent); await userEvent.type(percent, '30');

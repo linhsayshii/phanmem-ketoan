@@ -40,6 +40,7 @@ Tài liệu ngắn cho kế toán viên và kế toán trưởng: nhập Phiếu
 - Vào Sổ cái → Kết chuyển cuối kỳ. Sơ đồ mặc định gồm: kết chuyển giảm trừ doanh thu, doanh thu và thu nhập khác, giá vốn và chi phí sang 911, rồi 911 sang 4212 (lợi nhuận năm nay); bước 4212 sang 4211 chạy ngày đầu năm sau. Sửa sơ đồ được (thêm bước chuyển hoặc phân bổ theo tỷ lệ), "Nạp lại mẫu" để quay về mặc định.
 - Chọn ngày kết chuyển (thường 31/12), bấm "Chạy tất cả bước cuối kỳ" hoặc "Chạy" từng bước. Mỗi bước sinh phiếu KC/PB thật, có số, đã ghi sổ.
 - Phát sinh thêm sau khi kết chuyển thì bấm "Chạy lại (đảo cũ)": phiếu cũ của đúng bước đó bị đảo rồi tính lại, không sửa đè. Các bước sau của sơ đồ đã chạy cùng ngày không tự chạy lại (số của chúng còn theo số dư cũ): màn hình liệt kê tên các bước đó, hãy chạy lại từng bước hoặc bấm "Chạy tất cả bước cuối kỳ". Trước khi kết chuyển nên ghi sổ hết phiếu nháp.
+- Mỗi chế độ kế toán (TT200, TT99, TT133...) có sơ đồ kết chuyển riêng, và sơ đồ hiện theo chế độ của kỳ chứa ngày kết chuyển. Tạo năm tài chính theo chế độ mới chỉ thêm sơ đồ mặc định của chế độ đó (nếu công ty chưa có), không đụng sơ đồ chế độ cũ nên vẫn kết chuyển được năm cũ. Chạy một bước vào ngày thuộc kỳ của chế độ khác sẽ bị từ chối; "Nạp lại mẫu" chỉ nạp lại sơ đồ của chế độ đang xem.
 
 ## Xem và in sổ sách, báo cáo
 

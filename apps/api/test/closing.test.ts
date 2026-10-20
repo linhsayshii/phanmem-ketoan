@@ -222,3 +222,29 @@ describe('kết chuyển: phạm vi chế độ, đối tượng, lỗi', () => 
     expect((await run(b!.id, '31/12/2026')).statusCode).toBe(400);
   }, 30_000);
 });
+
+describe('kết chuyển: sơ đồ riêng theo chế độ', () => {
+  it('năm TT99 tạo sau không phá sơ đồ TT200: kết chuyển năm TT200 vẫn chạy; sai chế độ thì 409; nạp lại TT99 không đụng TT200', async () => {
+    const { call } = await newTenant('KCCHEDO', [[2025, 'TT200'], [2026, 'TT99']]);
+    const list = async (q: string) => (await call('GET', `/api/closing/steps?${q}`)).json() as { id: string; regime: string; toAccount: string }[];
+    const t200 = await list('regime=TT200'); const t99 = await list('date=2026-06-30');
+    expect(t200.map((s) => s.toAccount)).toEqual(['5111', '911', '911', '4212', '4211']);
+    expect(t99.length).toBeGreaterThan(0); expect(new Set(t99.map((s) => s.regime))).toEqual(new Set(['TT99']));
+    expect(t99.map((s) => s.id).filter((i) => t200.some((s) => s.id === i))).toEqual([]);
+
+    await post(call, '2025-03-05', [{ accountCode: '1121', debit: '1000' }, { accountCode: '5113', credit: '1000' }]);
+    await post(call, '2025-04-05', [{ accountCode: '6421', debit: '300' }, { accountCode: '1121', credit: '300' }]);
+    const all = await call('POST', '/api/closing/run-all', { postingDate: '2025-12-31' });
+    expect(all.statusCode, all.body).toBe(200);
+    expect(all.json().steps).toHaveLength(4);
+
+    const bad = await call('POST', '/api/closing/run', { stepId: t99[0]!.id, postingDate: '2025-12-31' });
+    expect([bad.statusCode, bad.json().error.code]).toEqual([409, 'CLOSING_STEP_REGIME_MISMATCH']);
+    expect(bad.json().error.message).toContain('TT99');
+
+    const reload = await call('POST', '/api/closing/steps/reload', { regime: 'TT99' });
+    expect(reload.statusCode, reload.body).toBe(200);
+    expect((await list('regime=TT200')).map((s) => s.id)).toEqual(t200.map((s) => s.id));
+    expect((await list('regime=TT99')).map((s) => s.id)).not.toEqual(t99.map((s) => s.id));
+  }, 30_000);
+});

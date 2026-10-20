@@ -8,11 +8,11 @@ import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
 interface Ratio { account: string; percent: string }
-interface Step { id: string; stepOrder: number; name: string; mode: 'transfer' | 'allocate'; fromAccounts: string[]; toAccount: string | null; keepBalance: string; byDimension: 'project' | null;
+interface Step { id: string; regime: string; stepOrder: number; name: string; mode: 'transfer' | 'allocate'; fromAccounts: string[]; toAccount: string | null; keepBalance: string; byDimension: 'project' | null;
   ratioSource: { ratios: Ratio[] } | null; runAt: 'period_end' | 'next_year_start'; isActive: boolean }
 interface Run { id: number; stepName: string; postingDate: string; voucherNo: string | null; voucherId: string; status: 'done' | 'reversed'; createdAt: string }
 // Biểu mẫu phẳng hơn dữ liệu máy chủ: tỷ lệ phân bổ và cờ "theo vụ việc" nằm cùng cấp với các trường khác.
-type FormStep = Omit<Step, 'id' | 'ratioSource' | 'byDimension'> & { id?: string; ratios: Ratio[]; byProject: boolean };
+type FormStep = Omit<Step, 'id' | 'regime' | 'ratioSource' | 'byDimension'> & { id?: string; ratios: Ratio[]; byProject: boolean };
 
 const MODE = { transfer: 'Kết chuyển', allocate: 'Phân bổ' } as const;
 const RUN_AT = { period_end: 'Cuối kỳ', next_year_start: 'Đầu năm sau' } as const;
@@ -48,7 +48,7 @@ export default function ClosingPage() {
   const [date, setDate] = useState<Dayjs>(() => dayjs().endOf('month'));
   const postingDate = date.format('YYYY-MM-DD');
   const [form] = Form.useForm<{ steps: FormStep[] }>();
-  const steps = useQuery({ queryKey: ['closing-steps'], queryFn: () => api<Step[]>('/api/closing/steps') });
+  const steps = useQuery({ queryKey: ['closing-steps', postingDate], queryFn: () => api<Step[]>(`/api/closing/steps?date=${postingDate}`) });
   const runs = useQuery({ queryKey: ['closing-runs', date.year()], queryFn: () => api<Run[]>(`/api/closing/runs?year=${date.year()}`) });
   useEffect(() => { if (steps.error) void message.error((steps.error as Error).message); }, [steps.error]);
   useEffect(() => { if (runs.error) void message.error((runs.error as Error).message); }, [runs.error]);
@@ -65,15 +65,16 @@ export default function ClosingPage() {
     onError, onSettled: refresh('closing-runs', 'vouchers'),
     onSuccess: (r) => { setLaterDone(r.laterStepsDone ?? []); const n = r.voucherIds?.length ?? r.steps?.reduce((a, s) => a + s.voucherIds.length, 0) ?? 0; void message.success(n ? `Đã sinh ${n} chứng từ` : 'Không có số dư cần xử lý'); },
   });
-  const save = useMutation({ mutationFn: (v: FormStep[]) => api('/api/closing/steps', { method: 'PUT', json: { steps: v.map(toPayload) } }), onError, onSettled: refresh('closing-steps'),
+  const save = useMutation({ mutationFn: (v: FormStep[]) => api('/api/closing/steps', { method: 'PUT', json: { steps: v.map(toPayload), date: postingDate } }), onError, onSettled: refresh('closing-steps'),
     onSuccess: () => { void message.success('Đã lưu sơ đồ'); } });
-  const reload = useMutation({ mutationFn: () => api('/api/closing/steps/reload', { method: 'POST' }), onError, onSettled: refresh('closing-steps', 'closing-runs'), onSuccess: () => { void message.success('Đã nạp lại sơ đồ mẫu'); } });
+  const reload = useMutation({ mutationFn: () => api('/api/closing/steps/reload', { method: 'POST', json: { date: postingDate } }), onError, onSettled: refresh('closing-steps', 'closing-runs'), onSuccess: () => { void message.success('Đã nạp lại sơ đồ mẫu'); } });
 
   const confirm = (title: string, content: string, okText: string, fn: () => Promise<unknown>) =>
     Modal.confirm({ title, content, okText, cancelText: 'Hủy', onOk: () => fn().catch(() => undefined) });
   const runOne = (s: Step) => exec.mutateAsync({ path: 'run', json: { stepId: s.id, postingDate } });
   const rerunOne = (s: Step) => confirm(`Chạy lại "${s.name}" ngày ${date.format('DD/MM/YYYY')}?`, 'Các chứng từ đã sinh của bước này tại ngày đó được đảo (không sửa đè), rồi bước được chạy lại theo số dư hiện tại. Các bước sau của sơ đồ đã chạy cùng ngày không tự chạy lại: hãy chạy lại các bước đó hoặc Chạy tất cả.', 'Đảo và chạy lại',
     () => exec.mutateAsync({ path: 'rerun', json: { stepId: s.id, postingDate } }));
+  const regime = steps.data?.[0]?.regime;
   const periodEnd = (steps.data ?? []).filter((s) => s.isActive && s.runAt === 'period_end');
   const runAll = () => confirm(`Chạy ${periodEnd.length} bước cuối kỳ đến ngày ${date.format('DD/MM/YYYY')}?`, 'Các bước chạy lần lượt theo thứ tự và dừng ở bước lỗi đầu tiên; bước đã chạy được giữ lại.', 'Chạy tất cả',
     () => exec.mutateAsync({ path: 'run-all', json: { postingDate } }));
@@ -91,7 +92,7 @@ export default function ClosingPage() {
         {can('closing.run') && <Button type="primary" disabled={!periodEnd.length} loading={exec.isPending} onClick={runAll}>Chạy tất cả bước cuối kỳ</Button>}
       </Space>
       {laterDone.length > 0 && <Alert type="warning" showIcon closable onClose={() => setLaterDone([])} message={`Các bước sau đã chạy trước đó: ${laterDone.join(', ')}; hãy chạy lại các bước này hoặc Chạy tất cả`} />}
-      <Card size="small" title="Các bước" extra="Bước &quot;Đầu năm sau&quot; chạy với ngày 01/01 của năm sau">
+      <Card size="small" title={<>Các bước {regime && <Tag color="blue">Sơ đồ {regime}</Tag>}</>} extra="Bước &quot;Đầu năm sau&quot; chạy với ngày 01/01 của năm sau">
         <Table<Step> rowKey="id" size="small" pagination={false} loading={steps.isFetching} dataSource={steps.data ?? []} columns={[
           { title: 'Thứ tự', dataIndex: 'stepOrder', width: 80 },
           { title: 'Tên bước', dataIndex: 'name', render: (n: string, s) => <>{n} {!s.isActive && <Tag>Ngừng</Tag>}</> },
@@ -149,7 +150,7 @@ export default function ClosingPage() {
             </Form.List>
             <Space style={{ marginTop: 12 }}>
               <Button type="primary" htmlType="submit" loading={save.isPending}>Lưu sơ đồ</Button>
-              <Button loading={reload.isPending} onClick={() => confirm('Nạp lại sơ đồ mẫu?', 'Sơ đồ hiện tại bị thay bằng sơ đồ mẫu. Nhật ký chạy được giữ lại.', 'Nạp lại mẫu', () => reload.mutateAsync())}>Nạp lại mẫu</Button>
+              <Button loading={reload.isPending} onClick={() => confirm('Nạp lại sơ đồ mẫu?', `Sơ đồ ${regime ?? ''} hiện tại bị thay bằng sơ đồ mẫu của chế độ này (sơ đồ chế độ khác giữ nguyên). Nhật ký chạy được giữ lại.`, 'Nạp lại mẫu', () => reload.mutateAsync())}>Nạp lại mẫu</Button>
             </Space>
           </Form>
         </Card>)}
