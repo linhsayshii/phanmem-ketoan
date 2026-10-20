@@ -12,7 +12,18 @@ const getDummyHash = () => (dummyHash ??= hashPassword(randomUUID()));
 
 export interface LoginResult { sessionId: string; userId: string; tenantId: string | null; tenants: { id: string; code: string; name: string }[] }
 
-export async function login(db: Kysely<Database>, input: { username: string; password: string; ip: string; ttlHours: number }): Promise<LoginResult | null> {
+export async function login(db: Kysely<Database>, input: { username: string; password: string; ip: string; ttlHours: number; limits: { maxFailsUser: number; maxFailsIp: number; lockMinutes: number } }): Promise<LoginResult | null | 'throttled'> {
+  const { maxFailsUser, maxFailsIp, lockMinutes } = input.limits;
+  // Đếm cả tên không tồn tại (không lộ tên có tồn tại); lần đúng gần nhất xóa bộ đếm theo tên
+  const cnt = await sql<{ u: string; i: string }>`
+    SELECT (SELECT count(*) FROM login_event WHERE username = ${input.username} AND NOT success
+              AND ts > now() - make_interval(mins => ${lockMinutes})
+              AND ts > coalesce((SELECT max(ts) FROM login_event WHERE username = ${input.username} AND success), '-infinity')) AS u,
+           (SELECT count(*) FROM login_event WHERE ip = ${input.ip} AND NOT success AND ts > now() - make_interval(mins => ${lockMinutes})) AS i`.execute(db);
+  if (Number(cnt.rows[0]!.u) >= maxFailsUser || Number(cnt.rows[0]!.i) >= maxFailsIp) {
+    await db.insertInto('login_event').values({ username: input.username, user_id: null, success: false, ip: input.ip }).execute();
+    return 'throttled';
+  }
   const user = await db.selectFrom('app_user').selectAll().where('username', '=', input.username).executeTakeFirst();
   const verified = await verifyPassword(user?.is_active ? user.password_hash : await getDummyHash(), input.password);
   const ok = verified && !!user?.is_active;

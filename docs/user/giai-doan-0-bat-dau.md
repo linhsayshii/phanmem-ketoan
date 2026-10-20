@@ -14,3 +14,5 @@
 
 - `NODE_ENV=production`: API từ chối khởi động nếu `SESSION_SECRET` ngắn hơn 32 ký tự (hoặc còn là giá trị mẫu) hoặc `COOKIE_SECURE` khác `true`.
 - `TRUST_PROXY` (mặc định `false`): API không tin tiêu đề `X-Forwarded-For`, nên IP trong Nhật ký đăng nhập là IP kết nối thật. Khi chạy sau reverse proxy (nginx...) đặt `true`, số bước proxy (ví dụ `1`) hoặc danh sách IP/CIDR của proxy cách nhau dấu phẩy, nếu không IP ghi nhận sẽ là IP của proxy.
+
+Đăng nhập sai 5 lần liên tiếp thì tài khoản bị khóa 15 phút (kể cả khi nhập đúng mật khẩu trong thời gian khóa); đăng nhập đúng trước ngưỡng sẽ xóa bộ đếm. Ngoài ra một địa chỉ IP sai 20 lần trong 15 phút sẽ bị chặn mọi tên đăng nhập. Quản trị có thể đổi ngưỡng bằng `LOGIN_MAX_FAILS_USER`, `LOGIN_MAX_FAILS_IP`, `LOGIN_LOCK_MINUTES`.

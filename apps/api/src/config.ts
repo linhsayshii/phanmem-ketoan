@@ -15,6 +15,9 @@ const schema = z.object({
   BACKUP_DIR: z.string().default('./backups'),
   ATTACHMENT_DIR: z.string().default('./attachments').transform((p) => path.resolve(repoRoot, p)),
   PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: z.string().optional(),
+  LOGIN_MAX_FAILS_USER: z.coerce.number().int().positive().default(5),
+  LOGIN_MAX_FAILS_IP: z.coerce.number().int().positive().default(20),
+  LOGIN_LOCK_MINUTES: z.coerce.number().int().positive().default(15),
   NODE_ENV: z.string().default('development'),
   // Mặc định không tin X-Forwarded-For (tránh giả IP ghi vào nhật ký đăng nhập); sau reverse proxy đặt 'true', số bước proxy hoặc danh sách IP/CIDR
   TRUST_PROXY: z.string().default('false').transform((v): boolean | number | string => {

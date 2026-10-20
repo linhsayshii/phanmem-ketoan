@@ -13,12 +13,12 @@ import { closePdfBrowser } from '../src/modules/reporting/print/pdf.js';
 
 export interface TestApp { app: FastifyInstance; t: TestDb; close(): Promise<void> }
 
-export async function createTestApp(): Promise<TestApp> {
+export async function createTestApp(configOverrides: NodeJS.ProcessEnv = {}): Promise<TestApp> {
   const t = await setupTestDb();
   const boss = new PgBoss({ connectionString: process.env.DATABASE_ADMIN_URL!, schema: 'pgboss' });
   await boss.start();
   const attachmentDir = mkdtempSync(path.join(tmpdir(), 'kt-attachments-')); // tệp đính kèm của kiểm thử không làm bẩn thư mục dự án
-  const app = await buildApp({ db: t.db, config: loadConfig({ ...process.env, SESSION_SECRET: 'test-secret-123', ATTACHMENT_DIR: attachmentDir }), boss });
+  const app = await buildApp({ db: t.db, config: loadConfig({ ...process.env, SESSION_SECRET: 'test-secret-123', ATTACHMENT_DIR: attachmentDir, LOGIN_MAX_FAILS_IP: '1000000', ...configOverrides }), boss });
   await app.ready();
   return { app, t, close: async () => { await app.close(); await closePdfBrowser(); await boss.stop({ graceful: false }); await t.close(); rmSync(attachmentDir, { recursive: true, force: true }); } };
 }

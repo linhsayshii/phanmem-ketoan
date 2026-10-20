@@ -8,7 +8,9 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   const cookieOpts = { path: '/', httpOnly: true, sameSite: 'lax' as const, secure: cfg.COOKIE_SECURE === 'true', signed: true, maxAge: cfg.SESSION_TTL_HOURS * 3600 };
 
   app.post('/api/auth/login', { schema: { body: z.object({ username: z.string().min(1), password: z.string().min(1) }) } }, async (req, reply) => {
-    const r = await login(app.db, { ...req.body, ip: req.ip, ttlHours: cfg.SESSION_TTL_HOURS });
+    const r = await login(app.db, { ...req.body, ip: req.ip, ttlHours: cfg.SESSION_TTL_HOURS,
+      limits: { maxFailsUser: cfg.LOGIN_MAX_FAILS_USER, maxFailsIp: cfg.LOGIN_MAX_FAILS_IP, lockMinutes: cfg.LOGIN_LOCK_MINUTES } });
+    if (r === 'throttled') throw new AppError('LOGIN_THROTTLED', `Đăng nhập sai quá nhiều lần, thử lại sau ${cfg.LOGIN_LOCK_MINUTES} phút`, 429);
     if (!r) throw new AppError('BAD_CREDENTIALS', 'Sai tên đăng nhập hoặc mật khẩu', 401);
     reply.setCookie('sid', r.sessionId, cookieOpts);
     return { userId: r.userId, tenantId: r.tenantId, tenants: r.tenants };

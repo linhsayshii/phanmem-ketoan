@@ -48,4 +48,44 @@ describe('xác thực', () => {
     expect(me.json().tenantId).toBe(b.tenantId);
     expect(me.json().permissions).not.toContain('user.create');
   });
+
+  const login = (app: TestApp['app'], username: string, password: string, headers: Record<string, string> = {}) =>
+    app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password }, headers });
+  const mk = async (p: string) => { const username = `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`; await createTestUser(ctx.t.admin, { username, passwordHash: await hashPassword(TEST_PASSWORD) }); return username; };
+
+  describe('giới hạn đăng nhập sai', () => {
+    let lim: TestApp;
+    beforeAll(async () => { lim = await createTestApp({ LOGIN_MAX_FAILS_USER: '3' }); });
+    afterAll(async () => { await lim.close(); });
+
+    it('sai mật khẩu đủ ngưỡng thì khóa tạm, kể cả khi nhập đúng; tên khác không bị ảnh hưởng', async () => {
+      const u = await mk('lk'); const other = await mk('lko');
+      for (let i = 0; i < 3; i++) expect((await login(lim.app, u, 'sai')).statusCode).toBe(401);
+      const r = await login(lim.app, u, TEST_PASSWORD);
+      expect(r.statusCode).toBe(429);
+      expect(r.json().error.code).toBe('LOGIN_THROTTLED');
+      expect((await login(lim.app, other, TEST_PASSWORD)).statusCode).toBe(200);
+    });
+    it('tên không tồn tại cũng bị khóa như nhau, không lộ tên có tồn tại', async () => {
+      const ghost = `ghost_${Date.now()}`;
+      for (let i = 0; i < 3; i++) expect((await login(lim.app, ghost, 'sai')).statusCode).toBe(401);
+      expect((await login(lim.app, ghost, 'sai')).statusCode).toBe(429);
+    });
+    it('đăng nhập đúng trước ngưỡng thì xóa bộ đếm theo tên', async () => {
+      const u2 = await mk('xd');
+      await login(lim.app, u2, 'sai'); await login(lim.app, u2, 'sai');
+      expect((await login(lim.app, u2, TEST_PASSWORD)).statusCode).toBe(200);
+      await login(lim.app, u2, 'sai'); await login(lim.app, u2, 'sai');
+      expect((await login(lim.app, u2, TEST_PASSWORD)).statusCode).toBe(200);
+    });
+  });
+
+  it('quá ngưỡng theo IP thì khóa mọi tên từ IP đó', async () => {
+    const ipApp = await createTestApp({ TRUST_PROXY: 'true', LOGIN_MAX_FAILS_IP: '4' });
+    try {
+      const h = { 'x-forwarded-for': `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}` };
+      for (let i = 0; i < 4; i++) expect((await login(ipApp.app, await mk('ip'), 'sai', h)).statusCode).toBe(401);
+      expect((await login(ipApp.app, await mk('ip'), TEST_PASSWORD, h)).statusCode).toBe(429);
+    } finally { await ipApp.close(); }
+  });
 });
