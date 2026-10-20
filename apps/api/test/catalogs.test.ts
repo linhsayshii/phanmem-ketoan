@@ -125,7 +125,7 @@ describe('danh mục khung', () => {
     }
   });
 
-  it('lỗi dữ liệu của PostgreSQL (tràn số) được trả 400 VALIDATION, không phải 500', async () => {
+  it('số tiền quá 16 chữ số bị 400 VALIDATION', async () => {
     const r = await post('party', { code: 'KH_OVF', name: 'Tràn số', credit_limit: '9'.repeat(25) });
     expect(r.statusCode, r.body).toBe(400);
     expect(r.json().error.code).toBe('VALIDATION');
@@ -139,6 +139,64 @@ describe('danh mục khung', () => {
     expect(strictPut.statusCode).toBe(400);
     expect((await ctx.app.inject({ method: 'PUT', url: `/api/catalogs/department/${dept.id}`, headers: { cookie }, payload: {} })).statusCode).toBe(200);
     expect((await ctx.app.inject({ method: 'PUT', url: '/api/catalogs/department/999999999', headers: { cookie }, payload: {} })).statusCode).toBe(404);
+  });
+
+  const get = (url: string, headers = { cookie }) => ctx.app.inject({ method: 'GET', url, headers });
+
+  it('tìm kiếm coi % và _ là ký tự thường', async () => {
+    await post('party', { code: 'A_1', name: 'Công ty 100%' }); await post('party', { code: 'AB1', name: 'Công ty khác' });
+    expect((await get('/api/catalogs/party?q=A_1')).json().rows.map((r: { code: string }) => r.code)).toEqual(['A_1']);
+    expect((await get('/api/catalogs/party?q=100%25')).json().total).toBe(1);
+    expect((await get('/api/catalogs/party?q=%5C')).json().total).toBe(0); // dấu \ đơn lẻ không làm hỏng mẫu tìm kiếm
+  });
+
+  it('cắt khoảng trắng mã và tên; mã toàn khoảng trắng bị từ chối', async () => {
+    const id = (await post('party', { code: '  KH9 ', name: ' Khách 9 ' })).json().id;
+    expect((await get(`/api/catalogs/party/${id}`)).json()).toMatchObject({ code: 'KH9', name: 'Khách 9' });
+    expect((await post('party', { code: '   ', name: 'x' })).statusCode).toBe(400);
+    expect((await post('party', { code: 'KH10', name: '   ' })).statusCode).toBe(400);
+  });
+
+  it('ngưng dùng rồi lọc theo trạng thái; dùng lại; danh mục không có cột is_active bị 400', async () => {
+    const id = (await post('party', { code: 'KH_NG', name: 'Sẽ ngưng dùng' })).json().id as string;
+    const has = async (q: string) => (await get(`/api/catalogs/party?q=KH_NG${q}`)).json().rows.some((r: { id: string }) => r.id === id);
+    expect(await has('')).toBe(true);
+    const off = await ctx.app.inject({ method: 'POST', url: `/api/catalogs/party/${id}/deactivate`, headers: { cookie }, payload: {} });
+    expect(off.statusCode, off.body).toBe(200);
+    expect(await has('')).toBe(false); expect(await has('&active=false')).toBe(true); expect(await has('&active=all')).toBe(true); expect(await has('&active=true')).toBe(false);
+    expect((await get(`/api/catalogs/party/${id}`)).json().is_active).toBe(false); // lấy theo id vẫn thấy dòng đã ngưng
+    expect((await ctx.app.inject({ method: 'POST', url: `/api/catalogs/party/${id}/activate`, headers: { cookie }, payload: {} })).statusCode).toBe(200);
+    expect(await has('')).toBe(true);
+    expect((await ctx.app.inject({ method: 'POST', url: `/api/catalogs/party/${id}/deactivate`, headers: { cookie }, payload: {} })).statusCode).toBe(200);
+    expect((await get('/api/catalogs/party?active=zzz')).statusCode).toBe(400);
+    const flagless = await ctx.app.inject({ method: 'POST', url: '/api/catalogs/exchange_rate/1/deactivate', headers: { cookie }, payload: {} });
+    expect(flagless.statusCode).toBe(400); expect(flagless.json().error.code).toBe('CATALOG_NO_ACTIVE_FLAG');
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/catalogs/party/abc/deactivate', headers: { cookie }, payload: {} })).statusCode).toBe(404);
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/catalogs/currency/VND/deactivate', headers: { cookie }, payload: {} })).statusCode).toBe(200); // khóa theo mã
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/catalogs/currency/VND/activate', headers: { cookie }, payload: {} })).statusCode).toBe(200);
+  });
+
+  it('người chỉ xem không ngưng dùng được danh mục (403)', async () => {
+    const admin = await bootstrapTenant(ctx, { code: `DV${Date.now()}` });
+    const username = `xem_ngung_${Date.now()}`;
+    await ctx.app.inject({ method: 'POST', url: '/api/users', headers: { cookie: admin.cookie }, payload: { username, fullName: 'Xem', password: TEST_PASSWORD, roleCode: 'xem' } });
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: TEST_PASSWORD } });
+    const headers = { cookie: `sid=${login.cookies.find((c) => c.name === 'sid')!.value}` };
+    const uom = (await get('/api/catalogs/uom?q=CAI', headers)).json().rows[0] as { id: string };
+    expect((await ctx.app.inject({ method: 'POST', url: `/api/catalogs/uom/${uom.id}/deactivate`, headers, payload: {} })).statusCode).toBe(403);
+  });
+
+  it('id số lẻ, page quá lớn, trùng mã: không 500, không lộ tên ràng buộc', async () => {
+    expect((await get('/api/catalogs/department/1.5')).statusCode).toBe(404);
+    expect((await get('/api/catalogs/party/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaag')).statusCode).toBe(404);
+    expect((await get('/api/catalogs/party?page=10001')).statusCode).toBe(400);
+    expect((await ctx.app.inject({ method: 'PUT', url: '/api/accounts/1.5', headers: { cookie }, payload: { name: 'x' } })).statusCode).toBeLessThan(500);
+    const dup = await post('party', { code: 'KH9', name: 'Trùng' });
+    expect(dup.statusCode).toBe(409); expect(dup.json().error.code).toBe('DUPLICATE'); expect(dup.json().error.message).toBe('Mã đã tồn tại'); expect(dup.body).not.toMatch(/_key|_tenant_id/);
+    const rate = { currency_code: 'USD', rate_date: '2026-03-01', rate_type: 'buy', rate: '25000' };
+    expect((await post('exchange_rate', rate)).statusCode).toBe(201);
+    const dupRate = await post('exchange_rate', rate);
+    expect(dupRate.statusCode).toBe(409); expect(dupRate.body).not.toMatch(/_key|_tenant_id/);
   });
 
   it('currency_code không có trong danh mục loại tiền bị 404 LOOKUP_NOT_FOUND', async () => {

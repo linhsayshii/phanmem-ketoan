@@ -16,7 +16,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       normalBalance: z.enum(['debit', 'credit', 'both']).optional(), trackCurrency: z.boolean().optional(),
       subledgerKind: z.enum(['receivable', 'payable', 'inventory', 'fixed_asset', 'bank', 'cash']).nullable().optional() }) } },
     async (req, reply) => reply.status(201).send({ id: await app.withTenant(req, (trx) => addSubAccount(trx, req.auth!.tenantId!, req.body)) }));
-  app.put('/api/accounts/:id', { preHandler: app.requirePermission('account.update'), schema: { params: z.object({ id: z.coerce.number() }), body: z.object({
+  app.put('/api/accounts/:id', { preHandler: app.requirePermission('account.update'), schema: { params: z.object({ id: z.string().regex(/^\d{1,15}$/).transform(Number) }), body: z.object({
       name: z.string().min(1).optional(), nameEn: z.string().nullable().optional(), isActive: z.boolean().optional(), trackCurrency: z.boolean().optional(),
       subledgerKind: z.enum(['receivable', 'payable', 'inventory', 'fixed_asset', 'bank', 'cash']).nullable().optional() }) } },
     async (req) => {

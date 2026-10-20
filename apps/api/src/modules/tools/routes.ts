@@ -21,7 +21,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   // Đường tĩnh /api/catalogs/data_check_rule được find-my-way ưu tiên hơn /api/catalogs/:name của khung danh mục chung.
   const base = '/api/catalogs/data_check_rule';
   const params = z.object({ id: z.string() });
-  app.get(base, { preHandler: app.requirePermission('catalog.view'), schema: { querystring: z.object({ q: z.string().optional(), page: z.coerce.number().int().min(1).default(1), size: z.coerce.number().int().min(1).max(1000).default(100) }) } },
+  app.get(base, { preHandler: app.requirePermission('catalog.view'), schema: { querystring: z.object({ q: z.string().optional(), page: z.coerce.number().int().min(1).max(10_000).default(1), size: z.coerce.number().int().min(1).max(1000).default(100) }) } },
     async (req) => app.withTenant(req, (trx) => listRows(trx, ruleDef, req.query)));
   app.get(`${base}/:id`, { preHandler: app.requirePermission('catalog.view'), schema: { params } }, async (req) => app.withTenant(req, (trx) => getRow(trx, ruleDef, req.params.id)));
   app.put(`${base}/:id`, { preHandler: app.requirePermission('data_check.manage'), schema: { params } },

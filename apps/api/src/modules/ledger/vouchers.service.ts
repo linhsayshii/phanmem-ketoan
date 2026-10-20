@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Database } from '@kt/db';
 import { D, sum, VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
+import { likePattern } from '../master/crud.js';
 
 export const dateIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 // Tiền hạch toán là đồng nguyên (numeric(20,0) sẽ âm thầm làm tròn '100.5'); nguyên tệ numeric(20,4); tỷ giá numeric(20,10) và phải dương.
@@ -223,7 +224,7 @@ export async function listVouchers(trx: Trx, f: { type?: string | undefined; fro
   if (f.from) q = q.where('v.posting_date', '>=', f.from);
   if (f.to) q = q.where('v.posting_date', '<=', f.to);
   if (f.state) q = q.where('v.state', '=', f.state);
-  if (f.q) q = q.where((eb) => eb.or([eb('v.voucher_no', 'ilike', `%${f.q}%`), eb('v.description', 'ilike', `%${f.q}%`), eb('p.name', 'ilike', `%${f.q}%`)]));
+  if (f.q) { const like = likePattern(f.q); q = q.where((eb) => eb.or([eb('v.voucher_no', 'ilike', like), eb('v.description', 'ilike', like), eb('p.name', 'ilike', like)])); }
   const total = Number((await q.select(sql<string>`count(*)`.as('n')).executeTakeFirstOrThrow()).n);
   const rows = await q.select(['v.id', 'v.voucher_type as voucherType', 'v.voucher_no as voucherNo', 'v.posting_date as postingDate', 'v.state', 'v.description', 'p.name as partyName',
       sql<string>`(SELECT coalesce(sum(debit),0) FROM voucher_line l WHERE l.voucher_id = v.id AND l.posting_date = v.posting_date)`.as('totalDebit')])

@@ -7,9 +7,14 @@ type Trx = Transaction<Database>;
 // currency có khóa chính (tenant_id, code) nên "id" của nó là code.
 export const idColumn = (def: CatalogDef): string => (def.table === 'currency' ? 'code' : 'id');
 const UUID_TABLES = new Set(['party_group', 'party', 'party_bank_account']);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Thoát \, % và _ để từ khóa tìm kiếm là chuỗi thường, không phải mẫu LIKE (dùng cùng ILIKE ... ESCAPE '\').
+export const likePattern = (q: string) => '%' + q.replace(/[\\%_]/g, (c) => '\\' + c) + '%';
+// Danh mục có cột is_active (schema khai báo) mới có ngưng dùng / lọc trạng thái.
+export const hasActiveFlag = (def: Pick<CatalogDef, 'schema'>): boolean => 'is_active' in def.schema.shape;
 // Kiểm tra :id theo kiểu cột khóa trước khi truy vấn để id sai dạng trả 404 thay vì lỗi cast của PostgreSQL.
 function assertId(def: CatalogDef, id: string): void {
-  const re = def.table === 'currency' ? /^[A-Z]{3}$/ : UUID_TABLES.has(def.table as string) ? /^[0-9a-f-]{36}$/i : /^\d{1,15}$/;
+  const re = def.table === 'currency' ? /^[A-Z]{3}$/ : UUID_TABLES.has(def.table as string) ? UUID_RE : /^\d{1,15}$/;
   if (!re.test(id)) throw new AppError('NOT_FOUND', 'Không tìm thấy bản ghi', 404);
 }
 const lookupsOf = (def: CatalogDef) => def.columns.filter((c) => c.lookup && c.lookup.catalog !== 'currency').map((c, i) => ({ key: c.key, idKey: c.key.replace(/_code$/, '_id'), table: catalogByName(c.lookup!.catalog)!.table as string, alias: `l${i}` }));
@@ -47,12 +52,13 @@ export async function resolveLookups(trx: Trx, def: CatalogDef, row: Record<stri
 }
 
 // Trả hàng kèm `<x>_code` thay cho `<x>_id` để giao diện và Excel dùng mã.
-export async function listRows(trx: Trx, def: CatalogDef, q: { q?: string | undefined; page: number; size: number }, whereId?: string) {
+export async function listRows(trx: Trx, def: CatalogDef, q: { q?: string | undefined; page: number; size: number; active?: 'true' | 'false' | 'all' | undefined }, whereId?: string) {
   const lk = lookupsOf(def);
   const extra = lk.length ? sql.join(lk.map((j) => sql`, ${sql.ref(`${j.alias}.code`)} AS ${sql.ref(j.key)}`), sql``) : sql``;
   const joins = lk.length ? sql.join(lk.map((j) => sql` LEFT JOIN ${sql.table(j.table)} AS ${sql.ref(j.alias)} ON ${sql.ref(`${j.alias}.id`)} = ${sql.ref(`t.${j.idKey}`)}`), sql``) : sql``;
   const conds = [];
-  if (q.q) conds.push(sql`(${sql.join(def.searchIn.map((c) => sql`${sql.ref(`t.${c}`)}::text ILIKE ${'%' + q.q + '%'}`), sql` OR `)})`);
+  if (q.q) { const like = likePattern(q.q); conds.push(sql`(${sql.join(def.searchIn.map((c) => sql`${sql.ref(`t.${c}`)}::text ILIKE ${like} ESCAPE '\\'`), sql` OR `)})`); }
+  if (hasActiveFlag(def) && q.active && q.active !== 'all') conds.push(sql`${sql.ref('t.is_active')} = ${q.active === 'true'}`);
   if (whereId !== undefined) conds.push(sql`${sql.ref(`t.${idColumn(def)}`)} = ${whereId}`);
   const where = conds.length ? sql`WHERE ${sql.join(conds, sql` AND `)}` : sql``;
   const total = await sql<{ n: string }>`SELECT count(*) AS n FROM ${sql.table(def.table as string)} t ${where}`.execute(trx);
@@ -65,6 +71,13 @@ export async function getRow(trx: Trx, def: CatalogDef, id: string) {
   const { rows } = await listRows(trx, def, { page: 1, size: 1 }, id);
   if (!rows[0]) throw new AppError('NOT_FOUND', `Không tìm thấy ${def.label}`, 404);
   return rows[0];
+}
+
+export async function setActive(trx: Trx, def: CatalogDef, id: string, active: boolean): Promise<void> {
+  if (!hasActiveFlag(def)) throw new AppError('CATALOG_NO_ACTIVE_FLAG', `${def.label} không có trạng thái ngưng dùng`, 400);
+  assertId(def, id);
+  const r = await trx.updateTable(def.table as never).set({ is_active: active } as never).where(idColumn(def) as never, '=', id as never).executeTakeFirst();
+  if (r.numUpdatedRows === 0n) throw new AppError('NOT_FOUND', `Không tìm thấy ${def.label}`, 404);
 }
 
 export async function createRow(trx: Trx, tenantId: string, def: CatalogDef, body: unknown): Promise<string> {

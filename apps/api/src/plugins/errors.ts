@@ -24,7 +24,8 @@ export default fp(async (app) => {
     if (e.code?.startsWith('22') || e.code === '23502' || e.code === '23514') return reply.status(400).send({ error: { code: 'VALIDATION', message: 'Dữ liệu không hợp lệ' } });
     // Bế tắc (40P01) và lỗi tuần tự hóa (40001): PostgreSQL đã hủy giao dịch này, chưa ghi gì; người dùng thử lại được.
     if (e.code === '40P01' || e.code === '40001') return reply.status(409).send({ error: { code: 'CONCURRENT_RETRY', message: 'Thao tác đồng thời bị xung đột, hãy thử lại' } });
-    if (e.code === '23505') return reply.status(409).send({ error: { code: 'DUPLICATE', message: `Trùng dữ liệu (${e.constraint ?? ''})` } });
+    // Không đưa tên ràng buộc ra ngoài; ràng buộc duy nhất của danh mục đều có `code` trong tên.
+    if (e.code === '23505') return reply.status(409).send({ error: { code: 'DUPLICATE', message: e.constraint?.includes('code') ? 'Mã đã tồn tại' : 'Trùng dữ liệu đã có' } });
     if (e.code === '23503') return reply.status(409).send({ error: { code: 'REFERENCED', message: 'Dữ liệu đang được tham chiếu' } });
     if (e.code === '42501') return reply.status(403).send({ error: { code: 'FORBIDDEN', message: 'Không có quyền trên dữ liệu' } });
     if (e.statusCode && e.statusCode < 500) return reply.status(e.statusCode).send({ error: { code: 'HTTP', message: e.message } });

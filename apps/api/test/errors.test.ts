@@ -12,6 +12,9 @@ const raise = (message: string) => Object.assign(new Error(message), { code: 'P0
 app.get('/deadlock', async () => { throw pgError('40P01'); });
 app.get('/serialization', async () => { throw pgError('40001'); });
 app.get('/duplicate', async () => { throw pgError('23505'); });
+app.get('/duplicate-code', async () => { throw Object.assign(pgError('23505'), { constraint: 'party_tenant_id_code_key' }); });
+app.get('/duplicate-other', async () => { throw Object.assign(pgError('23505'), { constraint: 'voucher_tenant_id_idempotency_key_key' }); });
+app.get('/overflow', async () => { throw pgError('22003'); });
 app.get('/raise-not-found', async () => { throw raise('VOUCHER_NOT_FOUND: x'); });
 app.get('/raise-posted', async () => { throw raise('VOUCHER_POSTED: y'); });
 afterAll(async () => { await app.close(); });
@@ -38,6 +41,15 @@ describe('ánh xạ lỗi PostgreSQL', () => {
   });
   it('lỗi 23505 vẫn là DUPLICATE', async () => {
     expect((await app.inject({ method: 'GET', url: '/duplicate' })).json().error.code).toBe('DUPLICATE');
+  });
+  it('lỗi 23505 không lộ tên ràng buộc: "Mã đã tồn tại" khi trùng mã, còn lại "Trùng dữ liệu đã có"', async () => {
+    const code = await app.inject({ method: 'GET', url: '/duplicate-code' });
+    expect([code.statusCode, code.json().error]).toEqual([409, { code: 'DUPLICATE', message: 'Mã đã tồn tại' }]);
+    for (const url of ['/duplicate', '/duplicate-other']) expect((await app.inject({ method: 'GET', url })).json().error).toEqual({ code: 'DUPLICATE', message: 'Trùng dữ liệu đã có' });
+  });
+  it('lỗi dữ liệu lớp 22 (tràn số) là 400 VALIDATION', async () => {
+    const r = await app.inject({ method: 'GET', url: '/overflow' });
+    expect([r.statusCode, r.json().error.code]).toEqual([400, 'VALIDATION']);
   });
   it('P0001 mã *_NOT_FOUND từ SQL trả 404, mã khác 409', async () => {
     const nf = await app.inject({ method: 'GET', url: '/raise-not-found' });

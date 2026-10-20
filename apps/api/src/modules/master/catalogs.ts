@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import type { Database } from '@kt/db';
+import { VND_AMOUNT_RE } from '@kt/domain';
 
 export interface ColumnDef { key: string; label: string; type: 'text' | 'number' | 'boolean' | 'date' | 'select'; required?: boolean; options?: { value: string; label: string }[]; lookup?: { catalog: string }; width?: number }
 export interface CatalogDef { name: string; table: keyof Database; label: string; schema: z.ZodObject<z.ZodRawShape>; columns: ColumnDef[]; uniqueBy: string[]; sort: string; searchIn: string[] }
 
-// Số tiền VND: số nguyên không dấu (cột numeric(20,0)).
-const vnd = z.string().regex(/^\d+$/);
+// Số tiền VND: số nguyên không dấu, tối đa 16 chữ số (cột numeric(20,0)).
+const vnd = z.string().regex(VND_AMOUNT_RE);
 // Tỷ giá numeric(20,10): tối đa 10 chữ số nguyên và 10 chữ số thập phân, phải > 0.
 const exRate = z.string().regex(/^\d{1,10}(\.\d{1,10})?$/).refine((v) => Number(v) > 0);
 // Thuế suất % numeric(5,2): không quá 100.
@@ -18,8 +19,8 @@ export const dateIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => {
 });
 // Mã tiền tệ khớp assertId của currency (/^[A-Z]{3}$/), nếu không dòng tạo ra sẽ không GET/PUT/DELETE được.
 const ccy = z.string().regex(/^[A-Z]{3}$/, 'Mã tiền tệ gồm 3 chữ in hoa');
-const code = z.string().min(1).max(30);
-const text = (o = true) => (o ? z.string().nullable().optional() : z.string().min(1));
+const code = z.string().trim().min(1).max(30);
+const text = (o = true) => (o ? z.string().nullable().optional() : z.string().trim().min(1));
 
 const defs: CatalogDef[] = [
   { name: 'party_group', table: 'party_group', label: 'Nhóm đối tượng', uniqueBy: ['code'], sort: 'code', searchIn: ['code', 'name'],

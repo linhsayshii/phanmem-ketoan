@@ -10,7 +10,9 @@ import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
 interface ColumnDef { key: string; label: string; type: 'text' | 'number' | 'boolean' | 'date' | 'select'; required?: boolean; options?: { value: string; label: string }[]; lookup?: { catalog: string } }
-interface Def { name: string; label: string; columns: ColumnDef[] }
+interface Def { name: string; label: string; columns: ColumnDef[]; hasActiveFlag: boolean }
+type Active = 'true' | 'false' | 'all';
+const ACTIVE_OPTIONS = [{ value: 'true', label: 'Đang dùng' }, { value: 'false', label: 'Ngưng dùng' }, { value: 'all', label: 'Tất cả' }];
 type Row = Record<string, unknown>;
 
 // Khóa của currency là chính mã (không có cột id); các danh mục khác dùng id.
@@ -36,10 +38,10 @@ export default function CatalogPage() {
   const { me, can } = useAuth(); const qc = useQueryClient();
   const defs = useQuery({ queryKey: ['catalog-defs'], queryFn: () => api<Def[]>('/api/catalogs') });
   const def = defs.data?.find((d) => d.name === name);
-  const [filter, setFilter] = useRememberedFilter(`catalog:${name}`, { q: '' }, `${me?.tenantId ?? ''}:${me?.userId ?? ''}`);
+  const [filter, setFilter] = useRememberedFilter<{ q: string; active: Active }>(`catalog:${name}`, { q: '', active: 'true' }, `${me?.tenantId ?? ''}:${me?.userId ?? ''}`);
   const [qText, setQText] = useState(filter.q);
   useEffect(() => setQText(filter.q), [filter.q]); // bộ lọc nhớ nạp muộn từ máy chủ hoặc đổi danh mục thì ô tìm kiếm theo kịp
-  const rows = useQuery({ queryKey: ['catalog', name, filter.q], queryFn: () => api<{ rows: Row[]; total: number }>(`/api/catalogs/${name}?q=${encodeURIComponent(filter.q)}&size=1000`), enabled: !!def });
+  const rows = useQuery({ queryKey: ['catalog', name, filter.q, filter.active], queryFn: () => api<{ rows: Row[]; total: number }>(`/api/catalogs/${name}?q=${encodeURIComponent(filter.q)}&active=${filter.active}&size=1000`), enabled: !!def });
   const [editing, setEditing] = useState<Row | 'new' | null>(null);
   const [form] = Form.useForm();
   const save = useMutation({
@@ -52,19 +54,23 @@ export default function CatalogPage() {
     onError: (e) => void message.error((e as Error).message) });
   const remove = useMutation({ mutationFn: (id: string) => api(`/api/catalogs/${name}/${id}`, { method: 'DELETE' }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['catalog', name] }); void message.success('Đã xóa'); }, onError: (e) => void message.error((e as Error).message) });
+  const toggleActive = useMutation({ mutationFn: (v: { id: string; active: boolean }) => api(`/api/catalogs/${name}/${v.id}/${v.active ? 'activate' : 'deactivate'}`, { method: 'POST', json: {} }),
+    onSuccess: (_d, v) => { void qc.invalidateQueries({ queryKey: ['catalog', name] }); void message.success(v.active ? 'Đã cho dùng lại' : 'Đã ngưng dùng'); }, onError: (e) => void message.error((e as Error).message) });
   const columns = useMemo<ColDef<Row>[]>(() => def ? [...def.columns.map((c): ColDef<Row> => ({
     field: c.key, headerName: c.label, editable: false, width: c.type === 'boolean' ? 110 : 180,
     valueFormatter: (p) => c.type === 'number' ? formatVnNumber(p.value as string | null, scaleOf(def.name, c.key)) : c.type === 'date' && p.value ? formatVnDate(p.value as string) : c.type === 'boolean' ? (p.value ? '✓' : '') : c.type === 'select' ? (c.options?.find((o) => o.value === p.value)?.label ?? '') : String(p.value ?? ''),
-  })), { headerName: '', width: 140, editable: false, cellRenderer: (p: ICellRendererParams<Row>) => p.data ? (
+  })), { headerName: '', width: 220, editable: false, cellRenderer: (p: ICellRendererParams<Row>) => p.data ? (
     <Space>{can('catalog.update') && <a onClick={() => { setEditing(p.data!); form.setFieldsValue(p.data); }}>Sửa</a>}
+      {can('catalog.update') && def.hasActiveFlag && <a onClick={() => toggleActive.mutate({ id: idOf(p.data!), active: p.data!['is_active'] === false })}>{p.data['is_active'] === false ? 'Dùng lại' : 'Ngưng dùng'}</a>}
       {can('catalog.delete') && <a onClick={() => Modal.confirm({ title: `Xóa ${def.label.toLowerCase()} này?`, onOk: () => remove.mutate(idOf(p.data!)) })}>Xóa</a>}</Space>) : null }] : [],
-  [def, can, form, remove.mutate]);
+  [def, can, form, remove.mutate, toggleActive.mutate]);
   if (!def) return null;
   return (
     <>
       <Space style={{ marginBottom: 12 }}>
         <h2 style={{ margin: 0 }}>{def.label}</h2>
-        <Input.Search placeholder="Tìm mã, tên…" value={qText} onChange={(e) => setQText(e.target.value)} onSearch={(q) => setFilter({ q })} style={{ width: 280 }} allowClear />
+        <Input.Search placeholder="Tìm mã, tên…" value={qText} onChange={(e) => setQText(e.target.value)} onSearch={(q) => setFilter({ ...filter, q })} style={{ width: 280 }} allowClear />
+        {def.hasActiveFlag && <Select value={filter.active} options={ACTIVE_OPTIONS} onChange={(active: Active) => setFilter({ ...filter, active })} style={{ width: 140 }} aria-label="Trạng thái" />}
         {can('catalog.create') && <Button type="primary" onClick={() => { setEditing('new'); form.resetFields(); }}>Thêm (Insert)</Button>}
       </Space>
       <KeyboardGrid<Row> rows={rows.data?.rows ?? []} columns={columns} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly height="calc(100vh - 200px)" />
