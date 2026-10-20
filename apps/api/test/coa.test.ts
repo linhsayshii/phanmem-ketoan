@@ -68,7 +68,8 @@ describe('sinh tài khoản từ mẫu', () => {
   });
 
   it('TT99 chưa có mẫu: tạo năm tài chính bị 409 COA_TEMPLATE_PENDING và không để lại kỳ nào', async ({ skip }) => {
-    if ((await templateCount('TT99')) > 0) skip('Mẫu TT99 đã có dữ liệu, trường hợp chờ văn bản gốc không còn áp dụng');
+    // Vitest `skip` chỉ nhận 0 tham số theo kiểu: lý do bỏ qua nằm ở chú thích: mẫu TT99 đã có dữ liệu thì trường hợp chờ văn bản gốc không còn áp dụng.
+    if ((await templateCount('TT99')) > 0) skip();
     const { cookie } = await bootstrapTenant(ctx, { code: `CE${Date.now()}` });
     const r = await post(cookie, '/api/fiscal-years', { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT99' });
     expect(r.statusCode).toBe(409); expect(r.json().error.code).toBe('COA_TEMPLATE_PENDING');

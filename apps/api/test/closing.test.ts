@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'kysely';
+import type { LightMyRequestResponse } from 'fastify';
 import { withTenant } from '@kt/db';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
 import { runStep } from '../src/modules/ledger/closing.js';
@@ -45,7 +46,7 @@ describe('kết chuyển', () => {
   it('chứng từ KC/PB do hệ thống sinh: bỏ ghi sổ, hủy, xóa, sửa dòng, nhân bản đều bị chặn (API và SQL trực tiếp)', async () => {
     const kcId = (await ctx.app.inject({ method: 'GET', url: '/api/vouchers?type=KC&from=2026-12-31&to=2026-12-31', headers: { cookie } })).json().rows[0].id as string;
     const MSG = 'Chứng từ do hệ thống sinh (kết chuyển/phân bổ); dùng Chạy lại (đảo cũ) ở màn hình Kết chuyển';
-    const call = (method: 'GET' | 'POST' | 'DELETE' | 'PUT', url: string, payload?: object) => ctx.app.inject({ method, url, headers: { cookie }, payload });
+    const call = (method: 'GET' | 'POST' | 'DELETE' | 'PUT', url: string, payload?: object) => ctx.app.inject({ method, url, headers: { cookie }, ...(payload ? { payload } : {}) });
     const version = (await call('GET', `/api/vouchers/${kcId}`)).json().version as number;
     for (const [what, r] of [['unpost', await call('POST', `/api/vouchers/${kcId}/unpost`)], ['discard', await call('POST', `/api/vouchers/${kcId}/discard`)], ['delete', await call('DELETE', `/api/vouchers/${kcId}`)],
       ['sửa dòng', await call('PUT', `/api/vouchers/${kcId}`, { version, lines: [{ lineNo: 1, description: 'sửa' }] })]] as const)
@@ -96,7 +97,7 @@ describe('kết chuyển', () => {
 });
 
 // Các kiểm thử dưới đây dùng công ty riêng để không phụ thuộc trạng thái của nhóm trên.
-type Call = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object) => ReturnType<TestApp['app']['inject']>;
+type Call = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object) => Promise<LightMyRequestResponse>;
 async function newTenant(label: string, years: [number, string][]) {
   const { cookie: c, tenantId, userId } = await bootstrapTenant(ctx, { code: `${label}${Date.now()}` });
   const call: Call = (method, url, payload) => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload ? { payload } : {}) });

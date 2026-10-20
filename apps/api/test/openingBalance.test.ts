@@ -227,7 +227,7 @@ describe('số dư đầu kỳ nhiều hệ tài khoản và nhiều năm', () =
 describe('chứng từ DK: không lập tay, không bị chiếm, số dư lớn', () => {
   let c3: string; let t3: string; let u3: string;
   const jobs = async () => (await sql<{ n: number }>`SELECT count(*) AS n FROM pgboss.job WHERE name = 'balance.recompute' AND data->>'tenantId' = ${t3}`.execute(ctx.t.admin)).rows[0]!.n;
-  const api = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object) => ctx.app.inject({ method, url, headers: { cookie: c3 }, payload });
+  const api = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object) => ctx.app.inject({ method, url, headers: { cookie: c3 }, ...(payload ? { payload } : {}) });
   const pkt = (voucherType: string) => ({ voucherType, postingDate: '2026-02-05', documentDate: '2026-02-05', lines: [{ accountCode: '1111', debit: '5', credit: '0' }, { accountCode: '4111', debit: '0', credit: '5' }] });
   beforeAll(async () => {
     ({ cookie: c3, tenantId: t3, userId: u3 } = await bootstrapTenant(ctx, { code: `OD${Date.now()}` }));
