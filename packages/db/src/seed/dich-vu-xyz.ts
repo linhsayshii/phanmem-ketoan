@@ -20,7 +20,7 @@ async function seedXyzData(c: pg.Client, tenantId: string, admin: string, regime
   await c.query(`UPDATE tenant SET address = '45 Trần Duy Hưng, Cầu Giấy, Hà Nội', legal_rep = 'Lê Minh Quân', chief_accountant = 'Phạm Thu Hà' WHERE id = $1`, [tenantId]);
   await insertFiscalYear(c, tenantId, { fiscalYear: FY, dateFrom: `${FY}-01-01`, months: 12, regime });
   await generateAccountsSql(c, tenantId, regime);
-  await insertDefaultClosingSteps(c, tenantId);
+  await insertDefaultClosingSteps(c, tenantId, regime);
   const acc = new Map<string, number>((await c.query('SELECT code, id FROM account WHERE tenant_id = $1 AND NOT is_group', [tenantId])).rows.map((r) => [r.code, r.id]));
   const pick = (cands: string[]) => { const f = cands.find((x) => acc.has(x)); if (!f) throw new Error(`Hệ ${regime} không có tài khoản nào trong ${cands.join(', ')}`); return f; };
   const A = (k: string) => pick(XYZ_ACCOUNT_CANDIDATES[k] ?? [k]);

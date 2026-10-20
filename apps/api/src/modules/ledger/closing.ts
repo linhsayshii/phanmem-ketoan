@@ -3,7 +3,8 @@ import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
 import { loadDefaultClosingSteps } from '@kt/coa-data';
-import { VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
+import { VND_AMOUNT_MSG, VND_AMOUNT_RE, type Regime } from '@kt/domain';
+import { regimeOf } from '../reporting/ledgers.js';
 import { AppError } from '../../plugins/errors.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { dateIso } from './vouchers.service.js';
@@ -17,9 +18,9 @@ export const stepInput = z.object({ id: z.string().uuid().optional(), stepOrder:
 type Trx = Transaction<Database>;
 
 // Thay toàn bộ sơ đồ bằng mẫu. Nhật ký chạy (closing_run) không mất: step_id về NULL.
-export async function loadClosingTemplate(trx: Trx, tenantId: string): Promise<number> {
+export async function loadClosingTemplate(trx: Trx, tenantId: string, regime: Regime): Promise<number> {
   await trx.deleteFrom('closing_step').execute();
-  const tpl = loadDefaultClosingSteps();
+  const tpl = loadDefaultClosingSteps(regime);
   for (const s of tpl) await trx.insertInto('closing_step').values({ tenant_id: tenantId, step_order: s.stepOrder, name: s.name, mode: s.mode, from_accounts: s.fromAccounts, to_account: s.toAccount,
     keep_balance: s.keepBalance ?? '0', by_dimension: s.byDimension ?? null, ratio_source: s.ratioSource ? JSON.stringify(s.ratioSource) : null, run_at: s.runAt }).execute();
   return tpl.length;
@@ -62,7 +63,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     });
     return { ok: true };
   });
-  app.post('/api/closing/steps/reload', { preHandler: app.requirePermission('closing_step.update') }, async (req) => ({ count: await app.withTenant(req, (trx) => loadClosingTemplate(trx, req.auth!.tenantId!)) }));
+  app.post('/api/closing/steps/reload', { preHandler: app.requirePermission('closing_step.update') }, async (req) => ({ count: await app.withTenant(req, async (trx) => loadClosingTemplate(trx, req.auth!.tenantId!, (await regimeOf(trx, { from: new Date().toISOString().slice(0, 10), to: new Date().toISOString().slice(0, 10) })) as Regime)) }));
 
   app.post('/api/closing/run', { preHandler: app.requirePermission('closing.run'), schema: { body: runBody } }, async (req) => {
     const tenantId = req.auth!.tenantId!;

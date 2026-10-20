@@ -1,5 +1,5 @@
 {
   "complete": true,
   "source": "Phụ lục II (A - Danh mục tài khoản kế toán) Thông tư số 99/2025/TT-BTC ngày 27/10/2025 của Bộ Tài chính; Công báo số 1565 + 1566 ngày 16/11/2025, trang 35-45, https://congbao.chinhphu.vn/van-ban/thong-tu-so-99-2025-tt-btc-46529.htm",
-  "note": "184 tài khoản: 71 cấp 1, 101 cấp 2, 10 cấp 3, 2 cấp 4 (215121, 215122), đúng bảng danh mục của văn bản (không có tài khoản ngoài bảng). Số hiệu và tên lấy từ văn bản; normal_balance, track_currency, subledger_kind là thuộc tính phần mềm (suy từ tt200.csv và bản chất tài khoản). Danh sách 'TK mới' trong ghi chú cũ (137, 246, 351) KHÔNG có trong bảng danh mục của TT 99/2025, nên không nhập; 1383 (Thuế TTĐB của hàng nhập khẩu), 215, 2295, 332 có. Các TK 161, 417, 441, 461, 466, 611, 631 không có trong bảng."
+  "note": "184 tài khoản: 71 cấp 1, 101 cấp 2, 10 cấp 3, 2 cấp 4 (215121, 215122), đúng bảng danh mục của văn bản (không có tài khoản ngoài bảng). Số hiệu và tên lấy từ văn bản; normal_balance, track_currency, subledger_kind là thuộc tính phần mềm (suy từ tt200.csv và bản chất tài khoản). 137, 246, 351 là mã số chỉ tiêu của Báo cáo tình hình tài chính (B01), không phải số hiệu tài khoản, nên không nhập vào danh mục tài khoản; 1383 (Thuế TTĐB của hàng nhập khẩu), 215, 2295, 332 có. Các TK 161, 417, 441, 461, 466, 611, 631 không có trong bảng."
 }

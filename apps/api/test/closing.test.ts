@@ -10,8 +10,8 @@ const bal = async (asOf: string) => { const r = await ctx.app.inject({ method: '
 
 beforeAll(async () => {
   ctx = await createTestApp(); ({ cookie, tenantId, userId } = await bootstrapTenant(ctx, { code: `KC${Date.now()}` }));
-  await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' } });
-  await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT133' } });
+  await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT200' } });
+  await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT200' } });
   await pkt('2026-03-05', [{ accountCode: '1121', debit: '1000' }, { accountCode: '5113', credit: '1000' }]);
   await pkt('2026-06-05', [{ accountCode: '6421', debit: '600' }, { accountCode: '1121', credit: '600' }]);
   await pkt('2026-09-05', [{ accountCode: '6422', debit: '100' }, { accountCode: '1111', credit: '100' }]);
@@ -110,7 +110,7 @@ const post = (call: Call, date: string, lines: object[]) => call('POST', '/api/v
 
 describe('kết chuyển: đồng thời và lịch sử chạy', () => {
   it('khóa theo công ty: giao dịch thứ hai chờ giao dịch đầu commit rồi thấy số dư đã về 0, không sinh trùng KC', async () => {
-    const { call, steps, tenantId, userId } = await newTenant('KCKHOA', [[2026, 'TT133']]);
+    const { call, steps, tenantId, userId } = await newTenant('KCKHOA', [[2026, 'TT200']]);
     await post(call, '2026-03-05', [{ accountCode: '1121', debit: '1000' }, { accountCode: '5113', credit: '1000' }]);
     const step2 = (await steps()).find((s) => s.stepOrder === 2)!;
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -127,7 +127,7 @@ describe('kết chuyển: đồng thời và lịch sử chạy', () => {
   }, 30_000);
 
   it('chạy cùng một bước hai lần song song chỉ sinh một bộ chứng từ; nạp lại mẫu không xóa nhật ký chạy', async () => {
-    const { call, steps } = await newTenant('KCSONG', [[2026, 'TT133']]);
+    const { call, steps } = await newTenant('KCSONG', [[2026, 'TT200']]);
     expect((await post(call, '2026-03-05', [{ accountCode: '1121', debit: '1000' }, { accountCode: '5113', credit: '1000' }])).statusCode).toBe(201);
     const step2 = (await steps()).find((s) => s.stepOrder === 2)!;
     const run = () => call('POST', '/api/closing/run', { stepId: step2.id, postingDate: '2026-12-31' });
@@ -148,7 +148,7 @@ describe('kết chuyển: đồng thời và lịch sử chạy', () => {
   }, 30_000);
 
   it('PUT sơ đồ giữ nguyên nhật ký của bước còn lại, đổi chỗ thứ tự được', async () => {
-    const { call, steps } = await newTenant('KCPUT', [[2026, 'TT133']]);
+    const { call, steps } = await newTenant('KCPUT', [[2026, 'TT200']]);
     await post(call, '2026-03-05', [{ accountCode: '1121', debit: '1000' }, { accountCode: '5113', credit: '1000' }]);
     const cur = (await call('GET', '/api/closing/steps')).json() as { id: string; stepOrder: number }[];
     await call('POST', '/api/closing/run', { stepId: cur.find((s) => s.stepOrder === 2)!.id, postingDate: '2026-12-31' });
@@ -178,7 +178,7 @@ describe('kết chuyển: phạm vi chế độ, đối tượng, lỗi', () => 
   }, 30_000);
 
   it('nguồn là tài khoản công nợ: dòng kết chuyển mang theo đối tượng', async () => {
-    const { call } = await newTenant('KCDT', [[2026, 'TT133']]);
+    const { call } = await newTenant('KCDT', [[2026, 'TT200']]);
     expect((await call('POST', '/api/catalogs/party', { code: 'KH1', name: 'Khách 1', is_customer: true })).statusCode).toBe(201);
     await post(call, '2026-03-05', [{ accountCode: '131', debit: '500', partyCode: 'KH1' }, { accountCode: '5113', credit: '500' }]);
     const put = await call('PUT', '/api/closing/steps', { steps: [{ stepOrder: 1, name: 'Chuyển công nợ', mode: 'transfer', fromAccounts: ['131'], toAccount: '4212' }] });
@@ -191,7 +191,7 @@ describe('kết chuyển: phạm vi chế độ, đối tượng, lỗi', () => 
   }, 30_000);
 
   it('mã lỗi: bước không có, tỷ lệ sai, tài khoản đích sai, ngày ngoài kỳ, ngày sai định dạng', async () => {
-    const { call } = await newTenant('KCLOI', [[2026, 'TT133']]);
+    const { call } = await newTenant('KCLOI', [[2026, 'TT200']]);
     const put = await call('PUT', '/api/closing/steps', { steps: [
       { stepOrder: 1, name: 'Tỷ lệ sai', mode: 'allocate', fromAccounts: ['242'], ratioSource: { ratios: [{ account: '6421', percent: '60' }, { account: '6422', percent: '30' }] } },
       { stepOrder: 2, name: 'Đích sai', mode: 'transfer', fromAccounts: ['511'], toAccount: '99999' },

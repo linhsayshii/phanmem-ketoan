@@ -29,7 +29,7 @@ export async function createFiscalYear(trx: Transaction<Database>, tenantId: str
   const hasAccounts = await trx.selectFrom('account').select('id').where('regime', '=', input.regime).limit(1).executeTakeFirst();
   if (!hasAccounts) await generateAccounts(trx, tenantId, input.regime as Regime);
   // Sơ đồ kết chuyển mặc định chỉ nạp khi công ty chưa có bước nào (năm sau không ghi đè sơ đồ đã sửa).
-  if (!(await trx.selectFrom('closing_step').select('id').limit(1).executeTakeFirst())) await loadClosingTemplate(trx, tenantId);
+  if (!(await trx.selectFrom('closing_step').select('id').limit(1).executeTakeFirst())) await loadClosingTemplate(trx, tenantId, input.regime as Regime);
   // Định nghĩa báo cáo của hệ này chỉ sao chép từ mẫu khi công ty chưa có: năm sau không ghi đè báo cáo đã sửa (bộ chờ văn bản thì không có mẫu để sao chép).
   if (!(await trx.selectFrom('report_def').select('id').where('regime', '=', input.regime).limit(1).executeTakeFirst())) await copyReportTemplates(trx, tenantId, input.regime);
   return periods.length;

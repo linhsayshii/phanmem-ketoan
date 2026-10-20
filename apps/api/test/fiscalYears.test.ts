@@ -18,6 +18,21 @@ describe('năm tài chính', () => {
     const dup = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' } });
     expect(dup.statusCode).toBe(409);
   });
+  it('sơ đồ kết chuyển nạp theo chế độ của năm tài chính', async () => {
+    const stepsOf = async (regime: string) => {
+      const { cookie } = await bootstrapTenant(ctx, { code: `FK${regime}${Date.now()}` });
+      await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime } });
+      const steps = (await ctx.app.inject({ method: 'GET', url: '/api/closing/steps', headers: { cookie } })).json() as { fromAccounts: string[]; toAccount: string }[];
+      const reload = await ctx.app.inject({ method: 'POST', url: '/api/closing/steps/reload', headers: { cookie } });
+      expect(reload.statusCode, reload.body).toBe(200);
+      return { steps, reloaded: reload.json().count as number };
+    };
+    const t99 = await stepsOf('TT99');
+    expect(t99.steps[0]).toMatchObject({ fromAccounts: ['521'], toAccount: '511' });
+    const t133 = await stepsOf('TT133');
+    expect(t133.steps.flatMap((s) => s.fromAccounts)).not.toContain('521');
+    expect(t133.reloaded).toBe(t133.steps.length);
+  });
   it('năm sau phải nối tiếp ngày kết thúc năm trước', async () => {
     const { cookie } = await bootstrapTenant(ctx, { code: `FZ${Date.now()}` });
     await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' } });

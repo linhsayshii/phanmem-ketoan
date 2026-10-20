@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { validateCoaTemplate } from '@kt/domain';
-import { COA_REGIMES, dataPath, loadCoaTemplate, tt99Status } from '../src/index.js';
+import { COA_REGIMES, dataPath, loadCoaTemplate, loadDefaultClosingSteps, tt99Status } from '../src/index.js';
 
 // Tách một dòng CSV có nhận biết dấu nháy (cùng quy tắc với scripts/pick-columns.mjs; tệp tham chiếu không còn dấu xuống dòng trong ô).
 const splitLine = (l: string): string[] => {
@@ -72,5 +72,21 @@ describe('mẫu hệ thống tài khoản', () => {
     expect(loadCoaTemplate('TT133')).toHaveLength(123);
     expect(by.has('521')).toBe(false); expect(by.get('642')?.name).toBe('Chi phí quản lý kinh doanh');
     expect(by.get('1386')?.name).toBe('Cầm cố, thế chấp, ký quỹ, ký cược'); expect(by.get('3562')?.name).toContain('khoa học');
+  });
+});
+
+describe('sơ đồ kết chuyển mặc định theo chế độ', () => {
+  it.each(COA_REGIMES)('%s: mọi tài khoản nguồn và đích có trong hệ thống tài khoản của chế độ', (regime) => {
+    const codes = new Set(loadCoaTemplate(regime).map((r) => r.code));
+    const steps = loadDefaultClosingSteps(regime);
+    expect(steps.length).toBeGreaterThan(0);
+    for (const s of steps) for (const a of [...s.fromAccounts, ...(s.toAccount ? [s.toAccount] : [])]) expect(codes.has(a), `${regime} bước ${s.stepOrder}: ${a}`).toBe(true);
+  });
+  it('TT99 kết chuyển 521 vào 511; TT133 không có 521 và 641', () => {
+    expect(loadDefaultClosingSteps('TT99')[0]).toMatchObject({ fromAccounts: ['521'], toAccount: '511' });
+    const t133 = loadDefaultClosingSteps('TT133');
+    expect(t133.flatMap((s) => s.fromAccounts)).not.toContain('521');
+    expect(t133.flatMap((s) => s.fromAccounts)).not.toContain('641');
+    expect(loadDefaultClosingSteps('TT200')[0]).toMatchObject({ fromAccounts: ['521'], toAccount: '5111' });
   });
 });
