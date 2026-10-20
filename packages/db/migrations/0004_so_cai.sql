@@ -151,7 +151,11 @@ BEGIN
     RAISE EXCEPTION 'PARTITION_RANGE_INVALID: khoảng % - % không hợp lệ (cần từ <= đến, năm 1990-2199)', p_from, p_to USING ERRCODE = 'P0001'; END IF;
   IF (extract(year FROM p_to)::int - extract(year FROM p_from)::int) * 12 + extract(month FROM p_to)::int - extract(month FROM p_from)::int + 1 > 24 THEN
     RAISE EXCEPTION 'PARTITION_RANGE_INVALID: khoảng % - % dài hơn 24 tháng', p_from, p_to USING ERRCODE = 'P0001'; END IF;
-  -- Hai giao dịch cùng tạo một tháng sẽ đua nhau tới "already exists": tuần tự hóa bằng khóa tư vấn đến hết giao dịch.
+  -- Khóa kiểm tra hai lần: không thiếu tháng nào thì thoát ngay, không giữ khóa đến hết giao dịch của người gọi.
+  IF NOT EXISTS (SELECT 1 FROM generate_series(d, p_to, interval '1 month') g
+                 WHERE to_regclass(format('voucher_line_y%sm%s', to_char(g, 'YYYY'), to_char(g, 'MM'))) IS NULL) THEN RETURN; END IF;
+  -- Hai giao dịch cùng tạo một tháng sẽ đua nhau tới "already exists": tuần tự hóa bằng khóa tư vấn rồi kiểm tra lại từng tháng.
+  -- Còn lại: hai phiên cùng tạo tháng mới, một phiên đã ghi party/account/currency... có thể bế tắc; PostgreSQL hủy một phiên (40P01), chấp nhận được.
   PERFORM pg_advisory_xact_lock(hashtext('ensure_line_partitions'));
   WHILE d <= p_to LOOP
     v_name := format('voucher_line_y%sm%s', to_char(d, 'YYYY'), to_char(d, 'MM'));

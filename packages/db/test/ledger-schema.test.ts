@@ -183,6 +183,19 @@ describe('lược đồ sổ cái', () => {
     }
   });
 
+  it('chỉ giữ khóa tạo partition khi thật sự tạo tháng mới (tháng đã có thì không khóa)', async () => {
+    const tn = await createTestTenant(t.admin, { code: `PL${Date.now()}`, name: 'Partition khóa' });
+    const c = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL }); await c.connect();
+    const locks = async () => (await c.query(`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid()`)).rows[0].n as number;
+    const ins = (y: number, m: string) => c.query(`INSERT INTO fiscal_period(tenant_id, fiscal_year, period_no, date_from, date_to, regime) VALUES ($1, $2, 1, $3, $3, 'TT133')`, [tn, y, `${y}-${m}-01`]);
+    try {
+      await c.query('BEGIN'); await ins(2026, '01'); // đã có partition từ năm tài chính 2026
+      expect(await locks()).toBe(0);
+      await ins(2150, '02'); // tháng chưa có: tạo trong giao dịch này (ROLLBACK ngay sau đó) nên phải khóa
+      expect(await locks()).toBe(1);
+    } finally { await c.query('ROLLBACK'); await c.end(); }
+  });
+
   it('tài khoản khác chế độ kế toán của kỳ bị từ chối', async () => {
     await generateAccountsSql(admin, tenantId, 'TT200'); // công ty giữ cả hai hệ tài khoản, nhưng năm 2026 dùng TT133
     await expect(newVoucher('2026-04-01', [{ code: '1111', debit: '1', regime: 'TT200' }, { code: '5113', credit: '1' }])).rejects.toThrow(/ACCOUNT_REGIME_MISMATCH/);

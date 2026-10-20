@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && cp -r migrations dist/",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --no-file-parallelism",
     "migrate": "tsx src/migrate-cli.ts",
     "seed:abc": "tsx src/seed/demo-abc.ts",
     "seed:xyz": "tsx src/seed/dich-vu-xyz.ts"
