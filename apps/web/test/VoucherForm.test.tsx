@@ -155,6 +155,20 @@ describe('Tồn quỹ và cảnh báo tồn quỹ âm', () => {
     expect(await screen.findByText(warning, {}, slow)).toBeInTheDocument();
     expect(screen.getByText('Đã ghi sổ')).toBeInTheDocument();
   });
+
+  it('bỏ ghi sổ làm tồn quỹ âm (chế độ warn): hiện cảnh báo của máy chủ sau thông báo Đã bỏ ghi sổ', async () => {
+    mocks.route.type = 'PKT'; mocks.route.id = 'v1';
+    const warning = 'Bỏ ghi sổ làm tồn quỹ tiền mặt TK 1111 âm 600.000 đ tại ngày 06/01/2026';
+    mocks.api.mockImplementation(async (path: string) => {
+      if (path === '/api/fiscal-years') return years;
+      if (path === '/api/vouchers/v1/unpost') return posted({ state: 'draft', warnings: [{ code: 'CASH_NEGATIVE', message: warning }] });
+      return path === '/api/vouchers/v1' ? posted() : [];
+    });
+    renderForm();
+    await userEvent.click(await screen.findByRole('button', { name: 'Bỏ ghi sổ' }, slow));
+    expect(await screen.findByText(warning, {}, slow)).toBeInTheDocument();
+    expect(screen.getByText('Đã bỏ ghi sổ')).toBeInTheDocument();
+  });
 });
 
 describe('Loại chứng từ không có', () => {

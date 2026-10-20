@@ -71,7 +71,7 @@ export interface Book {
   kind: 'cash' | 'bank'; accountCode: string; accountName: string; bankAccountNo: string | null; bankAccountLabel: string | null; bankName: string | null; branch: string | null; currency: string | null; from: string; to: string;
   opening: string; openingCurrency: string | null; rows: BookRow[]; totalIn: string; totalOut: string; totalInCurrency: string | null; totalOutCurrency: string | null; closing: string; closingCurrency: string | null;
 }
-interface LineRow { voucherId: string; voucherType: string; voucherNo: string | null; postingDate: string; documentDate: string; vDesc: string | null; lDesc: string | null; debit: string; credit: string; cur: string; counters: string[] }
+interface LineRow { voucherId: string; voucherType: string; voucherNo: string | null; postingDate: string; documentDate: string; vDesc: string | null; lDesc: string | null; debit: string; credit: string; cur: string; counters: string[]; isReversal: boolean }
 
 export async function cashBook(trx: Trx, p: { kind: 'cash' | 'bank'; accountCode?: string | undefined; bankAccountNo?: string | undefined; currency?: string | undefined; from: string; to: string }): Promise<Book> {
   const regime = await regimeOf(trx, p);
@@ -79,7 +79,9 @@ export async function cashBook(trx: Trx, p: { kind: 'cash' | 'bank'; accountCode
   const accountCode = bank ? bank.glAccountCode : p.accountCode;
   if (!accountCode) throw new AppError('VALIDATION', 'Cần tài khoản hoặc số tài khoản ngân hàng', 400);
   if (bank && p.accountCode && !bank.glAccountCode.startsWith(p.accountCode)) throw new AppError('BANK_ACCOUNT_GL_MISMATCH', `Tài khoản ngân hàng ${bank.accountNo} thuộc TK ${bank.glAccountCode}, không thuộc TK ${p.accountCode}`, 400);
-  const acc = (await accountsUnder(trx, regime, accountCode)).find((a) => a.code === accountCode);
+  const under = await accountsUnder(trx, regime, accountCode);
+  if (p.kind === 'bank' && !under.some((a) => a.subledger_kind === 'bank')) throw new AppError('NOT_BANK_ACCOUNT', `Tài khoản ${accountCode} không phải tài khoản tiền gửi ngân hàng`, 400);
+  const acc = under.find((a) => a.code === accountCode);
   // Sổ của tài khoản ngân hàng ngoại tệ mặc định theo loại tiền của tài khoản đó.
   const currency = p.currency ?? (bank && isForeign(bank.currencyCode) ? bank.currencyCode : undefined);
   const scope: Scope = { regime, prefix: accountCode, bankId: p.kind === 'bank' ? (bank ? bank.id : 'none') : undefined, currency };
@@ -87,7 +89,7 @@ export async function cashBook(trx: Trx, p: { kind: 'cash' | 'bank'; accountCode
 
   const opening = await netAt(trx, scope, dayBefore(p.from));
   const lines = (await sql<LineRow>`
-    SELECT v.id AS "voucherId", v.voucher_type AS "voucherType", v.voucher_no AS "voucherNo", v.posting_date AS "postingDate", v.document_date AS "documentDate", v.description AS "vDesc", l.description AS "lDesc",
+    SELECT v.id AS "voucherId", v.voucher_type AS "voucherType", v.voucher_no AS "voucherNo", v.posting_date AS "postingDate", v.document_date AS "documentDate", v.description AS "vDesc", l.description AS "lDesc", (v.reversal_of_id IS NOT NULL) AS "isReversal",
            l.debit::text AS debit, l.credit::text AS credit, l.amount_currency::text AS cur,
            coalesce((SELECT array_agg(DISTINCT c.code ORDER BY c.code) FROM voucher_pair q JOIN account c ON c.id = CASE WHEN q.debit_line_id = l.id THEN q.credit_account_id ELSE q.debit_account_id END
                      WHERE q.voucher_id = l.voucher_id AND q.posting_date = l.posting_date AND (q.debit_line_id = l.id OR q.credit_line_id = l.id)), '{}') AS counters
@@ -106,16 +108,17 @@ export async function cashBook(trx: Trx, p: { kind: 'cash' | 'bank'; accountCode
     if (D(l.credit).gt(0)) a.outCur = a.outCur.minus(l.cur);
     for (const c of l.counters) a.counters.add(c);
   }
-  // Trong cùng một ngày phiếu thu xếp trước phiếu chi (sổ giấy của thủ quỹ không để tồn quỹ âm vì thứ tự lập phiếu); sắp xếp ổn định nên còn lại theo loại, số.
-  const ordered = [...byVoucher.values()].sort((x, y) => x.meta.postingDate.localeCompare(y.meta.postingDate) || Number(y.in.gt(x.out)) - Number(x.in.gt(y.out)) || Number(y.in.gt(y.out)) - Number(x.in.gt(x.out)));
+  // Trong cùng một ngày chứng từ thu (Thu > Chi) xếp trước chứng từ chi (sổ giấy của thủ quỹ không để tồn quỹ âm vì thứ tự lập phiếu); sắp xếp ổn định nên còn lại theo loại, số.
+  const ordered = [...byVoucher.values()].sort((x, y) => x.meta.postingDate.localeCompare(y.meta.postingDate) || Number(y.in.gt(y.out)) - Number(x.in.gt(x.out)));
 
   let run = opening.net; let runCur = opening.cur; let totalIn = ZERO; let totalOut = ZERO; let totalInCur = ZERO; let totalOutCur = ZERO;
   const rows: BookRow[] = ordered.map((a) => {
     run = run.plus(a.in).minus(a.out); runCur = runCur.plus(a.inCur).minus(a.outCur);
     totalIn = totalIn.plus(a.in); totalOut = totalOut.plus(a.out); totalInCur = totalInCur.plus(a.inCur); totalOutCur = totalOutCur.plus(a.outCur);
     const m = a.meta; const t = m.voucherType;
-    // Phiếu thu/chi vào đúng cột của loại; chứng từ loại khác (phiếu kế toán, giấy báo) vào cột theo chiều Nợ/Có.
-    const receipt = t === 'PT' || (t !== 'PC' && a.in.gt(0)); const payment = t === 'PC' || (t !== 'PT' && a.out.gt(0));
+    // Phiếu thu/chi thường vào đúng cột của loại; chứng từ đảo (giữ nguyên loại của chứng từ gốc), chứng từ vừa thu vừa chi và loại khác (phiếu kế toán, giấy báo) vào cột theo chiều Nợ/Có.
+    const byType = (t === 'PT' || t === 'PC') && !m.isReversal && !(a.in.gt(0) && a.out.gt(0));
+    const receipt = byType ? t === 'PT' : a.in.gt(0); const payment = byType ? t === 'PC' : a.out.gt(0);
     return { date: m.postingDate, documentDate: m.documentDate, voucherId: m.voucherId, voucherType: t, voucherNo: m.voucherNo, receiptNo: receipt ? m.voucherNo : null, paymentNo: payment ? m.voucherNo : null,
       description: a.desc, counterAccounts: [...a.counters].join(', '), in: vnd(a.in), out: vnd(a.out), balance: vnd(run),
       inCurrency: fx ? foreign(a.inCur) : null, outCurrency: fx ? foreign(a.outCur) : null, balanceCurrency: fx ? foreign(runCur) : null };
@@ -149,20 +152,43 @@ export async function bookDoc(trx: Trx, tenantId: string, regime: string, b: Boo
     signatures: ['Người lập biểu', 'Kế toán trưởng', 'Người đại diện theo pháp luật'] };
 }
 
-// ---- Tồn quỹ âm khi ghi sổ ----
+// ---- Tồn quỹ âm khi ghi sổ, bỏ ghi sổ và đảo ----
 export interface CashWarning { code: 'CASH_NEGATIVE'; message: string }
+type CashAction = 'post' | 'unpost' | 'reverse';
+const VERB: Record<CashAction, string> = { post: 'Ghi sổ', unpost: 'Bỏ ghi sổ', reverse: 'Đảo chứng từ' };
 
-// Khóa tư vấn theo (công ty, tài khoản quỹ/ngân hàng), lấy theo thứ tự tài khoản để hai phiếu cùng ghi sổ không khóa chéo nhau; giữ đến hết giao dịch ghi sổ.
+// Khóa tư vấn theo (công ty, tài khoản quỹ/ngân hàng), lấy theo thứ tự tài khoản để hai phiếu cùng ghi sổ không khóa chéo nhau; giữ đến hết giao dịch.
 // Phải lấy TRƯỚC khi ghi sổ và kiểm tra: hai phiếu chi đồng thời, mỗi phiếu vừa quỹ nhưng cộng lại không, sẽ lần lượt (phiếu sau thấy phiếu trước đã ghi) thay vì cùng thấy tồn quỹ cũ.
 // Hiện post_voucher đã tuần tự hóa mọi lần ghi sổ của một công ty (mark_balance_stale cập nhật một hàng balance_stale duy nhất), nên khóa này chưa đổi kết quả; giữ để phép kiểm tra không dựa vào chi tiết đó.
+// Phép kiểm tra cũng cần giao dịch READ COMMITTED: mỗi câu lệnh sau khi ghi sổ phải thấy dòng vừa ghi và phiếu đã commit của giao dịch khác.
 async function lockCashAccounts(trx: Trx, voucherId: string): Promise<void> {
   const ids = await sql<{ id: number }>`SELECT DISTINCT l.account_id AS id FROM voucher_line l JOIN account a ON a.id = l.account_id WHERE l.voucher_id = ${voucherId}::uuid AND a.subledger_kind IN ('cash', 'bank') ORDER BY 1`.execute(trx);
   for (const r of ids.rows) await sql`SELECT pg_advisory_xact_lock(hashtextextended(app_tenant()::text || ':cash:' || ${String(r.id)}, 0))`.execute(trx);
 }
 
-// Sau khi ghi sổ (trong cùng giao dịch, thấy cả dòng của chính chứng từ): quỹ hoặc tài khoản ngân hàng mà chứng từ làm GIẢM và đang âm tại ngày hạch toán.
+interface Net { net: string; cur: string }
+interface Tail extends Net { id: number; currency: string; day: string }
+interface Base extends Net { id: number; currency: string }
+const amountIn = (currency: string, x: Net) => D(currency === 'VND' ? x.net : x.cur);
+
+// Ngày đầu tiên số dư cuối ngày < 0 trong [date, hết dữ liệu] của từng nhóm (id|loại tiền): số dư cuối ngày `date` (base), rồi cộng dồn phát sinh các ngày sau (tail, đã sắp theo ngày).
+// Một chứng từ làm giảm quỹ tại ngày d làm giảm số dư cuối ngày của mọi ngày từ d trở đi, nên chứng từ ghi lùi ngày phải xét cả các ngày sau nó.
+function firstNegative(keys: string[], base: Base[], tail: Tail[], date: string): Map<string, { day: string; bal: Decimal }> {
+  const run = new Map(keys.map((k) => [k, ZERO])); const found = new Map<string, { day: string; bal: Decimal }>();
+  for (const b of base) { const k = `${b.id}|${b.currency}`; if (run.has(k)) run.set(k, amountIn(b.currency, b)); }
+  for (const [k, bal] of run) if (bal.lt(0)) found.set(k, { day: date, bal });
+  for (const t of tail) {
+    const k = `${t.id}|${t.currency}`; if (!run.has(k) || found.has(k)) continue;
+    const bal = run.get(k)!.plus(amountIn(t.currency, t)); run.set(k, bal);
+    if (bal.lt(0)) found.set(k, { day: t.day, bal });
+  }
+  return found;
+}
+
+// Sau khi ghi sổ / bỏ ghi sổ / đảo (trong cùng giao dịch, thấy cả dòng của chính chứng từ): quỹ hoặc tài khoản ngân hàng mà chứng từ làm GIẢM và có ngày nào từ ngày hạch toán trở đi số dư cuối ngày âm.
+// Ghi sổ và chứng từ đảo (đã ghi sổ trong reverse_voucher) giảm quỹ khi dòng của chúng làm giảm; bỏ ghi sổ lấy dòng ra khỏi sổ nên giảm quỹ khi dòng đó là thu vào.
 // Chứng từ chỉ thu thêm vào quỹ đang âm từ trước không bị chặn. Tiền VND xét theo VND, ngoại tệ xét theo nguyên tệ.
-async function cashNegativeWarnings(trx: Trx, voucherId: string): Promise<CashWarning[]> {
+async function cashNegativeWarnings(trx: Trx, voucherId: string, action: CashAction): Promise<CashWarning[]> {
   const v = await trx.selectFrom('voucher').select('posting_date').where('id', '=', voucherId).executeTakeFirstOrThrow();
   const date = v.posting_date;
   const mine = (await sql<{ accountId: number; code: string; kind: string; currency: string; bankAccountId: number | null; net: string; cur: string }>`
@@ -170,7 +196,8 @@ async function cashNegativeWarnings(trx: Trx, voucherId: string): Promise<CashWa
     FROM voucher_line l JOIN account a ON a.id = l.account_id WHERE l.voucher_id = ${voucherId}::uuid AND a.subledger_kind IN ('cash', 'bank')
     GROUP BY l.account_id, a.code, a.subledger_kind, l.currency_code, l.bank_account_id`.execute(trx)).rows;
   if (!mine.length) return [];
-  const decrease = (currency: string, net: Decimal, cur: Decimal) => (currency === 'VND' ? net : cur).lt(0);
+  const sign = action === 'unpost' ? -1 : 1;
+  const decrease = (currency: string, net: Decimal, cur: Decimal) => (currency === 'VND' ? net : cur).times(sign).lt(0);
   // Cộng theo (tài khoản, loại tiền) và (tài khoản ngân hàng, loại tiền).
   const accs = new Map<string, { accountId: number; code: string; kind: string; currency: string; net: Decimal; cur: Decimal }>();
   const banks = new Map<string, { id: number; accountId: number; currency: string; net: Decimal; cur: Decimal }>();
@@ -181,38 +208,62 @@ async function cashNegativeWarnings(trx: Trx, voucherId: string): Promise<CashWa
   }
   const out: CashWarning[] = []; const when = formatVnDate(date);
   const show = (currency: string, bal: Decimal) => currency === 'VND' ? `${formatVnNumber(bal.abs().toString())} đ` : `${formatVnNumber(bal.abs().toString(), 2)} ${currency}`;
+  const warn = (label: string, currency: string, f: { day: string; bal: Decimal }) => out.push({ code: 'CASH_NEGATIVE',
+    message: `${VERB[action]} làm ${label} âm ${show(currency, f.bal)} tại ngày ${formatVnDate(f.day)}${f.day === date ? '' : ` (chứng từ hạch toán ngày ${when})`}` });
+
   const dropping = [...accs.values()].filter((a) => decrease(a.currency, a.net, a.cur));
   if (dropping.length) {
-    const bal = await sql<{ accountId: number; currency: string; net: string; cur: string }>`SELECT b.account_id AS "accountId", b.currency_code AS currency, sum(b.debit - b.credit)::text AS net, sum(b.debit_cur - b.credit_cur)::text AS cur
-      FROM fn_balances_at(app_tenant(), ${date}::date) b WHERE b.account_id = ANY(${dropping.map((a) => a.accountId)}::bigint[]) GROUP BY b.account_id, b.currency_code`.execute(trx);
-    const at = new Map(bal.rows.map((r) => [`${r.accountId}|${r.currency}`, r]));
-    for (const a of dropping) {
-      const r = at.get(`${a.accountId}|${a.currency}`); const left = D(a.currency === 'VND' ? (r?.net ?? '0') : (r?.cur ?? '0'));
-      if (left.lt(0)) out.push({ code: 'CASH_NEGATIVE', message: `Ghi sổ làm ${a.kind === 'cash' ? 'tồn quỹ tiền mặt' : 'số dư tiền gửi'} TK ${a.code} âm ${show(a.currency, left)} tại ngày ${when}` });
-    }
+    const ids = dropping.map((a) => a.accountId);
+    const base = (await sql<Base>`SELECT b.account_id AS id, b.currency_code AS currency, sum(b.debit - b.credit)::text AS net, sum(b.debit_cur - b.credit_cur)::text AS cur
+      FROM fn_balances_at(app_tenant(), ${date}::date) b WHERE b.account_id = ANY(${ids}::bigint[]) GROUP BY b.account_id, b.currency_code`.execute(trx)).rows;
+    const tail = (await sql<Tail>`SELECT l.account_id AS id, l.currency_code AS currency, l.posting_date::text AS day, sum(l.debit - l.credit)::text AS net, sum(l.amount_currency)::text AS cur
+      FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id WHERE ${POSTED} AND l.account_id = ANY(${ids}::bigint[]) AND l.posting_date > ${date}::date
+      GROUP BY l.account_id, l.currency_code, l.posting_date ORDER BY l.posting_date`.execute(trx)).rows;
+    const found = firstNegative(dropping.map((a) => `${a.accountId}|${a.currency}`), base, tail, date);
+    for (const a of dropping) { const f = found.get(`${a.accountId}|${a.currency}`); if (f) warn(`${a.kind === 'cash' ? 'tồn quỹ tiền mặt' : 'số dư tiền gửi'} TK ${a.code}`, a.currency, f); }
   }
   const bankDrop = [...banks.values()].filter((b) => decrease(b.currency, b.net, b.cur));
   if (bankDrop.length) {
-    const bal = await sql<{ id: number; accountNo: string; code: string; currency: string; net: string; cur: string }>`
-      SELECT l.bank_account_id AS id, ba.account_no AS "accountNo", ba.gl_account_code AS code, l.currency_code AS currency, sum(l.debit - l.credit)::text AS net, sum(l.amount_currency)::text AS cur
-      FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN bank_account ba ON ba.id = l.bank_account_id
-      WHERE ${POSTED} AND l.posting_date <= ${date}::date AND l.bank_account_id = ANY(${bankDrop.map((b) => b.id)}::bigint[]) GROUP BY l.bank_account_id, ba.account_no, ba.gl_account_code, l.currency_code`.execute(trx);
-    const at = new Map(bal.rows.map((r) => [`${r.id}|${r.currency}`, r]));
-    for (const b of bankDrop) {
-      const r = at.get(`${b.id}|${b.currency}`); const left = D(b.currency === 'VND' ? (r?.net ?? '0') : (r?.cur ?? '0'));
-      if (left.lt(0)) out.push({ code: 'CASH_NEGATIVE', message: `Ghi sổ làm số dư tiền gửi tài khoản ngân hàng ${r?.accountNo ?? b.id} (TK ${r?.code ?? ''}) âm ${show(b.currency, left)} tại ngày ${when}` });
-    }
+    const ids = bankDrop.map((b) => b.id); const accountIds = [...new Set(bankDrop.map((b) => b.accountId))];
+    // Chỉ mục voucher_line theo (tài khoản, ngày): lọc thêm theo tài khoản sổ cái để dùng chỉ mục, rồi theo tài khoản ngân hàng.
+    const scope = sql`${POSTED} AND l.account_id = ANY(${accountIds}::bigint[]) AND l.bank_account_id = ANY(${ids}::bigint[])`;
+    const base = (await sql<Base>`SELECT l.bank_account_id AS id, l.currency_code AS currency, sum(l.debit - l.credit)::text AS net, sum(l.amount_currency)::text AS cur
+      FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id WHERE ${scope} AND l.posting_date <= ${date}::date GROUP BY l.bank_account_id, l.currency_code`.execute(trx)).rows;
+    const tail = (await sql<Tail>`SELECT l.bank_account_id AS id, l.currency_code AS currency, l.posting_date::text AS day, sum(l.debit - l.credit)::text AS net, sum(l.amount_currency)::text AS cur
+      FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id WHERE ${scope} AND l.posting_date > ${date}::date
+      GROUP BY l.bank_account_id, l.currency_code, l.posting_date ORDER BY l.posting_date`.execute(trx)).rows;
+    const found = firstNegative(bankDrop.map((b) => `${b.id}|${b.currency}`), base, tail, date);
+    const labels = new Map((await trx.selectFrom('bank_account').select(['id', 'account_no', 'gl_account_code']).where('id', 'in', ids).execute()).map((r) => [r.id, r]));
+    for (const b of bankDrop) { const f = found.get(`${b.id}|${b.currency}`); const r = labels.get(b.id); if (f) warn(`số dư tiền gửi tài khoản ngân hàng ${r?.account_no ?? b.id} (TK ${r?.gl_account_code ?? ''})`, b.currency, f); }
   }
   return out;
 }
 
-// Ghi sổ có kiểm tra tồn quỹ âm theo cài đặt `cash_negative`: warn trả chứng từ kèm `warnings`, block ném 409 CASH_NEGATIVE (cả giao dịch hoàn tác nên chứng từ vẫn là nháp).
+// warn: trả chứng từ kèm `warnings`; block: ném 409 CASH_NEGATIVE, cả giao dịch hoàn tác (ghi sổ/bỏ ghi sổ/đảo không xảy ra).
+function applyMode<T extends object>(mode: string, dto: T, warnings: CashWarning[]): T & { warnings?: CashWarning[] } {
+  if (!warnings.length) return dto;
+  if (mode === 'block') throw new AppError('CASH_NEGATIVE', warnings.map((w) => w.message).join('; '), 409);
+  return { ...dto, warnings };
+}
+
+// Ghi sổ có kiểm tra tồn quỹ âm theo cài đặt `cash_negative`.
 export async function postWithCashCheck(trx: Trx, tenantId: string, id: string): Promise<S.VoucherDto & { warnings?: CashWarning[] }> {
   const mode = (await getSettings(trx, tenantId)).cash_negative;
   await lockCashAccounts(trx, id);
   const dto = await S.postVoucher(trx, id);
-  const warnings = await cashNegativeWarnings(trx, id);
-  if (!warnings.length) return dto;
-  if (mode === 'block') throw new AppError('CASH_NEGATIVE', warnings.map((w) => w.message).join('; '), 409);
-  return { ...dto, warnings };
+  return applyMode(mode, dto, await cashNegativeWarnings(trx, id, 'post'));
+}
+// Bỏ ghi sổ chứng từ thu tiền làm các ngày sau có thể bị âm quỹ: cùng phép kiểm tra, dòng chứng từ bị lấy khỏi sổ.
+export async function unpostWithCashCheck(trx: Trx, tenantId: string, id: string): Promise<S.VoucherDto & { warnings?: CashWarning[] }> {
+  const mode = (await getSettings(trx, tenantId)).cash_negative;
+  await lockCashAccounts(trx, id);
+  const dto = await S.unpostVoucher(trx, id);
+  return applyMode(mode, dto, await cashNegativeWarnings(trx, id, 'unpost'));
+}
+// Đảo chứng từ: chứng từ đảo được ghi sổ ngay trong reverse_voucher nên kiểm tra sau đó, trong cùng giao dịch.
+export async function reverseWithCashCheck(trx: Trx, tenantId: string, id: string, input: { postingDate: string; description?: string | undefined }): Promise<S.VoucherDto & { warnings?: CashWarning[] }> {
+  const mode = (await getSettings(trx, tenantId)).cash_negative;
+  await lockCashAccounts(trx, id);
+  const dto = await S.reverseVoucher(trx, id, input);
+  return applyMode(mode, dto, await cashNegativeWarnings(trx, dto.id, 'reverse'));
 }

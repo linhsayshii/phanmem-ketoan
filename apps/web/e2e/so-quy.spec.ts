@@ -25,7 +25,9 @@ test('Sổ quỹ tiền mặt: xem một ngày, mở chứng từ, xuất Excel;
   const pt = await post(request, 'PT', iso, `Thu sổ quỹ ${stamp}`, [{ accountCode: '1111', debit: '1000000', credit: '0' }, { accountCode: '5113', debit: '0', credit: '1000000' }]);
   const pc = await post(request, 'PC', iso, `Chi sổ quỹ ${stamp}`, [{ accountCode: '6422', debit: '400000', credit: '0' }, { accountCode: '1111', debit: '0', credit: '400000' }]);
 
-  await page.goto('/bao-cao/so-quy');
+  // Bộ lọc nhớ nạp từ máy chủ sau khi trang mở và ghi đè ô vừa nhập (lần chạy trước đã lưu ngày của nó): chờ bản nạp xong rồi mới nhập.
+  const prefs = page.waitForResponse((r) => r.url().includes('/api/prefs/') && r.url().includes('cash-books'));
+  await page.goto('/bao-cao/so-quy'); await prefs;
   await expect(page.getByRole('heading', { name: 'Sổ quỹ và tiền gửi' })).toBeVisible();
   // Khoảng ngày chỉ gồm ngày vừa lập: hai ô của bộ chọn khoảng ngày nhận chữ rồi Enter
   const range = page.locator('.ant-picker-range input');

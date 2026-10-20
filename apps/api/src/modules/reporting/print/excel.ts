@@ -2,12 +2,14 @@ import ExcelJS from 'exceljs';
 import { D, formatVnDate } from '@kt/domain';
 import type { ReportDoc } from './html.js';
 
-// Tiền đi qua API dạng chuỗi thập phân: chỉ thành ô số khi khứ hồi qua Number() không đổi (số nguyên an toàn của JS);
-// còn lại (trên 2^53, có phần lẻ) ghi chuỗi để Excel không làm tròn tiền lặng lẽ.
-export function moneyCell(v: unknown): number | string | null {
+// Tiền đi qua API dạng chuỗi thập phân: chỉ thành ô số khi khứ hồi qua Number() không đổi;
+// còn lại ghi chuỗi để Excel không làm tròn tiền lặng lẽ. VND: số nguyên an toàn của JS (dưới 2^53).
+// Có phần lẻ (`scale`, nguyên tệ 4 chữ số): tối đa 15 chữ số có nghĩa, bằng độ chính xác Excel lưu ô số.
+export function moneyCell(v: unknown, scale?: number): number | string | null {
   if (v === null || v === undefined || v === '') return null;
   const s = D(String(v)).toFixed(); const n = Number(s);
-  return Number.isSafeInteger(n) && String(n) === s ? n : s;
+  const exact = scale ? Number.isFinite(n) && s.replace(/\D/g, '').replace(/^0+/, '').length <= 15 : Number.isSafeInteger(n);
+  return exact && String(n) === s ? n : s;
 }
 
 export async function renderReportXlsx(docs: ReportDoc[]): Promise<Buffer> {
@@ -16,7 +18,7 @@ export async function renderReportXlsx(docs: ReportDoc[]): Promise<Buffer> {
     // Tên sheet tối đa 31 ký tự, không chứa \ / * ? : [ ], không trùng (không phân biệt hoa thường).
     let name = (d.sheetName ?? d.formNo).replace(/[\\/*?:[\]]/g, '-').slice(0, 28); let k = 1; while (used.has(name.toLowerCase())) name = `${name.slice(0, 25)}(${++k})`; used.add(name.toLowerCase());
     const ws = wb.addWorksheet(name);
-    const val = (c: ReportDoc['columns'][number], v: unknown) => c.type === 'number' ? (c.scale && v !== null && v !== undefined && v !== '' ? Number(v) : moneyCell(v)) : c.type === 'date' && v ? formatVnDate(String(v)) : (v ?? '');
+    const val = (c: ReportDoc['columns'][number], v: unknown) => c.type === 'number' ? moneyCell(v, c.scale) : c.type === 'date' && v ? formatVnDate(String(v)) : (v ?? '');
     ws.addRow([d.company.name]); if (d.formNo) ws.addRow([`Mẫu số ${d.formNo} – ${d.issuedBy}`]); ws.addRow([d.title.toUpperCase()]).font = { bold: true, size: 14 }; ws.addRow([d.subtitle]); ws.addRow([]);
     const header = ws.addRow(d.columns.map((c) => c.label)); header.font = { bold: true };
     for (const r of d.rows) { const row = ws.addRow(d.columns.map((c) => val(c, r[c.key]))); if (r['isBold']) row.font = { bold: true }; }

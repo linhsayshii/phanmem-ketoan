@@ -194,6 +194,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     } });
   const action = useMutation({ mutationFn: (p: { act: string; body?: object }) => api<Voucher>(`/api/vouchers/${id}/${p.act}`, { method: 'POST', json: p.body ?? {} }), onError: onErr,
     onSuccess: async (r, p) => { void message.success({ unpost: 'Đã bỏ ghi sổ', reverse: `Đã tạo chứng từ đảo ${r.voucherNo}`, discard: 'Đã hủy', duplicate: 'Đã nhân bản' }[p.act] ?? 'Xong');
+      for (const w of r.warnings ?? []) void message.warning({ content: w.message, duration: 10 }); // bỏ ghi sổ hoặc đảo làm tồn quỹ âm ở chế độ warn
       if (p.act === 'reverse') setReverse(null);
       if (p.act === 'reverse' || p.act === 'duplicate') toVoucher({ ...r, voucherType: r.voucherType ?? eff.code }); else await invalidate(); } });
 

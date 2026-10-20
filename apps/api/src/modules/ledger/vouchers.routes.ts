@@ -7,7 +7,7 @@ import { voucherTypeDef } from '@kt/domain';
 import * as S from './vouchers.service.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { AppError } from '../../plugins/errors.js';
-import { postWithCashCheck } from '../cash/books.js';
+import { postWithCashCheck, reverseWithCashCheck, unpostWithCashCheck } from '../cash/books.js';
 import { formNoFor, voucherFormFor } from '../reporting/print/forms.js';
 import { renderCashVoucherHtml, type BankInfo } from '../reporting/print/cashVoucherHtml.js';
 import { renderPdf } from '../reporting/print/pdf.js';
@@ -89,9 +89,9 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     const dto = await withOverride(req, (trx) => postWithCashCheck(trx, req.auth!.tenantId!, req.params.id)); notifyRecompute(app, req.auth!.tenantId!); return dto; });
   app.post('/api/vouchers/:id/unpost', { preHandler: app.requirePermission('voucher.unpost'), schema: { params: idParam } }, async (req) => {
     if (!req.auth!.permissions.has('voucher.edit_posted')) throw new AppError('FORBIDDEN', 'Thiếu quyền sửa sau ghi sổ', 403);
-    const dto = await app.withTenant(req, (trx) => S.unpostVoucher(trx, req.params.id)); notifyRecompute(app, req.auth!.tenantId!); return dto; });
+    const dto = await app.withTenant(req, (trx) => unpostWithCashCheck(trx, req.auth!.tenantId!, req.params.id)); notifyRecompute(app, req.auth!.tenantId!); return dto; });
   app.post('/api/vouchers/:id/reverse', { preHandler: app.requirePermission('voucher.post'), schema: { params: idParam, body: z.object({ postingDate: S.dateIso, description: z.string().optional() }) } }, async (req, reply) => {
-    const dto = await withOverride(req, (trx) => S.reverseVoucher(trx, req.params.id, req.body)); notifyRecompute(app, req.auth!.tenantId!); return reply.status(201).send(dto); });
+    const dto = await withOverride(req, (trx) => reverseWithCashCheck(trx, req.auth!.tenantId!, req.params.id, req.body)); notifyRecompute(app, req.auth!.tenantId!); return reply.status(201).send(dto); });
   app.post('/api/vouchers/:id/discard', { preHandler: app.requirePermission('voucher.delete'), schema: { params: idParam } }, async (req) => app.withTenant(req, (trx) => S.discardVoucher(trx, req.params.id)));
   app.post('/api/vouchers/:id/duplicate', { preHandler: app.requirePermission('voucher.create'), schema: { params: idParam, body: z.object({ postingDate: S.dateIso }) } }, async (req, reply) =>
     reply.status(201).send(await withOverride(req, (trx) => S.duplicateVoucher(trx, ctx(req), req.params.id, req.body.postingDate))));

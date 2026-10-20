@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import ExcelJS from 'exceljs';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
-import { renderReportXlsx } from '../src/modules/reporting/print/excel.js';
+import { moneyCell, renderReportXlsx } from '../src/modules/reporting/print/excel.js';
 import { assertPrintable, MAX_PRINT_ROWS, renderReportBody, type ReportDoc } from '../src/modules/reporting/print/html.js';
 import { closePdfBrowser, limitConcurrency, renderPdf } from '../src/modules/reporting/print/pdf.js';
 
@@ -163,6 +163,20 @@ describe('Excel: ô tiền', () => {
     expect(await read('9007199254740993')).toBe('9007199254740993'); // 2^53 + 1: Number() sẽ làm tròn thành ...992
     expect(await read('1234.5')).toBe('1234.5');
     expect(await read(null)).toBeNull();
+  });
+});
+
+describe('Excel: ô tiền có phần lẻ (nguyên tệ)', () => {
+  it('cột có scale ghi số khi khứ hồi đúng và tối đa 15 chữ số có nghĩa; dài hơn hoặc quá lớn ghi chuỗi, không làm tròn lặng lẽ', () => {
+    expect(moneyCell('1200.5000', 4)).toBe(1200.5);
+    expect(moneyCell('0.0001', 4)).toBe(0.0001);
+    expect(moneyCell('-30492700.0000', 4)).toBe(-30492700);
+    expect(moneyCell('123456789012.3456', 4)).toBe('123456789012.3456'); // 16 chữ số: quá 15, ghi chuỗi
+    expect(moneyCell('12345678901.2345', 4)).toBe(12345678901.2345); // 15 chữ số
+    expect(moneyCell('1234567890123456.1234', 4)).toBe('1234567890123456.1234');
+    expect(moneyCell('99999999999999999999.9999', 4)).toBe('99999999999999999999.9999');
+    expect(moneyCell('1200.5000')).toBe('1200.5'); // không scale: giữ quy tắc cũ, có phần lẻ ghi chuỗi
+    expect(moneyCell('', 4)).toBeNull();
   });
 });
 

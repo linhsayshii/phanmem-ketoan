@@ -185,6 +185,83 @@ describe('cảnh báo tồn quỹ âm khi ghi sổ', () => {
     }
   }, 120_000);
 
+  it('chứng từ ghi lùi ngày: ngày của chính nó còn dương nhưng làm ngày sau âm thì vẫn bị cảnh báo/chặn, nêu ngày âm đầu tiên', async () => {
+    for (const mode of ['warn', 'block'] as const) {
+      const t = await tenant(); await t.setCashNegative(mode);
+      await t.post(voucher('PT', '2026-01-05', [L('1111', '1000000'), L('5113', '0', '1000000')]));
+      await t.post(voucher('PC', '2026-01-10', [L('6422', '900000'), L('1111', '0', '900000')])); // cuối ngày 10 còn 100.000
+      const back = await t.create({ ...voucher('PC', '2026-01-06', [L('6422', '500000'), L('1111', '0', '500000')]), autoPost: true }); // ngày 6 còn 500.000, nhưng ngày 10 âm 400.000
+      if (mode === 'warn') {
+        expect(back.statusCode, back.body).toBe(201);
+        expect(back.json().warnings).toEqual([{ code: 'CASH_NEGATIVE', message: expect.stringContaining('âm 400.000 đ tại ngày 10/01/2026') }]);
+        expect(back.json().warnings[0].message).toContain('hạch toán ngày 06/01/2026');
+      } else {
+        expect(back.statusCode, back.body).toBe(409); expect(back.json().error.code).toBe('CASH_NEGATIVE'); expect(back.json().error.message).toContain('10/01/2026');
+        const drafts = (await t.get('/api/vouchers?type=PC')).json();
+        expect(drafts.total).toBe(1); // phiếu chi ghi lùi bị hoàn tác hẳn (autoPost trong cùng giao dịch)
+        // cùng phiếu ở dạng nháp: /post bị chặn và phiếu vẫn là nháp
+        const d = (await t.create(voucher('PC', '2026-01-06', [L('6422', '500000'), L('1111', '0', '500000')]))).json();
+        const bad = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${d.id}/post`, headers: { cookie: t.cookie } });
+        expect(bad.statusCode, bad.body).toBe(409);
+        expect((await t.get(`/api/vouchers/${d.id}`)).json().state).toBe('draft');
+        // bớt xuống 100.000 thì ngày 10 về đúng 0: không phải âm
+        const zero = await t.create({ ...voucher('PC', '2026-01-06', [L('6422', '100000'), L('1111', '0', '100000')]), autoPost: true });
+        expect(zero.statusCode, zero.body).toBe(201);
+      }
+    }
+  }, 60_000);
+
+  it('tiền gửi: chứng từ ghi lùi ngày xét theo từng tài khoản ngân hàng, nêu ngày âm đầu tiên', async () => {
+    const t = await tenant(); await t.setCashNegative('block');
+    await t.post(voucher('BC', '2026-01-05', [L('1121', '1000'), L('131', '0', '1000', { partyCode: 'KH001' })], { bankAccountNo: '0011001' }));
+    await t.post(voucher('BN', '2026-01-10', [L('331', '900', '0', { partyCode: 'NCC001' }), L('1121', '0', '900')], { bankAccountNo: '0011001', purpose: 'chi_tra_ncc', partyCode: 'NCC001' }));
+    const bn = (amount: string) => t.create({ ...voucher('BN', '2026-01-06', [L('331', amount, '0', { partyCode: 'NCC001' }), L('1121', '0', amount)], { bankAccountNo: '0011001', purpose: 'chi_tra_ncc', partyCode: 'NCC001' }), autoPost: true });
+    const bad = await bn('500');
+    expect(bad.statusCode, bad.body).toBe(409); expect(bad.json().error.message).toContain('0011001'); expect(bad.json().error.message).toContain('10/01/2026');
+    expect((await bn('100')).statusCode).toBe(201); // ngày 10 về đúng 0
+  }, 60_000);
+
+  it('bỏ ghi sổ phiếu thu mà các phiếu chi sau đó dựa vào: block chặn 409 (phiếu thu vẫn đã ghi sổ), warn bỏ ghi sổ kèm cảnh báo', async () => {
+    for (const mode of ['block', 'warn'] as const) {
+      const t = await tenant(); await t.setCashNegative(mode);
+      const pt = await t.post(voucher('PT', '2026-01-05', [L('1111', '1000000'), L('5113', '0', '1000000')]));
+      await t.post(voucher('PC', '2026-01-06', [L('6422', '600000'), L('1111', '0', '600000')]));
+      const un = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${pt.id}/unpost`, headers: { cookie: t.cookie } });
+      if (mode === 'block') {
+        expect(un.statusCode, un.body).toBe(409); expect(un.json().error.code).toBe('CASH_NEGATIVE'); expect(un.json().error.message).toContain('Bỏ ghi sổ');
+        expect((await t.get(`/api/vouchers/${pt.id}`)).json().state).toBe('posted');
+      } else {
+        expect(un.statusCode, un.body).toBe(200); expect(un.json().state).toBe('draft');
+        expect(un.json().warnings).toEqual([{ code: 'CASH_NEGATIVE', message: expect.stringContaining('âm 600.000 đ tại ngày 06/01/2026') }]);
+      }
+    }
+  }, 60_000);
+
+  it('đảo phiếu thu làm quỹ âm: block chặn 409 và phiếu thu gốc vẫn là posted, không sinh chứng từ đảo; warn đảo kèm cảnh báo', async () => {
+    for (const mode of ['block', 'warn'] as const) {
+      const t = await tenant(); await t.setCashNegative(mode);
+      const pt = await t.post(voucher('PT', '2026-01-05', [L('1111', '1000000'), L('5113', '0', '1000000')]));
+      await t.post(voucher('PC', '2026-01-06', [L('6422', '600000'), L('1111', '0', '600000')]));
+      const rev = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${pt.id}/reverse`, headers: { cookie: t.cookie }, payload: { postingDate: '2026-01-07' } });
+      if (mode === 'block') {
+        expect(rev.statusCode, rev.body).toBe(409); expect(rev.json().error.code).toBe('CASH_NEGATIVE'); expect(rev.json().error.message).toContain('Đảo chứng từ');
+        expect((await t.get(`/api/vouchers/${pt.id}`)).json().state).toBe('posted');
+        expect((await t.get('/api/vouchers?type=PT')).json().total).toBe(1);
+      } else {
+        expect(rev.statusCode, rev.body).toBe(201); expect(rev.json().state).toBe('posted');
+        expect(rev.json().warnings).toEqual([{ code: 'CASH_NEGATIVE', message: expect.stringContaining('âm 600.000 đ tại ngày 07/01/2026') }]);
+      }
+    }
+  }, 60_000);
+
+  it('bỏ ghi sổ phiếu chi hay đảo phiếu chi (tiền vào quỹ) không bao giờ bị chặn', async () => {
+    const t = await tenant(); await t.setCashNegative('block');
+    await t.post(voucher('PT', '2026-01-05', [L('1111', '1000000'), L('5113', '0', '1000000')]));
+    const pc = await t.post(voucher('PC', '2026-01-06', [L('6422', '600000'), L('1111', '0', '600000')]));
+    const rev = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${pc.id}/reverse`, headers: { cookie: t.cookie }, payload: { postingDate: '2026-01-07' } });
+    expect(rev.statusCode, rev.body).toBe(201); expect(rev.json().warnings).toBeUndefined();
+  }, 60_000);
+
   it('cài đặt cash_negative chỉ nhận warn hoặc block', async () => {
     const t = await tenant();
     const put = (v: unknown) => ctx.app.inject({ method: 'PUT', url: '/api/settings', headers: { cookie: t.cookie }, payload: { cash_negative: v } });
@@ -192,4 +269,62 @@ describe('cảnh báo tồn quỹ âm khi ghi sổ', () => {
     expect((await put('block')).statusCode).toBe(200);
     expect((await t.get('/api/settings')).json().cash_negative).toBe('block');
   });
+});
+
+describe('cột số phiếu thu/chi theo chiều tiền', () => {
+  it('chứng từ đảo của phiếu thu nằm ở cột phiếu chi (tiền ra); phiếu vừa thu vừa chi có cả hai số; phiếu thu thường vẫn ở cột thu', async () => {
+    const t = await tenant();
+    const pt = await t.post(voucher('PT', '2026-01-05', [L('1111', '1000000'), L('5113', '0', '1000000')]));
+    const rev = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${pt.id}/reverse`, headers: { cookie: t.cookie }, payload: { postingDate: '2026-01-08' } });
+    expect(rev.statusCode, rev.body).toBe(201);
+    const mixed = await t.post(voucher('PT', '2026-01-09', [L('1111', '500'), L('5113', '0', '300'), L('1111', '0', '200')]));
+    const b = (await t.get('/api/reports/cash-book?accountCode=1111&from=2026-01-01&to=2026-01-31')).json();
+    expect(b.rows).toHaveLength(3);
+    expect(b.rows[0]).toMatchObject({ voucherId: pt.id, receiptNo: pt.voucherNo, paymentNo: null, in: '1000000' });
+    expect(b.rows[1]).toMatchObject({ voucherId: rev.json().id, receiptNo: null, paymentNo: rev.json().voucherNo, in: '0', out: '1000000' });
+    expect(b.rows[2]).toMatchObject({ voucherId: mixed.id, receiptNo: mixed.voucherNo, paymentNo: mixed.voucherNo, in: '500', out: '200' });
+  }, 60_000);
+
+  it('cùng ngày, chứng từ thu ròng xếp trước chứng từ chi ròng (không so chéo Nợ với Có của hai chứng từ)', async () => {
+    const t = await tenant();
+    const pkt = await t.post(voucher('PKT', '2026-01-05', [L('1111', '50'), L('1111', '0', '200'), L('6422', '150')])); // thu 50, chi 200; loại PKT xếp trước PT theo mã loại
+    const pt = await t.post(voucher('PT', '2026-01-05', [L('1111', '100'), L('5113', '0', '100')]));
+    const b = (await t.get('/api/reports/cash-book?accountCode=1111&from=2026-01-01&to=2026-01-31')).json();
+    expect(b.rows.map((r: { voucherId: string }) => r.voucherId)).toEqual([pt.id, pkt.id]);
+  }, 60_000);
+
+  it('sổ tiền gửi: chỉ nhận tài khoản ngân hàng, tài khoản tiền mặt bị 400 NOT_BANK_ACCOUNT', async () => {
+    const t = await tenant();
+    const r = await t.get('/api/reports/bank-book?accountCode=1111&from=2026-01-01&to=2026-01-31');
+    expect(r.statusCode, r.body).toBe(400); expect(r.json().error.code).toBe('NOT_BANK_ACCOUNT');
+    expect((await t.get('/api/reports/bank-book?accountCode=112&from=2026-01-01&to=2026-01-31')).statusCode).toBe(200); // tài khoản cấp 2 gồm 1121, 1122
+    expect((await t.get('/api/reports/bank-book?accountCode=1121&from=2026-01-01&to=2026-01-31')).statusCode).toBe(200);
+  }, 60_000);
+});
+
+describe('phân quyền sổ quỹ', () => {
+  const asUser = async (t: Awaited<ReturnType<typeof tenant>>, permissions: string[]) => {
+    const roles = (await ctx.app.inject({ method: 'GET', url: '/api/roles', headers: { cookie: t.cookie } })).json() as { id: string; code: string }[];
+    expect((await ctx.app.inject({ method: 'PUT', url: `/api/roles/${roles.find((x) => x.code === 'xem')!.id}/permissions`, headers: { cookie: t.cookie }, payload: { permissions } })).statusCode).toBe(200);
+    const username = `xq_${Date.now()}_${n++}`;
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/users', headers: { cookie: t.cookie }, payload: { username, fullName: 'Chỉ xem', password: 'Matkhau1!', roleCode: 'xem' } })).statusCode).toBe(201);
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+    return `sid=${login.cookies.find((c) => c.name === 'sid')!.value}`;
+  };
+  const q = '&from=2026-01-01&to=2026-01-31';
+  const get = (url: string, cookie: string) => ctx.app.inject({ method: 'GET', url, headers: { cookie } });
+
+  it('chỉ voucher.view: xem số dư tại ngày được, sổ quỹ báo cáo 403', async () => {
+    const t = await tenant(); const c = await asUser(t, ['voucher.view']);
+    expect((await get('/api/cash/balance?accountCode=1111&asOf=2026-01-31', c)).statusCode).toBe(200);
+    expect((await get(`/api/reports/cash-book?accountCode=1111${q}`, c)).statusCode).toBe(403);
+    expect((await get(`/api/reports/bank-book?bankAccountNo=0011001${q}`, c)).statusCode).toBe(403);
+  }, 60_000);
+
+  it('chỉ report.view: sổ quỹ JSON được, số dư tại ngày 403, xuất Excel/PDF/HTML cần thêm report.print', async () => {
+    const t = await tenant(); const c = await asUser(t, ['report.view']);
+    expect((await get(`/api/reports/cash-book?accountCode=1111${q}`, c)).statusCode).toBe(200);
+    expect((await get('/api/cash/balance?accountCode=1111&asOf=2026-01-31', c)).statusCode).toBe(403);
+    for (const f of ['xlsx', 'html', 'pdf']) expect((await get(`/api/reports/cash-book?accountCode=1111${q}&format=${f}`, c)).statusCode, f).toBe(403);
+  }, 60_000);
 });
