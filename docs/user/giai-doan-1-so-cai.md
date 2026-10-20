@@ -20,6 +20,7 @@ Tài liệu ngắn cho kế toán viên và kế toán trưởng: nhập Phiếu
 
 - Vào Sổ cái → Số dư đầu kỳ, chọn năm tài chính đầu tiên của công ty, nhập số dư từng tài khoản chi tiết (công nợ nhập theo từng đối tượng) hoặc "Nhập Excel" bằng "Tải mẫu Excel".
 - Bấm "Kiểm tra" để xem lỗi (tổng Nợ khác tổng Có, nhập sai bên, thiếu đối tượng, tài khoản loại 5–9), sửa hết lỗi rồi bấm "Ghi sổ số dư đầu kỳ": hệ thống tạo một phiếu loại DK đã ghi sổ.
+- Tài khoản tiền gửi ngân hàng (1121, 1122 của hệ TT133) nhập số dư theo từng tài khoản ngân hàng: chọn ở cột "TK ngân hàng" (F4), mỗi tài khoản ngân hàng một dòng; nhờ vậy Sổ tiền gửi của từng tài khoản ngân hàng mở đầu đúng số dư. Dòng chưa gán tài khoản ngân hàng vẫn ghi sổ được nhưng "Kiểm tra" nhắc là sổ tiền gửi theo tài khoản ngân hàng sẽ thiếu số dư đầu. Mẫu Excel có thêm cột "Tài khoản ngân hàng" ngay sau cột Mã đối tượng; tệp mẫu cũ (không có cột này) vẫn nhập được.
 - Chỉ nhập cho năm đầu tiên; các năm sau số dư tự chuyển từ cuối năm trước. Muốn sửa, nhập lại rồi ghi sổ lần nữa (phiếu DK cũ được thay, giữ nguyên số), hoặc bấm "Bỏ ghi sổ số dư đầu kỳ" (cần quyền sửa số dư đầu kỳ và quyền bỏ ghi sổ; nút chỉ hiện khi phiếu DK của năm đang ghi sổ) để đưa phiếu DK về nháp, sửa số dư rồi ghi sổ lại. Đây là cách duy nhất bỏ ghi sổ phiếu DK; màn hình chứng từ chung không bỏ ghi sổ phiếu DK.
 
 ## Ghi sổ, bỏ ghi sổ, đảo, hủy: dùng cái nào

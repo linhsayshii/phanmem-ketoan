@@ -6,12 +6,12 @@ import OpeningBalancePage from '../src/pages/OpeningBalance.js';
 
 const mocks = vi.hoisted(() => {
   class ApiError extends Error { constructor(public code: string, message: string, public status = 409, public details?: unknown) { super(message); } }
-  return { api: vi.fn(), ApiError, perms: { has: (_c: string): boolean => true } };
+  return { api: vi.fn(), ApiError, perms: { has: (_c: string): boolean => true }, grid: { columns: [] as { field?: string; editable?: unknown }[] } };
 });
 vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: mocks.ApiError }));
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: (c: string) => mocks.perms.has(c) }) }));
 // lưới AG Grid và ô tra danh mục nặng trong jsdom và không thuộc điều đang kiểm tra (nút theo quyền/trạng thái tải); đường nhập phím được kiểm bằng trình duyệt
-vi.mock('@kt/ui', () => ({ KeyboardGrid: () => null, LookupSelect: () => null }));
+vi.mock('@kt/ui', () => ({ KeyboardGrid: (p: { columns: { field?: string; editable?: unknown }[] }) => { mocks.grid.columns = p.columns; return null; }, LookupSelect: () => null }));
 
 vi.setConfig({ testTimeout: 30_000 });
 const years = [{ fiscalYear: 2026, regime: 'TT133', dateFrom: '2026-01-01' }];
@@ -88,5 +88,44 @@ describe('Màn hình Số dư đầu kỳ', () => {
     renderPage();
     await screen.findByRole('button', { name: 'Ghi sổ số dư đầu kỳ' });
     expect(screen.queryByRole('button', { name: 'Bỏ ghi sổ số dư đầu kỳ' })).not.toBeInTheDocument();
+  });
+
+  describe('số dư theo tài khoản ngân hàng', () => {
+    const saved1121 = { accountCode: '1121', accountName: 'Tiền gửi ngân hàng', partyCode: null, partyName: null, bankAccountNo: '0011001', bankName: 'Vietcombank', currencyCode: 'VND', debit: '100', credit: '0', debitCurrency: '0', creditCurrency: '0' };
+    const accounts = [{ code: '1121', subledgerKind: 'bank' }, { code: '131', subledgerKind: 'receivable' }, { code: '1111', subledgerKind: null }];
+    const apiBank = (check: unknown[] = []) => mocks.api.mockImplementation(async (path: string) =>
+      path === '/api/fiscal-years' ? years : path === '/api/opening-balance/2026' ? [saved1121] : path === '/api/accounts?regime=TT133' ? accounts : path === '/api/opening-balance/2026/check' ? check : []);
+
+    it('cột TK ngân hàng chỉ sửa được ở dòng tài khoản ngân hàng', async () => {
+      apiBank();
+      renderPage();
+      await waitFor(() => expect(mocks.grid.columns.find((c) => c.field === 'bankAccountNo')).toBeDefined());
+      const editable = () => mocks.grid.columns.find((c) => c.field === 'bankAccountNo')!.editable as (p: { data: { accountCode: string } }) => boolean;
+      await waitFor(() => expect(editable()({ data: { accountCode: '1121' } })).toBe(true)); // đợi danh sách tài khoản tải xong
+      expect(editable()({ data: { accountCode: '131' } })).toBe(false);
+      expect(editable()({ data: { accountCode: '1111' } })).toBe(false);
+      expect(editable()({ data: { accountCode: '' } })).toBe(false);
+    });
+
+    it('Lưu gửi kèm bankAccountNo của dòng', async () => {
+      apiBank();
+      renderPage();
+      const save = await screen.findByRole('button', { name: 'Lưu' });
+      await waitFor(() => expect(save).toBeEnabled());
+      await userEvent.click(save);
+      await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/opening-balance/2026', { method: 'PUT', json: { rows: [expect.objectContaining({ accountCode: '1121', bankAccountNo: '0011001' })] } }));
+    });
+
+    it('cảnh báo chưa gán tài khoản ngân hàng hiện riêng, không tính là lỗi chặn ghi sổ', async () => {
+      const warn = { code: 'BANK_ACCOUNT_MISSING', warning: true, message: 'Tài khoản 1121 chưa gán tài khoản ngân hàng: sổ tiền gửi theo tài khoản ngân hàng sẽ thiếu số dư đầu' };
+      apiBank([warn]);
+      renderPage();
+      const check = await screen.findByRole('button', { name: 'Kiểm tra' });
+      await waitFor(() => expect(check).toBeEnabled());
+      await userEvent.click(check);
+      expect(await screen.findByText('Số dư đầu kỳ hợp lệ')).toBeInTheDocument();
+      expect(screen.getByText(warn.message)).toBeInTheDocument();
+      expect(screen.queryByText(/lỗi, chưa ghi sổ được/)).not.toBeInTheDocument();
+    });
   });
 });

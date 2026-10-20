@@ -117,6 +117,23 @@ describe('sổ tiền gửi ngân hàng', () => {
     const html = await t.get('/api/reports/bank-book?bankAccountNo=0011001&from=2026-01-01&to=2026-01-31&format=html');
     expect(html.body).toContain('SỔ TIỀN GỬI NGÂN HÀNG'); expect(html.body).toContain('Mẫu số S05-DNN'); expect(html.body).toContain('0011001'); expect(html.body).toContain('Vietcombank');
   }, 60_000);
+
+  it('số dư đầu 1121 theo hai tài khoản ngân hàng: ghi sổ DK mang bank_account_id; sổ tiền gửi từng tài khoản mở đầu đúng', async () => {
+    const t = await tenant();
+    const opening = (rows: object[]) => ctx.app.inject({ method: 'PUT', url: '/api/opening-balance/2026', headers: { cookie: t.cookie }, payload: { rows } });
+    const O = (accountCode: string, debit: string, credit: string, bankAccountNo: string | null) =>
+      ({ accountCode, partyCode: null, currencyCode: 'VND', debit, credit, debitCurrency: '0', creditCurrency: '0', bankAccountNo });
+    expect((await opening([O('1121', '3000000', '0', '0011001'), O('1121', '2000000', '0', '0011002'), O('4111', '0', '5000000', null)])).statusCode).toBe(200);
+    const dk = await ctx.app.inject({ method: 'POST', url: '/api/opening-balance/2026/post', headers: { cookie: t.cookie } });
+    expect(dk.statusCode, dk.body).toBe(200);
+    await t.post(voucher('BC', '2026-01-05', [L('1121', '1000000'), L('131', '0', '1000000', { partyCode: 'KH001' })], { bankAccountNo: '0011001' }));
+    const book = async (no: string) => { const r = await t.get(`/api/reports/bank-book?from=2026-01-01&to=2026-01-31&bankAccountNo=${no}`); expect(r.statusCode, r.body).toBe(200); return r.json(); };
+    expect(await book('0011001')).toMatchObject({ opening: '3000000', totalIn: '1000000', closing: '4000000' });
+    expect(await book('0011002')).toMatchObject({ opening: '2000000', totalIn: '0', closing: '2000000' });
+    // không còn dòng chưa gán: sổ chưa gán tài khoản ngân hàng trống, tổng các sổ khớp số dư 1121
+    expect((await t.get('/api/reports/bank-book?from=2026-01-01&to=2026-01-31&accountCode=1121')).json()).toMatchObject({ opening: '0', closing: '0' });
+    expect((await t.get('/api/cash/balance?accountCode=1121&asOf=2026-01-31')).json().balance).toBe('6000000');
+  }, 60_000);
 });
 
 describe('cảnh báo tồn quỹ âm khi ghi sổ', () => {
