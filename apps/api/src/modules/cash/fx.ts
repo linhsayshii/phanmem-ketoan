@@ -34,6 +34,9 @@ export async function fxRunSourceId(trx: Trx, tenantId: string, runId: number): 
   return (await sql<{ id: string }>`SELECT md5(${`${tenantId}:fx_run:${runId}`})::uuid::text AS id`.execute(trx)).rows[0]!.id;
 }
 
+// Tính lại tỷ giá xuất quỹ và đánh giá lại ngoại tệ của một công ty chạy nối tiếp nhau (cùng một khóa): đánh giá lại đọc số dư tiền sau XQ, XQ bỏ qua DG trong kỳ.
+export const fxLock = (trx: Trx, tenantId: string) => sql`SELECT pg_advisory_xact_lock(hashtext('fx'), hashtext(${tenantId}::text))`.execute(trx);
+
 // Tài khoản lãi/lỗ tỷ giá của chế độ, đọc bảng fx_rule (đồng bộ từ fx-rules.json khi migrate) như hàm SQL đối trừ: một nguồn lúc chạy.
 // Chế độ chưa có quy tắc thì 409. Chênh lệch tỷ giá đối trừ, xuất quỹ và đánh giá lại dùng chung.
 export async function fxRulesFor(db: Kysely<Database>, regime: string): Promise<FxRules> {
@@ -51,7 +54,7 @@ interface Group { accountCode: string; bankAccountNo: string | null; currency: s
 // và dòng chỉ VND (nguyên tệ 0: điều chỉnh, đánh giá lại) giữ số đã ghi. Tổng lệch (đã ghi − đúng) khác 0 thì sinh một chứng từ XQ ngày cuối kỳ, mỗi nhóm một cặp dòng
 // với 515/635. Chạy lại cùng kỳ đảo XQ của các lần trước (cùng ngày cuối kỳ) rồi sinh mới; kết quả không đổi thì không chạm sổ.
 export async function runOutflowAdjust(trx: Trx, ctx: { tenantId: string; userId: string; canBackdate: boolean }, input: z.infer<typeof adjustInput>) {
-  await sql`SELECT pg_advisory_xact_lock(hashtext('fx_outflow'), hashtext(${ctx.tenantId}::text))`.execute(trx);
+  await fxLock(trx, ctx.tenantId);
   if ((await getSettings(trx, ctx.tenantId)).fx_outflow_method !== 'moving_average')
     throw new AppError('FX_OUTFLOW_METHOD_SPECIFIC', 'Công ty dùng tỷ giá xuất quỹ đích danh (cài đặt): không tính lại theo bình quân di động', 409);
   const { fiscalYear: fy, periodNo: pn } = input;
@@ -78,6 +81,8 @@ export async function runOutflowAdjust(trx: Trx, ctx: { tenantId: string; userId
       -- đảo của một bản đảo là lần thu/chi thật, vẫn duyệt. Bản đảo của chứng từ kỳ trước giữ số đã ghi ("inPeriod" sai).
       AND NOT coalesce(o.reversal_of_id IS NULL AND o.posting_date >= ${p.date_from}::date, false)
       AND NOT coalesce(v.reversal_of_id IS NULL AND r.posting_date <= ${p.date_to}::date AND v.posting_date >= ${p.date_from}::date, false)
+      -- đánh giá lại (DG, gốc và bản đảo) ghi trong kỳ: chạy sau XQ trên số dư đã điều chỉnh; DG cuối kỳ đứng trước phiếu chi cùng ngày (Nợ trước Có) sẽ làm lệch bình quân
+      AND NOT coalesce(v.source_doc_type = 'fx_revaluation' AND v.posting_date BETWEEN ${p.date_from}::date AND ${p.date_to}::date, false)
     ORDER BY l.account_id, l.bank_account_id NULLS FIRST, l.currency_code, l.posting_date, "isOut", v.posted_at, v.id, l.line_no`.execute(trx)).rows;
 
   // shortcut: duyệt từng dòng cả lịch sử của nhóm; dữ liệu lớn thì cộng gộp các dòng trước kỳ (đều giữ số đã ghi) thành số dư đầu kỳ rồi chỉ duyệt dòng trong kỳ.
@@ -129,5 +134,8 @@ export async function runOutflowAdjust(trx: Trx, ctx: { tenantId: string; userId
   // Kỳ sau cùng năm đã chạy: bình quân đầu kỳ của chúng có thể đã đổi, cần chạy lại theo thứ tự kỳ.
   const stalePeriods = (await trx.selectFrom('fx_run').select('period_no').distinct().where('kind', '=', 'outflow').where('fiscal_year', '=', fy).where('period_no', '>', pn)
     .orderBy('period_no').execute()).map((r) => r.period_no);
-  return { runId: run.id, voucherIds, reversedVoucherIds: reversed, unchanged, stalePeriods, groups: summary };
+  // Đánh giá lại từ đầu kỳ trở đi tính trên số dư tiền trước lần điều chỉnh này: chạy lại đánh giá lại các ngày đó.
+  const staleRevaluations = unchanged ? [] : (await trx.selectFrom('fx_run').select('run_date').distinct().where('kind', '=', 'revaluation').where('run_date', '>=', p.date_from)
+    .orderBy('run_date').execute()).map((r) => r.run_date);
+  return { runId: run.id, voucherIds, reversedVoucherIds: reversed, unchanged, stalePeriods, staleRevaluations, groups: summary };
 }

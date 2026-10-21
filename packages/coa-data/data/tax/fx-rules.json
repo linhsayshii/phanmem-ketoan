@@ -2,16 +2,28 @@
   "TT133": {
     "gainAccount": "515",
     "lossAccount": "635",
-    "source": "TT 133/2016/TT-BTC: Điều 11 khoản 4 (bên Có tài khoản tiền được áp dụng tỷ giá ghi sổ bình quân gia quyền), Điều 52 khoản 1.3 (tỷ giá bình quân gia quyền sau mỗi lần nhập hoặc cuối kỳ) và khoản 2 điểm b (tất cả các khoản chênh lệch tỷ giá phát sinh trong kỳ đều được phản ánh ngay vào doanh thu hoạt động tài chính nếu lãi hoặc chi phí tài chính nếu lỗ của kỳ báo cáo), Công báo số 1099 + 1100 và 1101 + 1102 ngày 12/10/2016"
+    "revalAccount": "413",
+    "transferToPnl": true,
+    "assetRate": "transfer_avg",
+    "liabilityRate": "transfer_avg",
+    "source": "TT 133/2016/TT-BTC: Điều 11 khoản 4 (bên Có tài khoản tiền được áp dụng tỷ giá ghi sổ bình quân gia quyền), Điều 52 khoản 1.3 (tỷ giá bình quân gia quyền sau mỗi lần nhập hoặc cuối kỳ) và khoản 2 điểm b (tất cả các khoản chênh lệch tỷ giá phát sinh trong kỳ đều được phản ánh ngay vào doanh thu hoạt động tài chính nếu lãi hoặc chi phí tài chính nếu lỗ của kỳ báo cáo), Công báo số 1099 + 1100 và 1101 + 1102 ngày 12/10/2016. Đánh giá lại: Điều 11 khoản 6 (tiền), Điều 16 khoản 6 (nợ phải thu), Điều 39 khoản 4 (nợ phải trả) và Điều 52 khoản 1.4.2 (tỷ giá để đánh giá lại các khoản mục tiền tệ có gốc ngoại tệ là tỷ giá chuyển khoản trung bình cuối kỳ của ngân hàng thương mại nơi doanh nghiệp thường xuyên có giao dịch, cho cả tài sản và nợ phải trả; toàn bộ chênh lệch do đánh giá lại theo số thuần sau khi bù trừ số phát sinh bên Nợ và bên Có TK 413 được kết chuyển vào chi phí tài chính nếu lỗ hoặc doanh thu hoạt động tài chính nếu lãi), khoản 3 (TK 413 không có số dư), Công báo số 1101 + 1102 trang 56"
   },
   "TT99": {
     "gainAccount": "515",
     "lossAccount": "635",
-    "source": "Phụ lục II TT 99/2025/TT-BTC, Tài khoản 413: khoản 1.2.2 điểm b (tỷ giá ghi sổ bình quân gia quyền xác định cuối kỳ hoặc từng thời điểm thanh toán), khoản 1.4.4 (chênh lệch tỷ giá phát sinh trong kỳ ghi ngay vào doanh thu hoạt động tài chính nếu lãi, chi phí tài chính nếu lỗ), khoản 4.1.1 điểm a (khi Có TK 111, 112 theo tỷ giá ghi sổ: Nợ TK 635 nếu lỗ hoặc Có TK 515 nếu lãi), Công báo số 1571 + 1572 ngày 16/11/2025"
+    "revalAccount": null,
+    "transferToPnl": false,
+    "assetRate": "transfer_avg",
+    "liabilityRate": "transfer_avg",
+    "source": "Phụ lục II TT 99/2025/TT-BTC, Tài khoản 413: khoản 1.2.2 điểm b (tỷ giá ghi sổ bình quân gia quyền xác định cuối kỳ hoặc từng thời điểm thanh toán), khoản 1.4.4 (chênh lệch tỷ giá phát sinh trong kỳ ghi ngay vào doanh thu hoạt động tài chính nếu lãi, chi phí tài chính nếu lỗ), khoản 4.1.1 điểm a (khi Có TK 111, 112 theo tỷ giá ghi sổ: Nợ TK 635 nếu lỗ hoặc Có TK 515 nếu lãi), Công báo số 1571 + 1572 ngày 16/11/2025. Đánh giá lại: Nguyên tắc kế toán tiền khoản 4 điểm b, Nguyên tắc kế toán các khoản nợ phải thu khoản 3.2, Nguyên tắc kế toán các khoản nợ phải trả khoản 5.2 và Tài khoản 413 khoản 1.5.1 (tỷ giá mua bán chuyển khoản trung bình của ngân hàng thương mại nơi doanh nghiệp thường xuyên có giao dịch, riêng tiền gửi không kỳ hạn theo ngân hàng nơi mở tài khoản, cho cả tài sản và nợ phải trả), khoản 1.5.2 và 4.2 (chênh lệch do đánh giá lại ghi thẳng Nợ TK 111, 112, 131, 331... / Có TK 515 nếu lãi, Nợ TK 635 / Có TK 111, 112, 131, 331... nếu lỗ; TK 413 chỉ dùng cho doanh nghiệp nhà nước giai đoạn trước hoạt động theo khoản 4.3), Công báo số 1565 + 1566, 1569 + 1570 và 1571 + 1572 ngày 16/11/2025"
   },
   "TT200": {
     "gainAccount": "515",
     "lossAccount": "635",
-    "source": "chưa có văn bản gốc trong ~/legal-docs; dùng 515, 635 có trong mẫu hệ thống tài khoản TT200 của coa-data"
+    "revalAccount": "4131",
+    "transferToPnl": true,
+    "assetRate": "transfer_avg",
+    "liabilityRate": "transfer_avg",
+    "source": "chưa có văn bản gốc trong ~/legal-docs; dùng 515, 635 và 4131 (Chênh lệch tỷ giá do đánh giá lại các khoản mục tiền tệ có gốc ngoại tệ) có trong mẫu hệ thống tài khoản TT200 của coa-data; loại tỷ giá đánh giá lại chưa đối chiếu (status.json fxRules_TT200 = false)"
   }
 }

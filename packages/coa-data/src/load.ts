@@ -53,7 +53,10 @@ export function loadReportTemplates(opts: { onlyComplete?: boolean } = {}): Repo
 
 // Tài khoản lãi/lỗ chênh lệch tỷ giá theo chế độ (data/tax/fx-rules.json, mỗi chế độ kèm nguồn văn bản); chế độ chưa có trong tệp thì undefined
 // Nguồn của bảng fx_rule (syncReferenceData khi migrate); lúc chạy API (fxRulesFor, 409 FX_RULES_MISSING) và SQL đối trừ đều đọc bảng. Sửa tệp thì chạy pnpm db:migrate.
-export interface FxRules { gainAccount: string; lossAccount: string; source: string }
+// Đánh giá lại: revalAccount là tài khoản đối ứng của chứng từ DG (413; null thì ghi thẳng gainAccount/lossAccount như TT99), transferToPnl thì chứng từ DG thứ hai
+// kết chuyển số ròng của revalAccount sang gainAccount/lossAccount; assetRate/liabilityRate là loại tỷ giá đánh giá lại tài sản (tiền, phải thu)/nợ phải trả.
+export type FxRateType = 'transfer_avg' | 'buy' | 'sell';
+export interface FxRules { gainAccount: string; lossAccount: string; revalAccount: string | null; transferToPnl: boolean; assetRate: FxRateType; liabilityRate: FxRateType; source: string }
 export function loadFxRules(regime: Regime): FxRules | undefined {
   return (JSON.parse(readFileSync(dataPath('tax', 'fx-rules.json'), 'utf8')) as Partial<Record<Regime, FxRules>>)[regime];
 }

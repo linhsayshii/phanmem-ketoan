@@ -3,7 +3,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
-import { assertCanView, regimeOf } from '../reporting/ledgers.js';
+import { assertCanView, assertSensitive, regimeOf } from '../reporting/ledgers.js';
 import { isoDate, respondReport } from '../reporting/routes.js';
 import { companyInfo } from '../reporting/print/bookSet.js';
 import { voucherFormFor } from '../reporting/print/forms.js';
@@ -11,6 +11,7 @@ import { renderPdf } from '../reporting/print/pdf.js';
 import { bookDoc, cashBalanceAt, cashBook } from './books.js';
 import { countInput, createCount, deleteCount, getCount, listCounts, renderCashCountHtml, settleCount, settleInput } from './cashCount.js';
 import { adjustInput, outflowRate, rateAt, runOutflowAdjust } from './fx.js';
+import { previewRevaluation, revaluationInput, runRevaluation } from './revaluation.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 
 const format = z.enum(['json', 'html', 'pdf', 'xlsx']).default('json');
@@ -44,6 +45,21 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.post('/api/fx/outflow-adjust', { preHandler: app.requirePermission('fx.run'), schema: { body: adjustInput } }, async (req) => {
     const auth = req.auth!;
     const out = await app.withOverride(req, (trx) => runOutflowAdjust(trx, { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') }, req.body));
+    if (out.voucherIds.length || out.reversedVoucherIds.length) notifyRecompute(app, auth.tenantId!);
+    return out;
+  });
+  // Đánh giá lại số dư ngoại tệ (tiền, công nợ) tại ngày. dryRun=true: trả các khoản mục và chênh lệch dự kiến, không ghi. Kết quả chạy thật không có dòng theo đối tượng.
+  app.post('/api/fx/revaluation', { preHandler: app.requirePermission('fx.run'),
+    schema: { body: revaluationInput, querystring: z.object({ dryRun: z.enum(['true', 'false']).default('false') }) } }, async (req) => {
+    const auth = req.auth!;
+    const c = { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') };
+    if (req.query.dryRun === 'true') {
+      const out = await app.withTenant(req, (trx) => previewRevaluation(trx, c, req.body), READ_SNAPSHOT);
+      // Dòng công nợ chỉ cho người có cờ xem công nợ tương ứng: thiếu cờ thì chặn cả bản xem trước, không trả thiếu dòng.
+      for (const l of out.lines) assertSensitive(auth, { subledger_kind: l.kind, code: l.accountCode });
+      return out;
+    }
+    const out = await app.withOverride(req, (trx) => runRevaluation(trx, c, req.body));
     if (out.voucherIds.length || out.reversedVoucherIds.length) notifyRecompute(app, auth.tenantId!);
     return out;
   });

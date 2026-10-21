@@ -14,6 +14,9 @@ export const SETTINGS = z.object({
   cash_negative: z.enum(['warn', 'block']).default('warn'),
   // Tỷ giá ghi Có tài khoản tiền ngoại tệ: moving_average = bình quân di động (điền sẵn trên phiếu chi, tính lại cuối kỳ bằng chứng từ XQ), specific = người dùng nhập tỷ giá.
   fx_outflow_method: z.enum(['moving_average', 'specific']).default('moving_average'),
+  // Loại tỷ giá đánh giá lại ngoại tệ cuối kỳ cho tài sản (tiền, phải thu) và nợ phải trả; null = theo chế độ kế toán (fx-rules.json). Chọn lại khi chế độ chưa đối chiếu văn bản gốc.
+  fx_reval_rate_asset: z.enum(['transfer_avg', 'buy', 'sell']).nullable().default(null),
+  fx_reval_rate_liability: z.enum(['transfer_avg', 'buy', 'sell']).nullable().default(null),
 });
 export type Settings = z.infer<typeof SETTINGS>;
 

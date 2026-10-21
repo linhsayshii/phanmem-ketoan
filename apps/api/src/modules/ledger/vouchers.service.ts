@@ -10,7 +10,7 @@ export const dateIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 // Tiền hạch toán là đồng nguyên (numeric(20,0) sẽ âm thầm làm tròn '100.5'); nguyên tệ numeric(20,4); tỷ giá numeric(20,10) và phải dương.
 const vndAmount = z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG);
 const foreignAmount = z.string().regex(/^-?\d{1,16}(\.\d{1,4})?$/);
-const fxRate = z.string().regex(/^\d{1,10}(\.\d{1,10})?$/).refine((s) => Number(s) > 0, 'Tỷ giá phải lớn hơn 0');
+export const fxRate = z.string().regex(/^\d{1,10}(\.\d{1,10})?$/).refine((s) => Number(s) > 0, 'Tỷ giá phải lớn hơn 0');
 // Số tiền/nguyên tệ đối trừ phải dương (kiểm bằng regex: refine vẫn chạy khi regex trước đã sai).
 const positive = (s: string) => /[1-9]/.test(s);
 const settleAmount = vndAmount.refine(positive, 'Số tiền đối trừ phải lớn hơn 0');
