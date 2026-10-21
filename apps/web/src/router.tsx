@@ -17,6 +17,7 @@ import VoucherPage from './pages/VoucherForm.js';
 import OpeningBalancePage from './pages/OpeningBalance.js';
 import ClosingPage from './pages/Closing.js';
 import LedgersPage from './pages/Ledgers.js';
+import ArapReportsPage from './pages/ArapReports.js';
 import CashBooksPage from './pages/CashBooks.js';
 import CashCountPage from './pages/CashCount.js';
 import FinancialPage from './pages/Financial.js';
@@ -59,6 +60,9 @@ export const MENU: MenuItem[] = [
   { key: 'quy', label: 'Quỹ', to: '/quy', children: [
     { key: 'cashcount', label: 'Kiểm kê quỹ', to: '/quy/kiem-ke', permission: 'cash_count.view' },
   ] },
+  { key: 'congno', label: 'Công nợ', to: '/cong-no', children: [
+    { key: 'arapreports', label: 'Báo cáo công nợ', to: '/cong-no/bao-cao', permission: 'report.view' },
+  ] },
   { key: 'socai', label: 'Sổ cái', to: '/so-cai', children: [
     { key: 'periods', label: 'Kỳ kế toán và khóa sổ', to: '/so-cai/ky-ke-toan', permission: 'period.view' },
     { key: 'opening', label: 'Số dư đầu kỳ', to: '/so-cai/so-du-dau-ky', permission: 'opening_balance.view' },
@@ -96,6 +100,7 @@ const openingRoute = createRoute({ getParentRoute: () => appRoute, path: '/so-ca
 const closingRoute = createRoute({ getParentRoute: () => appRoute, path: '/so-cai/ket-chuyen', component: ClosingPage });
 const ledgersRoute = createRoute({ getParentRoute: () => appRoute, path: '/bao-cao/so-sach', component: LedgersPage });
 const cashBooksRoute = createRoute({ getParentRoute: () => appRoute, path: '/bao-cao/so-quy', component: CashBooksPage });
+const arapReportsRoute = createRoute({ getParentRoute: () => appRoute, path: '/cong-no/bao-cao', component: ArapReportsPage });
 const cashCountRoute = createRoute({ getParentRoute: () => appRoute, path: '/quy/kiem-ke', component: CashCountPage });
 const financialRoute = createRoute({ getParentRoute: () => appRoute, path: '/bao-cao/bao-cao-tai-chinh', component: FinancialPage });
 const dataCheckRoute = createRoute({ getParentRoute: () => appRoute, path: '/tien-ich/soat-loi', component: DataCheckPage });
@@ -107,6 +112,6 @@ const oldPktListRoute = createRoute({ getParentRoute: () => appRoute, path: '/ch
 const oldPktRoute = createRoute({ getParentRoute: () => appRoute, path: '/chung-tu/phieu-ke-toan/$id', beforeLoad: ({ params }) => { throw redirect({ to: '/chung-tu/$type/$id', params: { type: 'PKT', id: params.id } }); } });
 const catalogRoute = createRoute({ getParentRoute: () => appRoute, path: '/danh-muc/$name', component: CatalogPage });
 
-export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, closingRoute, ledgersRoute, cashBooksRoute, cashCountRoute, financialRoute, dataCheckRoute, exportRoute, oldPktListRoute, oldPktRoute, voucherListRoute, voucherRoute, catalogRoute])]);
+export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, closingRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, cashCountRoute, financialRoute, dataCheckRoute, exportRoute, oldPktListRoute, oldPktRoute, voucherListRoute, voucherRoute, catalogRoute])]);
 export const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }
