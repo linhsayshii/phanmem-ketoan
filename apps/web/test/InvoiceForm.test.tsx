@@ -146,6 +146,26 @@ describe('Màn hình hóa đơn dịch vụ: thuế và bút toán xem trước 
     await vi.waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith({ to: '/chung-tu/$type/$id', params: { type: 'HDB', id: 'i1' } }), slow);
   }, 60_000);
 
+  it('mở hóa đơn đã lưu: nhóm kê khai ở đầu hóa đơn lấy từ headerGroupCode, không phải nhóm của dòng đầu', async () => {
+    const doc = { id: 'v9', voucherType: 'HDB', voucherNo: null, state: 'draft', postingDate: '2026-03-05', documentDate: '2026-03-05', description: null, partyCode: 'KH001', partyName: 'Công ty A', dueDate: null,
+      currencyCode: 'VND', fxRate: null, version: 3, periodStatus: 'open', hashed: false,
+      invoices: [{ id: 5, formNo: '01GTKT', serial: 'AA/26E', invoiceNo: '77', invoiceDate: '2026-03-05', partyName: 'Công ty A', partyTaxCode: '0100109106', partyAddress: '', invoiceGroupCode: 'KCT', headerGroupCode: '10', taxCode: 'KCT', taxAmount: '0', adjustsInvoiceId: null }],
+      items: [{ lineNo: 1, description: 'Bán', quantity: null, unitPrice: null, amountCurrency: '1000000', discountRate: null, discountAmountCurrency: '0', taxCodes: ['KCT'], accountCode: '5113', departmentCode: null, projectCode: null, costItemCode: null }] };
+    mocks.api.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/invoices/tax-defs') return TAX_DEFS;
+      if (path.startsWith('/api/catalogs/invoice_group')) return { rows: GROUPS, total: GROUPS.length };
+      if (path === '/api/invoices/v9' && init?.method === 'PUT') return { ...doc, version: 4 };
+      if (path === '/api/invoices/v9') return doc;
+      return [];
+    });
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><InvoiceEditor def={voucherTypeDef('HDB')!} id="v9" /></QueryClientProvider>);
+    await screen.findByDisplayValue('77', undefined, slow);
+    fireEvent.click(screen.getByRole('button', { name: /Lưu/ }));
+    await vi.waitFor(() => expect(mocks.api.mock.calls.some(([p, i]) => p === '/api/invoices/v9' && (i as { method?: string } | undefined)?.method === 'PUT')).toBe(true), slow);
+    const put = mocks.api.mock.calls.find(([p, i]) => p === '/api/invoices/v9' && (i as { method?: string } | undefined)?.method === 'PUT')!;
+    expect((put[1] as { json: { invoice: { invoiceGroupCode: string } } }).json.invoice.invoiceGroupCode).toBe('10');
+  }, 60_000);
+
   it('hóa đơn mua trùng: details của lỗi cho liên kết mở thẳng chứng từ đã nhập, không tra cứu theo số', async () => {
     mocks.api.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path === '/api/invoices/tax-defs') return TAX_DEFS;

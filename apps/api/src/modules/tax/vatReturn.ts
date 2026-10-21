@@ -26,7 +26,7 @@ export const returnUpdate = z.object({ manual: amounts.optional(), overrides: ov
 
 const lock = (trx: Trx, tenantId: string) => sql`SELECT pg_advisory_xact_lock(hashtext('tax_return'), hashtext(${tenantId}::text))`.execute(trx);
 
-async function templateFor(trx: Trx, from: string, label: string): Promise<VatTemplate> {
+export async function templateFor(trx: Trx, from: string, label: string): Promise<VatTemplate> {
   const version = await legalParam<string>(trx, 'vat_return_template', from);
   if (version !== 'TT89' && version !== 'TT80') throw new AppError('VAT_TEMPLATE_UNAVAILABLE', `Không có mẫu tờ khai 01/GTGT áp dụng cho ${label}`, 409);
   if (!isVatTemplateComplete(version)) {
@@ -190,6 +190,18 @@ export async function finalizeReturn(trx: Trx, ctx: { tenantId: string; userId: 
     throw new AppError('TAX_RETURN_STALE', `Số liệu sổ đã thay đổi kể từ lần tính trước (${changed.map((x) => `[${x.code}]`).join(', ') || 'mẫu tờ khai'}): lưu lại nháp để tính lại và kiểm tra trước khi chốt`, 409, { changed });
   await trx.updateTable('tax_return').set({ status: 'final', finalized_by: ctx.userId, finalized_at: sql<string>`now()` }).where('id', '=', id).execute();
   return { ...(await getReturn(trx, id)), hints: c.hints, warnings: c.warnings };
+}
+
+// Mẫu chỉ tiêu áp dụng cho kỳ (màn hình dựng bảng từ đây, không viết cứng danh sách chỉ tiêu). Kỳ trước 01/7/2026 chưa có mẫu: 409 VAT_TEMPLATE_UNAVAILABLE.
+export async function templateOfPeriod(trx: Trx, q: PeriodQ): Promise<VatTemplate> { const s = specOf(q); return templateFor(trx, s.from, s.label); }
+
+// Gợi ý, cảnh báo và số lệch so với sổ hiện tại của tờ khai nháp (chỉ đọc, không ghi): màn hình mở lại nháp vẫn thấy gợi ý [37]/[38], [25]; tờ khai đã chốt không có (số đã khóa).
+export async function previewReturn(trx: Trx, id: number) {
+  const r = await rowOf(trx, id);
+  if (r.status === 'final') return { hints: {} as Record<string, string>, warnings: [] as string[], changed: [] as { code: string; stored: string | null; fresh: string | null }[] };
+  const c = await compute(trx, qOf(r), manualOf(loadVatTemplate(r.template_version as VatTemplate['version']), r.values), r.overrides, false);
+  const changed = [...new Set([...Object.keys(r.values), ...Object.keys(c.values)])].filter((k) => r.values[k] !== c.values[k]).map((code) => ({ code, stored: r.values[code] ?? null, fresh: c.values[code] ?? null }));
+  return { hints: c.hints, warnings: c.warnings, changed };
 }
 
 // Tài liệu in theo bố cục mẫu: chỉ tiêu theo thứ tự và mục của mẫu dữ liệu; không thêm chữ ban hành ngoài mẫu. Chỉ tiêu cờ [21] in dạng ô đánh dấu.

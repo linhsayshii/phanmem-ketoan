@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import InvoiceRegisterPage, { registerRows } from '../src/pages/InvoiceRegister.js';
+import InvoiceRegisterPage, { registerRows, urlSelection } from '../src/pages/InvoiceRegister.js';
 
 const apiMock = vi.hoisted(() => vi.fn());
 const auth = vi.hoisted(() => ({ canPrint: true }));
@@ -78,6 +78,26 @@ describe('Bảng kê hóa đơn', () => {
     renderPage();
     await screen.findAllByTestId('row');
     expect(screen.queryByRole('button', { name: 'Xuất Excel' })).toBeNull();
+  });
+
+  it('urlSelection: đọc chiều, kỳ và nhóm từ đường dẫn; tham số sai bị bỏ qua', () => {
+    expect(urlSelection('?direction=sale&year=2026&period=7&periodKind=month&group=10,%2008')).toEqual({ tab: 'sale', sel: { periodKind: 'month', year: 2026, period: 7 }, groups: ['10', '08'] });
+    expect(urlSelection('?direction=x&year=2026&period=13&periodKind=month')).toEqual({ tab: null, sel: null, groups: [] });
+    expect(urlSelection('')).toEqual({ tab: null, sel: null, groups: [] });
+  });
+
+  it('mở từ tờ khai: gọi đúng chiều và kỳ trên đường dẫn, chỉ giữ nhóm được chọn, Bỏ lọc trả đủ nhóm', async () => {
+    window.history.pushState({}, '', '/thue/bang-ke-hoa-don?direction=sale&year=2026&period=7&periodKind=month&group=02');
+    try {
+      apiMock.mockImplementation(async (url: string) => (url.startsWith('/api/tax/reconcile') ? reconcile : { ...register, groups: [...register.groups, { code: '02', name: 'Nhóm 02', rows: [line({ groupCode: '02', stt: 3, invoiceNo: 'X3' })], baseTotal: '1000000', taxTotal: '100000' }] }));
+      renderPage();
+      expect(await screen.findByText(/Đang lọc theo nhóm kê khai 02/)).toBeInTheDocument();
+      const q = lastCall('/api/tax/invoices')!;
+      expect([q.get('direction'), q.get('year'), q.get('period'), q.get('periodKind')]).toEqual(['sale', '2026', '7', 'month']);
+      expect((await screen.findAllByTestId('row')).map((r) => cell(r, 'Tên người bán/mua'))).toEqual(['Nhóm 02 – Nhóm 02', 'Công ty A', 'Cộng nhóm 02', 'Tổng cộng']);
+      await userEvent.click(screen.getByRole('button', { name: 'Bỏ lọc' }));
+      expect((await screen.findAllByTestId('row')).length).toBeGreaterThan(4);
+    } finally { window.history.pushState({}, '', '/'); }
   });
 
   it('registerRows: kỳ không có hóa đơn thì không có dòng tổng', () => {

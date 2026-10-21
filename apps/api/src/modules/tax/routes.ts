@@ -6,7 +6,7 @@ import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { companyInfo } from '../reporting/print/bookSet.js';
 import { invoiceRegister, reconcileDoc, reconcileTax, registerDoc } from './register.js';
 import { offsetInput, runVatOffset } from './vatOffset.js';
-import { createReturn, finalizeReturn, getReturn, listReturns, returnDoc, returnInput, returnUpdate, updateReturn } from './vatReturn.js';
+import { createReturn, finalizeReturn, getReturn, listReturns, previewReturn, returnDoc, returnInput, returnUpdate, templateOfPeriod, updateReturn } from './vatReturn.js';
 import { XML_FORMATS } from './xml/index.js';
 import { AppError } from '../../plugins/errors.js';
 
@@ -38,6 +38,9 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   // Tờ khai 01/GTGT: lập (lần đầu hoặc bổ sung), sửa nháp, chốt; danh sách và chi tiết đọc trong giao dịch REPEATABLE READ READ ONLY.
   app.get('/api/tax/vat-returns', { preHandler: app.requirePermission('tax_return.view'), schema: { querystring: z.object({ year: z.coerce.number().int().min(2000).max(2100).optional() }) } }, async (req) =>
     app.withTenant(req, (trx) => listReturns(trx, req.query.year), READ_SNAPSHOT));
+  app.get('/api/tax/vat-template', { preHandler: app.requirePermission('tax_return.view'), schema: { querystring: z.object(period) } }, async (req) =>
+    app.withTenant(req, (trx) => templateOfPeriod(trx, req.query), READ_SNAPSHOT));
+  app.get('/api/tax/vat-returns/:id/hints', { preHandler: app.requirePermission('tax_return.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => previewReturn(trx, req.params.id), READ_SNAPSHOT));
   app.get('/api/tax/vat-returns/:id', { preHandler: app.requirePermission('tax_return.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => getReturn(trx, req.params.id), READ_SNAPSHOT));
   app.post('/api/tax/vat-returns', { preHandler: app.requirePermission('tax_return.create'), schema: { body: returnInput } }, async (req, reply) =>
     reply.status(201).send(await app.withTenant(req, (trx) => createReturn(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.body), SNAPSHOT_RW)));

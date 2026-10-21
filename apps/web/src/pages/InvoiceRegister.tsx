@@ -50,17 +50,33 @@ const diffColumns: ColDef<Diff>[] = ([
   { headerName: 'Chênh lệch', width: 150, cellClass: 'ag-right-aligned-cell', valueGetter: (p) => (p.data ? D(p.data.ledgerTax).minus(p.data.invoiceTax).toFixed(0) : ''), valueFormatter: (p) => formatVnNumber(p.value as string) },
 ] satisfies ColDef<Diff>[]).map((c) => ({ ...c, editable: false }));
 
+// Mở từ tờ khai GTGT: ?direction=sale&year=2026&period=7&periodKind=month&group=10,08 (nhóm cách nhau dấu phẩy). Tham số của đường dẫn thắng bộ lọc đã nhớ cho tới khi người dùng đổi kỳ.
+export function urlSelection(search: string): { tab: TabKey | null; sel: { periodKind: string; year: number; period: number } | null; groups: string[] } {
+  const q = new URLSearchParams(search); const dir = q.get('direction'); const year = Number(q.get('year')); const period = Number(q.get('period')); const kind = q.get('periodKind');
+  const ok = Number.isInteger(year) && year >= 2000 && year <= 2100 && Number.isInteger(period) && period >= 1 && period <= 12 && (kind === 'month' || kind === 'quarter');
+  return { tab: dir === 'purchase' || dir === 'sale' ? dir : null, sel: ok ? { periodKind: kind, year, period } : null, groups: (q.get('group') ?? '').split(',').map((x) => x.trim()).filter(Boolean) };
+}
+
 export default function InvoiceRegisterPage() {
   const { me, can } = useAuth();
-  const [tab, setTab] = useState<TabKey>('purchase');
+  const init = useMemo(() => urlSelection(typeof window === 'undefined' ? '' : window.location.search), []);
+  const [tab, setTab] = useState<TabKey>(init.tab ?? 'purchase');
+  const [groups, setGroups] = useState<string[]>(init.groups);
+  const [urlSel, setUrlSel] = useState(init.sel);
   const now = dayjs();
-  const [f, setF] = useRememberedFilter('tax-register', { periodKind: 'month', year: now.year(), period: now.month() + 1 }, `${me?.tenantId}:${me?.userId}`);
+  const [remembered, setRemembered] = useRememberedFilter('tax-register', { periodKind: 'month', year: now.year(), period: now.month() + 1 }, `${me?.tenantId}:${me?.userId}`);
+  const f = urlSel ?? remembered;
+  const setF = (v: typeof remembered) => { setUrlSel(null); setGroups([]); setRemembered(v); };
   const kind = f.periodKind as 'month' | 'quarter';
   const period = Math.min(f.period, kind === 'month' ? 12 : 4);
   const qs = new URLSearchParams({ year: String(f.year), period: String(period), periodKind: kind });
   const url = tab === 'reconcile' ? `/api/tax/reconcile?${qs}` : `/api/tax/invoices?direction=${tab}&${qs}`;
   const data = useQuery({ queryKey: ['tax-register', url], queryFn: () => api<Register | Reconcile>(url), retry: false });
-  const rows = useMemo(() => (tab !== 'reconcile' && data.data && 'groups' in data.data ? registerRows(data.data) : []), [tab, data.data]);
+  const rows = useMemo(() => {
+    if (tab === 'reconcile' || !data.data || !('groups' in data.data)) return [];
+    const r = data.data;
+    return registerRows(groups.length ? { ...r, groups: r.groups.filter((g) => groups.includes(g.code)), otherTaxes: { rows: [], baseTotal: '0', taxTotal: '0' } } : r);
+  }, [tab, data.data, groups]);
 
   const stat = (label: string, value: string) => <span key={label}>{label}: <b>{formatVnNumber(value)}</b></span>;
   const body = () => {
@@ -77,6 +93,7 @@ export default function InvoiceRegisterPage() {
     const r = d as Register;
     return (
       <Space direction="vertical" style={{ width: '100%' }}>
+        {groups.length > 0 && <Alert type="info" showIcon message={`Đang lọc theo nhóm kê khai ${groups.join(', ')} (từ tờ khai GTGT)`} action={<Button size="small" onClick={() => setGroups([])}>Bỏ lọc</Button>} />}
         {r.note && <Alert type="info" showIcon message={r.note} />}
         <Space size="large" wrap>{stat('Giá trị chưa thuế', r.totals.baseAmount)}{stat('Thuế GTGT', r.totals.taxAmount)}</Space>
         {rows.length === 0 ? <Alert type="info" showIcon message={`Không có hóa đơn ${tab === 'purchase' ? 'mua vào' : 'bán ra'} trong ${r.label.toLowerCase()}`} />
@@ -94,7 +111,7 @@ export default function InvoiceRegisterPage() {
           options={Array.from({ length: kind === 'month' ? 12 : 4 }, (_, i) => ({ value: i + 1, label: `${kind === 'month' ? 'Tháng' : 'Quý'} ${i + 1}` }))} />
         {can('report.print') && <Button onClick={() => window.open(`${url}&format=xlsx`, '_blank')}>Xuất Excel</Button>}
       </Space>
-      <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={[{ key: 'purchase', label: 'Mua vào' }, { key: 'sale', label: 'Bán ra' }, { key: 'reconcile', label: 'Đối chiếu' }]} />
+      <Tabs activeKey={tab} onChange={(k) => { setTab(k as TabKey); setGroups([]); }} items={[{ key: 'purchase', label: 'Mua vào' }, { key: 'sale', label: 'Bán ra' }, { key: 'reconcile', label: 'Đối chiếu' }]} />
       {body()}
     </Space>
   );

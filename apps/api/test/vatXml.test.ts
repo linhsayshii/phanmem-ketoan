@@ -106,3 +106,28 @@ describe('escapeXml', () => {
     expect(XML_FORMATS['htkk-01gtgt']).toMatchObject({ verified: false, formCode: '01/GTGT', templateVersions: ['TT89'] });
   });
 });
+
+describe('mẫu và gợi ý cho màn hình tờ khai', () => {
+  it('vat-template trả chỉ tiêu theo mẫu của kỳ; kỳ trước 01/7/2026: 409 VAT_TEMPLATE_UNAVAILABLE', async () => {
+    const t = await tenant();
+    const ok = await t.call('GET', '/api/tax/vat-template?year=2026&periodKind=month&period=7');
+    expect(ok.statusCode, ok.body).toBe(200);
+    const body = ok.json(); expect(body.version).toBe('TT89');
+    expect(body.lines.map((l: { code: string }) => l.code)).toEqual(loadVatTemplate('TT89').lines.map((l) => l.code));
+    expect(err(await t.call('GET', '/api/tax/vat-template?year=2026&periodKind=month&period=6'))).toEqual([409, 'VAT_TEMPLATE_UNAVAILABLE']);
+  });
+
+  it('hints: nháp trả gợi ý [25] và số lệch rỗng; sổ đổi sau khi lập thì changed nêu chỉ tiêu; đã chốt thì rỗng', async () => {
+    const t = await tenant(); const id = await t.ret(false);
+    const h = (await t.call('GET', `/api/tax/vat-returns/${id}/hints`)).json();
+    expect(h.changed).toEqual([]); expect(h.hints['25']).toContain('Gợi ý'); expect(Array.isArray(h.warnings)).toBe(true);
+    await t.call('POST', '/api/invoices', { voucherType: 'HDB', postingDate: '2026-07-20', documentDate: '2026-07-20', partyCode: 'KH001', autoPost: true, items: [{ accountCode: '5113', amountCurrency: '100000000', taxCodes: ['V10'] }],
+      invoice: { serial: 'C26TAA', invoiceNo: '0000002', invoiceDate: '2026-07-20', invoiceGroupCode: '10' } });
+    const h2 = (await t.call('GET', `/api/tax/vat-returns/${id}/hints`)).json();
+    expect(h2.changed.map((x: { code: string }) => x.code)).toContain('32');
+    expect((await t.call('POST', `/api/tax/vat-returns/${id}/finalize`)).statusCode).toBe(409);
+    const put = await ctx.app.inject({ method: 'PUT', url: `/api/tax/vat-returns/${id}`, headers: { cookie: t.cookie }, payload: {} }); expect(put.statusCode, put.body).toBe(200);
+    expect((await t.call('POST', `/api/tax/vat-returns/${id}/finalize`)).statusCode).toBe(200);
+    expect((await t.call('GET', `/api/tax/vat-returns/${id}/hints`)).json()).toEqual({ hints: {}, warnings: [], changed: [] });
+  });
+});
