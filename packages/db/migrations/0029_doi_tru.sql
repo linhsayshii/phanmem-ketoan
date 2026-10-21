@@ -1,5 +1,5 @@
 -- GĐ2 Task 12: đối trừ chứng từ công nợ (thủ công, tự động, theo kế hoạch gửi kèm chứng từ), hủy đối trừ, chênh lệch tỷ giá thực hiện (chứng từ CL).
--- Thân post_voucher, unpost_voucher, discard_voucher, renumber_vouchers, fn_open_items_create, fn_open_items_settle_reversal lấy từ định nghĩa hiện hành (pg_get_functiondef) sau 0028,
+-- Thân post_voucher, unpost_voucher, reverse_voucher, discard_voucher, renumber_vouchers, fn_open_items_create, fn_open_items_settle_reversal lấy từ định nghĩa hiện hành (pg_get_functiondef) sau 0028,
 -- chỉ thêm các đoạn ghi chú "công nợ"/"đối trừ". Hàm vẫn chạy quyền người gọi.
 
 -- 1) Quy tắc tỷ giá theo chế độ (packages/coa-data/data/tax/fx-rules.json), syncReferenceData nạp vào để hàm SQL đọc được tài khoản lãi/lỗ
@@ -410,4 +410,42 @@ BEGIN
   UPDATE voucher SET state = 'cancelled' WHERE id = p_id;
   PERFORM set_config('app.state_change', 'off', true);
   PERFORM fn_audit_voucher(v.tenant_id, 'discard', p_id, jsonb_build_object('voucher_no', v.voucher_no));
+END $function$;
+
+CREATE OR REPLACE FUNCTION reverse_voucher(p_id uuid, p_date date, p_description text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+AS $function$
+DECLARE v voucher; v_new uuid := gen_random_uuid(); v_by text;
+BEGIN
+  SELECT * INTO v FROM voucher WHERE id = p_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'VOUCHER_NOT_FOUND: %', p_id USING ERRCODE = 'P0001'; END IF;
+  IF v.state <> 'posted' THEN RAISE EXCEPTION 'STATE_INVALID: chỉ đảo được chứng từ đang ghi sổ (hiện tại: %)', v.state USING ERRCODE = 'P0001'; END IF;
+  IF p_date < v.posting_date THEN RAISE EXCEPTION 'REVERSE_DATE_BEFORE_ORIGINAL: ngày đảo % trước ngày chứng từ gốc %', p_date, v.posting_date USING ERRCODE = 'P0001'; END IF;
+  -- công nợ: như bỏ ghi sổ, trừ đối trừ kiểu 'reversal' (khoản của một bản đảo đã đối trừ hết với chứng từ gốc; đảo lại bản đảo vẫn được)
+  IF EXISTS (SELECT 1 FROM open_item o JOIN settlement s ON s.tenant_id = o.tenant_id AND (s.debit_item_id = o.id OR s.credit_item_id = o.id) WHERE o.voucher_id = p_id AND s.kind <> 'reversal') THEN
+    RAISE EXCEPTION 'OPEN_ITEM_SETTLED: chứng từ đã đối trừ công nợ, hãy hủy đối trừ trước' USING ERRCODE = 'P0001'; END IF;
+  -- đối trừ: như bỏ ghi sổ, khoản đang được chứng từ nháp chọn để đối trừ (đảo sẽ đối trừ hết khoản gốc, nháp ghi sổ sau sẽ lỗi khó hiểu)
+  SELECT coalesce(d.voucher_no, d.voucher_type || ' ngày ' || to_char(d.posting_date, 'DD/MM/YYYY')) INTO v_by
+    FROM open_item o JOIN settlement_plan sp ON sp.tenant_id = o.tenant_id AND sp.open_item_id = o.id JOIN voucher d ON d.id = sp.voucher_id
+    WHERE o.voucher_id = p_id ORDER BY d.posting_date, d.id LIMIT 1;
+  IF v_by IS NOT NULL THEN
+    RAISE EXCEPTION 'OPEN_ITEM_PLANNED: khoản công nợ của chứng từ đang được chọn đối trừ ở chứng từ nháp %, hãy bỏ chọn ở chứng từ đó trước', v_by USING ERRCODE = 'P0001'; END IF;
+  INSERT INTO voucher(id, tenant_id, voucher_type, posting_date, document_date, description, party_id, currency_code, fx_rate, source_doc_type, source_doc_id, reversal_of_id, is_closing, created_by,
+                      person_name, person_address, attachments_count, bank_account_id, counter_bank_account_id, party_bank_account_id, due_date, purpose)
+  VALUES (v_new, v.tenant_id, v.voucher_type, p_date, p_date, coalesce(p_description, 'Đảo chứng từ ' || v.voucher_no || ' ngày ' || to_char(v.posting_date, 'DD/MM/YYYY')),
+          v.party_id, v.currency_code, v.fx_rate, v.source_doc_type, v.source_doc_id, p_id, v.is_closing, app_user_id(),
+          v.person_name, v.person_address, v.attachments_count, v.bank_account_id, v.counter_bank_account_id, v.party_bank_account_id, v.due_date, v.purpose);
+  INSERT INTO voucher_line(tenant_id, voucher_id, line_no, account_id, posting_date, currency_code, fx_rate, amount_currency, debit, credit,
+                           party_id, item_id, warehouse_id, department_id, project_id, cost_item_id, contract_id, employee_id, asset_id, extra_dims, description, due_date, bank_account_id)
+  SELECT tenant_id, v_new, line_no, account_id, p_date, currency_code, fx_rate, -amount_currency, credit, debit,
+         party_id, item_id, warehouse_id, department_id, project_id, cost_item_id, contract_id, employee_id, asset_id, extra_dims, description, due_date, bank_account_id
+  FROM voucher_line WHERE voucher_id = p_id ORDER BY line_no;
+  PERFORM post_voucher(v_new);
+  PERFORM fn_open_items_settle_reversal(p_id, v_new); -- công nợ: khoản gốc và khoản đảo tự đối trừ
+  PERFORM set_config('app.state_change', 'on', true);
+  UPDATE voucher SET state = 'reversed', reversed_by_id = v_new WHERE id = p_id;
+  PERFORM set_config('app.state_change', 'off', true);
+  PERFORM fn_audit_voucher(v.tenant_id, 'reverse', p_id, jsonb_build_object('reversed_by', v_new, 'date', p_date));
+  RETURN v_new;
 END $function$;

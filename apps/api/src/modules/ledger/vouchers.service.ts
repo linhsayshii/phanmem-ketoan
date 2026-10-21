@@ -4,12 +4,17 @@ import type { Database } from '@kt/db';
 import { CASH_PURPOSES, D, HEADER_FIELD_LABELS, sum, SYSTEM_VOUCHER_TYPES, VND_AMOUNT_MSG, VND_AMOUNT_RE, voucherTypeDef, type CashPurpose, type HeaderField, type VoucherTypeDef } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { likePattern } from '../master/crud.js';
+import { assertSensitive } from '../reporting/ledgers.js';
 
 export const dateIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 // Tiền hạch toán là đồng nguyên (numeric(20,0) sẽ âm thầm làm tròn '100.5'); nguyên tệ numeric(20,4); tỷ giá numeric(20,10) và phải dương.
 const vndAmount = z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG);
 const foreignAmount = z.string().regex(/^-?\d{1,16}(\.\d{1,4})?$/);
 const fxRate = z.string().regex(/^\d{1,10}(\.\d{1,10})?$/).refine((s) => Number(s) > 0, 'Tỷ giá phải lớn hơn 0');
+// Số tiền/nguyên tệ đối trừ phải dương (kiểm bằng regex: refine vẫn chạy khi regex trước đã sai).
+const positive = (s: string) => /[1-9]/.test(s);
+const settleAmount = vndAmount.refine(positive, 'Số tiền đối trừ phải lớn hơn 0');
+const settleCurrency = z.string().regex(/^\d{1,16}(\.\d{1,4})?$/).refine(positive, 'Số nguyên tệ đối trừ phải lớn hơn 0');
 
 const optText = (max: number) => z.string().max(max).nullable().optional();
 export const lineInput = z.object({
@@ -18,7 +23,7 @@ export const lineInput = z.object({
   costItemCode: z.string().nullable().optional(), employeeCode: z.string().nullable().optional(), description: z.string().nullable().optional(),
   dueDate: dateIso.nullable().optional(), extraDims: z.record(z.string()).optional(), bankAccountNo: optText(50),
   // Kế hoạch đối trừ (thu/chi từ hóa đơn, bù trừ công nợ): khoản công nợ của dòng đối trừ với các khoản này khi ghi sổ.
-  settle: z.array(z.object({ openItemId: z.number().int(), amount: vndAmount.optional(), amountCurrency: foreignAmount.optional() })).max(500).optional(),
+  settle: z.array(z.object({ openItemId: z.number().int().positive(), amount: settleAmount.optional(), amountCurrency: settleCurrency.optional() })).max(500).optional(),
 });
 export const voucherInput = z.object({
   voucherType: z.string().min(1), postingDate: dateIso, documentDate: dateIso, description: z.string().nullable().optional(),
@@ -138,18 +143,25 @@ async function insertLines(trx: Trx, tenantId: string, voucherId: string, postin
   const rows = lines.map((r, i) => ({ tenant_id: tenantId, voucher_id: voucherId, line_no: i + 1, posting_date: postingDate, ...r }));
   for (let i = 0; i < rows.length; i += 1000) await trx.insertInto('voucher_line').values(rows.slice(i, i + 1000)).execute(); // chia lô: một câu lệnh 5.000 dòng vượt 65.535 tham số bind
 }
+type PlanAuth = { permissions: Set<string>; sensitive: Set<string> };
 // Kế hoạch đối trừ của các dòng: khoản VND theo số tiền, khoản ngoại tệ theo số nguyên tệ (post_voucher áp khi ghi sổ, kiểm cùng tài khoản/đối tượng và số còn lại).
-async function insertPlans(trx: Trx, tenantId: string, voucherId: string, input: SystemVoucherInput) {
+// Kế hoạch là một lối vào đối trừ: cùng quyền settlement.create và cờ nhạy cảm theo tài khoản của khoản như POST /api/settlements.
+// Không có auth (bộ sinh nội bộ) thì không lập được kế hoạch.
+async function insertPlans(trx: Trx, tenantId: string, voucherId: string, input: SystemVoucherInput, auth: PlanAuth | undefined) {
   const rows = input.lines.flatMap((l, i) => (l.settle ?? []).map((s) => {
     const vnd = (l.currencyCode ?? input.currencyCode) === 'VND';
     if (vnd ? !s.amount : !s.amountCurrency) throw new AppError('VALIDATION', `Dòng ${i + 1}: đối trừ ${vnd ? 'phải có số tiền' : 'khoản ngoại tệ phải có số nguyên tệ'}`, 400);
     return { tenant_id: tenantId, voucher_id: voucherId, line_no: i + 1, open_item_id: s.openItemId, amount: s.amount ?? null, amount_currency: s.amountCurrency ?? null };
   }));
   if (!rows.length) return;
+  if (!auth?.permissions.has('settlement.create')) throw new AppError('FORBIDDEN', 'Thiếu quyền settlement.create', 403);
   const ids = [...new Set(rows.map((r) => r.open_item_id))];
-  const found = new Set((await trx.selectFrom('open_item').select('id').where(sql<boolean>`id = ANY(${ids}::bigint[])`).execute()).map((r) => r.id));
+  const items = await trx.selectFrom('open_item as o').innerJoin('account as a', 'a.id', 'o.account_id').select(['o.id', 'a.code', 'a.subledger_kind'])
+    .where(sql<boolean>`o.id = ANY(${ids}::bigint[])`).execute();
+  const found = new Set(items.map((r) => r.id));
   const missing = ids.find((x) => !found.has(x));
   if (missing !== undefined) throw new AppError('OPEN_ITEM_NOT_FOUND', `Không có khoản công nợ ${missing}`, 404);
+  for (const i of items) assertSensitive(auth, i);
   for (let i = 0; i < rows.length; i += 1000) await trx.insertInto('settlement_plan').values(rows.slice(i, i + 1000)).execute();
 }
 
@@ -264,7 +276,8 @@ export async function assertNotSystemGenerated(trx: Trx, id: string) {
   failIfSystem((await trx.selectFrom('voucher').select('source_doc_type').where('id', '=', id).executeTakeFirst())?.source_doc_type ?? null);
 }
 
-export async function createVoucher(trx: Trx, ctx: { tenantId: string; userId: string }, input: VoucherInput): Promise<VoucherDto> {
+// ctx.auth: quyền và cờ của người lập, bắt buộc khi có dòng mang kế hoạch đối trừ (settle).
+export async function createVoucher(trx: Trx, ctx: { tenantId: string; userId: string; auth?: PlanAuth }, input: VoucherInput): Promise<VoucherDto> {
   assertNotSystemType(input.voucherType); // cả nhân bản (duplicateVoucher gọi hàm này)
   return insertVoucher(trx, ctx, input);
 }
@@ -272,7 +285,7 @@ export async function createVoucher(trx: Trx, ctx: { tenantId: string; userId: s
 export const createSystemVoucher = (trx: Trx, ctx: { tenantId: string; userId: string }, input: SystemVoucherInput, source: { type: string; id: string }): Promise<VoucherDto> =>
   insertVoucher(trx, ctx, input, source);
 
-async function insertVoucher(trx: Trx, ctx: { tenantId: string; userId: string }, input: SystemVoucherInput, source?: { type: string; id: string }): Promise<VoucherDto> {
+async function insertVoucher(trx: Trx, ctx: { tenantId: string; userId: string; auth?: PlanAuth }, input: SystemVoucherInput, source?: { type: string; id: string }): Promise<VoucherDto> {
   if (input.idempotencyKey) {
     const existing = await trx.selectFrom('voucher').select('id').where('idempotency_key', '=', input.idempotencyKey).executeTakeFirst();
     if (existing) return getVoucher(trx, existing.id);
@@ -289,7 +302,7 @@ async function insertVoucher(trx: Trx, ctx: { tenantId: string; userId: string }
     return getVoucher(trx, existing.id);
   }
   await insertLines(trx, ctx.tenantId, v.id, input.postingDate, lines);
-  await insertPlans(trx, ctx.tenantId, v.id, input);
+  await insertPlans(trx, ctx.tenantId, v.id, input, ctx.auth);
   return getVoucher(trx, v.id);
 }
 
@@ -300,7 +313,7 @@ async function lockAndCheckVersion(trx: Trx, id: string, version: number) {
   return v;
 }
 
-export async function updateDraft(trx: Trx, id: string, version: number, input: VoucherInput): Promise<VoucherDto> {
+export async function updateDraft(trx: Trx, id: string, version: number, input: VoucherInput, auth?: PlanAuth): Promise<VoucherDto> {
   assertNotSystemType(input.voucherType);
   const v = await lockAndCheckVersion(trx, id, version);
   failIfSystem(v.source_doc_type);
@@ -315,7 +328,7 @@ export async function updateDraft(trx: Trx, id: string, version: number, input: 
   await trx.updateTable('voucher').set({ voucher_type: input.voucherType, posting_date: input.postingDate, document_date: input.documentDate, description: input.description ?? null,
     ...header, currency_code: input.currencyCode, fx_rate: input.fxRate ?? null }).where('id', '=', id).execute();
   await insertLines(trx, v.tenant_id, id, input.postingDate, lines);
-  await insertPlans(trx, v.tenant_id, id, input);
+  await insertPlans(trx, v.tenant_id, id, input, auth);
   return getVoucher(trx, id);
 }
 

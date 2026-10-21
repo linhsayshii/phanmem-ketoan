@@ -239,10 +239,10 @@ describe('tỷ giá xuất quỹ bình quân di động', () => {
     expect((await t.call('PUT', '/api/settings', { fx_outflow_method: 'fifo' })).statusCode).toBe(400); // FIFO không làm
   }, 60_000);
 
-  it('chế độ chưa có tài khoản lãi/lỗ tỷ giá trong fx-rules.json → 409 FX_RULES_MISSING', () => {
-    expect(fxRulesFor('TT133')).toMatchObject({ gainAccount: '515', lossAccount: '635' });
+  it('chế độ chưa có tài khoản lãi/lỗ tỷ giá (bảng fx_rule, đồng bộ từ fx-rules.json) → 409 FX_RULES_MISSING', async () => {
+    expect(await fxRulesFor(ctx.app.db, 'TT133')).toMatchObject({ gainAccount: '515', lossAccount: '635' });
     let err: unknown;
-    try { fxRulesFor('TT58'); } catch (e) { err = e; }
+    try { await fxRulesFor(ctx.app.db, 'TT58'); } catch (e) { err = e; }
     expect(err).toBeInstanceOf(AppError);
     expect(err).toMatchObject({ code: 'FX_RULES_MISSING', status: 409 });
   });

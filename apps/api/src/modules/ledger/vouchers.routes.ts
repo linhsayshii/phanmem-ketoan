@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { sql, type Transaction } from 'kysely';
+import type { Transaction } from 'kysely';
 import { READ_SNAPSHOT, type Database } from '@kt/db';
 import { voucherTypeDef } from '@kt/domain';
 import * as S from './vouchers.service.js';
@@ -29,12 +29,8 @@ async function bankInfos(trx: Transaction<Database>, voucherId: string): Promise
 }
 
 const routes: FastifyPluginAsyncZod = async (app) => {
-  const ctx = (req: FastifyRequest) => ({ tenantId: req.auth!.tenantId!, userId: req.auth!.userId });
-  // Ghi vào kỳ khóa mềm chỉ khi có quyền; biến phiên được đặt trong transaction.
-  const withOverride = <T>(req: FastifyRequest, fn: (trx: Transaction<Database>) => Promise<T>) => app.withTenant(req, async (trx) => {
-    if (req.auth!.permissions.has('voucher.backdate_locked')) await sql`SELECT set_config('app.override_soft_lock', 'on', true)`.execute(trx);
-    return fn(trx);
-  });
+  // auth đi kèm để kiểm quyền đối trừ và cờ nhạy cảm của kế hoạch đối trừ trên dòng (settle).
+  const ctx = (req: FastifyRequest) => ({ tenantId: req.auth!.tenantId!, userId: req.auth!.userId, auth: req.auth! });
 
   app.get('/api/voucher-types', { preHandler: app.requireAuth }, async (req) => app.withTenant(req, (trx) => trx.selectFrom('voucher_type').selectAll().where('is_active', '=', true).orderBy('code').execute()));
 
@@ -72,7 +68,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     const { autoPost, ...input } = req.body;
     // Gửi lại cùng idempotencyKey trả đúng chứng từ cũ, không ghi sổ lại: chỉ ghi sổ chứng từ vừa tạo (nháp, version 1).
     // Chứng từ đã ghi sổ rồi bỏ ghi sổ có version >= 3 nên không bị ghi sổ lại bởi một yêu cầu gửi lại.
-    const dto = await withOverride(req, async (trx) => {
+    const dto = await app.withOverride(req, async (trx) => {
       const v = await S.createVoucher(trx, ctx(req), input);
       return autoPost && v.state === 'draft' && v.version === 1 ? postWithCashCheck(trx, req.auth!.tenantId!, v.id) : v;
     });
@@ -82,21 +78,21 @@ const routes: FastifyPluginAsyncZod = async (app) => {
 
   app.put('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.update'), schema: { params: idParam, body: z.union([S.voucherInput.extend({ version: z.number().int() }), metaBody]) } }, async (req) => {
     const { version, ...input } = req.body;
-    return withOverride(req, (trx) => 'voucherType' in input ? S.updateDraft(trx, req.params.id, version, input) : S.updatePostedMeta(trx, req.params.id, version, input));
+    return app.withOverride(req, (trx) => 'voucherType' in input ? S.updateDraft(trx, req.params.id, version, input, req.auth!) : S.updatePostedMeta(trx, req.params.id, version, input));
   });
 
   app.post('/api/vouchers/:id/post', { preHandler: app.requirePermission('voucher.post'), schema: { params: idParam } }, async (req) => {
-    const dto = await withOverride(req, (trx) => postWithCashCheck(trx, req.auth!.tenantId!, req.params.id)); notifyRecompute(app, req.auth!.tenantId!); return dto; });
+    const dto = await app.withOverride(req, (trx) => postWithCashCheck(trx, req.auth!.tenantId!, req.params.id)); notifyRecompute(app, req.auth!.tenantId!); return dto; });
   app.post('/api/vouchers/:id/unpost', { preHandler: app.requirePermission('voucher.unpost'), schema: { params: idParam } }, async (req) => {
     if (!req.auth!.permissions.has('voucher.edit_posted')) throw new AppError('FORBIDDEN', 'Thiếu quyền sửa sau ghi sổ', 403);
     const dto = await app.withTenant(req, (trx) => unpostWithCashCheck(trx, req.auth!.tenantId!, req.params.id)); notifyRecompute(app, req.auth!.tenantId!); return dto; });
   app.post('/api/vouchers/:id/reverse', { preHandler: app.requirePermission('voucher.post'), schema: { params: idParam, body: z.object({ postingDate: S.dateIso, description: z.string().optional() }) } }, async (req, reply) => {
     // Chứng từ hệ thống sinh (XQ, KC, DK...) chỉ đảo qua chức năng đã sinh ra nó (chạy lại); các bộ sinh gọi S.reverseVoucher trực tiếp nên không bị chặn.
-    const dto = await withOverride(req, async (trx) => { await S.assertNotSystemGenerated(trx, req.params.id); return reverseWithCashCheck(trx, req.auth!.tenantId!, req.params.id, req.body); });
+    const dto = await app.withOverride(req, async (trx) => { await S.assertNotSystemGenerated(trx, req.params.id); return reverseWithCashCheck(trx, req.auth!.tenantId!, req.params.id, req.body); });
     notifyRecompute(app, req.auth!.tenantId!); return reply.status(201).send(dto); });
   app.post('/api/vouchers/:id/discard', { preHandler: app.requirePermission('voucher.delete'), schema: { params: idParam } }, async (req) => app.withTenant(req, (trx) => S.discardVoucher(trx, req.params.id)));
   app.post('/api/vouchers/:id/duplicate', { preHandler: app.requirePermission('voucher.create'), schema: { params: idParam, body: z.object({ postingDate: S.dateIso }) } }, async (req, reply) =>
-    reply.status(201).send(await withOverride(req, (trx) => S.duplicateVoucher(trx, ctx(req), req.params.id, req.body.postingDate))));
+    reply.status(201).send(await app.withOverride(req, (trx) => S.duplicateVoucher(trx, ctx(req), req.params.id, req.body.postingDate))));
   app.delete('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.delete'), schema: { params: idParam } }, async (req, reply) => { await app.withTenant(req, (trx) => S.deleteDraft(trx, req.params.id)); return reply.status(204).send(); });
 };
 export default routes;

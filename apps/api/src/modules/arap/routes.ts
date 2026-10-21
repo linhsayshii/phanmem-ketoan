@@ -1,8 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
-import type { FastifyRequest } from 'fastify';
-import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
-import { READ_SNAPSHOT, type Database } from '@kt/db';
+import { READ_SNAPSHOT } from '@kt/db';
 import { todayVn } from '@kt/domain';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { isoDate } from '../reporting/routes.js';
@@ -15,25 +13,21 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     schema: { querystring: z.object({ accountCode: z.string().min(1), partyCode: z.string().min(1).optional(), asOf: isoDate.optional(), onlyOpen: z.enum(['true', 'false']).default('true') }) } }, async (req) =>
     app.withTenant(req, (trx) => listOpenItems(trx, req.auth!, req.auth!.tenantId!, { ...req.query, asOf: req.query.asOf ?? todayVn(), onlyOpen: req.query.onlyOpen === 'true' }), READ_SNAPSHOT));
 
-  // Đối trừ và hủy đối trừ ở kỳ khóa sổ chỉ khi có quyền ghi lùi (như chứng từ, tỷ giá xuất quỹ); kỳ khóa cứng luôn bị chặn trong SQL.
-  const withOverride = <T>(req: FastifyRequest, fn: (trx: Transaction<Database>) => Promise<T>) => app.withTenant(req, async (trx) => {
-    if (req.auth!.permissions.has('voucher.backdate_locked')) await sql`SELECT set_config('app.override_soft_lock', 'on', true)`.execute(trx);
-    return fn(trx);
-  });
+  // Đối trừ và hủy đối trừ qua app.withOverride: kỳ khóa sổ chỉ khi có quyền ghi lùi (như chứng từ, tỷ giá xuất quỹ); kỳ khóa cứng luôn bị chặn trong SQL.
   app.get('/api/settlements', { preHandler: app.requirePermission('settlement.view'), schema: { querystring: listQuery } }, async (req) =>
     app.withTenant(req, (trx) => listSettlements(trx, req.auth!, req.auth!.tenantId!, { ...req.query, today: todayVn() }), READ_SNAPSHOT));
   app.post('/api/settlements', { preHandler: app.requirePermission('settlement.create'), schema: { body: settleInput } }, async (req, reply) => {
-    const out = await withOverride(req, (trx) => settle(trx, req.auth!, req.body));
+    const out = await app.withOverride(req, (trx) => settle(trx, req.auth!, req.body));
     if (out.fxVoucherId) notifyRecompute(app, req.auth!.tenantId!); // chứng từ CL đã ghi sổ
     return reply.status(201).send(out);
   });
   app.post('/api/settlements/auto', { preHandler: app.requirePermission('settlement.create'), schema: { body: autoInput } }, async (req) => {
-    const out = await withOverride(req, (trx) => autoSettle(trx, req.auth!, req.body));
+    const out = await app.withOverride(req, (trx) => autoSettle(trx, req.auth!, req.body));
     if (out.groups) notifyRecompute(app, req.auth!.tenantId!);
     return out;
   });
   app.delete('/api/settlements/groups/:groupId', { preHandler: app.requirePermission('settlement.delete'), schema: { params: z.object({ groupId: z.string().uuid() }) } }, async (req, reply) => {
-    await withOverride(req, (trx) => unsettle(trx, req.auth!, req.params.groupId));
+    await app.withOverride(req, (trx) => unsettle(trx, req.auth!, req.params.groupId));
     notifyRecompute(app, req.auth!.tenantId!);
     return reply.status(204).send();
   });

@@ -154,6 +154,18 @@ describe('đối trừ ngoại tệ và chênh lệch tỷ giá thực hiện', 
     const r = await sql<{ i: number; a: string }>`SELECT i::int AS i, fn_proportional_vnd(v, c, p)::text AS a FROM unnest(${all.map((x) => x[0])}::numeric[], ${all.map((x) => x[1])}::numeric[], ${all.map((x) => x[2])}::numeric[]) WITH ORDINALITY AS u(v, c, p, i) ORDER BY i`.execute(ctx.t.admin);
     expect(r.rows.map((x) => x.a)).toEqual(all.map(([v, c, p]) => proportionalVnd(v, c, p)));
   });
+
+  it('phía phải trả: HĐ Có 331 1.000 USD @25.000, trả Nợ 331 @25.400 → CL lỗ Nợ 635 / Có 331 400.000, dư về 0', async () => {
+    const t = await tenant();
+    const v = toVnd('1000', '25000'); const v2 = toVnd('1000', '25400');
+    const inv = await t.itemOf((await t.pkt('2026-01-10', [L('6421', v, '0', { amountCurrency: '1000' }), K('331', 'NCC001', '0', v, { amountCurrency: '-1000' })], { currencyCode: 'USD', fxRate: '25000' })).id);
+    await t.usdReceipt('2026-01-15', '1000', '25400', 'KH002'); // có USD trong 1122 để chi
+    const pay = await t.itemOf((await t.pkt('2026-01-20', [K('331', 'NCC001', v2, '0', { amountCurrency: '1000' }), L('1122', '0', v2, { amountCurrency: '-1000' })], { currencyCode: 'USD', fxRate: '25400' })).id);
+    const r = await t.settle({ debitItemId: pay, creditItemId: inv, amountCurrency: '1000' });
+    expect(await t.fxVoucherLines(r.fxVoucherId)).toEqual([{ account: '635', debit: '400000' }, { account: '331', credit: '400000' }]);
+    expect(await t.residual(inv)).toEqual({ vnd: '0', cur: '0' }); expect(await t.residual(pay)).toEqual({ vnd: '0', cur: '0' });
+    await t.sumsMatch('2026-01-20');
+  });
 });
 
 describe('hủy đối trừ', () => {
@@ -205,7 +217,7 @@ describe('đối trừ tự động', () => {
     const k2r = await t.itemOf((await t.vndReceipt('2026-02-02', '70', 'KH002')).id);
     const auto = (body: object) => t.call('POST', '/api/settlements/auto', body);
     const one = await auto({ accountCode: '131', partyCode: 'KH001', date: '2026-02-28' }); expect(one.statusCode, one.body).toBe(200);
-    expect(one.json()).toEqual({ groups: 4 });
+    expect(one.json()).toEqual({ groups: 4, more: false });
     const s = (await sql<{ d: number; c: number; amount: string; date: string; kind: string; g: string }>`SELECT s.debit_item_id::int AS d, s.credit_item_id::int AS c, s.amount::text, s.settle_date::text AS date, s.kind, s.group_id::text AS g
       FROM settlement s JOIN open_item o ON o.id = s.debit_item_id JOIN party p ON p.id = o.party_id WHERE s.tenant_id = ${t.tenantId}::uuid AND p.code = 'KH001' ORDER BY s.id`.execute(ctx.t.admin)).rows;
     expect(s.map(({ g: _g, ...x }) => x)).toEqual([
@@ -213,9 +225,9 @@ describe('đối trừ tự động', () => {
       { d: b, c: r2, amount: '200', date: '2026-02-28', kind: 'auto' }, { d: a, c: r2, amount: '100', date: '2026-02-28', kind: 'auto' }]);
     expect(new Set(s.map((x) => x.g)).size).toBe(4); // mỗi cặp một nhóm
     expect([await t.residual(r2), await t.residual(r3), await t.residual(usd), await t.residual(k2i)]).toEqual([{ vnd: '-50', cur: '-50' }, { vnd: '-100', cur: '-100' }, { vnd: '250000', cur: '10' }, { vnd: '70', cur: '70' }]);
-    expect((await auto({ accountCode: '131', date: '2026-02-28' })).json()).toEqual({ groups: 1 }); // KH002
+    expect((await auto({ accountCode: '131', date: '2026-02-28' })).json()).toEqual({ groups: 1, more: false }); // KH002
     expect(await t.residual(k2r)).toEqual({ vnd: '0', cur: '0' });
-    expect((await auto({ accountCode: '131', date: '2026-02-28' })).json()).toEqual({ groups: 0 });
+    expect((await auto({ accountCode: '131', date: '2026-02-28' })).json()).toEqual({ groups: 0, more: false });
     await t.sumsMatch('2026-02-28');
     expect(err(await auto({ accountCode: '9999', date: '2026-02-28' }))).toEqual([404, 'ACCOUNT_NOT_FOUND']);
     expect(err(await auto({ accountCode: '131', partyCode: 'KHONGCO', date: '2026-02-28' }))).toEqual([404, 'PARTY_NOT_FOUND']);
@@ -248,6 +260,8 @@ describe('kế hoạch đối trừ gửi kèm chứng từ', () => {
     // đầu vào: thiếu số tiền, khoản không có, dòng không phải công nợ
     expect(err(await t.call('POST', '/api/vouchers', { ...body('100'), lines: [L('1111', '100'), K('131', 'KH001', '0', '100', { settle: [{ openItemId: inv }] })] }))).toEqual([400, 'VALIDATION']);
     expect(err(await t.call('POST', '/api/vouchers', { ...body('100'), lines: [L('1111', '100'), K('131', 'KH001', '0', '100', { settle: [{ openItemId: 987654321, amount: '100' }] })] }))).toEqual([404, 'OPEN_ITEM_NOT_FOUND']);
+    for (const s of [{ openItemId: inv, amount: '0' }, { openItemId: inv, amountCurrency: '-5' }, { openItemId: inv, amountCurrency: '0.0000' }, { openItemId: 0, amount: '100' }])
+      expect(err(await t.call('POST', '/api/vouchers', { ...body('100'), lines: [L('1111', '100'), K('131', 'KH001', '0', '100', { settle: [s] })] }))).toEqual([400, 'VALIDATION']);
     const bad = await t.call('POST', '/api/vouchers', { ...body('100'), autoPost: true, lines: [L('1111', '100', '0', { settle: [{ openItemId: inv, amount: '100' }] }), K('131', 'KH001', '0', '100')] });
     expect(err(bad)).toEqual([409, 'SETTLEMENT_PLAN_LINE_INVALID']);
     // xóa nháp có kế hoạch được
@@ -258,6 +272,8 @@ describe('kế hoạch đối trừ gửi kèm chứng từ', () => {
     const d3 = await t.voucher({ ...body('300'), lines: [L('1111', '300'), K('131', 'KH001', '0', '300', { settle: [{ openItemId: inv2, amount: '300' }] })] }, false);
     const blocked = await t.call('POST', `/api/vouchers/${inv2V.id}/unpost`);
     expect([...err(blocked), blocked.json().error.message]).toEqual([409, 'OPEN_ITEM_PLANNED', 'khoản công nợ của chứng từ đang được chọn đối trừ ở chứng từ nháp PT ngày 10/03/2026, hãy bỏ chọn ở chứng từ đó trước']);
+    // đảo chứng từ của khoản đang được chọn cũng bị chặn như bỏ ghi sổ
+    expect(err(await t.call('POST', `/api/vouchers/${inv2V.id}/reverse`, { postingDate: '2026-03-20' }))).toEqual([409, 'OPEN_ITEM_PLANNED']);
     expect((await t.call('POST', `/api/vouchers/${d3.id}/discard`)).statusCode).toBe(200);
     expect((await sql<{ n: number }>`SELECT count(*)::int AS n FROM settlement_plan WHERE voucher_id = ${d3.id}::uuid`.execute(ctx.t.admin)).rows[0]!.n).toBe(0);
     expect((await t.call('POST', `/api/vouchers/${inv2V.id}/unpost`)).statusCode).toBe(200);
@@ -274,6 +290,59 @@ describe('kế hoạch đối trừ gửi kèm chứng từ', () => {
       .toEqual([{ vnd: '400000', cur: '400000' }, { vnd: '0', cur: '0' }, { vnd: '0', cur: '0' }, { vnd: '0', cur: '0' }]);
     expect((await sql<{ kind: string }>`SELECT kind FROM settlement WHERE tenant_id = ${t.tenantId}::uuid ORDER BY id`.execute(ctx.t.admin)).rows.map((x) => x.kind)).toEqual(['plan', 'plan']);
     await t.sumsMatch('2026-04-30');
+  });
+
+  it('kế hoạch đối trừ cần quyền settlement.create và cờ nhạy cảm của tài khoản khoản, như POST /api/settlements', async () => {
+    const t = await tenant();
+    const inv = await t.itemOf((await t.vndInvoice('2026-03-01', '1000')).id);
+    const body = (settle?: object[]) => ({ voucherType: 'PT', postingDate: '2026-03-10', documentDate: '2026-03-10', partyCode: 'KH001',
+      lines: [L('1111', '400'), K('131', 'KH001', '0', '400', settle ? { settle } : {})] });
+    const plan = [{ openItemId: inv, amount: '400' }];
+    const noFlag = await t.userWith('ketoan_vien', []);
+    const forbidden = await t.call('POST', '/api/vouchers', { ...body(plan), autoPost: true }, noFlag);
+    expect([...err(forbidden), forbidden.json().error.message]).toEqual([403, 'FORBIDDEN', 'Không có quyền xem công nợ phải thu']);
+    const draft = await t.call('POST', '/api/vouchers', body(), noFlag); expect(draft.statusCode, draft.body).toBe(201); // không kèm kế hoạch thì được
+    expect(err(await t.call('PUT', `/api/vouchers/${draft.json().id}`, { version: draft.json().version, ...body(plan) }, noFlag))).toEqual([403, 'FORBIDDEN']);
+    const withFlag = await t.userWith('ketoan_vien', ['view_receivable']);
+    expect((await t.call('POST', '/api/vouchers', body(plan), withFlag)).statusCode).toBe(201);
+    // vai trò mất settlement.create: kế hoạch bị chặn, chứng từ không kèm kế hoạch vẫn lập được
+    const role = ((await t.call('GET', '/api/roles')).json() as { id: string; code: string; permissions: string[] }[]).find((r) => r.code === 'ketoan_vien')!;
+    expect((await t.call('PUT', `/api/roles/${role.id}/permissions`, { permissions: role.permissions.filter((x) => x !== 'settlement.create') })).statusCode).toBe(200);
+    const noPerm = await t.call('POST', '/api/vouchers', body(plan), withFlag);
+    expect([...err(noPerm), noPerm.json().error.message]).toEqual([403, 'FORBIDDEN', 'Thiếu quyền settlement.create']);
+    expect((await t.call('POST', '/api/vouchers', body(), withFlag)).statusCode).toBe(201);
+    expect((await sql<{ n: number }>`SELECT count(*)::int AS n FROM settlement_plan sp JOIN voucher v ON v.id = sp.voucher_id WHERE v.tenant_id = ${t.tenantId}::uuid`.execute(ctx.t.admin)).rows[0]!.n).toBe(1);
+  });
+
+  it('kế hoạch trên khoản ngoại tệ: chứng từ CL sinh và ghi sổ ngay trong lúc ghi sổ chứng từ thu', async () => {
+    const t = await tenant();
+    const inv = await t.itemOf((await t.usdInvoice('2026-01-10', '1000', '25000')).id);
+    const v = toVnd('1000', '25400');
+    const rcv = await t.pkt('2026-01-20', [L('1122', v, '0', { amountCurrency: '1000' }), K('131', 'KH001', '0', v, { amountCurrency: '-1000', settle: [{ openItemId: inv, amountCurrency: '1000' }] })],
+      { currencyCode: 'USD', fxRate: '25400' });
+    expect(rcv.state).toBe('posted');
+    const rcvItem = await t.itemOf(rcv.id);
+    const g = (await sql<{ g: string; fx: string }>`SELECT group_id::text AS g, fx_voucher_id::text AS fx FROM settlement WHERE credit_item_id = ${rcvItem} AND kind = 'plan'`.execute(ctx.t.admin)).rows[0]!;
+    expect(await t.fxVoucherLines(g.fx)).toEqual([{ account: '131', debit: '400000' }, { account: '515', credit: '400000' }]);
+    const cl = (await t.call('GET', `/api/vouchers/${g.fx}`)).json();
+    expect([cl.voucherType, cl.state, cl.postingDate, cl.sourceDocType, cl.sourceDocId]).toEqual(['CL', 'posted', '2026-01-20', 'settlement_fx', g.g]);
+    expect((await t.rows(g.g)).map((r) => r.kind)).toEqual(['plan', 'fx']);
+    expect(await t.residual(inv)).toEqual({ vnd: '0', cur: '0' }); expect(await t.residual(rcvItem)).toEqual({ vnd: '0', cur: '0' });
+    await t.sumsMatch('2026-01-20');
+  });
+
+  it('khoản đã bị đối trừ hết trước khi nháp ghi sổ: 409 SETTLEMENT_EXCEEDS_RESIDUAL, nháp vẫn là nháp, giữ kế hoạch', async () => {
+    const t = await tenant();
+    const inv = await t.itemOf((await t.vndInvoice('2026-03-01', '1000')).id);
+    const draft = await t.voucher({ voucherType: 'PT', postingDate: '2026-03-10', documentDate: '2026-03-10', partyCode: 'KH001',
+      lines: [L('1111', '1000'), K('131', 'KH001', '0', '1000', { settle: [{ openItemId: inv, amount: '1000' }] })] }, false);
+    const rcv = await t.itemOf((await t.vndReceipt('2026-03-05', '1000')).id);
+    await t.settle({ debitItemId: inv, creditItemId: rcv, amount: '1000' });
+    expect(err(await t.call('POST', `/api/vouchers/${draft.id}/post`))).toEqual([409, 'SETTLEMENT_EXCEEDS_RESIDUAL']);
+    const after = (await t.call('GET', `/api/vouchers/${draft.id}`)).json();
+    expect([after.state, after.lines[1].settle]).toEqual(['draft', [{ openItemId: inv, amount: '1000' }]]);
+    expect(await t.residual(inv)).toEqual({ vnd: '0', cur: '0' });
+    await t.sumsMatch('2026-03-10');
   });
 });
 
@@ -313,6 +382,19 @@ describe('từ chối đối trừ sai', () => {
     expect(err(await post({ debitItemId: inv, creditItemId: rcv, amount: '100' }))).toEqual([409, 'PERIOD_HARD_LOCKED']);
     expect(err(await t.call('DELETE', `/api/settlements/groups/${g.groupId}`))).toEqual([409, 'PERIOD_HARD_LOCKED']);
     expect(await t.residual(inv)).toEqual({ vnd: '599900', cur: '599900' });
+  });
+
+  it('id khoản và nhóm đối trừ của công ty khác: 404, không chạm dữ liệu của công ty đó', async () => {
+    const a = await tenant(); const b = await tenant();
+    const inv = await a.itemOf((await a.vndInvoice('2026-02-01', '1000')).id);
+    const rcv = await a.itemOf((await a.vndReceipt('2026-02-05', '600')).id);
+    const g = await a.settle({ debitItemId: inv, creditItemId: rcv, amount: '600' });
+    const inv2 = await a.itemOf((await a.vndInvoice('2026-02-02', '500')).id);
+    const rcv2 = await a.itemOf((await a.vndReceipt('2026-02-06', '500')).id);
+    expect(err(await b.call('POST', '/api/settlements', { debitItemId: inv2, creditItemId: rcv2, amount: '500' }))).toEqual([404, 'OPEN_ITEM_NOT_FOUND']);
+    expect(err(await b.call('DELETE', `/api/settlements/groups/${g.groupId}`))).toEqual([404, 'SETTLEMENT_NOT_FOUND']);
+    expect((await a.rows(g.groupId)).length).toBe(1);
+    expect(await a.residual(inv2)).toEqual({ vnd: '500', cur: '500' });
   });
 
   it('kỳ khóa sổ: hủy đối trừ có CL cần quyền ghi lùi, đảo CL đúng ngày đối trừ', async () => {

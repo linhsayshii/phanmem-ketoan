@@ -42,6 +42,7 @@ export async function settle(trx: Trx, auth: Auth, input: z.infer<typeof settleI
   return { groupId, settlementIds: r.rows[0]!.ids.map(Number), fxVoucherId: fx?.fx_voucher_id ?? null };
 }
 
+const AUTO_SETTLE_CAP = 10000; // LIMIT trong auto_settle (0029)
 // Đối trừ tự động trên tài khoản (cả tài khoản con theo dõi công nợ), một đối tượng hoặc mọi đối tượng, đến ngày `date`.
 export async function autoSettle(trx: Trx, auth: Auth, input: z.infer<typeof autoInput>) {
   const regime = await regimeOf(trx, { from: input.date, to: input.date });
@@ -49,9 +50,12 @@ export async function autoSettle(trx: Trx, auth: Auth, input: z.infer<typeof aut
   for (const a of accounts) assertSensitive(auth, a);
   const party = await partyId(trx, input.partyCode);
   const ids = await trx.selectFrom('account').select('id').where('regime', '=', regime).where('code', 'in', accounts.map((a) => a.code)).where('reconcile', '=', true).where('is_group', '=', false).orderBy('code').execute();
-  let groups = 0;
-  for (const a of ids) groups += (await sql<{ n: number }>`SELECT auto_settle(${a.id}, ${party}::uuid, ${input.date}::date) AS n`.execute(trx)).rows[0]!.n;
-  return { groups };
+  let groups = 0; let more = false;
+  for (const a of ids) {
+    const n = (await sql<{ n: number }>`SELECT auto_settle(${a.id}, ${party}::uuid, ${input.date}::date) AS n`.execute(trx)).rows[0]!.n;
+    groups += n; more ||= n >= AUTO_SETTLE_CAP;
+  }
+  return { groups, more }; // more: một tài khoản chạm giới hạn mỗi lần, còn cặp chưa đối trừ, chạy lại để tiếp
 }
 
 // Hủy một lần đối trừ (nhóm); cờ nhạy cảm theo tài khoản của các khoản trong nhóm.

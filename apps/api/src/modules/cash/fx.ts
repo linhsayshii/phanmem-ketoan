@@ -1,8 +1,8 @@
-import { sql, type Transaction } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
-import { loadFxRules, type FxRules } from '@kt/coa-data';
-import { avgRate, D, formatVnDate, proportionalVnd, ZERO, type Decimal, type Regime } from '@kt/domain';
+import type { FxRules } from '@kt/coa-data';
+import { avgRate, D, formatVnDate, proportionalVnd, ZERO, type Decimal } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { getSettings, type Settings } from '../core/settings.js';
 import * as S from '../ledger/vouchers.service.js';
@@ -34,11 +34,12 @@ export async function fxRunSourceId(trx: Trx, tenantId: string, runId: number): 
   return (await sql<{ id: string }>`SELECT md5(${`${tenantId}:fx_run:${runId}`})::uuid::text AS id`.execute(trx)).rows[0]!.id;
 }
 
-// Tài khoản lãi/lỗ tỷ giá của chế độ (fx-rules.json); chế độ chưa có quy tắc thì 409. Chênh lệch tỷ giá đối trừ và đánh giá lại dùng chung.
-export function fxRulesFor(regime: string): FxRules {
-  const r = loadFxRules(regime as Regime);
+// Tài khoản lãi/lỗ tỷ giá của chế độ, đọc bảng fx_rule (đồng bộ từ fx-rules.json khi migrate) như hàm SQL đối trừ: một nguồn lúc chạy.
+// Chế độ chưa có quy tắc thì 409. Chênh lệch tỷ giá đối trừ, xuất quỹ và đánh giá lại dùng chung.
+export async function fxRulesFor(db: Kysely<Database>, regime: string): Promise<FxRules> {
+  const r = await db.selectFrom('fx_rule').select('rules').where('regime', '=', regime).executeTakeFirst();
   if (!r) throw new AppError('FX_RULES_MISSING', `Chưa khai báo tài khoản lãi, lỗ chênh lệch tỷ giá cho chế độ kế toán ${regime}`, 409);
-  return r;
+  return r.rules as FxRules;
 }
 
 export const adjustInput = z.object({ fiscalYear: z.number().int(), periodNo: z.number().int().min(1).max(15) });
@@ -57,10 +58,8 @@ export async function runOutflowAdjust(trx: Trx, ctx: { tenantId: string; userId
   const p = await trx.selectFrom('fiscal_period').select(['date_from', 'date_to', 'status', 'regime']).where('fiscal_year', '=', fy).where('period_no', '=', pn).executeTakeFirst();
   if (!p) throw new AppError('PERIOD_NOT_FOUND', `Không có kỳ ${pn}/${fy}`, 404);
   if (p.status === 'hard_locked') throw new AppError('PERIOD_HARD_LOCKED', `Kỳ ${pn}/${fy} đã khóa cứng: không tính lại tỷ giá xuất quỹ`, 409);
-  if (p.status === 'soft_locked') {
-    if (!ctx.canBackdate) throw new AppError('PERIOD_SOFT_LOCKED', `Kỳ ${pn}/${fy} đã khóa sổ, cần quyền ghi lùi ngày`, 409);
-    await sql`SELECT set_config('app.override_soft_lock', 'on', true)`.execute(trx);
-  }
+  // Biến phiên ghi lùi do người gọi đặt (app.withOverride); ở đây chỉ báo lỗi sớm, rõ kỳ.
+  if (p.status === 'soft_locked' && !ctx.canBackdate) throw new AppError('PERIOD_SOFT_LOCKED', `Kỳ ${pn}/${fy} đã khóa sổ, cần quyền ghi lùi ngày`, 409);
 
   // XQ còn hiệu lực của các lần chạy trước cùng kỳ.
   const prev = (await sql<{ id: string }>`SELECT v.id FROM fx_run r CROSS JOIN LATERAL unnest(r.voucher_ids) AS u(id) JOIN voucher v ON v.id = u.id
@@ -95,7 +94,7 @@ export async function runOutflowAdjust(trx: Trx, ctx: { tenantId: string; userId
   }
 
   const adjust = [...groups.values()].filter((g) => !g.diff.isZero());
-  const rules = adjust.length ? fxRulesFor(p.regime) : undefined; // chỉ cần khi có điều chỉnh
+  const rules = adjust.length ? await fxRulesFor(trx, p.regime) : undefined; // chỉ cần khi có điều chỉnh
   const summary = adjust.map((g) => ({ accountCode: g.accountCode, bankAccountNo: g.bankAccountNo, currency: g.currency, difference: g.diff.toFixed(0) }));
   // Lệch dương: đã ghi Có tiền nhiều hơn giá trị đúng, ghi Nợ lại tiền / Có lãi tỷ giá; lệch âm: Nợ lỗ tỷ giá / Có tiền.
   const lines = adjust.flatMap((g) => {

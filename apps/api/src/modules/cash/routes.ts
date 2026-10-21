@@ -43,7 +43,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     }, READ_SNAPSHOT));
   app.post('/api/fx/outflow-adjust', { preHandler: app.requirePermission('fx.run'), schema: { body: adjustInput } }, async (req) => {
     const auth = req.auth!;
-    const out = await app.withTenant(req, (trx) => runOutflowAdjust(trx, { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') }, req.body));
+    const out = await app.withOverride(req, (trx) => runOutflowAdjust(trx, { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') }, req.body));
     if (out.voucherIds.length || out.reversedVoucherIds.length) notifyRecompute(app, auth.tenantId!);
     return out;
   });
