@@ -51,6 +51,10 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
   - Mỗi lần chạy lại có thay đổi, bước đóng khoản con của khoản gốc đã đảo quét mọi nhóm đối trừ loại đảo của công ty (có chỉ mục `parent_id`, chưa đo trên dữ liệu lớn). Có thể giới hạn vào các khoản gốc mà lần chạy chạm tới.
   - Số dư đầu kỳ (DK) đã được đánh giá lại thì không sửa được: phải chạy lại đánh giá lại sau khi sửa, nhưng DK chưa có đường gỡ khoản con.
   - Route đối trừ công nợ không giữ khóa `fx`. Một lần đối trừ chạy đúng lúc đang đánh giá lại có thể để lại khoản con mồ côi (cửa sổ rất hẹp).
+- Phân bổ doanh thu nhận trước (Task 20):
+  - Lịch kiểm tài khoản theo chế độ kế toán của kỳ bắt đầu. Lịch kéo sang năm có chế độ khác (TT133 sang TT99) mà tài khoản không có ở chế độ mới thì chỉ báo lỗi khi chạy kỳ đó.
+  - Năm chưa tạo được giả định 12 kỳ. Năm tạo sau với số kỳ khác 12 thì lịch đã phân bổ không xếp lại được: chạy kỳ báo `AMORTIZATION_PERIOD_LAYOUT`, người dùng ngừng lịch và lập lịch mới cho phần còn lại.
+  - Chạy lại và gỡ lịch luôn đảo chứng từ PB vào ngày cuối kỳ, kể cả kỳ mở (giống chứng từ tỷ giá xuất quỹ Task 10, vì guard 0030 chặn bỏ ghi sổ chứng từ tự động).
 
 ## 4. Chờ người dùng
 
