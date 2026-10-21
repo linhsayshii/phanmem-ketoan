@@ -58,10 +58,13 @@ export async function getInvoice(trx: Trx, id: string): Promise<InvoiceDto> {
 }
 
 // Mã thuế và phân bổ của chúng, dạng động cơ thuế dùng. Mã không có trong danh mục để động cơ báo TAX_CODE_UNKNOWN. scopes: phạm vi dùng của mã (sale, purchase, both).
-async function loadTaxDefs(trx: Trx, codes: string[]): Promise<{ defs: Record<string, TaxDef>; ids: Map<string, number>; scopes: Map<string, string> }> {
+// codes bỏ trống: nạp mọi mã (danh mục cho màn hình hóa đơn, xem listTaxDefs); rows là các dòng tax_code đã nạp.
+async function loadTaxDefs(trx: Trx, codes?: string[]) {
   const defs: Record<string, TaxDef> = {}; const ids = new Map<string, number>(); const scopes = new Map<string, string>();
-  if (!codes.length) return { defs, ids, scopes };
-  const rows = await trx.selectFrom('tax_code').select(['id', 'code', 'kind', 'rate', 'method', 'price_include', 'scope']).where('code', 'in', codes).execute();
+  if (codes && !codes.length) return { defs, ids, scopes, rows: [] };
+  let q = trx.selectFrom('tax_code').select(['id', 'code', 'name', 'kind', 'rate', 'method', 'price_include', 'scope', 'is_active']);
+  if (codes) q = q.where('code', 'in', codes);
+  const rows = await q.orderBy('code').execute();
   const dists = rows.length ? await trx.selectFrom('tax_distribution').select(['tax_code_id', 'document_type', 'scope', 'line_type', 'factor_percent', 'account_code', 'report_tag']).where('tax_code_id', 'in', rows.map((r) => r.id)).execute() : [];
   for (const r of rows) {
     ids.set(r.code, r.id); scopes.set(r.code, r.scope);
@@ -69,7 +72,14 @@ async function loadTaxDefs(trx: Trx, codes: string[]): Promise<{ defs: Record<st
       distributions: dists.filter((d) => d.tax_code_id === r.id).map((d) => ({ documentType: d.document_type as 'invoice' | 'refund', scope: d.scope as 'sale' | 'purchase', lineType: d.line_type as 'base' | 'tax',
         factorPercent: d.factor_percent, accountCode: d.account_code, reportTag: d.report_tag })) };
   }
-  return { defs, ids, scopes };
+  return { defs, ids, scopes, rows };
+}
+
+// Danh mục mã thuế kèm phân bổ cho màn hình hóa đơn: trình duyệt xem trước thuế và bút toán bằng đúng động cơ thuế (@kt/domain) với dữ liệu này.
+export interface TaxDefRow { code: string; name: string; scope: 'sale' | 'purchase' | 'both'; isActive: boolean; def: TaxDef }
+export async function listTaxDefs(trx: Trx): Promise<TaxDefRow[]> {
+  const { defs, rows } = await loadTaxDefs(trx);
+  return rows.map((r) => ({ code: r.code, name: r.name, scope: r.scope as TaxDefRow['scope'], isActive: r.is_active, def: defs[r.code]! }));
 }
 
 // Mã dùng gom dòng kê khai: mã GTGT của dòng (tối đa một, buildInvoice đã chặn nhiều mã); không có thì mã thuế đầu tiên không phải TNCN (thuế nhập khẩu, TTĐB); không có nữa thì null (dòng không thuế).

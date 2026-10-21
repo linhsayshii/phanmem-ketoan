@@ -413,3 +413,24 @@ describe('hóa đơn ngoại tệ: chia chênh làm tròn một đồng mỗi d�
     }
   });
 });
+
+describe('GET /api/invoices/tax-defs (danh mục mã thuế cho màn hình hóa đơn)', () => {
+  it('trả mọi mã thuế kèm phạm vi, trạng thái và phân bổ dạng động cơ thuế dùng', async () => {
+    const t = await tenant();
+    const r = await t.call('GET', '/api/invoices/tax-defs');
+    expect(r.statusCode, r.body).toBe(200);
+    const rows = r.json() as { code: string; name: string; scope: string; isActive: boolean; def: { code: string; kind: string; method: string; rate: string | null; priceInclude: boolean; distributions: { documentType: string; scope: string; lineType: string; accountCode: string | null }[] } }[];
+    const v10 = rows.find((x) => x.code === 'V10')!;
+    expect(v10).toMatchObject({ isActive: true, def: { code: 'V10', kind: 'vat', method: 'deduct', rate: '10.00', priceInclude: false } });
+    expect(v10.def.distributions.filter((d) => d.lineType === 'tax').map((d) => [d.documentType, d.scope, d.accountCode]).sort())
+      .toEqual(expect.arrayContaining([['invoice', 'sale', '33311'], ['invoice', 'purchase', '1331']]));
+    expect(rows.map((x) => x.code)).toEqual(expect.arrayContaining(['V0', 'V5', 'V8', 'KCT', 'KKK', 'TNCN_KT']));
+    expect(rows.find((x) => x.code === 'TNCN_KT')!.def.rate).toBeNull(); // chưa nhập thuế suất: màn hình báo TAX_RATE_MISSING khi dùng
+  });
+
+  it('mã đứng trước :id; cần quyền xem chứng từ: không đăng nhập thì 401', async () => {
+    const t = await tenant();
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/invoices/tax-defs' })).statusCode).toBe(401);
+    expect(err(await t.call('GET', '/api/invoices/00000000-0000-0000-0000-000000000000'))).toEqual([404, 'VOUCHER_NOT_FOUND']);
+  });
+});

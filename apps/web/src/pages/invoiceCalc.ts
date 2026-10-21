@@ -1,0 +1,100 @@
+import { buildInvoiceLedgerDetail, computeTaxes, D, Decimal, sum, TaxError, toVnd, type LedgerLine, type TaxDef, type TaxResult } from '@kt/domain';
+
+// Phần tính của màn hình hóa đơn dịch vụ: dẫn xuất ô của dòng hàng và xem trước thuế, bút toán.
+// Thuế và bút toán gọi đúng computeTaxes / buildInvoiceLedgerDetail của @kt/domain (cùng hàm máy chủ dùng khi lưu), không có công thức riêng.
+
+// Một dòng của /api/invoices/tax-defs: mã thuế, phạm vi dùng và định nghĩa cho động cơ thuế.
+export interface TaxDefRow { code: string; name: string; scope: 'sale' | 'purchase' | 'both'; isActive: boolean; def: TaxDef }
+export interface GroupRow { scope: string; code: string; name: string; rate: string | null }
+// Mọi ô là chuỗi: số tiền là chuỗi thập phân, mã thuế là chữ cách nhau bằng dấu phẩy. taxAmount do máy tính điền, không nhập.
+export interface InvRow { description: string; accountCode: string; quantity: string; unitPrice: string; amount: string; discountRate: string; discount: string; taxCodes: string; taxAmount: string;
+  departmentCode: string; projectCode: string; costItemCode: string }
+export const emptyInvRow = (): InvRow => ({ description: '', accountCode: '', quantity: '', unitPrice: '', amount: '', discountRate: '', discount: '', taxCodes: '', taxAmount: '', departmentCode: '', projectCode: '', costItemCode: '' });
+
+export const codesOf = (r: Pick<InvRow, 'taxCodes'>): string[] => r.taxCodes.split(/[\s,;]+/).filter(Boolean);
+const INPUT_KEYS = ['description', 'accountCode', 'quantity', 'unitPrice', 'amount', 'discountRate', 'discount', 'taxCodes', 'departmentCode', 'projectCode', 'costItemCode'] as const;
+export const isBlankRow = (r: InvRow): boolean => INPUT_KEYS.every((k) => (r[k] ?? '').trim() === '');
+
+export const NUM_RE = /^\d{1,16}(\.\d{1,4})?$/;
+const round = (x: Decimal, dp: number): string => x.toDecimalPlaces(dp, Decimal.ROUND_HALF_UP).toFixed();
+
+// Giá trị của dòng ở lần dẫn xuất trước. Lưới ghi thẳng vào đối tượng dòng nên không so được với bản cũ của mảng: chủ giữ bản chụp theo đối tượng dòng.
+export type RowSnap = Pick<InvRow, 'quantity' | 'unitPrice' | 'amount' | 'discountRate' | 'discount'>;
+export const snapOf = (r: InvRow): RowSnap => ({ quantity: r.quantity, unitPrice: r.unitPrice, amount: r.amount, discountRate: r.discountRate, discount: r.discount });
+
+// Ghi giá trị dẫn xuất tại chỗ (không đổi đối tượng dòng: đổi thì lưới hủy ô đang sửa). `dp` là số chữ số thập phân của loại tiền.
+//  - Số lượng hoặc đơn giá đổi: thành tiền = số lượng × đơn giá (vẫn sửa tay được thành tiền).
+//  - Sửa tay tiền chiết khấu (không đổi %): bỏ %. Đổi % hoặc thành tiền khi có %: tiền chiết khấu = thành tiền × % / 100.
+export function deriveRow(r: InvRow, prev: RowSnap, dp: number): void {
+  if ((r.quantity !== prev.quantity || r.unitPrice !== prev.unitPrice) && NUM_RE.test(r.quantity) && NUM_RE.test(r.unitPrice)) r.amount = round(D(r.quantity).times(r.unitPrice), dp);
+  if (r.discount !== prev.discount && r.discountRate === prev.discountRate) r.discountRate = '';
+  else if (r.discountRate && (r.discountRate !== prev.discountRate || r.amount !== prev.amount) && NUM_RE.test(r.amount) && NUM_RE.test(r.discountRate)) r.discount = round(D(r.amount).times(r.discountRate).div(100), dp);
+}
+
+// Nhóm kê khai mặc định theo mã thuế GTGT đầu tiên của hóa đơn, theo dữ liệu danh mục (không viết cứng thuế suất):
+// bán ra: nhóm cùng thuế suất (thuế suất trống thì nhóm không có thuế suất, vd. không chịu thuế); mua vào: nhóm đầu tiên (hàng hóa, dịch vụ dùng cho kinh doanh chịu thuế, đủ điều kiện khấu trừ) khi mã khấu trừ có thuế suất.
+export function defaultGroup(scope: 'sale' | 'purchase', codes: string[], defs: TaxDefRow[], groups: GroupRow[]): string | null {
+  const vat = codes.map((c) => defs.find((d) => d.code === c)).find((d) => d?.def.kind === 'vat');
+  if (!vat) return null;
+  const inScope = groups.filter((g) => g.scope === scope).sort((a, b) => a.code.localeCompare(b.code));
+  if (scope === 'purchase') return vat.def.method === 'deduct' && vat.def.rate !== null ? inScope[0]?.code ?? null : null;
+  return inScope.find((g) => (g.rate === null ? vat.def.rate === null : vat.def.rate !== null && D(g.rate).eq(vat.def.rate)))?.code ?? null;
+}
+
+export interface CodeSummary { code: string; name: string; lines: number; computed: string; declared: string; diff: string; allowed: number; ok: boolean }
+export interface Preview { lineTax: string[]; ledger: LedgerLine[]; byCode: CodeSummary[]; error: { code: string; message: string } | null }
+export interface PreviewInput { scope: 'sale' | 'purchase'; documentType: 'invoice' | 'refund'; defs: TaxDefRow[]; rows: InvRow[]; currency: string; fxRate: string | null; minorUnit?: number | undefined;
+  partyCode: string; counterAccountCode: string; declared: Record<string, string> }
+export const NO_PREVIEW: Preview = { lineTax: [], ledger: [], byCode: [], error: null };
+
+// Xem trước thuế từng dòng, bảng thuế theo mã và bút toán. Dòng chưa có tài khoản bỏ qua (chưa đủ để hạch toán; lúc lưu mới báo thiếu).
+// Kiểm tra chiết khấu, một mã GTGT mỗi dòng và phạm vi mã thuế giống máy chủ (service.ts buildInvoice) để lỗi hiện ngay khi nhập.
+// Dung sai thuế ghi trên hóa đơn: VND lệch Σ thuế dòng tối đa bằng số dòng mang mã; ngoại tệ thêm ±1 đồng mỗi dòng thuế hạch toán so với số quy đổi từ nguyên tệ.
+export function previewInvoice(i: PreviewInput): Preview {
+  const lineTax = i.rows.map(() => '');
+  const items = i.rows.flatMap((r, k) => (r.accountCode.trim() ? [{ r, lineNo: k + 1, codes: codesOf(r) }] : []));
+  if (!items.length) return { ...NO_PREVIEW, lineTax };
+  const defs = Object.fromEntries(i.defs.map((d) => [d.code, d.def]));
+  const isVnd = i.currency === 'VND';
+  const fail = (e: unknown, partial: Partial<Preview> = {}): Preview => {
+    const error = e instanceof TaxError ? { code: e.code, message: e.message } : e instanceof Error ? { code: 'PREVIEW', message: e.message } : (e as { code: string; message: string });
+    return { ...NO_PREVIEW, lineTax, ...partial, error };
+  };
+  for (const { r, lineNo, codes } of items) {
+    if (r.amount && D(r.discount || '0').gt(r.amount)) return fail({ code: 'VALIDATION', message: `Dòng ${lineNo}: chiết khấu lớn hơn tiền hàng` });
+    const vats = codes.filter((c) => defs[c]?.kind === 'vat');
+    if (vats.length > 1) return fail({ code: 'INVOICE_LINE_MULTIPLE_VAT', message: `Dòng ${lineNo}: mỗi dòng hàng chỉ được một mã thuế GTGT, đang có ${vats.join(', ')}. Tách thành các dòng hàng riêng theo từng thuế suất` });
+    for (const c of codes) {
+      const s = i.defs.find((d) => d.code === c)?.scope;
+      if (s && s !== 'both' && s !== i.scope) return fail({ code: 'TAX_SCOPE_MISMATCH', message: `Mã thuế ${c} chỉ dùng cho hóa đơn ${s === 'sale' ? 'bán ra' : 'mua vào'}` });
+    }
+  }
+  const taxLines = items.map(({ r, lineNo, codes }) => ({ lineNo, amountCurrency: r.amount || '0', discountCurrency: r.discount || '0', taxCodes: codes }));
+  const opts = { scope: i.scope, documentType: i.documentType, currency: i.currency, fxRate: isVnd ? null : i.fxRate, ...(i.minorUnit !== undefined && { minorUnit: i.minorUnit }) };
+  let base: TaxResult;
+  try { base = computeTaxes(taxLines, defs, opts); } catch (e) { return fail(e); }
+  for (const l of base.lines) lineTax[l.lineNo - 1] = l.taxes.length ? sum(l.taxes.map((t) => t.amountCurrency)).toFixed() : '';
+
+  // Thuế ghi trên hóa đơn: chỉ mã đang có trên dòng và đã nhập số.
+  const present = [...new Set(items.flatMap((x) => x.codes))];
+  const declared = Object.fromEntries(Object.entries(i.declared).filter(([c, v]) => v !== '' && present.includes(c)));
+  const byCode: CodeSummary[] = present.map((code) => {
+    const lines = items.filter((x) => x.codes.includes(code)).length;
+    const postings = base.postings.filter((p) => p.code === code);
+    const sumVnd = sum(base.lines.flatMap((l) => l.taxes.filter((t) => t.code === code).map((t) => t.amountVnd)));
+    const exact = isVnd ? sumVnd : sum(postings.map((p) => toVnd(p.amountCurrency, i.fxRate!)));
+    const dec = declared[code] ?? '';
+    const diff = dec === '' ? D(0) : D(dec).minus(sumVnd);
+    const ok = dec === '' || (diff.abs().lte(lines) && (isVnd || D(dec).minus(exact).abs().lte(Math.max(postings.length, 1))));
+    return { code, name: i.defs.find((d) => d.code === code)?.name ?? code, lines, computed: sumVnd.toFixed(), declared: dec, diff: diff.toFixed(), allowed: lines, ok };
+  });
+
+  try {
+    const tax = Object.keys(declared).length ? computeTaxes(taxLines, defs, { ...opts, declaredTaxVnd: declared }) : base;
+    const detail = buildInvoiceLedgerDetail({ scope: i.scope, documentType: i.documentType, counterAccountCode: i.counterAccountCode, partyCode: i.partyCode, currency: i.currency, fxRate: isVnd ? null : i.fxRate,
+      dueDate: null, tax, ...(Object.keys(declared).length && { declaredTaxVnd: declared }),
+      items: items.map(({ r, lineNo, codes }) => ({ lineNo, description: r.description.trim() || null, accountCode: r.accountCode.trim(), amountCurrency: r.amount || '0', discountCurrency: r.discount || '0', taxCodes: codes,
+        departmentCode: r.departmentCode.trim() || null, projectCode: r.projectCode.trim() || null, costItemCode: r.costItemCode.trim() || null })) });
+    return { lineTax, ledger: detail.lines, byCode, error: null };
+  } catch (e) { return fail(e, { byCode }); }
+}

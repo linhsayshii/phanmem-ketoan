@@ -1,9 +1,10 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { READ_SNAPSHOT } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
 import { postWithCashCheck } from '../cash/books.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
-import { createInvoice, getInvoice, invoiceInput, updateInvoice } from './service.js';
+import { createInvoice, getInvoice, invoiceInput, listTaxDefs, updateInvoice } from './service.js';
 
 const idParam = z.object({ id: z.string().uuid() });
 
@@ -25,6 +26,8 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     const { version, ...input } = req.body;
     return app.withOverride(req, (trx) => updateInvoice(trx, { tenantId: req.auth!.tenantId! }, req.params.id, version, input));
   });
+  // Danh mục mã thuế và phân bổ để trình duyệt xem trước thuế, bút toán bằng động cơ thuế; đứng trước :id (tuyến tĩnh thắng tuyến tham số).
+  app.get('/api/invoices/tax-defs', { preHandler: app.requirePermission('voucher.view') }, async (req) => app.withTenant(req, (trx) => listTaxDefs(trx), READ_SNAPSHOT));
   app.get('/api/invoices/:id', { preHandler: app.requirePermission('voucher.view'), schema: { params: idParam } }, async (req) => app.withTenant(req, (trx) => getInvoice(trx, req.params.id)));
 };
 export default routes;

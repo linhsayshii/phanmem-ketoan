@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Alert, Button, Card, Col, DatePicker, Dropdown, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Spin, Tag, Upload, message } from 'antd';
+import { Alert, Button, Card, Col, DatePicker, Dropdown, Form, Input, InputNumber, Modal, Row, Select, Space, Spin, Tabs, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
@@ -12,6 +12,9 @@ import { useAuth } from '../auth.js';
 import { accountFetcherFor, bankAccountFetcher, regimeFor, type FiscalYearRef } from '../lookups.js';
 import { STATE_LABEL, typeLabel } from './VoucherList.js';
 import { SettleDialog, type SettleEntry, type SettleTarget } from './settleCommon.js';
+import { Attachments, iso, quickAdd, reportError, text } from './voucherCommon.js';
+import InvoiceEditor from './InvoiceForm.js';
+import { DECLARING_TYPES, DeclaredInvoices, declaredBody, declRowsOf, emptyDeclRow, type DeclRow } from './DeclaredInvoices.js';
 
 // Các trường *Name chỉ để hiển thị; còn lại (employeeCode, dueDate, extraDims...) được giữ nguyên khi lưu lại để không mất dữ liệu chứng từ lập từ nơi khác.
 // amountCurrency (nguyên tệ, có dấu), fxRate, bankAccountNo (tài khoản ngân hàng ghi đè của dòng) và settle (kế hoạch đối trừ công nợ) chỉ gửi khi có ý nghĩa, xem `linesBody`.
@@ -19,7 +22,7 @@ export interface Line { lineNo?: number; accountCode: string; accountName?: stri
   amountCurrency?: string | undefined; fxRate?: string | undefined; bankAccountNo?: string | null | undefined; settle?: SettleEntry[] | undefined; settleSig?: string | undefined; partyCode: string | null; departmentCode: string | null; projectCode: string | null; costItemCode: string | null }
 interface Voucher { id: string; voucherType: string; voucherNo: string | null; postingDate: string; documentDate: string; state: string; description: string | null; partyCode: string | null;
   personName?: string | null; personAddress?: string | null; attachmentsCount?: number | null; bankAccountNo?: string | null; counterBankAccountNo?: string | null; partyBankAccountNo?: string | null;
-  dueDate?: string | null; purpose?: string | null; periodStatus: 'open' | 'soft_locked' | 'hard_locked'; hashed: boolean;
+  dueDate?: string | null; purpose?: string | null; invoices?: Parameters<typeof declRowsOf>[0]; periodStatus: 'open' | 'soft_locked' | 'hard_locked'; hashed: boolean;
   currencyCode: string; fxRate: string | null; version: number; totalDebit: string; lines: Line[]; warnings?: { code: string; message: string }[] }
 interface FormValues { postingDate: Dayjs; documentDate: Dayjs; description?: string | null; partyCode?: string | null; personName?: string | null; personAddress?: string | null; attachmentsCount?: number | null;
   bankAccountNo?: string | null; counterBankAccountNo?: string | null; partyBankAccountNo?: string | null; dueDate?: Dayjs | null; purpose?: string | null; currencyCode?: string; fxRate?: string | null }
@@ -47,9 +50,6 @@ export function mirrorCashAmount(rows: Line[], side: 'debit' | 'credit', last: s
 // Chứng từ đã ghi sổ chỉ sửa được diễn giải và các chiều phân tích của dòng (không đổi số tiền, tài khoản, số dòng).
 const META_COLS = ['description', 'departmentCode', 'projectCode', 'costItemCode'];
 const LOOKUP_CATALOG: Record<string, string> = { accountCode: 'account', partyCode: 'party', departmentCode: 'department', projectCode: 'project', costItemCode: 'cost_item', bankAccountNo: 'bank_account' };
-const quickAdd = [{ key: 'code', label: 'Mã' }, { key: 'name', label: 'Tên' }];
-const iso = (d: Dayjs) => d.format('YYYY-MM-DD');
-const text = (s?: string | null) => s?.trim() || null;
 // Ô Nợ/Có: để trống (Backspace + Enter, Delete) là 0; chỉ nhận số nguyên không âm (tiền VND), chữ/số âm/số lẻ bị từ chối: giữ giá trị cũ.
 export function parseAmount(newValue: unknown, oldValue: unknown): string {
   const t = String(newValue ?? '').trim();
@@ -63,10 +63,6 @@ const numCol = (field: 'debit' | 'credit', headerName: string): ColDef<Line> => 
 const foreignCol: ColDef<Line> = { field: 'amountCurrency', headerName: 'Nguyên tệ (Nợ +, Có −)', width: 160, cellClass: 'ag-right-aligned-cell', cellEditorParams: { useFormatter: true },
   valueFormatter: (p) => { const s = p.value as string | undefined; return s ? formatVnNumber(s, D(s).decimalPlaces()) : ''; },
   valueParser: (p) => { const t = String(p.newValue ?? '').trim(); if (t === '') return undefined; const n = parseVnNumber(t); return n !== null && /^-?\d{1,16}(\.\d{1,4})?$/.test(n) ? n : p.oldValue; } };
-
-// Lỗi hiển thị cho người dùng: lỗi máy chủ kèm mã; lỗi form.validateFields() là đối tượng { errorFields } nên lấy chữ lỗi của trường đầu tiên (không để "[object Object]").
-const errorText = (e: unknown): string => e instanceof ApiError ? `${e.message} (${e.code})`
-  : (e as { errorFields?: { errors: string[] }[] } | null)?.errorFields?.[0]?.errors[0] ?? (e instanceof Error ? e.message : String(e));
 
 // Trường tiêu đề đi vào thân yêu cầu; trường nào loại chứng từ không có thì không gửi.
 const HEADER_BODY: Partial<Record<HeaderField, (f: FormValues) => object>> = {
@@ -103,6 +99,7 @@ export default function VoucherPage() {
   const { type, id } = useParams({ strict: false }) as { type: string; id: string };
   const def = voucherTypeDef(type);
   if (!def) return <Alert type="error" showIcon message={`Không có loại chứng từ "${type}"`} />;
+  if (def.hasItems) return <InvoiceEditor key={`${def.code}/${id}`} def={def} id={id} />; // hóa đơn mua/bán, giảm giá: màn hình riêng có thuế và bút toán xem trước
   return <VoucherEditor key={`${def.code}/${id}`} def={def} id={id} />; // đổi chứng từ (kể cả moi -> id sau khi lưu) thì dựng lại toàn bộ trạng thái nhập
 }
 
@@ -126,7 +123,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   useEffect(() => { if (mismatch) void navigate({ to: '/chung-tu/$type/$id', params: { type: realType!, id }, replace: true }); }, [mismatch, realType, id, navigate]);
 
   const state = (v.data?.state ?? 'draft') as VoucherState;
-  const viewOnly = !eff.manual || !!eff.hasItems; // chứng từ hệ thống tự sinh và hóa đơn (lập ở màn hình riêng): chỉ xem và in
+  const viewOnly = !eff.manual; // chứng từ hệ thống tự sinh: chỉ xem và in
   const posted = state === 'posted';
   const decision = posted ? decideEdit({ periodStatus: v.data?.periodStatus ?? 'open', hashed: v.data?.hashed ?? false, change: 'amount', canEditPosted: can('voucher.edit_posted'), canBackdateLocked: can('voucher.backdate_locked') }) : null;
   const editable = state === 'draft' && !viewOnly;
@@ -136,7 +133,12 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   // Chưa lưu: so các dòng với bản lúc tải/lưu, cộng cờ đã sửa tiêu đề; dùng cho hộp xác nhận trước khi bỏ phần đang nhập.
   const baseline = useRef(JSON.stringify(cleanLines(lines)));
   const [formDirty, setFormDirty] = useState(false); const [rowsDirty, setRowsDirty] = useState(false);
-  const confirmIfDirty = useUnsavedChanges((formDirty || rowsDirty) && (editable || metaOnly));
+  // Hóa đơn kê khai nhập tay (PC/BN/PKT): lưới riêng, cùng cách theo dõi chưa lưu.
+  const declaring = DECLARING_TYPES.includes(eff.code);
+  const [declRows, setDeclRows] = useState<DeclRow[]>(() => [emptyDeclRow()]);
+  const declRef = useRef(declRows); const declBaseline = useRef(JSON.stringify(declRows)); const [declDirty, setDeclDirty] = useState(false);
+  const changeDecl = useCallback((rows: DeclRow[]) => { declRef.current = rows; setDeclRows(rows); setDeclDirty(JSON.stringify(rows) !== declBaseline.current); }, []);
+  const confirmIfDirty = useUnsavedChanges((formDirty || rowsDirty || declDirty) && (editable || metaOnly));
   const lastCash = useRef('0'); const autoAccount = useRef<string>(); const lastParty = useRef<string | null>(null);
   const cashSide = eff.cashSide && eff.moneyKind ? (eff.cashSide === 'in' ? 'debit' : 'credit') : undefined;
 
@@ -156,6 +158,8 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     const all = v.data.state === 'draft' ? [...rows, emptyLine()] : rows;
     baseline.current = JSON.stringify(cleanLines(all)); lastCash.current = (cashSide && all[0]?.[cashSide]) || '0'; lastParty.current = v.data.partyCode;
     setAllLines(all); setFormDirty(false); setRowsDirty(false);
+    const decl = declRowsOf(v.data.invoices ?? []); const declAll = v.data.state === 'draft' ? [...decl, emptyDeclRow()] : decl;
+    declRef.current = declAll; declBaseline.current = JSON.stringify(declAll); setDeclRows(declAll); setDeclDirty(false);
   }, [v.data, form, setAllLines, cashSide]);
   const postingDate = Form.useWatch('postingDate', form);
   const postingIso = postingDate?.isValid() ? iso(postingDate) : undefined;
@@ -202,14 +206,14 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
       conflict.current = Modal.confirm({ title: 'Chứng từ đã được người khác sửa', content: `${e.message}. Tải lại sẽ bỏ phần bạn đang nhập.`, okText: 'Tải lại', cancelText: 'Giữ bản đang nhập', onOk: () => invalidate() });
       return;
     }
-    void message.error(errorText(e));
+    reportError(e, navigate);
   };
   // Ô đang gõ dở chưa vào state: rời ô để lưới chốt giá trị trước khi lấy dòng (Ctrl+S/F9 khi con trỏ còn trong ô).
   const flushEditing = async () => { (document.activeElement as HTMLElement | null)?.blur(); await new Promise((r) => setTimeout(r, 0)); };
   const body = (f: FormValues) => ({
     voucherType: eff.code, postingDate: iso(f.postingDate), documentDate: iso(f.documentDate), description: f.description ?? null, partyCode: f.partyCode ?? null,
     currencyCode: f.currencyCode ?? 'VND', ...((f.currencyCode ?? 'VND') !== 'VND' && f.fxRate ? { fxRate: f.fxRate } : {}),
-    ...Object.assign({}, ...eff.header.map((h) => HEADER_BODY[h]?.(f))), lines: linesBody(linesRef.current, f) });
+    ...Object.assign({}, ...eff.header.map((h) => HEADER_BODY[h]?.(f))), lines: linesBody(linesRef.current, f), ...(declaring ? { invoices: declaredBody(declRef.current) } : {}) });
   // Lưu bản đang nhập; ghi sổ (F9) lưu trước rồi mới ghi để không ghi sổ bản cũ trên máy chủ.
   const persist = async (postAfter: boolean): Promise<Voucher> => {
     await flushEditing();
@@ -232,7 +236,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     onSuccess: async (r, postAfter) => {
       void message.success(postAfter ? 'Đã ghi sổ' : 'Đã lưu');
       for (const w of r.warnings ?? []) void message.warning({ content: w.message, duration: 10 }); // ví dụ CASH_NEGATIVE: ghi sổ được nhưng tồn quỹ âm
-      setFormDirty(false); setRowsDirty(false); // đã lưu: chuyển trang không hỏi bỏ thay đổi
+      setFormDirty(false); setRowsDirty(false); setDeclDirty(false); // đã lưu: chuyển trang không hỏi bỏ thay đổi
       if (isNew) toVoucher({ ...r, voucherType: r.voucherType ?? eff.code });
       await invalidate(r.id); // luôn tải lại: một lần tải đang chạy từ trước khi ghi sổ không được ghi đè trạng thái mới
     } });
@@ -324,6 +328,14 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     }
   };
 
+  const ledgerGrid = (<>
+    <KeyboardGrid<Line> rows={lines} columns={columns} readOnly={locked} lockRows={metaOnly} onRowsChange={onRowsChange} addRowTemplate={emptyLine} onLookup={onLookup} height={360} />
+    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, marginTop: 8 }}>
+      <b>Tổng Nợ: {formatVnNumber(t.debit)}</b><b>Tổng Có: {formatVnNumber(t.credit)}</b>
+      {!balanced && <Tag color="red">Chênh lệch {formatVnNumber(sum([t.debit, `-${t.credit}`]).toString())}</Tag>}
+    </div>
+  </>);
+
   if (mismatch) return <Spin />; // đang chuyển sang đường dẫn đúng loại của chứng từ
   return (
     <Card title={<Space><span>{typeLabel(eff)} {v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}</span><Tag>{STATE_LABEL[state]}</Tag></Space>}
@@ -349,11 +361,11 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
           <Col span={24}><Form.Item label={sideIn ? 'Lý do nộp' : sideOut ? 'Lý do chi' : 'Diễn giải'} name="description"><Input disabled={locked} /></Form.Item></Col>
         </Row>
       </Form>
-      <KeyboardGrid<Line> rows={lines} columns={columns} readOnly={locked} lockRows={metaOnly} onRowsChange={onRowsChange} addRowTemplate={emptyLine} onLookup={onLookup} height={360} />
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, marginTop: 8 }}>
-        <b>Tổng Nợ: {formatVnNumber(t.debit)}</b><b>Tổng Có: {formatVnNumber(t.credit)}</b>
-        {!balanced && <Tag color="red">Chênh lệch {formatVnNumber(sum([t.debit, `-${t.credit}`]).toString())}</Tag>}
-      </div>
+      {declaring ? (
+        <Tabs size="small" items={[{ key: 'ledger', label: 'Hạch toán', children: ledgerGrid },
+          { key: 'invoices', label: <span>Hóa đơn{declRows.some((r) => r.invoiceNo.trim()) && <Tag style={{ marginLeft: 6, marginRight: 0 }}>{declRows.filter((r) => r.invoiceNo.trim()).length}</Tag>}</span>,
+            children: <DeclaredInvoices rows={declRows} onRowsChange={changeDecl} editable={editable} /> }]} />
+      ) : ledgerGrid}
       {cashBalance.data?.balance !== undefined && postingIso && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
           <Tag color={D(cashBalance.data.balance).lt(0) ? 'red' : 'default'}>
@@ -382,26 +394,5 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
         </Space>}
       </Modal>
     </Card>
-  );
-}
-
-function Attachments({ voucherId, canEdit }: { voucherId: string; canEdit: boolean }) {
-  const qc = useQueryClient();
-  const key = ['attachments', voucherId];
-  const list = useQuery({ queryKey: key, queryFn: () => api<{ id: string; fileName: string; bytes: number }[]>(`/api/vouchers/${voucherId}/attachments`) });
-  const remove = (attId: string) => api(`/api/attachments/${attId}`, { method: 'DELETE' }).then(() => qc.invalidateQueries({ queryKey: key })).catch((e: unknown) => void message.error((e as Error).message));
-  return (
-    <div style={{ marginTop: 16 }}>
-      <Space wrap>
-        <b>Đính kèm:</b>
-        {(list.data ?? []).map((a) => <span key={a.id}><a href={`/api/attachments/${a.id}`} target="_blank" rel="noopener">{a.fileName}</a> ({Math.ceil(a.bytes / 1024)} KB)
-          {canEdit && <Popconfirm title="Xóa tệp đính kèm?" okText="Xóa" cancelText="Không" onConfirm={() => remove(a.id)}><Button type="link" size="small" danger aria-label={`Xóa ${a.fileName}`}>✕</Button></Popconfirm>}</span>)}
-        {canEdit && <Upload showUploadList={false} customRequest={async ({ file, onSuccess, onError }) => {
-          const fd = new FormData(); fd.append('file', file as File);
-          const r = await fetch(`/api/vouchers/${voucherId}/attachments`, { method: 'POST', body: fd, credentials: 'include' });
-          if (r.ok) { onSuccess?.(await r.json()); void qc.invalidateQueries({ queryKey: key }); }
-          else { const e = (await r.json().catch(() => null)) as { error?: { message?: string } } | null; const msg = e?.error?.message ?? `Lỗi tải lên (${r.status})`; void message.error(msg); onError?.(new Error(msg)); } }}><Button size="small">Thêm tệp</Button></Upload>}
-      </Space>
-    </div>
   );
 }

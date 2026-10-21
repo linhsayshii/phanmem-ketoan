@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef, type GetRowIdParams, type GridApi } from 'ag-grid-community';
 import { gridKeyAction, isImeComposing, nextCellOnEnter, type GridKeyAction } from '@kt/domain';
@@ -20,6 +20,9 @@ export function KeyboardGrid<T extends object>({ rows, columns, onRowsChange, ad
   // rowsRef: bản mới nhất, kể cả thay đổi chủ chưa kịp render lại (cellValueChanged tới trễ, sau khi Enter đã thêm dòng); emit cập nhật nó ngay.
   const rowsRef = useRef(rows); rowsRef.current = rows;
   const emit = (next: T[]) => { rowsRef.current = next; onRowsChange(next); };
+  // Chủ có thể ghi giá trị dẫn xuất (thành tiền, tiền thuế...) thẳng vào đối tượng dòng mà giữ nguyên danh tính dòng (đổi danh tính thì ô đang sửa bị hủy); AG Grid không tự làm tươi dòng cùng đối tượng.
+  // refreshCells không ép bỏ qua ô đang sửa và chỉ vẽ lại ô có giá trị đổi.
+  useEffect(() => { apiRef.current?.refreshCells(); }, [rows]);
   const colDefs = useMemo(() => columns.map((c) => ({ ...c, editable: readOnly ? false : c.editable ?? true })), [columns, readOnly]);
   const editableIdx = useMemo(() => colDefs.map((c, i) => (c.editable ? i : -1)).filter((i) => i >= 0), [colDefs]);
   const colId = (i: number) => (colDefs[i]?.colId ?? colDefs[i]?.field) as string | undefined;

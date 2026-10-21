@@ -29,8 +29,9 @@ import { VOUCHER_TYPES } from '@kt/domain';
 import { api } from './api/client.js';
 
 // Các task sau thêm mục vào MENU và route vào routeTree.
-// Mỗi mục menu Chứng từ là danh sách lọc theo loại; hóa đơn (HDB, HDM, GGB, GGM) có màn hình riêng ở giai đoạn sau.
+// Mỗi mục menu Chứng từ là danh sách lọc theo loại; hóa đơn và giảm giá (HDB, HDM, GGB, GGM) nằm ở nhóm Mua hàng / Bán hàng, cùng đường dẫn /chung-tu/<mã> (VoucherPage chọn màn hình hóa đơn theo loại).
 const VOUCHER_MENU_TYPES = ['PT', 'PC', 'BC', 'BN', 'CT', 'QTU', 'BT', 'PKT'] as const;
+const voucherItem = (code: string, label: string): MenuItem => ({ key: code.toLowerCase(), label, to: `/chung-tu/${code}`, permission: 'voucher.view' });
 export const MENU: MenuItem[] = [
   { key: 'hethong', label: 'Hệ thống', to: '/he-thong', children: [
     { key: 'users', label: 'Người dùng', to: '/he-thong/nguoi-dung', permission: 'user.view' },
@@ -60,6 +61,8 @@ export const MENU: MenuItem[] = [
   { key: 'chungtu', label: 'Chứng từ', to: '/chung-tu', children: [
     ...VOUCHER_MENU_TYPES.map((code) => ({ key: code.toLowerCase(), label: typeLabel(VOUCHER_TYPES[code]!), to: `/chung-tu/${code}`, permission: 'voucher.view' })),
   ] },
+  { key: 'muahang', label: 'Mua hàng', to: '/chung-tu/HDM', children: [voucherItem('HDM', 'Hóa đơn mua dịch vụ'), voucherItem('GGM', 'Giảm giá mua')] },
+  { key: 'banhang', label: 'Bán hàng', to: '/chung-tu/HDB', children: [voucherItem('HDB', 'Hóa đơn bán dịch vụ'), voucherItem('GGB', 'Giảm giá bán')] },
   { key: 'quy', label: 'Quỹ', to: '/quy', children: [
     { key: 'cashcount', label: 'Kiểm kê quỹ', to: '/quy/kiem-ke', permission: 'cash_count.view' },
   ] },
