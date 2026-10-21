@@ -4,9 +4,11 @@ import { READ_SNAPSHOT } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
 import { postWithCashCheck } from '../cash/books.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
+import { createSchedule, deleteSchedule, getSchedule, listSchedules, runAmortization, runInput, scheduleInput, scheduleUpdate, updateSchedule } from './amortization.js';
 import { createInvoice, getInvoice, invoiceInput, listTaxDefs, updateInvoice } from './service.js';
 
 const idParam = z.object({ id: z.string().uuid() });
+const numId = z.object({ id: z.coerce.number().int().positive() });
 
 // Hóa đơn mua/bán dịch vụ, giảm giá, trả lại: dựng bút toán từ dòng hàng và mã thuế, ghi bảng kê hóa đơn kê khai thuế. Ghi sổ, bỏ ghi sổ, đảo, hủy dùng route /api/vouchers/:id/*.
 const routes: FastifyPluginAsyncZod = async (app) => {
@@ -29,5 +31,23 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   // Danh mục mã thuế và phân bổ để trình duyệt xem trước thuế, bút toán bằng động cơ thuế; đứng trước :id (tuyến tĩnh thắng tuyến tham số).
   app.get('/api/invoices/tax-defs', { preHandler: app.requirePermission('voucher.view') }, async (req) => app.withTenant(req, (trx) => listTaxDefs(trx), READ_SNAPSHOT));
   app.get('/api/invoices/:id', { preHandler: app.requirePermission('voucher.view'), schema: { params: idParam } }, async (req) => app.withTenant(req, (trx) => getInvoice(trx, req.params.id)));
+
+  // ---- Doanh thu nhận trước: lịch phân bổ (3387 → doanh thu) và chạy phân bổ theo kỳ (chứng từ PB) ----
+  app.get('/api/amortizations', { preHandler: app.requirePermission('amortization.view') }, async (req) => app.withTenant(req, (trx) => listSchedules(trx), READ_SNAPSHOT));
+  app.get('/api/amortizations/:id', { preHandler: app.requirePermission('amortization.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => getSchedule(trx, req.params.id), READ_SNAPSHOT));
+  app.post('/api/amortizations', { preHandler: app.requirePermission('amortization.create'), schema: { body: scheduleInput } }, async (req, reply) =>
+    reply.status(201).send(await app.withTenant(req, (trx) => createSchedule(trx, req.auth!.tenantId!, req.body))));
+  app.put('/api/amortizations/:id', { preHandler: app.requirePermission('amortization.update'), schema: { params: numId, body: scheduleUpdate } }, async (req) =>
+    app.withTenant(req, (trx) => updateSchedule(trx, req.auth!.tenantId!, req.params.id, req.body)));
+  app.delete('/api/amortizations/:id', { preHandler: app.requirePermission('amortization.delete'), schema: { params: numId } }, async (req, reply) => {
+    await app.withTenant(req, (trx) => deleteSchedule(trx, req.params.id));
+    return reply.status(204).send();
+  });
+  app.post('/api/amortizations/run', { preHandler: app.requirePermission('amortization.run'), schema: { body: runInput } }, async (req) => {
+    const auth = req.auth!;
+    const out = await app.withOverride(req, (trx) => runAmortization(trx, { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') }, req.body));
+    if (out.created.length || out.reversedVoucherIds.length) notifyRecompute(app, auth.tenantId!);
+    return out;
+  });
 };
 export default routes;

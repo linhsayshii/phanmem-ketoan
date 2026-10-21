@@ -193,6 +193,12 @@ export interface FxRunTable {
   voucher_ids: ColumnType<string[], string[] | undefined, string[]>; reversed_voucher_ids: ColumnType<string[], string[] | undefined, string[]>;
   params: ColumnType<unknown, string | undefined, string>; created_by: string | null; created_at: Generated<string>;
 }
+// Lịch phân bổ (doanh thu nhận trước) và các dòng phân bổ theo kỳ; voucher_id là chứng từ PB đã sinh.
+export interface AmortizationScheduleTable {
+  id: Generated<number>; tenant_id: string; kind: string; source_voucher_id: string | null; from_account_id: number; to_account_id: number; total: Numeric; periods: number;
+  start_year: number; start_period: number; description: string | null; is_active: Generated<boolean>; created_by: string | null; created_at: Generated<string>;
+}
+export interface AmortizationLineTable { id: Generated<number>; tenant_id: string; schedule_id: number; seq: number; fiscal_year: number; period_no: number; amount: Numeric; voucher_id: string | null }
 export interface BalanceStaleTable { tenant_id: string; stale_year: number; stale_period: number; marked_at: Generated<string> }
 export interface AccountPeriodBalanceTable {
   tenant_id: string; account_id: number; fiscal_year: number; period_no: number; currency_code: string; party_id: Generated<string>;
@@ -277,6 +283,8 @@ export interface Database {
   fx_rule: FxRuleTable;
   cash_count: CashCountTable;
   fx_run: FxRunTable;
+  amortization_schedule: AmortizationScheduleTable;
+  amortization_line: AmortizationLineTable;
   closing_step: ClosingStepTable;
   closing_run: ClosingRunTable;
   report_template: ReportTemplateTable;

@@ -264,8 +264,13 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
   const ledgerDebit = sum(preview.ledger.map((l) => l.debit)).toFixed(); const ledgerCredit = sum(preview.ledger.map((l) => l.credit)).toFixed();
   const fmt = (s: string) => formatVnNumber(s, D(s).decimalPlaces());
 
+  // Dòng hạch toán vào 3387: gợi ý lập lịch phân bổ doanh thu nhận trước (mở tab mới, giữ nguyên hóa đơn đang nhập).
+  const deferred = isVnd ? sum(valid.filter((r) => r.accountCode.trim().startsWith('3387')).map((r) => D(r.amount).minus(r.discount || '0').toFixed())).toFixed() : '0';
+  const amortLink = D(deferred).gt(0) && /^\d{1,16}$/.test(deferred)
+    ? `/so-cai/phan-bo?${new URLSearchParams({ from: '3387', to: '5113', total: deferred, description: `Phân bổ doanh thu nhận trước ${v.data?.voucherNo ?? ''}`.trim(), ...(isNew ? {} : { voucher: id }) }).toString()}` : null;
   const goodsTab = (<>
     <KeyboardGrid<InvRow> rows={rows} columns={columns} readOnly={!editable} onRowsChange={changeRows} addRowTemplate={emptyInvRow} onLookup={onLookup} height={300} />
+    {amortLink && <div style={{ marginTop: 8 }}>Có dòng hạch toán vào TK 3387: <a href={amortLink} target="_blank" rel="noopener noreferrer">Tạo lịch phân bổ</a></div>}
     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, marginTop: 8 }}>
       <span>Tiền hàng (sau chiết khấu): <b>{fmt(goods)}</b></span><span>Tiền thuế: <b>{fmt(taxTotal)}</b></span><b>Cộng: {fmt(sum([goods, taxTotal]).toFixed())}{isVnd ? '' : ` ${currency}`}</b>
     </div>
