@@ -255,7 +255,7 @@ describe('kế hoạch đối trừ gửi kèm chứng từ', () => {
     expect(err(await t.call('POST', `/api/vouchers/${draft.id}/unpost`))).toEqual([409, 'OPEN_ITEM_SETTLED']);
     // kế hoạch chỉ ghi được khi chứng từ còn nháp (trigger fn_voucher_child_guard)
     await expect(sql`INSERT INTO settlement_plan(tenant_id, voucher_id, line_no, open_item_id, amount) VALUES (${t.tenantId}::uuid, ${draft.id}::uuid, 2, ${inv}, 1)`.execute(ctx.t.admin))
-      .rejects.toThrow(/VOUCHER_POSTED_EDIT/);
+      .rejects.toThrow(/VOUCHER_CHILD_IMMUTABLE/);
     await t.sumsMatch('2026-03-10');
     // đầu vào: thiếu số tiền, khoản không có, dòng không phải công nợ
     expect(err(await t.call('POST', '/api/vouchers', { ...body('100'), lines: [L('1111', '100'), K('131', 'KH001', '0', '100', { settle: [{ openItemId: inv }] })] }))).toEqual([400, 'VALIDATION']);

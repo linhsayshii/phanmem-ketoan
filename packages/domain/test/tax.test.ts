@@ -102,6 +102,13 @@ describe('động cơ thuế', () => {
     expect(r.postings).toEqual([{ code: 'V10G', accountCode: '33311', amountVnd: '228500', amountCurrency: '9.14', reportTag: 'sale_tax' }]);
   });
 
+  it('loại tiền có minorUnit riêng: JPY 0 chữ số lẻ làm tròn thuế về yên, 3 chữ số lẻ giữ phần nghìn; mặc định 2', () => {
+    const jpy = { ...SALE, currency: 'JPY', fxRate: '170' };
+    expect(computeTaxes([line(1, '1005', ['V8'])], TAXES, { ...jpy, minorUnit: 0 }).lines[0]!.taxes[0]!.amountCurrency).toBe('80'); // 80,4
+    expect(computeTaxes([line(1, '1005', ['V8'])], TAXES, { ...jpy, minorUnit: 3 }).lines[0]!.taxes[0]!.amountCurrency).toBe('80.400');
+    expect(computeTaxes([line(1, '1005', ['V8'])], TAXES, jpy).lines[0]!.taxes[0]!.amountCurrency).toBe('80.40');
+  });
+
   it('USD 2 dòng 100,55 @25.400: cơ sở VND từng dòng làm tròn rồi cộng', () => {
     const usd = { ...SALE, currency: 'USD', fxRate: '25400' };
     const r = computeTaxes([line(1, '100.55', ['V10']), line(2, '100.55', ['V10'])], TAXES, usd);

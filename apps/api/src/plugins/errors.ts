@@ -1,6 +1,6 @@
 import fp from 'fastify-plugin';
 import { ZodError } from 'zod';
-import { FormulaError } from '@kt/domain';
+import { FormulaError, TaxError, type TaxErrorCode } from '@kt/domain';
 
 export class AppError extends Error {
   constructor(public code: string, message: string, public status = 400, public details?: unknown) { super(message); }
@@ -13,9 +13,16 @@ const CHECK_MSG: Record<string, string> = {
   tax_code_pit_check: 'Thuế TNCN khấu trừ tại nguồn phải dùng phương pháp khấu trừ và không chọn giá đã gồm thuế',
 };
 
+// Lỗi động cơ thuế: thông báo tiếng Việt do động cơ dựng sẵn. Mã thuế không có là 404; cấu hình phân bổ sai/thiếu là 409 (trạng thái danh mục, không phải lỗi đầu vào); còn lại là lỗi đầu vào.
+const TAX_STATUS: Record<TaxErrorCode, number> = {
+  TAX_CODE_UNKNOWN: 404, TAX_DISTRIBUTION_MISSING: 409, TAX_DISTRIBUTION_INVALID: 409,
+  TAX_DECLARED_MISMATCH: 400, TAX_RATE_MISSING: 400, TAX_CODE_DUPLICATE: 400, TAX_FX_RATE_REQUIRED: 400,
+};
+
 export default fp(async (app) => {
   app.setErrorHandler((err: unknown, _req, reply) => {
     if (err instanceof AppError) return reply.status(err.status).send({ error: { code: err.code, message: err.message, ...(err.details !== undefined && { details: err.details }) } });
+    if (err instanceof TaxError) return reply.status(TAX_STATUS[err.code]).send({ error: { code: err.code, message: err.message } });
     if (err instanceof FormulaError) return reply.status(400).send({ error: { code: 'FORMULA_INVALID', message: err.message } });
     if (err instanceof ZodError) return reply.status(400).send({ error: { code: 'VALIDATION', message: 'Dữ liệu không hợp lệ', details: err.issues } });
     const e = err as PgError & { validation?: unknown; statusCode?: number };

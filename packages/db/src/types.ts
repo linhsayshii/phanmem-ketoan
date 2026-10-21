@@ -167,6 +167,18 @@ export interface SettlementTable {
 export interface SettlementPlanTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; line_no: number; open_item_id: number; amount: Numeric | null; amount_currency: Numeric | null;
 }
+// Dòng hàng hóa, dịch vụ của hóa đơn HDB/HDM/GGB/GGM (chỉ ghi khi chứng từ còn nháp).
+export interface VoucherItemLineTable {
+  id: Generated<number>; tenant_id: string; voucher_id: string; line_no: number; description: string | null; item_id: number | null; uom_id: number | null;
+  quantity: Numeric | null; unit_price: Numeric | null; amount_currency: Numeric; amount: Numeric; discount_rate: NumericDefault; discount_amount_currency: NumericDefault;
+  discount_amount: NumericDefault; tax_codes: Generated<string[]>; tax_amount: NumericDefault; account_id: number; department_id: number | null; project_id: number | null; cost_item_id: number | null;
+}
+// Bảng kê hóa đơn kê khai thuế: một dòng mỗi (hóa đơn, mã thuế).
+export interface VoucherInvoiceTable {
+  id: Generated<number>; tenant_id: string; voucher_id: string; direction: string; form_no: string | null; serial: string | null; invoice_no: string; invoice_date: DateOnly;
+  party_id: string | null; party_name: string | null; party_tax_code: string | null; party_address: string | null; invoice_group_id: number | null; tax_code_id: number | null;
+  base_amount: Numeric; tax_amount: Numeric; is_import: Generated<boolean>; adjusts_invoice_id: number | null; declare_year: number | null; declare_period: number | null; note: string | null;
+}
 // Quy tắc tỷ giá theo chế độ, nạp từ fx-rules.json (bảng tham chiếu dùng chung).
 export interface FxRuleTable { regime: string; rules: ColumnType<unknown, string, string> }
 export interface CashCountTable {
@@ -260,6 +272,8 @@ export interface Database {
   open_item: OpenItemTable;
   settlement: SettlementTable;
   settlement_plan: SettlementPlanTable;
+  voucher_item_line: VoucherItemLineTable;
+  voucher_invoice: VoucherInvoiceTable;
   fx_rule: FxRuleTable;
   cash_count: CashCountTable;
   fx_run: FxRunTable;

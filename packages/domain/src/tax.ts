@@ -36,15 +36,15 @@ function allocate(total: Decimal, factors: Decimal[], dp: number): Decimal[] {
 
 // Cơ sở = tiền hàng − chiết khấu (giá chưa thuế). Giá đã gồm thuế (GTGT, không áp cho TNCN): thuế = round(gross × Σ thuế suất / (100 + Σ thuế suất)) trước, cơ sở = gross − thuế,
 // nên cơ sở + thuế = gross đúng cả khi nguyên tệ có 4 chữ số lẻ; VND: thuế = toVnd(thuế), cơ sở = toVnd(gross) − thuế VND.
-// Thuế từng dòng làm tròn theo đơn vị nhỏ nhất của loại tiền (VND 0 chữ số, ngoại tệ 2); VND = toVnd từng dòng.
+// Thuế từng dòng làm tròn theo đơn vị nhỏ nhất của loại tiền (VND 0 chữ số, ngoại tệ `minorUnit`, mặc định 2); VND = toVnd từng dòng.
 // declaredTaxVnd[mã] (thuế ghi trên hóa đơn) lệch Σ thuế dòng không quá số dòng có mã đó: dồn vào dòng có thuế lớn nhất của mã (bảng kê và bút toán không có dòng lẻ).
 // Mã không tính thuế hoặc thuế suất 0% chỉ nhận thuế ghi trên hóa đơn bằng 0. roundingVnd = phần tổng tiền hóa đơn VND (Σ cơ sở + Σ bút toán thuế theo dấu phân bổ)
 // thay đổi do dồn chênh: giá chưa thuế thì bằng phần bút toán thay đổi; giá đã gồm thuế thì cơ sở nhận phần ngược lại nên không đổi tổng.
 export function computeTaxes(lines: TaxableLine[], taxes: Record<string, TaxDef>,
-  opts: { scope: 'sale' | 'purchase'; documentType: 'invoice' | 'refund'; currency: string; fxRate: string | null; declaredTaxVnd?: Record<string, string> }): TaxResult {
+  opts: { scope: 'sale' | 'purchase'; documentType: 'invoice' | 'refund'; currency: string; fxRate: string | null; declaredTaxVnd?: Record<string, string>; minorUnit?: number }): TaxResult {
   const isVnd = opts.currency === 'VND';
   if (!isVnd && !opts.fxRate) throw new TaxError('TAX_FX_RATE_REQUIRED', `Hóa đơn ${opts.currency} phải có tỷ giá để quy đổi thuế ra đồng`);
-  const dp = isVnd ? 0 : 2;
+  const dp = isVnd ? 0 : (opts.minorUnit ?? 2); // số chữ số thập phân của loại tiền (currency.minor_unit), mặc định 2
   const rate = isVnd ? '1' : opts.fxRate!;
   const vndOf = (x: Decimal): string => toVnd(x.toFixed(), rate);
   const defOf = (code: string): TaxDef => {

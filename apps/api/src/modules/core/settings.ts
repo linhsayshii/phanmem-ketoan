@@ -17,6 +17,8 @@ export const SETTINGS = z.object({
   // Loại tỷ giá đánh giá lại ngoại tệ cuối kỳ cho tài sản (tiền, phải thu) và nợ phải trả; null = theo chế độ kế toán (fx-rules.json). Chọn lại khi chế độ chưa đối chiếu văn bản gốc.
   fx_reval_rate_asset: z.enum(['transfer_avg', 'buy', 'sell']).nullable().default(null),
   fx_reval_rate_liability: z.enum(['transfer_avg', 'buy', 'sell']).nullable().default(null),
+  // Kỳ kê khai thuế GTGT: hóa đơn ghi declare_period theo tháng (1-12) hoặc quý (1-4).
+  vat_period: z.enum(['month', 'quarter']).default('month'),
 });
 export type Settings = z.infer<typeof SETTINGS>;
 
