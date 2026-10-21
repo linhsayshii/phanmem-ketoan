@@ -43,11 +43,13 @@ export function declarePeriod(invoiceDate: string, vatPeriod: 'month' | 'quarter
 const blank = (s: string | null | undefined): string | null => (s?.trim() ? s.trim() : null);
 
 // Hóa đơn đầu vào trùng: cùng chiều mua, cùng mã số thuế người bán, ký hiệu và số hóa đơn (so không phân biệt hoa thường, bỏ mọi khoảng trắng, bằng fn_invoice_key trùng với chỉ mục).
-// Chứng từ đã hủy không chặn; nháp chặn. Người bán không có mã số thuế thì so thêm cùng đối tượng. Nhiều dòng cùng hóa đơn khác mã thuế trong một chứng từ là hợp lệ; cùng mã thuế hai lần thì trùng.
+// Chứng từ đã hủy hoặc đã đảo (chứng từ đảo không mang dòng kê khai) không chặn: nhập lại hóa đơn đó là hợp lệ; nháp chặn. Khóa tư vấn theo khóa hóa đơn để hai yêu cầu đồng thời không cùng qua kiểm tra. Người bán không có mã số thuế thì so thêm cùng đối tượng. Nhiều dòng cùng hóa đơn khác mã thuế trong một chứng từ là hợp lệ; cùng mã thuế hai lần thì trùng.
 async function assertNotDuplicate(trx: Trx, tenantId: string, voucherId: string, r: InvoiceRow, partyTaxCode: string | null): Promise<void> {
+  await sql`SELECT pg_advisory_xact_lock(hashtext(${tenantId}::text || ':' || fn_invoice_key(${partyTaxCode}) || ':' || fn_invoice_key(${blank(r.serial)}) || ':' || fn_invoice_key(${r.invoiceNo})
+    || CASE WHEN fn_invoice_key(${partyTaxCode}) = '' THEN ':' || COALESCE(${r.partyId}::text, '') ELSE '' END))`.execute(trx);
   const hit = await sql<{ voucher_id: string; voucher_no: string | null; voucher_type: string }>`
     SELECT v.id AS voucher_id, v.voucher_no, v.voucher_type FROM voucher_invoice vi JOIN voucher v ON v.tenant_id = vi.tenant_id AND v.id = vi.voucher_id
-    WHERE vi.tenant_id = ${tenantId}::uuid AND vi.direction = 'purchase' AND v.state <> 'cancelled'
+    WHERE vi.tenant_id = ${tenantId}::uuid AND vi.direction = 'purchase' AND v.state NOT IN ('cancelled', 'reversed')
       AND fn_invoice_key(vi.party_tax_code) = fn_invoice_key(${partyTaxCode}) AND fn_invoice_key(vi.serial) = fn_invoice_key(${blank(r.serial)}) AND fn_invoice_key(vi.invoice_no) = fn_invoice_key(${r.invoiceNo})
       AND (fn_invoice_key(${partyTaxCode}) <> '' OR vi.party_id IS NOT DISTINCT FROM ${r.partyId}::uuid)
       AND (vi.voucher_id <> ${voucherId}::uuid OR vi.tax_code_id IS NOT DISTINCT FROM ${r.taxCodeId}::bigint)

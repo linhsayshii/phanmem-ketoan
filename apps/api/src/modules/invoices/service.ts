@@ -36,7 +36,7 @@ export interface ItemLineDto {
 }
 export type InvoiceDto = VoucherDto & { items: ItemLineDto[] };
 
-const NOT_DRAFT = 'chứng từ đã ghi sổ, hãy bỏ ghi sổ để sửa hóa đơn';
+const NOT_DRAFT = 'chứng từ không còn là nháp, hãy bỏ ghi sổ (nếu đã ghi sổ) để sửa hóa đơn';
 const addDays = (iso: string, days: number): string => new Date(Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)) + days)).toISOString().slice(0, 10);
 
 async function itemsOf(trx: Trx, voucherId: string): Promise<ItemLineDto[]> {
@@ -57,19 +57,19 @@ export async function getInvoice(trx: Trx, id: string): Promise<InvoiceDto> {
   return { ...v, items: await itemsOf(trx, id) };
 }
 
-// Mã thuế và phân bổ của chúng, dạng động cơ thuế dùng. Mã không có trong danh mục để động cơ báo TAX_CODE_UNKNOWN.
-async function loadTaxDefs(trx: Trx, codes: string[]): Promise<{ defs: Record<string, TaxDef>; ids: Map<string, number> }> {
-  const defs: Record<string, TaxDef> = {}; const ids = new Map<string, number>();
-  if (!codes.length) return { defs, ids };
-  const rows = await trx.selectFrom('tax_code').select(['id', 'code', 'kind', 'rate', 'method', 'price_include']).where('code', 'in', codes).execute();
+// Mã thuế và phân bổ của chúng, dạng động cơ thuế dùng. Mã không có trong danh mục để động cơ báo TAX_CODE_UNKNOWN. scopes: phạm vi dùng của mã (sale, purchase, both).
+async function loadTaxDefs(trx: Trx, codes: string[]): Promise<{ defs: Record<string, TaxDef>; ids: Map<string, number>; scopes: Map<string, string> }> {
+  const defs: Record<string, TaxDef> = {}; const ids = new Map<string, number>(); const scopes = new Map<string, string>();
+  if (!codes.length) return { defs, ids, scopes };
+  const rows = await trx.selectFrom('tax_code').select(['id', 'code', 'kind', 'rate', 'method', 'price_include', 'scope']).where('code', 'in', codes).execute();
   const dists = rows.length ? await trx.selectFrom('tax_distribution').select(['tax_code_id', 'document_type', 'scope', 'line_type', 'factor_percent', 'account_code', 'report_tag']).where('tax_code_id', 'in', rows.map((r) => r.id)).execute() : [];
   for (const r of rows) {
-    ids.set(r.code, r.id);
+    ids.set(r.code, r.id); scopes.set(r.code, r.scope);
     defs[r.code] = { code: r.code, kind: r.kind as TaxDef['kind'], method: r.method as TaxDef['method'], rate: r.rate, priceInclude: r.price_include,
       distributions: dists.filter((d) => d.tax_code_id === r.id).map((d) => ({ documentType: d.document_type as 'invoice' | 'refund', scope: d.scope as 'sale' | 'purchase', lineType: d.line_type as 'base' | 'tax',
         factorPercent: d.factor_percent, accountCode: d.account_code, reportTag: d.report_tag })) };
   }
-  return { defs, ids };
+  return { defs, ids, scopes };
 }
 
 // Mã dùng gom dòng kê khai: mã GTGT đầu tiên của dòng; không có thì mã thuế đầu tiên không phải TNCN (thuế nhập khẩu, TTĐB); không có nữa thì null (dòng không thuế).
@@ -97,7 +97,8 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput): Pr
   // Công nợ mặc định theo chiều: tài khoản mặc định của đối tượng chỉ được dùng khi đúng nhóm 131 (bán) / 331 (mua); đối tượng vừa là khách vừa là nhà cung cấp có thể mang tài khoản của chiều kia.
   const fallback = scope === 'sale' ? '131' : '331';
   const counterAccountCode = input.counterAccountCode ?? (party.default_account_code?.startsWith(fallback) ? party.default_account_code : fallback);
-  const dueDate = input.dueDate !== undefined ? input.dueDate : party.payment_term_days === null ? null : addDays(input.documentDate, party.payment_term_days);
+  // Giảm giá, trả lại là khoản giảm công nợ: không mặc định hạn thanh toán theo đối tượng (tránh hiện quá hạn trên phân tích tuổi nợ)
+  const dueDate = input.dueDate !== undefined ? input.dueDate : def.refund || party.payment_term_days === null ? null : addDays(input.documentDate, party.payment_term_days);
 
   let minorUnit: number | undefined;
   if (!isVnd) {
@@ -107,10 +108,12 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput): Pr
   }
   const rate = isVnd ? null : input.fxRate ?? null;
 
-  const { defs, ids } = await loadTaxDefs(trx, [...new Set(input.items.flatMap((i) => i.taxCodes))]);
+  const { defs, ids, scopes } = await loadTaxDefs(trx, [...new Set(input.items.flatMap((i) => i.taxCodes))]);
+  for (const [code, s] of scopes) if (s !== 'both' && s !== scope) throw new AppError('TAX_SCOPE_MISMATCH', `Mã thuế ${code} chỉ dùng cho hóa đơn ${s === 'sale' ? 'bán ra' : 'mua vào'}, không dùng cho ${def.name}`, 400);
   const tax: TaxResult = computeTaxes(input.items.map((it, k) => ({ lineNo: k + 1, amountCurrency: it.amountCurrency, discountCurrency: it.discountCurrency, taxCodes: it.taxCodes })), defs,
     { scope, documentType, currency: input.currencyCode, fxRate: rate, ...(input.invoice.declaredTax && { declaredTaxVnd: input.invoice.declaredTax }), ...(minorUnit !== undefined && { minorUnit }) });
   const detail = buildInvoiceLedgerDetail({ scope, documentType, counterAccountCode, partyCode: input.partyCode, currency: input.currencyCode, fxRate: rate, dueDate, tax,
+    ...(input.invoice.declaredTax && { declaredTaxVnd: input.invoice.declaredTax }),
     items: input.items.map((it, k) => ({ lineNo: k + 1, description: it.description ?? null, accountCode: it.accountCode, amountCurrency: it.amountCurrency, discountCurrency: it.discountCurrency, taxCodes: it.taxCodes,
       departmentCode: it.departmentCode ?? null, projectCode: it.projectCode ?? null, costItemCode: it.costItemCode ?? null })) });
   if (!detail.lines.length) throw new AppError('INVOICE_EMPTY', 'Hóa đơn không có số tiền nào để hạch toán', 400);
@@ -133,13 +136,21 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput): Pr
       if (!r) throw new AppError('LOOKUP_NOT_FOUND', `Không có ${label} mã "${code}"`, 404);
       return r.id as number;
     };
+    // Thuế GTGT (không tính TNCN) từng dòng theo động cơ thuế; ngoại tệ thì bút toán có thể lệch vài đồng (thuế ghi trên hóa đơn, chia chênh làm tròn), phần lệch
+    // dồn vào dòng có thuế lớn nhất của mã đó để tổng dòng hàng theo mã khớp bảng kê voucher_invoice và dòng thuế đã ghi sổ.
+    const taxOf = input.items.map((_, k) => new Map(tax.lines[k]!.taxes.filter((x) => defs[x.code]!.kind !== 'pit').map((x) => [x.code, D(x.amountVnd)])));
+    for (const code of new Set(taxOf.flatMap((m) => [...m.keys()]))) {
+      const diff = D(detail.taxVnd[code] ?? 0).minus(taxOf.reduce((acc, m) => acc.plus(m.get(code) ?? 0), D(0)));
+      if (diff.isZero()) continue;
+      const top = taxOf.reduce((best, m) => ((m.get(code) ?? D(-1)).gt(best.get(code) ?? D(-1)) ? m : best));
+      top.set(code, top.get(code)!.plus(diff));
+    }
     const itemRows = [];
     for (const [k, it] of input.items.entries()) {
-      const t = tax.lines[k]!;
       itemRows.push({
         tenant_id: tenantId, voucher_id: voucherId, line_no: k + 1, description: it.description ?? null, uom_id: await lookup('uom', it.uomCode, 'đơn vị tính'), quantity: it.quantity ?? null, unit_price: it.unitPrice ?? null,
         amount_currency: it.amountCurrency, amount: vndText(it.amountCurrency, rate), discount_rate: it.discountRate ?? '0', discount_amount_currency: it.discountCurrency, discount_amount: vndText(it.discountCurrency, rate),
-        tax_codes: it.taxCodes, tax_amount: D(0).plus(t.taxes.filter((x) => defs[x.code]!.kind !== 'pit').reduce((s, x) => s.plus(x.amountVnd), D(0))).toFixed(0),
+        tax_codes: it.taxCodes, tax_amount: [...taxOf[k]!.values()].reduce((acc, v) => acc.plus(v), D(0)).toFixed(0),
         account_id: (await lookup('account', it.accountCode, 'tài khoản'))!, department_id: await lookup('department', it.departmentCode, 'bộ phận'), project_id: await lookup('project', it.projectCode, 'vụ việc'),
         cost_item_id: await lookup('cost_item', it.costItemCode, 'khoản mục chi phí'),
       });
@@ -186,7 +197,7 @@ export async function createInvoice(trx: Trx, ctx: { tenantId: string; userId: s
 
 // Sửa hóa đơn nháp: dựng lại toàn bộ từ đầu vào, thay dòng sổ, dòng hàng và dòng kê khai. Hóa đơn đã ghi sổ phải Bỏ ghi sổ trước (khớp trigger fn_voucher_child_guard).
 export async function updateInvoice(trx: Trx, ctx: { tenantId: string }, id: string, version: number, input: InvoiceInput): Promise<InvoiceDto> {
-  const cur = await trx.selectFrom('voucher').select(['state', 'voucher_type']).where('id', '=', id).executeTakeFirst();
+  const cur = await trx.selectFrom('voucher').select(['state', 'voucher_type']).where('id', '=', id).forUpdate().executeTakeFirst(); // khóa dòng: ghi sổ đồng thời báo VOUCHER_CHILD_IMMUTABLE chứ không phải lỗi sửa chứng từ đã ghi sổ
   if (!cur || !voucherTypeDef(cur.voucher_type)?.hasItems) throw new AppError('INVOICE_NOT_FOUND', 'Không tìm thấy hóa đơn', 404);
   if (cur.state !== 'draft') throw new AppError('VOUCHER_CHILD_IMMUTABLE', NOT_DRAFT, 409);
   const built = await buildInvoice(trx, ctx.tenantId, input);

@@ -9,11 +9,11 @@ BEGIN
   IF current_setting('app.unposting', true) = 'on' THEN RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END; END IF;
   IF TG_OP <> 'DELETE' THEN
     SELECT state INTO v_state FROM voucher WHERE id = NEW.voucher_id;
-    IF FOUND AND v_state <> 'draft' THEN RAISE EXCEPTION 'VOUCHER_CHILD_IMMUTABLE: chứng từ đã ghi sổ (trạng thái %), hãy bỏ ghi sổ để sửa hóa đơn', v_state USING ERRCODE = 'P0001'; END IF;
+    IF FOUND AND v_state <> 'draft' THEN RAISE EXCEPTION 'VOUCHER_CHILD_IMMUTABLE: chứng từ không còn là nháp (trạng thái %), không sửa được hóa đơn; chứng từ đã ghi sổ thì bỏ ghi sổ trước', v_state USING ERRCODE = 'P0001'; END IF;
   END IF;
   IF TG_OP <> 'INSERT' THEN
     SELECT state INTO v_state FROM voucher WHERE id = OLD.voucher_id;
-    IF FOUND AND v_state <> 'draft' THEN RAISE EXCEPTION 'VOUCHER_CHILD_IMMUTABLE: chứng từ đã ghi sổ (trạng thái %), hãy bỏ ghi sổ để sửa hóa đơn', v_state USING ERRCODE = 'P0001'; END IF;
+    IF FOUND AND v_state <> 'draft' THEN RAISE EXCEPTION 'VOUCHER_CHILD_IMMUTABLE: chứng từ không còn là nháp (trạng thái %), không sửa được hóa đơn; chứng từ đã ghi sổ thì bỏ ghi sổ trước', v_state USING ERRCODE = 'P0001'; END IF;
   END IF;
   RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
 END $$;
@@ -23,7 +23,8 @@ ALTER TABLE uom ADD CONSTRAINT uom_tenant_id_id_key UNIQUE (tenant_id, id);
 ALTER TABLE invoice_group ADD CONSTRAINT invoice_group_tenant_id_id_key UNIQUE (tenant_id, id);
 
 -- 3) Dòng hàng hóa, dịch vụ của hóa đơn. item_id chờ danh mục hàng hóa (GĐ3) nên chưa có khóa ngoại.
--- amount/discount_amount là VND của tiền hàng và chiết khấu theo tỷ giá chứng từ; tax_amount là VND thuế (không kể thuế khấu trừ tại nguồn) của dòng.
+-- amount/discount_amount là VND của tiền hàng và chiết khấu theo tỷ giá chứng từ, chỉ mang tính tham khảo: với ngoại tệ, bút toán còn chia chênh làm tròn ±1 đồng nên tổng các dòng hàng có thể lệch sổ vài đồng.
+-- tax_amount là VND thuế (không kể thuế khấu trừ tại nguồn) của dòng, đã dồn chênh để tổng theo mã thuế đúng bằng dòng thuế đã ghi sổ. Báo cáo và đối chiếu kê khai lấy số ở voucher_invoice, không cộng dòng hàng.
 CREATE TABLE voucher_item_line (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   tenant_id uuid NOT NULL REFERENCES tenant(id),
@@ -73,8 +74,8 @@ CREATE TABLE voucher_invoice (
   party_address text,
   invoice_group_id bigint,
   tax_code_id bigint,
-  base_amount numeric(20,0) NOT NULL,
-  tax_amount numeric(20,0) NOT NULL,
+  base_amount numeric(20,0) NOT NULL CHECK (base_amount >= 0),
+  tax_amount numeric(20,0) NOT NULL CHECK (tax_amount >= 0),
   is_import boolean NOT NULL DEFAULT false,
   adjusts_invoice_id bigint,
   declare_year int,

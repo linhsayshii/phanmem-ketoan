@@ -10,7 +10,7 @@ export interface TaxLineResult { lineNo: number; baseCurrency: string; baseVnd: 
 export interface TaxPosting { code: string; accountCode: string; amountVnd: string; amountCurrency: string; reportTag: string | null } // dương = cùng chiều thuế, âm = phân bổ âm (khấu trừ)
 export interface TaxResult { lines: TaxLineResult[]; postings: TaxPosting[]; roundingVnd: string }
 
-export type TaxErrorCode = 'TAX_CODE_UNKNOWN' | 'TAX_CODE_DUPLICATE' | 'TAX_RATE_MISSING' | 'TAX_DISTRIBUTION_MISSING' | 'TAX_DISTRIBUTION_INVALID' | 'TAX_DECLARED_MISMATCH' | 'TAX_FX_RATE_REQUIRED';
+export type TaxErrorCode = 'TAX_CODE_UNKNOWN' | 'TAX_CODE_DUPLICATE' | 'TAX_RATE_MISSING' | 'TAX_DISTRIBUTION_MISSING' | 'TAX_DISTRIBUTION_INVALID' | 'TAX_DECLARED_MISMATCH' | 'TAX_FX_RATE_REQUIRED' | 'INVOICE_ROUNDING_OVERFLOW';
 export class TaxError extends Error {
   constructor(public code: TaxErrorCode, message: string) { super(message); this.name = 'TaxError'; }
 }

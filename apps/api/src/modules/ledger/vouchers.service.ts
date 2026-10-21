@@ -336,6 +336,9 @@ async function lockAndCheckVersion(trx: Trx, id: string, version: number) {
 
 export async function updateDraft(trx: Trx, id: string, version: number, input: VoucherInput, auth?: PlanAuth): Promise<VoucherDto> {
   assertNotSystemType(input.voucherType);
+  // Hóa đơn nháp chỉ sửa qua /api/invoices: đổi loại sang PKT... qua route chung sẽ để lại dòng hàng, dòng kê khai mồ côi (loại chứng từ không đổi được sau khi tạo, nên đọc không cần khóa).
+  const cur = await trx.selectFrom('voucher').select('voucher_type').where('id', '=', id).executeTakeFirst();
+  if (cur && voucherTypeDef(cur.voucher_type)?.hasItems) throw new AppError('VOUCHER_TYPE_USE_INVOICE', `${voucherTypeDef(cur.voucher_type)!.name} sửa ở màn hình Hóa đơn, không sửa qua chứng từ chung`, 409);
   return updateDraftCore(trx, id, version, input, auth);
 }
 export const updateInvoiceDraft = (trx: Trx, id: string, version: number, input: VoucherInput): Promise<VoucherDto> => {

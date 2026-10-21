@@ -16,7 +16,7 @@ const CHECK_MSG: Record<string, string> = {
 // Lỗi động cơ thuế: thông báo tiếng Việt do động cơ dựng sẵn. Mã thuế không có là 404; cấu hình phân bổ sai/thiếu là 409 (trạng thái danh mục, không phải lỗi đầu vào); còn lại là lỗi đầu vào.
 const TAX_STATUS: Record<TaxErrorCode, number> = {
   TAX_CODE_UNKNOWN: 404, TAX_DISTRIBUTION_MISSING: 409, TAX_DISTRIBUTION_INVALID: 409,
-  TAX_DECLARED_MISMATCH: 400, TAX_RATE_MISSING: 400, TAX_CODE_DUPLICATE: 400, TAX_FX_RATE_REQUIRED: 400,
+  TAX_DECLARED_MISMATCH: 400, TAX_RATE_MISSING: 400, TAX_CODE_DUPLICATE: 400, TAX_FX_RATE_REQUIRED: 400, INVOICE_ROUNDING_OVERFLOW: 400,
 };
 
 export default fp(async (app) => {
