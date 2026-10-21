@@ -39,7 +39,8 @@ beforeAll(async () => {
   await c.query(`SELECT reverse_voucher($1, '2026-03-22', NULL)`, [r1]);
   await c.query(`SELECT reverse_voucher($1, '2026-04-26', NULL)`, [await idOf('Trả tiền thuê văn phòng tháng 4')]);
   await c.query('COMMIT');
-  expect(await migrate(url)).toEqual([OPEN_ITEM_MIGRATION]);
+  copyFileSync(path.join(MIGRATIONS, OPEN_ITEM_MIGRATION), path.join(dir, OPEN_ITEM_MIGRATION)); // chỉ 0028: kiểm thử dữ liệu ngay sau backfill, không phụ thuộc migration sau
+  expect(await migrate(url, dir)).toEqual([OPEN_ITEM_MIGRATION]);
 }, 180_000);
 afterAll(async () => {
   await c?.end();

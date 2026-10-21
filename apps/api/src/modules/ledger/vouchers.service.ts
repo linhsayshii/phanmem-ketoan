@@ -17,6 +17,8 @@ export const lineInput = z.object({
   partyCode: z.string().nullable().optional(), departmentCode: z.string().nullable().optional(), projectCode: z.string().nullable().optional(),
   costItemCode: z.string().nullable().optional(), employeeCode: z.string().nullable().optional(), description: z.string().nullable().optional(),
   dueDate: dateIso.nullable().optional(), extraDims: z.record(z.string()).optional(), bankAccountNo: optText(50),
+  // Kế hoạch đối trừ (thu/chi từ hóa đơn, bù trừ công nợ): khoản công nợ của dòng đối trừ với các khoản này khi ghi sổ.
+  settle: z.array(z.object({ openItemId: z.number().int(), amount: vndAmount.optional(), amountCurrency: foreignAmount.optional() })).max(500).optional(),
 });
 export const voucherInput = z.object({
   voucherType: z.string().min(1), postingDate: dateIso, documentDate: dateIso, description: z.string().nullable().optional(),
@@ -115,6 +117,10 @@ export async function getVoucher(trx: Trx, id: string): Promise<VoucherDto> {
     .select(['l.line_no', 'a.code as account_code', 'a.name as account_name', 'l.debit', 'l.credit', 'l.amount_currency', 'l.fx_rate', 'p.code as party_code', 'p.name as party_name',
       'd.code as department_code', 'pr.code as project_code', 'ci.code as cost_item_code', 'e.code as employee_code', 'l.description', 'l.due_date', 'l.extra_dims', 'lb.account_no as bank_account_no'])
     .where('l.voucher_id', '=', id).where('l.posting_date', '=', v.posting_date).orderBy('l.line_no').execute(); // posting_date: chỉ quét partition của tháng chứng từ
+  // Kế hoạch đối trừ của chứng từ nháp (ghi sổ thì đã áp và xóa)
+  const plans = new Map<number, NonNullable<LineInput['settle']>>();
+  for (const r of await trx.selectFrom('settlement_plan').select(['line_no', 'open_item_id', 'amount', 'amount_currency']).where('voucher_id', '=', id).orderBy('id').execute())
+    plans.set(r.line_no, [...(plans.get(r.line_no) ?? []), { openItemId: r.open_item_id, ...(r.amount !== null && { amount: r.amount }), ...(r.amount_currency !== null && { amountCurrency: r.amount_currency }) }]);
   return {
     id: v.id, voucherType: v.voucher_type, voucherNo: v.voucher_no, seqNo: v.seq_no, postingDate: v.posting_date, documentDate: v.document_date, state: v.state, description: v.description,
     partyCode: v.party_code, partyName: v.party_name, personName: v.person_name, personAddress: v.person_address, attachmentsCount: v.attachments_count,
@@ -124,13 +130,27 @@ export async function getVoucher(trx: Trx, id: string): Promise<VoucherDto> {
     totalDebit: sum(lines.map((l) => l.debit)).toString(),
     lines: lines.map((l) => ({ lineNo: l.line_no, accountCode: l.account_code, accountName: l.account_name, debit: l.debit, credit: l.credit, amountCurrency: l.amount_currency, fxRate: l.fx_rate ?? undefined,
       partyCode: l.party_code, partyName: l.party_name, departmentCode: l.department_code, projectCode: l.project_code, costItemCode: l.cost_item_code, employeeCode: l.employee_code,
-      description: l.description, dueDate: l.due_date, extraDims: l.extra_dims as Record<string, string>, bankAccountNo: l.bank_account_no })),
+      description: l.description, dueDate: l.due_date, extraDims: l.extra_dims as Record<string, string>, bankAccountNo: l.bank_account_no, ...(plans.has(l.line_no) && { settle: plans.get(l.line_no) }) })),
   };
 }
 
 async function insertLines(trx: Trx, tenantId: string, voucherId: string, postingDate: string, lines: ResolvedLine[]) {
   const rows = lines.map((r, i) => ({ tenant_id: tenantId, voucher_id: voucherId, line_no: i + 1, posting_date: postingDate, ...r }));
   for (let i = 0; i < rows.length; i += 1000) await trx.insertInto('voucher_line').values(rows.slice(i, i + 1000)).execute(); // chia lô: một câu lệnh 5.000 dòng vượt 65.535 tham số bind
+}
+// Kế hoạch đối trừ của các dòng: khoản VND theo số tiền, khoản ngoại tệ theo số nguyên tệ (post_voucher áp khi ghi sổ, kiểm cùng tài khoản/đối tượng và số còn lại).
+async function insertPlans(trx: Trx, tenantId: string, voucherId: string, input: SystemVoucherInput) {
+  const rows = input.lines.flatMap((l, i) => (l.settle ?? []).map((s) => {
+    const vnd = (l.currencyCode ?? input.currencyCode) === 'VND';
+    if (vnd ? !s.amount : !s.amountCurrency) throw new AppError('VALIDATION', `Dòng ${i + 1}: đối trừ ${vnd ? 'phải có số tiền' : 'khoản ngoại tệ phải có số nguyên tệ'}`, 400);
+    return { tenant_id: tenantId, voucher_id: voucherId, line_no: i + 1, open_item_id: s.openItemId, amount: s.amount ?? null, amount_currency: s.amountCurrency ?? null };
+  }));
+  if (!rows.length) return;
+  const ids = [...new Set(rows.map((r) => r.open_item_id))];
+  const found = new Set((await trx.selectFrom('open_item').select('id').where(sql<boolean>`id = ANY(${ids}::bigint[])`).execute()).map((r) => r.id));
+  const missing = ids.find((x) => !found.has(x));
+  if (missing !== undefined) throw new AppError('OPEN_ITEM_NOT_FOUND', `Không có khoản công nợ ${missing}`, 404);
+  for (let i = 0; i < rows.length; i += 1000) await trx.insertInto('settlement_plan').values(rows.slice(i, i + 1000)).execute();
 }
 
 const HEADER_VALUE: Record<HeaderField, (i: VoucherInput) => unknown> = {
@@ -269,6 +289,7 @@ async function insertVoucher(trx: Trx, ctx: { tenantId: string; userId: string }
     return getVoucher(trx, existing.id);
   }
   await insertLines(trx, ctx.tenantId, v.id, input.postingDate, lines);
+  await insertPlans(trx, ctx.tenantId, v.id, input);
   return getVoucher(trx, v.id);
 }
 
@@ -290,9 +311,11 @@ export async function updateDraft(trx: Trx, id: string, version: number, input: 
     throw new AppError('VOUCHER_NUMBER_LOCKED', 'Chứng từ đã có số: không đổi loại chứng từ hoặc năm tài chính; hãy Hủy và lập mới', 409);
   const { header, lines } = await prepareVoucher(trx, lookupIn(trx, period.regime), input, period.regime);
   await trx.deleteFrom('voucher_line').where('voucher_id', '=', id).execute();
+  await trx.deleteFrom('settlement_plan').where('voucher_id', '=', id).execute();
   await trx.updateTable('voucher').set({ voucher_type: input.voucherType, posting_date: input.postingDate, document_date: input.documentDate, description: input.description ?? null,
     ...header, currency_code: input.currencyCode, fx_rate: input.fxRate ?? null }).where('id', '=', id).execute();
   await insertLines(trx, v.tenant_id, id, input.postingDate, lines);
+  await insertPlans(trx, v.tenant_id, id, input);
   return getVoucher(trx, id);
 }
 

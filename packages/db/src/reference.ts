@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { PERMISSIONS } from '@kt/domain';
-import { COA_REGIMES, loadCoaTemplate, loadReportTemplates } from '@kt/coa-data';
+import { COA_REGIMES, loadCoaTemplate, loadFxRules, loadReportTemplates } from '@kt/coa-data';
 
 export async function syncReferenceData(adminUrl: string): Promise<void> {
   const client = new pg.Client({ connectionString: adminUrl });
@@ -40,6 +40,14 @@ export async function syncReferenceData(adminUrl: string): Promise<void> {
     await client.query(
       `DELETE FROM report_template WHERE (regime, report_code, line_code) NOT IN (SELECT a, b, c FROM unnest($1::text[], $2::text[], $3::text[]) AS t(a, b, c))`,
       [tpl.map((r) => r.regime), tpl.map((r) => r.reportCode), tpl.map((r) => r.lineCode)]);
+    // Quy tắc tỷ giá theo chế độ (fx-rules.json) cho hàm SQL đối trừ (tài khoản lãi/lỗ của chứng từ CL). DB tạm dừng ở migration trước 0029 (kiểm thử backfill) chưa có bảng.
+    if ((await client.query<{ t: string | null }>(`SELECT to_regclass('public.fx_rule')::text AS t`)).rows[0]!.t) {
+      for (const regime of COA_REGIMES) {
+        const rules = loadFxRules(regime);
+        if (rules) await client.query('INSERT INTO fx_rule(regime, rules) VALUES ($1, $2) ON CONFLICT (regime) DO UPDATE SET rules = EXCLUDED.rules', [regime, JSON.stringify(rules)]);
+        else await client.query('DELETE FROM fx_rule WHERE regime = $1', [regime]);
+      }
+    }
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { await client.end(); }
 }

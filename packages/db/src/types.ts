@@ -158,6 +158,12 @@ export interface SettlementTable {
   id: Generated<number>; tenant_id: string; debit_item_id: number; credit_item_id: number; amount: Numeric; amount_currency: Numeric; settle_date: DateOnly;
   kind: string; fx_voucher_id: string | null; group_id: string; created_by: string | null; created_at: Generated<string>;
 }
+// Kế hoạch đối trừ gửi kèm chứng từ nháp (dòng line_no đối trừ với khoản open_item_id khi ghi sổ, rồi xóa).
+export interface SettlementPlanTable {
+  id: Generated<number>; tenant_id: string; voucher_id: string; line_no: number; open_item_id: number; amount: Numeric | null; amount_currency: Numeric | null;
+}
+// Quy tắc tỷ giá theo chế độ, nạp từ fx-rules.json (bảng tham chiếu dùng chung).
+export interface FxRuleTable { regime: string; rules: ColumnType<unknown, string, string> }
 export interface CashCountTable {
   id: Generated<number>; tenant_id: string; count_date: DateOnly; account_id: number; currency_code: Generated<string>;
   book_balance: Numeric; book_balance_currency: NumericDefault; denominations: JSONColumnType<{ value: string; qty: number }[]>;
@@ -247,6 +253,8 @@ export interface Database {
   opening_balance: OpeningBalanceTable;
   open_item: OpenItemTable;
   settlement: SettlementTable;
+  settlement_plan: SettlementPlanTable;
+  fx_rule: FxRuleTable;
   cash_count: CashCountTable;
   fx_run: FxRunTable;
   closing_step: ClosingStepTable;
