@@ -39,7 +39,7 @@
 ## Cấu trúc file
 
 - `packages/domain/src/`: `voucherTypes.ts` (cấu hình loại chứng từ, mục đích thu/chi, danh sách loại hệ thống), `fx.ts` (quy đổi, bình quân di động), `tax.ts` (động cơ thuế), `invoiceLedger.ts` (dựng bút toán hóa đơn), `vatFormula.ts` (công thức tờ khai), `vnTime.ts` (ngày hôm nay giờ Việt Nam), `permissions.ts` (thêm quyền, `sensitiveDenial` chuyển về đây).
-- `packages/db/migrations/0024_quyen_gd2.sql` … `0038_b02_so_thuan.sql` (bảng "Thứ tự thực hiện").
+- `packages/db/migrations/0024_quyen_gd2.sql` … `0039_b02_so_thuan.sql` (bảng "Thứ tự thực hiện").
 - `apps/api/src/modules/ledger/`: `vouchers.service.ts`, `vouchers.routes.ts` (chứng từ dùng chung theo loại), `openingBalance.ts` (số dư công nợ theo hóa đơn, bỏ ghi sổ số dư).
 - `apps/api/src/modules/cash/` (mới): `books.ts` (số dư tại ngày, sổ quỹ, sổ tiền gửi), `cashCount.ts`, `fx.ts` (tỷ giá theo ngày, tỷ giá xuất quỹ, đánh giá lại), `routes.ts`.
 - `apps/api/src/modules/arap/` (mới): `openItems.ts`, `settlement.ts`, `reports.ts` (sổ chi tiết, tổng hợp, tuổi nợ, đối chiếu, nhắc nợ), `routes.ts`.
@@ -958,7 +958,7 @@ it('bảng kê mua vào: trùng hóa đơn trong tệp và với hóa đơn đã
 Model: sonnet.
 
 **Files:**
-- Create: `packages/db/migrations/0036_khu_trung.sql`, `apps/api/src/modules/tools/dedupe.ts`, `apps/web/src/pages/Dedupe.tsx`, `apps/web/e2e/khu-trung.spec.ts`
+- Create: `packages/db/migrations/0037_khu_trung.sql`, `apps/api/src/modules/tools/dedupe.ts`, `apps/web/src/pages/Dedupe.tsx`, `apps/web/e2e/khu-trung.spec.ts`
 - Modify: `apps/api/src/modules/tools/routes.ts`, `packages/db/src/types.ts`, `apps/web/src/router.tsx`
 - Test: `apps/api/test/dedupe.test.ts`
 
@@ -978,7 +978,7 @@ Model: sonnet.
 Model: sonnet.
 
 **Files:**
-- Create: `packages/db/migrations/0037_soat_loi_gd2.sql`
+- Create: `packages/db/migrations/0038_soat_loi_gd2.sql`
 - Modify: `apps/api/src/modules/tools/dataCheck.ts`, `apps/api/src/modules/tools/routes.ts`
 - Test: `apps/api/test/dataCheck.test.ts`
 
@@ -1009,7 +1009,7 @@ Model: sonnet (rà soát opus: trình bày BCTC theo văn bản). Thêm theo l�
 Căn cứ (đã đối chiếu `~/legal-docs/tt99-2025/tt99-full.txt`): TT 99/2025/TT-BTC, hướng dẫn TK 413 mục 1.5.2 và 4.2 (gạch cuối): chênh lệch tỷ giá do đánh giá lại khoản mục tiền tệ có gốc ngoại tệ cuối kỳ "phải trình bày vào báo cáo kết quả hoạt động kinh doanh theo số thuần giữa tổng số lãi và tổng số lỗ". Phụ lục IV, hướng dẫn lập B02-DN mục 3.7 (Mã số 22, Doanh thu hoạt động tài chính) và 3.8 (Mã số 23, Chi phí tài chính): tổng lãi lớn hơn tổng lỗ đánh giá lại thì mã 22 trình bày số lãi thuần; tổng lỗ lớn hơn tổng lãi thì mã 23 trình bày số lỗ thuần. Chứng từ DG theo TT99 ghi thẳng Có 515 / Nợ 635 (T13, `fx-rules.json` TT99 `revalAccount: null`), nên số gộp hiện nằm cả ở 22 lẫn 23. TT133 không đổi: chênh lệch đánh giá lại đi qua 413 rồi kết chuyển số thuần sang 515 hoặc 635 bằng DG thứ hai.
 
 **Files:**
-- Create: `packages/db/migrations/0038_b02_so_thuan.sql`
+- Create: `packages/db/migrations/0039_b02_so_thuan.sql`
 - Modify: `packages/domain/src/reportFormula.ts`, `apps/api/src/modules/reporting/financial.ts`, `packages/coa-data/data/reports/tt99/B02.csv` (dòng 22, 23), `packages/coa-data/data/reports/status.json` (`note` của TT99)
 - Test: `packages/domain/test/reportFormula.test.ts`, `apps/api/test/financialReports.test.ts` (hoặc tệp kiểm thử B02 sẵn có), `packages/db/test/` (migration)
 
@@ -1020,7 +1020,7 @@ Căn cứ (đã đối chiếu `~/legal-docs/tt99-2025/tt99-full.txt`): TT 99/20
   - hạng tử `REVAL_GAIN`, `REVAL_LOSS`: với N = Σ(Có − Nợ) 515 của nhóm − Σ(Nợ − Có) 635 của nhóm trong kỳ báo cáo, `REVAL_GAIN = max(N, 0)`, `REVAL_LOSS = max(−N, 0)`; luôn ≥ 0, không phụ thuộc `side` của dòng.
   - `Resolver` thêm `reval(): Promise<{ gain: Decimal; loss: Decimal }>` và cờ `excludeReval` trên tham chiếu tài khoản; `saveReportDef` (kiểm công thức) và `drillLine` (truy xuất dòng 22/23 liệt kê cả phần số thuần) nhận hạng tử mới.
 - `B02.csv` TT99: dòng 22 công thức `515!REVAL + REVAL_GAIN`, dòng 23 `635!REVAL + REVAL_LOSS`; dòng 24 (chi phí đi vay) không đổi.
-- `0038_b02_so_thuan.sql`: cập nhật `report_line` của các công ty đã có B02 TT99: dòng 22 từ `515` sang công thức mới, dòng 23 từ `635` sang công thức mới, chỉ khi công thức đang đúng bằng công thức mẫu cũ (đã sửa tay thì giữ nguyên, ghi `audit_event` như 0004 tắt/bật audit nếu cần). `report_template` cập nhật theo đường đồng bộ dữ liệu tham chiếu sẵn có từ `packages/coa-data`.
+- `0039_b02_so_thuan.sql`: cập nhật `report_line` của các công ty đã có B02 TT99: dòng 22 từ `515` sang công thức mới, dòng 23 từ `635` sang công thức mới, chỉ khi công thức đang đúng bằng công thức mẫu cũ (đã sửa tay thì giữ nguyên, ghi `audit_event` như 0004 tắt/bật audit nếu cần). `report_template` cập nhật theo đường đồng bộ dữ liệu tham chiếu sẵn có từ `packages/coa-data`.
 - `status.json` TT99 `note`: thêm câu "B02: 22 và 23 trình bày số thuần chênh lệch đánh giá lại ngoại tệ cuối kỳ (TT99 TK413 mục 1.5.2, 4.2; Phụ lục IV B02 mục 3.7, 3.8); nhóm đánh giá lại gồm DG và CL gỡ đánh giá lại khi đảo khoản công nợ". Giữ `B02: true`.
 
 - [ ] **Step 1: Kiểm thử thất bại:**
@@ -1033,7 +1033,7 @@ it('TT99: chạy lại đánh giá lại (đảo DG cũ, sinh DG mới) chỉ t�
 it('TT99: đảo khoản công nợ đã đánh giá lại ghi ngày trước ngày DG: lãi 600.000 và lỗ 600.000 cùng ngày, mã 22 và 23 không có phần đánh giá lại', async () => {});
 it('TT99: chênh lệch thực hiện CL của đối trừ thông thường vẫn trình bày gộp ở 22/23', async () => {});
 it('mã 30 (lợi nhuận thuần) không đổi so với công thức cũ', async () => {});
-it('0038 cập nhật dòng 22/23 của công ty chưa sửa định nghĩa B02 TT99, giữ nguyên công ty đã sửa tay', async () => {});
+it('0039 cập nhật dòng 22/23 của công ty chưa sửa định nghĩa B02 TT99, giữ nguyên công ty đã sửa tay', async () => {});
 it('TT133: B02 không đổi', async () => {});
 ```
 
@@ -1106,9 +1106,10 @@ Phụ thuộc chính: T4 trước mọi tác vụ dùng loại chứng từ mớ
 | 0033_phan_bo.sql | T20 |
 | 0034_chi_muc_ban_ke_thue.sql | T22 |
 | 0035_to_khai_thue.sql | T23 |
-| 0036_khu_trung.sql | T26 |
-| 0037_soat_loi_gd2.sql | T27 |
-| 0038_b02_so_thuan.sql | T27b |
+| 0036_nhom_dau_hoa_don.sql | T24 |
+| 0037_khu_trung.sql | T26 |
+| 0038_soat_loi_gd2.sql | T27 |
+| 0039_b02_so_thuan.sql | T27b |
 
 ## Đối chiếu nhóm B
 
