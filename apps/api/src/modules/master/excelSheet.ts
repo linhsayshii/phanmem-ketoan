@@ -90,6 +90,7 @@ export async function assertZipSafe(buf: Buffer, limits: Partial<typeof ZIP_LIMI
         size += c.length;
         if (size > cap) { st.destroy(); reject(tooBig(cap === lim.entry ? 'Tệp Excel giải nén quá lớn (một mục vượt 100 MB)' : 'Tệp Excel giải nén quá lớn (vượt 200 MB)')); }
       });
+      // Bắt buộc giữ: sau destroy JSZip còn phát lỗi "stream.push() after EOF" nhiều lần, thiếu listener là lỗi không bắt làm sập tiến trình.
       st.on('error', () => reject(invalid()));
       st.on('end', () => resolve(size));
     });
