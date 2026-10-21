@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Select, Space } from 'antd';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Modal, Select, Space, message } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import type { ColDef, ValueParserParams } from 'ag-grid-community';
 import { D, VND_AMOUNT_RE, formatVnDate, formatVnNumber, parseVnNumber, type Decimal } from '@kt/domain';
@@ -97,9 +97,24 @@ export function SettleDialog({ open, targets, currency, asOf, onApply, onClose }
   useEffect(() => { if (open && target && items.data) setRows(buildRows(items.data, currency, target.settle)[target.side]); }, [open, items.data, currency, target?.index, target?.side]);
   const total = sumPicks(rows); const over = overResidual(rows);
   const line = target?.amount && !fx ? D(target.amount) : null;
+  const apply = () => {
+    if (!target) return;
+    if (over.length > 0) { void message.warning(`Số đối trừ của ${over.map((r) => r.docNo).join(', ')} vượt số còn dư`); return; }
+    onApply(target.index, rows.filter((r) => D(r.pick).gt(0)).map(entryOf)); onClose();
+  };
+  // Ctrl+S áp dụng như bấm nút. Nghe ở pha bắt (capture) để phím không lọt tới Ctrl+S lưu chứng từ phía sau; ô lưới đang gõ dở được chốt (blur) trước khi đọc số.
+  const run = useRef(apply); run.current = apply;
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 's') return;
+      e.preventDefault(); e.stopPropagation(); (document.activeElement as HTMLElement | null)?.blur?.(); setTimeout(() => { run.current(); }, 0);
+    };
+    window.addEventListener('keydown', onKey, true); return () => window.removeEventListener('keydown', onKey, true);
+  }, [open]);
   return (
-    <Modal title="Chọn chứng từ công nợ" open={open} onCancel={onClose} width={760} okText="Áp dụng" cancelText="Đóng" okButtonProps={{ disabled: over.length > 0 || !target }} destroyOnHidden
-      onOk={() => { if (target) { onApply(target.index, rows.filter((r) => D(r.pick).gt(0)).map(entryOf)); onClose(); } }}>
+    <Modal title="Chọn chứng từ công nợ" open={open} onCancel={onClose} width={760} okText="Áp dụng (Ctrl+S)" cancelText="Đóng" okButtonProps={{ disabled: over.length > 0 || !target }} destroyOnHidden
+      onOk={apply}>
       <Space direction="vertical" style={{ width: '100%' }}>
         {targets.length > 1 && <Select<number> aria-label="Dòng chứng từ" style={{ width: 360 }} value={target?.index ?? null} onChange={setIndex}
           options={targets.map((t) => ({ value: t.index, label: `Dòng ${t.index + 1}: TK ${t.accountCode}${t.partyCode ? ` - ${t.partyCode}` : ''}` }))} />}

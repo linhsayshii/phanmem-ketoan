@@ -14,7 +14,7 @@ const K = (accountCode: string, partyCode: string, debit = '0', credit = '0', mo
 const BANK1 = '0022001'; const BANK2 = '0022002'; // hai tài khoản ngân hàng USD trên TK 1122 (TT133)
 type Res = { statusCode: number; body: string; json: () => any }; // eslint-disable-line @typescript-eslint/no-explicit-any
 const err = (r: Res) => [r.statusCode, r.json().error?.code];
-type RunOut = { runId: number; voucherIds: string[]; reversedVoucherIds: string[]; unchanged: boolean; staleRevaluations: string[]; warnings: string[] };
+type RunOut = { runId: number; voucherIds: string[]; reversedVoucherIds: string[]; unchanged: boolean; staleRevaluations: string[]; warnings: string[]; rates: object[] };
 
 // Mỗi kiểm thử một công ty riêng (năm 2026, TT133 mặc định), đối tượng KH001, KH002, NCC001; tỷ giá chuyển khoản trung bình USD 31/01 = 25.600.
 async function tenant(regime: 'TT133' | 'TT99' = 'TT133') {
@@ -325,6 +325,7 @@ describe('đánh giá lại số dư ngoại tệ cuối kỳ', () => {
       ['Tỷ giá mua của USD lấy ngày 30/01/2026, trước ngày đánh giá lại 31/01/2026', 'Tỷ giá bán của USD lấy ngày 30/01/2026, trước ngày đánh giá lại 31/01/2026']]);
     const run = await t.revalOk();
     expect(run.warnings).toEqual(dry.warnings);
+    expect(run.rates).toEqual(dry.rates); // bản chạy trả cùng tỷ giá áp dụng (kèm ngày tỷ giá) như bản xem trước
     expect((await sql<{ w: string[] }>`SELECT params->'warnings' AS w FROM fx_run WHERE id = ${run.runId}`.execute(ctx.t.admin)).rows[0]!.w).toEqual(dry.warnings);
     // tỷ giá nhập tay của loại tiền dùng cho cả tài sản và nợ phải trả
     const given = (await t.reval({ rates: { USD: '25100' } }, '?dryRun=true')).json() as { lines: { rateType: string; difference: string }[]; rates: object[]; warnings: string[] };
@@ -521,5 +522,14 @@ describe('đánh giá lại số dư ngoại tệ cuối kỳ', () => {
     expect((await t.call('GET', '/api/fx/runs?kind=outflow')).json()).toEqual([]);
     expect(((await t.call('GET', '/api/fx/runs?kind=revaluation&limit=1')).json() as unknown[]).length).toBe(1);
     expect(err(await t.call('GET', '/api/fx/runs', undefined, await t.userWith('xem', [])))).toEqual([403, 'FORBIDDEN']);
+    expect(runs.every((r) => !('params' in r))).toBe(true); // params có thể mang số chứng từ trong cảnh báo: không lộ ra route đọc
+  });
+
+  it('GET /api/fx/runs: công ty khác không thấy nhật ký của công ty này', async () => {
+    const a = await tenant(); const b = await tenant();
+    await a.usdInvoice('2026-01-10', '1000', '25000');
+    const run = await a.revalOk();
+    expect(((await a.call('GET', '/api/fx/runs')).json() as { id: number }[]).map((r) => r.id)).toEqual([run.runId]);
+    expect((await b.call('GET', '/api/fx/runs')).json()).toEqual([]);
   });
 });

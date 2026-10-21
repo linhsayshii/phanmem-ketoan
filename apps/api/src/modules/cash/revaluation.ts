@@ -198,7 +198,7 @@ export async function runRevaluation(trx: Trx, ctx: Ctx, input: Input) {
   // Đánh giá lại các ngày sau tính trên số dư (khoản con) cũ: chạy lại theo thứ tự ngày.
   const staleRevaluations = c.unchanged ? [] : (await trx.selectFrom('fx_run').select('run_date').distinct().where('kind', '=', 'revaluation').where('run_date', '>', date)
     .orderBy('run_date').execute()).map((r) => r.run_date);
-  return { runId: run.id, date, voucherIds, reversedVoucherIds: reversed, unchanged: c.unchanged, staleRevaluations, totals: c.totals, warnings: c.warnings };
+  return { runId: run.id, date, voucherIds, reversedVoucherIds: reversed, unchanged: c.unchanged, staleRevaluations, totals: c.totals, rates: c.rates, warnings: c.warnings };
 }
 
 // Khoản gốc đã đóng bằng đảo chứng từ mà còn khoản con dư ≠ 0 (khoản con của DG vừa ghi, hoặc bản đảo của khoản con cũ đã đóng khi đảo khoản gốc):

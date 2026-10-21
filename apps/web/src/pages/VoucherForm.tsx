@@ -16,7 +16,7 @@ import { SettleDialog, type SettleEntry, type SettleTarget } from './settleCommo
 // Các trường *Name chỉ để hiển thị; còn lại (employeeCode, dueDate, extraDims...) được giữ nguyên khi lưu lại để không mất dữ liệu chứng từ lập từ nơi khác.
 // amountCurrency (nguyên tệ, có dấu), fxRate, bankAccountNo (tài khoản ngân hàng ghi đè của dòng) và settle (kế hoạch đối trừ công nợ) chỉ gửi khi có ý nghĩa, xem `linesBody`.
 export interface Line { lineNo?: number; accountCode: string; accountName?: string; partyName?: string | null; description: string | null; debit: string; credit: string;
-  amountCurrency?: string | undefined; fxRate?: string | undefined; bankAccountNo?: string | null | undefined; settle?: SettleEntry[] | undefined; partyCode: string | null; departmentCode: string | null; projectCode: string | null; costItemCode: string | null }
+  amountCurrency?: string | undefined; fxRate?: string | undefined; bankAccountNo?: string | null | undefined; settle?: SettleEntry[] | undefined; settleSig?: string | undefined; partyCode: string | null; departmentCode: string | null; projectCode: string | null; costItemCode: string | null }
 interface Voucher { id: string; voucherType: string; voucherNo: string | null; postingDate: string; documentDate: string; state: string; description: string | null; partyCode: string | null;
   personName?: string | null; personAddress?: string | null; attachmentsCount?: number | null; bankAccountNo?: string | null; counterBankAccountNo?: string | null; partyBankAccountNo?: string | null;
   dueDate?: string | null; purpose?: string | null; periodStatus: 'open' | 'soft_locked' | 'hard_locked'; hashed: boolean;
@@ -31,7 +31,7 @@ export const emptyLine = (): Line => ({ accountCode: '', description: null, debi
 export const totals = (lines: Line[]) => ({ debit: sum(lines.map((l) => l.debit || '0')).toString(), credit: sum(lines.map((l) => l.credit || '0')).toString() });
 export const cleanLines = (lines: Line[]) => lines.filter((l) => l.accountCode.trim() !== '')
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  .map(({ accountName, partyName, lineNo, ...rest }) => ({ ...rest, debit: rest.debit || '0', credit: rest.credit || '0' }));
+  .map(({ accountName, partyName, lineNo, settleSig, ...rest }) => ({ ...rest, debit: rest.debit || '0', credit: rest.credit || '0' }));
 
 // Phiếu thu/chi, giấy báo: nhập số tiền ở dòng quỹ/ngân hàng (dòng 1) thì dòng đối ứng đầu tiên (dòng 2) lấy cùng số tiền ở bên ngược lại,
 // khi ô đó còn 0 hoặc đang bằng số tiền cũ của dòng 1 (đã sửa tay khác đi thì không đè). `last` là số tiền dòng 1 lần trước:
@@ -81,6 +81,9 @@ const linesBody = (rows: Line[], f: FormValues) => cleanLines(rows).map(({ amoun
 
 // Loại chứng từ chọn được khoản công nợ để đối trừ khi ghi sổ (kế hoạch đối trừ ở dòng).
 const SETTLE_TYPES = ['PT', 'PC', 'BC', 'BN', 'BT'];
+// Chữ ký các trường làm kế hoạch đối trừ hết hiệu lực khi đổi: tài khoản, đối tượng hiệu lực (dòng, không có thì tiêu đề), hai bên số tiền, nguyên tệ và loại tiền.
+// Chỉ để so sánh trong trang, không gửi lên máy chủ (cleanLines bỏ đi).
+export const settleSig = (l: Line, headerParty: string | null | undefined, currency: string) => JSON.stringify([l.accountCode, l.partyCode || headerParty || '', l.debit || '0', l.credit || '0', l.amountCurrency ?? '', currency]);
 // Dòng công nợ (131/331) có thể gắn đối trừ; bên khoản cần liệt kê ngược với bên dòng: dòng Có 131 thu tiền hóa đơn (khoản Nợ), dòng Nợ 331 trả tiền hóa đơn mua (khoản Có).
 // Dòng chưa nhập số tiền thì theo bản chất tài khoản: 131 là khoản Nợ, 331 là khoản Có.
 export function settleTargets(rows: Line[], headerParty: string | null | undefined): SettleTarget[] {
@@ -148,7 +151,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     if (!v.data) return;
     // Tài khoản ngân hàng dòng trùng tiêu đề là do máy chủ suy ra: bỏ đi để đổi tài khoản ở tiêu đề thì các dòng đổi theo.
     const derived = (b?: string | null) => !!b && (b === v.data.bankAccountNo || b === v.data.counterBankAccountNo);
-    const rows = v.data.lines.map((l) => (derived(l.bankAccountNo) ? { ...l, bankAccountNo: null } : l));
+    const rows = v.data.lines.map((l) => ({ ...l, ...(derived(l.bankAccountNo) && { bankAccountNo: null }), ...(!!l.settle?.length && { settleSig: settleSig(l, v.data.partyCode, v.data.currencyCode) }) }));
     form.setFieldsValue({ ...v.data, postingDate: dayjs(v.data.postingDate), documentDate: dayjs(v.data.documentDate), dueDate: v.data.dueDate ? dayjs(v.data.dueDate) : null, fxRate: v.data.fxRate });
     const all = v.data.state === 'draft' ? [...rows, emptyLine()] : rows;
     baseline.current = JSON.stringify(cleanLines(all)); lastCash.current = (cashSide && all[0]?.[cashSide]) || '0'; lastParty.current = v.data.partyCode;
@@ -159,6 +162,16 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const currency = Form.useWatch('currencyCode', form) ?? 'VND';
   const bankAccountNo = Form.useWatch('bankAccountNo', form);
   const headerParty = Form.useWatch('partyCode', form);
+  // Kế hoạch đối trừ chỉ đúng với dòng như lúc chọn: đổi tài khoản, đối tượng, số tiền, nguyên tệ hoặc loại tiền thì bỏ kế hoạch của dòng đó và báo người dùng chọn lại.
+  // Đọc tiêu đề trực tiếp từ form (đồng bộ ngay sau setFieldsValue) để lần tải chứng từ không bị coi là đổi.
+  useEffect(() => {
+    const party = form.getFieldValue('partyCode') as string | null | undefined; const cur = (form.getFieldValue('currencyCode') as string | undefined) ?? 'VND';
+    const stale = linesRef.current.flatMap((l, i) => (l.settle?.length && l.settleSig !== undefined && l.settleSig !== settleSig(l, party, cur) ? [i] : []));
+    if (stale.length === 0) return;
+    const next = linesRef.current.map((l, i) => (stale.includes(i) ? { ...l, settle: undefined, settleSig: undefined } : l));
+    setAllLines(next); setRowsDirty(JSON.stringify(cleanLines(next)) !== baseline.current);
+    void message.warning(`Đã bỏ kế hoạch đối trừ của dòng ${stale.map((i) => i + 1).join(', ')} vì dòng đã đổi (tài khoản, đối tượng, số tiền hoặc loại tiền); chọn lại chứng từ công nợ`);
+  }, [lines, currency, headerParty, form, setAllLines]);
   // Tồn quỹ (tiền mặt) hoặc số dư tiền gửi (đã chọn tài khoản ngân hàng) cuối ngày hạch toán; chưa đủ dữ kiện hoặc không xem được thì không hiện.
   const cashAccount = eff.moneyKind === 'cash' ? lines.find((l) => l.accountCode.startsWith('111'))?.accountCode : eff.moneyKind === 'bank' && bankAccountNo ? '112' : undefined;
   const cashBalance = useQuery({ queryKey: ['cash-balance', cashAccount, bankAccountNo, currency, postingIso], enabled: !!cashAccount && !!postingIso && can('voucher.view'), retry: false,
@@ -355,7 +368,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
           onChange={(code) => { if (code !== null) { const copy = [...linesRef.current]; copy[lookup.row] = { ...copy[lookup.row]!, [lookup.col]: code }; changeRows(copy); } setLookup(null); }} /></div>}
       </Modal>
       {maySettle && <SettleDialog open={settleOpen} targets={settleList} currency={currency} asOf={postingIso} onClose={() => setSettleOpen(false)}
-        onApply={(index, settle) => changeRows(linesRef.current.map((l, i) => (i === index ? { ...l, settle } : l)))} />}
+        onApply={(index, settle) => changeRows(linesRef.current.map((l, i) => (i === index ? { ...l, settle, settleSig: settle.length ? settleSig(l, form.getFieldValue('partyCode') as string | null | undefined, currency) : undefined } : l)))} />}
       <Modal open={!!reverse} title="Lập chứng từ đảo" okText="Lập chứng từ đảo" cancelText="Không" destroyOnHidden onCancel={() => setReverse(null)}
         okButtonProps={{ loading: action.isPending, disabled: !reverse?.date }}
         onOk={() => { if (reverse) action.mutate({ act: 'reverse', body: { postingDate: iso(reverse.date), ...(reverse.description.trim() ? { description: reverse.description.trim() } : {}) } }); }}>

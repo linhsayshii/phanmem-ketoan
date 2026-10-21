@@ -57,7 +57,12 @@ export default function SettlementPage() {
 
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['open-items'] }), qc.invalidateQueries({ queryKey: ['settlements'] })]);
   const settle = async () => {
-    if (!balanced || busy || !canCreate) return;
+    if (busy) return;
+    // Nút Đối trừ đã khóa theo các điều kiện này; Ctrl+S đi qua đây nên phải nói lý do thay vì lặng lẽ bỏ qua.
+    const why = !canCreate ? 'Bạn không có quyền đối trừ' : tab !== 'pick' ? 'Chuyển sang thẻ "Chọn để đối trừ" để đối trừ'
+      : !f.partyCode ? 'Chọn đối tượng (F4) để xem các khoản còn dư' : over.length > 0 ? 'Có khoản đối trừ vượt số còn dư'
+      : totalD.isZero() && totalC.isZero() ? 'Chưa chọn khoản nào để đối trừ' : !balanced ? `Tổng Nợ chọn khác tổng Có chọn, chênh lệch ${formatAmount(diff, fx)}` : null;
+    if (why) { void message.warning(why); return; }
     const pairs = pairOff(debit, credit); setBusy(true); setResult(null);
     const fxIds = new Set<string>(); let done = 0; let failed: string | null = null;
     try {
@@ -84,7 +89,7 @@ export default function SettlementPage() {
   const autoSettle = () => {
     const date = settleDate ?? todayVn();
     Modal.confirm({ title: 'Đối trừ tự động', okText: 'Thực hiện', cancelText: 'Hủy',
-      content: `Ghép các khoản Nợ và Có của TK ${f.accountCode}${f.partyCode ? `, đối tượng ${f.partyCode}` : ', mọi đối tượng'} đã ghi sổ đến ngày ${formatVnDate(date)} theo thứ tự ngày chứng từ.`,
+      content: `Ghép các khoản Nợ và Có của TK ${f.accountCode} (kể cả tài khoản con), mọi loại tiền${f.partyCode ? `, đối tượng ${f.partyCode}` : ', mọi đối tượng'}, đã ghi sổ đến ngày ${formatVnDate(date)} theo thứ tự ngày chứng từ.`,
       onOk: async () => {
         try {
           const r = await api<{ groups: number; more: boolean }>('/api/settlements/auto', { method: 'POST', json: { accountCode: f.accountCode, ...(f.partyCode ? { partyCode: f.partyCode } : {}), date } });

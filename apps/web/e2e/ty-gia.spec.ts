@@ -14,12 +14,14 @@ async function signIn(page: Page, request: APIRequestContext) {
 
 test('Công cụ tỷ giá: chạy tỷ giá xuất quỹ ghi nhật ký; đánh giá lại phải xem trước mới chạy được', async ({ page, request }) => {
   await signIn(page, request);
-  // Dữ liệu E2E dùng chung giữa các lần chạy: mỗi lần một khách hàng riêng, ngày tháng 12 ngẫu nhiên và tỷ giá cố định theo ngày (chạy lại cùng ngày không đụng tỷ giá cũ).
-  const stamp = Date.now(); const day = String(2 + (Math.floor(stamp / 1000) % 27)).padStart(2, '0'); const iso = `2026-12-${day}`; const vn = `${day}/12/2026`;
-  const code = `KHTG${stamp}`; const rate = String(25000 + Number(day) * 10);
+  // Dữ liệu E2E dùng chung với các spec khác. Cách ly: mỗi lần một khách hàng riêng, ngoại tệ USD (không spec nào khác dùng), và MỘT ngày cố định 31/12/2026:
+  // các spec khác chỉ ghi và đọc ngày 1-28 tháng 12 (VND), nên chứng từ DG của lần chạy này không đụng dữ liệu của chúng; chạy lại cùng ngày thì chứng từ DG cũ bị đảo và thay bằng bản mới,
+  // nên số chứng từ dùng chung không phình ra theo số lần chạy. Spec này chạy thứ tự nào cũng được.
+  const stamp = Date.now(); const iso = '2026-12-31'; const vn = '31/12/2026';
+  const code = `KHTG${stamp}`; const rate = '25500';
   expect((await request.post('/api/catalogs/party', { data: { code, name: `Khách tỷ giá ${stamp}`, is_customer: true } })).ok()).toBeTruthy();
   const rateRow = await request.post('/api/catalogs/exchange_rate', { data: { currency_code: 'USD', rate_date: iso, rate_type: 'transfer_avg', rate } });
-  expect([201, 409], await rateRow.text()).toContain(rateRow.status());
+  expect([201, 409], await rateRow.text()).toContain(rateRow.status()); // 409: tỷ giá ngày này đã có từ lần chạy trước
   // Hóa đơn bán chịu 100 USD, tỷ giá ghi sổ 25.000: cuối ngày tỷ giá cao hơn nên có chênh lệch đánh giá lại.
   const invoice = await request.post('/api/vouchers', { data: { voucherType: 'PKT', postingDate: iso, documentDate: iso, description: `Bán chịu USD ${stamp}`, currencyCode: 'USD', fxRate: '25000', autoPost: true,
     lines: [{ accountCode: '131', partyCode: code, debit: '2500000', credit: '0', amountCurrency: '100' }, { accountCode: '5113', debit: '0', credit: '2500000', amountCurrency: '-100' }] } });

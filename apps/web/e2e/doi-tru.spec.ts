@@ -95,8 +95,10 @@ test('Đối trừ chứng từ: chọn khoản bằng bàn phím, Ctrl+S, hủy
   await expect(dialog.getByText(rcpt.voucherNo)).toHaveCount(0); // chỉ khoản Nợ của đối tượng, TK 131: phiếu thu cũ (khoản Có) không có trong danh sách
   await pick.locator('[col-id="pick"]').click(); await page.keyboard.press('Enter'); await page.keyboard.press('Enter');
   await expect(dialog.getByText(/Tổng chọn đối trừ/)).toContainText('3.000.000');
-  await dialog.getByRole('button', { name: 'Áp dụng' }).click();
+  await expect(dialog.getByRole('button', { name: /^Áp dụng/ })).toBeEnabled();
+  await page.keyboard.press('Control+s'); // Ctrl+S trong hộp thoại = Áp dụng, không lưu chứng từ phía sau
   await expect(dialog).toBeHidden(); // phím tắt Ctrl+S bị bỏ qua khi tiêu điểm còn trong hộp thoại đang đóng
+  await expect(page.locator('.ant-message').getByText('Đã lưu')).toHaveCount(0);
   await page.keyboard.press('Control+s');
   await expect(page.locator('.ant-message').getByText('Đã lưu')).toBeVisible();
   await expect(page).toHaveURL(/PT\/[0-9a-f-]{36}$/);

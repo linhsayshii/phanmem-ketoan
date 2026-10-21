@@ -12,7 +12,7 @@ interface GridColumn {
   headerName?: string; field?: string; editable?: boolean; valueGetter?: (p: { data: unknown }) => unknown; valueFormatter?: (p: { value: unknown }) => string;
   valueParser?: (p: { newValue: string; oldValue: unknown; data: unknown }) => unknown;
 }
-// Lưới giả: mỗi dòng một khối, mỗi cột một ô mang tên cột; cột sửa được là ô nhập (Enter chốt qua valueParser như AG Grid, ghi thẳng vào đối tượng dòng).
+// Lưới giả: mỗi dòng một khối, mỗi cột một ô mang tên cột; cột sửa được là ô nhập (Enter hoặc rời ô chốt qua valueParser như AG Grid, ghi thẳng vào đối tượng dòng).
 vi.mock('@kt/ui', async () => {
   const { useState } = await import('react');
   return {
@@ -25,7 +25,7 @@ vi.mock('@kt/ui', async () => {
               const field = c.field;
               const commit = (text: string) => { const next = c.valueParser ? c.valueParser({ newValue: text, oldValue: r[field], data: r }) : text; if (next !== r[field]) { r[field] = next; onRowsChange([...rows]); } };
               return <input key={`${c.headerName}-${String(raw)}`} data-col={c.headerName} aria-label={`${c.headerName} ${String(r['docNo'])}`} defaultValue={String(raw ?? '')}
-                onKeyDown={(e) => { if (e.key === 'Enter') commit(e.currentTarget.value); }} />;
+                onKeyDown={(e) => { if (e.key === 'Enter') commit(e.currentTarget.value); }} onBlur={(e) => commit(e.currentTarget.value)} />;
             }
             return <span key={c.headerName} data-col={c.headerName}>{c.valueFormatter ? c.valueFormatter({ value: raw }) : String(raw ?? '')}</span>;
           })}
@@ -151,6 +151,50 @@ describe('Đối trừ chứng từ', () => {
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await screen.findByText(/Đã đối trừ 1 cặp/);
     expect(posts()).toEqual([{ debitItemId: 1, creditItemId: 2, amount: '600000' }]);
+  });
+
+  it('Ctrl+S khi ô lưới đang gõ dở (chưa Enter): chốt ô trước rồi mới đối trừ', async () => {
+    renderPage(); pickParty(); await debitSide().findByText('HD001');
+    await enter('HD001', '600000');
+    const input = screen.getByLabelText('Số đối trừ PT001'); await userEvent.clear(input); await userEvent.type(input, '600000');
+    expect(input).toHaveFocus();
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await screen.findByText(/Đã đối trừ 1 cặp/);
+    expect(posts()).toEqual([{ debitItemId: 1, creditItemId: 2, amount: '600000' }]);
+  });
+
+  it('Ctrl+S khi Nợ chọn khác Có chọn: không đối trừ, báo lý do', async () => {
+    renderPage(); pickParty(); await debitSide().findByText('HD001');
+    await enter('HD001', '600000'); await enter('PT001', '500000');
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    expect(await screen.findByText(/Tổng Nợ chọn khác tổng Có chọn, chênh lệch 100\.000/)).toBeInTheDocument();
+    expect(posts()).toHaveLength(0);
+  });
+
+  it('Ctrl+S ở thẻ Đã đối trừ không đối trừ dù lựa chọn ở thẻ Chọn vẫn còn, và báo phải quay lại thẻ Chọn', async () => {
+    renderPage(); pickParty(); await debitSide().findByText('HD001');
+    await enter('HD001', '600000'); await enter('PT001', '');
+    expect(settleButton()).toBeEnabled();
+    await userEvent.click(screen.getByRole('tab', { name: 'Đã đối trừ' }));
+    expect(settleButton()).toBeDisabled();
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    expect(await screen.findByText('Chuyển sang thẻ "Chọn để đối trừ" để đối trừ')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 20)); // chờ lệnh hoãn của Ctrl+S (setTimeout 0)
+    expect(posts()).toHaveLength(0);
+    await userEvent.click(screen.getByRole('tab', { name: 'Chọn để đối trừ' })); // quay lại: vẫn đối trừ được
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await screen.findByText(/Đã đối trừ 1 cặp/);
+    expect(posts()).toHaveLength(1);
+  });
+
+  it('Đối trừ tự động: lời xác nhận nói rõ ghép mọi loại tiền của tài khoản, không riêng loại tiền đang chọn', async () => {
+    renderPage(); pickParty(); await debitSide().findByText('HD001');
+    fireEvent.change(screen.getByLabelText('Loại tiền (F4)'), { target: { value: 'USD' } });
+    await userEvent.click(screen.getByRole('button', { name: 'Đối trừ tự động' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toMatch(/TK 131 \(kể cả tài khoản con\), mọi loại tiền, đối tượng KH001/);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Hủy' }));
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
   it('Ngày đối trừ chọn tay thì gửi kèm date', async () => {

@@ -1,25 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { message } from 'antd';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, createRouter } from '@tanstack/react-router';
 import type * as ReactRouter from '@tanstack/react-router';
 import { todayVn } from '@kt/domain';
-import VoucherForm, { settleTargets, emptyLine, type Line } from '../src/pages/VoucherForm.js';
+import VoucherForm, { settleSig, settleTargets, emptyLine, type Line } from '../src/pages/VoucherForm.js';
 import VoucherList from '../src/pages/VoucherList.js';
 import { routeTree } from '../src/router.js';
 
 const mocks = vi.hoisted(() => {
   class ApiError extends Error { constructor(public code: string, message: string, public status = 409) { super(message); } }
-  return { api: vi.fn(), ApiError, route: { type: 'PT', id: 'moi' }, navigate: vi.fn() };
+  return { api: vi.fn(), ApiError, route: { type: 'PT', id: 'moi' }, navigate: vi.fn(), lineGrid: null as null | { rows: object[]; onRowsChange: (r: object[]) => void } };
 });
 vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: mocks.ApiError }));
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: () => true, loading: false }) }));
 // Lưới AG Grid nặng trong jsdom: thay bằng danh sách mã tài khoản để quan sát dòng đối ứng được điền.
 vi.mock('@kt/ui', () => ({
   // Hộp thoại Chọn chứng từ công nợ dùng cùng lưới: dòng có docNo là khoản công nợ, nút "Chọn <số>" đặt số đối trừ bằng đủ số còn dư (như Enter ở ô trống).
-  KeyboardGrid: ({ rows, onRowsChange }: { rows: { accountCode?: string; docNo?: string; remain?: string }[]; onRowsChange: (r: object[]) => void }) => <ul>{rows.map((r, i) =>
-    <li key={i} data-testid={r.docNo ? `khoan-${r.docNo}` : `tk-${i}`}>{r.accountCode}{r.docNo && <button onClick={() => onRowsChange(rows.map((x) => (x === r ? { ...x, pick: x.remain } : x)))}>Chọn {r.docNo}</button>}</li>)}</ul>,
+  // Nút "Vượt <số>" đặt số đối trừ lớn hơn số còn dư. Lưới dòng chứng từ (dòng không có docNo) lưu bản mới nhất vào mocks.lineGrid để kiểm thử sửa dòng.
+  KeyboardGrid: ({ rows, onRowsChange }: { rows: { accountCode?: string; docNo?: string; remain?: string }[]; onRowsChange: (r: object[]) => void }) => {
+    if (rows[0] && rows[0].docNo === undefined) mocks.lineGrid = { rows, onRowsChange };
+    return <ul>{rows.map((r, i) =>
+      <li key={i} data-testid={r.docNo ? `khoan-${r.docNo}` : `tk-${i}`}>{r.accountCode}{r.docNo && <button onClick={() => onRowsChange(rows.map((x) => (x === r ? { ...x, pick: x.remain } : x)))}>Chọn {r.docNo}</button>}
+        {r.docNo && <button onClick={() => onRowsChange(rows.map((x) => (x === r ? { ...x, pick: `${x.remain}1` } : x)))}>Vượt {r.docNo}</button>}</li>)}</ul>;
+  },
   LookupSelect: () => null, VnNumberInput: ({ scale, ...p }: { scale?: number; value?: string }) => <input {...p} value={p.value ?? ''} readOnly data-scale={scale} />, useHotkeys: () => undefined, useRememberedFilter: (_k: string, init: unknown) => [init, () => undefined],
   useUnsavedChanges: () => (proceed: () => void) => proceed(),
 }));
@@ -164,13 +170,96 @@ describe('Chọn chứng từ công nợ trên phiếu thu/chi', () => {
     expect(within(dialog).getByText(/Tổng chọn đối trừ/)).toHaveTextContent('600.000');
     const q = new URLSearchParams(mocks.api.mock.calls.map(([p]) => String(p)).find((p) => p.startsWith('/api/open-items'))!.split('?')[1]);
     expect([q.get('accountCode'), q.get('partyCode'), q.get('onlyOpen'), q.get('asOf')]).toEqual(['131', 'KH01', 'true', '2026-01-05']);
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Áp dụng' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: /^Áp dụng/ }));
     await vi.waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument(), slow);
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await vi.waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/vouchers/v1', expect.objectContaining({ method: 'PUT' })), slow);
     const put = mocks.api.mock.calls.find(([, init]) => init?.method === 'PUT')![1] as { json: { lines: { accountCode: string; settle?: object[] }[] } };
     expect(put.json.lines.find((l) => l.accountCode === '131')?.settle).toEqual([{ openItemId: 7, amount: '600000' }]);
     expect(put.json.lines.find((l) => l.accountCode === '1111')).not.toHaveProperty('settle');
+  });
+
+  // Mở hộp thoại, chọn HD01 (đủ số còn dư) và áp dụng: dòng 131 mang kế hoạch đối trừ.
+  const planApplied = async (voucher: object = draftPt) => {
+    mocks.api.mockImplementation(async (path: string) => {
+      if (path === '/api/fiscal-years') return years;
+      if (path === '/api/vouchers/v1') return voucher;
+      return path.startsWith('/api/open-items') ? [item] : [];
+    });
+    renderForm();
+    const open = await screen.findByRole('button', { name: /Chọn chứng từ công nợ/ }, slow);
+    await vi.waitFor(() => expect(open).toBeEnabled(), slow);
+    await userEvent.click(open);
+    const dialog = await screen.findByRole('dialog', {}, slow);
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Chọn HD01' }, slow));
+    return dialog;
+  };
+  const putLines = async () => {
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await vi.waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/vouchers/v1', expect.objectContaining({ method: 'PUT' })), slow);
+    return (mocks.api.mock.calls.find(([, init]) => init?.method === 'PUT')![1] as { json: { lines: { accountCode: string; settle?: object[] }[] } }).json.lines;
+  };
+  const editLine = (index: number, patch: object) => act(() => { const g = mocks.lineGrid!; g.onRowsChange(g.rows.map((r, i) => (i === index ? { ...r, ...patch } : r))); });
+  const WARN = /Đã bỏ kế hoạch đối trừ của dòng 2/;
+
+  it('Ctrl+S trong hộp thoại áp dụng kế hoạch như nút Áp dụng và không lưu chứng từ phía sau', async () => {
+    const dialog = await planApplied();
+    fireEvent.keyDown(dialog, { key: 's', ctrlKey: true });
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument(), slow);
+    expect(mocks.api).not.toHaveBeenCalledWith('/api/vouchers/v1', expect.objectContaining({ method: 'PUT' }));
+    expect((await putLines()).find((l) => l.accountCode === '131')?.settle).toEqual([{ openItemId: 7, amount: '600000' }]);
+  });
+
+  it('Ctrl+S khi số đối trừ vượt số còn dư: báo, hộp thoại vẫn mở, chưa ghi kế hoạch', async () => {
+    const dialog = await planApplied();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Vượt HD01' }));
+    expect(within(dialog).getByRole('button', { name: /^Áp dụng/ })).toBeDisabled();
+    fireEvent.keyDown(dialog, { key: 's', ctrlKey: true });
+    expect(await screen.findByText(/Số đối trừ của HD01 vượt số còn dư/, { selector: '.ant-message-notice-content *' }, slow)).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('settleSig: khác nhau khi đổi tài khoản, đối tượng (dòng hoặc tiêu đề), Nợ, Có, nguyên tệ hoặc loại tiền', () => {
+    const base = ln('131', '0', '600000', 'KH01');
+    const sig = settleSig(base, 'KH09', 'VND');
+    expect(settleSig({ ...base }, 'KH01', 'VND')).toBe(sig); // đối tượng dòng đè tiêu đề
+    for (const other of [settleSig({ ...base, accountCode: '1311' }, 'KH09', 'VND'), settleSig({ ...base, partyCode: 'KH02' }, 'KH09', 'VND'), settleSig({ ...base, partyCode: null }, 'KH09', 'VND'),
+      settleSig({ ...base, credit: '500000' }, 'KH09', 'VND'), settleSig({ ...base, debit: '1' }, 'KH09', 'VND'), settleSig({ ...base, amountCurrency: '-24' }, 'KH09', 'VND'), settleSig(base, 'KH09', 'USD')]) expect(other).not.toBe(sig);
+  });
+
+  describe('đổi dòng sau khi chọn thì bỏ kế hoạch đối trừ và báo', () => {
+    afterEach(() => { message.destroy(); mocks.lineGrid = null; });
+    it.each([['số tiền', { credit: '500000' }], ['tài khoản', { accountCode: '1311' }], ['đối tượng', { partyCode: 'KH02' }], ['nguyên tệ', { amountCurrency: '-24' }]])('đổi %s', async (_name, patch) => {
+      const dialog = await planApplied();
+      await userEvent.click(within(dialog).getByRole('button', { name: /^Áp dụng/ }));
+      await vi.waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument(), slow);
+      expect(screen.getByRole('button', { name: /Chọn chứng từ công nợ/ })).toHaveTextContent('1'); // đã có kế hoạch: nút hiện số khoản
+      editLine(1, patch);
+      expect(await screen.findByText(WARN, {}, slow)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Chọn chứng từ công nợ/ })).not.toHaveTextContent('1');
+      expect((await putLines()).find((l) => l.accountCode.startsWith('131'))).not.toHaveProperty('settle');
+    });
+
+    it('sửa diễn giải (không đổi tiền, tài khoản, đối tượng) thì giữ kế hoạch, không báo', async () => {
+      const dialog = await planApplied();
+      await userEvent.click(within(dialog).getByRole('button', { name: /^Áp dụng/ }));
+      await vi.waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument(), slow);
+      editLine(1, { description: 'Thu tiền hàng đợt 1' });
+      expect(screen.queryByText(WARN)).not.toBeInTheDocument();
+      expect((await putLines()).find((l) => l.accountCode === '131')?.settle).toEqual([{ openItemId: 7, amount: '600000' }]);
+    });
+
+    it('kế hoạch tải từ máy chủ được giữ khi mở chứng từ (không coi là đã đổi)', async () => {
+      mocks.api.mockImplementation(async (path: string) => {
+        if (path === '/api/fiscal-years') return years;
+        if (path === '/api/vouchers/v1') return { ...draftPt, lines: [draftPt.lines[0], { ...draftPt.lines[1], settle: [{ openItemId: 7, amount: '600000' }] }] };
+        return [];
+      });
+      renderForm();
+      await vi.waitFor(() => expect(screen.getByTestId('tk-1')).toHaveTextContent('131'), slow);
+      expect(screen.queryByText(WARN)).not.toBeInTheDocument();
+      expect((await putLines()).find((l) => l.accountCode === '131')?.settle).toEqual([{ openItemId: 7, amount: '600000' }]);
+    });
   });
 
   it('phiếu kế toán không có nút Chọn chứng từ công nợ', async () => {

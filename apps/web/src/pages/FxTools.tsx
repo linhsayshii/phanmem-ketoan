@@ -16,16 +16,23 @@ interface OutflowResult { runId: number; voucherIds: string[]; reversedVoucherId
 interface RevalLine { kind: string; accountCode: string; bankAccountNo: string | null; partyCode: string | null; openItemId: number | null; docNo: string | null; currency: string; balanceCurrency: string; balance: string; rateType: string; rate: string; revalued: string; difference: string }
 interface RevalRate { currency: string; rateType: string; rate: string; rateDate: string | null }
 interface RevalPreview { dryRun: true; date: string; fiscalYear: number; periodNo: number; unchanged: boolean; totals: { gain: string; loss: string; net: string }; rates: RevalRate[]; warnings: string[]; lines: RevalLine[] }
-interface RevalResult { runId: number; voucherIds: string[]; unchanged: boolean; staleRevaluations: string[]; warnings: string[] }
+interface RevalResult { runId: number; voucherIds: string[]; unchanged: boolean; staleRevaluations: string[]; rates: RevalRate[]; warnings: string[] }
 interface Currency { code: string; name: string; is_active?: boolean }
 interface Settings { fx_reval_rate_asset: string | null; fx_reval_rate_liability: string | null }
 interface Done { ids: string[]; nos: string[]; unchanged: boolean; stale: string[] }
+interface RevalDone extends Done { rates: RevalRate[]; warnings: string[] }
 
 const RATE_TYPE_LABEL: Record<string, string> = { transfer_avg: 'Chuyển khoản trung bình', buy: 'Mua', sell: 'Bán', input: 'Nhập tay' };
 const DEFAULT_RATE = 'default';
 const RATE_OPTIONS = [{ value: DEFAULT_RATE, label: 'Theo quy định của chế độ' }, { value: 'transfer_avg', label: 'Tỷ giá chuyển khoản trung bình' }, { value: 'buy', label: 'Tỷ giá mua' }, { value: 'sell', label: 'Tỷ giá bán' }];
 const money = (v: unknown) => (typeof v === 'string' ? formatVnNumber(v, D(v).decimalPlaces()) : '');
 const shortDate = (iso: string) => formatVnDate(iso).slice(0, 5);
+// Bảng tỷ giá máy chủ đã áp dụng (kèm ngày tỷ giá) và cảnh báo: dùng cho cả bản xem trước và kết quả chạy. Một loại tiền có thể có hai dòng (tài sản và nợ phải trả khác loại tỷ giá).
+const warningAlerts = (warnings: string[]) => warnings.map((w) => <Alert key={w} type="warning" showIcon message={w} />);
+const AppliedRates = ({ rates }: { rates: RevalRate[] }) => (
+  <Table size="small" rowKey={(r) => `${r.currency}|${r.rateType}`} pagination={false} dataSource={rates} columns={[
+    { title: 'Tỷ giá áp dụng', dataIndex: 'currency', width: 160 }, { title: 'Loại tỷ giá', dataIndex: 'rateType', render: (v: string) => RATE_TYPE_LABEL[v] ?? v },
+    { title: 'Tỷ giá', dataIndex: 'rate', align: 'right', render: money }, { title: 'Ngày tỷ giá', dataIndex: 'rateDate', render: (v: string | null) => (v ? formatVnDate(v) : '') }]} />);
 
 const voucherLinks = (type: string, ids: string[], nos: string[]) => ids.map((id, i) => (
   <span key={id}>{i > 0 && ', '}<a href={`/chung-tu/${type}/${id}`} target="_blank" rel="noopener noreferrer">{nos[i] ?? id}</a></span>));
@@ -108,18 +115,21 @@ function RevaluationTab() {
   const [pv, setPv] = useState<{ key: string; data: RevalPreview } | null>(null);
   const [busy, setBusy] = useState<'preview' | 'run' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<Done | null>(null);
+  const [done, setDone] = useState<RevalDone | null>(null);
 
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<FiscalYear[]>('/api/fiscal-years') });
   const settings = useQuery({ queryKey: ['settings'], queryFn: () => api<Settings>('/api/settings') });
   const catalog = useQuery({ queryKey: ['currency-catalog'], queryFn: () => api<{ rows: Currency[] }>('/api/catalogs/currency?size=100') });
   const foreign = (catalog.data?.rows ?? []).filter((c) => c.code !== 'VND' && c.is_active !== false);
-  const prefill = useQueries({ queries: foreign.map((c) => ({ queryKey: ['fx-rate', c.code, date], retry: false,
-    queryFn: () => api<{ rate: string; rateDate: string }>(`/api/fx/rate?${new URLSearchParams({ currency: c.code, date })}`) })) });
+  // Điền sẵn theo loại tỷ giá tài sản của công ty (cài đặt bên dưới).
+  // shortcut: không có cài đặt thì lấy transfer_avg, là mặc định của cả TT133, TT99 và TT200 trong fx-rules.json; chưa có API lộ mặc định theo chế độ, khi quy tắc khác nhau giữa các chế độ thì lộ qua API.
+  const assetType = settings.data?.fx_reval_rate_asset ?? 'transfer_avg';
+  const prefill = useQueries({ queries: foreign.map((c) => ({ queryKey: ['fx-rate', c.code, date, assetType], retry: false, enabled: !settings.isLoading,
+    queryFn: () => api<{ rate: string; rateDate: string }>(`/api/fx/rate?${new URLSearchParams({ currency: c.code, date, type: assetType })}`) })) });
   const prefillOf = (code: string) => prefill[foreign.findIndex((c) => c.code === code)];
 
-  const edited = Object.fromEntries(Object.entries(manual).filter(([code, v]) => { const p = prefillOf(code)?.data?.rate; return !p || !D(v).eq(D(p)); }));
-  const body = { date, ...(Object.keys(edited).length ? { rates: edited } : {}) };
+  // VnNumberInput chỉ phát giá trị khi người dùng gõ, nên mọi giá trị trong `manual` đều là tỷ giá nhập tay (kể cả khi bằng số điền sẵn).
+  const body = { date, ...(Object.keys(manual).length ? { rates: manual } : {}) };
   const key = JSON.stringify(body);
   const previewed = pv?.key === key ? pv.data : null; // đổi ngày hoặc tỷ giá thì bản xem trước cũ hết hiệu lực
 
@@ -131,7 +141,7 @@ function RevaluationTab() {
     setBusy('run'); setError(null);
     try {
       const r = await api<RevalResult>('/api/fx/revaluation', { method: 'POST', json: body });
-      setDone({ ids: r.voucherIds, nos: await fetchVoucherNos(r.voucherIds), unchanged: r.unchanged, stale: r.staleRevaluations });
+      setDone({ ids: r.voucherIds, nos: await fetchVoucherNos(r.voucherIds), unchanged: r.unchanged, stale: r.staleRevaluations, rates: r.rates, warnings: r.warnings });
       setPv(null); void qc.invalidateQueries({ queryKey: ['fx-runs'] });
     } catch (e) { setError((e as Error).message); } finally { setBusy(null); }
   };
@@ -160,24 +170,23 @@ function RevaluationTab() {
         {rateSetting('fx_reval_rate_asset', 'Tỷ giá đánh giá lại tài sản')}{rateSetting('fx_reval_rate_liability', 'Tỷ giá đánh giá lại nợ phải trả')}
       </Space>
       <Table size="small" rowKey="code" pagination={false} dataSource={foreign} columns={rateColumns} loading={catalog.isLoading} locale={{ emptyText: 'Chưa có loại tiền ngoại tệ' }} />
-      <span style={{ opacity: 0.7 }}>Tỷ giá ở bảng chỉ dùng khi bạn sửa; loại tiền không sửa lấy theo loại tỷ giá đã chọn ở trên. Bấm Xem trước để biết tỷ giá máy chủ áp dụng.</span>
+      <span style={{ opacity: 0.7 }}>Tỷ giá điền sẵn theo loại tỷ giá tài sản đã chọn ở trên và chỉ dùng khi bạn sửa; loại tiền không sửa lấy theo loại tỷ giá của từng khoản (tài sản, nợ phải trả). Bấm Xem trước để biết tỷ giá máy chủ áp dụng.</span>
       <Space>
-        <Button loading={busy === 'preview'} onClick={() => { void doPreview(); }}>Xem trước</Button>
-        {previewed?.warnings.map((w) => <Alert key={w} type="warning" showIcon message={w} />)}
+        <Button loading={busy === 'preview'} disabled={save.isPending} onClick={() => { void doPreview(); }}>Xem trước</Button>
+        {previewed && warningAlerts(previewed.warnings)}
       </Space>
       {error && <Alert type="error" showIcon message={error} />}
       {previewed && <>
         {previewed.unchanged && <Alert type="info" showIcon message="Kết quả không đổi so với lần chạy trước của ngày này; chạy lại không sinh thêm chứng từ" />}
         <span>Lãi chênh lệch tỷ giá: <b>{money(previewed.totals.gain)}</b> · Lỗ chênh lệch tỷ giá: <b>{money(previewed.totals.loss)}</b> · Tổng chênh lệch: <b>{money(previewed.totals.net)}</b> (kỳ {previewed.periodNo}/{previewed.fiscalYear})</span>
-        <Table size="small" rowKey="currency" pagination={false} dataSource={previewed.rates} columns={[
-          { title: 'Tỷ giá áp dụng', dataIndex: 'currency', width: 160 }, { title: 'Loại tỷ giá', dataIndex: 'rateType', render: (v: string) => RATE_TYPE_LABEL[v] ?? v },
-          { title: 'Tỷ giá', dataIndex: 'rate', align: 'right', render: money }, { title: 'Ngày tỷ giá', dataIndex: 'rateDate', render: (v: string | null) => (v ? formatVnDate(v) : '') }]} />
+        <AppliedRates rates={previewed.rates} />
         <KeyboardGrid<RevalLine> rows={previewed.lines} columns={previewColumns} onRowsChange={() => undefined} addRowTemplate={() => ({} as RevalLine)} readOnly height={Math.min(420, 90 + 32 * previewed.lines.length)} />
       </>}
-      <Button type="primary" disabled={!previewed || busy !== null} loading={busy === 'run'} onClick={() => { void doRun(); }}>Chạy đánh giá lại</Button>
+      <Button type="primary" disabled={!previewed || busy !== null || save.isPending} loading={busy === 'run'} onClick={() => { void doRun(); }}>Chạy đánh giá lại</Button>
       {done && (done.unchanged || done.ids.length === 0
         ? <Alert type="info" showIcon message="Không có chênh lệch cần ghi sổ, không sinh chứng từ mới" />
         : <Alert type="success" showIcon message="Đã đánh giá lại ngoại tệ" description={<span>Chứng từ: {voucherLinks('DG', done.ids, done.nos)}</span>} />)}
+      {done && <>{warningAlerts(done.warnings)}<AppliedRates rates={done.rates} /></>}
       {done && done.stale.length > 0 && <Alert type="warning" showIcon message={`Đánh giá lại ngoại tệ ngày ${done.stale.map(formatVnDate).join(', ')} đã chạy sau ngày này, cần chạy lại`} />}
       <b>Các lần đã chạy</b>
       <RunHistory kind="revaluation" />

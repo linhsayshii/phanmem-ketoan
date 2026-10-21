@@ -64,18 +64,18 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     return out;
   });
 
-  // Nhật ký chạy tỷ giá cuối kỳ (xuất quỹ XQ, đánh giá lại DG), mới nhất trước, kèm số các chứng từ sinh ra và đã đảo.
+  // Nhật ký chạy tỷ giá cuối kỳ (xuất quỹ XQ, đánh giá lại DG), mới nhất trước, kèm số các chứng từ sinh ra và đã đảo. Không trả params: cảnh báo trong đó có thể mang số chứng từ.
   app.get('/api/fx/runs', { preHandler: app.requirePermission('fx.run'),
     schema: { querystring: z.object({ kind: z.enum(['outflow', 'revaluation']).optional(), limit: z.coerce.number().int().min(1).max(200).default(100) }) } }, async (req) =>
     app.withTenant(req, async (trx) => {
-      let q = trx.selectFrom('fx_run').select(['id', 'kind', 'fiscal_year', 'period_no', 'run_date', 'voucher_ids', 'reversed_voucher_ids', 'params', 'created_at']);
+      let q = trx.selectFrom('fx_run').select(['id', 'kind', 'fiscal_year', 'period_no', 'run_date', 'voucher_ids', 'reversed_voucher_ids', 'created_at']);
       if (req.query.kind) q = q.where('kind', '=', req.query.kind);
       const runs = await q.orderBy('id', 'desc').limit(req.query.limit).execute();
       const ids = [...new Set(runs.flatMap((r) => [...r.voucher_ids, ...r.reversed_voucher_ids]))];
       const nos = new Map((ids.length ? await trx.selectFrom('voucher').select(['id', 'voucher_no']).where('id', 'in', ids).execute() : []).map((v) => [v.id, v.voucher_no]));
       const noOf = (id: string) => nos.get(id) ?? id;
       return runs.map((r) => ({ id: r.id, kind: r.kind, fiscalYear: r.fiscal_year, periodNo: r.period_no, runDate: r.run_date, voucherIds: r.voucher_ids, voucherNos: r.voucher_ids.map(noOf),
-        reversedVoucherIds: r.reversed_voucher_ids, reversedVoucherNos: r.reversed_voucher_ids.map(noOf), params: r.params, createdAt: r.created_at }));
+        reversedVoucherIds: r.reversed_voucher_ids, reversedVoucherNos: r.reversed_voucher_ids.map(noOf), createdAt: r.created_at }));
     }, READ_SNAPSHOT));
 
   const view = app.requirePermission('report.view');
