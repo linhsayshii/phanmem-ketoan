@@ -11,7 +11,7 @@ import { useAuth } from '../auth.js';
 
 interface Row { id: string; voucherType: string; voucherNo: string | null; postingDate: string; state: string; description: string | null; partyName: string | null; totalDebit: string }
 export const STATE_LABEL: Record<string, string> = { draft: 'Nháp', posted: 'Đã ghi sổ', reversed: 'Đã đảo', cancelled: 'Đã hủy' };
-const STATE_COLOR: Record<string, string> = { draft: 'default', posted: 'green', reversed: 'orange', cancelled: 'red' };
+export const STATE_COLOR: Record<string, string> = { draft: 'default', posted: 'green', reversed: 'orange', cancelled: 'red' };
 // Tên gọi trên menu và tiêu đề: bỏ phần chú thích trong ngoặc, vd. "Giấy báo Nợ (in Ủy nhiệm chi)" -> "Giấy báo Nợ".
 export const typeLabel = (d: VoucherTypeDef): string => d.name.replace(/\s*\(.*\)$/, '');
 

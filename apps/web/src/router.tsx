@@ -28,6 +28,7 @@ import CashBooksPage from './pages/CashBooks.js';
 import CashCountPage from './pages/CashCount.js';
 import FinancialPage from './pages/Financial.js';
 import DataCheckPage from './pages/DataCheck.js';
+import DedupePage from './pages/Dedupe.js';
 import ExportPage from './pages/Export.js';
 import { VOUCHER_TYPES } from '@kt/domain';
 import { api } from './api/client.js';
@@ -52,6 +53,7 @@ export const MENU: MenuItem[] = [
     { key: 'cat-currency', label: 'Loại tiền', to: '/danh-muc/currency', permission: 'catalog.view' },
     { key: 'cat-exchange_rate', label: 'Tỷ giá', to: '/danh-muc/exchange_rate', permission: 'catalog.view' },
     { key: 'cat-bank', label: 'Ngân hàng', to: '/danh-muc/bank', permission: 'catalog.view' },
+    { key: 'cat-voucher_dup_rule', label: 'Quy tắc khử trùng chứng từ', to: '/danh-muc/voucher_dup_rule', permission: 'catalog.view' },
     { key: 'cat-bank_account', label: 'Tài khoản ngân hàng', to: '/danh-muc/bank_account', permission: 'catalog.view' },
     { key: 'cat-payment_method', label: 'Hình thức thanh toán', to: '/danh-muc/payment_method', permission: 'catalog.view' },
     { key: 'cat-tax_code', label: 'Loại thuế', to: '/danh-muc/tax_code', permission: 'catalog.view' },
@@ -92,6 +94,7 @@ export const MENU: MenuItem[] = [
     { key: 'financial', label: 'Báo cáo tài chính', to: '/bao-cao/bao-cao-tai-chinh', permission: 'report.view' },
   ] },
   { key: 'tienich', label: 'Tiện ích', to: '/tien-ich', children: [
+    { key: 'dedupe', label: 'Khử trùng chứng từ', to: '/tien-ich/khu-trung', permission: 'dedupe.run' },
     { key: 'datacheck', label: 'Soát lỗi dữ liệu', to: '/tien-ich/soat-loi', permission: 'data_check.run' },
     { key: 'export', label: 'Xuất dữ liệu cho cơ quan thẩm quyền', to: '/tien-ich/xuat-du-lieu', permission: 'export.authority' },
   ] },
@@ -127,6 +130,7 @@ const amortizationRoute = createRoute({ getParentRoute: () => appRoute, path: '/
 const cashCountRoute = createRoute({ getParentRoute: () => appRoute, path: '/quy/kiem-ke', component: CashCountPage });
 const financialRoute = createRoute({ getParentRoute: () => appRoute, path: '/bao-cao/bao-cao-tai-chinh', component: FinancialPage });
 const dataCheckRoute = createRoute({ getParentRoute: () => appRoute, path: '/tien-ich/soat-loi', component: DataCheckPage });
+const dedupeRoute = createRoute({ getParentRoute: () => appRoute, path: '/tien-ich/khu-trung', component: DedupePage });
 const exportRoute = createRoute({ getParentRoute: () => appRoute, path: '/tien-ich/xuat-du-lieu', component: ExportPage });
 const importVouchersRoute = createRoute({ getParentRoute: () => appRoute, path: '/chung-tu/nhap-excel', component: ImportVouchersPage });
 const voucherListRoute = createRoute({ getParentRoute: () => appRoute, path: '/chung-tu/$type', component: VoucherListPage });
@@ -136,6 +140,6 @@ const oldPktListRoute = createRoute({ getParentRoute: () => appRoute, path: '/ch
 const oldPktRoute = createRoute({ getParentRoute: () => appRoute, path: '/chung-tu/phieu-ke-toan/$id', beforeLoad: ({ params }) => { throw redirect({ to: '/chung-tu/$type/$id', params: { type: 'PKT', id: params.id } }); } });
 const catalogRoute = createRoute({ getParentRoute: () => appRoute, path: '/danh-muc/$name', component: CatalogPage });
 
-export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, closingRoute, amortizationRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, catalogRoute])]);
+export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, closingRoute, amortizationRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, catalogRoute])]);
 export const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }
