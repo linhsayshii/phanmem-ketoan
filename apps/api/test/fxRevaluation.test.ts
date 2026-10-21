@@ -490,4 +490,19 @@ describe('đánh giá lại số dư ngoại tệ cuối kỳ', () => {
     for (const id of [inv, child, r1, r2]) expect(await t.residual(id)).toEqual({ vnd: '0', cur: '0' });
     expect(await t.sumsMatch('2026-02-20')).toEqual({});
   });
+  // Giới hạn sản phẩm đã biết (T13-M10): settle_open_items lấy ngày đối trừ mặc định = ngày chứng từ lớn nhất của khoản gốc, không xét ngày ghi sổ của khoản con đánh giá lại,
+  // nhưng đối trừ cả khoản con nên trigger fn_settlement_guard từ chối. Khóa hành vi hiện tại bằng kiểm thử để quyết định cuối GĐ2 đổi có chủ đích.
+  it('đối trừ không nêu ngày với khoản đã đánh giá lại ngày 31/01 bằng phiếu thu ngày 20/01 → 409 SETTLEMENT_DATE_BEFORE_POSTING, sổ không đổi (hành vi hiện tại, chờ quyết định cuối GĐ2: T13-M10)', async () => {
+    const t = await tenant();
+    const inv = await t.itemOf((await t.usdInvoice('2026-01-10', '10', '25000')).id);
+    await t.revalOk(); // khoản con ghi sổ 31/01
+    const rcv = await t.itemOf((await t.usdReceipt('2026-01-20', '10', '25500')).id);
+    const count = async () => (await sql<{ s: number; v: number }>`SELECT (SELECT count(*)::int FROM settlement WHERE tenant_id = ${t.tenantId}::uuid) AS s,
+      (SELECT count(*)::int FROM voucher WHERE tenant_id = ${t.tenantId}::uuid) AS v`.execute(ctx.t.admin)).rows[0];
+    const [before, sumsBefore] = [await count(), await t.sumsMatch('2026-12-31')];
+    const r = await t.call('POST', '/api/settlements', { debitItemId: inv, creditItemId: rcv, amountCurrency: '10' });
+    expect([r.statusCode, r.json().error?.code]).toEqual([409, 'SETTLEMENT_DATE_BEFORE_POSTING']);
+    expect([await count(), await t.sumsMatch('2026-12-31')]).toEqual([before, sumsBefore]);
+    expect([(await t.residual(inv))?.cur, (await t.residual(rcv))?.cur]).toEqual(['10', '-10']); // cả hai khoản vẫn còn nguyên
+  });
 });

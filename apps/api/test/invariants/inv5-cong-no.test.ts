@@ -112,9 +112,8 @@ describe('Bất biến 5: công nợ theo chứng từ khớp sổ cái theo đ�
           JOIN account a ON a.id = x.account_id JOIN party p ON p.id = x.party_id
         WHERE o.parent_id IS NULL AND (x.residual <> 0 OR x.residual_currency <> 0) ORDER BY x.item_id`.execute(ctx.t.admin)).rows
         .map((r) => ({ ...r, vnd: BigInt(r.vnd), qty: cents4(r.qty), cdt: r.cdt ?? undefined })).filter((i) => (i.cur === 'VND' ? i.vnd : i.qty) !== 0n);
-      // Ngày ghi sổ muộn nhất của khoản con (điều chỉnh đánh giá lại) của một chứng từ, hoặc của cả công ty khi không chỉ định: đối trừ, đảo không được sớm hơn (guard so với ngày của khoản con).
-      const lastChild = async (voucherId: string | null) => (await sql<{ d: string | null }>`SELECT max(c.line_posting_date)::text AS d FROM open_item c JOIN open_item o ON o.id = c.parent_id AND o.tenant_id = c.tenant_id
-        WHERE c.tenant_id = ${tenantId}::uuid AND (${voucherId}::uuid IS NULL OR o.voucher_id = ${voucherId}::uuid)`.execute(ctx.t.admin)).rows[0]!.d ?? undefined;
+      // Ngày ghi sổ muộn nhất của mọi khoản con (điều chỉnh đánh giá lại) của công ty: đối trừ tự động không được sớm hơn (guard so với ngày của khoản con; giới hạn T13-M10).
+      const lastChild = async () => (await sql<{ d: string | null }>`SELECT max(line_posting_date)::text AS d FROM open_item WHERE tenant_id = ${tenantId}::uuid AND parent_id IS NOT NULL`.execute(ctx.t.admin)).rows[0]!.d ?? undefined;
 
       // Chứng từ một dòng công nợ + dòng đối ứng: 131 Nợ/Có 5113, thu Nợ tiền/Có 131, 331 Có/Nợ 6422, chi trả Nợ 331/Có tiền. `amount`: VND là đồng, USD là xu; VND dòng USD = làm tròn(nguyên tệ × tỷ giá).
       const docParts = (d: { acc: string; side: 'D' | 'C'; party: string; cur: Cur; amount: bigint; rate: string; date: string; settle?: object[]; autoPost: boolean }) => {
@@ -154,7 +153,7 @@ describe('Bất biến 5: công nợ theo chứng từ khớp sổ cái theo đ�
           if (ok(op, await call('POST', `/api/vouchers/${d.id}/unpost`), 200)) { d.state = 'draft'; tally('unpost'); }
         } else if (op.kind === 'reverse') {
           const d = at(ofState('posted'), op.pick); if (!d) continue;
-          const date = latest(op.date, d.date, await lastChild(d.id))!;
+          const date = latest(op.date, d.date)!;
           const r = await call('POST', `/api/vouchers/${d.id}/reverse`, { postingDate: date });
           if (ok(op, r, 201)) { d.state = 'reversed'; docs.push({ id: r.json().id, date, state: 'posted' }); tally('reverse'); }
         } else if (op.kind === 'settle') {
@@ -170,7 +169,7 @@ describe('Bất biến 5: công nợ theo chứng từ khớp sổ cái theo đ�
           const g = at(groups, op.pick); if (!g) continue;
           if (ok(op, await call('DELETE', `/api/settlements/groups/${g.g}`), 204)) tally('unsettle');
         } else if (op.kind === 'auto') {
-          const r = await call('POST', '/api/settlements/auto', { accountCode: op.acc, date: latest(op.date, await lastChild(null))!, ...(op.party && { partyCode: op.party }) });
+          const r = await call('POST', '/api/settlements/auto', { accountCode: op.acc, date: latest(op.date, await lastChild())!, ...(op.party && { partyCode: op.party }) });
           if (ok(op, r, 200) && r.json().groups > 0) tally('auto');
         } else {
           const r = await call('POST', '/api/fx/revaluation', { date: op.date, ...(op.rate && { rates: { USD: op.rate } }) });
