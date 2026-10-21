@@ -6,12 +6,12 @@ import OpeningBalancePage from '../src/pages/OpeningBalance.js';
 
 const mocks = vi.hoisted(() => {
   class ApiError extends Error { constructor(public code: string, message: string, public status = 409, public details?: unknown) { super(message); } }
-  return { api: vi.fn(), ApiError, perms: { has: (_c: string): boolean => true }, grid: { columns: [] as { field?: string; editable?: unknown; valueSetter?: unknown }[] } };
+  return { api: vi.fn(), ApiError, perms: { has: (_c: string): boolean => true }, grid: { columns: [] as { field?: string; editable?: unknown; valueSetter?: unknown; valueParser?: unknown; valueFormatter?: unknown }[] } };
 });
 vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: mocks.ApiError }));
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: (c: string) => mocks.perms.has(c) }) }));
 // lưới AG Grid và ô tra danh mục nặng trong jsdom và không thuộc điều đang kiểm tra (nút theo quyền/trạng thái tải); đường nhập phím được kiểm bằng trình duyệt
-vi.mock('@kt/ui', () => ({ KeyboardGrid: (p: { columns: { field?: string; editable?: unknown; valueSetter?: unknown }[] }) => { mocks.grid.columns = p.columns; return null; }, LookupSelect: () => null }));
+vi.mock('@kt/ui', () => ({ KeyboardGrid: (p: { columns: { field?: string; editable?: unknown; valueSetter?: unknown; valueParser?: unknown; valueFormatter?: unknown }[] }) => { mocks.grid.columns = p.columns; return null; }, LookupSelect: () => null }));
 
 vi.setConfig({ testTimeout: 30_000 });
 const years = [{ fiscalYear: 2026, regime: 'TT133', dateFrom: '2026-01-01' }];
@@ -136,6 +136,58 @@ describe('Màn hình Số dư đầu kỳ', () => {
       expect(await screen.findByText('Số dư đầu kỳ hợp lệ')).toBeInTheDocument();
       expect(screen.getByText(warn.message)).toBeInTheDocument();
       expect(screen.queryByText(/lỗi, chưa ghi sổ được/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('số dư công nợ theo hóa đơn', () => {
+    const saved131 = { accountCode: '131', accountName: 'Phải thu của khách hàng', partyCode: 'KH001', partyName: 'Khách 1', bankAccountNo: null, bankName: null, docNo: 'HD001', docDate: '2025-11-15', dueDate: '2026-01-15',
+      currencyCode: 'VND', debit: '100', credit: '0', debitCurrency: '0', creditCurrency: '0' };
+    const accounts = [{ code: '1121', subledgerKind: 'bank' }, { code: '131', subledgerKind: 'receivable' }, { code: '331', subledgerKind: 'payable' }, { code: '1111', subledgerKind: null }];
+    const apiDoc = () => mocks.api.mockImplementation(async (path: string) =>
+      path === '/api/fiscal-years' ? years : path === '/api/opening-balance/2026' ? [saved131] : path === '/api/accounts?regime=TT133' ? accounts : []);
+    type Col = { field?: string; editable?: unknown; valueSetter?: unknown; valueParser?: unknown; valueFormatter?: unknown };
+    const col = (field: string) => mocks.grid.columns.find((c) => c.field === field) as Col;
+
+    it('Số chứng từ, Ngày chứng từ, Hạn thanh toán chỉ sửa được ở dòng tài khoản công nợ', async () => {
+      apiDoc();
+      renderPage();
+      await waitFor(() => expect(col('docNo')).toBeDefined());
+      for (const field of ['docNo', 'docDate', 'dueDate']) {
+        const editable = () => col(field).editable as (p: { data: { accountCode: string } }) => boolean;
+        await waitFor(() => expect(editable()({ data: { accountCode: '131' } })).toBe(true));
+        expect([field, editable()({ data: { accountCode: '331' } }), editable()({ data: { accountCode: '1121' } }), editable()({ data: { accountCode: '' } })]).toEqual([field, true, false, false]);
+      }
+    });
+
+    it('ô ngày nhận dd/mm/yyyy, để trống là không có, chữ sai giữ giá trị cũ; hiện dạng dd/mm/yyyy', async () => {
+      apiDoc();
+      renderPage();
+      await waitFor(() => expect(col('docDate')).toBeDefined());
+      const parse = col('docDate').valueParser as (p: { newValue: unknown; oldValue: unknown }) => string | null;
+      const format = col('dueDate').valueFormatter as (p: { value: unknown }) => string;
+      expect(parse({ newValue: '15/11/2025', oldValue: null })).toBe('2025-11-15');
+      expect(parse({ newValue: '', oldValue: '2025-11-15' })).toBeNull();
+      expect(parse({ newValue: '31/02/2025', oldValue: '2025-11-15' })).toBe('2025-11-15');
+      expect([format({ value: '2026-01-15' }), format({ value: null })]).toEqual(['15/01/2026', '']);
+    });
+
+    it('đổi sang tài khoản không theo dõi công nợ thì bỏ số, ngày chứng từ và hạn; đổi giữa hai tài khoản công nợ thì giữ', async () => {
+      apiDoc();
+      renderPage();
+      await waitFor(() => expect(col('accountCode')).toBeDefined());
+      const setter = () => col('accountCode').valueSetter as (p: { data: Record<string, unknown>; newValue: string }) => boolean;
+      const row = () => ({ accountCode: '131', docNo: 'HD001', docDate: '2025-11-15', dueDate: '2026-01-15', bankAccountNo: null });
+      await waitFor(() => { const kept = row(); setter()({ data: kept, newValue: '331' }); expect(kept).toMatchObject({ accountCode: '331', docNo: 'HD001', dueDate: '2026-01-15' }); });
+      const moved = row(); setter()({ data: moved, newValue: '1111' }); expect(moved).toMatchObject({ accountCode: '1111', docNo: null, docDate: null, dueDate: null });
+    });
+
+    it('Lưu gửi kèm số, ngày chứng từ và hạn thanh toán của dòng', async () => {
+      apiDoc();
+      renderPage();
+      const save = await screen.findByRole('button', { name: 'Lưu' });
+      await waitFor(() => expect(save).toBeEnabled());
+      await userEvent.click(save);
+      await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/opening-balance/2026', { method: 'PUT', json: { rows: [expect.objectContaining({ accountCode: '131', partyCode: 'KH001', docNo: 'HD001', docDate: '2025-11-15', dueDate: '2026-01-15' })] } }));
     });
   });
 });

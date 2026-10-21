@@ -42,6 +42,15 @@ const ymd = (y: number, m: number, d: number): string | null => {
   return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d ? isoOf(t) : null;
 };
 
+// Ô ngày Excel (Date), số ngày kiểu Excel, chữ YYYY-MM-DD hoặc dd/MM/yyyy → 'YYYY-MM-DD'; giá trị khác hoặc ngày không có thật → null.
+export function excelDate(v: unknown): string | null {
+  if (v instanceof Date) return isoOf(v);
+  if (typeof v === 'number') return Number.isFinite(v) ? isoOf(new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000)) : null; // số ngày Excel
+  if (typeof v !== 'string') return null;
+  const s = v.trim(); const a = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s); const b = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+  return a ? ymd(+a[1]!, +a[2]!, +a[3]!) : b ? ymd(+b[3]!, +b[2]!, +b[1]!) : null;
+}
+
 // Công thức → kết quả đã tính; rich text và liên kết → chuỗi thuần (nếu không String(object) ghi "[object Object]" vào dữ liệu).
 export const plainCell = (raw: ExcelJS.CellValue): unknown => typeof raw === 'object' && raw !== null && !(raw instanceof Date)
   ? ('result' in raw ? raw.result : 'richText' in raw ? raw.richText.map((t) => t.text).join('') : 'text' in raw ? raw.text : raw) : raw;
@@ -61,13 +70,7 @@ function cellValue(c: ColumnDef, cell: ExcelJS.Cell): Parsed {
       return n === null ? { err: 'Số không hợp lệ' } : { v: isInt(c.key) ? Number(n) : n };
     }
     case 'date': {
-      let iso: string | null = null;
-      if (v instanceof Date) iso = isoOf(v);
-      else if (typeof v === 'number') iso = Number.isFinite(v) ? isoOf(new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000)) : null; // số ngày Excel
-      else if (s !== null) {
-        const a = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s); const b = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
-        iso = a ? ymd(+a[1]!, +a[2]!, +a[3]!) : b ? ymd(+b[3]!, +b[2]!, +b[1]!) : null;
-      }
+      const iso = excelDate(v);
       return iso === null ? BAD_DATE : { v: iso };
     }
     default: {

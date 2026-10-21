@@ -160,8 +160,11 @@ describe('lược đồ sổ cái', () => {
       await expect(sql`SELECT ensure_line_partitions(${from}::date, ${to}::date)`.execute(t.admin), `${from}..${to}`).rejects.toThrow(/PARTITION_RANGE_INVALID/);
   });
 
+  // open_item tham chiếu voucher_line (0028): partition phải tách khỏi bảng gốc trước khi xóa
+  const dropPartition2150 = () => sql`DO $$ BEGIN IF to_regclass('voucher_line_y2150m01') IS NOT NULL THEN
+    ALTER TABLE voucher_line DETACH PARTITION voucher_line_y2150m01; DROP TABLE voucher_line_y2150m01; END IF; END $$`.execute(t.admin);
   it('hai công ty cùng thêm kỳ cho một tháng chưa có partition đồng thời đều thành công', async () => {
-    await sql`DROP TABLE IF EXISTS voucher_line_y2150m01`.execute(t.admin);
+    await dropPartition2150();
     const ta = await createTestTenant(t.admin, { code: `PA${Date.now()}`, name: 'Partition A' });
     const tb = await createTestTenant(t.admin, { code: `PB${Date.now()}`, name: 'Partition B' });
     const a = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL }); const b = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL });
@@ -179,7 +182,7 @@ describe('lược đồ sổ cái', () => {
     } finally {
       await a.query('ROLLBACK').catch(() => undefined); await b.query('ROLLBACK').catch(() => undefined);
       await Promise.all([a.end(), b.end()]);
-      await sql`DROP TABLE IF EXISTS voucher_line_y2150m01`.execute(t.admin);
+      await dropPartition2150();
     }
   });
 

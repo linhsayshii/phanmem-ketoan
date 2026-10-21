@@ -75,7 +75,7 @@ describe('số dư đầu kỳ', () => {
     const tpl = await ctx.app.inject({ method: 'GET', url: '/api/opening-balance/template.xlsx', headers: { cookie } });
     expect(tpl.statusCode).toBe(200); expect(tpl.headers['content-type']).toContain('spreadsheetml');
     const { wb, ws } = await sheet();
-    ws.addRow(['1111', null, null, 'VND', 50000000, 0, 0, 0]); ws.addRow(['4111', null, null, 'VND', 0, 50000000, 0, 0]); ws.addRow(['9999', null, null, 'VND', 1, 0, 0, 0]);
+    ws.addRow(['1111', null, null, null, null, null, 'VND', 50000000, 0, 0, 0]); ws.addRow(['4111', null, null, null, null, null, 'VND', 0, 50000000, 0, 0]); ws.addRow(['9999', null, null, null, null, null, 'VND', 1, 0, 0, 0]);
     const v = await upload(wb, 'validate'); expect(v.json().errors).toEqual([{ row: 5, column: 'account_code', message: expect.stringContaining('9999') }]);
     ws.spliceRows(5, 1);
     const c = await upload(wb, 'commit'); expect(c.json()).toMatchObject({ inserted: 2 });
@@ -84,9 +84,9 @@ describe('số dư đầu kỳ', () => {
 
   it('Excel: ô số giữ nguyên phần thập phân nguyên tệ, ô công thức lấy kết quả, ô chữ theo định dạng Việt Nam', async () => {
     const { wb, ws } = await sheet();
-    ws.addRow(['1111', null, null, 'VND', 10000000, 0, 0, 0]);
-    ws.addRow(['1122', null, null, 'USD', { formula: '25000000+6250', result: 25006250 }, 0, 1000.25, 0]);
-    ws.addRow(['4111', null, null, 'VND', 0, '35.006.250', 0, 0]);
+    ws.addRow(['1111', null, null, null, null, null, 'VND', 10000000, 0, 0, 0]);
+    ws.addRow(['1122', null, null, null, null, null, 'USD', { formula: '25000000+6250', result: 25006250 }, 0, 1000.25, 0]);
+    ws.addRow(['4111', null, null, null, null, null, 'VND', 0, '35.006.250', 0, 0]);
     const r = await upload(wb, 'commit'); expect(r.statusCode, r.body).toBe(200); expect(r.json()).toMatchObject({ total: 3, inserted: 3, errors: [] });
     const rows = (await list()).json() as { accountCode: string; currencyCode: string; debit: string; credit: string; debitCurrency: string }[];
     expect(rows.find((x) => x.accountCode === '1122')).toMatchObject({ currencyCode: 'USD', debit: '25006250', debitCurrency: '1000.2500' });
@@ -95,13 +95,13 @@ describe('số dư đầu kỳ', () => {
 
   it('Excel: ô chữ sai, số âm, trùng dòng, đối tượng và loại tiền không có đều báo đúng dòng và cột', async () => {
     const { wb, ws } = await sheet();
-    ws.addRow(['1111', null, null, 'VND', 'abc', '1.5', 0, 0]);          // dòng 3: Nợ chữ, Có "1.5" mơ hồ
-    ws.addRow(['1111', null, null, 'VND', -5, 0, 0, 0]);                  // dòng 4: số âm
-    ws.addRow(['131', 'KH001', null, 'VND', 5, 0, 0, 0]);                 // dòng 5
-    ws.addRow(['131', 'KH001', null, 'VND', 6, 0, 0, 0]);                 // dòng 6: trùng dòng 5
-    ws.addRow(['131', 'KHX', null, 'VND', 6, 0, 0, 0]);                   // dòng 7: đối tượng không có
-    ws.addRow(['1122', null, null, 'EUR', 6, 0, 1, 0]);                   // dòng 8: loại tiền không có
-    ws.addRow(['1122', null, null, 'USD', 6, 0, 0, 0]);                   // dòng 9: dòng ngoại tệ thiếu nguyên tệ
+    ws.addRow(['1111', null, null, null, null, null, 'VND', 'abc', '1.5', 0, 0]);          // dòng 3: Nợ chữ, Có "1.5" mơ hồ
+    ws.addRow(['1111', null, null, null, null, null, 'VND', -5, 0, 0, 0]);                  // dòng 4: số âm
+    ws.addRow(['131', 'KH001', null, null, null, null, 'VND', 5, 0, 0, 0]);                 // dòng 5
+    ws.addRow(['131', 'KH001', null, null, null, null, 'VND', 6, 0, 0, 0]);                 // dòng 6: trùng dòng 5
+    ws.addRow(['131', 'KHX', null, null, null, null, 'VND', 6, 0, 0, 0]);                   // dòng 7: đối tượng không có
+    ws.addRow(['1122', null, null, null, null, null, 'EUR', 6, 0, 1, 0]);                   // dòng 8: loại tiền không có
+    ws.addRow(['1122', null, null, null, null, null, 'USD', 6, 0, 0, 0]);                   // dòng 9: dòng ngoại tệ thiếu nguyên tệ
     const r = await upload(wb, 'validate'); expect(r.statusCode, r.body).toBe(200);
     const errs = r.json().errors as { row: number; column: string; message: string }[];
     expect(errs.map((e) => `${e.row}:${e.column}`).sort()).toEqual(['3:credit', '3:debit', '4:debit', '6:account_code', '7:party_code', '8:currency_code', '9:debit_currency']);
@@ -110,7 +110,7 @@ describe('số dư đầu kỳ', () => {
 
   it('nhập Excel không có dòng nào (hoặc toàn số 0) bị 400 IMPORT_EMPTY và không xóa số dư đã lưu', async () => {
     const before = (await list()).json().length; expect(before).toBeGreaterThan(0);
-    const empty = await sheet(); const zero = await sheet(); zero.ws.addRow(['1111', null, null, 'VND', 0, 0, 0, 0]);
+    const empty = await sheet(); const zero = await sheet(); zero.ws.addRow(['1111', null, null, null, null, null, 'VND', 0, 0, 0, 0]);
     for (const wb of [empty.wb, zero.wb]) for (const mode of ['validate', 'commit']) {
       const r = await upload(wb, mode); expect(r.statusCode, r.body).toBe(400); expect(r.json().error.code).toBe('IMPORT_EMPTY');
     }
@@ -210,7 +210,7 @@ describe('số dư đầu kỳ nhiều hệ tài khoản và nhiều năm', () =
     expect((await check(2026, c2)).json()).toEqual([]);
     const p = await post(2026, c2); expect(p.statusCode, p.body).toBe(200); expect(p.json().lines).toHaveLength(2);
 
-    const { wb, ws } = await sheet(); ws.addRow(['1113', null, null, 'VND', 5, 0, 0, 0]);
+    const { wb, ws } = await sheet(); ws.addRow(['1113', null, null, null, null, null, 'VND', 5, 0, 0, 0]);
     expect((await upload(wb, 'validate', 2026, c2)).json().errors).toEqual([{ row: 3, column: 'account_code', message: expect.stringContaining('1113') }]);
     expect((await upload(wb, 'validate', 2027, c2)).json().errors).toEqual([]);
   }, 30_000);
@@ -409,20 +409,30 @@ describe('API số dư đầu kỳ theo tài khoản ngân hàng', () => {
     expect((p.json().error.details as { code: string }[]).map((i) => i.code)).toEqual(['UNBALANCED']);
   }, 30_000);
 
-  const header = ['Số hiệu TK (*)', 'Mã đối tượng', 'Tài khoản ngân hàng', 'Loại tiền (*)', 'Dư Nợ', 'Dư Có', 'Dư Nợ nguyên tệ', 'Dư Có nguyên tệ'];
-  it('mẫu Excel có cột Tài khoản ngân hàng ngay sau cột đối tượng', async () => {
+  const header = ['Số hiệu TK (*)', 'Mã đối tượng', 'Tài khoản ngân hàng', 'Số chứng từ', 'Ngày chứng từ', 'Hạn thanh toán', 'Loại tiền (*)', 'Dư Nợ', 'Dư Có', 'Dư Nợ nguyên tệ', 'Dư Có nguyên tệ'];
+  it('mẫu Excel có cột Tài khoản ngân hàng ngay sau cột đối tượng, tiếp theo là Số chứng từ, Ngày chứng từ, Hạn thanh toán', async () => {
     const { ws } = await sheet();
     expect(ws.getRow(1).values).toEqual([undefined, ...header]);
-    expect(ws.getRow(2).getCell(3).value).toBe('bank_account_no');
+    expect([3, 4, 5, 6].map((i) => ws.getRow(2).getCell(i).value)).toEqual(['bank_account_no', 'doc_no', 'doc_date', 'due_date']);
   });
+
+  it('nhập Excel theo mẫu trước (có cột tài khoản ngân hàng, chưa có cột chứng từ) vẫn được', async () => {
+    const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Du_lieu');
+    ws.addRow(['Số hiệu TK (*)', 'Mã đối tượng', 'Tài khoản ngân hàng', 'Loại tiền (*)', 'Dư Nợ', 'Dư Có', 'Dư Nợ nguyên tệ', 'Dư Có nguyên tệ']);
+    ws.addRow(['account_code', 'party_code', 'bank_account_no', 'currency_code', 'debit', 'credit', 'debit_currency', 'credit_currency']); ws.getRow(2).hidden = true;
+    ws.addRow(['1121', null, '0011001', 'VND', 80, 0, 0, 0]); ws.addRow(['131', 'KH001', null, 'VND', 20, 0, 0, 0]); ws.addRow(['4111', null, null, 'VND', 0, 100, 0, 0]);
+    expect((await upload(wb, 'commit', 2026, c6)).json()).toMatchObject({ inserted: 3, errors: [] });
+    const rows = (await list(2026, c6)).json() as { accountCode: string; bankAccountNo: string | null; docNo: string | null; debit: string; credit: string }[];
+    expect(rows.map((r) => [r.accountCode, r.bankAccountNo, r.docNo, r.debit, r.credit])).toEqual([['1121', '0011001', null, '80', '0'], ['131', null, null, '20', '0'], ['4111', null, null, '0', '100']]);
+  }, 30_000);
 
   it('nhập Excel có cột tài khoản ngân hàng: ghi đúng, báo lỗi theo dòng và cột, cùng tài khoản khác ngân hàng không bị coi là trùng', async () => {
     const { wb, ws } = await sheet();
-    ws.addRow(['1121', null, '0011001', 'VND', 100, 0, 0, 0]); ws.addRow(['1121', null, '0011002', 'VND', 200, 0, 0, 0]); ws.addRow(['4111', null, null, 'VND', 0, 300, 0, 0]);
-    ws.addRow(['1121', null, 'KHONGCO', 'VND', 1, 0, 0, 0]);           // dòng 6: tài khoản ngân hàng không có
-    ws.addRow(['1121', null, '0099001', 'VND', 1, 0, 0, 0]);           // dòng 7: thuộc 1122
-    ws.addRow(['131', 'KH001', '0011001', 'VND', 1, 0, 0, 0]);         // dòng 8: 131 không có tài khoản ngân hàng
-    ws.addRow(['1121', null, '0011001', 'VND', 5, 0, 0, 0]);           // dòng 9: trùng dòng 3
+    ws.addRow(['1121', null, '0011001', null, null, null, 'VND', 100, 0, 0, 0]); ws.addRow(['1121', null, '0011002', null, null, null, 'VND', 200, 0, 0, 0]); ws.addRow(['4111', null, null, null, null, null, 'VND', 0, 300, 0, 0]);
+    ws.addRow(['1121', null, 'KHONGCO', null, null, null, 'VND', 1, 0, 0, 0]);           // dòng 6: tài khoản ngân hàng không có
+    ws.addRow(['1121', null, '0099001', null, null, null, 'VND', 1, 0, 0, 0]);           // dòng 7: thuộc 1122
+    ws.addRow(['131', 'KH001', '0011001', null, null, null, 'VND', 1, 0, 0, 0]);         // dòng 8: 131 không có tài khoản ngân hàng
+    ws.addRow(['1121', null, '0011001', null, null, null, 'VND', 5, 0, 0, 0]);           // dòng 9: trùng dòng 3
     const v = await upload(wb, 'validate', 2026, c6);
     expect((v.json().errors as { row: number; column: string }[]).map((e) => `${e.row}:${e.column}`)).toEqual(['6:bank_account_no', '7:bank_account_no', '8:bank_account_no', '9:account_code']);
     for (let k = 0; k < 4; k++) ws.spliceRows(6, 1); // spliceRows(6, 4) không bỏ các dòng cuối của ExcelJS
@@ -446,17 +456,101 @@ describe('API số dư đầu kỳ theo tài khoản ngân hàng', () => {
 
   it('nhập Excel: tiêu đề dòng 1 lạ thì từ chối 400 nêu tiêu đề cần có (không đoán bố cục, kẻo đọc lệch cột Nợ/Có); tiêu đề đúng sau khi chuẩn hóa khoảng trắng và hoa thường vẫn nhận', async () => {
     const wrong = async (edit: (ws: ExcelJS.Worksheet) => void) => {
-      const { wb, ws } = await sheet(); ws.addRow(['1121', null, null, 'VND', 100, 0, 0, 0]); edit(ws);
+      const { wb, ws } = await sheet(); ws.addRow(['1121', null, null, null, null, null, 'VND', 100, 0, 0, 0]); edit(ws);
       const r = await upload(wb, 'validate', 2026, c6); expect(r.statusCode, r.body).toBe(400);
       expect(r.json().error).toMatchObject({ code: 'IMPORT_BAD_HEADER', message: expect.stringContaining('Tài khoản ngân hàng') });
       expect(r.json().error.message).toContain('Dư Nợ nguyên tệ');
     };
     await wrong((ws) => { ws.getRow(1).getCell(3).value = 'Tài khoản NH'; });                  // tên khác ở cột ngân hàng
-    await wrong((ws) => { ws.getRow(1).getCell(4).value = 'Loại tiền'; });                      // thiếu "(*)"
-    await wrong((ws) => { ws.getRow(1).getCell(8).value = null; });                             // cột cuối trống
+    await wrong((ws) => { ws.getRow(1).getCell(7).value = 'Loại tiền'; });                      // thiếu "(*)"
+    await wrong((ws) => { ws.getRow(1).getCell(11).value = null; });                            // cột cuối trống
     await wrong((ws) => { ws.getRow(1).getCell(3).value = 'Tai khoan ngan hang'; });            // không dấu
-    const { wb, ws } = await sheet(); ws.addRow(['1121', null, null, 'VND', 100, 0, 0, 0]);
-    ws.getRow(1).getCell(3).value = '  tài  khoản NGÂN hàng '; ws.getRow(1).getCell(5).value = 'dư nợ';
+    await wrong((ws) => { ws.getRow(1).getCell(4).value = 'Số CT'; });                          // tên khác ở cột số chứng từ
+    const { wb, ws } = await sheet(); ws.addRow(['1121', null, null, null, null, null, 'VND', 100, 0, 0, 0]);
+    ws.getRow(1).getCell(3).value = '  tài  khoản NGÂN hàng '; ws.getRow(1).getCell(8).value = 'dư nợ';
     const ok = await upload(wb, 'commit', 2026, c6); expect(ok.statusCode, ok.body).toBe(200); expect(ok.json()).toMatchObject({ inserted: 1, errors: [] });
+  }, 30_000);
+});
+
+describe('số dư đầu kỳ công nợ theo hóa đơn', () => {
+  let c7: string; let t7: string;
+  const P = (rows: object[]) => put(rows, 2026, c7);
+  const D = (docNo: string | null, docDate: string | null = null, dueDate: string | null = null) => ({ docNo, docDate, dueDate });
+  const api = (method: 'GET' | 'POST', url: string, payload?: object) => ctx.app.inject({ method, url, headers: { cookie: c7 }, ...(payload ? { payload } : {}) });
+  type Item = { id: number; account: string; party: string; doc_no: string | null; doc_date: string; due_date: string | null; amount: string };
+  const dkItems = async () => (await sql<Item>`SELECT o.id::int AS id, a.code AS account, p.code AS party, o.doc_no, o.doc_date::text, o.due_date::text, o.amount::text FROM open_item o
+    JOIN voucher v ON v.id = o.voucher_id JOIN account a ON a.id = o.account_id JOIN party p ON p.id = o.party_id
+    WHERE v.tenant_id = ${t7}::uuid AND v.voucher_type = 'DK' ORDER BY a.code, o.doc_no`.execute(ctx.t.admin)).rows;
+  beforeAll(async () => {
+    ({ cookie: c7, tenantId: t7 } = await bootstrapTenant(ctx, { code: `OM${Date.now()}` }));
+    expect((await api('POST', '/api/fiscal-years', { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' })).statusCode).toBe(201);
+    for (const p of [{ code: 'KH001', name: 'Khách 1', is_customer: true }, { code: 'NCC001', name: 'Nhà cung cấp 1', is_vendor: true, payment_term_days: 15 }])
+      expect((await api('POST', '/api/catalogs/party', p)).statusCode).toBe(201);
+  }, 60_000);
+
+  it('số dư đầu kỳ công nợ theo từng hóa đơn: hai hóa đơn cùng khách sinh hai open_item có hạn riêng', async () => {
+    const rows = [R('131', '30', '0', 'KH001', D('HD001', '2025-11-15', '2026-01-15')), R('131', '20', '0', 'KH001', D('HD002', '2025-12-10', '2026-02-10')),
+      R('331', '0', '5', 'NCC001', D('M01', '2025-12-20')), R('1111', '15'), R('4111', '0', '60')];
+    expect((await P(rows)).json()).toEqual({ count: 5 });
+    const saved = (await list(2026, c7)).json() as { accountCode: string; docNo: string | null; docDate: string | null; dueDate: string | null }[];
+    expect(saved.filter((r) => r.accountCode === '131').map((r) => [r.docNo, r.docDate, r.dueDate])).toEqual([['HD001', '2025-11-15', '2026-01-15'], ['HD002', '2025-12-10', '2026-02-10']]);
+    expect((await check(2026, c7)).json()).toEqual([]);
+    const p = await post(2026, c7); expect(p.statusCode, p.body).toBe(200);
+    expect((p.json().lines as { accountCode: string; description: string; dueDate: string | null }[]).filter((l) => l.accountCode === '131').map((l) => [l.description, l.dueDate]))
+      .toEqual([['Số dư HD001', '2026-01-15'], ['Số dư HD002', '2026-02-10']]);
+    // hạn của dòng số dư; không nhập hạn thì ngày chứng từ + số ngày được nợ của đối tượng
+    expect((await dkItems()).map(({ id: _id, ...x }) => x)).toEqual([
+      { account: '131', party: 'KH001', doc_no: 'HD001', doc_date: '2025-11-15', due_date: '2026-01-15', amount: '30' },
+      { account: '131', party: 'KH001', doc_no: 'HD002', doc_date: '2025-12-10', due_date: '2026-02-10', amount: '20' },
+      { account: '331', party: 'NCC001', doc_no: 'M01', doc_date: '2025-12-20', due_date: '2026-01-04', amount: '-5' }]);
+    // cùng khách, cùng số chứng từ là dòng trùng
+    const dup = await P([R('131', '1', '0', 'KH001', D('HD001')), R('131', '2', '0', 'KH001', D('HD001')), R('4111', '0', '3')]);
+    expect([dup.statusCode, dup.json().error.code]).toEqual([409, 'DUPLICATE']);
+  }, 30_000);
+
+  it('số chứng từ, ngày chứng từ, hạn thanh toán chỉ nhập ở tài khoản công nợ; hạn trước ngày chứng từ, ngày chứng từ sau ngày số dư bị từ chối', async () => {
+    const before = (await list(2026, c7)).json();
+    const bad = async (row: object, status: number, code: string, message?: string) => {
+      const r = await P([row]); expect(r.statusCode, r.body).toBe(status); expect(r.json().error.code).toBe(code);
+      if (message) expect(r.json().error.message).toContain(message);
+    };
+    await bad(R('1111', '1', '0', null, D('X1')), 400, 'OPENING_DOC_NOT_ALLOWED', 'Tài khoản 1111 không theo dõi công nợ');
+    await bad(R('1111', '1', '0', null, D(null, null, '2026-02-01')), 400, 'OPENING_DOC_NOT_ALLOWED');
+    await bad(R('131', '1', '0', 'KH001', D('X2', '2025-12-01', '2025-11-30')), 400, 'VALIDATION');
+    await bad(R('131', '1', '0', 'KH001', D('X3', '2026-01-05')), 400, 'OPENING_DOC_DATE_AFTER', '31/12/2025');
+    await bad(R('131', '1', '0', 'KH001', { docDate: '2025-02-30' }), 400, 'VALIDATION');
+    expect((await list(2026, c7)).json()).toEqual(before);
+  }, 30_000);
+
+  it('khoản công nợ đầu kỳ đã đối trừ: bỏ ghi sổ và ghi sổ lại số dư đầu kỳ đều 409 OPEN_ITEM_SETTLED, chứng từ DK giữ nguyên', async () => {
+    const rec = await api('POST', '/api/vouchers', { voucherType: 'PKT', postingDate: '2026-01-10', documentDate: '2026-01-10', autoPost: true, lines: [{ accountCode: '1111', debit: '30' }, { accountCode: '131', credit: '30', partyCode: 'KH001' }] });
+    expect(rec.statusCode, rec.body).toBe(201);
+    const hd001 = (await dkItems()).find((i) => i.doc_no === 'HD001')!.id;
+    const recItem = (await sql<{ id: number }>`SELECT id::int AS id FROM open_item WHERE voucher_id = ${rec.json().id}::uuid`.execute(ctx.t.admin)).rows[0]!.id;
+    await sql`INSERT INTO settlement(tenant_id, debit_item_id, credit_item_id, amount, amount_currency, settle_date, kind, group_id) VALUES (${t7}::uuid, ${hd001}, ${recItem}, 30, 30, '2026-01-10', 'manual', gen_random_uuid())`.execute(ctx.t.admin);
+    for (const [what, r] of [['bỏ ghi sổ', await api('POST', '/api/opening-balance/2026/unpost')], ['ghi sổ lại', await api('POST', '/api/opening-balance/2026/post')]] as const)
+      expect([what, r.statusCode, r.json().error.code]).toEqual([what, 409, 'OPEN_ITEM_SETTLED']);
+    const dk = (await api('GET', '/api/vouchers?type=DK&state=posted')).json();
+    expect(dk.total).toBe(1);
+    expect((await dkItems()).map((i) => i.doc_no)).toEqual(['HD001', 'HD002', 'M01']);
+    await sql`DELETE FROM settlement WHERE debit_item_id = ${hd001}`.execute(ctx.t.admin);
+    const un = await api('POST', '/api/opening-balance/2026/unpost'); expect(un.statusCode, un.body).toBe(200);
+    expect(await dkItems()).toEqual([]);
+  }, 30_000);
+
+  it('nhập Excel có số chứng từ, ngày chứng từ (ô ngày hoặc chữ dd/mm/yyyy), hạn thanh toán; ngày sai báo đúng dòng và cột', async () => {
+    const { wb, ws } = await sheet();
+    ws.addRow(['131', 'KH001', null, 'HD101', new Date(Date.UTC(2025, 10, 20)), '20/01/2026', 'VND', 40, 0, 0, 0]);
+    ws.addRow(['131', 'KH001', null, 'HD102', '05/12/2025', null, 'VND', 10, 0, 0, 0]);
+    ws.addRow(['4111', null, null, null, null, null, 'VND', 0, 50, 0, 0]);
+    ws.addRow(['131', 'KH001', null, 'HD103', '31/02/2025', null, 'VND', 1, 0, 0, 0]);   // dòng 6: ngày không có
+    ws.addRow(['1111', null, null, 'X', null, null, 'VND', 1, 0, 0, 0]);                  // dòng 7: tài khoản không theo dõi công nợ
+    ws.addRow(['131', 'KH001', null, 'HD101', null, null, 'VND', 1, 0, 0, 0]);            // dòng 8: trùng dòng 3
+    const v = await upload(wb, 'validate', 2026, c7);
+    expect((v.json().errors as { row: number; column: string }[]).map((e) => `${e.row}:${e.column}`)).toEqual(['6:doc_date', '7:doc_no', '8:account_code']);
+    for (let k = 0; k < 3; k++) ws.spliceRows(6, 1);
+    const c = await upload(wb, 'commit', 2026, c7); expect(c.json()).toMatchObject({ inserted: 3, errors: [] });
+    const rows = (await list(2026, c7)).json() as { accountCode: string; docNo: string | null; docDate: string | null; dueDate: string | null }[];
+    expect(rows.filter((r) => r.accountCode === '131').map((r) => [r.docNo, r.docDate, r.dueDate])).toEqual([['HD101', '2025-11-20', '2026-01-20'], ['HD102', '2025-12-05', null]]);
   }, 30_000);
 });

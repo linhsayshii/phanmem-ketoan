@@ -146,6 +146,17 @@ export interface VoucherPairTable {
 export interface OpeningBalanceTable {
   id: Generated<number>; tenant_id: string; fiscal_year: number; account_id: number; party_id: string | null; bank_account_id: number | null; currency_code: Generated<string>;
   debit: NumericDefault; credit: NumericDefault; debit_currency: NumericDefault; credit_currency: NumericDefault;
+  doc_no: string | null; doc_date: DateOnly | null; due_date: DateOnly | null; // số dư công nợ theo từng hóa đơn
+}
+// Khoản công nợ theo chứng từ: sinh khi ghi sổ dòng tài khoản công nợ (account.reconcile) có đối tượng; amount có dấu (Nợ dương, Có âm).
+export interface OpenItemTable {
+  id: Generated<number>; tenant_id: string; voucher_id: string; voucher_line_id: number; line_posting_date: DateOnly; line_no: number; account_id: number; party_id: string;
+  currency_code: string; doc_date: DateOnly; doc_no: string | null; due_date: DateOnly | null; amount: Numeric; amount_currency: Numeric; parent_id: number | null; invoice_id: number | null;
+}
+// Một dòng đối trừ giữa khoản Nợ và khoản Có; các dòng cùng group_id là một lần đối trừ.
+export interface SettlementTable {
+  id: Generated<number>; tenant_id: string; debit_item_id: number; credit_item_id: number; amount: Numeric; amount_currency: Numeric; settle_date: DateOnly;
+  kind: string; fx_voucher_id: string | null; group_id: string; created_by: string | null; created_at: Generated<string>;
 }
 export interface CashCountTable {
   id: Generated<number>; tenant_id: string; count_date: DateOnly; account_id: number; currency_code: Generated<string>;
@@ -234,6 +245,8 @@ export interface Database {
   balance_stale: BalanceStaleTable;
   account_period_balance: AccountPeriodBalanceTable;
   opening_balance: OpeningBalanceTable;
+  open_item: OpenItemTable;
+  settlement: SettlementTable;
   cash_count: CashCountTable;
   fx_run: FxRunTable;
   closing_step: ClosingStepTable;

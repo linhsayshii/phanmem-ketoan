@@ -3,9 +3,10 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
-import { D, formatVnNumber, parseVnNumber, sum, VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
+import { D, formatVnDate, formatVnNumber, parseVnNumber, sum, VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
-import { MAX_ERRORS, MAX_ROWS, plainCell, type ImportError } from '../master/importExcel.js';
+import { excelDate, MAX_ERRORS, MAX_ROWS, plainCell, type ImportError } from '../master/importExcel.js';
+import { isoDate } from '../reporting/routes.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { getVoucher, postVoucher, type VoucherDto } from './vouchers.service.js';
 
@@ -15,6 +16,8 @@ const foreign = z.string().regex(/^\d{1,16}(\.\d{1,4})?$/, 'Nguyên tệ không 
 export const openingRow = z.object({
   accountCode: z.string().min(1, 'Thiếu số hiệu tài khoản'), partyCode: z.string().nullable().default(null), bankAccountNo: z.string().trim().min(1).max(50).nullable().optional(), currencyCode: z.string().length(3).default('VND'),
   debit: vnd.default('0'), credit: vnd.default('0'), debitCurrency: foreign.default('0'), creditCurrency: foreign.default('0'),
+  // Số dư công nợ theo từng hóa đơn: số, ngày chứng từ gốc và hạn thanh toán (chỉ tài khoản phải thu/phải trả).
+  docNo: z.string().trim().min(1).max(50).nullable().optional(), docDate: isoDate.nullable().optional(), dueDate: isoDate.nullable().optional(),
 }).superRefine((r, ctx) => {
   // Mỗi số nhập phải vào được chứng từ: số bị bỏ qua âm thầm (sai bên, dòng VND có nguyên tệ) là mất dữ liệu.
   const [d, c, dc, cc] = [r.debit, r.credit, r.debitCurrency, r.creditCurrency].map((x) => D(x).gt(0));
@@ -27,6 +30,7 @@ export const openingRow = z.object({
     if (!d && !c) bad('debit', 'Dòng ngoại tệ phải có số tiền VND quy đổi');
     else if ((d && !dc) || (c && !cc)) bad(d ? 'debitCurrency' : 'creditCurrency', 'Dòng ngoại tệ phải có nguyên tệ cùng bên Nợ/Có với số tiền VND');
   }
+  if (r.docDate && r.dueDate && r.dueDate < r.docDate) bad('dueDate', 'Hạn thanh toán trước ngày chứng từ');
 });
 export type OpeningRow = z.infer<typeof openingRow>;
 export interface OpeningIssue {
@@ -46,18 +50,18 @@ async function openingPeriod(trx: Trx, year: number) {
 const openingRows = (trx: Trx, year: number, regime: string) =>
   trx.selectFrom('opening_balance as o').innerJoin('account as a', 'a.id', 'o.account_id').leftJoin('party as p', 'p.id', 'o.party_id')
     .leftJoin('bank_account as ba', 'ba.id', 'o.bank_account_id').leftJoin('bank as bk', 'bk.id', 'ba.bank_id')
-    .select(['o.id', 'o.account_id', 'o.party_id', 'o.bank_account_id', 'o.currency_code', 'o.debit', 'o.credit', 'o.debit_currency', 'o.credit_currency',
+    .select(['o.id', 'o.account_id', 'o.party_id', 'o.bank_account_id', 'o.currency_code', 'o.debit', 'o.credit', 'o.debit_currency', 'o.credit_currency', 'o.doc_no', 'o.doc_date', 'o.due_date',
       'a.code as accountCode', 'a.name as accountName', 'a.is_group', 'a.is_active', 'a.normal_balance', 'a.subledger_kind', 'a.track_currency', 'a.root_type', 'p.code as partyCode', 'p.name as partyName', 'ba.account_no as bankAccountNo', 'bk.name as bankName'])
-    .where('o.fiscal_year', '=', year).where('a.regime', '=', regime).orderBy('a.code').orderBy('p.code').orderBy('ba.account_no').orderBy('o.id').execute();
+    .where('o.fiscal_year', '=', year).where('a.regime', '=', regime).orderBy('a.code').orderBy('p.code').orderBy('ba.account_no').orderBy('o.doc_date').orderBy('o.doc_no').orderBy('o.id').execute();
 type DbRow = Awaited<ReturnType<typeof openingRows>>[number];
 
 export async function listOpening(trx: Trx, year: number): Promise<(OpeningRow & { id: number; accountName: string; partyName: string | null; bankName: string | null })[]> {
   const { regime } = await openingPeriod(trx, year);
   return (await openingRows(trx, year, regime)).map((r) => ({ id: r.id, accountCode: r.accountCode, accountName: r.accountName, partyCode: r.partyCode, partyName: r.partyName, bankAccountNo: r.bankAccountNo, bankName: r.bankName,
-    currencyCode: r.currency_code, debit: r.debit, credit: r.credit, debitCurrency: r.debit_currency, creditCurrency: r.credit_currency }));
+    currencyCode: r.currency_code, debit: r.debit, credit: r.credit, debitCurrency: r.debit_currency, creditCurrency: r.credit_currency, docNo: r.doc_no, docDate: r.doc_date, dueDate: r.due_date }));
 }
 
-// 1000 dòng × 12 cột < 65535 tham số bind của PostgreSQL.
+// 1000 dòng × 15 cột < 65535 tham số bind của PostgreSQL.
 const chunks = <T>(xs: T[], n = 1000): T[][] => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, (i + 1) * n));
 const isZeroRow = (r: OpeningRow) => [r.debit, r.credit, r.debitCurrency, r.creditCurrency].every((x) => D(x).isZero());
 const uniq = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))];
@@ -71,12 +75,21 @@ function bankProblem(r: OpeningRow, account: { subledger_kind: string | null }, 
   if (bank.gl_account_code !== r.accountCode) return new AppError('BANK_ACCOUNT_GL_MISMATCH', `Tài khoản ngân hàng ${r.bankAccountNo} thuộc TK ${bank.gl_account_code}, không thuộc TK ${r.accountCode}`, 400);
   return null;
 }
+// Số, ngày chứng từ và hạn thanh toán chỉ có nghĩa với số dư công nợ (theo từng hóa đơn); ngày chứng từ không sau ngày của chứng từ số dư (DK).
+const isArap = (account: { subledger_kind: string | null }) => account.subledger_kind === 'receivable' || account.subledger_kind === 'payable';
+const DOC_FIELDS = [['docNo', 'doc_no'], ['docDate', 'doc_date'], ['dueDate', 'due_date']] as const;
+function docProblem(r: OpeningRow, account: { subledger_kind: string | null }, dkDate: string): { column: string; error: AppError } | null {
+  const given = DOC_FIELDS.find(([k]) => r[k]);
+  if (given && !isArap(account)) return { column: given[1], error: new AppError('OPENING_DOC_NOT_ALLOWED', `Tài khoản ${r.accountCode} không theo dõi công nợ: không nhập số chứng từ, ngày chứng từ, hạn thanh toán`, 400) };
+  if (r.docDate && r.docDate > dkDate) return { column: 'doc_date', error: new AppError('OPENING_DOC_DATE_AFTER', `Ngày chứng từ ${formatVnDate(r.docDate)} sau ngày số dư đầu kỳ ${formatVnDate(dkDate)}`, 400) };
+  return null;
+}
 const banksOf = async (trx: Trx, nos: string[]) =>
   new Map((nos.length ? await trx.selectFrom('bank_account').select(['id', 'account_no', 'gl_account_code']).where('account_no', 'in', nos).execute() : []).map((b) => [b.account_no, b]));
 
 // Thay toàn bộ số dư của năm. Dòng toàn số 0 bị bỏ qua; trả số dòng đã ghi.
 export async function replaceOpening(trx: Trx, tenantId: string, year: number, rows: OpeningRow[]): Promise<number> {
-  const { regime } = await openingPeriod(trx, year);
+  const { regime, date_from: dkDate } = await openingPeriod(trx, year);
   const live = rows.filter((r) => !isZeroRow(r));
   const accCodes = uniq(live.map((r) => r.accountCode)); const partyCodes = uniq(live.map((r) => r.partyCode)); const curCodes = uniq(live.map((r) => r.currencyCode));
   const accounts = new Map((accCodes.length ? await trx.selectFrom('account').select(['id', 'code', 'subledger_kind']).where('regime', '=', regime).where('code', 'in', accCodes).execute() : []).map((a) => [a.code, a]));
@@ -88,7 +101,9 @@ export async function replaceOpening(trx: Trx, tenantId: string, year: number, r
     const party_id = r.partyCode ? parties.get(r.partyCode) : null; if (party_id === undefined) throw notFound('đối tượng', r.partyCode!);
     if (!currencies.has(r.currencyCode)) throw notFound('loại tiền', r.currencyCode);
     const bank = r.bankAccountNo ? banks.get(r.bankAccountNo) : undefined; const bad = bankProblem(r, account, bank); if (bad) throw bad;
-    return { tenant_id: tenantId, fiscal_year: year, account_id: account.id, party_id, bank_account_id: bank?.id ?? null, currency_code: r.currencyCode, debit: r.debit, credit: r.credit, debit_currency: r.debitCurrency, credit_currency: r.creditCurrency };
+    const doc = docProblem(r, account, dkDate); if (doc) throw doc.error;
+    return { tenant_id: tenantId, fiscal_year: year, account_id: account.id, party_id, bank_account_id: bank?.id ?? null, currency_code: r.currencyCode, debit: r.debit, credit: r.credit, debit_currency: r.debitCurrency, credit_currency: r.creditCurrency,
+      doc_no: r.docNo ?? null, doc_date: r.docDate ?? null, due_date: r.dueDate ?? null };
   });
   await trx.deleteFrom('opening_balance').where('fiscal_year', '=', year).execute();
   for (const c of chunks(values)) await trx.insertInto('opening_balance').values(c).execute();
@@ -159,7 +174,10 @@ export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: str
   const lines = rows.map((r, i) => ({
     tenant_id: ctx.tenantId, voucher_id: id, line_no: i + 1, account_id: r.account_id, posting_date: p0.date_from, currency_code: r.currency_code, debit: r.debit, credit: r.credit,
     // có dấu: + Nợ, − Có (dòng VND được trigger đặt lại bằng Nợ − Có)
-    amount_currency: D(r.debit_currency).minus(r.credit_currency).toString(), party_id: r.party_id, bank_account_id: r.bank_account_id, description: 'Số dư đầu kỳ' }));
+    amount_currency: D(r.debit_currency).minus(r.credit_currency).toString(), party_id: r.party_id, bank_account_id: r.bank_account_id,
+    // số dư công nợ theo hóa đơn: fn_open_items_create lấy số/ngày chứng từ gốc từ extra_dims, hạn từ due_date của dòng
+    description: r.doc_no ? `Số dư ${r.doc_no}` : 'Số dư đầu kỳ', due_date: r.due_date,
+    extra_dims: JSON.stringify({ ...(r.doc_no ? { opening_doc_no: r.doc_no } : {}), ...(r.doc_date ? { opening_doc_date: r.doc_date } : {}) }) }));
   for (const c of chunks(lines)) await trx.insertInto('voucher_line').values(c).execute();
   return postVoucher(trx, id);
 }
@@ -170,27 +188,31 @@ export async function unpostOpening(trx: Trx, tenantId: string, year: number): P
   const dk = await trx.selectFrom('voucher').select('id').where('voucher_type', '=', 'DK').where('fiscal_year', '=', year).where('source_doc_type', '=', 'opening_balance')
     .where('reversal_of_id', 'is', null).where('state', '=', 'posted').executeTakeFirst();
   if (!dk) throw new AppError('OPENING_NOT_POSTED', `Năm ${year} chưa có chứng từ số dư đầu kỳ đã ghi sổ`, 409);
-  // shortcut: chưa chặn khi khoản công nợ mở của DK đã được đối trừ; Task 11 thêm kiểm tra này và trả 409 OPEN_ITEM_SETTLED tại đây.
+  // Khoản công nợ đầu kỳ của DK đã đối trừ thì unpost_voucher từ chối 409 OPEN_ITEM_SETTLED (ghi sổ lại số dư bỏ ghi sổ DK cũ bằng cùng hàm nên cũng bị chặn).
   await unpostOpeningVoucher(trx, dk.id);
   return getVoucher(trx, dk.id);
 }
 
 // ===== Excel =====
-const COLS = [['accountCode', 'Số hiệu TK (*)'], ['partyCode', 'Mã đối tượng'], ['bankAccountNo', 'Tài khoản ngân hàng'], ['currencyCode', 'Loại tiền (*)'], ['debit', 'Dư Nợ'], ['credit', 'Dư Có'],
-  ['debitCurrency', 'Dư Nợ nguyên tệ'], ['creditCurrency', 'Dư Có nguyên tệ']] as const;
+const COLS = [['accountCode', 'Số hiệu TK (*)'], ['partyCode', 'Mã đối tượng'], ['bankAccountNo', 'Tài khoản ngân hàng'], ['docNo', 'Số chứng từ'], ['docDate', 'Ngày chứng từ'], ['dueDate', 'Hạn thanh toán'],
+  ['currencyCode', 'Loại tiền (*)'], ['debit', 'Dư Nợ'], ['credit', 'Dư Có'], ['debitCurrency', 'Dư Nợ nguyên tệ'], ['creditCurrency', 'Dư Có nguyên tệ']] as const;
 type ColKey = (typeof COLS)[number][0];
-const NEW_KEYS: ColKey[] = COLS.map((c) => c[0]); const OLD_KEYS = NEW_KEYS.filter((k) => k !== 'bankAccountNo'); // mẫu cũ (trước khi có số dư theo tài khoản ngân hàng) không có cột Tài khoản ngân hàng
+// Ba bố cục nhận được: mẫu hiện hành; mẫu trước (chưa có cột chứng từ của số dư công nợ theo hóa đơn); mẫu cũ (chưa có cả cột Tài khoản ngân hàng).
+const NEW_KEYS: ColKey[] = COLS.map((c) => c[0]);
+const BANK_KEYS = NEW_KEYS.filter((k) => !['docNo', 'docDate', 'dueDate'].includes(k)); const OLD_KEYS = BANK_KEYS.filter((k) => k !== 'bankAccountNo');
 const normHeader = (s: string) => s.normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
 const snake = (k: string) => k.replace(/[A-Z]/g, (m) => '_' + m.toLowerCase());
 
 export async function openingTemplate(): Promise<Buffer> {
   const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Du_lieu');
-  ws.addRow(COLS.map((c) => c[1])); ws.addRow(COLS.map((c) => snake(c[0]))); ws.getRow(2).hidden = true; ws.addRow(['VI_DU', '', '', 'VND', 0, 0, 0, 0]);
+  ws.addRow(COLS.map((c) => c[1])); ws.addRow(COLS.map((c) => snake(c[0]))); ws.getRow(2).hidden = true; ws.addRow(['VI_DU', '', '', '', '', '', 'VND', 0, 0, 0, 0]);
   ws.getRow(1).font = { bold: true }; ws.columns.forEach((col) => { col.width = 22; });
-  for (const i of [1, 2, 3, 4]) ws.getColumn(i).numFmt = '@'; // cột chữ định dạng văn bản để Excel giữ số 0 đầu của mã
+  for (const i of [1, 2, 3, 4, 7]) ws.getColumn(i).numFmt = '@'; // cột chữ định dạng văn bản để Excel giữ số 0 đầu của mã
+  for (const i of [5, 6]) ws.getColumn(i).numFmt = 'dd/mm/yyyy';
   const hd = wb.addWorksheet('Huong_dan');
   hd.addRow(['Mỗi dòng một tài khoản chi tiết (và một đối tượng với tài khoản công nợ, một tài khoản ngân hàng với tài khoản tiền gửi ngân hàng: nhập số tài khoản đã khai trong danh mục Tài khoản ngân hàng). Chỉ nhập một bên Nợ hoặc Có. Tổng dư Nợ phải bằng tổng dư Có.']);
   hd.addRow(['Dòng 1: tên cột (cột có (*) bắt buộc). Dòng 3 là ví dụ (VI_DU): bị bỏ qua, có thể xóa hoặc để nguyên; nhập dữ liệu ngay bên dưới.']);
+  hd.addRow(['Số dư công nợ (131, 331...) nhập theo từng hóa đơn: mỗi hóa đơn một dòng với Số chứng từ, Ngày chứng từ, Hạn thanh toán (ngày dạng dd/mm/yyyy). Các cột này để trống ở tài khoản khác.']);
   hd.addRow(['Số tiền VND là số nguyên đồng; dư nguyên tệ nhập ở cột nguyên tệ (tối đa 4 số lẻ) cùng bên Nợ/Có với số VND. Số nhập dạng 1.500.000 hoặc 1.500.000,25.']);
   hd.addRow(['Nhập Excel thay thế toàn bộ số dư đầu kỳ đã nhập của năm; sau đó cần Ghi sổ số dư đầu kỳ để cập nhật chứng từ DK.']);
   return Buffer.from(await wb.xlsx.writeBuffer());
@@ -205,6 +227,8 @@ function num(cell: ExcelJS.Cell): string | null {
   return null;
 }
 const txt = (cell: ExcelJS.Cell) => { const v = plainCell(cell.value); return v === null || v === undefined ? '' : String(v).trim(); };
+// Ô ngày: trống là null, sai là undefined (lỗi).
+const day = (cell: ExcelJS.Cell): string | null | undefined => { const v = plainCell(cell.value); return v === null || v === undefined || (typeof v === 'string' && v.trim() === '') ? null : excelDate(v) ?? undefined; };
 
 export async function parseOpeningWorkbook(trx: Trx, year: number, buffer: Buffer): Promise<{ rows: OpeningRow[]; errors: ImportError[] }> {
   const wb = new ExcelJS.Workbook();
@@ -212,11 +236,11 @@ export async function parseOpeningWorkbook(trx: Trx, year: number, buffer: Buffe
   const ws = wb.getWorksheet('Du_lieu') ?? wb.worksheets[0];
   if (!ws) throw new AppError('IMPORT_NO_SHEET', 'Không tìm thấy sheet Du_lieu', 400);
   if (ws.rowCount > MAX_ROWS + 3) throw new AppError('IMPORT_TOO_LARGE', 'File vượt quá 20.000 dòng', 400);
-  // Bố cục cột nhận biết bằng tiêu đề dòng 1, phải khớp đúng một trong hai mẫu (mẫu cũ thì các cột sau dịch sang trái một ô); tiêu đề lạ thì từ chối, không đoán, kẻo đọc lệch cột Nợ/Có.
+  // Bố cục cột nhận biết bằng tiêu đề dòng 1, phải khớp đúng một trong ba mẫu (mẫu trước, mẫu cũ thì các cột sau dịch sang trái); tiêu đề lạ thì từ chối, không đoán, kẻo đọc lệch cột Nợ/Có.
   const headerIs = (keys: ColKey[]) => keys.every((k, i) => normHeader(txt(ws.getRow(1).getCell(i + 1))) === normHeader(COLS.find((c) => c[0] === k)![1]));
-  const cols = headerIs(NEW_KEYS) ? NEW_KEYS : headerIs(OLD_KEYS) ? OLD_KEYS : null;
-  if (!cols) throw new AppError('IMPORT_BAD_HEADER', `Tiêu đề cột ở dòng 1 không đúng mẫu. Cần: ${COLS.map((c) => c[1]).join(', ')} (hoặc mẫu cũ không có cột Tài khoản ngân hàng). Hãy tải lại mẫu Excel.`, 400);
-  const { regime } = await openingPeriod(trx, year);
+  const cols = [NEW_KEYS, BANK_KEYS, OLD_KEYS].find(headerIs);
+  if (!cols) throw new AppError('IMPORT_BAD_HEADER', `Tiêu đề cột ở dòng 1 không đúng mẫu. Cần: ${COLS.map((c) => c[1]).join(', ')} (hoặc mẫu trước chưa có ba cột Số chứng từ, Ngày chứng từ, Hạn thanh toán; mẫu cũ chưa có cả cột Tài khoản ngân hàng). Hãy tải lại mẫu Excel.`, 400);
+  const { regime, date_from: dkDate } = await openingPeriod(trx, year);
   const accounts = new Map((await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', regime).execute()).map((a) => [a.code, a]));
   const banks = new Map((await trx.selectFrom('bank_account').select(['account_no', 'gl_account_code']).execute()).map((b) => [b.account_no, b]));
   const parties = new Set((await trx.selectFrom('party').select('code').execute()).map((p) => p.code));
@@ -230,7 +254,12 @@ export async function parseOpeningWorkbook(trx: Trx, year: number, buffer: Buffe
     const n = amounts.map((k) => num(cell(row, k)));
     const badNum = n.flatMap((v, k) => (v === null ? [amounts[k]!] : []));
     if (badNum.length) { for (const k of badNum) errors.push({ row: i, column: snake(k), message: 'Số không hợp lệ' }); return; }
-    const parsed = openingRow.safeParse({ accountCode: txt(cell(row, 'accountCode')), partyCode: txt(cell(row, 'partyCode')) || null, bankAccountNo: cols.includes('bankAccountNo') ? txt(cell(row, 'bankAccountNo')) || null : null,
+    const has = (k: ColKey) => cols.includes(k);
+    const dates = (['docDate', 'dueDate'] as const).map((k) => (has(k) ? day(cell(row, k)) : null));
+    const badDate = dates.flatMap((v, k) => (v === undefined ? [k ? 'due_date' : 'doc_date'] : []));
+    if (badDate.length) { for (const column of badDate) errors.push({ row: i, column, message: 'Ngày không hợp lệ' }); return; }
+    const parsed = openingRow.safeParse({ accountCode: txt(cell(row, 'accountCode')), partyCode: txt(cell(row, 'partyCode')) || null, bankAccountNo: has('bankAccountNo') ? txt(cell(row, 'bankAccountNo')) || null : null,
+      docNo: has('docNo') ? txt(cell(row, 'docNo')) || null : null, docDate: dates[0], dueDate: dates[1],
       currencyCode: (txt(cell(row, 'currencyCode')) || 'VND').toUpperCase(), debit: n[0], credit: n[1], debitCurrency: n[2], creditCurrency: n[3] });
     if (!parsed.success) { for (const is of parsed.error.issues) errors.push({ row: i, column: snake(String(is.path[0])), message: is.message }); return; }
     const r = parsed.data;
@@ -240,8 +269,10 @@ export async function parseOpeningWorkbook(trx: Trx, year: number, buffer: Buffe
     if (r.partyCode && !parties.has(r.partyCode)) return fail('party_code', `Không có đối tượng ${r.partyCode}`);
     const bad = bankProblem(r, account, banks.get(r.bankAccountNo ?? ''));
     if (bad) return fail('bank_account_no', bad.message);
+    const doc = docProblem(r, account, dkDate);
+    if (doc) return fail(doc.column, doc.error.message);
     if (!currencies.has(r.currencyCode)) return fail('currency_code', `Không có loại tiền ${r.currencyCode}`);
-    const key = `${r.accountCode}|${r.partyCode ?? ''}|${r.bankAccountNo ?? ''}|${r.currencyCode}`;
+    const key = `${r.accountCode}|${r.partyCode ?? ''}|${r.bankAccountNo ?? ''}|${r.currencyCode}|${r.docNo ?? ''}`;
     if (seen.has(key)) return fail('account_code', `Trùng với dòng ${seen.get(key)}`);
     seen.set(key, i); rows.push(r);
   });

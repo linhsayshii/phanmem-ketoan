@@ -3,19 +3,21 @@ import { Alert, Button, Card, Modal, Select, Space, Table, Tag, Upload, message 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import type { ColDef } from 'ag-grid-community';
-import { D, formatVnNumber, parseVnNumber, sum } from '@kt/domain';
+import { D, formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, sum } from '@kt/domain';
 import { KeyboardGrid, LookupSelect } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor, bankAccountFetcher } from '../lookups.js';
 import { parseAmount } from './VoucherForm.js';
 
-// accountName, partyName, bankName và id chỉ để hiển thị; máy chủ không nhận.
-type Row = { accountCode: string; accountName: string; partyCode: string | null; partyName: string | null; bankAccountNo: string | null; bankName: string | null; currencyCode: string; debit: string; credit: string; debitCurrency: string; creditCurrency: string };
+// accountName, partyName, bankName và id chỉ để hiển thị; máy chủ không nhận. docNo, docDate, dueDate: số dư công nợ theo từng hóa đơn.
+type Row = { accountCode: string; accountName: string; partyCode: string | null; partyName: string | null; bankAccountNo: string | null; bankName: string | null;
+  docNo: string | null; docDate: string | null; dueDate: string | null; currencyCode: string; debit: string; credit: string; debitCurrency: string; creditCurrency: string };
 interface Issue { code: string; message: string; accountCode?: string; partyCode?: string | null; warning?: boolean }
 interface FiscalYear { fiscalYear: number; regime: string; dateFrom: string }
 interface ImportResult { total: number; inserted: number; errors: { row: number; column: string; message: string }[]; errorCount?: number }
-const emptyRow = (): Row => ({ accountCode: '', accountName: '', partyCode: null, partyName: null, bankAccountNo: null, bankName: null, currencyCode: 'VND', debit: '0', credit: '0', debitCurrency: '0', creditCurrency: '0' });
+const emptyRow = (): Row => ({ accountCode: '', accountName: '', partyCode: null, partyName: null, bankAccountNo: null, bankName: null, docNo: null, docDate: null, dueDate: null,
+  currencyCode: 'VND', debit: '0', credit: '0', debitCurrency: '0', creditCurrency: '0' });
 const LOOKUP_CATALOG: Record<string, string> = { accountCode: 'account', partyCode: 'party', bankAccountNo: 'bank_account' };
 const NAME_FIELD = { accountCode: 'accountName', partyCode: 'partyName', bankAccountNo: 'bankName' } as const;
 const quickAdd = [{ key: 'code', label: 'Mã' }, { key: 'name', label: 'Tên' }];
@@ -31,6 +33,11 @@ const numCol = (field: keyof Row, headerName: string, foreign: boolean): ColDef<
   valueFormatter: (p) => { const v = (p.value as string) || '0'; return formatVnNumber(v, foreign ? D(v).decimalPlaces() : 0); },
   valueParser: (p) => (foreign ? parseForeign(p.newValue, p.oldValue) : parseAmount(p.newValue, p.oldValue)),
   cellEditorParams: { useFormatter: true } }); // ô sửa hiện số dạng 1.500.000 để parseVnNumber đọc lại được
+// Ô ngày nhập dd/mm/yyyy (để trống là không có); chữ sai thì giữ giá trị cũ.
+const dateCol = (field: 'docDate' | 'dueDate', headerName: string, editable: (d: Row | undefined) => boolean): ColDef<Row> => ({ field, headerName, width: 120, editable: (p) => editable(p.data),
+  valueFormatter: (p) => (p.value ? formatVnDate(p.value as string) : ''),
+  valueParser: (p) => { const t = String(p.newValue ?? '').trim(); return t === '' ? null : parseVnDate(t) ?? (p.oldValue as string | null) ?? null; },
+  cellEditorParams: { useFormatter: true } });
 // Đổi mã thì xóa tên cũ (tên đúng chỉ có sau khi lưu hoặc chọn từ danh mục), không để tên của mã trước lại bên cạnh mã mới.
 const codeCol = (field: keyof typeof NAME_FIELD, headerName: string, width: number, after?: (d: Row) => void): ColDef<Row> => ({ field, headerName, width,
   valueSetter: (p) => {
@@ -42,7 +49,7 @@ const codeCol = (field: keyof typeof NAME_FIELD, headerName: string, width: numb
 // Lỗi 400 của máy chủ chỉ nêu chỉ số dòng gửi lên (đã bỏ dòng trống): đổi sang số dòng trên lưới.
 function explain(e: unknown, gridRow: number[]): string {
   if (!(e instanceof ApiError)) return String(e);
-  if (e.code === 'DUPLICATE') return 'Có dòng trùng (cùng tài khoản, đối tượng, tài khoản ngân hàng và loại tiền)';
+  if (e.code === 'DUPLICATE') return 'Có dòng trùng (cùng tài khoản, đối tượng, tài khoản ngân hàng, số chứng từ và loại tiền)';
   if (e.code === 'VALIDATION' && Array.isArray(e.details))
     return (e.details as { path: (string | number)[]; message: string }[]).slice(0, 3).map((d) => `Dòng ${(gridRow[Number(d.path[1])] ?? 0) + 1}: ${d.message}`).join('; ');
   return `${e.message} (${e.code})`;
@@ -59,6 +66,8 @@ export default function OpeningBalancePage() {
   // Chỉ dòng tài khoản tiền gửi (theo dõi chi tiết theo ngân hàng) mới gán được tài khoản ngân hàng.
   const accountList = useQuery({ queryKey: ['accounts', fy?.regime], queryFn: () => api<{ code: string; subledgerKind: string | null }[]>(`/api/accounts?regime=${fy!.regime}`), enabled: !!fy });
   const bankCodes = useMemo(() => new Set((accountList.data ?? []).filter((a) => a.subledgerKind === 'bank').map((a) => a.code)), [accountList.data]);
+  // Chỉ dòng tài khoản công nợ (phải thu, phải trả) mới nhập số dư theo từng hóa đơn: số, ngày chứng từ và hạn thanh toán.
+  const arapCodes = useMemo(() => new Set((accountList.data ?? []).filter((a) => a.subledgerKind === 'receivable' || a.subledgerKind === 'payable').map((a) => a.code)), [accountList.data]);
   const dkDate = fy ? dayjs(fy.dateFrom).subtract(1, 'day').format('YYYY-MM-DD') : undefined;
   const canSeeDk = can('voucher.view');
   const dk = useQuery({ queryKey: ['opening-dk', year], enabled: dkDate !== undefined && canSeeDk,
@@ -90,7 +99,7 @@ export default function OpeningBalancePage() {
   const persist = async () => {
     await flushEditing();
     const keep = rowsRef.current.map((r, i) => [r, i] as const).filter(([r]) => r.accountCode.trim() !== '');
-    const body = keep.map(([r]) => ({ accountCode: r.accountCode.trim(), partyCode: r.partyCode || null, bankAccountNo: r.bankAccountNo || null, currencyCode: r.currencyCode || 'VND',
+    const body = keep.map(([r]) => ({ accountCode: r.accountCode.trim(), partyCode: r.partyCode || null, bankAccountNo: r.bankAccountNo || null, docNo: r.docNo || null, docDate: r.docDate || null, dueDate: r.dueDate || null, currencyCode: r.currencyCode || 'VND',
       debit: r.debit || '0', credit: r.credit || '0', debitCurrency: r.debitCurrency || '0', creditCurrency: r.creditCurrency || '0' }));
     try { await api(`/api/opening-balance/${year}`, { method: 'PUT', json: { rows: body } }); }
     catch (e) { throw new Error(explain(e, keep.map(([, i]) => i))); }
@@ -117,12 +126,18 @@ export default function OpeningBalancePage() {
     onOk: () => run(async () => { await api(`/api/opening-balance/${year}/unpost`, { method: 'POST', json: {} }); setPosted(null); setIssues(null);
       await Promise.all([qc.invalidateQueries({ queryKey: ['opening', year] }), refreshDk()]); void message.success('Đã bỏ ghi sổ số dư đầu kỳ, sửa số dư rồi ghi sổ lại'); }) });
 
+  // Đổi tài khoản thì tài khoản ngân hàng cũ không còn khớp tài khoản sổ cái; sang tài khoản không theo dõi công nợ thì bỏ số, ngày chứng từ và hạn.
+  const resetForAccount = useCallback((d: Row) => { d.bankAccountNo = null; d.bankName = null; if (!arapCodes.has(d.accountCode)) { d.docNo = null; d.docDate = null; d.dueDate = null; } }, [arapCodes]);
+  const isArapRow = useCallback((d: Row | undefined) => arapCodes.has(d?.accountCode ?? ''), [arapCodes]);
   const columns = useMemo<ColDef<Row>[]>(() => [
-    codeCol('accountCode', 'TK (F4)', 110, (d) => { d.bankAccountNo = null; d.bankName = null; }), { field: 'accountName', headerName: 'Tên tài khoản', flex: 1, editable: false },
+    codeCol('accountCode', 'TK (F4)', 110, resetForAccount), { field: 'accountName', headerName: 'Tên tài khoản', flex: 1, editable: false },
     codeCol('partyCode', 'Đối tượng (F4)', 130),
-    { ...codeCol('bankAccountNo', 'TK ngân hàng (F4)', 150), editable: (p) => bankCodes.has(p.data?.accountCode ?? ''), tooltipField: 'bankName' }, { field: 'currencyCode', headerName: 'Loại tiền', width: 90, valueParser: (p) => String(p.newValue ?? '').trim().toUpperCase() },
+    { ...codeCol('bankAccountNo', 'TK ngân hàng (F4)', 150), editable: (p) => bankCodes.has(p.data?.accountCode ?? ''), tooltipField: 'bankName' },
+    { field: 'docNo', headerName: 'Số chứng từ', width: 120, editable: (p) => isArapRow(p.data), valueParser: (p) => String(p.newValue ?? '').trim() || null },
+    dateCol('docDate', 'Ngày chứng từ', isArapRow), dateCol('dueDate', 'Hạn thanh toán', isArapRow),
+    { field: 'currencyCode', headerName: 'Loại tiền', width: 90, valueParser: (p) => String(p.newValue ?? '').trim().toUpperCase() },
     numCol('debit', 'Dư Nợ', false), numCol('credit', 'Dư Có', false), numCol('debitCurrency', 'Dư Nợ NT', true), numCol('creditCurrency', 'Dư Có NT', true),
-  ], [bankCodes]);
+  ], [bankCodes, resetForAccount, isArapRow]);
   const onLookup = useCallback((col: string, row: number) => {
     if (!(col in LOOKUP_CATALOG) || !mayEdit) return;
     if (col === 'bankAccountNo' && !bankCodes.has(rowsRef.current[row]?.accountCode ?? '')) return;
@@ -157,7 +172,7 @@ export default function OpeningBalancePage() {
             if (code !== null) {
               const copy = [...rowsRef.current]; const nameField = NAME_FIELD[lookup.col as keyof typeof NAME_FIELD]; const prev = copy[lookup.row]!.accountCode;
               copy[lookup.row] = { ...copy[lookup.row]!, [lookup.col]: code, [nameField]: picked?.name ?? null };
-              if (lookup.col === 'accountCode' && code !== prev) copy[lookup.row] = { ...copy[lookup.row]!, bankAccountNo: null, bankName: null }; // đổi tài khoản thì tài khoản ngân hàng cũ không còn khớp tài khoản sổ cái
+              if (lookup.col === 'accountCode' && code !== prev) { const d = { ...copy[lookup.row]! }; resetForAccount(d); copy[lookup.row] = d; }
               setAll(copy);
             }
             setLookup(null);

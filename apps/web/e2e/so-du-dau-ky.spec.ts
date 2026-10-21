@@ -12,16 +12,17 @@ async function signIn(page: Page, request: APIRequestContext) {
   await expect(page).not.toHaveURL(/dang-nhap/);
 }
 
-type Saved = { accountCode: string; partyCode: string | null; bankAccountNo: string | null; currencyCode: string; debit: string; credit: string; debitCurrency: string; creditCurrency: string };
-const toBody = (r: Saved) => ({ accountCode: r.accountCode, partyCode: r.partyCode, bankAccountNo: r.bankAccountNo, currencyCode: r.currencyCode, debit: r.debit, credit: r.credit, debitCurrency: r.debitCurrency, creditCurrency: r.creditCurrency });
+type Saved = { accountCode: string; partyCode: string | null; bankAccountNo: string | null; docNo: string | null; docDate: string | null; dueDate: string | null; currencyCode: string; debit: string; credit: string; debitCurrency: string; creditCurrency: string };
+const toBody = (r: Saved) => ({ accountCode: r.accountCode, partyCode: r.partyCode, bankAccountNo: r.bankAccountNo, docNo: r.docNo, docDate: r.docDate, dueDate: r.dueDate, currencyCode: r.currencyCode, debit: r.debit, credit: r.credit, debitCurrency: r.debitCurrency, creditCurrency: r.creditCurrency });
 
-test('Số dư đầu kỳ: nhập bằng bàn phím, ô TK ngân hàng chỉ dừng ở dòng tiền gửi; lưu kèm tài khoản ngân hàng', async ({ page, request }) => {
+test('Số dư đầu kỳ: nhập bằng bàn phím, ô TK ngân hàng chỉ dừng ở dòng tiền gửi, ô chứng từ và hạn chỉ dừng ở dòng công nợ; lưu kèm tài khoản ngân hàng và hóa đơn', async ({ page, request }) => {
   await signIn(page, request);
   const stamp = Date.now(); const accountNo = `99${String(stamp).slice(-9)}`;
   // Tài khoản ngân hàng riêng của lần chạy (ngân hàng VCB dùng chung giữa các lần: đã có thì bỏ qua lỗi trùng)
   await request.post('/api/catalogs/bank', { data: { code: 'VCB', name: 'Vietcombank' } });
   const created = await request.post('/api/catalogs/bank_account', { data: { bank_code: 'VCB', account_no: accountNo, account_name: `E2E ${stamp}`, gl_account_code: '1121' } });
   expect(created.ok(), await created.text()).toBeTruthy();
+  await request.post('/api/catalogs/party', { data: { code: 'KHE2E', name: 'Khách hàng E2E', is_customer: true } }); // dùng chung giữa các lần chạy: đã có thì bỏ qua lỗi trùng
   // Số dư của năm 2026 dùng chung với công ty E2E: lưu bản cũ, thay bằng bảng trống để lưới chỉ có dòng nhập mới, trả lại bản cũ ở cuối.
   const original = await (await request.get('/api/opening-balance/2026')).json() as Saved[];
   expect((await request.put('/api/opening-balance/2026', { data: { rows: [] } })).ok()).toBeTruthy();
@@ -49,12 +50,25 @@ test('Số dư đầu kỳ: nhập bằng bàn phím, ô TK ngân hàng chỉ d�
     await expect.poll(editingCol).toBe('partyCode'); await page.keyboard.press('Enter');
     await expect.poll(editingCol).toBe('currencyCode'); await page.keyboard.press('Enter');
     await expect.poll(editingCol).toBe('debit'); await type('1000000'); await page.keyboard.press('Enter');
+    await expect.poll(editingCol).toBe('credit');
+    for (const col of ['debitCurrency', 'creditCurrency', 'accountCode']) { await page.keyboard.press('Enter'); await expect.poll(editingCol).toBe(col); }
+
+    // Dòng 3: 131 (công nợ phải thu) theo hóa đơn. Bỏ qua ô TK ngân hàng, dừng ở Số chứng từ, Ngày chứng từ, Hạn thanh toán (gõ dd/mm/yyyy)
+    await expect(cell(2, 'accountCode')).toBeVisible(); await type('131'); await page.keyboard.press('Enter');
+    await expect.poll(editingCol).toBe('partyCode'); await page.keyboard.type('KHE2E'); await page.keyboard.press('Enter');
+    await expect.poll(editingCol).toBe('docNo'); await page.keyboard.type('HD-E2E-1'); await page.keyboard.press('Enter');
+    await expect.poll(editingCol).toBe('docDate'); await page.keyboard.type('15/12/2025'); await page.keyboard.press('Enter');
+    await expect.poll(editingCol).toBe('dueDate'); await page.keyboard.type('15/01/2026'); await page.keyboard.press('Enter');
+    await expect.poll(editingCol).toBe('currencyCode'); await page.keyboard.press('Enter');
+    await expect.poll(editingCol).toBe('debit'); await type('2000000'); await page.keyboard.press('Enter');
     await expect.poll(editingCol).toBe('credit'); await page.keyboard.press('Escape');
+    await expect(cell(2, 'docDate')).toHaveText('15/12/2025');
 
     await page.getByRole('button', { name: 'Lưu' }).click();
     await expect(page.locator('.ant-message').getByText('Đã lưu')).toBeVisible();
     const rows = await (await request.get('/api/opening-balance/2026')).json() as (Saved & { bankName: string | null })[];
-    expect(rows.map((r) => [r.accountCode, r.bankAccountNo, r.debit])).toEqual([['1111', null, '1000000'], ['1121', accountNo, '5000000']]);
+    expect(rows.map((r) => [r.accountCode, r.bankAccountNo, r.debit])).toEqual([['1111', null, '1000000'], ['1121', accountNo, '5000000'], ['131', null, '2000000']]);
+    expect(rows.find((r) => r.accountCode === '131')).toMatchObject({ partyCode: 'KHE2E', docNo: 'HD-E2E-1', docDate: '2025-12-15', dueDate: '2026-01-15' });
     expect(rows.find((r) => r.accountCode === '1121')!.bankName).toBe('Vietcombank');
     // Số dư 1121 đã gán tài khoản ngân hàng nên không còn cảnh báo thiếu tài khoản ngân hàng cho 1121
     const issues = await (await request.get('/api/opening-balance/2026/check')).json() as { code: string; accountCode?: string }[];
