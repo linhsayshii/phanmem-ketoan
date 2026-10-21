@@ -59,7 +59,7 @@ export default function DedupePage() {
         <p style={{ color: 'rgba(0,0,0,.45)', margin: '8px 0 0' }}>Tìm các cặp chứng từ cùng số tiền, gần ngày, cùng đối tượng và tài khoản đối ứng theo cặp loại chứng từ đã cấu hình (ví dụ Phiếu chi và Giấy báo nợ).</p>
       </Card>
       {list.error && <Alert type="error" showIcon message={(list.error as Error).message} />}
-      {list.data?.hiddenBySensitive && <Alert type="warning" showIcon message="Không xét chứng từ có tài khoản công nợ phải thu, phải trả hoặc giá vốn mà bạn không có quyền xem; các cặp liên quan bị ẩn." />}
+      {list.data?.hiddenBySensitive && <Alert type="warning" showIcon message="Không xét chứng từ có tài khoản công nợ phải thu, phải trả hoặc giá vốn mà bạn không có quyền xem; các cặp liên quan (nếu có) bị ẩn." />}
       {list.data?.truncated && <Alert type="warning" showIcon message="Chỉ hiển thị 500 cặp đầu tiên. Hãy xử lý bớt hoặc thu hẹp khoảng ngày rồi tìm lại." />}
       {asked && list.data && list.data.pairs.length === 0 && <Card><Empty description="Không có cặp chứng từ nghi trùng" /></Card>}
       {list.data?.pairs.map((p) => (
