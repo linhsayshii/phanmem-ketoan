@@ -14,7 +14,7 @@ interface Detail { kind: 'receivable' | 'payable'; partyName: string; currency: 
   openingCurrency: string | null; closingCurrency: string | null; rows: DetailRow[] }
 interface SummaryRow { partyCode: string; partyName: string; openingDebit: string; openingCredit: string; periodDebit: string; periodCredit: string; closingDebit: string; closingCredit: string }
 interface Summary { rows: SummaryRow[]; totals: Omit<SummaryRow, 'partyCode' | 'partyName'>; closingNet: string; accountNet: string; matches: boolean }
-interface AgingItem { itemId: number; docNo: string | null; docDate: string; dueDate: string | null; residual: string; daysOverdue: number | null; bucket: string }
+interface AgingItem { itemId: number; docNo: string | null; docDate: string; dueDate: string | null; residual: string; ageDays: number | null; bucket: string }
 interface Aging { kind: 'receivable' | 'payable'; columns: { key: string; label: string }[]; rows: ({ partyCode: string; partyName: string } & Record<string, string>)[]; totals: Record<string, string>; items?: AgingItem[] }
 type TabKey = 'detail' | 'summary' | 'aging' | 'statement';
 type Row = Record<string, unknown>;
@@ -39,8 +39,9 @@ const detailColumns = (fx: boolean): ColDef<DetailRow>[] => readOnly<DetailRow>(
 const summaryColumns: ColDef<SummaryRow>[] = readOnly<SummaryRow>([{ field: 'partyCode', headerName: 'Mã đối tượng', width: 130 }, text('Tên đối tượng', 'partyName'),
   sn('Dư đầu kỳ Nợ', (r) => r.openingDebit), sn('Dư đầu kỳ Có', (r) => r.openingCredit), sn('Phát sinh Nợ', (r) => r.periodDebit), sn('Phát sinh Có', (r) => r.periodCredit),
   sn('Dư cuối kỳ Nợ', (r) => r.closingDebit), sn('Dư cuối kỳ Có', (r) => r.closingCredit)]);
-const itemColumns: ColDef<AgingItem>[] = readOnly<AgingItem>([{ field: 'docNo', headerName: 'Số chứng từ', width: 140 }, date('Ngày chứng từ', 'docDate'), date('Hạn thanh toán', 'dueDate'), itn('Còn nợ', (r) => r.residual),
-  itn('Số ngày quá hạn', (r) => (r.daysOverdue !== null && r.daysOverdue > 0 ? String(r.daysOverdue) : ''), (v) => String(v ?? ''), 140)]);
+// ageDays: số ngày kể từ hạn thanh toán (theo hạn) hoặc kể từ ngày chứng từ (theo ngày chứng từ); chỉ hiện khi dương.
+const itemColumns = (by: string): ColDef<AgingItem>[] => readOnly<AgingItem>([{ field: 'docNo', headerName: 'Số chứng từ', width: 140 }, date('Ngày chứng từ', 'docDate'), date('Hạn thanh toán', 'dueDate'), itn('Còn nợ', (r) => r.residual),
+  itn(by === 'due' ? 'Số ngày quá hạn' : 'Số ngày từ ngày chứng từ', (r) => (r.ageDays !== null && r.ageDays > 0 ? String(r.ageDays) : ''), (v) => String(v ?? ''), 140)]);
 
 export default function ArapReportsPage() {
   const { me, can } = useAuth();
@@ -102,7 +103,7 @@ export default function ArapReportsPage() {
           <Space size="large" wrap>{a.columns.map((c) => stat(c.label, a.totals[c.key] ?? '0', undefined, c.key === 'credit'))}</Space>
           <KeyboardGrid<Row> rows={a.rows} columns={agingColumns} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly height={a.items ? 220 : 'calc(100vh - 340px)'} />
           {a.items && <><b>Các khoản còn nợ của đối tượng {f.partyCode}</b>
-            <KeyboardGrid<AgingItem> rows={a.items} columns={itemColumns} onRowsChange={() => undefined} addRowTemplate={() => ({} as AgingItem)} readOnly height="calc(100vh - 640px)" /></>}
+            <KeyboardGrid<AgingItem> rows={a.items} columns={itemColumns(f.by)} onRowsChange={() => undefined} addRowTemplate={() => ({} as AgingItem)} readOnly height="calc(100vh - 640px)" /></>}
         </Space>);
     }
     const x = d as Detail; const fx = !!x.currency && x.currency !== 'VND';
@@ -120,6 +121,10 @@ export default function ArapReportsPage() {
   const rangePicker = <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />;
   const partyPicker = (placeholder: string) => <LookupSelect catalog="party" includeInactive aria-label={placeholder} placeholder={placeholder} style={{ width: 240 }} value={f.partyCode || null} onChange={(code) => setF({ ...f, partyCode: code ?? '' })} />;
   const canPrint = can('report.print');
+  // Thư nhắc nợ chỉ lập khi đối tượng có khoản quá hạn (tính theo hạn thanh toán tại cùng ngày), nếu không máy chủ trả 404.
+  const overdue = useQuery({ queryKey: ['arap-overdue', f.accountCode, f.asOf, f.partyCode], enabled: canPrint && receivable && !!f.partyCode, retry: false,
+    queryFn: () => api<Aging>(`/api/reports/arap/aging?${new URLSearchParams({ accountCode: f.accountCode, asOf: f.asOf, by: 'due', partyCode: f.partyCode })}`) });
+  const hasOverdue = !!overdue.data?.items?.some((i) => i.ageDays !== null && i.ageDays > 0 && D(i.residual).gt(0));
 
   return (
     <Space direction="vertical" size={8} style={{ width: '100%' }}>
@@ -140,7 +145,7 @@ export default function ArapReportsPage() {
           <Button disabled={!url || tab === 'statement'} onClick={() => printAs('pdf')}>In PDF</Button>
           <Button disabled={!url || tab === 'statement'} onClick={() => printAs('xlsx')}>Xuất Excel</Button>
           <Button type="primary" disabled={!f.partyCode} onClick={() => open(printUrl('statement'))}>In biên bản</Button>
-          {receivable && <Button disabled={!f.partyCode} onClick={() => open(printUrl('reminder'))}>Thư nhắc nợ</Button>}</>}
+          {receivable && <Button disabled={!hasOverdue} title={f.partyCode && overdue.isSuccess && !hasOverdue ? `Đối tượng không có khoản nợ quá hạn tại ngày ${formatVnDate(f.asOf)}` : undefined} onClick={() => open(printUrl('reminder'))}>Thư nhắc nợ</Button>}</>}
       </Space>
       <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={[{ key: 'detail', label: 'Sổ chi tiết' }, { key: 'summary', label: 'Tổng hợp' }, { key: 'aging', label: 'Tuổi nợ' }, { key: 'statement', label: 'Đối chiếu' }]} />
       {body()}

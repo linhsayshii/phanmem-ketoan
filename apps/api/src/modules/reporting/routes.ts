@@ -14,8 +14,11 @@ import { renderPdf } from './print/pdf.js';
 
 export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => !Number.isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s, 'Ngày không hợp lệ');
 const range = { from: isoDate, to: isoDate };
-const ordered = (q: { from: string; to: string }) => q.from <= q.to;
-const orderedMsg = { message: 'Từ ngày phải trước hoặc bằng đến ngày' };
+export const ordered = (q: { from: string; to: string }) => q.from <= q.to;
+export const orderedMsg = { message: 'Từ ngày phải trước hoặc bằng đến ngày' };
+export const assertPrint = (auth: { permissions: Set<string> }) => {
+  if (!auth.permissions.has('report.print')) throw new AppError('FORBIDDEN', 'Thiếu quyền report.print', 403);
+};
 const regimeEnum = z.enum(['TT99', 'TT133', 'TT200', 'TT58']);
 const reportCode = z.enum(['B01', 'B02', 'B03']);
 const format = z.enum(['json', 'html', 'pdf', 'xlsx']).default('json');
@@ -34,7 +37,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   const view = app.requirePermission('report.view');
   // In một sổ/báo cáo: cần thêm quyền report.print; hệ tài khoản theo khoảng ngày (như chính các hàm sổ), dựng tài liệu trong giao dịch rồi mới dựng PDF/Excel ngoài giao dịch.
   const printDoc = async (req: FastifyRequest, reply: FastifyReply, fmt: PrintFormat, q: { from: string; to: string }, fileName: string, build: (trx: Transaction<Database>, regime: string) => Promise<ReportDoc>) => {
-    if (!req.auth!.permissions.has('report.print')) throw new AppError('FORBIDDEN', 'Thiếu quyền report.print', 403);
+    assertPrint(req.auth!);
     return respondReport(reply, [await app.withTenant(req, async (trx) => build(trx, await regimeOf(trx, q)), READ_SNAPSHOT)], fmt, fileName);
   };
   app.get('/api/reports/ledgers/general-journal', { preHandler: view, schema: { querystring: z.object({ ...range, format }).refine(ordered, orderedMsg) } }, async (req, reply) => {

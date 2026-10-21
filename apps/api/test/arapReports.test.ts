@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { sql } from 'kysely';
-import { toVnd } from '@kt/domain';
+import { D, toVnd } from '@kt/domain';
 import { createTestApp, type TestApp } from './helpers.js';
 import { setupLedgerTenant } from './invariants/helpers.js';
 
@@ -21,7 +21,7 @@ const flat = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '
 // Mỗi bộ kiểm thử một công ty riêng (năm 2026, TT133), đối tượng KH001 "Khách 1", KH002 "Khách 2", NCC001 "NCC 1".
 async function tenant() {
   const { cookie, tenantId } = await setupLedgerTenant(ctx, `CN${Date.now()}${n++}`);
-  const call = (method: 'GET' | 'POST', url: string, payload?: object, c = cookie): Promise<Res> => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload ? { payload } : {}) });
+  const call = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object, c = cookie): Promise<Res> => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload ? { payload } : {}) });
   const get = async (url: string, c = cookie) => { const r = await call('GET', url, undefined, c); return { status: r.statusCode, json: (r.headers['content-type'] as string).startsWith('application/json') ? r.json() as Json : null, r }; };
   const pkt = async (date: string, lines: object[], extra: object = {}) => {
     const r = await call('POST', '/api/vouchers', { voucherType: 'PKT', postingDate: date, documentDate: date, description: `CT ${date}`, autoPost: true, ...extra, lines });
@@ -83,6 +83,9 @@ describe('báo cáo công nợ phải thu', () => {
     // Tổng = Σ dư của open_item (fn_open_items_at) = số dư sổ cái TK 131.
     const sum = (await sql<{ n: string }>`SELECT sum(x.residual)::text AS n FROM fn_open_items_at(${t.tenantId}::uuid, '2026-03-31'::date) x JOIN account a ON a.id = x.account_id WHERE a.code = '131'`.execute(ctx.t.admin)).rows[0]!.n;
     expect([json.totals.total, sum, await t.ledgerNet('131', '2026-03-31')]).toEqual(['61500', '61500', '61500']);
+    // Danh sách khoản công nợ (listOpenItems) cùng tổng với tuổi nợ: hai nơi tính dư không được lệch nhau.
+    const listed = (await t.get('/api/open-items?accountCode=131&asOf=2026-03-31')).json as { residual: string }[];
+    expect(listed.reduce((x, i) => x.plus(i.residual), D(0)).toFixed(0)).toBe('61500');
   });
 
   it('tuổi nợ theo ngày chứng từ khác theo hạn thanh toán; có đối tượng thì liệt kê từng khoản', async () => {
@@ -91,12 +94,13 @@ describe('báo cáo công nợ phải thu', () => {
     const byParty = Object.fromEntries(doc.rows.map((r: Json) => [r.partyCode, agingRow(r)]));
     // Ngày chứng từ 05/01 cách 85 ngày (61–90), 20/02 cách 39 ngày (31–60); không có khoản nào "chưa đến hạn" vì mọi chứng từ đã ghi trước ngày xem.
     expect(byParty).toEqual({ KH001: { ...ZERO_ROW, b2: '30300', total: '30300' }, KH002: { ...ZERO_ROW, b1: '32000', credit: '-500', total: '31500' }, NCC001: { ...ZERO_ROW, credit: '-300', total: '-300' } });
+    expect([due.columns[0].label, doc.columns[0].label]).toEqual(['Chưa đến hạn', 'Trong ngày']);
     expect(doc.rows).not.toEqual(due.rows);
     expect(doc.totals.total).toBe(due.totals.total);
 
     const one = (await t.get('/api/reports/arap/aging?accountCode=131&partyCode=KH001&asOf=2026-03-31')).json;
     expect(one.rows.map((r: Json) => r.partyCode)).toEqual(['KH001']);
-    expect(one.items.map((i: Json) => [i.dueDate, i.residual, i.daysOverdue, i.bucket])).toEqual([
+    expect(one.items.map((i: Json) => [i.dueDate, i.residual, i.ageDays, i.bucket])).toEqual([
       ['2025-12-30', '8000', 91, 'b3'], ['2025-12-31', '16000', 90, 'b2'], ['2026-02-10', '4000', 49, 'b1'], ['2026-03-20', '1300', 11, 'b0'], ['2026-04-15', '1000', -15, 'notDue']]);
   });
 
@@ -198,10 +202,9 @@ describe('cờ nhạy cảm theo tài khoản công nợ', () => {
       expect([kind, (await t.get(`/api/reports/arap/${q('131', kind)}`, receivable)).status]).toEqual([kind, 200]);
       expect([kind, (await t.get(`/api/reports/arap/${q('131', kind)}`, none)).status]).toEqual([kind, 403]);
     }
-    for (const kind of ['statement', 'reminder']) {
-      expect([kind, (await t.call('GET', `/api/reports/arap/${q('131', kind)}&format=html`, undefined, payable)).statusCode]).toEqual([kind, 403]);
-      expect([kind, (await t.call('GET', `/api/reports/arap/${q('131', kind)}&format=pdf`, undefined, payable)).statusCode]).toEqual([kind, 403]);
-    }
+    // Bản in cũng chặn theo cờ trước khi đọc số liệu, ở mọi định dạng mà từng báo cáo có.
+    for (const [kind, formats] of [['detail', ['html', 'pdf', 'xlsx']], ['summary', ['html', 'pdf', 'xlsx']], ['aging', ['html', 'pdf', 'xlsx']], ['statement', ['html', 'pdf', 'xlsx']], ['reminder', ['html', 'pdf']]] as const)
+      for (const format of formats) expect([kind, format, (await t.call('GET', `/api/reports/arap/${q('131', kind)}&format=${format}`, undefined, payable)).statusCode]).toEqual([kind, format, 403]);
     expect((await t.call('GET', `/api/reports/arap/${q('331', 'statement')}&format=html`, undefined, payable)).statusCode).toBe(200);
     // Công nợ phải trả: dư Có hiển thị dương ở tuổi nợ, dư Nợ (trả trước) ở cột dư bên ngược; sổ chi tiết có số dư âm (Có).
     const ag = (await t.get('/api/reports/arap/aging?accountCode=331&asOf=2026-03-31', payable)).json;
@@ -209,6 +212,53 @@ describe('cờ nhạy cảm theo tài khoản công nợ', () => {
     expect(agingRow(ag.rows[0])).toEqual({ ...ZERO_ROW, b0: '900', total: '900' }); // hạn 01/03, quá hạn 30 ngày
     const d = (await t.get('/api/reports/arap/detail?accountCode=331&partyCode=NCC001&from=2026-01-01&to=2026-03-31', payable)).json;
     expect([d.closing, d.rows.map((r: Json) => r.balance)]).toEqual(['-900', ['-900']]);
+  });
+});
+
+describe('công nợ: số dư đầu năm, ranh giới nhóm tuổi nợ, dòng sổ và dòng không đối tượng', () => {
+  it('số dư đầu năm (chứng từ DK) vào sổ chi tiết, tổng hợp và tuổi nợ, giữ số chứng từ, ngày và hạn của khoản đầu kỳ', async () => {
+    const t = await tenant();
+    const R = (accountCode: string, debit: string, credit: string, more: object = {}) => ({ accountCode, partyCode: accountCode === '131' ? 'KH001' : null, currencyCode: 'VND', debit, credit, debitCurrency: '0', creditCurrency: '0', ...more });
+    const put = await t.call('PUT', '/api/opening-balance/2026', { rows: [R('131', '5000', '0', { docNo: 'HD-DK1', docDate: '2025-10-01', dueDate: '2025-11-30' }), R('4111', '0', '5000')] });
+    expect(put.statusCode, put.body).toBe(200);
+    const posted = await t.call('POST', '/api/opening-balance/2026/post'); expect(posted.statusCode, posted.body).toBe(200);
+    await t.pkt('2026-01-05', [K('131', 'KH001', '1000', '0', { dueDate: '2026-02-10' }), L('5113', '0', '1000')]);
+
+    const det = (await t.get('/api/reports/arap/detail?accountCode=131&partyCode=KH001&from=2026-01-01&to=2026-01-31')).json;
+    expect([det.opening, det.totalDebit, det.closing, det.rows.length]).toEqual(['5000', '1000', '6000', 1]);
+    const sm = (await t.get('/api/reports/arap/summary?accountCode=131&from=2026-01-01&to=2026-01-31')).json;
+    expect(sm.rows.map((r: Json) => [r.partyCode, r.openingDebit, r.periodDebit, r.closingDebit])).toEqual([['KH001', '5000', '1000', '6000']]);
+    expect([sm.matches, sm.accountNet]).toEqual([true, '6000']);
+    const ag = (await t.get('/api/reports/arap/aging?accountCode=131&partyCode=KH001&asOf=2026-03-31')).json;
+    expect(ag.totals.total).toBe('6000');
+    expect(ag.items.filter((i: Json) => i.docNo === 'HD-DK1').map((i: Json) => [i.docDate, i.dueDate, i.residual, i.ageDays, i.bucket])).toEqual([['2025-10-01', '2025-11-30', '5000', 121, 'b3']]); 
+  });
+
+  it('ranh giới nhóm tuổi nợ: 30/31, 60/61, 90/91, 180/181 ngày quá hạn rơi sang nhóm kế tiếp đúng ở ngày thứ nhất sau mốc', async () => {
+    const t = await tenant(); const asOf = Date.UTC(2026, 2, 31);
+    const dueAt = (days: number) => new Date(asOf - days * 86_400_000).toISOString().slice(0, 10);
+    for (const days of [30, 31, 60, 61, 90, 91, 180, 181]) await t.pkt('2026-01-02', [K('131', 'KH001', '100', '0', { dueDate: dueAt(days) }), L('5113', '0', '100')]);
+    const { items } = (await t.get('/api/reports/arap/aging?accountCode=131&partyCode=KH001&asOf=2026-03-31')).json;
+    expect(items.map((i: Json) => [i.ageDays, i.bucket])).toEqual([[181, 'b4'], [180, 'b3'], [91, 'b3'], [90, 'b2'], [61, 'b2'], [60, 'b1'], [31, 'b1'], [30, 'b0']]);
+  });
+
+  it('diễn giải dòng sổ ưu tiên diễn giải của dòng, như sổ chi tiết tài khoản; không có thì lấy diễn giải chứng từ', async () => {
+    const t = await tenant();
+    await t.pkt('2026-01-05', [K('131', 'KH001', '100', '0', { description: 'Dòng 131', dueDate: '2026-02-10' }), L('5113', '0', '100')], { description: 'Chứng từ A' });
+    await t.pkt('2026-01-06', [K('131', 'KH001', '200', '0', { dueDate: '2026-02-10' }), L('5113', '0', '200')], { description: 'Chứng từ B' });
+    const det = (await t.get('/api/reports/arap/detail?accountCode=131&partyCode=KH001&from=2026-01-01&to=2026-01-31')).json;
+    expect(det.rows.map((r: Json) => r.description)).toEqual(['Dòng 131', 'Chứng từ B']);
+  });
+
+  it('dòng không có đối tượng trên tài khoản con không mang loại công nợ: tổng hợp chỉ một hàng "Chưa gán đối tượng", số dư đầu và phát sinh gộp chung', async () => {
+    const t = await tenant();
+    const sub = async (code: string, extra: object) => { const r = await t.call('POST', '/api/accounts', { regime: 'TT133', parentCode: '131', code, name: `Phải thu ${code}`, ...extra }); expect(r.statusCode, r.body).toBe(201); };
+    await sub('1311', {}); await sub('1319', { subledgerKind: null }); // 1311 kế thừa loại phải thu (bắt buộc có đối tượng), 1319 thì không
+    await t.pkt('2026-01-10', [K('1311', 'KH001', '50', '0', { dueDate: '2026-02-10' }), L('1319', '100'), L('5113', '0', '150')]);
+    await t.pkt('2026-02-10', [L('1319', '100'), L('5113', '0', '100')]);
+    const sm = (await t.get('/api/reports/arap/summary?accountCode=131&from=2026-02-01&to=2026-02-28')).json;
+    expect(sm.rows.map((r: Json) => [r.partyCode, r.partyName, r.openingDebit, r.periodDebit, r.closingDebit])).toEqual([['KH001', 'Khách 1', '50', '0', '50'], ['', 'Chưa gán đối tượng', '100', '100', '200']]);
+    expect([sm.closingNet, sm.accountNet, sm.matches]).toEqual(['250', '250', true]);
   });
 });
 
@@ -226,7 +276,7 @@ describe('công nợ ngoại tệ và chênh lệch đánh giá lại', () => {
     // 100 USD x (25.600 - 25.500) = 10.000 chênh lệch; tuổi nợ tại 28/02 gồm khoản gốc 2.550.000 và khoản con 10.000, theo hạn của khoản gốc (10/02: quá 18 ngày).
     const ag = (await t.get('/api/reports/arap/aging?accountCode=131&partyCode=KH001&asOf=2026-02-28')).json;
     expect(agingRow(ag.rows[0])).toEqual({ ...ZERO_ROW, b0: '2560000', total: '2560000' });
-    expect(ag.items.map((i: Json) => [i.dueDate, i.residual, i.daysOverdue])).toEqual([['2026-02-10', '2560000', 18]]);
+    expect(ag.items.map((i: Json) => [i.dueDate, i.residual, i.ageDays])).toEqual([['2026-02-10', '2560000', 18]]);
     expect([ag.totals.total, await t.ledgerNet('131', '2026-02-28')]).toEqual(['2560000', '2560000']);
     const sm = (await t.get('/api/reports/arap/summary?accountCode=131&from=2026-01-01&to=2026-02-28')).json;
     expect([sm.rows[0].closingDebit, sm.matches]).toEqual(['2560000', true]);

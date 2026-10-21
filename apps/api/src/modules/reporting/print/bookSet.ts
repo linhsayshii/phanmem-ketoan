@@ -12,9 +12,10 @@ type Trx = Transaction<Database>;
 // Hàng công ty đọc một lần cho mỗi giao dịch (bộ sổ năm dựng hàng trăm tài liệu trong cùng một giao dịch); WeakMap nên hết giao dịch là bỏ.
 const tenantRows = new WeakMap<Trx, ReturnType<typeof loadTenant>>();
 const loadTenant = (trx: Trx, tenantId: string) => trx.selectFrom('tenant').selectAll().where('id', '=', tenantId).executeTakeFirstOrThrow();
-export async function companyInfo(trx: Trx, tenantId: string, regime: string, formKey: string): Promise<CompanyInfo> {
+// formKey null: tài liệu nội bộ không có số mẫu, formNo và issuedBy để trống.
+export async function companyInfo(trx: Trx, tenantId: string, regime: string, formKey: string | null): Promise<CompanyInfo> {
   let row = tenantRows.get(trx); if (!row) tenantRows.set(trx, row = loadTenant(trx, tenantId));
-  const t = await row; const f = formNoFor(regime, formKey);
+  const t = await row; const f = formKey === null ? { formNo: '', issuedBy: '' } : formNoFor(regime, formKey);
   return { name: t.name, address: t.address, taxCode: t.tax_code, legalRep: t.legal_rep, chiefAccountant: t.chief_accountant, formNo: f.formNo, issuedBy: f.issuedBy };
 }
 export async function journalDoc(trx: Trx, tenantId: string, regime: string, p: { from: string; to: string }): Promise<ReportDoc> {

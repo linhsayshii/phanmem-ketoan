@@ -35,7 +35,7 @@ async function findParty(trx: Trx, code: string) {
 }
 type Party = Awaited<ReturnType<typeof findParty>>;
 // Tài liệu in công nợ là mẫu nội bộ, không có văn bản gốc để chép số mẫu: không bao giờ in dòng "Mẫu số".
-const internalCompany = async (trx: Trx, tenantId: string, regime: string) => ({ ...(await companyInfo(trx, tenantId, regime, 'cong-no')), formNo: '', issuedBy: '' });
+const internalCompany = (trx: Trx, tenantId: string, regime: string) => companyInfo(trx, tenantId, regime, null);
 const num = (key: string, label: string, scale?: number) => ({ key, label, type: 'number' as const, ...(scale === undefined ? {} : { scale }) });
 const bold = { isBold: true };
 
@@ -84,7 +84,7 @@ async function buildDetail(trx: Trx, tenantId: string, s: Scope, party: Party, q
     run = run.plus(a.debit).minus(a.credit); runCur = runCur.plus(a.dCur).minus(a.cCur);
     totalD = totalD.plus(a.debit); totalC = totalC.plus(a.credit); totalDCur = totalDCur.plus(a.dCur); totalCCur = totalCCur.plus(a.cCur);
     const m = a.meta;
-    return { date: m.postingDate, documentDate: m.documentDate, voucherId: m.voucherId, voucherType: m.voucherType, voucherNo: m.voucherNo, description: m.vDesc ?? m.lDesc, counterAccounts: [...a.counters].join(', '),
+    return { date: m.postingDate, documentDate: m.documentDate, voucherId: m.voucherId, voucherType: m.voucherType, voucherNo: m.voucherNo, description: m.lDesc ?? m.vDesc, counterAccounts: [...a.counters].join(', '),
       debit: vnd(a.debit), credit: vnd(a.credit), balance: vnd(run), debitCurrency: fx ? foreign(a.dCur) : null, creditCurrency: fx ? foreign(a.cCur) : null, balanceCurrency: fx ? foreign(runCur) : null };
   });
   return { kind: s.kind, accountCode: s.prefix, accountName: s.accountName, partyCode: party.code, partyName: party.name, partyAddress: party.address, partyTaxCode: party.tax_code, currency: q.currency ?? null, from: q.from, to: q.to,
@@ -121,6 +121,8 @@ export interface SummaryRow { partyCode: string; partyName: string; openingDebit
 // Dư đầu/cuối của từng đối tượng là số dư ròng (gộp tài khoản con và loại tiền) tách sang bên Nợ hoặc bên Có; tổng từng bên cộng thẳng các đối tượng (không bù trừ như Bảng cân đối số phát sinh).
 // accountNet là số dư ròng (Nợ - Có) của cả tài khoản tại `to` đọc độc lập từ số dư kỳ; matches cho biết Σ dư cuối các đối tượng có khớp nó không.
 export interface Summary { kind: Kind; accountCode: string; accountName: string; from: string; to: string; rows: SummaryRow[]; totals: Omit<SummaryRow, 'partyCode' | 'partyName'>; closingNet: string; accountNet: string; matches: boolean }
+// fn_balances_at gộp dòng không có đối tượng về UUID rỗng; phần phát sinh phải gộp cùng khóa để "Chưa gán đối tượng" chỉ một dòng.
+const NIL_PARTY = '00000000-0000-0000-0000-000000000000';
 export async function arapSummary(trx: Trx, auth: Auth, tenantId: string, q: { accountCode: string; from: string; to: string }): Promise<Summary> {
   const s = await scopeOf(trx, auth, q);
   const r = await sql<{ code: string | null; name: string | null; open: string; pd: string; pc: string }>`
@@ -129,8 +131,8 @@ export async function arapSummary(trx: Trx, auth: Auth, tenantId: string, q: { a
         SELECT b.party_id, sum(b.debit - b.credit) AS open, 0::numeric AS pd, 0::numeric AS pc FROM fn_balances_at(${tenantId}::uuid, ${dayBefore(q.from)}::date) b JOIN account a ON a.id = b.account_id
           WHERE a.regime = ${s.regime} AND starts_with(a.code, ${s.prefix}) GROUP BY b.party_id
         UNION ALL
-        SELECT l.party_id, 0::numeric, sum(l.debit), sum(l.credit) FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
-          WHERE ${POSTED} AND v.posting_date BETWEEN ${q.from}::date AND ${q.to}::date AND l.posting_date BETWEEN ${q.from}::date AND ${q.to}::date AND a.regime = ${s.regime} AND starts_with(a.code, ${s.prefix}) GROUP BY l.party_id) x
+        SELECT coalesce(l.party_id, ${NIL_PARTY}::uuid), 0::numeric, sum(l.debit), sum(l.credit) FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
+          WHERE ${POSTED} AND v.posting_date BETWEEN ${q.from}::date AND ${q.to}::date AND l.posting_date BETWEEN ${q.from}::date AND ${q.to}::date AND a.regime = ${s.regime} AND starts_with(a.code, ${s.prefix}) GROUP BY 1) x
       GROUP BY x.party_id) u LEFT JOIN party p ON p.id = u.party_id
     ORDER BY p.code NULLS LAST`.execute(trx);
   const rows: SummaryRow[] = []; const t = { od: ZERO, oc: ZERO, pd: ZERO, pc: ZERO, cd: ZERO, cc: ZERO };
@@ -158,18 +160,16 @@ export async function summaryDoc(trx: Trx, auth: Auth, tenantId: string, q: { ac
 
 // ---- Tuổi nợ ----
 // Khoản gốc cộng các khoản con đánh giá lại (open_item.parent_id, chỉ có VND) theo hạn và ngày chứng từ của khoản gốc; chỉ khoản còn dư khác 0.
-// Dư tính tại cuối ngày asOf bằng cùng công thức fn_open_items_at, lọc tài khoản và đối tượng trước khi cộng đối trừ.
+// Dư còn lại tại cuối ngày asOf lấy từ fn_open_items_at (cùng nguồn Danh sách khoản công nợ và Đánh giá lại), ở đây chỉ lọc tài khoản, đối tượng và gộp khoản con về khoản gốc.
 interface Item { itemId: number; partyCode: string; partyName: string; docNo: string | null; docDate: string; dueDate: string | null; residual: string; daysDue: number | null; daysDoc: number }
 async function loadItems(trx: Trx, tenantId: string, s: Scope, asOf: string, partyId: string | undefined, by: 'due' | 'doc'): Promise<Item[]> {
   const r = await sql<Item>`
     SELECT r.id AS "itemId", p.code AS "partyCode", p.name AS "partyName", r.doc_no AS "docNo", r.doc_date AS "docDate", r.due_date AS "dueDate", sum(x.residual)::text AS residual,
            (${asOf}::date - r.due_date) AS "daysDue", (${asOf}::date - r.doc_date) AS "daysDoc"
-    FROM (SELECT coalesce(o.parent_id, o.id) AS root_id, o.amount - coalesce(d.a, 0) + coalesce(c.a, 0) AS residual
-      FROM open_item o JOIN account a ON a.id = o.account_id
-        LEFT JOIN LATERAL (SELECT sum(s.amount) AS a FROM settlement s WHERE s.tenant_id = o.tenant_id AND s.debit_item_id = o.id AND s.settle_date <= ${asOf}::date) d ON true
-        LEFT JOIN LATERAL (SELECT sum(s.amount) AS a FROM settlement s WHERE s.tenant_id = o.tenant_id AND s.credit_item_id = o.id AND s.settle_date <= ${asOf}::date) c ON true
-      WHERE o.tenant_id = ${tenantId}::uuid AND o.line_posting_date <= ${asOf}::date AND a.regime = ${s.regime} AND starts_with(a.code, ${s.prefix})
-        ${partyId ? sql`AND o.party_id = ${partyId}::uuid` : sql``}) x
+    FROM (SELECT coalesce(o.parent_id, o.id) AS root_id, f.residual
+      FROM fn_open_items_at(${tenantId}::uuid, ${asOf}::date) f JOIN open_item o ON o.tenant_id = ${tenantId}::uuid AND o.id = f.item_id JOIN account a ON a.id = f.account_id
+      WHERE a.regime = ${s.regime} AND starts_with(a.code, ${s.prefix})
+        ${partyId ? sql`AND f.party_id = ${partyId}::uuid` : sql``}) x
       JOIN open_item r ON r.tenant_id = ${tenantId}::uuid AND r.id = x.root_id JOIN party p ON p.id = r.party_id
     GROUP BY r.id, p.code, p.name, r.doc_no, r.doc_date, r.due_date HAVING sum(x.residual) <> 0
     ORDER BY p.code, ${by === 'due' ? sql`r.due_date NULLS LAST,` : sql``} r.doc_date, r.id`.execute(trx);
@@ -181,7 +181,7 @@ export const DEFAULT_BUCKETS = [30, 60, 90, 180];
 export const bucketsParam = z.string().regex(/^\d{1,4}(,\d{1,4})*$/, 'Mốc tuổi nợ phải là các số nguyên dương cách nhau bởi dấu phẩy').transform((s) => s.split(',').map(Number))
   .refine((a) => a.length <= 8 && a.every((x, i) => x > 0 && (i === 0 || x > a[i - 1]!)), 'Mốc tuổi nợ phải là các số nguyên dương tăng dần, tối đa 8 mốc');
 export interface AgingQuery { accountCode: string; partyCode?: string | undefined; asOf: string; by: 'due' | 'doc'; buckets: number[] }
-export interface AgingItem { itemId: number; docNo: string | null; docDate: string; dueDate: string | null; residual: string; daysOverdue: number | null; bucket: string }
+export interface AgingItem { itemId: number; docNo: string | null; docDate: string; dueDate: string | null; residual: string; ageDays: number | null; bucket: string }
 // Số liệu theo chiều tự nhiên của tài khoản: phải thu = dư Nợ (dương), phải trả = dư Có (đổi dấu thành dương); phần dư ngược chiều (trả trước, thu thừa) vào cột `credit` mang dấu âm,
 // nên Σ các cột = total = Σ dư của khoản (phải thu) hoặc -Σ dư (phải trả). Mỗi hàng có khóa notDue, b0..bN (N = số mốc), credit, total.
 export interface Aging {
@@ -194,7 +194,7 @@ export async function arapAging(trx: Trx, auth: Auth, tenantId: string, q: Aging
   const items = await loadItems(trx, tenantId, s, q.asOf, party?.id, q.by);
   const e = q.buckets; const last = `b${e.length}`;
   const labels = [...e.map((x, i) => `${i === 0 ? 1 : e[i - 1]! + 1}–${x}`), `>${e.at(-1)}`];
-  const columns = [{ key: 'notDue', label: q.by === 'due' ? 'Chưa đến hạn' : 'Chưa quá ngày chứng từ' }, ...labels.map((label, i) => ({ key: `b${i}`, label })),
+  const columns = [{ key: 'notDue', label: q.by === 'due' ? 'Chưa đến hạn' : 'Trong ngày' }, ...labels.map((label, i) => ({ key: `b${i}`, label })),
     { key: 'credit', label: s.kind === 'receivable' ? 'Trả trước / dư Có' : 'Trả trước / dư Nợ' }, { key: 'total', label: 'Tổng' }];
   const sign = s.kind === 'payable' ? -1 : 1;
   const bucketOf = (natural: Decimal, days: number | null) => {
@@ -209,7 +209,7 @@ export async function arapAging(trx: Trx, auth: Auth, tenantId: string, q: Aging
     const natural = D(it.residual).times(sign); const days = q.by === 'due' ? it.daysDue : it.daysDoc; const key = bucketOf(natural, days);
     let row = byParty.get(it.partyCode); if (!row) byParty.set(it.partyCode, row = { name: it.partyName, v: blank() });
     for (const v of [row.v, total]) { v[key] = v[key]!.plus(natural); v['total'] = v['total']!.plus(natural); }
-    out.push({ itemId: it.itemId, docNo: it.docNo, docDate: it.docDate, dueDate: it.dueDate, residual: vnd(natural), daysOverdue: days, bucket: key });
+    out.push({ itemId: it.itemId, docNo: it.docNo, docDate: it.docDate, dueDate: it.dueDate, residual: vnd(natural), ageDays: days, bucket: key });
   }
   const text = (v: Record<string, Decimal>) => Object.fromEntries(Object.entries(v).map(([k, x]) => [k, vnd(x)]));
   return { kind: s.kind, accountCode: s.prefix, accountName: s.accountName, asOf: q.asOf, by: q.by, buckets: e, columns,

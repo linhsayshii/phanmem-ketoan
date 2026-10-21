@@ -34,7 +34,7 @@ const summary = { rows: [{ partyCode: 'KH001', partyName: 'Khách 1', openingDeb
   totals: { openingDebit: '0', openingCredit: '0', periodDebit: '31000', periodCredit: '1000', closingDebit: '30300', closingCredit: '300' }, closingNet: '30000', accountNet: '30000', matches: true };
 const aging = { kind: 'receivable', columns: [{ key: 'notDue', label: 'Chưa đến hạn' }, { key: 'b0', label: '1–30' }, { key: 'credit', label: 'Trả trước / dư Có' }, { key: 'total', label: 'Tổng' }],
   rows: [{ partyCode: 'KH001', partyName: 'Khách 1', notDue: '1000', b0: '4000', credit: '0', total: '5000' }], totals: { notDue: '1000', b0: '4000', credit: '-300', total: '4700' } };
-const agingWithItems = { ...aging, items: [{ itemId: 1, docNo: 'PKT00002', docDate: '2026-01-05', dueDate: '2026-02-10', residual: '4000', daysOverdue: 49, bucket: 'b1' }] };
+const agingWithItems = { ...aging, items: [{ itemId: 1, docNo: 'PKT00002', docDate: '2026-01-05', dueDate: '2026-02-10', residual: '4000', ageDays: 49, bucket: 'b1' }] };
 
 const calls = () => apiMock.mock.calls.map((c) => String(c[0]));
 const lastCall = (path: string) => { const u = calls().filter((c) => c.startsWith(path)).at(-1); return u ? new URLSearchParams(u.split('?')[1]) : undefined; };
@@ -115,10 +115,25 @@ describe('Báo cáo công nợ', () => {
     const statement = new URL(String(open.mock.calls[0]![0]), 'http://x');
     expect(statement.pathname).toBe('/api/reports/arap/statement');
     expect([statement.searchParams.get('accountCode'), statement.searchParams.get('partyCode')]).toEqual(['131', 'KH001']);
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Thư nhắc nợ' })).toBeEnabled());
     await userEvent.click(screen.getByRole('button', { name: 'Thư nhắc nợ' }));
     const reminder = new URL(String(open.mock.calls[1]![0]), 'http://x');
     expect(reminder.pathname).toBe('/api/reports/arap/reminder');
     expect([reminder.searchParams.get('partyCode'), reminder.searchParams.get('asOf')]).toEqual(['KH001', expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/)]);
+  });
+
+  it('Thư nhắc nợ: tắt khi đối tượng không có khoản quá hạn, nút nêu lý do và máy chủ không bị gọi lấy JSON 404', async () => {
+    const open = vi.fn(); vi.stubGlobal('open', open);
+    apiMock.mockImplementation(async (url: string) => (url.startsWith('/api/reports/arap/aging') ? { ...aging, items: [{ ...agingWithItems.items[0]!, ageDays: 0 }, { ...agingWithItems.items[0]!, itemId: 2, ageDays: null, dueDate: null }] } : detail));
+    renderPage();
+    expect(screen.getByRole('button', { name: 'Thư nhắc nợ' })).toBeDisabled();
+    pickParty();
+    await vi.waitFor(() => expect(calls().some((c) => c.startsWith('/api/reports/arap/aging') && c.includes('by=due'))).toBe(true));
+    const button = screen.getByRole('button', { name: 'Thư nhắc nợ' });
+    await vi.waitFor(() => expect(button.getAttribute('title')).toMatch(/không có khoản nợ quá hạn/));
+    expect(button).toBeDisabled();
+    await userEvent.click(button);
+    expect(open).not.toHaveBeenCalled();
   });
 
   it('Phải trả (331): gọi tài khoản 331 và không có nút Thư nhắc nợ', async () => {
