@@ -4,21 +4,21 @@
     "value": { "from": 10, "to": 8 },
     "validFrom": "2025-07-01",
     "validTo": "2026-12-31",
-    "source": "NQ 204/2025/QH15 ngày 17/6/2025: Điều 1 khoản 1 (giảm 2% thuế suất thuế GTGT, còn 8%, đối với nhóm hàng hóa, dịch vụ quy định tại khoản 3 Điều 9 Luật Thuế GTGT số 48/2024/QH15, trừ viễn thông, hoạt động tài chính, ngân hàng, chứng khoán, bảo hiểm, kinh doanh bất động sản, sản phẩm kim loại, sản phẩm khai khoáng (trừ than), hàng hóa và dịch vụ chịu thuế tiêu thụ đặc biệt (trừ xăng)), Điều 2 (hiệu lực từ 01/7/2025 đến hết 31/12/2026). NĐ 174/2025/NĐ-CP ngày 30/6/2025: Điều 1 khoản 1 và Phụ lục I, II (nhóm không được giảm), khoản 2 điểm a (cơ sở kinh doanh theo phương pháp khấu trừ áp dụng thuế suất 8%), Điều 2 khoản 1 (hiệu lực từ 01/7/2025 đến hết 31/12/2026). https://vanban.chinhphu.vn/?pageid=27160&docid=214209, https://vanban.chinhphu.vn/?pageid=27160&docid=214310"
+    "source": "NQ 204/2025/QH15 ngày 17/6/2025: Điều 1 khoản 1 (giảm 2% thuế suất thuế GTGT, còn 8%, đối với nhóm hàng hóa, dịch vụ quy định tại khoản 3 Điều 9 Luật Thuế GTGT số 48/2024/QH15, trừ viễn thông, hoạt động tài chính, ngân hàng, chứng khoán, bảo hiểm, kinh doanh bất động sản, sản phẩm kim loại, sản phẩm khai khoáng (trừ than), hàng hóa và dịch vụ chịu thuế tiêu thụ đặc biệt (trừ xăng)), Điều 2 (hiệu lực từ 01/7/2025 đến hết 31/12/2026). NĐ 174/2025/NĐ-CP ngày 30/6/2025: Điều 1 khoản 1 và Phụ lục I, II (nhóm không được giảm), khoản 2 điểm a (cơ sở kinh doanh theo phương pháp khấu trừ áp dụng thuế suất 8%), Điều 2 khoản 1 (hiệu lực từ 01/7/2025 đến hết 31/12/2026). https://vanban.chinhphu.vn/?pageid=27160&docid=214209, https://vanban.chinhphu.vn/?pageid=27160&docid=214310 Chỉ mã hóa thuế suất 8% cho cơ sở theo phương pháp khấu trừ (NĐ 174/2025 Điều 1 khoản 2 điểm a); mức giảm 20% tỷ lệ % trên doanh thu cho cơ sở theo phương pháp trực tiếp (khoản 2 điểm b) không có trong tham số này, cần thêm khi làm hóa đơn và tờ khai theo phương pháp trực tiếp."
   },
   {
     "code": "vat_noncash_threshold",
     "value": "5000000",
     "validFrom": "2025-07-01",
     "validTo": null,
-    "source": "NĐ 181/2025/NĐ-CP ngày 01/7/2025 quy định chi tiết thi hành một số điều của Luật Thuế GTGT (số 48/2024/QH15): Điều 26 (phải có chứng từ thanh toán không dùng tiền mặt đối với hàng hóa, dịch vụ mua vào, kể cả hàng hóa nhập khẩu, từ 05 triệu đồng trở lên đã bao gồm thuế GTGT; khoản 2 điểm h: mua vào từng lần theo hóa đơn dưới 05 triệu đồng theo giá đã có thuế GTGT không cần; khoản 3: mua của một người nộp thuế nhiều lần trong cùng một ngày có tổng giá trị từ 05 triệu đồng trở lên thì cần), Điều 38 khoản 1 (hiệu lực từ 01/7/2025); căn cứ điểm b khoản 2 Điều 14 Luật 48/2024/QH15 (văn bản Luật chưa tải). https://vanban.chinhphu.vn/?pageid=27160&docid=214336"
+    "source": "NĐ 181/2025/NĐ-CP ngày 01/7/2025 quy định chi tiết thi hành một số điều của Luật Thuế GTGT (số 48/2024/QH15). Giá trị 5.000.000 đồng và ngày hiệu lực đã đối chiếu văn bản gốc NĐ 181/2025 (~/legal-docs/nd181-2025, OCR trang 32-34): Điều 26 (phải có chứng từ thanh toán không dùng tiền mặt đối với hàng hóa, dịch vụ mua vào, kể cả hàng hóa nhập khẩu, từ 05 triệu đồng trở lên đã bao gồm thuế GTGT; khoản 2 điểm h: mua vào từng lần theo hóa đơn dưới 05 triệu đồng theo giá đã có thuế GTGT không cần; khoản 3: mua của một người nộp thuế nhiều lần trong cùng một ngày có tổng giá trị từ 05 triệu đồng trở lên thì cần), Điều 38 khoản 1 (hiệu lực từ 01/7/2025). Luật 48/2024/QH15 (điểm b khoản 2 Điều 14) chỉ được dẫn qua NĐ 181/2025; văn bản Luật chưa tải nên không dùng làm căn cứ cho giá trị. https://vanban.chinhphu.vn/?pageid=27160&docid=214336"
   },
   {
     "code": "vat_return_template",
     "value": "TT80",
     "validFrom": "2022-01-01",
     "validTo": "2026-06-30",
-    "source": "Mẫu tờ khai theo TT 80/2021/TT-BTC (ngày bắt đầu áp dụng 01/01/2022 chưa đối chiếu văn bản gốc TT 80/2021). Mốc kết thúc: TT 89/2026/TT-BTC Điều 99 khoản 1 (hiệu lực từ 01/7/2026), khoản 3 điểm h (bãi bỏ TT 80/2021/TT-BTC), Điều 100 khoản 1 (hồ sơ khai thuế có kỳ tính thuế trước ngày 01/7/2026 thực hiện theo mẫu biểu áp dụng trước thời điểm Thông tư có hiệu lực). Tra theo một ngày thuộc kỳ tính thuế, không theo ngày nộp."
+    "source": "Mẫu tờ khai theo TT 80/2021/TT-BTC ngày 29/9/2021, kể cả các lần sửa đổi bởi TT 94/2025/TT-BTC và TT 21/2026/TT-BTC ngày 17/3/2026 (ngày bắt đầu áp dụng 01/01/2022 chưa đối chiếu văn bản gốc TT 80/2021; nếu mẫu 01/GTGT đổi trong khoảng này theo TT 94/2025 hoặc TT 21/2026 thì cần thêm dòng). Mốc kết thúc đã đối chiếu: TT 89/2026/TT-BTC Điều 99 khoản 1 (hiệu lực từ 01/7/2026), khoản 3 điểm h, i, k (bãi bỏ TT 80/2021, TT 94/2025, TT 21/2026), Điều 100 khoản 1 (hồ sơ khai thuế có kỳ tính thuế trước ngày 01/7/2026 thực hiện theo mẫu biểu áp dụng trước thời điểm Thông tư có hiệu lực). Tra theo một ngày thuộc kỳ tính thuế, không theo ngày nộp."
   },
   {
     "code": "vat_return_template",

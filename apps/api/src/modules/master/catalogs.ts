@@ -3,7 +3,8 @@ import type { Database } from '@kt/db';
 import { VND_AMOUNT_RE } from '@kt/domain';
 
 export interface ColumnDef { key: string; label: string; type: 'text' | 'number' | 'boolean' | 'date' | 'select'; required?: boolean; options?: { value: string; label: string }[]; lookup?: { catalog: string }; width?: number }
-export interface CatalogDef { name: string; table: keyof Database; label: string; schema: z.ZodObject<z.ZodRawShape>; columns: ColumnDef[]; uniqueBy: string[]; sort: string; searchIn: string[] }
+// nullsNotDistinct: ràng buộc duy nhất của bảng là UNIQUE NULLS NOT DISTINCT (NULL trùng NULL), nhập Excel kiểm trùng theo IS NULL.
+export interface CatalogDef { name: string; table: keyof Database; label: string; schema: z.ZodObject<z.ZodRawShape>; columns: ColumnDef[]; uniqueBy: string[]; sort: string; searchIn: string[]; nullsNotDistinct?: boolean }
 
 // Số tiền VND: số nguyên không dấu, tối đa 16 chữ số (cột numeric(20,0)).
 const vnd = z.string().regex(VND_AMOUNT_RE);
@@ -81,7 +82,7 @@ const defs: CatalogDef[] = [
       { key: 'scope', label: 'Áp dụng', type: 'select', options: [...SCOPE_OPTIONS, { value: 'both', label: 'Mua vào và bán ra' }] },
       { key: 'method', label: 'Phương pháp', type: 'select', options: [{ value: 'deduct', label: 'Khấu trừ' }, { value: 'direct', label: 'Trực tiếp trên doanh thu' }, { value: 'none', label: 'Không tính thuế' }] },
       { key: 'price_include', label: 'Giá đã gồm thuế', type: 'boolean' }] },
-  { name: 'tax_distribution', table: 'tax_distribution', label: 'Phân bổ thuế', uniqueBy: ['tax_code_code', 'document_type', 'scope', 'line_type', 'account_code'], sort: 'tax_code_id', searchIn: ['account_code', 'report_tag'],
+  { name: 'tax_distribution', table: 'tax_distribution', label: 'Phân bổ thuế', uniqueBy: ['tax_code_code', 'document_type', 'scope', 'line_type', 'account_code'], nullsNotDistinct: true, sort: 'tax_code_id', searchIn: ['account_code', 'report_tag'],
     schema: z.object({ tax_code_code: code, document_type: z.enum(['invoice', 'refund']), scope: z.enum(['sale', 'purchase']), line_type: z.enum(['base', 'tax']), factor_percent: factor, account_code: text(), report_tag: text() }),
     columns: [{ key: 'tax_code_code', label: 'Loại thuế', type: 'text', required: true, lookup: { catalog: 'tax_code' } },
       { key: 'document_type', label: 'Chứng từ', type: 'select', required: true, options: [{ value: 'invoice', label: 'Hóa đơn' }, { value: 'refund', label: 'Giảm giá, trả lại' }] },

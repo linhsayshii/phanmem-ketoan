@@ -141,6 +141,15 @@ describe('nhập Excel', () => {
     expect(dry.json()).toMatchObject({ inserted: 0, errorCount: 3 });
   });
 
+  it('phân bổ thuế (UNIQUE NULLS NOT DISTINCT): nhập lại dòng cơ sở không tài khoản → lỗi từng dòng, không 409 DUPLICATE cả file', async () => {
+    const buf = await workbookWith([['V10', 'invoice', 'sale', 'base', 100, null, 'sale_base']], 'tax_distribution');
+    const first = await upload('tax_distribution', buf, 'commit');
+    expect(first.statusCode, first.body).toBe(200);
+    const again = await upload('tax_distribution', buf, 'commit');
+    expect(again.statusCode).toBe(409);
+    expect(again.json().error).toMatchObject({ code: 'IMPORT_ERRORS', details: [{ row: 4, column: 'tax_code_code', message: 'Mã đã tồn tại trong hệ thống' }] });
+  });
+
   it('dòng cha ở trên, dòng con tham chiếu cha trong cùng file → nhập được', async () => {
     const buf = await workbookWith([['PB_CHA', 'Phòng cha', null, true], ['PB_CON', 'Phòng con', 'PB_CHA', false]], 'department');
     const r = await upload('department', buf, 'commit');

@@ -118,7 +118,10 @@ async function exists(trx: Transaction<Database>, def: CatalogDef, values: Recor
   for (const k of def.uniqueBy) {
     const col = def.columns.find((c) => c.key === k);
     const dbCol = col?.lookup && col.lookup.catalog !== 'currency' ? k.replace(/_code$/, '_id') : k;
-    if (values[dbCol] === null || values[dbCol] === undefined) return false; // khóa có NULL không bao giờ vi phạm UNIQUE
+    if (values[dbCol] === null || values[dbCol] === undefined) {
+      if (!def.nullsNotDistinct) return false; // khóa có NULL không bao giờ vi phạm UNIQUE thường
+      conds.push(sql`${sql.ref(dbCol)} IS NULL`); continue;
+    }
     conds.push(sql`${sql.ref(dbCol)} = ${values[dbCol]}`);
   }
   return (await sql`SELECT 1 FROM ${sql.table(def.table as string)} WHERE ${sql.join(conds, sql` AND `)} LIMIT 1`.execute(trx)).rows.length > 0;

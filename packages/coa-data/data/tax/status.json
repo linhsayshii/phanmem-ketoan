@@ -3,8 +3,9 @@
   "fxRules_TT99": true,
   "fxRules_TT200": false,
   "fxRules_note": "Loại tỷ giá đánh giá lại (assetRate, liabilityRate) và tài khoản trong fx-rules.json. TT133 (Điều 52 khoản 1.4.2) và TT99 (Tài khoản 413 khoản 1.5.1) đã đối chiếu văn bản gốc: tỷ giá chuyển khoản trung bình cho cả tài sản và nợ phải trả. TT200 chưa có văn bản gốc trong ~/legal-docs: để transfer_avg; công ty chọn lại ở cài đặt fx_reval_rate_asset, fx_reval_rate_liability (transfer_avg, buy, sell).",
-  "legalParam_vat_reduced_rate": true,
-  "legalParam_vat_noncash_threshold": true,
-  "legalParam_vat_return_template": true,
-  "legalParam_note": "Tham số pháp lý theo ngày hiệu lực trong legal-params.json (syncReferenceData nạp vào legal_param). true: giá trị và ngày hiệu lực đã đối chiếu văn bản gốc trong ~/legal-docs (nq204-2025, nd174-2025, nd181-2025, tt89-2026; PDF quét ảnh, đọc bằng OCR); false: lấy theo đặc tả mục 10, chưa đối chiếu, nguồn ghi \"chưa đối chiếu văn bản gốc\". vat_return_template: mốc TT80 → TT89 đã đối chiếu TT 89/2026 Điều 99, Điều 100; riêng ngày bắt đầu 01/01/2022 của dòng TT80 chưa đối chiếu (TT 80/2021 chưa tải được), không ảnh hưởng kỳ tính thuế từ 2022."
+  "legalParam_vat_reduced_rate@2025-07-01": true,
+  "legalParam_vat_noncash_threshold@2025-07-01": true,
+  "legalParam_vat_return_template@2022-01-01": false,
+  "legalParam_vat_return_template@2026-07-01": true,
+  "legalParam_note": "Cổng theo từng dòng của legal-params.json, khóa legalParam_<mã>@<validFrom>. true: giá trị và cả hai mốc hiệu lực đã đối chiếu văn bản gốc trong ~/legal-docs (nq204-2025, nd174-2025, nd181-2025, tt89-2026; PDF quét ảnh, đọc bằng OCR); false: còn phần chưa đối chiếu, nguồn của dòng ghi rõ \"chưa đối chiếu văn bản gốc\". vat_return_template@2022-01-01 (TT80) là false vì ngày bắt đầu 01/01/2022 chưa đối chiếu (TT 80/2021 chưa tải được); mốc kết thúc 30/6/2026 và dòng TT89 đã đối chiếu TT 89/2026 Điều 99, Điều 100. Như fxRules_*, cổng chỉ là nhãn trạng thái dữ liệu: syncReferenceData nạp mọi dòng vào legal_param và legalParam() không phân biệt dòng đã hay chưa đối chiếu; kiểm thử coa-data giữ cổng khớp với nguồn."
 }

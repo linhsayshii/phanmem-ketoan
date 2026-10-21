@@ -132,6 +132,16 @@ describe('danh mục khung', () => {
       expect(r.statusCode, `${name} ${JSON.stringify(payload)} -> ${r.body}`).toBe(400);
       expect(r.json().error.code).toBe('VALIDATION');
     }
+    // ràng buộc giữa các cột (CHECK của 0031): thông báo nêu ô cần sửa
+    const exempt = await post('tax_code', { code: 'XE', name: 'X', kind: 'vat', is_exempt: true });
+    expect(exempt.statusCode).toBe(400);
+    expect(exempt.json().error).toEqual({ code: 'VALIDATION', message: 'Mã không chịu thuế phải chọn phương pháp "Không tính thuế"' });
+    expect((await post('tax_code', { code: 'XE', name: 'X', kind: 'vat', is_exempt: true, method: 'none' })).statusCode).toBe(201);
+    for (const bad of [{ method: 'direct' }, { method: 'none' }, { price_include: true }]) {
+      const r = await post('tax_code', { code: 'XP', name: 'X', kind: 'pit', rate: '10', ...bad });
+      expect(r.statusCode, JSON.stringify(bad)).toBe(400);
+      expect(r.json().error.message).toBe('Thuế TNCN khấu trừ tại nguồn phải dùng phương pháp khấu trừ và không chọn giá đã gồm thuế');
+    }
   });
 
   it('số tiền quá 16 chữ số bị 400 VALIDATION', async () => {

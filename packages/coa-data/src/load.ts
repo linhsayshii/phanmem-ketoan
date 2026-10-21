@@ -62,6 +62,6 @@ export function loadFxRules(regime: Regime): FxRules | undefined {
 }
 
 // Tham số pháp lý theo ngày hiệu lực (data/tax/legal-params.json, mỗi dòng kèm nguồn văn bản); syncReferenceData nạp vào legal_param, API đọc bằng legalParam().
-// Cổng dữ liệu pháp lý: status.json legalParam_<code> = false khi giá trị chưa đối chiếu văn bản gốc.
+// Cổng dữ liệu pháp lý theo dòng: status.json legalParam_<code>@<validFrom> = false khi dòng còn phần chưa đối chiếu văn bản gốc (nhãn, sync vẫn nạp mọi dòng).
 export interface LegalParam { code: string; value: unknown; validFrom: string; validTo: string | null; source: string }
 export function loadLegalParams(): LegalParam[] { return JSON.parse(readFileSync(dataPath('tax', 'legal-params.json'), 'utf8')) as LegalParam[]; }

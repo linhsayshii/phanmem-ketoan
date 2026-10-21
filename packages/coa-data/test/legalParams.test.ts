@@ -20,11 +20,14 @@ describe('legal-params.json', () => {
       xs.slice(1).forEach((r, i) => expect(xs[i]!.validTo !== null && xs[i]!.validTo! < r.validFrom, `${code}: ${xs[i]!.validFrom} chồng ${r.validFrom}`).toBe(true));
     }
   });
-  it('cổng dữ liệu pháp lý: mỗi mã có legalParam_<mã> trong status.json; mã chưa đối chiếu ghi rõ trong nguồn', () => {
-    for (const r of rows) {
-      expect(typeof status[`legalParam_${r.code}`], `status.json thiếu legalParam_${r.code}`).toBe('boolean');
-      if (status[`legalParam_${r.code}`] === false) expect(r.source).toContain('chưa đối chiếu văn bản gốc');
-    }
+  it('cổng dữ liệu pháp lý theo dòng: legalParam_<mã>@<validFrom>; false khi và chỉ khi nguồn ghi "chưa đối chiếu"; không có khóa thừa', () => {
+    const keys = rows.map((r) => `legalParam_${r.code}@${r.validFrom}`);
+    rows.forEach((r, i) => {
+      const gate = status[keys[i]!];
+      expect(typeof gate, `status.json thiếu ${keys[i]}`).toBe('boolean');
+      expect(gate, `${keys[i]}: cổng phải là false khi và chỉ khi nguồn ghi "chưa đối chiếu"`).toBe(!r.source.includes('chưa đối chiếu'));
+    });
+    expect(Object.keys(status).filter((k) => k.startsWith('legalParam_') && k !== 'legalParam_note').sort()).toEqual([...keys].sort());
   });
   it('giá trị theo đặc tả mục 10: giảm thuế suất 10% → 8% đến hết 2026, ngưỡng thanh toán không dùng tiền mặt 5 triệu, mẫu tờ khai TT80 → TT89 từ 01/7/2026', () => {
     expect(rows.find((r) => r.code === 'vat_reduced_rate')).toMatchObject({ value: { from: 10, to: 8 }, validFrom: '2025-07-01', validTo: '2026-12-31' });

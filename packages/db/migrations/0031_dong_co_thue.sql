@@ -20,7 +20,7 @@ CREATE TABLE tax_distribution (
   document_type text NOT NULL CHECK (document_type IN ('invoice', 'refund')),
   scope text NOT NULL CHECK (scope IN ('sale', 'purchase')),
   line_type text NOT NULL CHECK (line_type IN ('base', 'tax')),
-  factor_percent numeric(7,4) NOT NULL,
+  factor_percent numeric(7,4) NOT NULL CHECK (factor_percent BETWEEN -100 AND 100),
   account_code text,
   report_tag text,
   CHECK (line_type = 'base' OR account_code IS NOT NULL),
@@ -31,8 +31,9 @@ SELECT rls_enable('tax_distribution');
 
 -- 3) Phân bổ mặc định: GTGT mua vào 1331 (purchase_tax), bán ra 33311 (sale_tax), giảm giá/trả lại cùng tài khoản; TNCN khấu trừ tại nguồn -100% vào 3335.
 -- TNCN_KT không gieo thuế suất (người dùng nhập; Luật Thuế TNCN 109/2025 chưa có văn bản gốc). Mã GTGT trực tiếp không gieo: người dùng tự tạo mã method 'direct'.
+-- TNCN_KT in_declaration = false như NK, TTĐB: không lên tờ khai GTGT dù bộ lọc tờ khai chỉ xét in_declaration.
 CREATE OR REPLACE FUNCTION seed_tax_defaults(p_tenant uuid) RETURNS void LANGUAGE sql AS $$
-  INSERT INTO tax_code(tenant_id, code, name, kind, rate, scope) VALUES (p_tenant, 'TNCN_KT', 'Khấu trừ thuế TNCN tại nguồn', 'pit', NULL, 'purchase')
+  INSERT INTO tax_code(tenant_id, code, name, kind, rate, scope, in_declaration) VALUES (p_tenant, 'TNCN_KT', 'Khấu trừ thuế TNCN tại nguồn', 'pit', NULL, 'purchase', false)
   ON CONFLICT (tenant_id, code) DO NOTHING;
   INSERT INTO tax_distribution(tenant_id, tax_code_id, document_type, scope, line_type, factor_percent, account_code, report_tag)
   SELECT p_tenant, c.id, d.document_type, s.scope, 'tax', 100, s.account_code, s.report_tag
@@ -77,10 +78,15 @@ END $function$;
 
 -- 4) Công ty đã có: mã không chịu thuế/không kê khai không tính thuế, thêm TNCN_KT và phân bổ mặc định. Tắt audit như 0025 (migration không có người dùng).
 ALTER TABLE tax_code DISABLE TRIGGER trg_audit;
-UPDATE tax_code SET method = 'none' WHERE is_exempt AND method = 'deduct';
+UPDATE tax_code SET method = 'none' WHERE is_exempt AND method <> 'none';
 SELECT seed_tax_defaults(id) FROM tenant;
 ALTER TABLE tax_code ENABLE TRIGGER trg_audit;
 SELECT audit_enable('tax_distribution');
+-- Động cơ thuế không đọc is_exempt mà đọc method: mã không chịu thuế/không kê khai luôn 'none' (thuế 0, không nhận thuế ghi trên hóa đơn khác 0).
+-- TNCN khấu trừ tại nguồn luôn tính thuế trên cơ sở chưa thuế: không 'direct'/'none', không giá đã gồm thuế (tách ngược kiểu GTGT sai với TNCN).
+ALTER TABLE tax_code
+  ADD CONSTRAINT tax_code_exempt_method_check CHECK (NOT is_exempt OR method = 'none'),
+  ADD CONSTRAINT tax_code_pit_check CHECK (kind <> 'pit' OR (method = 'deduct' AND NOT price_include));
 
 -- 5) Tham số pháp lý: một dòng cho mỗi (mã, ngày hiệu lực); syncReferenceData upsert theo khóa này từ packages/coa-data/data/tax/legal-params.json.
 DROP INDEX legal_param_code_valid_from_idx;

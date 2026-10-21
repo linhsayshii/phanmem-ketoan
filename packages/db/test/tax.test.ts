@@ -23,8 +23,9 @@ describe('động cơ thuế: dữ liệu mặc định', () => {
   it('công ty mới có phân bổ thuế mặc định; legalParam vat_return_template ngày 2026-06-30 = TT80, 2026-07-01 = TT89', async () => {
     const a = await createTestTenant(t.admin, { code: `TX${Date.now()}`, name: 'Thuế' });
     expect(await dists(a)).toEqual(expected());
-    const codes = (await sql<{ code: string; kind: string; rate: string | null; scope: string; method: string; price_include: boolean }>`SELECT code, kind, rate, scope, method, price_include FROM tax_code WHERE tenant_id = ${a} ORDER BY code`.execute(t.admin)).rows;
-    expect(codes.find((c) => c.code === 'TNCN_KT')).toEqual({ code: 'TNCN_KT', kind: 'pit', rate: null, scope: 'purchase', method: 'deduct', price_include: false });
+    const codes = (await sql<{ code: string; kind: string; rate: string | null; scope: string; method: string; price_include: boolean; in_declaration: boolean }>`SELECT code, kind, rate, scope, method, price_include, in_declaration FROM tax_code WHERE tenant_id = ${a} ORDER BY code`.execute(t.admin)).rows;
+    // TNCN không lên tờ khai GTGT (như NK, TTĐB)
+    expect(codes.find((c) => c.code === 'TNCN_KT')).toEqual({ code: 'TNCN_KT', kind: 'pit', rate: null, scope: 'purchase', method: 'deduct', price_include: false, in_declaration: false });
     expect(codes.filter((c) => c.method === 'none').map((c) => c.code)).toEqual(['KCT', 'KKK']); // không chịu thuế, không kê khai: thuế 0
     expect(codes.find((c) => c.code === 'V10')).toMatchObject({ rate: '10.00', scope: 'both', method: 'deduct', price_include: false });
     expect(await param('vat_return_template', '2026-06-30')).toEqual(['TT80']);
@@ -61,9 +62,26 @@ describe('động cơ thuế: dữ liệu mặc định', () => {
     await expect(ins('tax', null)).rejects.toThrow(/check constraint/);
     await ins('base', null);
     await expect(ins('base', null)).rejects.toThrow(/duplicate key/);
+    const factor = (f: string) => withTenant(t.db, { tenantId: a }, (trx) =>
+      sql`INSERT INTO tax_distribution(tenant_id, tax_code_id, document_type, scope, line_type, factor_percent, account_code) VALUES (${a}, ${v10}, 'refund', 'sale', 'tax', ${f}::numeric, '6422')`.execute(trx));
+    await expect(factor('150')).rejects.toThrow(/tax_distribution_factor_percent_check/);
+    await expect(factor('-100.0001')).rejects.toThrow(/tax_distribution_factor_percent_check/);
     const seen = await withTenant(t.db, { tenantId: b }, (trx) => sql<{ n: string }>`SELECT count(*) AS n FROM tax_distribution WHERE tenant_id = ${a}`.execute(trx));
     expect(Number(seen.rows[0]!.n)).toBe(0);
     const audit = await sql<{ n: string }>`SELECT count(*) AS n FROM audit_event WHERE tenant_id = ${a} AND entity = 'tax_distribution' AND action = 'insert' AND after->>'line_type' = 'base'`.execute(t.admin);
     expect(Number(audit.rows[0]!.n)).toBe(1); // thêm phân bổ ghi audit_event
+  });
+
+  it('mã không chịu thuế phải không tính thuế; TNCN luôn khấu trừ, không giá đã gồm thuế', async () => {
+    const a = await createTestTenant(t.admin, { code: `TE${Date.now()}`, name: 'Ràng buộc mã' });
+    const add = (code: string, kind: string, isExempt: boolean, method: string, priceInclude = false) => withTenant(t.db, { tenantId: a }, (trx) =>
+      sql`INSERT INTO tax_code(tenant_id, code, name, kind, rate, is_exempt, method, price_include) VALUES (${a}, ${code}, ${code}, ${kind}, NULL, ${isExempt}, ${method}, ${priceInclude})`.execute(trx));
+    await expect(add('X1', 'vat', true, 'deduct')).rejects.toThrow(/tax_code_exempt_method_check/);
+    await expect(add('X2', 'vat', true, 'direct')).rejects.toThrow(/tax_code_exempt_method_check/);
+    await add('X3', 'vat', true, 'none');
+    await expect(add('P1', 'pit', false, 'direct')).rejects.toThrow(/tax_code_pit_check/);
+    await expect(add('P2', 'pit', false, 'none')).rejects.toThrow(/tax_code_pit_check/);
+    await expect(add('P3', 'pit', false, 'deduct', true)).rejects.toThrow(/tax_code_pit_check/);
+    await add('P4', 'pit', false, 'deduct');
   });
 });

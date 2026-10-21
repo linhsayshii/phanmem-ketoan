@@ -7,6 +7,11 @@ export class AppError extends Error {
 }
 
 interface PgError extends Error { code?: string; detail?: string; constraint?: string }
+// Ràng buộc CHECK giữa nhiều cột: nói rõ ô cần sửa thay cho thông báo chung.
+const CHECK_MSG: Record<string, string> = {
+  tax_code_exempt_method_check: 'Mã không chịu thuế phải chọn phương pháp "Không tính thuế"',
+  tax_code_pit_check: 'Thuế TNCN khấu trừ tại nguồn phải dùng phương pháp khấu trừ và không chọn giá đã gồm thuế',
+};
 
 export default fp(async (app) => {
   app.setErrorHandler((err: unknown, _req, reply) => {
@@ -21,7 +26,7 @@ export default fp(async (app) => {
       return reply.status(code!.trim().endsWith('_NOT_FOUND') ? 404 : 409).send({ error: { code: code!.trim(), message: rest.join(':').trim() } });
     }
     // SQLSTATE lớp 22 (dữ liệu sai: tràn số, sai định dạng...), 23502 (NOT NULL) và 23514 (CHECK) là lỗi đầu vào, không phải lỗi hệ thống.
-    if (e.code?.startsWith('22') || e.code === '23502' || e.code === '23514') return reply.status(400).send({ error: { code: 'VALIDATION', message: 'Dữ liệu không hợp lệ' } });
+    if (e.code?.startsWith('22') || e.code === '23502' || e.code === '23514') return reply.status(400).send({ error: { code: 'VALIDATION', message: (e.code === '23514' && CHECK_MSG[e.constraint ?? '']) || 'Dữ liệu không hợp lệ' } });
     // Bế tắc (40P01) và lỗi tuần tự hóa (40001): PostgreSQL đã hủy giao dịch này, chưa ghi gì; người dùng thử lại được.
     if (e.code === '40P01' || e.code === '40001') return reply.status(409).send({ error: { code: 'CONCURRENT_RETRY', message: 'Thao tác đồng thời bị xung đột, hãy thử lại' } });
     // Không đưa tên ràng buộc ra ngoài; ràng buộc duy nhất của danh mục đều có `code` trong tên.
