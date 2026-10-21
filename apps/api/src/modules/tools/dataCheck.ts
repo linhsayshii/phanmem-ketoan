@@ -16,7 +16,14 @@ export const MAX_ROWS = 1000;
 // - mỗi công ty chỉ một lần soát tại một thời điểm (khóa tư vấn theo giao dịch).
 const wrap = (rule: string) => `WITH _p AS (SELECT $1::date AS d1, $2::date AS d2) SELECT q.voucher_id, q.ref, q.detail FROM (${rule}) q(voucher_id, ref, detail) LIMIT ${MAX_ROWS + 1}`;
 
-export async function runDataChecks(trx: Transaction<Database>, f: { from: string; to: string; codes?: string[] | undefined }): Promise<{ results: CheckResult[]; ran: number; truncated: string[] }> {
+export interface SkippedRule { code: string; reason: string }
+
+// Cờ nhạy cảm -> tên hiển thị trong lý do bỏ qua; view_receivable và view_payable cùng là "công nợ".
+const FLAG_LABEL: Record<string, string> = { view_receivable: 'công nợ', view_payable: 'công nợ', view_cost: 'giá vốn', view_salary: 'lương' };
+const skipReason = (missing: string[]) => `Bỏ qua do thiếu quyền xem ${[...new Set(missing.map((m) => FLAG_LABEL[m] ?? m))].join(', ')}`;
+
+// sensitive: cờ nhạy cảm của người chạy. Quy tắc khai báo flags thì người chạy phải có đủ mọi cờ đó, nếu không quy tắc bị bỏ qua (không chạy SQL) và báo trong skipped.
+export async function runDataChecks(trx: Transaction<Database>, f: { from: string; to: string; codes?: string[] | undefined }, sensitive: ReadonlySet<string>): Promise<{ results: CheckResult[]; ran: number; truncated: string[]; skipped: SkippedRule[] }> {
   await sql`SET LOCAL transaction_read_only = on`.execute(trx);
   const timeout = () => sql`SET LOCAL statement_timeout = '15s'`.execute(trx);
   await timeout();
@@ -24,7 +31,13 @@ export async function runDataChecks(trx: Transaction<Database>, f: { from: strin
   if (!start.ok) throw new AppError('DATA_CHECK_RUNNING', 'Công ty này đang có một lần soát lỗi khác, hãy thử lại sau', 409);
   let q = trx.selectFrom('data_check_rule').selectAll().where('is_enabled', '=', true);
   if (f.codes?.length) q = q.where('code', 'in', f.codes);
-  const rules = await q.orderBy('code').execute();
+  const all = await q.orderBy('code').execute();
+  const skipped: SkippedRule[] = [];
+  const rules = all.filter((r) => {
+    const missing = r.flags.filter((x) => !sensitive.has(x));
+    if (missing.length) skipped.push({ code: r.code, reason: skipReason(missing) });
+    return !missing.length;
+  });
   const results: CheckResult[] = [];
   const truncated: string[] = [];
   for (const r of rules) {
@@ -49,5 +62,5 @@ export async function runDataChecks(trx: Transaction<Database>, f: { from: strin
     }
     await timeout(); // quy tắc có thể đã đặt statement_timeout = 0 bằng set_config
   }
-  return { results, ran: rules.length, truncated };
+  return { results, ran: rules.length, truncated, skipped };
 }

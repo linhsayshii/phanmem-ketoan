@@ -52,6 +52,19 @@ describe('Màn hình soát lỗi dữ liệu', () => {
     expect(JSON.parse(JSON.stringify(init.json)).codes).toEqual(['CT_KHONG_CAN']);
   });
 
+  it('quy tắc bị bỏ qua do thiếu cờ nhạy cảm được liệt kê kèm lý do, kể cả khi không có kết quả nào', async () => {
+    apiMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path.startsWith('/api/catalogs/data_check_rule') && !init) return { rows: RULES, total: 2 };
+      if (path === '/api/data-check/run') return { ran: 1, truncated: [], results: [], skipped: [{ code: 'CT_KHONG_CAN', reason: 'Bỏ qua do thiếu quyền xem công nợ' }] };
+      return { ok: true };
+    });
+    renderPage();
+    await screen.findByText('Chứng từ không cân');
+    await userEvent.click(screen.getByRole('button', { name: 'Soát lỗi' }));
+    expect(await screen.findByText('Chứng từ không cân: Bỏ qua do thiếu quyền xem công nợ')).toBeInTheDocument();
+    expect(screen.getByText('Đã chạy 1 quy tắc, không phát hiện vấn đề')).toBeInTheDocument();
+  });
+
   it('công tắc Bật chỉ gửi is_enabled; sửa quy tắc không gửi code hay sql', async () => {
     renderPage();
     await screen.findByText('Chứng từ không cân');

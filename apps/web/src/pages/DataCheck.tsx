@@ -10,6 +10,7 @@ type Severity = 'error' | 'warning';
 // Hàng của GET /api/catalogs/data_check_rule (snake_case). Cột sql chỉ để xem: chỉ hệ thống cung cấp quy tắc.
 interface Rule { id: number; code: string; name: string; severity: Severity; sql: string; message: string; fix_hint: string | null; is_system: boolean; is_enabled: boolean }
 interface CheckResult { ruleCode: string; ruleName: string; severity: Severity; message: string; fixHint: string | null; voucherId: string | null; voucherNo: string | null; ref: string | null; detail: string | null }
+interface Skipped { code: string; reason: string }
 interface RuleForm { name: string; severity: Severity; message: string; fix_hint: string | null }
 
 const SEVERITY = { error: { color: 'red', label: 'Lỗi' }, warning: { color: 'orange', label: 'Cảnh báo' } } as const;
@@ -31,7 +32,7 @@ export default function DataCheckPage() {
   const update = useMutation({ mutationFn: ({ id, json }: { id: number; json: object }) => api(`/api/catalogs/data_check_rule/${id}`, { method: 'PUT', json }), onError,
     onSuccess: () => { setEditing(null); void qc.invalidateQueries({ queryKey: ['data-check-rules'] }); void message.success('Đã lưu'); } });
   const check = useMutation({
-    mutationFn: () => api<{ results: CheckResult[]; ran: number; truncated: string[] }>('/api/data-check/run', { method: 'POST', json: { from: range[0].format('YYYY-MM-DD'), to: range[1].format('YYYY-MM-DD'), ...(canView ? { codes: selected } : {}) } }),
+    mutationFn: () => api<{ results: CheckResult[]; ran: number; truncated: string[]; skipped?: Skipped[] }>('/api/data-check/run', { method: 'POST', json: { from: range[0].format('YYYY-MM-DD'), to: range[1].format('YYYY-MM-DD'), ...(canView ? { codes: selected } : {}) } }),
     onError });
 
   const groups = new Map<string, CheckResult[]>();
@@ -62,6 +63,10 @@ export default function DataCheckPage() {
               ]} />)}
         </Space>
       </Card>
+
+      {!!check.data?.skipped?.length && (
+        <Alert type="warning" showIcon message="Có quy tắc không được chạy"
+          description={<ul style={{ margin: 0, paddingLeft: 20 }}>{check.data.skipped.map((k) => <li key={k.code}>{rules.data?.rows.find((r) => r.code === k.code)?.name ?? k.code}: {k.reason}</li>)}</ul>} />)}
 
       {check.data && (check.data.results.length === 0
         ? <Alert type="success" showIcon message={`Đã chạy ${check.data.ran} quy tắc, không phát hiện vấn đề`} />

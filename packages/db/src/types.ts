@@ -238,7 +238,7 @@ export interface ReportLineTable {
 // sql chỉ chủ sở hữu CSDL (migration/seed) ghi được; app_user chỉ UPDATE các cột thông điệp (xem 0014).
 export interface DataCheckRuleTable {
   id: Generated<number>; tenant_id: string; code: string; name: string; severity: string; sql: string; message: string; fix_hint: string | null;
-  is_system: Generated<boolean>; is_enabled: Generated<boolean>;
+  is_system: Generated<boolean>; is_enabled: Generated<boolean>; flags: Generated<string[]>;
 }
 
 export interface Database {
