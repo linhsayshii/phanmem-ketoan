@@ -25,3 +25,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-21 05:25 | GĐ2 | T8 số dư tại ngày, Sổ quỹ tiền mặt, Sổ tiền gửi ngân hàng, cảnh báo/chặn tồn quỹ âm (số dư thấp nhất từ ngày ghi sổ) | 1e0639e, 46386c6 | api 369, web 98, e2e so-quy 4/4; lint/typecheck sạch
 2026-10-21 06:22 | GĐ2 | T9 kiểm kê quỹ và xử lý chênh lệch (0026), đảo giữ tiêu đề, cột opening_balance.bank_account_id | 2e151a6, dec26f0 | pnpm test 720, cashCount 9, e2e kiem-ke-quy; lint/typecheck sạch
 2026-10-21 07:06 | GĐ2 | T9b số dư đầu kỳ theo tài khoản ngân hàng; lưới bỏ qua ô không sửa được theo dòng | a0636b3, 4d82656 | ui 34, web 102, api 64, e2e so-du-dau-ky; lint/typecheck sạch
+2026-10-21 08:16 | GĐ2 | T10 tỷ giá theo ngày, tỷ giá xuất quỹ bình quân di động, chứng từ XQ cuối kỳ (0027), chặn đảo chứng từ hệ thống qua route chung | ec631bf, a53f1b5 | api 400, domain 106, coa-data 26, db 73, web 103, bất biến 18; lint/typecheck sạch
