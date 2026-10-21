@@ -27,3 +27,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-21 07:06 | GĐ2 | T9b số dư đầu kỳ theo tài khoản ngân hàng; lưới bỏ qua ô không sửa được theo dòng | a0636b3, 4d82656 | ui 34, web 102, api 64, e2e so-du-dau-ky; lint/typecheck sạch
 2026-10-21 08:16 | GĐ2 | T10 tỷ giá theo ngày, tỷ giá xuất quỹ bình quân di động, chứng từ XQ cuối kỳ (0027), chặn đảo chứng từ hệ thống qua route chung | ec631bf, a53f1b5 | api 400, domain 106, coa-data 26, db 73, web 103, bất biến 18; lint/typecheck sạch
 2026-10-21 09:23 | GĐ2 | T11 công nợ theo chứng từ open_item/settlement (0028), số dư đầu kỳ công nợ theo hóa đơn | a8eacc8, 99a88f5 | pnpm test 773, bất biến 18, web 108, e2e 8/8; lint/typecheck sạch
+2026-10-21 10:32 | GĐ2 | T12 đối trừ thủ công/tự động, kế hoạch đối trừ theo chứng từ, bù trừ, hủy đối trừ, chênh lệch tỷ giá thực hiện CL (0029) | f23aa02, b9e8ea9 | api 434, settlement 21, bất biến 18, db 76; lint/typecheck sạch
