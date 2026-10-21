@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
 import FormData from 'form-data';
+import { deflateRawSync } from 'node:zlib';
 import { bootstrapTenant, createTestApp, TEST_PASSWORD, type TestApp } from './helpers.js';
 import { buildTemplate, parseWorkbook } from '../src/modules/master/importExcel.js';
 import { assertZipSafe, excelDate, readSheet, zodIssueVi } from '../src/modules/master/excelSheet.js';
@@ -259,32 +260,49 @@ describe('nhập Excel', () => {
   });
 });
 
-// Dựng zip tối thiểu chỉ có thư mục trung tâm: đủ để kiểm tra kích thước khai báo, không cần nén thật.
-function fakeZip(sizes: number[], opts: { zip64?: boolean; declaredCount?: number } = {}): Buffer {
-  const entries = sizes.map((size) => { const e = Buffer.alloc(46); e.writeUInt32LE(0x02014b50, 0); e.writeUInt32LE(size, 24); return e; });
-  const cd = Buffer.concat(entries);
-  const eocd = Buffer.alloc(22); eocd.writeUInt32LE(0x06054b50, 0);
-  const n = opts.declaredCount ?? sizes.length;
-  eocd.writeUInt16LE(opts.zip64 ? 0xffff : n, 10); eocd.writeUInt32LE(cd.length, 12); eocd.writeUInt32LE(0, 16);
-  return Buffer.concat([cd, eocd]);
+// Dựng zip thật (tiêu đề cục bộ + thư mục trung tâm + EOCD) để kiểm tra trần giải nén; `declared` giả kích thước khai báo, `eocdCount` giả số mục ở EOCD.
+function zipOf(entries: { data: Buffer; method?: 0 | 8 | 99; declared?: number }[], opts: { eocdCount?: number; zip64?: boolean } = {}): Buffer {
+  const locals: Buffer[] = []; const cds: Buffer[] = []; let off = 0;
+  entries.forEach((e, i) => {
+    const method = e.method ?? 8; const body = method === 8 ? deflateRawSync(e.data) : e.data; const name = Buffer.from(`f${i}.bin`);
+    const l = Buffer.alloc(30); l.writeUInt32LE(0x04034b50, 0); l.writeUInt16LE(method, 8); l.writeUInt32LE(body.length, 18); l.writeUInt32LE(e.data.length, 22); l.writeUInt16LE(name.length, 26);
+    const c = Buffer.alloc(46); c.writeUInt32LE(0x02014b50, 0); c.writeUInt16LE(method, 10); c.writeUInt32LE(body.length, 20); c.writeUInt32LE(e.declared ?? e.data.length, 24); c.writeUInt16LE(name.length, 28); c.writeUInt32LE(off, 42);
+    locals.push(l, name, body); cds.push(c, name); off += 30 + name.length + body.length;
+  });
+  const cd = Buffer.concat(cds); const eocd = Buffer.alloc(22); eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(opts.zip64 ? 0xffff : opts.eocdCount ?? entries.length, 10); eocd.writeUInt32LE(cd.length, 12); eocd.writeUInt32LE(off, 16);
+  return Buffer.concat([...locals, cd, eocd]);
 }
 
 describe('chặn tệp zip nén bom', () => {
-  const MB = 1024 * 1024;
-  it('tệp xlsx hợp lệ qua được; mục lớn, tổng lớn, quá nhiều mục, ZIP64 và tệp không phải zip bị từ chối', async () => {
+  const zeros = (n: number) => Buffer.alloc(n);
+  const lim = { entry: 1000, total: 1500, entries: 2 };
+  const tooLarge = expect.objectContaining({ code: 'IMPORT_FILE_TOO_LARGE' });
+  it('tệp xlsx thật qua được; kích thước thật vượt trần (mục, tổng) bị từ chối dù khai báo nhỏ hay EOCD ghi ít mục', async () => {
     assertZipSafe(await workbookWith([party('KHZ1')]));
-    assertZipSafe(fakeZip([10 * MB, 10 * MB]));
-    const tooLarge = { code: 'IMPORT_FILE_TOO_LARGE', status: 400 };
-    expect(() => assertZipSafe(fakeZip([101 * MB]))).toThrow(expect.objectContaining(tooLarge));
-    expect(() => assertZipSafe(fakeZip([90 * MB, 90 * MB, 90 * MB]))).toThrow(expect.objectContaining(tooLarge));
-    expect(() => assertZipSafe(fakeZip([], { declaredCount: 10_001 }))).toThrow(expect.objectContaining(tooLarge));
-    expect(() => assertZipSafe(fakeZip([1], { zip64: true }))).toThrow(expect.objectContaining(tooLarge));
+    assertZipSafe(zipOf([{ data: zeros(900) }, { data: zeros(500), method: 0 }], { }), { ...lim, entries: 5 });
+    expect(() => assertZipSafe(zipOf([{ data: zeros(5000) }]), lim)).toThrow(tooLarge);
+    expect(() => assertZipSafe(zipOf([{ data: zeros(900) }, { data: zeros(900) }]), lim)).toThrow(tooLarge); // tổng 1800 > 1500
+    // EOCD ghi 1 mục nhưng còn mục bom phía sau (JSZip bỏ qua số mục ở EOCD)
+    expect(() => assertZipSafe(zipOf([{ data: zeros(10) }, { data: zeros(5000) }], { eocdCount: 1 }), lim)).toThrow(tooLarge);
+    // khai báo 100 nhưng thật 5000
+    expect(() => assertZipSafe(zipOf([{ data: zeros(5000), declared: 100 }]), lim)).toThrow(tooLarge);
+    // mục lưu nguyên (stored) cũng tính theo độ dài thật
+    expect(() => assertZipSafe(zipOf([{ data: zeros(2000), method: 0 }]), lim)).toThrow(tooLarge);
+    expect(() => assertZipSafe(zipOf([{ data: zeros(1) }, { data: zeros(1) }, { data: zeros(1) }]), lim)).toThrow(tooLarge); // quá 2 mục
+  });
+
+  it('ZIP64, phương thức nén lạ, dữ liệu nén hỏng và tệp không phải zip bị từ chối', () => {
+    expect(() => assertZipSafe(zipOf([{ data: zeros(1) }], { zip64: true }))).toThrow(tooLarge);
+    expect(() => assertZipSafe(zipOf([{ data: zeros(1), method: 99 }]))).toThrow(expect.objectContaining({ code: 'IMPORT_BAD_FILE', message: 'Tệp không phải xlsx hợp lệ' }));
+    const broken = zipOf([{ data: Buffer.from('xin chào xin chào') }]); broken.fill(0xff, 30 + 6, 30 + 12);
+    expect(() => assertZipSafe(broken)).toThrow(expect.objectContaining({ code: 'IMPORT_BAD_FILE' }));
     expect(() => assertZipSafe(Buffer.from('hello'))).toThrow(expect.objectContaining({ code: 'IMPORT_BAD_FILE' }));
     expect(() => assertZipSafe(Buffer.alloc(200, 7))).toThrow(expect.objectContaining({ code: 'IMPORT_BAD_FILE' }));
   });
 
-  it('nhập danh mục với tệp bom trả 400 IMPORT_FILE_TOO_LARGE, tệp rác trả IMPORT_BAD_FILE', async () => {
-    const bomb = await upload('party', fakeZip([150 * MB]), 'validate');
+  it('nhập danh mục với tệp bom (mục thật 101 MB) trả 400 IMPORT_FILE_TOO_LARGE, tệp rác trả IMPORT_BAD_FILE', async () => {
+    const bomb = await upload('party', zipOf([{ data: zeros(101 * 1024 * 1024), declared: 50 }]), 'validate');
     expect(bomb.statusCode).toBe(400); expect(bomb.json().error.code).toBe('IMPORT_FILE_TOO_LARGE');
     const junk = await upload('party', Buffer.from('không phải excel, chỉ là chữ'), 'validate');
     expect(junk.statusCode).toBe(400); expect(junk.json().error.code).toBe('IMPORT_BAD_FILE');

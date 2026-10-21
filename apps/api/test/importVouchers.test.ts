@@ -42,6 +42,17 @@ const pt = (group: string, o: Row = {}): Row => ({ group, type: 'PT', postingDat
 const bk = (group: string | null, o: Row = {}): Row => ({ group, postingDate: '2026-03-10', serial: 'C26TAA', invoiceNo: '0000001', invoiceDate: '2026-03-10', partyCode: 'NCC001', accountCode: '6422', counterAccountCode: '331', amount: '10000000', taxCode: 'V10', taxAmount: '1000000', invoiceGroupCode: '01', ...o });
 
 describe('mẫu và quyền', () => {
+  it('tải mẫu rồi nhập nguyên trạng (không có dòng dữ liệu) → 400 IMPORT_EMPTY ở cả hai chế độ, không phải 500', async () => {
+    const t = await tenant();
+    for (const kind of ['thu-chi', 'bang-ke-mua', 'bang-ke-ban']) {
+      const tpl = Buffer.from((await t.call('GET', `/api/import/vouchers/${kind}/template.xlsx`)).rawPayload);
+      for (const mode of ['validate', 'commit']) {
+        const r = await t.upload(kind, tpl, mode);
+        expect(r.statusCode, r.body).toBe(400); expect(r.json().error).toMatchObject({ code: 'IMPORT_EMPTY', message: 'Tệp không có dòng dữ liệu' });
+      }
+    }
+  });
+
   it('mẫu có nhãn tiếng Việt, dòng khóa ẩn và sheet hướng dẫn; mọi loại tải được; loại lạ 404; người chỉ xem bị 403', async () => {
     const t = await tenant();
     for (const kind of ['thu-chi', 'bang-ke-mua', 'bang-ke-ban']) {

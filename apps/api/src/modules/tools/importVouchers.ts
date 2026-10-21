@@ -205,6 +205,7 @@ export async function prepareImport(kind: Kind, buf: Buffer): Promise<Prepared> 
     if (!groups.has(g)) groups.set(g, []);
     groups.get(g)!.push({ row, v: parsed.data });
   }
+  if (!groups.size && !errors.length) throw new AppError('IMPORT_EMPTY', 'Tệp không có dòng dữ liệu', 400);
   if (groups.size > MAX_GROUPS) throw new AppError('IMPORT_TOO_MANY_GROUPS', `Tệp có ${groups.size.toLocaleString('vi-VN')} chứng từ, tối đa ${MAX_GROUPS.toLocaleString('vi-VN')}; hãy chia thành nhiều tệp`, 400);
 
   // Tiêu đề trong nhóm phải thống nhất: ô nào khác giá trị đầu tiên của nhóm là lỗi ở dòng đó.
