@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import FormData from 'form-data';
 import { bootstrapTenant, createTestApp, TEST_PASSWORD, type TestApp } from './helpers.js';
 import { buildTemplate, parseWorkbook } from '../src/modules/master/importExcel.js';
+import { excelDate, readSheet, zodIssueVi } from '../src/modules/master/excelSheet.js';
 import { catalogByName } from '../src/modules/master/catalogs.js';
 
 let ctx: TestApp; let cookie: string;
@@ -102,7 +103,7 @@ describe('nhập Excel', () => {
 
     const cells = await loadTemplate('party');
     cells.ws.addRow(['KH400', { error: '#N/A' }]);
-    expect((await parseWorkbook(catalogByName('party')!, await save(cells.wb))).errors).toEqual([{ row: 4, column: 'name', message: 'Ô lỗi' }]);
+    expect((await parseWorkbook(catalogByName('party')!, await save(cells.wb))).errors).toEqual([{ row: 4, column: 'name', message: 'Ô không đọc được' }]);
   });
 
   it('cột chữ: ô số giữ số 0 đầu theo định dạng, ô chữ giữ nguyên số 0 đầu, ô số thường thành chuỗi', async () => {
@@ -184,14 +185,64 @@ describe('nhập Excel', () => {
     expect(await count('party', 'KHQ')).toBe(0);
   });
 
-  it('quá 20.000 dòng → 400 IMPORT_TOO_LARGE; báo lỗi tối đa 500 dòng kèm errorCount', async () => {
+  it('quá 20.000 dòng → 400 IMPORT_TOO_MANY_ROWS trước khi đọc ô; báo lỗi tối đa 500 dòng kèm errorCount', async () => {
     const { wb, ws } = await loadTemplate('party');
-    ws.getCell('A20005').numFmt = '@';
+    for (let i = 0; i < 20_001; i++) ws.addRow([`B${i}`]);
     const big = await upload('party', await save(wb), 'validate');
-    expect(big.statusCode).toBe(400); expect(big.json().error.code).toBe('IMPORT_TOO_LARGE');
+    expect(big.statusCode).toBe(400); expect(big.json().error).toMatchObject({ code: 'IMPORT_TOO_MANY_ROWS', message: 'Tệp có 20.001 dòng, tối đa 20.000' });
     const r = await upload('party', await workbookWith(Array.from({ length: 600 }, (_, i) => [`CAP${i}`, null])), 'validate');
     expect(r.statusCode).toBe(200);
     expect(r.json().errors).toHaveLength(500); expect(r.json().errorCount).toBe(600);
+  });
+
+  it('số ngày Excel có phần giờ (45672.75) vẫn là ngày 2025-01-15, không lệch sang ngày sau', async () => {
+    expect(excelDate(45672.75)).toBe('2025-01-15'); expect(excelDate(45672.999)).toBe('2025-01-15'); expect(excelDate(45672)).toBe('2025-01-15');
+    const { rows } = await parseWorkbook(catalogByName('exchange_rate')!, await workbookWith([['USD', 45672.75, 'buy', 25000]], 'exchange_rate'));
+    expect(rows[0]).toMatchObject({ rate_date: '2025-01-15' });
+  });
+
+  it('thiếu cột bắt buộc ở dòng khóa → 400 IMPORT_COLUMN_MISSING nêu tên cột; thiếu cột không bắt buộc vẫn đọc được', async () => {
+    const { wb, ws } = await loadTemplate('party');
+    ws.getRow(2).getCell(2).value = null; // name
+    ws.addRow(['KHM1']);
+    const miss = await upload('party', await save(wb), 'validate');
+    expect(miss.statusCode).toBe(400);
+    expect(miss.json().error).toMatchObject({ code: 'IMPORT_COLUMN_MISSING', message: expect.stringContaining('[name]') });
+    const opt = await loadTemplate('party');
+    opt.ws.getRow(2).getCell(7).value = null; // tax_code
+    opt.ws.addRow(['KHM2', 'Thiếu cột MST']);
+    const { rows, errors } = await parseWorkbook(catalogByName('party')!, await save(opt.wb));
+    expect(errors).toEqual([]); expect(rows[0]).toMatchObject({ code: 'KHM2', name: 'Thiếu cột MST' });
+  });
+
+  it('thông báo lỗi bằng tiếng Việt, không có "[object Object]"', async () => {
+    const { wb, ws } = await loadTemplate('party');
+    ws.addRow(['', 'Thiếu mã', true, false, false, null, 'MST_SAI']);
+    ws.addRow(['K'.repeat(80), { error: '#DIV/0!' }]);
+    const { errors } = await parseWorkbook(catalogByName('party')!, await save(wb));
+    expect(errors.length).toBeGreaterThanOrEqual(4);
+    for (const e of errors) { expect(e.message).not.toMatch(/\[object|Required|String must|Invalid/i); expect(e.message).toMatch(/[ạảãàáâấầẩẫậắằẳẵặẹẻẽèéêếềểễệịỉĩìíọỏõòóôốồổỗộớờởỡợụủũùúưứừửữựỳỷỹỵđ]/); }
+    expect(errors).toEqual(expect.arrayContaining([{ row: 4, column: 'code', message: expect.stringContaining('bắt buộc') }, { row: 5, column: 'name', message: 'Ô không đọc được' }]));
+    expect(zodIssueVi({ code: 'invalid_enum_value', options: ['a', 'b'], received: 'c', path: [], message: 'Invalid enum value' } as never, 'Loại')).toBe('Loại: không thuộc danh sách (a, b)');
+    expect(zodIssueVi({ code: 'too_big', type: 'string', maximum: 20, inclusive: true, path: [], message: 'String must contain at most 20 character(s)' } as never, 'Mã')).toBe('Mã: quá dài (tối đa 20 ký tự)');
+    expect(zodIssueVi({ code: 'invalid_string', validation: 'regex', path: [], message: 'Invalid' } as never, 'MST')).toBe('MST: sai định dạng');
+  });
+
+  it('readSheet đọc theo khóa dòng khóa, bỏ dòng trống, gom lỗi ô', async () => {
+    const { wb, ws } = await loadTemplate('party');
+    ws.addRow(['KHS1', 'Một']); ws.addRow([]); ws.addRow(['KHS2', 'Hai']);
+    const r = await readSheet(await save(wb), { sheet: 'Du_lieu', keyRow: 2, firstDataRow: 4, maxRows: 100, columns: catalogByName('party')!.columns });
+    expect(r.rows.map((x) => [x.row, x.values.code])).toEqual([[4, 'KHS1'], [6, 'KHS2']]); expect(r.errors).toEqual([]);
+  });
+
+  it('một dòng lỗi → không ghi dòng nào, kể cả khi file nhiều hơn một lô 500 dòng; file sạch 1.200 dòng ghi đủ', async () => {
+    const rows = Array.from({ length: 1200 }, (_, i) => party(`KHB${String(i).padStart(4, '0')}`));
+    const bad = await upload('party', await workbookWith([...rows, party('KHBX', 'Nhóm sai', 'KHONG_CO')]), 'commit');
+    expect(bad.statusCode).toBe(409); expect(bad.json().error.details).toMatchObject([{ row: 1204, column: 'group_code' }]);
+    expect(await count('party', 'KHB')).toBe(0);
+    const ok = await upload('party', await workbookWith(rows), 'commit');
+    expect(ok.json(), ok.body).toMatchObject({ total: 1200, inserted: 1200 });
+    expect(await count('party', 'KHB')).toBe(1200);
   });
 
   it('người chỉ xem tải được mẫu nhưng nhập bị 403', async () => {
