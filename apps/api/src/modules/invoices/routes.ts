@@ -36,11 +36,11 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.get('/api/amortizations', { preHandler: app.requirePermission('amortization.view') }, async (req) => app.withTenant(req, (trx) => listSchedules(trx), READ_SNAPSHOT));
   app.get('/api/amortizations/:id', { preHandler: app.requirePermission('amortization.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => getSchedule(trx, req.params.id), READ_SNAPSHOT));
   app.post('/api/amortizations', { preHandler: app.requirePermission('amortization.create'), schema: { body: scheduleInput } }, async (req, reply) =>
-    reply.status(201).send(await app.withTenant(req, (trx) => createSchedule(trx, req.auth!.tenantId!, req.body))));
+    reply.status(201).send(await app.withTenant(req, (trx) => createSchedule(trx, req.auth!.tenantId!, req.auth!.userId, req.body))));
   app.put('/api/amortizations/:id', { preHandler: app.requirePermission('amortization.update'), schema: { params: numId, body: scheduleUpdate } }, async (req) =>
     app.withTenant(req, (trx) => updateSchedule(trx, req.auth!.tenantId!, req.params.id, req.body)));
   app.delete('/api/amortizations/:id', { preHandler: app.requirePermission('amortization.delete'), schema: { params: numId } }, async (req, reply) => {
-    await app.withTenant(req, (trx) => deleteSchedule(trx, req.params.id));
+    await app.withTenant(req, (trx) => deleteSchedule(trx, req.auth!.tenantId!, req.params.id));
     return reply.status(204).send();
   });
   app.post('/api/amortizations/run', { preHandler: app.requirePermission('amortization.run'), schema: { body: runInput } }, async (req) => {

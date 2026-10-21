@@ -33,6 +33,7 @@ describe('lịch phân bổ', () => {
     const s = await t.create();
     expect(s.lines.map((l) => l.amount)).toEqual([...Array(11).fill('1000000'), '1000001']);
     expect(s.lines.reduce((a, l) => a + BigInt(l.amount), 0n)).toBe(12000001n);
+    expect((await sql<{ n: string }>`SELECT count(*)::text AS n FROM amortization_schedule WHERE id = ${s.id} AND created_by IS NOT NULL`.execute(ctx.t.admin)).rows[0]!.n).toBe('1');
     expect([s.lines[0]!.periodNo, s.lines[11]!.periodNo, s.lines[11]!.fiscalYear]).toEqual([1, 12, 2026]);
     // bắt đầu giữa năm: kỳ chuyển sang năm sau
     expect(buildLines('10', 4, 2026, 11).map((l) => [l.fiscal_year, l.period_no, l.amount])).toEqual([[2026, 11, '2'], [2026, 12, '2'], [2027, 1, '2'], [2027, 2, '4']]);
@@ -132,10 +133,44 @@ describe('lịch phân bổ', () => {
     await lock('hard', 0); await lock('hard', 1);
     expect(err(await t.run(1))).toEqual([409, 'PERIOD_HARD_LOCKED']);
     expect(err(await t.run(1, 2027))).toEqual([404, 'PERIOD_NOT_FOUND']);
-    expect((await t.run(13)).statusCode).toBe(400);
+    expect((await t.run(16)).statusCode).toBe(400);
     const list = await t.call('GET', '/api/amortizations');
     expect((list.json() as Sched[]).map((x) => x.id)).toEqual([s.id]);
     const audit = await sql<{ n: string }>`SELECT count(*)::text AS n FROM audit_event WHERE tenant_id = ${t.tenantId}::uuid AND entity IN ('amortization_schedule', 'amortization_line')`.execute(ctx.t.admin);
     expect(Number(audit.rows[0]!.n)).toBeGreaterThan(0);
+  }, 60_000);
+  it('năm tài chính 15 tháng: lịch 15 kỳ ánh xạ kỳ 1-15 của năm đó và chạy được kỳ 14', async () => {
+    const t = await tenant();
+    expect((await t.call('POST', '/api/fiscal-years', { fiscalYear: 2027, dateFrom: '2027-01-01', months: 15, regime: 'TT133' })).statusCode).toBe(201);
+    const s = await t.create({ total: '1500', periods: 15, startYear: 2027, startPeriod: 1 });
+    expect(s.lines.map((l) => [l.fiscalYear, l.periodNo])).toEqual(Array.from({ length: 15 }, (_, i) => [2027, i + 1]));
+    const r = await t.run(14, 2027); expect(r.statusCode, r.body).toBe(200);
+    const v = await t.voucher((r.json() as { created: { voucherId: string }[] }).created[0]!.voucherId);
+    expect(v.postingDate).toBe('2028-02-29');
+  }, 60_000);
+
+  it('năm tạo sau với số kỳ khác 12: chạy kỳ 409 AMORTIZATION_PERIOD_LAYOUT; sửa lịch (chưa bắt đầu) thì xếp lại theo kỳ thật', async () => {
+    const t = await tenant();
+    const o = { total: '400', periods: 4, startPeriod: 11 };
+    const s = await t.create(o);
+    expect(s.lines.map((l) => [l.fiscalYear, l.periodNo])).toEqual([[2026, 11], [2026, 12], [2027, 1], [2027, 2]]); // 2027 chưa có: giả định 12 kỳ
+    expect((await t.call('POST', '/api/fiscal-years', { fiscalYear: 2027, dateFrom: '2027-01-01', months: 1, regime: 'TT133' })).statusCode).toBe(201);
+    expect(err(await t.run(1, 2027))).toEqual([409, 'AMORTIZATION_PERIOD_LAYOUT']);
+    const fixed = await t.call('PUT', `/api/amortizations/${s.id}`, { fromAccountCode: '3387', toAccountCode: '5113', startYear: 2026, ...o });
+    expect((fixed.json() as Sched).lines.map((l) => [l.fiscalYear, l.periodNo])).toEqual([[2026, 11], [2026, 12], [2027, 1], [2028, 1]]);
+    expect((await t.run(1, 2027)).statusCode).toBe(200);
+  }, 60_000);
+
+  it('chạy lại có lệch ở kỳ khóa mềm: người có quyền ghi lùi đảo PB cũ (ngày cuối kỳ) và sinh PB mới', async () => {
+    const t = await tenant();
+    const s = await t.create();
+    const first = (await t.runOk(1)).created[0]!;
+    expect((await t.call('POST', '/api/periods/2026/1/lock', { level: 'soft' })).statusCode).toBe(200);
+    await sql`UPDATE amortization_line SET amount = 900000 WHERE schedule_id = ${s.id} AND seq = 1`.execute(ctx.t.admin);
+    const out = await t.runOk(1);
+    expect(out.reversedVoucherIds).toEqual([first.voucherId]); expect(out.created).toHaveLength(1);
+    const old = await t.voucher(first.voucherId);
+    expect(old.state).toBe('reversed'); expect((await t.voucher(old.reversedById)).postingDate).toBe('2026-01-31');
+    expect((await t.voucher(out.created[0]!.voucherId)).lines[0].debit).toBe('900000');
   }, 60_000);
 });

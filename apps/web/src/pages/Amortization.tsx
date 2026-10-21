@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { D, formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
+import { D, formatVnDate, formatVnNumber, isImeComposing, todayVn } from '@kt/domain';
 import { LookupSelect, VnNumberInput } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
@@ -57,8 +57,16 @@ export default function AmortizationPage() {
   };
   // Form được dựng sẵn (forceRender) nên đặt giá trị ngay được; lần đầu vào trang có tham số từ hóa đơn thì mở sẵn hộp thoại.
   useEffect(() => { if (pre && cur) { open('new'); form.setFieldsValue({ ...pre }); } }, [cur?.fiscalYear]);
-  const startDate = (() => { const y = form.getFieldValue('startYear') as number | null | undefined; return y ? `${y}-01-01` : today; })();
+  const watchedYear = Form.useWatch('startYear', form) as number | undefined;
+  const startDate = watchedYear ? `${watchedYear}-01-01` : today;
   const accountFetcher = useMemo(() => accountFetcherFor(startDate), [startDate]);
+  const startNos = fy.find((y) => y.fiscalYear === watchedYear)?.periods.filter((p) => p.periodNo > 0).map((p) => p.periodNo) ?? Array.from({ length: 12 }, (_, i) => i + 1);
+  // Enter (trong ô nhập, không phải danh sách chọn) và Ctrl+S lưu hộp thoại; không dùng useHotkeys vì nó bỏ qua phím khi tiêu điểm nằm trong hộp thoại.
+  const submitOnKey = (e: React.KeyboardEvent) => {
+    if (isImeComposing(e.nativeEvent) || save.isPending) return;
+    const t = e.target as HTMLElement;
+    if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') || (e.key === 'Enter' && t.tagName === 'INPUT' && !t.closest('.ant-select'))) { e.preventDefault(); void form.validateFields().then((v) => save.mutate(v), () => undefined); }
+  };
   const bodyOf = (v: FormValues, s?: { isActive?: boolean }) => ({ fromAccountCode: v.fromAccountCode, toAccountCode: v.toAccountCode, total: v.total, periods: v.periods, startYear: v.startYear, startPeriod: v.startPeriod,
     description: v.description.trim() || null, ...(sourceVoucherId ? { sourceVoucherId } : {}), ...(s?.isActive === undefined ? {} : { isActive: s.isActive }) });
   const save = useMutation({
@@ -125,7 +133,7 @@ export default function AmortizationPage() {
           { title: '', key: 'act', width: 230, render: (_, s) => writable && (
             <Space size={4}>
               {can('amortization.update') && <Button size="small" aria-label={`Sửa lịch ${s.id}`} onClick={() => open(s)}>Sửa</Button>}
-              {can('amortization.update') && <Button size="small" loading={toggle.isPending} onClick={() => toggle.mutate(s)}>{s.isActive ? 'Ngừng' : 'Chạy lại lịch'}</Button>}
+              {can('amortization.update') && <Button size="small" loading={toggle.isPending} onClick={() => toggle.mutate(s)}>{s.isActive ? 'Ngừng' : 'Tiếp tục'}</Button>}
               {can('amortization.delete') && <Popconfirm title="Xóa lịch phân bổ này?" okText="Xóa" cancelText="Không" disabled={s.started} onConfirm={() => del.mutate(s)}>
                 <Button size="small" danger disabled={s.started}>Xóa</Button></Popconfirm>}
             </Space>) },
@@ -135,7 +143,7 @@ export default function AmortizationPage() {
         onCancel={() => setEditing(null)} onOk={() => { void form.validateFields().then((v) => save.mutate(v), () => undefined); }}>
         {typeof editing === 'object' && editing?.started && <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Lịch đã phân bổ ít nhất một kỳ: chỉ sửa được diễn giải" />}
         {formErr && <Alert type="error" showIcon message={formErr} style={{ marginBottom: 12 }} />}
-        <Form form={form} layout="vertical" disabled={typeof editing === 'object' && editing?.started === true} initialValues={{ fromAccountCode: '3387', toAccountCode: '5113', periods: 12, startPeriod: 1, description: '' }}>
+        <Form form={form} layout="vertical" onKeyDown={submitOnKey} disabled={typeof editing === 'object' && editing?.started === true} initialValues={{ fromAccountCode: '3387', toAccountCode: '5113', periods: 12, startPeriod: 1, description: '' }}>
           <Space align="start" size={12} style={{ display: 'flex' }}>
             <Form.Item label="Tài khoản nhận trước (Nợ, F4)" name="fromAccountCode" rules={[{ required: true, message: 'Chọn tài khoản' }]} style={{ width: 280 }}><LookupSelect catalog="account" fetcher={accountFetcher} /></Form.Item>
             <Form.Item label="Tài khoản doanh thu (Có, F4)" name="toAccountCode" rules={[{ required: true, message: 'Chọn tài khoản' }]} style={{ width: 280 }}><LookupSelect catalog="account" fetcher={accountFetcher} /></Form.Item>
@@ -144,9 +152,9 @@ export default function AmortizationPage() {
             <Form.Item label="Tổng số tiền" name="total" rules={[{ required: true, message: 'Nhập tổng số tiền' }]} style={{ width: 200 }}><VnNumberInput aria-label="Tổng số tiền" /></Form.Item>
             <Form.Item label="Số kỳ" name="periods" rules={[{ required: true, message: 'Nhập số kỳ' }]} style={{ width: 100 }}><InputNumber aria-label="Số kỳ" min={1} max={120} precision={0} style={{ width: '100%' }} /></Form.Item>
             <Form.Item label="Năm bắt đầu" name="startYear" rules={[{ required: true, message: 'Chọn năm' }]} style={{ width: 140 }}><Select aria-label="Năm bắt đầu" options={yearOpt} /></Form.Item>
-            <Form.Item label="Kỳ bắt đầu" name="startPeriod" rules={[{ required: true, message: 'Chọn kỳ' }]} style={{ width: 100 }}><Select aria-label="Kỳ bắt đầu" virtual={false} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `Kỳ ${i + 1}` }))} /></Form.Item>
+            <Form.Item label="Kỳ bắt đầu" name="startPeriod" rules={[{ required: true, message: 'Chọn kỳ' }]} style={{ width: 100 }}><Select aria-label="Kỳ bắt đầu" virtual={false} options={startNos.map((n) => ({ value: n, label: `Kỳ ${n}` }))} /></Form.Item>
           </Space>
-          <Form.Item label="Diễn giải" name="description"><Input maxLength={500} /></Form.Item>
+          <Form.Item label="Diễn giải" name="description"><Input maxLength={500} disabled={false} /></Form.Item>
         </Form>
         {split && <span style={{ opacity: 0.75 }}>Mỗi kỳ {money(split.each)}{split.last !== split.each ? `, kỳ cuối ${money(split.last)}` : ''}.</span>}
       </Modal>

@@ -28,7 +28,7 @@ test('Phân bổ doanh thu nhận trước: thêm lịch 2 kỳ, chạy kỳ 11,
   await page.locator('.ant-select-item-option', { hasText: 'Kỳ 11' }).click();
   await dlg.getByLabel('Diễn giải').fill(desc);
   await expect(dlg.getByText('Mỗi kỳ 600.000, kỳ cuối 600.001.')).toBeVisible();
-  await dlg.getByRole('button', { name: 'Lưu' }).click();
+  await dlg.getByLabel('Diễn giải').press('Enter'); // Enter trong ô nhập lưu hộp thoại
   const row = page.locator('.ant-table-row', { hasText: desc });
   await expect(row).toContainText('1.200.001'); await expect(row).toContainText('11/2026');
 

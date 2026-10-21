@@ -10,20 +10,29 @@ const ctxOf = (c: { tenantId: string; userId: string }) => ({ tenantId: c.tenant
 
 export const scheduleInput = z.object({
   sourceVoucherId: z.string().uuid().nullable().optional(), fromAccountCode: z.string().min(1), toAccountCode: z.string().min(1),
-  total: z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG), periods: z.number().int().min(1).max(120), startYear: z.number().int().min(1900).max(2200), startPeriod: z.number().int().min(1).max(12),
+  total: z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG), periods: z.number().int().min(1).max(120), startYear: z.number().int().min(1900).max(2200), startPeriod: z.number().int().min(1).max(15),
   description: z.string().max(500).nullable().optional(),
 });
 export const scheduleUpdate = scheduleInput.extend({ isActive: z.boolean().optional() });
-export const runInput = z.object({ fiscalYear: z.number().int(), periodNo: z.number().int().min(1).max(12) });
+export const runInput = z.object({ fiscalYear: z.number().int(), periodNo: z.number().int().min(1).max(15) });
 
-// Chia đều floor(total / kỳ), kỳ cuối nhận phần dư: tổng đúng bằng total. Kỳ thứ seq tính từ (startYear, startPeriod), 12 kỳ mỗi năm.
-// shortcut: năm tài chính ngắn hoặc dài hơn 12 kỳ chưa hỗ trợ; làm khi có yêu cầu.
-export function buildLines(total: string, periods: number, startYear: number, startPeriod: number) {
+// Chia đều floor(total / kỳ), kỳ cuối nhận phần dư: tổng đúng bằng total. Kỳ thứ seq tính từ (startYear, startPeriod) theo các kỳ thật của năm tài chính (layout: năm -> số kỳ, theo thứ tự);
+// năm chưa tạo giả định 12 kỳ. Năm tạo sau với số kỳ khác 12 thì lần chạy kỳ báo AMORTIZATION_PERIOD_LAYOUT (sửa lịch khi chưa bắt đầu để xếp lại).
+const DEFAULT_NOS = Array.from({ length: 12 }, (_, i) => i + 1);
+export function buildLines(total: string, periods: number, startYear: number, startPeriod: number, layout: Record<number, number[]> = {}) {
   const each = D(total).div(periods).floor();
+  const nosOf = (y: number) => layout[y] ?? DEFAULT_NOS;
+  let year = startYear; let idx = Math.max(0, nosOf(year).indexOf(startPeriod));
   return Array.from({ length: periods }, (_, i) => {
-    const k = startPeriod - 1 + i;
-    return { seq: i + 1, fiscal_year: startYear + Math.floor(k / 12), period_no: (k % 12) + 1, amount: (i === periods - 1 ? D(total).minus(each.times(periods - 1)) : each).toFixed(0) };
+    if (idx >= nosOf(year).length) { year++; idx = 0; }
+    return { seq: i + 1, fiscal_year: year, period_no: nosOf(year)[idx++]!, amount: (i === periods - 1 ? D(total).minus(each.times(periods - 1)) : each).toFixed(0) };
   });
+}
+async function loadLayout(trx: Trx, startYear: number, periods: number) {
+  const rows = await trx.selectFrom('fiscal_period').select(['fiscal_year', 'period_no']).where('period_no', '>', 0).where('fiscal_year', '>=', startYear).where('fiscal_year', '<=', startYear + periods).orderBy('fiscal_year').orderBy('period_no').execute();
+  const layout: Record<number, number[]> = {};
+  for (const r of rows) (layout[r.fiscal_year] ??= []).push(r.period_no);
+  return layout;
 }
 
 // source_doc_id của chứng từ PB: uuid suy từ công ty và mã lịch (source_doc_id là uuid còn id lịch là số), như XQ của tỷ giá xuất quỹ.
@@ -59,7 +68,7 @@ export async function getSchedule(trx: Trx, id: number): Promise<ScheduleDto> {
   return (await dto(trx, [r]))[0]!;
 }
 
-async function save(trx: Trx, tenantId: string, id: number | null, input: z.infer<typeof scheduleInput>, isActive?: boolean) {
+async function save(trx: Trx, tenantId: string, userId: string | null, id: number | null, input: z.infer<typeof scheduleInput>, isActive?: boolean) {
   if (D(input.total).lt(input.periods)) throw new AppError('VALIDATION', 'Tổng số tiền phải từ 1 đồng mỗi kỳ trở lên', 400);
   const p = await trx.selectFrom('fiscal_period').select('regime').where('fiscal_year', '=', input.startYear).where('period_no', '=', input.startPeriod).executeTakeFirst();
   if (!p) throw new AppError('PERIOD_NOT_FOUND', `Không có kỳ ${input.startPeriod}/${input.startYear}`, 404);
@@ -68,25 +77,27 @@ async function save(trx: Trx, tenantId: string, id: number | null, input: z.infe
   if (input.sourceVoucherId && !(await trx.selectFrom('voucher').select('id').where('id', '=', input.sourceVoucherId).executeTakeFirst())) throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy chứng từ gốc', 404);
   const v = { source_voucher_id: input.sourceVoucherId ?? null, from_account_id: from, to_account_id: to, total: input.total, periods: input.periods, start_year: input.startYear, start_period: input.startPeriod, description: input.description ?? null };
   let sid = id;
-  if (sid === null) sid = (await trx.insertInto('amortization_schedule').values({ tenant_id: tenantId, kind: 'deferred_revenue', ...v }).returning('id').executeTakeFirstOrThrow()).id;
+  if (sid === null) sid = (await trx.insertInto('amortization_schedule').values({ tenant_id: tenantId, kind: 'deferred_revenue', created_by: userId, ...v }).returning('id').executeTakeFirstOrThrow()).id;
   else {
     await trx.updateTable('amortization_schedule').set({ ...v, ...(isActive === undefined ? {} : { is_active: isActive }) }).where('id', '=', sid).execute();
     await trx.deleteFrom('amortization_line').where('schedule_id', '=', sid).execute();
   }
-  await trx.insertInto('amortization_line').values(buildLines(input.total, input.periods, input.startYear, input.startPeriod).map((l) => ({ tenant_id: tenantId, schedule_id: sid, ...l }))).execute();
+  await trx.insertInto('amortization_line').values(buildLines(input.total, input.periods, input.startYear, input.startPeriod, await loadLayout(trx, input.startYear, input.periods)).map((l) => ({ tenant_id: tenantId, schedule_id: sid, ...l }))).execute();
   return getSchedule(trx, sid);
 }
 
-export const createSchedule = (trx: Trx, tenantId: string, input: z.infer<typeof scheduleInput>) => save(trx, tenantId, null, input);
+export const createSchedule = (trx: Trx, tenantId: string, userId: string, input: z.infer<typeof scheduleInput>) => save(trx, tenantId, userId, null, input);
 
 const NOT_STARTED = 'Lịch đã phân bổ ít nhất một kỳ: không sửa được số tiền, số kỳ, tài khoản và không xóa được; có thể ngừng lịch (is_active = false) để dừng các kỳ sau';
-async function lockSchedule(trx: Trx, id: number) {
+const lockRuns = (trx: Trx, tenantId: string) => sql`SELECT pg_advisory_xact_lock(hashtext('amortization'), hashtext(${tenantId}::text))`.execute(trx);
+async function lockSchedule(trx: Trx, tenantId: string, id: number) {
+  await lockRuns(trx, tenantId); // cùng khóa với chạy kỳ: sửa/xóa lịch và chạy kỳ không chạy song song (nếu không PB có thể mồ côi hoặc ghi doanh thu hai lần)
   const s = await trx.selectFrom('amortization_schedule').select('id').where('id', '=', id).forUpdate().executeTakeFirst();
   if (!s) throw new AppError('AMORTIZATION_NOT_FOUND', 'Không tìm thấy lịch phân bổ', 404);
   return (await trx.selectFrom('amortization_line').select('id').where('schedule_id', '=', id).where('voucher_id', 'is not', null).limit(1).executeTakeFirst()) !== undefined;
 }
 export async function updateSchedule(trx: Trx, tenantId: string, id: number, input: z.infer<typeof scheduleUpdate>) {
-  const started = await lockSchedule(trx, id);
+  const started = await lockSchedule(trx, tenantId, id);
   const { isActive, ...rest } = input;
   if (started) {
     // Đã phân bổ: chỉ đổi được diễn giải và trạng thái hoạt động; các trường khác phải giữ nguyên.
@@ -97,10 +108,10 @@ export async function updateSchedule(trx: Trx, tenantId: string, id: number, inp
     await trx.updateTable('amortization_schedule').set({ description: rest.description ?? null, ...(isActive === undefined ? {} : { is_active: isActive }) }).where('id', '=', id).execute();
     return getSchedule(trx, id);
   }
-  return save(trx, tenantId, id, rest, isActive);
+  return save(trx, tenantId, null, id, rest, isActive);
 }
-export async function deleteSchedule(trx: Trx, id: number) {
-  if (await lockSchedule(trx, id)) throw new AppError('AMORTIZATION_STARTED', NOT_STARTED, 409);
+export async function deleteSchedule(trx: Trx, tenantId: string, id: number) {
+  if (await lockSchedule(trx, tenantId, id)) throw new AppError('AMORTIZATION_STARTED', NOT_STARTED, 409);
   await trx.deleteFrom('amortization_schedule').where('id', '=', id).execute(); // dòng xóa theo (ON DELETE CASCADE)
 }
 
@@ -108,12 +119,17 @@ export async function deleteSchedule(trx: Trx, id: number) {
 // Chứng từ đang hiệu lực khớp tài khoản và số tiền thì giữ nguyên (không chạm sổ, kể cả kỳ khóa sổ); lệch (hoặc đã bị đảo) thì đảo cũ ngày cuối kỳ rồi sinh mới, như tỷ giá xuất quỹ.
 // Chứng từ phân bổ là chứng từ hệ thống nên không bỏ ghi sổ/hủy được, kể cả kỳ đang mở: luôn dùng đảo.
 export async function runAmortization(trx: Trx, ctx: { tenantId: string; userId: string; canBackdate: boolean }, input: z.infer<typeof runInput>) {
-  await sql`SELECT pg_advisory_xact_lock(hashtext('amortization'), hashtext(${ctx.tenantId}::text))`.execute(trx);
+  await lockRuns(trx, ctx.tenantId);
   const { fiscalYear: fy, periodNo: pn } = input;
   const p = await trx.selectFrom('fiscal_period').select(['date_to', 'status']).where('fiscal_year', '=', fy).where('period_no', '=', pn).executeTakeFirst();
   if (!p) throw new AppError('PERIOD_NOT_FOUND', `Không có kỳ ${pn}/${fy}`, 404);
   if (p.status === 'hard_locked') throw new AppError('PERIOD_HARD_LOCKED', `Kỳ ${pn}/${fy} đã khóa cứng: không chạy phân bổ`, 409);
   if (p.status === 'soft_locked' && !ctx.canBackdate) throw new AppError('PERIOD_SOFT_LOCKED', `Kỳ ${pn}/${fy} đã khóa sổ, cần quyền ghi lùi ngày`, 409);
+
+  // Lịch lập khi năm này chưa có (giả định 12 kỳ) mà năm được tạo sau với số kỳ khác: dòng trỏ vào kỳ không tồn tại thì không chạy tiếp, tránh ghi sai kỳ hoặc không bao giờ phân bổ hết.
+  const orphan = await trx.selectFrom('amortization_line as l').innerJoin('amortization_schedule as s', 's.id', 'l.schedule_id').select('l.period_no').where('l.fiscal_year', '=', fy).where('s.is_active', '=', true)
+    .where(sql<boolean>`NOT EXISTS (SELECT 1 FROM fiscal_period fp WHERE fp.tenant_id = l.tenant_id AND fp.fiscal_year = l.fiscal_year AND fp.period_no = l.period_no)`).orderBy('l.period_no').limit(1).executeTakeFirst();
+  if (orphan) throw new AppError('AMORTIZATION_PERIOD_LAYOUT', `Có lịch phân bổ trỏ vào kỳ ${orphan.period_no}/${fy} không tồn tại trong năm tài chính ${fy} (năm được tạo sau với số kỳ khác 12). Xóa lịch rồi lập lại, hoặc sửa lịch khi chưa phân bổ kỳ nào để xếp lại kỳ`, 409);
 
   const rows = await trx.selectFrom('amortization_line as l').innerJoin('amortization_schedule as s', 's.id', 'l.schedule_id').innerJoin('account as f', 'f.id', 's.from_account_id').innerJoin('account as t', 't.id', 's.to_account_id')
     .leftJoin('voucher as v', 'v.id', 'l.voucher_id')
@@ -133,7 +149,8 @@ export async function runAmortization(trx: Trx, ctx: { tenantId: string; userId:
       lines: [{ accountCode: r.from_code, debit: r.amount, credit: '0', description }, { accountCode: r.to_code, debit: '0', credit: r.amount, description }] },
     { type: 'amortization', id: await sourceId(trx, ctx.tenantId, r.schedule_id) });
     await S.postVoucher(trx, v.id);
-    await trx.updateTable('amortization_line').set({ voucher_id: v.id }).where('id', '=', r.id).execute();
+    const upd = await trx.updateTable('amortization_line').set({ voucher_id: v.id }).where('id', '=', r.id).executeTakeFirst();
+    if (Number(upd.numUpdatedRows) !== 1) throw new AppError('AMORTIZATION_CONFLICT', 'Lịch phân bổ vừa bị sửa hoặc xóa trong lúc chạy kỳ, hãy chạy lại', 409);
     created.push({ scheduleId: r.schedule_id, voucherId: v.id });
   }
   return { fiscalYear: fy, periodNo: pn, created, reversedVoucherIds: reversed, unchanged };
