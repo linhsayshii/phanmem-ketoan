@@ -101,7 +101,7 @@ export async function readSheet(buf: Buffer, opts: SheetOptions): Promise<{ rows
 
 // Lỗi Zod → tiếng Việt kế toán. Thông báo tùy biến của lược đồ (đã là tiếng Việt) được giữ; thông báo mặc định (tiếng Anh) thay bằng câu theo loại lỗi.
 export function zodIssueVi(issue: ZodIssue, label: string): string {
-  const custom = /[^\x00-\x7F]/.test(issue.message) ? issue.message : null;
+  const custom = /\P{ASCII}/u.test(issue.message) ? issue.message : null;
   if (custom) return `${label}: ${custom}`;
   switch (issue.code) {
     case 'invalid_type': return `${label}: ${issue.received === 'undefined' || issue.received === 'null' ? 'bắt buộc nhập' : 'sai kiểu dữ liệu'}`;
