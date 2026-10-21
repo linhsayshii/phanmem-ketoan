@@ -820,6 +820,11 @@ export interface VatTemplate { form: '01/GTGT'; version: 'TT89' | 'TT80'; validF
 
 Model: sonnet.
 
+**Việc mang sang từ Task 18 (controller thêm, bắt buộc):**
+- Hóa đơn của chứng từ `reversed`: chứng từ gốc đã kê khai ở kỳ của nó; nếu chứng từ đảo nằm ở kỳ sau thì kỳ đó kê khai điều chỉnh giảm (số âm) theo hóa đơn gốc; đảo cùng kỳ thì cả hai triệt tiêu, bảng kê không hiện. Chứng từ đảo không có dòng `voucher_invoice` (T18), nên bảng kê đọc hóa đơn qua `reversal_of_id`. Có kiểm thử cho cả hai trường hợp.
+- T18 Minor 4: thuế nhập khẩu/tiêu thụ đặc biệt (`kind` `import`/`excise`) phân bổ trên nhiều dòng có mã GTGT khác nhau chưa tách được theo nhóm kê khai; T18 đã chặn hơn một mã GTGT trên một dòng (`INVOICE_LINE_MULTIPLE_VAT`). Bảng kê nhóm theo mã GTGT của dòng; nếu gặp mã `import`/`excise` thì ghi rõ trong báo cáo cách đã chọn hoặc chặn với thông báo.
+- T18 N2: mã thuế có phân bổ chia đôi (ví dụ 50/50 hai tài khoản) bị báo lệch giả khi đối chiếu `voucher_invoice.tax_amount` với phát sinh tài khoản thuế; đối chiếu phải cộng mọi tài khoản phân bổ thuế của mã (`tax_distribution` `line_type='tax'`), không chỉ 1331/33311.
+
 **Files:**
 - Create: `apps/api/src/modules/tax/register.ts`, `apps/api/src/modules/tax/routes.ts`, `apps/web/src/pages/InvoiceRegister.tsx`, `apps/web/e2e/bang-ke-thue.spec.ts`
 - Modify: `apps/api/src/app.ts`, `apps/web/src/router.tsx` (menu "Thuế")

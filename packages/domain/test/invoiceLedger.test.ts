@@ -106,7 +106,7 @@ describe('bút toán hóa đơn', () => {
   });
 
   it('hết dòng cơ sở mà còn chênh thì chia tiếp cho dòng thuế không cố định (1 dòng cơ sở + V8 ghi trên hóa đơn + TNCN_KT: chênh 2 đồng)', () => {
-    // 6,49 USD × 3.988,66: V8 quy đổi 2.072 nhưng ghi trên hóa đơn 2.073 nên chênh 2 đồng: dòng cơ sở nhích 1, dòng TNCN (không cố định) nhích 1, công nợ giữ nguyên
+    // 6,49 USD × 3.988,66: V8 quy đổi 2.074 nhưng ghi trên hóa đơn 2.073 nên chênh 2 đồng: dòng cơ sở nhích 1, dòng TNCN (không cố định) nhích 1, công nợ giữ nguyên
     const items = [item(1, '6.49', ['V8', 'TNCN_KT'], { accountCode: '6422' })];
     const { lines, input } = ledger(items, { scope: 'purchase', documentType: 'invoice', currency: 'USD', fxRate: '3988.66', declaredTaxVnd: { V8: '2073' } });
     const t = totals(lines);
