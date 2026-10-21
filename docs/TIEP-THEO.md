@@ -23,7 +23,7 @@ Văn bản gốc tải về `~/legal-docs/` trên VPS (ngoài repo): TT 99/2025 
 - [ ] Kế toán trưởng rà soát một lượt việc gán tài khoản cho từng chỉ tiêu TT99 (xem mục 4).
 - [ ] GĐ2/GĐ3: thêm thuộc tính kỳ hạn (ngắn/dài hạn) cho công nợ, tiền gửi, vay để tách dòng dài hạn B01 TT99; B03 phân loại dòng tiền theo mã luồng tiền trên chứng từ thay vì chỉ theo cặp tài khoản.
 - [ ] Hệ thống tài khoản TT200 vẫn lấy từ SUNSOFT, chưa đối chiếu Phụ lục 1 TT 200/2014 (TT200 đã bị TT99 thay từ 2026; ưu tiên thấp).
-- [ ] Mẫu tờ khai 01/GTGT theo TT 89/2026 (Phụ lục I): đã OCR trang 241–243 (`~/legal-docs/tt89-2026/ocr/SUMMARY.md`, ảnh 300 dpi kèm theo); đối chiếu bằng mắt và nhập dữ liệu mẫu ở GĐ2 Task 21.
+- [x] Mẫu tờ khai 01/GTGT theo TT 89/2026 (Phụ lục I, trang 241–243): 30 chỉ tiêu [21]–[43] nhập từ ảnh trang gốc vào `data/tax/01gtgt-tt89.json`, cổng `01GTGT_TT89=true` (GĐ2 Task 21, 2026-10-22). Hai cổng còn `false`: `01GTGT_TT89_rate8` (nhóm 8% tạm gộp vào [32]/[33]) và `01GTGT_TT80` (chưa có văn bản gốc TT 80/2021), xem mục 4.
 - [ ] Ký hiệu hóa đơn theo TT 91/2026 (Phụ lục I, đã có chữ): dùng cho GĐ5.
 
 ## 3. Các giai đoạn tiếp theo
@@ -64,6 +64,8 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
 | Remote GitHub (nếu muốn CI chạy) | Tạo repo và quyền push là quyết định của người dùng | CI trong `.github/workflows` chưa chạy |
 | Mẫu Ủy nhiệm chi giấy của từng ngân hàng (Vietcombank, BIDV, VietinBank, Agribank, Techcombank, MB, ACB… theo ngân hàng công ty đang dùng): file PDF hoặc ảnh quét mẫu trắng, chép vào `~/legal-docs/unc-ngan-hang/<mã ngân hàng>.pdf` | Mẫu giấy là tài sản của từng ngân hàng, không tải công khai được; cần đối chiếu bố cục từng ô để in đúng lên giấy in sẵn | Ủy nhiệm chi chỉ có một bố cục chung nội bộ (đơn vị trả tiền, đơn vị thụ hưởng, số tiền bằng số và chữ, nội dung), chưa in vừa mẫu giấy của ngân hàng |
 | Văn bản gốc TT 200/2014/TT-BTC (Mẫu 01-TT, 02-TT) và văn bản chế độ TT 58 (nếu có mẫu chứng từ), chép vào `~/legal-docs/tt200-2014/`, `~/legal-docs/tt58/` | Chưa tải về VPS; luật dự án không cho chép mẫu từ trí nhớ | Phiếu thu, Phiếu chi của công ty theo TT200 hoặc TT58 in đúng bố cục nhưng không có dòng "Mẫu số" và chú thích ban hành |
+| Văn bản gốc TT 80/2021/TT-BTC (29/9/2021), Phụ lục II mẫu 01/GTGT: Công báo, vanban.chinhphu.vn, datafiles.chinhphu.vn không tìm được bản chính thức từ VPS. Cần tải và chép vào `~/legal-docs/tt80-2021/` | Trang luật chặn tải tự động; không chép mẫu từ trí nhớ hay bản sao không chính thức | Tờ khai 01/GTGT cho kỳ trước 01/7/2026 trả 409 `VAT_TEMPLATE_UNAVAILABLE` |
+| Xác nhận hàng bán thuế suất 8% (NĐ 174/2025) khai vào chỉ tiêu nào của 01/GTGT TT 89/2026, kèm công văn hướng dẫn của Cục Thuế nếu có | TT 89/2026 và NĐ 174/2025 không nêu chỉ tiêu; cần văn bản hướng dẫn hoặc thực tế HTKK | Nhóm 08 tạm gộp vào [32]/[33]; tờ khai cảnh báo khi kỳ có hóa đơn 8% (`isVatRate8Verified()` = false) |
 | Tên miền và cách triển khai thật (qua nginx proxy manager sẵn có hay không) | Đụng dịch vụ đang chạy trên VPS | Chỉ chạy được nội bộ qua SSH tunnel |
 
 ## 5. Ghi chú môi trường
