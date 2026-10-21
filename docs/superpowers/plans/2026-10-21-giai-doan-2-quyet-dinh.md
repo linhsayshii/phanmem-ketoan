@@ -224,5 +224,8 @@ Chi tiết từng hạn chế nằm ở `docs/TIEP-THEO.md`, mục "Hạn chế 
 167. Bảng kê bán ra kiểm trùng với hóa đơn bán đã có (ký hiệu + số chuẩn hóa `fn_invoice_key`, trừ đã hủy/đảo) ngay trong bộ nhập, vì dịch vụ chỉ kiểm trùng đầu vào (Task 25, 52b36af).
 168. Ngoại tệ khi nhập: số tiền VND không bắt buộc; có thì phải lệch không quá 1 đồng so với `toVnd(nguyên tệ × tỷ giá)`, không có thì tự tính (Task 25, 52b36af).
 169. Chống tệp nén độc: đọc thư mục zip bằng chính JSZip 3.10.2 mà exceljs dùng (phụ thuộc trực tiếp, cùng phiên bản), giải nén dạng luồng đếm byte thật, dừng ở 100 MB mỗi mục/200 MB tổng/10.000 mục — hai bộ đọc tự viết trước đó đều bị lách vì đọc thư mục khác JSZip (Task 25, d00974c, c29a4ef).
+170. Khử trùng chứng từ: khóa tài khoản đối ứng gồm cả chiều (Nợ/Có) để hóa đơn mua (Có 331) và phiếu chi trả nợ (Nợ 331) không bị coi là trùng; quét rộng thêm `max(days_window)` hai đầu, giữ cặp khi một trong hai chứng từ thuộc kỳ lọc; kết quả `{ pairs, truncated, hiddenBySensitive }` tối đa 500 cặp (Task 26, 5c37116, 4390261).
+171. Khử trùng giữ lọc theo cờ nhạy cảm (bỏ chứng từ có dòng trên tài khoản người dùng không được xem) và báo trên màn hình, dù danh sách chứng từ chung không lọc (GĐ1 #244) — vì màn hình khử trùng gợi ý hành động đảo/hủy trên số liệu công nợ — nếu sai, người thiếu cờ bỏ sót cặp trùng (có cảnh báo) (Task 26, 4390261).
+172. Quy tắc trùng mặc định gieo qua `seed_tenant_defaults` (định nghĩa lại từ thân 0035, chỉ thêm một dòng) và chèn bù công ty đã có; cột `days_window` của danh mục nhận số hoặc chuỗi số, rỗng/null không thành 0 (Task 26, 5c37116, 4390261).
 
 (ghi tiếp sau mỗi tác vụ)

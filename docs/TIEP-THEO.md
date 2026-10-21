@@ -68,6 +68,10 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
   - Lượt Kiểm tra không ghi sổ nên không phát hiện lỗi chỉ có khi ghi sổ (kỳ đã khóa, quỹ âm); lỗi này hiện ở lượt Nhập.
   - Khóa chống nhập trùng tính theo nội dung từng nhóm (số nhóm + các dòng đã sắp xếp): sửa một nhóm rồi nhập lại tạo chứng từ mới cho nhóm đó, chứng từ cũ vẫn còn.
   - Tệp xlsx giải nén thật có giới hạn (100 MB mỗi mục, 200 MB tổng, 10.000 mục) bằng chính JSZip mà exceljs dùng; tệp 20 MB có hàng trăm nghìn mục thư mục vẫn tốn vài giây trong bước đọc thư mục (exceljs cũng tốn như vậy).
+- Khử trùng chứng từ (Task 26):
+  - Chưa đo `EXPLAIN ANALYZE` trên 100.000 chứng từ; ước tính 1–3 giây cho một năm. Đo trước khi tag GĐ2 hoặc khi có dữ liệu thật.
+  - Đánh dấu "Không trùng" chưa xem lại hay gỡ được (cần màn hình danh sách cặp đã bỏ qua).
+  - Người thiếu cờ xem công nợ/giá vốn không thấy cặp có tài khoản đó (có cảnh báo), trong khi danh sách chứng từ chung không lọc theo cờ (quyết định GĐ1 #244).
 
 ## 4. Chờ người dùng
 
