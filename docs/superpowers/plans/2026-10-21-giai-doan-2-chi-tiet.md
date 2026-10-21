@@ -39,7 +39,7 @@
 ## Cấu trúc file
 
 - `packages/domain/src/`: `voucherTypes.ts` (cấu hình loại chứng từ, mục đích thu/chi, danh sách loại hệ thống), `fx.ts` (quy đổi, bình quân di động), `tax.ts` (động cơ thuế), `invoiceLedger.ts` (dựng bút toán hóa đơn), `vatFormula.ts` (công thức tờ khai), `vnTime.ts` (ngày hôm nay giờ Việt Nam), `permissions.ts` (thêm quyền, `sensitiveDenial` chuyển về đây).
-- `packages/db/migrations/0024_quyen_gd2.sql` … `0036_soat_loi_gd2.sql` (bảng "Thứ tự thực hiện").
+- `packages/db/migrations/0024_quyen_gd2.sql` … `0037_b02_so_thuan.sql` (bảng "Thứ tự thực hiện").
 - `apps/api/src/modules/ledger/`: `vouchers.service.ts`, `vouchers.routes.ts` (chứng từ dùng chung theo loại), `openingBalance.ts` (số dư công nợ theo hóa đơn, bỏ ghi sổ số dư).
 - `apps/api/src/modules/cash/` (mới): `books.ts` (số dư tại ngày, sổ quỹ, sổ tiền gửi), `cashCount.ts`, `fx.ts` (tỷ giá theo ngày, tỷ giá xuất quỹ, đánh giá lại), `routes.ts`.
 - `apps/api/src/modules/arap/` (mới): `openItems.ts`, `settlement.ts`, `reports.ts` (sổ chi tiết, tổng hợp, tuổi nợ, đối chiếu, nhắc nợ), `routes.ts`.
@@ -981,6 +981,45 @@ Model: sonnet.
 - [ ] **Step 2:** FAIL. **Step 3:** Viết migration. **Step 4:** `pnpm db:migrate`; `pnpm -F @kt/api test -- test/dataCheck.test.ts`, `pnpm -F @kt/web test -- test/DataCheck.test.tsx` xanh.
 - [ ] **Step 5:** Commit `feat(db): soát lỗi công nợ lệch sổ cái, hóa đơn thiếu MST/trùng, thuế lệch, cờ nhạy cảm trên kết quả`.
 
+### Task 27b: Số thuần chênh lệch đánh giá lại ngoại tệ trên B02 TT99
+
+Model: sonnet (rà soát opus: trình bày BCTC theo văn bản). Thêm theo lệnh 03 của người dùng (2026-10-21) sau phát hiện M3 của rà soát Task 13.
+
+Căn cứ (đã đối chiếu `~/legal-docs/tt99-2025/tt99-full.txt`): TT 99/2025/TT-BTC, hướng dẫn TK 413 mục 1.5.2 và 4.2 (gạch cuối): chênh lệch tỷ giá do đánh giá lại khoản mục tiền tệ có gốc ngoại tệ cuối kỳ "phải trình bày vào báo cáo kết quả hoạt động kinh doanh theo số thuần giữa tổng số lãi và tổng số lỗ". Phụ lục IV, hướng dẫn lập B02-DN mục 3.7 (Mã số 22, Doanh thu hoạt động tài chính) và 3.8 (Mã số 23, Chi phí tài chính): tổng lãi lớn hơn tổng lỗ đánh giá lại thì mã 22 trình bày số lãi thuần; tổng lỗ lớn hơn tổng lãi thì mã 23 trình bày số lỗ thuần. Chứng từ DG theo TT99 ghi thẳng Có 515 / Nợ 635 (T13, `fx-rules.json` TT99 `revalAccount: null`), nên số gộp hiện nằm cả ở 22 lẫn 23. TT133 không đổi: chênh lệch đánh giá lại đi qua 413 rồi kết chuyển số thuần sang 515 hoặc 635 bằng DG thứ hai.
+
+**Files:**
+- Create: `packages/db/migrations/0037_b02_so_thuan.sql`
+- Modify: `packages/domain/src/reportFormula.ts`, `apps/api/src/modules/reporting/financial.ts`, `packages/coa-data/data/reports/tt99/B02.csv` (dòng 22, 23), `packages/coa-data/data/reports/status.json` (`note` của TT99)
+- Test: `packages/domain/test/reportFormula.test.ts`, `apps/api/test/financialReports.test.ts` (hoặc tệp kiểm thử B02 sẵn có), `packages/db/test/` (migration)
+
+**Interfaces:**
+- Nhóm đánh giá lại: dòng 515/635 của chứng từ loại `DG` (kể cả bản đảo DG do chạy lại) và của chứng từ `CL` sinh khi đảo khoản công nợ đã đánh giá lại (dòng `settlement` loại `'reversal'` có `fx_voucher_id`, T13 vòng 2): CL đó gỡ chênh lệch đánh giá lại của chính khoản ấy, không phải chênh lệch thực hiện với bên thứ ba. CL của đối trừ thông thường (`'fx'`) và XQ là chênh lệch thực hiện, vẫn trình bày gộp.
+- Cú pháp công thức (`parseFormula`), thêm:
+  - hậu tố `!REVAL` cho hạng tử tài khoản: phát sinh của tài khoản trừ các dòng thuộc nhóm đánh giá lại (ví dụ `515!REVAL`); chỉ hợp lệ với `source = movement`, khác thì `FormulaError`.
+  - hạng tử `REVAL_GAIN`, `REVAL_LOSS`: với N = Σ(Có − Nợ) 515 của nhóm − Σ(Nợ − Có) 635 của nhóm trong kỳ báo cáo, `REVAL_GAIN = max(N, 0)`, `REVAL_LOSS = max(−N, 0)`; luôn ≥ 0, không phụ thuộc `side` của dòng.
+  - `Resolver` thêm `reval(): Promise<{ gain: Decimal; loss: Decimal }>` và cờ `excludeReval` trên tham chiếu tài khoản; `saveReportDef` (kiểm công thức) và `drillLine` (truy xuất dòng 22/23 liệt kê cả phần số thuần) nhận hạng tử mới.
+- `B02.csv` TT99: dòng 22 công thức `515!REVAL + REVAL_GAIN`, dòng 23 `635!REVAL + REVAL_LOSS`; dòng 24 (chi phí đi vay) không đổi.
+- `0037_b02_so_thuan.sql`: cập nhật `report_line` của các công ty đã có B02 TT99: dòng 22 từ `515` sang công thức mới, dòng 23 từ `635` sang công thức mới, chỉ khi công thức đang đúng bằng công thức mẫu cũ (đã sửa tay thì giữ nguyên, ghi `audit_event` như 0004 tắt/bật audit nếu cần). `report_template` cập nhật theo đường đồng bộ dữ liệu tham chiếu sẵn có từ `packages/coa-data`.
+- `status.json` TT99 `note`: thêm câu "B02: 22 và 23 trình bày số thuần chênh lệch đánh giá lại ngoại tệ cuối kỳ (TT99 TK413 mục 1.5.2, 4.2; Phụ lục IV B02 mục 3.7, 3.8); nhóm đánh giá lại gồm DG và CL gỡ đánh giá lại khi đảo khoản công nợ". Giữ `B02: true`.
+
+- [ ] **Step 1: Kiểm thử thất bại:**
+
+```ts
+it('parseFormula nhận 515!REVAL, REVAL_GAIN, REVAL_LOSS; !REVAL trên dòng số dư là FormulaError', () => {});
+it('TT99: DG lãi 1.000.000 (1122) và lỗ 400.000 (331) cùng lần chạy: mã 22 = 515 khác + 600.000, mã 23 = 635 khác', async () => {});
+it('TT99: tổng lỗ đánh giá lại lớn hơn lãi: mã 23 nhận lỗ thuần, mã 22 không có phần đánh giá lại', async () => {});
+it('TT99: chạy lại đánh giá lại (đảo DG cũ, sinh DG mới) chỉ tính số thuần của trạng thái cuối', async () => {});
+it('TT99: đảo khoản công nợ đã đánh giá lại ghi ngày trước ngày DG: lãi 600.000 và lỗ 600.000 cùng ngày, mã 22 và 23 không có phần đánh giá lại', async () => {});
+it('TT99: chênh lệch thực hiện CL của đối trừ thông thường vẫn trình bày gộp ở 22/23', async () => {});
+it('mã 30 (lợi nhuận thuần) không đổi so với công thức cũ', async () => {});
+it('0037 cập nhật dòng 22/23 của công ty chưa sửa định nghĩa B02 TT99, giữ nguyên công ty đã sửa tay', async () => {});
+it('TT133: B02 không đổi', async () => {});
+```
+
+- [ ] **Step 2:** FAIL. **Step 3:** Cài đặt (đọc nhóm đánh giá lại một lần cho cả báo cáo như `movement`, trong `READ_SNAPSHOT`, lọc theo chế độ của báo cáo).
+- [ ] **Step 4:** `pnpm db:migrate` dev; `pnpm -F @kt/domain test`, `pnpm -F @kt/db test`, `pnpm -F @kt/api test -- test/financialReports.test.ts test/fxRevaluation.test.ts`, `pnpm lint && pnpm typecheck` xanh.
+- [ ] **Step 5:** Commit `feat(coa): B02 TT99 trình bày số thuần chênh lệch đánh giá lại ngoại tệ`.
+
 ### Task 28: Dữ liệu mẫu ABC có ngoại tệ, công nợ, hóa đơn, thuế; kiểm thử nghiệm thu
 
 Model: **opus** (số kỳ vọng tính tay).
@@ -1029,9 +1068,9 @@ it('seed chạy lần hai không tạo thêm; lỗi giữa chừng hoàn tác h�
 
 ## Thứ tự thực hiện
 
-T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28.
+T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T27b → T28.
 
-Phụ thuộc chính: T4 trước mọi tác vụ dùng loại chứng từ mới; T11 → T12 → T13 → T14; T17 → T18 → T19/T20/T22; T21 → T23 → T24; T25 sau T18 (bảng kê dùng `/api/invoices`); T27 sau T11, T18, T22; T28 cuối cùng. T21 không phụ thuộc mã, làm sớm được nếu cần chờ văn bản TT80.
+Phụ thuộc chính: T4 trước mọi tác vụ dùng loại chứng từ mới; T11 → T12 → T13 → T14; T17 → T18 → T19/T20/T22; T21 → T23 → T24; T25 sau T18 (bảng kê dùng `/api/invoices`); T27 sau T11, T18, T22; T27b sau T13 và T27 (migration 0037); T28 cuối cùng. T21 không phụ thuộc mã, làm sớm được nếu cần chờ văn bản TT80.
 
 | Migration | Tác vụ |
 |---|---|
@@ -1047,6 +1086,7 @@ Phụ thuộc chính: T4 trước mọi tác vụ dùng loại chứng từ mớ
 | 0034_to_khai_thue.sql | T23 |
 | 0035_khu_trung.sql | T26 |
 | 0036_soat_loi_gd2.sql | T27 |
+| 0037_b02_so_thuan.sql | T27b |
 
 ## Đối chiếu nhóm B
 

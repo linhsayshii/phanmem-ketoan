@@ -160,4 +160,6 @@ Chi tiết từng hạn chế nằm ở `docs/TIEP-THEO.md`, mục "Hạn chế 
 
 ## T14 trở đi
 
+112. B02 TT99 trình bày số thuần chênh lệch đánh giá lại ngoại tệ cuối kỳ: thêm Task 27b (trước T28, migration `0037_b02_so_thuan`), mã 22 = `515!REVAL + REVAL_GAIN`, mã 23 = `635!REVAL + REVAL_LOSS`; nhóm đánh giá lại gồm chứng từ DG (kể cả bản đảo khi chạy lại) và CL gỡ đánh giá lại khi đảo khoản công nợ (dòng `settlement` loại `'reversal'` có `fx_voucher_id`); CL của đối trừ thông thường và XQ vẫn trình bày gộp; công ty đã có định nghĩa B02 TT99 chỉ được cập nhật dòng 22/23 khi công thức còn đúng bằng mẫu cũ — TT99 TK413 mục 1.5.2, 4.2 và Phụ lục IV hướng dẫn B02 mục 3.7, 3.8 (đã đối chiếu `~/legal-docs/tt99-2025/tt99-full.txt`); CL khi đảo gỡ chính khoản đánh giá lại chứ không phải chênh lệch thực hiện với bên thứ ba — nếu sai, CL khi đảo bị trình bày thuần thay vì gộp, lợi nhuận không đổi. (lệnh 03, kế hoạch)
+
 (ghi tiếp sau mỗi tác vụ)
