@@ -38,7 +38,8 @@ export function defaultGroup(scope: 'sale' | 'purchase', codes: string[], defs: 
   if (!vat) return null;
   const inScope = groups.filter((g) => g.scope === scope).sort((a, b) => a.code.localeCompare(b.code));
   if (scope === 'purchase') return vat.def.method === 'deduct' && vat.def.rate !== null ? inScope[0]?.code ?? null : null;
-  return inScope.find((g) => (g.rate === null ? vat.def.rate === null : vat.def.rate !== null && D(g.rate).eq(vat.def.rate)))?.code ?? null;
+  // Nhóm cùng mã với mã thuế (KCT, KKK) trước: các nhóm không thuế suất (KCT, KKK, KTGT, NPV) lên các chỉ tiêu khác nhau của tờ khai.
+  return (inScope.find((g) => g.code === vat.code) ?? inScope.find((g) => (g.rate === null ? vat.def.rate === null : vat.def.rate !== null && D(g.rate).eq(vat.def.rate))))?.code ?? null;
 }
 
 export interface CodeSummary { code: string; name: string; lines: number; computed: string; declared: string; diff: string; allowed: number; ok: boolean }
