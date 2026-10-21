@@ -129,7 +129,7 @@ export async function runAmortization(trx: Trx, ctx: { tenantId: string; userId:
   // Lịch lập khi năm này chưa có (giả định 12 kỳ) mà năm được tạo sau với số kỳ khác: dòng trỏ vào kỳ không tồn tại thì không chạy tiếp, tránh ghi sai kỳ hoặc không bao giờ phân bổ hết.
   const orphan = await trx.selectFrom('amortization_line as l').innerJoin('amortization_schedule as s', 's.id', 'l.schedule_id').select('l.period_no').where('l.fiscal_year', '=', fy).where('s.is_active', '=', true)
     .where(sql<boolean>`NOT EXISTS (SELECT 1 FROM fiscal_period fp WHERE fp.tenant_id = l.tenant_id AND fp.fiscal_year = l.fiscal_year AND fp.period_no = l.period_no)`).orderBy('l.period_no').limit(1).executeTakeFirst();
-  if (orphan) throw new AppError('AMORTIZATION_PERIOD_LAYOUT', `Có lịch phân bổ trỏ vào kỳ ${orphan.period_no}/${fy} không tồn tại trong năm tài chính ${fy} (năm được tạo sau với số kỳ khác 12). Xóa lịch rồi lập lại, hoặc sửa lịch khi chưa phân bổ kỳ nào để xếp lại kỳ`, 409);
+  if (orphan) throw new AppError('AMORTIZATION_PERIOD_LAYOUT', `Có lịch phân bổ trỏ vào kỳ ${orphan.period_no}/${fy} không tồn tại trong năm tài chính ${fy} (năm được tạo sau với số kỳ khác 12). Lịch chưa phân bổ kỳ nào: sửa lịch để xếp lại kỳ. Lịch đã phân bổ: ngừng lịch rồi lập lịch mới cho phần còn lại`, 409);
 
   const rows = await trx.selectFrom('amortization_line as l').innerJoin('amortization_schedule as s', 's.id', 'l.schedule_id').innerJoin('account as f', 'f.id', 's.from_account_id').innerJoin('account as t', 't.id', 's.to_account_id')
     .leftJoin('voucher as v', 'v.id', 'l.voucher_id')
