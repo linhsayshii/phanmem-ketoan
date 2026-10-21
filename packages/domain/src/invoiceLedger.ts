@@ -15,10 +15,11 @@ interface Entry { account: string; cur: Decimal; vnd: Decimal; src: Partial<Ledg
 
 // Chiều Nợ dương. Hóa đơn mua Nợ chi phí/thuế, Có công nợ; hóa đơn bán ngược lại; giảm giá, trả lại đảo chiều toàn bộ so với hóa đơn cùng phạm vi.
 // Tiền VND: các dòng lấy đúng số của động cơ thuế nên cân sẵn (công nợ = cơ sở + thuế theo dấu, số thuế ghi trên hóa đơn đã nằm trong dòng thuế, không cộng lại roundingVnd).
-// Ngoại tệ (kiểm dòng của sổ cái: |làm tròn(nguyên tệ × tỷ giá) − (Nợ − Có)| ≤ 1): dòng công nợ và dòng thuế lấy đúng làm tròn(nguyên tệ × tỷ giá), riêng mã thuế có số ghi trên hóa đơn
+// Ngoại tệ (kiểm dòng của sổ cái: |làm tròn(nguyên tệ × tỷ giá) − (Nợ − Có)| ≤ 1): dòng công nợ và dòng thuế bắt đầu ở làm tròn(nguyên tệ × tỷ giá), riêng mã thuế có số ghi trên hóa đơn
 // (declaredTaxVnd) lấy đúng số VND của động cơ thuế nếu lệch số làm tròn không quá 1 đồng mỗi dòng (quá thì TAX_DECLARED_MISMATCH) và không bị chia chênh;
 // dòng cơ sở bắt đầu ở làm tròn(cơ sở × tỷ giá) rồi chia chênh lệch VND còn lại ±1 đồng mỗi dòng, dòng có số tiền tuyệt đối lớn nhất trước (cùng số: dòng nhỏ số trước);
-// hết dòng cơ sở mà còn chênh thì chia tiếp cho các dòng thuế không cố định theo cùng thứ tự; vẫn còn thì INVOICE_ROUNDING_OVERFLOW.
+// hết dòng cơ sở mà còn chênh thì chia tiếp cho các dòng thuế không cố định theo cùng thứ tự, cuối cùng đến dòng công nợ (nên số công nợ đã ghi lệch làm tròn(nguyên tệ × tỷ giá) tối đa 1 đồng và bảng kê khớp số đã ghi);
+// vẫn còn thì INVOICE_ROUNDING_OVERFLOW. Mỗi dòng thuế cố định thêm tối đa 1 đồng chênh mà không chia được: với một mã thuế ghi trên hóa đơn luôn đủ chỗ chia, với nhiều mã ghi cùng lúc trên ít dòng thì có thể không đủ.
 export function buildInvoiceLedgerDetail(i: InvoiceLedgerInput): InvoiceLedgerDetail {
   const isVnd = i.currency === 'VND';
   if (!isVnd && !i.fxRate) throw new Error(`Hóa đơn ${i.currency} phải có tỷ giá`);
@@ -52,9 +53,9 @@ export function buildInvoiceLedgerDetail(i: InvoiceLedgerInput): InvoiceLedgerDe
     const step = imbalance.isPos() ? -1 : 1;
     const bySize = (es: Entry[]) => es.map((e, k) => ({ e, k })).sort((a, b) => b.e.vnd.abs().comparedTo(a.e.vnd.abs()) || a.k - b.k).map((x) => x.e);
     // mỗi dòng nhích tối đa một lần ±1 và không đổi sang bên đối với dấu nguyên tệ (ràng buộc sign_consistent của dòng sổ cái)
-    const movable = [...bySize(bases), ...bySize(taxes.filter((e) => !e.fixed))].filter((e) => !(e.cur.isPos() && e.vnd.plus(step).isNeg()) && !(e.cur.isNeg() && e.vnd.plus(step).isPos()));
+    const movable = [...bySize(bases), ...bySize(taxes.filter((e) => !e.fixed)), counter].filter((e) => !(e.cur.isPos() && e.vnd.plus(step).isNeg()) && !(e.cur.isNeg() && e.vnd.plus(step).isPos()));
     if (imbalance.abs().gt(movable.length))
-      throw new TaxError('INVOICE_ROUNDING_OVERFLOW', `Chênh lệch làm tròn ${imbalance.toFixed()} đồng vượt số dòng có thể chia (${movable.length}), không thể chia ±1 đồng mỗi dòng: hãy tách hóa đơn hoặc kiểm tra số tiền`);
+      throw new TaxError('INVOICE_ROUNDING_OVERFLOW', `Chênh lệch làm tròn ${imbalance.toFixed()} đồng vượt số dòng có thể chia (${movable.length}), không thể chia ±1 đồng mỗi dòng: hãy tách hóa đơn hoặc kiểm tra số tiền và số thuế ghi trên hóa đơn`);
     for (let n = 0; n < imbalance.abs().toNumber(); n++) movable[n]!.vnd = movable[n]!.vnd.plus(step);
   }
 

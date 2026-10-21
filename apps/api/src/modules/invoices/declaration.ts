@@ -42,11 +42,17 @@ export function declarePeriod(invoiceDate: string, vatPeriod: 'month' | 'quarter
 
 const blank = (s: string | null | undefined): string | null => (s?.trim() ? s.trim() : null);
 
+// Khóa kiểm trùng của một hóa đơn đầu vào, cùng chuẩn hóa với chỉ mục (fn_invoice_key): người bán không có mã số thuế thì thêm đối tượng.
+async function duplicateKey(trx: Trx, tenantId: string, r: InvoiceRow, partyTaxCode: string | null): Promise<string> {
+  const k = await sql<{ key: string }>`SELECT ${tenantId}::text || ':' || fn_invoice_key(${partyTaxCode}) || ':' || fn_invoice_key(${blank(r.serial)}) || ':' || fn_invoice_key(${r.invoiceNo})
+    || CASE WHEN fn_invoice_key(${partyTaxCode}) = '' THEN ':' || COALESCE(${r.partyId}::text, '') ELSE '' END AS key`.execute(trx);
+  return k.rows[0]!.key;
+}
+
 // Hóa đơn đầu vào trùng: cùng chiều mua, cùng mã số thuế người bán, ký hiệu và số hóa đơn (so không phân biệt hoa thường, bỏ mọi khoảng trắng, bằng fn_invoice_key trùng với chỉ mục).
-// Chứng từ đã hủy hoặc đã đảo (chứng từ đảo không mang dòng kê khai) không chặn: nhập lại hóa đơn đó là hợp lệ; nháp chặn. Khóa tư vấn theo khóa hóa đơn để hai yêu cầu đồng thời không cùng qua kiểm tra. Người bán không có mã số thuế thì so thêm cùng đối tượng. Nhiều dòng cùng hóa đơn khác mã thuế trong một chứng từ là hợp lệ; cùng mã thuế hai lần thì trùng.
+// Chứng từ đã hủy hoặc đã đảo (chứng từ đảo không mang dòng kê khai) không chặn: nhập lại hóa đơn đó là hợp lệ; nháp chặn. Người bán không có mã số thuế thì so thêm cùng đối tượng.
+// Nhiều dòng cùng hóa đơn khác mã thuế trong một chứng từ là hợp lệ; cùng mã thuế hai lần thì trùng. insertInvoiceRows đã khóa tư vấn khóa hóa đơn trước khi gọi.
 async function assertNotDuplicate(trx: Trx, tenantId: string, voucherId: string, r: InvoiceRow, partyTaxCode: string | null): Promise<void> {
-  await sql`SELECT pg_advisory_xact_lock(hashtext(${tenantId}::text || ':' || fn_invoice_key(${partyTaxCode}) || ':' || fn_invoice_key(${blank(r.serial)}) || ':' || fn_invoice_key(${r.invoiceNo})
-    || CASE WHEN fn_invoice_key(${partyTaxCode}) = '' THEN ':' || COALESCE(${r.partyId}::text, '') ELSE '' END))`.execute(trx);
   const hit = await sql<{ voucher_id: string; voucher_no: string | null; voucher_type: string }>`
     SELECT v.id AS voucher_id, v.voucher_no, v.voucher_type FROM voucher_invoice vi JOIN voucher v ON v.tenant_id = vi.tenant_id AND v.id = vi.voucher_id
     WHERE vi.tenant_id = ${tenantId}::uuid AND vi.direction = 'purchase' AND v.state NOT IN ('cancelled', 'reversed')
@@ -70,6 +76,10 @@ export async function insertInvoiceRows(trx: Trx, tenantId: string, voucherId: s
     const p = await trx.selectFrom('party').select(['name', 'tax_code', 'address']).where('id', '=', id).executeTakeFirstOrThrow();
     parties.set(id, p);
   }
+  // Khóa tư vấn theo khóa hóa đơn, mọi khóa trước khi kiểm tra và theo thứ tự khóa: hai yêu cầu đồng thời không cùng qua kiểm tra, và hai chứng từ khai chung hai hóa đơn ngược thứ tự không chờ nhau thành vòng (deadlock).
+  const keys = new Set<string>();
+  for (const r of rows) if (r.direction === 'purchase') keys.add(await duplicateKey(trx, tenantId, r, (r.partyId ? parties.get(r.partyId)! : undefined)?.tax_code ?? null));
+  for (const key of [...keys].sort()) await sql`SELECT pg_advisory_xact_lock(hashtextextended(${'invoice_duplicate:' + key}, 0))`.execute(trx);
   for (const r of rows) {
     const p = r.partyId ? parties.get(r.partyId)! : undefined;
     if (r.direction === 'purchase') await assertNotDuplicate(trx, tenantId, voucherId, r, p?.tax_code ?? null);

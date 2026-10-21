@@ -370,12 +370,35 @@ describe('hóa đơn ngoại tệ: chia chênh làm tròn một đồng mỗi d�
     }
   });
 
-  it('USD một dòng cơ sở + V8, V5, TNCN 10%: chênh làm tròn -2 đồng vượt số dòng cơ sở thì chia tiếp cho dòng thuế, không lỗi 500', async () => {
+  it('USD một dòng cơ sở + V8 ghi trên hóa đơn + TNCN 10%: chênh làm tròn 2 đồng vượt số dòng cơ sở thì chia tiếp cho dòng TNCN, không lỗi 500', async () => {
     const t = await tenant();
     await t.admin(sql`UPDATE tax_code SET rate = 10 WHERE tenant_id = ${t.tenantId}::uuid AND code = 'TNCN_KT'`);
-    const v = await t.create(t.invoice('HDM', { currencyCode: 'USD', fxRate: '4598.61', items: [{ accountCode: '6422', amountCurrency: '22.68', taxCodes: ['V8', 'V5', 'TNCN_KT'] }] }));
-    expect(shape(v)).toEqual([['6422', 'N', '104297'], ['1331', 'N', '8323'], ['1331', 'N', '5196'], ['3335', 'C', '10438'], ['331', 'C', '107378']]);
-    expect(v.items[0]!.taxAmount).toBe('13519'); // V8 + V5, không kể thuế khấu trừ
+    // 6,49 USD × 3.988,66: V8 quy đổi 2.072, ghi trên hóa đơn 2.073 (dòng cố định); cơ sở nhích +1 (25.887), dòng TNCN nhích +1 (2.592), công nợ giữ nguyên 25.368
+    const v = await t.create(t.invoice('HDM', { currencyCode: 'USD', fxRate: '3988.66', items: [{ accountCode: '6422', amountCurrency: '6.49', taxCodes: ['V8', 'TNCN_KT'] }] }, { declaredTax: { V8: '2073' } }));
+    expect(shape(v)).toEqual([['6422', 'N', '25887'], ['1331', 'N', '2073'], ['3335', 'C', '2592'], ['331', 'C', '25368']]);
+    expect(v.items[0]!.taxAmount).toBe('2073'); // chỉ thuế GTGT, không kể thuế khấu trừ
+    expect(v.invoices).toHaveLength(1);
+    expect(v.invoices[0]).toMatchObject({ taxCode: 'V8', baseAmount: '25887', taxAmount: '2073' });
+  });
+
+  it('USD một dòng 1.000,10 + V10 ghi trên hóa đơn 2.543.503 (quy đổi 2.543.504): ghi được, dòng cơ sở và dòng công nợ mỗi dòng nhích 1 đồng', async () => {
+    const t = await tenant();
+    const v = await t.create(t.invoice('HDB', { currencyCode: 'USD', fxRate: '25432.5', items: [{ accountCode: '5113', amountCurrency: '1000.10', taxCodes: ['V10'] }] }, { declaredTax: { V10: '2543503' } }));
+    expect(shape(v)).toEqual([['5113', 'C', '25435044'], ['33311', 'C', '2543503'], ['131', 'N', '27978547']]); // cơ sở 25.435.043 + 1, công nợ 27.978.548 - 1
+    expect(v.invoices[0]).toMatchObject({ taxCode: 'V10', baseAmount: '25435044', taxAmount: '2543503' });
+    expect(v.items[0]!.taxAmount).toBe('2543503');
+    expect(v.state).toBe('posted');
+  });
+
+  it('một dòng hàng có hai mã GTGT: 400 INVOICE_LINE_MULTIPLE_VAT; GTGT cùng TNCN khấu trừ vẫn được', async () => {
+    const t = await tenant();
+    await t.admin(sql`UPDATE tax_code SET rate = 10 WHERE tenant_id = ${t.tenantId}::uuid AND code = 'TNCN_KT'`);
+    const r = await t.call('POST', '/api/invoices', t.invoice('HDM', { items: [{ accountCode: '6422', amountCurrency: '10000000', taxCodes: ['V8', 'V5'] }] }));
+    expect(err(r)).toEqual([400, 'INVOICE_LINE_MULTIPLE_VAT']);
+    expect(r.json().error.message).toMatch(/Dòng 1: mỗi dòng hàng chỉ được một mã thuế GTGT, đang có V8, V5/);
+    const ok = await t.create(t.invoice('HDM', { items: [{ accountCode: '6422', amountCurrency: '10000000', taxCodes: ['V8', 'TNCN_KT'] }] }, { invoiceNo: '0000002' }));
+    expect(ok.invoices).toHaveLength(1);
+    expect(ok.invoices[0]).toMatchObject({ taxCode: 'V8', taxAmount: '800000' });
   });
 
   it('USD có GTGT 10% nhiều dòng: bút toán cân, bảng kê bằng đúng số đã ghi sổ', async () => {

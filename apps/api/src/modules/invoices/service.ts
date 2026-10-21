@@ -72,7 +72,7 @@ async function loadTaxDefs(trx: Trx, codes: string[]): Promise<{ defs: Record<st
   return { defs, ids, scopes };
 }
 
-// Mã dùng gom dòng kê khai: mã GTGT đầu tiên của dòng; không có thì mã thuế đầu tiên không phải TNCN (thuế nhập khẩu, TTĐB); không có nữa thì null (dòng không thuế).
+// Mã dùng gom dòng kê khai: mã GTGT của dòng (tối đa một, buildInvoice đã chặn nhiều mã); không có thì mã thuế đầu tiên không phải TNCN (thuế nhập khẩu, TTĐB); không có nữa thì null (dòng không thuế).
 const groupOf = (codes: string[], defs: Record<string, TaxDef>): string | null =>
   codes.find((c) => defs[c]?.kind === 'vat') ?? codes.find((c) => defs[c] && defs[c]!.kind !== 'pit') ?? null;
 
@@ -110,6 +110,10 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput): Pr
 
   const { defs, ids, scopes } = await loadTaxDefs(trx, [...new Set(input.items.flatMap((i) => i.taxCodes))]);
   for (const [code, s] of scopes) if (s !== 'both' && s !== scope) throw new AppError('TAX_SCOPE_MISMATCH', `Mã thuế ${code} chỉ dùng cho hóa đơn ${s === 'sale' ? 'bán ra' : 'mua vào'}, không dùng cho ${def.name}`, 400);
+  for (const [k, it] of input.items.entries()) { // một dòng hàng một thuế suất GTGT; TNCN khấu trừ được đi kèm. Bảng kê voucher_invoice gom theo mã GTGT của dòng nên nhiều mã sẽ làm mất thuế của mã sau
+    const vats = it.taxCodes.filter((c) => defs[c]?.kind === 'vat');
+    if (vats.length > 1) throw new AppError('INVOICE_LINE_MULTIPLE_VAT', `Dòng ${k + 1}: mỗi dòng hàng chỉ được một mã thuế GTGT, đang có ${vats.join(', ')}. Tách thành các dòng hàng riêng theo từng thuế suất`, 400);
+  }
   const tax: TaxResult = computeTaxes(input.items.map((it, k) => ({ lineNo: k + 1, amountCurrency: it.amountCurrency, discountCurrency: it.discountCurrency, taxCodes: it.taxCodes })), defs,
     { scope, documentType, currency: input.currencyCode, fxRate: rate, ...(input.invoice.declaredTax && { declaredTaxVnd: input.invoice.declaredTax }), ...(minorUnit !== undefined && { minorUnit }) });
   const detail = buildInvoiceLedgerDetail({ scope, documentType, counterAccountCode, partyCode: input.partyCode, currency: input.currencyCode, fxRate: rate, dueDate, tax,

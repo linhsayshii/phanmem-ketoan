@@ -89,7 +89,7 @@ describe('bút toán hóa đơn', () => {
     expect(t.cur.isZero()).toBe(true);
     for (const l of lines) expect(D(toVnd(l.amountCurrency, '25432.5')).minus(D(l.debit).minus(l.credit)).abs().lte(1), `${l.accountCode} ${l.amountCurrency}`).toBe(true);
     const counter = lines.at(-1)!;
-    expect(counter.debit).toBe(toVnd(counter.amountCurrency, '25432.5')); // công nợ: đúng nguyên tệ × tỷ giá
+    expect(counter.debit).toBe(toVnd(counter.amountCurrency, '25432.5')); // chia chênh đã hết ở dòng cơ sở nên công nợ vẫn đúng nguyên tệ × tỷ giá
     const tax = lines.find((l) => l.accountCode === '33311')!;
     expect(tax.credit).toBe(toVnd(D(tax.amountCurrency).neg().toFixed(), '25432.5'));
     // voucher_invoice lấy số sau khi chia chênh: cơ sở + thuế đã ghi khớp dòng công nợ
@@ -105,20 +105,23 @@ describe('bút toán hóa đơn', () => {
     expect(lines.map(side)).toEqual([{ account: '5113', debit: '2' }, { account: '5113', debit: '4' }, { account: '5113', debit: '2' }, { account: '331', credit: '8' }]);
   });
 
-  it('hết dòng cơ sở mà còn chênh thì chia tiếp cho các dòng thuế (1 dòng cơ sở + V8, V5, TNCN_KT: chênh -2 đồng)', () => {
-    const items = [item(1, '22.68', ['V8', 'V5', 'TNCN_KT'], { accountCode: '6422' })];
-    const { lines, input } = ledger(items, { scope: 'purchase', documentType: 'invoice', currency: 'USD', fxRate: '4598.61' });
+  it('hết dòng cơ sở mà còn chênh thì chia tiếp cho dòng thuế không cố định (1 dòng cơ sở + V8 ghi trên hóa đơn + TNCN_KT: chênh 2 đồng)', () => {
+    // 6,49 USD × 3.988,66: V8 quy đổi 2.072 nhưng ghi trên hóa đơn 2.073 nên chênh 2 đồng: dòng cơ sở nhích 1, dòng TNCN (không cố định) nhích 1, công nợ giữ nguyên
+    const items = [item(1, '6.49', ['V8', 'TNCN_KT'], { accountCode: '6422' })];
+    const { lines, input } = ledger(items, { scope: 'purchase', documentType: 'invoice', currency: 'USD', fxRate: '3988.66', declaredTaxVnd: { V8: '2073' } });
     const t = totals(lines);
     expect(t.debit.eq(t.credit)).toBe(true);
     expect(t.cur.isZero()).toBe(true);
-    for (const l of lines) expect(D(toVnd(l.amountCurrency, '4598.61')).minus(D(l.debit).minus(l.credit)).abs().lte(1), l.accountCode).toBe(true);
+    for (const l of lines) expect(D(toVnd(l.amountCurrency, '3988.66')).minus(D(l.debit).minus(l.credit)).abs().lte(1), l.accountCode).toBe(true);
     const detail = buildInvoiceLedgerDetail(input);
-    expect(detail.baseVnd).toEqual({ 1: '104297' });
-    expect(detail.taxVnd).toEqual({ V8: '8323', V5: '5196', TNCN_KT: '-10438' }); // dòng khấu trừ nhích 1 đồng, bảng kê khớp bút toán
+    expect(detail.baseVnd).toEqual({ 1: '25887' });
+    expect(detail.taxVnd).toEqual({ V8: '2073', TNCN_KT: '-2592' }); // dòng khấu trừ nhích 1 đồng, bảng kê khớp bút toán
+    const counter = lines.at(-1)!;
+    expect(counter.credit).toBe(toVnd(D(counter.amountCurrency).neg().toFixed(), '3988.66'));
   });
 
-  it('chênh vượt số dòng có thể chia (dòng thuế ghi trên hóa đơn không bị nhích) thì INVOICE_ROUNDING_OVERFLOW', () => {
-    // 1 dòng cơ sở 0,01 USD × 50 = 0,5 → 1; 3 dòng thuế mỗi dòng 0,01 USD (quy đổi 1) ghi trên hóa đơn 2 đồng: công nợ 0,04 × 50 = 2, lệch 5 đồng, chỉ dòng cơ sở nhích được
+  it('chênh vượt số dòng có thể chia (dòng thuế ghi trên hóa đơn không bị nhích; ở đây cả 3 dòng thuế đều cố định) thì INVOICE_ROUNDING_OVERFLOW', () => {
+    // 1 dòng cơ sở 0,01 USD × 50 = 0,5 → 1; 3 dòng thuế mỗi dòng 0,01 USD (quy đổi 1) ghi trên hóa đơn 2 đồng: công nợ 0,04 × 50 = 2, lệch 5 đồng, chỉ dòng cơ sở và dòng công nợ nhích được (2 dòng)
     const tax = computeTaxes([{ lineNo: 1, amountCurrency: '0.01', discountCurrency: '0', taxCodes: [] }], TAXES, { scope: 'sale', documentType: 'invoice', currency: 'USD', fxRate: '50' });
     const forged = { ...tax, postings: [1, 2, 3].map(() => ({ code: 'V10', accountCode: '33311', amountVnd: '2', amountCurrency: '0.01', reportTag: null })) };
     const input: InvoiceLedgerInput = { scope: 'sale', documentType: 'invoice', counterAccountCode: '131', partyCode: 'KH001', currency: 'USD', fxRate: '50', dueDate: null, items: [item(1, '0.01', [])], tax: forged };
@@ -152,6 +155,20 @@ describe('bút toán hóa đơn', () => {
     });
   });
 
+  it('thuế ghi trên hóa đơn lệch 1 đồng khi chỉ có một dòng cơ sở: dòng công nợ nhận đồng cuối cùng, lệch tối đa 1 đồng', () => {
+    // 1.000,10 USD × 25.432,5, V10: thuế 100,01 USD = 2.543.504 đồng, ghi trên hóa đơn 2.543.503: chênh 2 đồng, dòng cơ sở nhích 1, dòng công nợ nhích 1
+    const b: Base = { scope: 'sale', documentType: 'invoice', currency: 'USD', fxRate: '25432.5', declaredTaxVnd: { V10: '2543503' } };
+    const { lines, input } = ledger([item(1, '1000.10', ['V10'])], b);
+    expect(lines.find((l) => l.accountCode === '33311')!.credit).toBe('2543503');
+    const counter = lines.at(-1)!;
+    expect(D(counter.debit).minus(toVnd(counter.amountCurrency, '25432.5')).abs().toFixed()).toBe('1');
+    const detail = buildInvoiceLedgerDetail(input);
+    expect(D(sum(Object.values(detail.baseVnd))).plus(sum(Object.values(detail.taxVnd))).toFixed()).toBe(counter.debit);
+    const t = totals(lines);
+    expect(t.debit.eq(t.credit)).toBe(true);
+    expect(t.cur.isZero()).toBe(true);
+  });
+
   it('bảng kê theo mã thuế lấy tổng dòng cùng chiều: VAT đảo chiều (+1331, -33312) vẫn ra số thuế kê khai', () => {
     const { input } = ledger([item(1, '1000000', ['RC'], { accountCode: '6422' })], VND('purchase'));
     expect(buildInvoiceLedgerDetail(input).taxVnd).toEqual({ RC: '100000' });
@@ -179,7 +196,7 @@ describe('thuộc tính bút toán hóa đơn', () => {
 
   it('ngoại tệ: cân VND và nguyên tệ, mọi dòng lệch quy đổi không quá 1 đồng (hóa đơn và giảm giá, chiết khấu, giá đã gồm thuế, TNCN khấu trừ)', () => {
     const cents = fc.integer({ min: 1, max: 99_999_999 }).map((n) => (n / 100).toFixed(2));
-    const itemsFx = fc.array(fc.record({ amt: cents, disc: fc.integer({ min: 0, max: 30 }), codes: fc.constantFrom(['V5'], ['V8'], ['V10'], ['V10G'], ['V10', 'TNCN_KT'], ['V8', 'V5', 'TNCN_KT'], [] as string[]) }), { minLength: 1, maxLength: 6 })
+    const itemsFx = fc.array(fc.record({ amt: cents, disc: fc.integer({ min: 0, max: 30 }), codes: fc.constantFrom(['V5'], ['V8'], ['V10'], ['V10G'], ['V10', 'TNCN_KT'], [] as string[]) }), { minLength: 1, maxLength: 6 })
       .map((xs) => xs.map((x, i) => item(i + 1, x.amt, x.codes, { discountCurrency: D(x.amt).times(x.disc).div(100).toDecimalPlaces(2).toFixed(2) })));
     const rate = fc.tuple(fc.integer({ min: 1, max: 30_000 }), fc.integer({ min: 0, max: 99 })).map(([a, b]) => `${a}.${String(b).padStart(2, '0')}`);
     fc.assert(fc.property(itemsFx, rate, fc.constantFrom('sale', 'purchase') as fc.Arbitrary<'sale' | 'purchase'>, fc.constantFrom('invoice', 'refund') as fc.Arbitrary<'invoice' | 'refund'>, (items, fx, scope, documentType) => {
@@ -193,5 +210,43 @@ describe('thuộc tính bút toán hóa đơn', () => {
       const counter = lines.at(-1)!;
       expect(D(sum(Object.values(detail.baseVnd))).plus(sum(Object.values(detail.taxVnd))).toFixed()).toBe(D(counter.debit).plus(counter.credit).toFixed());
     }), { numRuns: 400 });
+  });
+
+  // Thuế ghi trên hóa đơn = làm tròn(Σ nguyên tệ thuế × tỷ giá) + {-1, 0, 1} mỗi mã. Mỗi dòng thuế ghi trên hóa đơn cố định, lệch tối đa 1 đồng nên cộng thêm tối đa 1 đồng chênh làm tròn;
+  // dòng cơ sở, thuế còn lại và công nợ mỗi dòng chia được 1 đồng. Một mã ghi trên hóa đơn thì luôn đủ chỗ chia; nhiều mã ghi cùng lúc trên ít dòng thì có thể không đủ (INVOICE_ROUNDING_OVERFLOW).
+  describe.each([{ which: 'một mã', all: false }, { which: 'mọi mã', all: true }])('ngoại tệ, thuế ghi trên hóa đơn lệch tối đa 1 đồng cho $which', ({ all }) => {
+    const cents = fc.integer({ min: 1, max: 99_999_999 }).map((n) => (n / 100).toFixed(2));
+    // mỗi dòng tối đa một mã GTGT (cùng TNCN khấu trừ được)
+    const itemsFx = fc.array(fc.record({ amt: cents, disc: fc.integer({ min: 0, max: 30 }), codes: fc.constantFrom(['V5'], ['V8'], ['V10'], ['V10G'], ['V10', 'TNCN_KT'], ['V5', 'TNCN_KT'], [] as string[]) }), { minLength: 1, maxLength: 6 })
+      .map((xs) => xs.map((x, i) => item(i + 1, x.amt, x.codes, { discountCurrency: D(x.amt).times(x.disc).div(100).toDecimalPlaces(2).toFixed(2) })));
+    const rate = fc.tuple(fc.integer({ min: 1, max: 30_000 }), fc.integer({ min: 0, max: 99 })).map(([a, b]) => `${a}.${String(b).padStart(2, '0')}`);
+    const deltas = fc.array(fc.constantFrom(-1, 0, 1), { minLength: 3, maxLength: 3 });
+    it(all ? 'hoặc bút toán đúng (mọi dòng lệch tối đa 1 đồng, cân, bảng kê khớp số đã ghi), hoặc INVOICE_ROUNDING_OVERFLOW' : 'luôn ghi được: mọi dòng lệch tối đa 1 đồng, cân, bảng kê khớp số đã ghi', () => {
+      fc.assert(fc.property(itemsFx, rate, deltas, fc.constantFrom('sale', 'purchase') as fc.Arbitrary<'sale' | 'purchase'>, fc.constantFrom('invoice', 'refund') as fc.Arbitrary<'invoice' | 'refund'>, (items, fx, ds, scope, documentType) => {
+        if (scope === 'sale' && items.some((i) => i.taxCodes.includes('TNCN_KT'))) return; // TNCN_KT chỉ có phân bổ mua vào
+        const base: Base = { scope, documentType, currency: 'USD', fxRate: fx };
+        const plain = ledger(items, base).input.tax;
+        const codes = [...new Set(plain.postings.map((p) => p.code))].slice(0, all ? undefined : 1);
+        const declaredTaxVnd: Record<string, string> = {};
+        codes.forEach((code, k) => {
+          const cur = sum(plain.postings.filter((p) => p.code === code).map((p) => D(p.amountCurrency).abs())); // thuế ghi trên hóa đơn luôn dương
+          declaredTaxVnd[code] = D(toVnd(cur.toFixed(), fx)).plus(ds[k % ds.length]!).clamp(0, Infinity).toFixed(0);
+        });
+        let r: ReturnType<typeof ledger>;
+        try { r = ledger(items, { ...base, declaredTaxVnd }); } catch (e) {
+          expect(all && codes.length > 1 ? (e as { code?: string }).code : e).toBe('INVOICE_ROUNDING_OVERFLOW');
+          return;
+        }
+        const { lines, input } = r;
+        const t = totals(lines);
+        expect(t.debit.eq(t.credit)).toBe(true);
+        expect(t.cur.isZero()).toBe(true);
+        for (const l of lines) expect(D(toVnd(l.amountCurrency, fx)).minus(D(l.debit).minus(l.credit)).abs().lte(1), `${l.accountCode} ${l.amountCurrency}`).toBe(true);
+        const detail = buildInvoiceLedgerDetail(input);
+        const counter = lines.at(-1)!;
+        expect(D(sum(Object.values(detail.baseVnd))).plus(sum(Object.values(detail.taxVnd))).toFixed()).toBe(D(counter.debit).plus(counter.credit).toFixed());
+        for (const code of codes) expect(D(detail.taxVnd[code]!).abs().toFixed(0), code).toBe(declaredTaxVnd[code]);
+      }), { numRuns: 600 });
+    });
   });
 });
