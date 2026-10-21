@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { dataPath, isVatTemplateComplete, loadVatTemplate } from '../src/index.js';
+import { dataPath, isVatRate8Verified, isVatTemplateComplete, loadVatTemplate } from '../src/index.js';
 
 const status = JSON.parse(readFileSync(dataPath('tax', 'status.json'), 'utf8')) as Record<string, boolean | string>;
 // Chỉ tiêu [21]-[43] in trên mẫu 01/GTGT, TT 89/2026 trang 241-242 (đối chiếu ảnh); ghi tay, không suy ra từ dữ liệu.
@@ -55,7 +55,7 @@ describe('mẫu tờ khai 01/GTGT theo TT 89/2026', () => {
   });
   it('cổng status.json: TT89 đã đối chiếu; 8% chưa có văn bản gốc nên false kèm ghi chú trên dòng [32]', () => {
     expect(status['01GTGT_TT89']).toBe(true); expect(isVatTemplateComplete('TT89')).toBe(true);
-    expect(status['01GTGT_TT89_rate8']).toBe(false);
+    expect(status['01GTGT_TT89_rate8']).toBe(false); expect(isVatRate8Verified()).toBe(false);
     expect(t.lines.find((x) => x.code === '32')!.note).toMatch(/8%/);
   });
   it('TT80 chưa có văn bản gốc: loadVatTemplate ném lỗi rõ, không hoàn chỉnh', () => {

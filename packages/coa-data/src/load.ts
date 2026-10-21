@@ -80,6 +80,11 @@ export function isVatTemplateComplete(version: 'TT89' | 'TT80'): boolean {
   const p = dataPath('tax', 'status.json');
   return existsSync(p) && (JSON.parse(readFileSync(p, 'utf8')) as Record<string, unknown>)[`01GTGT_${version}`] === true && existsSync(dataPath('tax', VAT_FILE[version]));
 }
+// Thuế suất 8% (NĐ 174/2025) chưa có căn cứ chỉ tiêu: false thì nhóm 08 gộp tạm vào [32]/[33], tờ khai phải cảnh báo.
+export function isVatRate8Verified(): boolean {
+  const p = dataPath('tax', 'status.json');
+  return existsSync(p) && (JSON.parse(readFileSync(p, 'utf8')) as Record<string, unknown>)['01GTGT_TT89_rate8'] === true;
+}
 export function loadVatTemplate(version: 'TT89' | 'TT80'): VatTemplate {
   if (!isVatTemplateComplete(version)) throw new Error(`Chưa có mẫu tờ khai 01/GTGT ${version === 'TT80' ? 'theo TT 80/2021/TT-BTC' : 'theo TT 89/2026/TT-BTC'} đối chiếu văn bản gốc (status.json 01GTGT_${version})`);
   return JSON.parse(readFileSync(dataPath('tax', VAT_FILE[version]), 'utf8')) as VatTemplate;
