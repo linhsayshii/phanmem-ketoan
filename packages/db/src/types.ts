@@ -153,6 +153,12 @@ export interface CashCountTable {
   counted_total: Numeric; difference: Numeric; members: JSONColumnType<{ name: string; role?: string }[]>; note: string | null;
   voucher_id: string | null; created_by: string | null; created_at: Generated<string>;
 }
+// Nhật ký chạy tỷ giá cuối kỳ: kind 'outflow' (tỷ giá xuất quỹ, chứng từ XQ) hoặc 'revaluation' (đánh giá lại, chứng từ DG).
+export interface FxRunTable {
+  id: Generated<number>; tenant_id: string; kind: string; fiscal_year: number; period_no: number; run_date: DateOnly;
+  voucher_ids: ColumnType<string[], string[] | undefined, string[]>; reversed_voucher_ids: ColumnType<string[], string[] | undefined, string[]>;
+  params: ColumnType<unknown, string | undefined, string>; created_by: string | null; created_at: Generated<string>;
+}
 export interface BalanceStaleTable { tenant_id: string; stale_year: number; stale_period: number; marked_at: Generated<string> }
 export interface AccountPeriodBalanceTable {
   tenant_id: string; account_id: number; fiscal_year: number; period_no: number; currency_code: string; party_id: Generated<string>;
@@ -229,6 +235,7 @@ export interface Database {
   account_period_balance: AccountPeriodBalanceTable;
   opening_balance: OpeningBalanceTable;
   cash_count: CashCountTable;
+  fx_run: FxRunTable;
   closing_step: ClosingStepTable;
   closing_run: ClosingRunTable;
   report_template: ReportTemplateTable;

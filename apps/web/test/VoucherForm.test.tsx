@@ -112,6 +112,25 @@ describe('Màn hình chứng từ theo loại', () => {
     renderForm();
     expect(await screen.findByLabelText('Tỷ giá', {}, slow)).toHaveAttribute('data-scale', '10');
   });
+
+  it('Giấy báo Nợ ngoại tệ, tỷ giá xuất quỹ bình quân di động: điền sẵn tỷ giá bình quân tại ngày hạch toán của tài khoản ngân hàng', async () => {
+    mocks.route.type = 'BN'; mocks.route.id = 'v1';
+    const draft = posted({ voucherType: 'BN', voucherNo: null, state: 'draft', currencyCode: 'USD', fxRate: null, bankAccountNo: '0022001', postingDate: '2026-01-20', documentDate: '2026-01-20' });
+    let method = 'moving_average';
+    mocks.api.mockImplementation(async (path: string) => path === '/api/vouchers/v1' ? draft : path === '/api/fiscal-years' ? years : path === '/api/settings' ? { fx_outflow_method: method }
+      : path.startsWith('/api/fx/outflow-rate') ? { rate: '25200.0000000000', balance: '50400000', balanceCurrency: '2000.0000' } : []);
+    const first = renderForm();
+    await vi.waitFor(() => expect(screen.getByLabelText('Tỷ giá')).toHaveValue('25200.0000000000'), slow);
+    const call = mocks.api.mock.calls.map(([p]) => String(p)).find((p) => p.startsWith('/api/fx/outflow-rate'))!;
+    expect(Object.fromEntries(new URLSearchParams(call.split('?')[1]))).toEqual({ accountCode: '112', bankAccountNo: '0022001', currency: 'USD', date: '2026-01-20' });
+    first.unmount(); mocks.api.mockClear();
+    // tỷ giá đích danh: người dùng tự nhập, không hỏi tỷ giá bình quân
+    method = 'specific';
+    renderForm();
+    expect(await screen.findByLabelText('Tỷ giá', {}, slow)).toHaveValue('');
+    await vi.waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/settings'));
+    expect(mocks.api.mock.calls.some(([p]) => String(p).startsWith('/api/fx/outflow-rate'))).toBe(false);
+  });
 });
 
 describe('Tồn quỹ và cảnh báo tồn quỹ âm', () => {

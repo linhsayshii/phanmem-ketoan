@@ -12,6 +12,8 @@ export const SETTINGS = z.object({
   fx_rate_type: z.enum(['transfer_avg', 'buy', 'sell']).default('transfer_avg'),
   // Ghi sổ làm tồn quỹ tiền mặt hoặc số dư tiền gửi âm: warn = ghi sổ và cảnh báo, block = chặn (409 CASH_NEGATIVE).
   cash_negative: z.enum(['warn', 'block']).default('warn'),
+  // Tỷ giá ghi Có tài khoản tiền ngoại tệ: moving_average = bình quân di động (điền sẵn trên phiếu chi, tính lại cuối kỳ bằng chứng từ XQ), specific = người dùng nhập tỷ giá.
+  fx_outflow_method: z.enum(['moving_average', 'specific']).default('moving_average'),
 });
 export type Settings = z.infer<typeof SETTINGS>;
 

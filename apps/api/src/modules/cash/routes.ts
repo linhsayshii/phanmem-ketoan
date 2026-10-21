@@ -10,6 +10,8 @@ import { voucherFormFor } from '../reporting/print/forms.js';
 import { renderPdf } from '../reporting/print/pdf.js';
 import { bookDoc, cashBalanceAt, cashBook } from './books.js';
 import { countInput, createCount, deleteCount, getCount, listCounts, renderCashCountHtml, settleCount, settleInput } from './cashCount.js';
+import { adjustInput, outflowRate, rateAt, runOutflowAdjust } from './fx.js';
+import { notifyRecompute } from '../ledger/notifyRecompute.js';
 
 const format = z.enum(['json', 'html', 'pdf', 'xlsx']).default('json');
 const range = z.object({ from: isoDate, to: isoDate });
@@ -26,6 +28,25 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       await assertCanView(trx, req.auth!, { accountCode: req.query.accountCode, from: req.query.asOf, to: req.query.asOf });
       return cashBalanceAt(trx, req.query);
     }, READ_SNAPSHOT));
+
+  // ---- Tỷ giá ----
+  const currency = z.string().length(3);
+  app.get('/api/fx/rate', { preHandler: app.requirePermission('voucher.view'),
+    schema: { querystring: z.object({ currency, date: isoDate, type: z.enum(['transfer_avg', 'buy', 'sell']).optional() }) } }, async (req) =>
+    app.withTenant(req, (trx) => rateAt(trx, req.auth!.tenantId!, req.query), READ_SNAPSHOT));
+  // Tỷ giá xuất quỹ bình quân di động tại ngày, để điền sẵn trên phiếu chi, giấy báo Nợ, chuyển tiền nội bộ ngoại tệ; cùng quyền xem như số dư tại ngày.
+  app.get('/api/fx/outflow-rate', { preHandler: app.requirePermission('voucher.view'),
+    schema: { querystring: z.object({ accountCode: z.string().min(1), bankAccountNo: optional, currency, date: isoDate }) } }, async (req) =>
+    app.withTenant(req, async (trx) => {
+      await assertCanView(trx, req.auth!, { accountCode: req.query.accountCode, from: req.query.date, to: req.query.date });
+      return outflowRate(trx, req.query);
+    }, READ_SNAPSHOT));
+  app.post('/api/fx/outflow-adjust', { preHandler: app.requirePermission('fx.run'), schema: { body: adjustInput } }, async (req) => {
+    const auth = req.auth!;
+    const out = await app.withTenant(req, (trx) => runOutflowAdjust(trx, { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') }, req.body));
+    if (out.voucherIds.length || out.reversedVoucherIds.length) notifyRecompute(app, auth.tenantId!);
+    return out;
+  });
 
   const view = app.requirePermission('report.view');
   const book = async (kind: 'cash' | 'bank', req: FastifyRequest, reply: FastifyReply, q: BookQuery) => {

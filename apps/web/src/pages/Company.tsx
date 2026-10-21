@@ -6,7 +6,7 @@ import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
 interface Company { code: string; name: string; taxCode: string | null; address: string | null; legalRep: string | null; chiefAccountant: string | null; phone: string | null; email: string | null }
-interface Settings { book_form: string; costing_method: string; base_currency: string; fx_rate_type: string; cash_negative: 'warn' | 'block'; hidden_modules: string[]; extra_dims: { key: string; label: string }[] }
+interface Settings { book_form: string; costing_method: string; base_currency: string; fx_rate_type: string; cash_negative: 'warn' | 'block'; fx_outflow_method: 'moving_average' | 'specific'; hidden_modules: string[]; extra_dims: { key: string; label: string }[] }
 
 interface BackupFile { name: string; bytes: number; mtime: string }
 
@@ -64,6 +64,8 @@ export default function CompanyPage() {
             { value: 'avg_period', label: 'Bình quân cuối kỳ' }, { value: 'avg_moving', label: 'Bình quân tức thời' }, { value: 'fifo', label: 'Nhập trước xuất trước' }, { value: 'specific', label: 'Đích danh' }]} /></Form.Item>
           <Form.Item label="Loại tỷ giá ghi sổ" name="fx_rate_type"><Select options={[
             { value: 'transfer_avg', label: 'Mua bán chuyển khoản trung bình' }, { value: 'buy', label: 'Tỷ giá mua' }, { value: 'sell', label: 'Tỷ giá bán' }]} /></Form.Item>
+          <Form.Item label="Tỷ giá xuất quỹ ngoại tệ" name="fx_outflow_method"><Select options={[
+            { value: 'moving_average', label: 'Bình quân gia quyền di động (tính lại cuối kỳ)' }, { value: 'specific', label: 'Đích danh (tự nhập tỷ giá)' }]} /></Form.Item>
           <Form.Item label="Khi ghi sổ làm tồn quỹ hoặc số dư tiền gửi âm" name="cash_negative"><Select options={[
             { value: 'warn', label: 'Cảnh báo nhưng vẫn ghi sổ' }, { value: 'block', label: 'Không cho ghi sổ' }]} /></Form.Item>
           <Form.Item label="Ẩn phân hệ" name="hidden_modules"><Select mode="multiple" options={['inventory', 'assets', 'payroll', 'costing'].map((m) => ({ value: m, label: m }))} /></Form.Item>

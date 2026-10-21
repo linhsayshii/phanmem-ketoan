@@ -33,6 +33,8 @@ export const metaInput = z.object({
 export type VoucherInput = z.infer<typeof voucherInput>;
 export type LineInput = z.infer<typeof lineInput>;
 export type MetaInput = z.infer<typeof metaInput>;
+// Chứng từ tự động (XQ, CL, DG...): dòng được mang loại tiền riêng, ví dụ dòng tiền ngoại tệ nguyên tệ 0 đi cùng dòng 515/635 bằng VND. Không có trong lược đồ API: chỉ mã nội bộ tạo được.
+export type SystemVoucherInput = Omit<VoucherInput, 'lines'> & { lines: (LineInput & { currencyCode?: string })[] };
 
 export interface LineDto extends LineInput { lineNo: number; accountName: string; partyName: string | null }
 export interface VoucherDto {
@@ -187,7 +189,7 @@ async function partyBankId(trx: Trx, partyId: string | null, no: string | null |
 }
 
 // Tra cứu, kiểm quy tắc theo loại và gán tài khoản ngân hàng cho dòng; dùng chung cho tạo mới và sửa nháp.
-async function prepareVoucher(trx: Trx, lookup: Lookup, input: VoucherInput, regime: string) {
+async function prepareVoucher(trx: Trx, lookup: Lookup, input: SystemVoucherInput, regime: string) {
   const bank = bankLookup(trx);
   const partyId = (await lookup('party', input.partyCode)) as string | null;
   const headerBank = await bank(input.bankAccountNo); const counterBank = await bank(input.counterBankAccountNo);
@@ -197,7 +199,7 @@ async function prepareVoucher(trx: Trx, lookup: Lookup, input: VoucherInput, reg
     due_date: input.dueDate ?? null, purpose: input.purpose || null,
   };
   const lines: ResolvedLine[] = [];
-  for (const l of input.lines) lines.push(await resolveLine(lookup, l, input.currencyCode, input.fxRate));
+  for (const l of input.lines) lines.push(await resolveLine(lookup, l, l.currencyCode ?? input.currencyCode, input.fxRate));
   const def = voucherTypeDef(input.voucherType);
   if (def) assertTypeRules(def, input, lines, lookup.accounts, regime);
   // Dòng riêng ghi tài khoản ngân hàng thì dùng; dòng trên tài khoản ngân hàng không ghi thì lấy của tiêu đề. Chuyển tiền nội bộ: dòng Có là tài khoản chuyển đi (bankAccountNo), dòng Nợ là tài khoản nhận (counterBankAccountNo).
@@ -244,6 +246,13 @@ async function assertNotSystemGenerated(trx: Trx, id: string) {
 
 export async function createVoucher(trx: Trx, ctx: { tenantId: string; userId: string }, input: VoucherInput): Promise<VoucherDto> {
   assertNotSystemType(input.voucherType); // cả nhân bản (duplicateVoucher gọi hàm này)
+  return insertVoucher(trx, ctx, input);
+}
+// Chứng từ do chức năng hệ thống sinh (loại trong SYSTEM_VOUCHER_TYPES được phép), ghi nguồn source_doc_type/source_doc_id ngay khi tạo; vẫn qua đủ tra cứu và quy tắc dòng như chứng từ lập tay.
+export const createSystemVoucher = (trx: Trx, ctx: { tenantId: string; userId: string }, input: SystemVoucherInput, source: { type: string; id: string }): Promise<VoucherDto> =>
+  insertVoucher(trx, ctx, input, source);
+
+async function insertVoucher(trx: Trx, ctx: { tenantId: string; userId: string }, input: SystemVoucherInput, source?: { type: string; id: string }): Promise<VoucherDto> {
   if (input.idempotencyKey) {
     const existing = await trx.selectFrom('voucher').select('id').where('idempotency_key', '=', input.idempotencyKey).executeTakeFirst();
     if (existing) return getVoucher(trx, existing.id);
@@ -253,6 +262,7 @@ export async function createVoucher(trx: Trx, ctx: { tenantId: string; userId: s
   const v = await trx.insertInto('voucher').values({
     tenant_id: ctx.tenantId, voucher_type: input.voucherType, posting_date: input.postingDate, document_date: input.documentDate, description: input.description ?? null,
     ...header, currency_code: input.currencyCode, fx_rate: input.fxRate ?? null, idempotency_key: input.idempotencyKey ?? null, created_by: ctx.userId,
+    source_doc_type: source?.type ?? null, source_doc_id: source?.id ?? null,
   }).onConflict((oc) => oc.columns(['tenant_id', 'idempotency_key']).doNothing()).returning('id').executeTakeFirst();
   if (!v) { // thua cuộc đua idempotency: chờ giao dịch thắng commit rồi trả chứng từ của nó
     const existing = await trx.selectFrom('voucher').select('id').where('idempotency_key', '=', input.idempotencyKey!).executeTakeFirstOrThrow();

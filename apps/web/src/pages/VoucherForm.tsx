@@ -146,6 +146,18 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const cashAccount = eff.moneyKind === 'cash' ? lines.find((l) => l.accountCode.startsWith('111'))?.accountCode : eff.moneyKind === 'bank' && bankAccountNo ? '112' : undefined;
   const cashBalance = useQuery({ queryKey: ['cash-balance', cashAccount, bankAccountNo, currency, postingIso], enabled: !!cashAccount && !!postingIso && can('voucher.view'), retry: false,
     queryFn: () => api<{ balance: string; balanceCurrency: string }>(`/api/cash/balance?${new URLSearchParams({ accountCode: cashAccount!, asOf: postingIso!, ...(eff.moneyKind === 'bank' && bankAccountNo ? { bankAccountNo } : {}), ...(currency !== 'VND' ? { currency } : {}) })}`) });
+  // Tỷ giá xuất quỹ bình quân di động (cài đặt fx_outflow_method) của phiếu chi, giấy báo Nợ, chuyển tiền nội bộ ngoại tệ: điền sẵn vào tỷ giá tiêu đề khi ô trống
+  // hoặc còn là số do lần điền trước đặt (người dùng đã sửa thì giữ).
+  const outAccount = eff.cashSide === 'out' ? cashAccount : eff.code === 'CT' && bankAccountNo ? '112' : undefined;
+  const settings = useQuery({ queryKey: ['settings'], queryFn: () => api<{ fx_outflow_method?: string }>('/api/settings'), enabled: editable && !!outAccount && currency !== 'VND' });
+  const outflowRate = useQuery({ queryKey: ['fx-outflow-rate', outAccount, bankAccountNo, currency, postingIso], retry: false,
+    enabled: editable && !!outAccount && currency !== 'VND' && !!postingIso && can('voucher.view') && settings.data?.fx_outflow_method === 'moving_average',
+    queryFn: () => api<{ rate: string | null }>(`/api/fx/outflow-rate?${new URLSearchParams({ accountCode: outAccount!, ...(outAccount === '112' && bankAccountNo ? { bankAccountNo } : {}), currency, date: postingIso! })}`) });
+  const autoRate = useRef<string>();
+  useEffect(() => {
+    const rate = outflowRate.data?.rate; const cur = form.getFieldValue('fxRate') as string | null | undefined;
+    if (rate && (!cur || cur === autoRate.current)) { autoRate.current = rate; form.setFieldsValue({ fxRate: rate }); }
+  }, [outflowRate.data, form]);
   const regime = regimeFor(years.data ?? [], postingIso);
   const accountFetcher = useMemo(() => accountFetcherFor(postingIso), [postingIso]);
   const t = totals(lines); const balanced = isBalanced(cleanLines(lines).map((l) => ({ debit: l.debit, credit: l.credit })));

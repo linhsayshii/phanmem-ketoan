@@ -1,0 +1,17 @@
+{
+  "TT133": {
+    "gainAccount": "515",
+    "lossAccount": "635",
+    "source": "TT 133/2016/TT-BTC: Điều 11 khoản 4 (bên Có tài khoản tiền được áp dụng tỷ giá ghi sổ bình quân gia quyền), Điều 52 khoản 1.3 (tỷ giá bình quân gia quyền sau mỗi lần nhập hoặc cuối kỳ) và khoản 1.4.1 điểm b (chênh lệch tỷ giá phát sinh trong kỳ ghi nhận tại thời điểm phát sinh hoặc định kỳ vào doanh thu hoạt động tài chính hoặc chi phí tài chính), Công báo số 1099 + 1100 và 1101 + 1102 ngày 12/10/2016"
+  },
+  "TT99": {
+    "gainAccount": "515",
+    "lossAccount": "635",
+    "source": "Phụ lục II TT 99/2025/TT-BTC, Tài khoản 413: khoản 1.2.2 điểm b (tỷ giá ghi sổ bình quân gia quyền xác định cuối kỳ hoặc từng thời điểm thanh toán), khoản 1.4.4 (chênh lệch tỷ giá phát sinh trong kỳ ghi ngay vào doanh thu hoạt động tài chính nếu lãi, chi phí tài chính nếu lỗ), khoản 4.1.1 điểm a (Nợ TK 635 / Có TK 515 khi Có TK 111, 112 theo tỷ giá ghi sổ), Công báo số 1571 + 1572 ngày 16/11/2025"
+  },
+  "TT200": {
+    "gainAccount": "515",
+    "lossAccount": "635",
+    "source": "chưa có văn bản gốc trong ~/legal-docs; dùng 515, 635 có trong mẫu hệ thống tài khoản TT200 của coa-data"
+  }
+}
