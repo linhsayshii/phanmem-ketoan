@@ -52,7 +52,7 @@ const NEVER = /(?!)/;
 const ACCEPT: Record<Op['kind'], RegExp> = {
   doc: NEVER, // chứng từ không kế hoạch đối trừ, kỳ luôn mở
   plan: NEVER, // ngày đã kẹp theo khoản và khoản con, phần đối trừ không quá dư hiện tại
-  post: /^SETTLEMENT_(EXCEEDS_RESIDUAL|DATE_BEFORE_POSTING)$/, // nháp ghi sổ sau: khoản được chọn đã bị đối trừ bớt hoặc đã có khoản con đánh giá lại muộn hơn ngày chứng từ
+  post: /^SETTLEMENT_(EXCEEDS_RESIDUAL|DATE_BEFORE_POSTING)$/, // nháp ghi sổ sau: khoản được chọn đã bị đối trừ bớt hoặc đã có khoản con đánh giá lại muộn hơn ngày chứng từ (giới hạn T13-M10)
   unpost: /^(OPEN_ITEM_(SETTLED|PLANNED|REVALUED)|STATE_INVALID)$/, // chứng từ đã đối trừ, được nháp chọn, đã đánh giá lại; chứng từ đảo không bỏ ghi sổ được
   reverse: /^OPEN_ITEM_(SETTLED|PLANNED)$/,
   settle: NEVER, // cặp chọn từ dư hiện tại, số tiền không quá dư, ngày đã kẹp theo khoản con
@@ -139,7 +139,7 @@ describe('Bất biến 5: công nợ theo chứng từ khớp sổ cái theo đ�
         } else if (op.kind === 'plan') {
           const item = at(await openItems(), op.pick); if (!item) continue;
           const usd = item.cur === 'USD'; const base = absOf(item); const part = base * BigInt(op.frac) / 4n || 1n; // phần đối trừ; extra: chứng từ lớn hơn phần đối trừ (phần dư thành khoản mở)
-          const date = latest(op.date, item.dt, item.cdt)!;
+          const date = latest(op.date, item.dt, item.cdt)!; // không sớm hơn khoản con đánh giá lại (giới hạn T13-M10)
           const settle = [{ openItemId: item.id, ...(usd ? { amountCurrency: fmtCents(part) } : { amount: part.toString() }) }];
           const amount = part + (op.extra ? (usd ? 100n : 1000n) : 0n);
           if (await create(op, docParts({ acc: item.acc, side: sideOf(item) === 'D' ? 'C' : 'D', party: item.party, cur: item.cur as Cur, amount, rate: op.rate, date, settle, autoPost: op.autoPost }))) {
@@ -161,7 +161,7 @@ describe('Bất biến 5: công nợ theo chứng từ khớp sổ cái theo đ�
           const pairs = items.flatMap((d) => (sideOf(d) === 'D' ? items.filter((c) => sideOf(c) === 'C' && c.acc === d.acc && c.party === d.party && c.cur === d.cur).map((c) => [d, c] as const) : []));
           const pair = at(pairs, op.pick); if (!pair) continue;
           const [d, c] = pair; const m = absOf(d) < absOf(c) ? absOf(d) : absOf(c); const part = m * BigInt(op.frac) / 4n || 1n;
-          const lo = latest(op.date, d.dt, c.dt, d.cdt, c.cdt)!; const date = op.date || d.cdt || c.cdt ? lo : undefined; // khoản đã đánh giá lại: luôn gửi ngày không sớm hơn khoản con
+          const lo = latest(op.date, d.dt, c.dt, d.cdt, c.cdt)!; const date = op.date || d.cdt || c.cdt ? lo : undefined; // khoản đã đánh giá lại: luôn gửi ngày không sớm hơn khoản con (giới hạn T13-M10)
           const r = await call('POST', '/api/settlements', { debitItemId: d.id, creditItemId: c.id, ...(d.cur === 'VND' ? { amount: part.toString() } : { amountCurrency: fmtCents(part) }), ...(date && { date }) });
           if (ok(op, r, 201)) { tally('settle'); if (d.cdt || c.cdt) tally('settleReval'); }
         } else if (op.kind === 'unsettle') {
