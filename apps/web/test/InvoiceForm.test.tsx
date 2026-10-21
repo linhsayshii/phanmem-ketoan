@@ -270,7 +270,7 @@ describe.each([['GGB', 'HDB', 'HDB00001'], ['GGM', 'HDM', 'HDM00001']] as const)
 });
 
 describe('Hóa đơn kê khai nhập tay trên PC/BN/PKT: declaredBody', () => {
-  const row = (o: Record<string, string> = {}) => ({ formNo: '01GTKT', serial: 'AA/26E', invoiceNo: '12', invoiceDate: '2026-01-05', invoiceGroupCode: '01', taxCode: 'V10', baseAmount: '1000000', taxAmount: '100000', partyCode: '', note: '', ...o });
+  const row = (o: Record<string, string> = {}) => ({ formNo: '01GTKT', serial: 'AA/26E', invoiceNo: '12', invoiceDate: '2026-01-05', invoiceGroupCode: '01', taxCode: 'V10', baseAmount: '1000000', taxAmount: '100000', partyCode: '', partyTaxCode: '', partyName: '', partyAddress: '', note: '', ...o });
   it('bỏ dòng trống, đổi dòng đủ thông tin sang thân yêu cầu (đối tượng trống thì không gửi)', () => {
     expect(declaredBody([row(), { ...row(), formNo: '', serial: '', invoiceNo: '', invoiceDate: '', invoiceGroupCode: '', taxCode: '', baseAmount: '', taxAmount: '' }])).toEqual([
       { formNo: '01GTKT', serial: 'AA/26E', invoiceNo: '12', invoiceDate: '2026-01-05', invoiceGroupCode: '01', taxCode: 'V10', baseAmount: '1000000', taxAmount: '100000' }]);

@@ -14,7 +14,7 @@ import { STATE_LABEL, typeLabel } from './VoucherList.js';
 import { SettleDialog, type SettleEntry, type SettleTarget } from './settleCommon.js';
 import { Attachments, iso, quickAdd, reportError, text } from './voucherCommon.js';
 import InvoiceEditor from './InvoiceForm.js';
-import { DECLARING_TYPES, DeclaredInvoices, declaredBody, declRowsOf, emptyDeclRow, type DeclRow } from './DeclaredInvoices.js';
+import { DECLARING_TYPES, DeclaredInvoices, clearPartySnapshot, declaredBody, declRowsOf, emptyDeclRow, type DeclRow } from './DeclaredInvoices.js';
 
 // Các trường *Name chỉ để hiển thị; còn lại (employeeCode, dueDate, extraDims...) được giữ nguyên khi lưu lại để không mất dữ liệu chứng từ lập từ nơi khác.
 // amountCurrency (nguyên tệ, có dấu), fxRate, bankAccountNo (tài khoản ngân hàng ghi đè của dòng) và settle (kế hoạch đối trừ công nợ) chỉ gửi khi có ý nghĩa, xem `linesBody`.
@@ -294,6 +294,8 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const applyParty = (party: string | null) => {
     const p = CASH_PURPOSES.find((x) => x.code === form.getFieldValue('purpose'));
     const prev = lastParty.current; lastParty.current = party;
+    // Dòng hóa đơn kê khai không chọn người bán lấy đối tượng tiêu đề: bỏ bản chụp tên/MST/địa chỉ của đối tượng cũ.
+    if (declRef.current.some((r) => !r.partyCode.trim())) changeDecl(declRef.current.map((r) => (r.partyCode.trim() ? r : clearPartySnapshot(r))));
     if (!p?.partyRequired) return;
     const counters = counterAccountsOf(p, regime);
     changeRows(linesRef.current.map((l, i) => (i > 0 && counters.includes(l.accountCode) && (l.partyCode == null || l.partyCode === prev) ? { ...l, partyCode: party } : l)));

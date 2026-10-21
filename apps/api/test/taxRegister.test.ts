@@ -184,6 +184,21 @@ describe('bảng kê hóa đơn mua vào/bán ra', () => {
     expect(err(dup)).toEqual([409, 'INVOICE_DUPLICATE']);
   });
 
+  it('lưu lại nháp PC kèm bản chụp người bán đọc về từ chứng từ: MST, tên, địa chỉ ghi đè được giữ', async () => {
+    const t = await tenant();
+    const body = (invoices: object[], more: object = {}) => ({ voucherType: 'PC', postingDate: '2026-03-12', documentDate: '2026-03-12', partyCode: 'NCC001', autoPost: false,
+      lines: [{ accountCode: '6422', debit: '10000000', credit: '0' }, { accountCode: '1331', debit: '1000000', credit: '0' }, { accountCode: '1111', debit: '0', credit: '11000000' }], invoices, ...more });
+    const c = await t.call('POST', '/api/vouchers', body([t.decl('0001700', { partyTaxCode: '0109999999', partyName: 'Bên ghi đè', partyAddress: 'Hà Nội' })]));
+    expect(c.statusCode, c.body).toBe(201);
+    const got = (await t.call('GET', `/api/vouchers/${c.json().id}`)).json();
+    const back = got.invoices.map((i: Record<string, string>) => ({ serial: i.serial, invoiceNo: i.invoiceNo, invoiceDate: i.invoiceDate, partyCode: i.partyCode, invoiceGroupCode: i.invoiceGroupCode, taxCode: i.taxCode,
+      baseAmount: i.baseAmount, taxAmount: i.taxAmount, partyTaxCode: i.partyTaxCode, partyName: i.partyName, partyAddress: i.partyAddress }));
+    const u = await t.call('PUT', `/api/vouchers/${c.json().id}`, body(back, { version: got.version, autoPost: undefined }));
+    expect(u.statusCode, u.body).toBe(200);
+    expect((await t.call('POST', `/api/vouchers/${c.json().id}/post`)).statusCode).toBe(200);
+    expect(flat(await t.reg('purchase', 3)).find((x) => x.invoiceNo === '0001700')).toMatchObject({ partyTaxCode: '0109999999', partyName: 'Bên ghi đè' });
+  });
+
   it('danh sách chứng từ lọc theo mã đối tượng ở máy chủ (ô chọn hóa đơn gốc)', async () => {
     const t = await tenant();
     await t.create(t.invoice('HDB', '2026-03-10', '0000800'));
