@@ -53,6 +53,7 @@ test('Khử trùng chứng từ: thấy cặp PC và BN, đánh dấu không tr�
   const second = page.locator('[data-testid=dup-pair]').filter({ hasText: `Trả tiền 2 ${stamp}` });
   await expect(second).toHaveCount(1);
   await second.getByRole('button', { name: 'Không trùng' }).click();
+  await page.locator('.ant-popover').getByRole('button', { name: 'Không trùng' }).click(); // hỏi lại trước khi đánh dấu
   await expect(second).toHaveCount(0);
   await expect(first).toHaveCount(1);
 
@@ -63,4 +64,24 @@ test('Khử trùng chứng từ: thấy cặp PC và BN, đánh dấu không tr�
   await expect(first).toHaveCount(0);
   const state = await (await request.get(`/api/vouchers/${pc.id}`)).json();
   expect(state.state).toBe('reversed');
+});
+
+test('Quy tắc khử trùng: sửa cửa sổ ngày trên màn Danh mục lưu được', async ({ page, request }) => {
+  await signIn(page, request);
+  const rules = (await (await request.get('/api/catalogs/voucher_dup_rule?size=100')).json()).rows as { id: number; type_a: string; type_b: string; days_window: number }[];
+  const rule = rules.find((r) => r.type_a === 'PKT' && r.type_b === 'PT')!;
+  expect(rule).toBeDefined();
+  const next = rule.days_window === 4 ? 5 : 4;
+  try {
+    await page.goto('/danh-muc/voucher_dup_rule');
+    const row = page.locator('.ag-row').filter({ has: page.locator('[col-id="type_a"]', { hasText: /^PKT$/ }) }).filter({ has: page.locator('[col-id="type_b"]', { hasText: /^PT$/ }) });
+    await row.getByRole('button', { name: 'Sửa' }).click();
+    await page.getByLabel('Cách tối đa (ngày)').fill(String(next));
+    await page.getByRole('dialog').getByRole('button', { name: 'Đồng ý' }).click();
+    await expect(page.getByText('Đã lưu')).toBeVisible();
+    const after = (await (await request.get('/api/catalogs/voucher_dup_rule?size=100')).json()).rows as { id: number; days_window: number }[];
+    expect(after.find((r) => r.id === rule.id)!.days_window).toBe(next);
+  } finally {
+    await request.put(`/api/catalogs/voucher_dup_rule/${rule.id}`, { data: { days_window: rule.days_window } }); // trả lại cấu hình cho các spec khác
+  }
 });

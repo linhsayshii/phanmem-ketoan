@@ -1,13 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { sql } from 'kysely';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
+import { findDuplicates } from '../src/modules/tools/dedupe.js';
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 });
 let ctx: TestApp; let cookie: string; let tenantId: string; let userId: string; let truong: string; let vien: string;
 type Row = { id: string; voucherType: string; voucherNo: string | null; postingDate: string; state: string; partyName: string | null; totalDebit: string };
 type Pair = { a: Row; b: Row; reasons: string[] };
+type Result = { pairs: Pair[]; truncated: boolean; hiddenBySensitive: boolean };
 const call = (method: 'GET' | 'POST', url: string, payload?: object, c = cookie) => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload ? { payload } : {}) });
-const dups = async (qs = 'from=2026-01-01&to=2026-12-31', c = cookie) => { const r = await call('GET', `/api/tools/duplicates?${qs}`, undefined, c); expect(r.statusCode, r.body).toBe(200); return r.json() as Pair[]; };
+const dups = async (qs = 'from=2026-01-01&to=2026-12-31', c = cookie) => { const r = await call('GET', `/api/tools/duplicates?${qs}`, undefined, c); expect(r.statusCode, r.body).toBe(200); return (r.json() as Result).pairs; };
+const raw = async (qs = 'from=2026-01-01&to=2026-12-31', c = cookie) => (await call('GET', `/api/tools/duplicates?${qs}`, undefined, c)).json() as Result;
 // Tiền nhỏ để không lệch số liệu; mỗi cặp một số tiền riêng nên các cặp không lẫn nhau.
 const mk = async (voucherType: 'PC' | 'BN', date: string, amount: string, o: { party?: string | null; debit?: string; autoPost?: boolean; bank?: string } = {}) => {
   const party = o.party === undefined ? 'NCC1' : o.party;
@@ -102,9 +105,11 @@ describe('khử trùng chứng từ', () => {
     expect(pairOf(await dups(), '6100')).toBeUndefined();
   });
 
-  it('khoảng ngày giới hạn cả hai chứng từ; from > to là 400', async () => {
+  it('cặp vắt qua biên khoảng ngày vẫn được thấy khi một chứng từ nằm trong khoảng; cả hai ngoài thì không; from > to là 400', async () => {
     expect(pairOf(await dups('from=2026-03-01&to=2026-03-31'), '1000')).toBeDefined();
-    expect(await dups('from=2026-03-11&to=2026-03-31')).toEqual([]); // PC ngày 10 nằm ngoài khoảng
+    expect(pairOf(await dups('from=2026-03-11&to=2026-03-31'), '1000')).toBeDefined(); // PC ngày 10 ngoài khoảng, BN ngày 12 trong khoảng
+    expect(pairOf(await dups('from=2026-03-01&to=2026-03-11'), '1000')).toBeDefined(); // ngược lại: PC trong, BN ngoài
+    expect(pairOf(await dups('from=2026-03-13&to=2026-03-31'), '1000')).toBeUndefined(); // cả hai ngoài khoảng
     expect((await call('GET', '/api/tools/duplicates?from=2026-04-01&to=2026-03-01')).statusCode).toBe(400);
   });
 
@@ -124,6 +129,16 @@ describe('khử trùng chứng từ', () => {
     expect((await call('PUT' as never, `/api/catalogs/voucher_dup_rule/${pcbn.id}`, { is_active: true, days_window: 3 })).statusCode).toBe(200);
   });
 
+  it('màn Danh mục gửi days_window dạng chuỗi (ô số VnNumberInput): lưu được; chữ hoặc ngoài 0..31 là 400', async () => {
+    const rules = (await call('GET', '/api/catalogs/voucher_dup_rule?size=100')).json().rows as { id: number; type_a: string; type_b: string; days_window: number }[];
+    const r = rules.find((x) => x.type_a === 'PKT' && x.type_b === 'PT')!;
+    const put = (days_window: unknown) => call('PUT' as never, `/api/catalogs/voucher_dup_rule/${r.id}`, { days_window });
+    expect((await put('7')).statusCode).toBe(200);
+    expect((await ctx.t.admin.selectFrom('voucher_dup_rule').select('days_window').where('id', '=', r.id).executeTakeFirstOrThrow()).days_window).toBe(7);
+    expect((await put('abc')).statusCode).toBe(400); expect((await put('32')).statusCode).toBe(400); expect((await put('2.5')).statusCode).toBe(400);
+    expect((await put(String(r.days_window))).statusCode).toBe(200);
+  });
+
   it('cả hai không có đối tượng: vẫn ghép (cùng không đối tượng) nhưng không nêu lý do "Cùng đối tượng"', async () => {
     await mk('PC', '2026-11-01', '8000', { party: null, debit: '6422' }); await mk('BN', '2026-11-01', '8000', { party: null, debit: '6422' });
     const p = pairOf(await dups(), '8000')!;
@@ -133,10 +148,39 @@ describe('khử trùng chứng từ', () => {
   it('quyền: thiếu dedupe.run là 403; thiếu cờ view_payable thì không thấy cặp có công nợ phải trả (chặn ở API)', async () => {
     expect((await call('GET', '/api/tools/duplicates?from=2026-01-01&to=2026-12-31', undefined, vien)).statusCode).toBe(403);
     expect((await call('POST', '/api/tools/duplicates/ignore', { a: '00000000-0000-4000-8000-000000000000', b: '00000000-0000-4000-8000-000000000001' }, vien)).statusCode).toBe(403);
-    const mine = await dups(undefined, truong); // kế toán trưởng có dedupe.run nhưng không cờ nhạy cảm
+    const r = await raw(undefined, truong); const mine = r.pairs; // kế toán trưởng có dedupe.run nhưng không cờ nhạy cảm
+    expect(r.hiddenBySensitive).toBe(true); expect((await raw()).hiddenBySensitive).toBe(false); // admin có đủ cờ: không ẩn gì; màn hình dựa vào cờ này để báo
     expect(pairOf(mine, '1000')).toBeUndefined();
     expect(pairOf(mine, '8000')).toBeDefined(); // cặp 6422 không công nợ vẫn thấy
     expect(JSON.stringify(mine)).not.toMatch(/Nhà cung cấp/);
+  });
+
+  it('cùng khóa có bên: ghi nhận công nợ rồi thanh toán không phải trùng; hai bút toán thanh toán giống nhau thì là trùng', async () => {
+    const pkt = async (date: string, amount: string, lines: { accountCode: string; debit: string; credit: string }[]) => {
+      const r = await call('POST', '/api/vouchers', { voucherType: 'PKT', postingDate: date, documentDate: date, description: `PKT ${amount}`, partyCode: 'NCC2', autoPost: true,
+        lines: lines.map((l) => ({ ...l, ...(l.accountCode === '331' ? { partyCode: 'NCC2' } : {}) })) });
+      expect(r.statusCode, r.body).toBe(201);
+    };
+    const pay = async (date: string, amount: string) => { const r = await call('POST', '/api/vouchers', { voucherType: 'PC', postingDate: date, documentDate: date, description: `PC ${amount}`, partyCode: 'NCC2', autoPost: true,
+      lines: [{ accountCode: '331', partyCode: 'NCC2', debit: amount, credit: '0' }, { accountCode: '1111', debit: '0', credit: amount }] }); expect(r.statusCode, r.body).toBe(201); };
+    // Trích trước Nợ 6422 / Có 331 rồi PC trả Nợ 331 / Có 1111: bình thường, không phải trùng
+    await pkt('2026-06-01', '11000', [{ accountCode: '6422', debit: '11000', credit: '0' }, { accountCode: '331', debit: '0', credit: '11000' }]); await pay('2026-06-02', '11000');
+    expect(pairOf(await dups(), '11000')).toBeUndefined();
+    // Phiếu kế toán ghi thanh toán Nợ 331 / Có 1111 trùng với PC cùng số tiền: là trùng
+    await pkt('2026-06-01', '12000', [{ accountCode: '331', debit: '12000', credit: '0' }, { accountCode: '1111', debit: '0', credit: '12000' }]); await pay('2026-06-02', '12000');
+    const p = pairOf(await dups(), '12000')!;
+    expect(p.reasons).toContain('Cùng tài khoản đối ứng');
+  });
+
+  it('trần số cặp: lấy thêm một dòng để biết bị cắt; không bị cắt thì truncated = false', async () => {
+    for (const amount of ['13001', '13002', '13003']) { await mk('PC', '2026-07-01', amount); await mk('BN', '2026-07-01', amount); }
+    const run = (max: number) => ctx.t.admin.transaction().execute((trx) => findDuplicates(trx, tenantId, { sensitive: new Set(['view_receivable', 'view_payable', 'view_cost']) }, { from: '2026-01-01', to: '2026-12-31' }, max));
+    const all = await run(1000);
+    expect(all.truncated).toBe(false); expect(all.pairs.length).toBeGreaterThanOrEqual(3);
+    const cut = await run(2);
+    expect(cut.truncated).toBe(true); expect(cut.pairs).toHaveLength(2);
+    expect((await run(all.pairs.length)).truncated).toBe(false);
+    expect((await raw()).truncated).toBe(false);
   });
 
   it('xóa chứng từ nháp kéo theo dòng bỏ qua (khóa ngoại tổng hợp, ON DELETE CASCADE)', async () => {
