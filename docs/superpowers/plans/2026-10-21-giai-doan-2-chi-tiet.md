@@ -39,7 +39,7 @@
 ## Cấu trúc file
 
 - `packages/domain/src/`: `voucherTypes.ts` (cấu hình loại chứng từ, mục đích thu/chi, danh sách loại hệ thống), `fx.ts` (quy đổi, bình quân di động), `tax.ts` (động cơ thuế), `invoiceLedger.ts` (dựng bút toán hóa đơn), `vatFormula.ts` (công thức tờ khai), `vnTime.ts` (ngày hôm nay giờ Việt Nam), `permissions.ts` (thêm quyền, `sensitiveDenial` chuyển về đây).
-- `packages/db/migrations/0024_quyen_gd2.sql` … `0035_soat_loi_gd2.sql` (bảng "Thứ tự thực hiện").
+- `packages/db/migrations/0024_quyen_gd2.sql` … `0036_soat_loi_gd2.sql` (bảng "Thứ tự thực hiện").
 - `apps/api/src/modules/ledger/`: `vouchers.service.ts`, `vouchers.routes.ts` (chứng từ dùng chung theo loại), `openingBalance.ts` (số dư công nợ theo hóa đơn, bỏ ghi sổ số dư).
 - `apps/api/src/modules/cash/` (mới): `books.ts` (số dư tại ngày, sổ quỹ, sổ tiền gửi), `cashCount.ts`, `fx.ts` (tỷ giá theo ngày, tỷ giá xuất quỹ, đánh giá lại), `routes.ts`.
 - `apps/api/src/modules/arap/` (mới): `openItems.ts`, `settlement.ts`, `reports.ts` (sổ chi tiết, tổng hợp, tuổi nợ, đối chiếu, nhắc nợ), `routes.ts`.
@@ -669,12 +669,12 @@ Model: sonnet.
 Model: **opus**.
 
 **Files:**
-- Create: `packages/db/migrations/0030_dong_co_thue.sql`, `packages/domain/src/tax.ts`
+- Create: `packages/db/migrations/0031_dong_co_thue.sql`, `packages/domain/src/tax.ts`
 - Modify: `packages/db/src/types.ts`, `packages/domain/src/index.ts`, `apps/api/src/modules/master/catalogs.ts` (danh mục `tax_code` thêm cột, danh mục mới `tax_distribution`), `packages/db/src/reference.ts` (nạp `legal_param`)
 - Test: `packages/domain/test/tax.test.ts`, `packages/db/test/tax.test.ts`
 
 **Interfaces:**
-- Quyết định: bảng `tax_code` hiện có là bảng `tax` của đặc tả (không tạo bảng trùng). `0030`: `ALTER TABLE tax_code ADD COLUMN scope text NOT NULL DEFAULT 'both' CHECK (scope IN ('sale','purchase','both')), ADD COLUMN method text NOT NULL DEFAULT 'deduct' CHECK (method IN ('deduct','direct','none')), ADD COLUMN price_include boolean NOT NULL DEFAULT false`; `kind` thêm giá trị `'pit'` (đổi CHECK); thêm `UNIQUE (tenant_id, id)`.
+- Quyết định: bảng `tax_code` hiện có là bảng `tax` của đặc tả (không tạo bảng trùng). `0031`: `ALTER TABLE tax_code ADD COLUMN scope text NOT NULL DEFAULT 'both' CHECK (scope IN ('sale','purchase','both')), ADD COLUMN method text NOT NULL DEFAULT 'deduct' CHECK (method IN ('deduct','direct','none')), ADD COLUMN price_include boolean NOT NULL DEFAULT false`; `kind` thêm giá trị `'pit'` (đổi CHECK); thêm `UNIQUE (tenant_id, id)`.
 - `tax_distribution (id bigint identity PK, tenant_id, tax_code_id bigint NOT NULL, document_type text CHECK (document_type IN ('invoice','refund')), scope text CHECK (scope IN ('sale','purchase')), line_type text CHECK (line_type IN ('base','tax')), factor_percent numeric(7,4) NOT NULL, account_code text, report_tag text, UNIQUE (tenant_id, tax_code_id, document_type, scope, line_type, account_code))`; FK tổng hợp; RLS + audit.
 - `seed_tenant_defaults` định nghĩa lại (thân hiện hành) và chèn bù cho công ty đã có: phân bổ mặc định cho V0/V5/V8/V10: mua → tax 100% `1331`, tag `purchase_tax`; bán → tax 100% `33311`, tag `sale_tax`; refund cùng tài khoản. Mã mới `TNCN_KT` "Khấu trừ thuế TNCN tại nguồn" `kind='pit'`, `rate NULL` (người dùng nhập thuế suất; văn bản Luật 109/2025 chưa có trong máy → "Chờ người dùng" xác nhận), `scope='purchase'`, phân bổ tax `factor_percent = -100` vào `3335`. Mã trực tiếp không gieo thuế suất (người dùng tự tạo mã `method='direct'` và nhập tỷ lệ).
 - `legal_param` (qua `syncReferenceData`, nguồn ghi đúng mục 10 đặc tả): `vat_reduced_rate` `{ "from": 10, "to": 8 }` hiệu lực 2025-07-01 → 2026-12-31, nguồn "NQ 204/2025, NĐ 174/2025"; `vat_noncash_threshold` `"5000000"` từ 2025-07-01, nguồn "Luật 48/2024, NĐ 181/2025"; `vat_return_template` `"TT80"` hiệu lực đến 2026-06-30 và `"TT89"` từ 2026-07-01, nguồn "TT 89/2026 Đ22, Đ100". Hàm `export async function legalParam<T>(trx, code: string, date: string): Promise<T | null>` trong `apps/api/src/modules/core/legal.ts`.
@@ -712,7 +712,7 @@ it('công ty mới có phân bổ thuế mặc định; legalParam vat_return_te
 Model: sonnet (rà soát opus vì dựng bút toán).
 
 **Files:**
-- Create: `packages/db/migrations/0031_hoa_don.sql`, `packages/domain/src/invoiceLedger.ts`, `apps/api/src/modules/invoices/service.ts`, `apps/api/src/modules/invoices/routes.ts`
+- Create: `packages/db/migrations/0032_hoa_don.sql`, `packages/domain/src/invoiceLedger.ts`, `apps/api/src/modules/invoices/service.ts`, `apps/api/src/modules/invoices/routes.ts`
 - Modify: `packages/db/src/types.ts`, `apps/api/src/app.ts`, `apps/api/src/modules/ledger/vouchers.service.ts` (`voucher_invoice` trên PC/BN/PKT qua `invoices` trong thân chứng từ), `apps/api/src/modules/ledger/vouchers.routes.ts`
 - Test: `packages/domain/test/invoiceLedger.test.ts`, `apps/api/test/invoices.test.ts`
 
@@ -774,7 +774,7 @@ Model: sonnet.
 Model: sonnet.
 
 **Files:**
-- Create: `packages/db/migrations/0032_phan_bo.sql`, `apps/api/src/modules/invoices/amortization.ts`, `apps/web/src/pages/Amortization.tsx`, `apps/web/e2e/phan-bo-doanh-thu.spec.ts`
+- Create: `packages/db/migrations/0033_phan_bo.sql`, `apps/api/src/modules/invoices/amortization.ts`, `apps/web/src/pages/Amortization.tsx`, `apps/web/e2e/phan-bo-doanh-thu.spec.ts`
 - Modify: `apps/api/src/modules/invoices/routes.ts`, `packages/db/src/types.ts`, `apps/web/src/router.tsx`
 - Test: `apps/api/test/amortization.test.ts`
 
@@ -839,13 +839,13 @@ Model: sonnet.
 Model: **opus**.
 
 **Files:**
-- Create: `packages/db/migrations/0033_to_khai_thue.sql`, `packages/domain/src/vatFormula.ts`, `apps/api/src/modules/tax/vatReturn.ts`, `apps/api/src/modules/tax/vatOffset.ts`
+- Create: `packages/db/migrations/0034_to_khai_thue.sql`, `packages/domain/src/vatFormula.ts`, `apps/api/src/modules/tax/vatReturn.ts`, `apps/api/src/modules/tax/vatOffset.ts`
 - Modify: `apps/api/src/modules/tax/routes.ts`, `packages/db/src/types.ts`
 - Test: `packages/domain/test/vatFormula.test.ts`, `apps/api/test/vatReturn.test.ts`, `apps/api/test/vatOffset.test.ts`
 
 **Interfaces:**
 - `tax_return (id bigint identity PK, tenant_id, form_code text NOT NULL /* '01/GTGT' */, template_version text NOT NULL, period_kind text CHECK (period_kind IN ('month','quarter')), year int, period int, revision int NOT NULL DEFAULT 0 /* 0 lần đầu, n bổ sung lần n */, status text CHECK (status IN ('draft','final')), values jsonb NOT NULL, overrides jsonb NOT NULL DEFAULT '{}', created_by uuid, created_at timestamptz, finalized_by uuid, finalized_at timestamptz, UNIQUE (tenant_id, form_code, year, period_kind, period, revision))`; RLS + audit; trigger chặn sửa dòng `final` (`TAX_RETURN_FINAL`).
-- `0033` cũng gieo nhóm bán `KKK` "Không kê khai, tính nộp thuế GTGT", `KTGT` "Không tính vào giá tính thuế GTGT", `NPV` "Không thuộc phạm vi điều chỉnh của pháp luật thuế GTGT" (định nghĩa lại `seed_tenant_defaults`, chèn bù công ty đã có).
+- `0034` cũng gieo nhóm bán `KKK` "Không kê khai, tính nộp thuế GTGT", `KTGT` "Không tính vào giá tính thuế GTGT", `NPV` "Không thuộc phạm vi điều chỉnh của pháp luật thuế GTGT" (định nghĩa lại `seed_tenant_defaults`, chèn bù công ty đã có).
 - Domain: `export function evalVatReturn(t: VatTemplate, inputs: { invoice: Record<string, string>; carry: string; manual: Record<string, string>; overrides: Record<string, string> }): Record<string, string>` (tính theo thứ tự phụ thuộc; `clamp`; số nguyên VND dạng chuỗi; `flag` [21] = `'X'` khi không có hóa đơn nào).
 - `POST /api/tax/vat-returns` (quyền `tax_return.create`) thân `{ year, periodKind, period, revision?, manual?: Record<string,string>, overrides?: Record<string,string> }`:
   - Mẫu theo `legalParam('vat_return_template', ngày đầu kỳ)`; mẫu chưa `complete` → 409 `VAT_TEMPLATE_UNAVAILABLE` (thông báo nêu văn bản còn thiếu).
@@ -937,7 +937,7 @@ it('bảng kê mua vào: trùng hóa đơn trong tệp và với hóa đơn đã
 Model: sonnet.
 
 **Files:**
-- Create: `packages/db/migrations/0034_khu_trung.sql`, `apps/api/src/modules/tools/dedupe.ts`, `apps/web/src/pages/Dedupe.tsx`, `apps/web/e2e/khu-trung.spec.ts`
+- Create: `packages/db/migrations/0035_khu_trung.sql`, `apps/api/src/modules/tools/dedupe.ts`, `apps/web/src/pages/Dedupe.tsx`, `apps/web/e2e/khu-trung.spec.ts`
 - Modify: `apps/api/src/modules/tools/routes.ts`, `packages/db/src/types.ts`, `apps/web/src/router.tsx`
 - Test: `apps/api/test/dedupe.test.ts`
 
@@ -957,7 +957,7 @@ Model: sonnet.
 Model: sonnet.
 
 **Files:**
-- Create: `packages/db/migrations/0035_soat_loi_gd2.sql`
+- Create: `packages/db/migrations/0036_soat_loi_gd2.sql`
 - Modify: `apps/api/src/modules/tools/dataCheck.ts`, `apps/api/src/modules/tools/routes.ts`
 - Test: `apps/api/test/dataCheck.test.ts`
 
@@ -1041,12 +1041,12 @@ Phụ thuộc chính: T4 trước mọi tác vụ dùng loại chứng từ mớ
 | 0027_ty_gia_xuat_quy.sql | T10 |
 | 0028_cong_no.sql | T11 |
 | 0029_doi_tru.sql | T12 |
-| 0030_dong_co_thue.sql | T17 |
-| 0031_hoa_don.sql | T18 |
-| 0032_phan_bo.sql | T20 |
-| 0033_to_khai_thue.sql | T23 |
-| 0034_khu_trung.sql | T26 |
-| 0035_soat_loi_gd2.sql | T27 |
+| 0031_dong_co_thue.sql | T17 |
+| 0032_hoa_don.sql | T18 |
+| 0033_phan_bo.sql | T20 |
+| 0034_to_khai_thue.sql | T23 |
+| 0035_khu_trung.sql | T26 |
+| 0036_soat_loi_gd2.sql | T27 |
 
 ## Đối chiếu nhóm B
 
