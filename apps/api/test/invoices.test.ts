@@ -437,3 +437,31 @@ describe('GET /api/invoices/tax-defs (danh mục mã thuế cho màn hình hóa 
     expect(err(await t.call('GET', '/api/invoices/00000000-0000-0000-0000-000000000000'))).toEqual([404, 'VOUCHER_NOT_FOUND']);
   });
 });
+
+describe('nhóm kê khai đầu hóa đơn bán ra (header_group_id)', () => {
+  it('đầu KTGT, dòng V10 đứng trước dòng KCT: lưu nhóm đầu, mở lại và lưu lại không đổi nhóm từng dòng', async () => {
+    const t = await tenant();
+    const items = [{ description: 'Có thuế', accountCode: '5113', amountCurrency: '10000000', taxCodes: ['V10'] }, { description: 'Không chịu thuế', accountCode: '5113', amountCurrency: '3000000', taxCodes: ['KCT'] }];
+    const groups = async (id: string) => (await sql<{ g: string; h: string; t: string }>`SELECT g.code AS g, h.code AS h, c.code AS t FROM voucher_invoice i JOIN invoice_group g ON g.id = i.invoice_group_id
+      JOIN invoice_group h ON h.id = i.header_group_id JOIN tax_code c ON c.id = i.tax_code_id WHERE i.voucher_id = ${id}::uuid ORDER BY i.id`.execute(ctx.t.admin)).rows.map((r) => [r.t, r.g, r.h]);
+    const v = await t.create(t.invoice('HDB', { autoPost: false, items }, { invoiceGroupCode: 'KTGT' }));
+    const want = [['V10', '10', 'KTGT'], ['KCT', 'KTGT', 'KTGT']];
+    expect(await groups(v.id)).toEqual(want);
+    // Dòng đầu (id nhỏ nhất) mang nhóm 10: cách đọc cũ lấy nhóm đầu từ dòng này sẽ đổi dòng KCT sang nhóm KCT khi lưu lại.
+    const doc = (await t.call('GET', `/api/invoices/${v.id}`)).json() as { version: number; invoices: { invoiceGroupCode: string; headerGroupCode: string }[] };
+    expect(doc.invoices.map((i) => [i.invoiceGroupCode, i.headerGroupCode])).toEqual([['10', 'KTGT'], ['KTGT', 'KTGT']]);
+    const put = await t.call('PUT', `/api/invoices/${v.id}`, { ...t.invoice('HDB', { items }, { invoiceGroupCode: doc.invoices[0]!.headerGroupCode }), autoPost: false, version: doc.version });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(await groups(v.id)).toEqual(want);
+    const bad = await t.call('PUT', `/api/invoices/${v.id}`, { ...t.invoice('HDB', { items }, { invoiceGroupCode: doc.invoices[0]!.invoiceGroupCode }), autoPost: false, version: put.json().version });
+    expect(bad.statusCode, bad.body).toBe(200);
+    expect((await groups(v.id)).map((r) => r[1])).toEqual(['10', 'KCT']); // chứng minh: đọc nhóm đầu từ dòng đầu làm đổi nhóm dòng KCT
+  });
+
+  it('hóa đơn mua ghi nhóm đầu bằng nhóm của dòng', async () => {
+    const t = await tenant();
+    const v = await t.create(t.invoice('HDM'));
+    const r = (await sql<{ same: boolean }>`SELECT bool_and(invoice_group_id = header_group_id) AS same FROM voucher_invoice WHERE voucher_id = ${v.id}::uuid`.execute(ctx.t.admin)).rows[0]!;
+    expect(r.same).toBe(true);
+  });
+});

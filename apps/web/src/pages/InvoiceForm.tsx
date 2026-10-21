@@ -18,7 +18,7 @@ import { codesOf, defaultGroup, deriveRow, emptyInvRow, isBlankRow, NO_PREVIEW, 
 interface ItemDto { lineNo: number; description: string | null; quantity: string | null; unitPrice: string | null; amountCurrency: string; discountRate: string | null; discountAmountCurrency: string;
   taxCodes: string[]; accountCode: string; departmentCode: string | null; projectCode: string | null; costItemCode: string | null }
 interface InvoiceRef { id: number; formNo: string | null; serial: string | null; invoiceNo: string; invoiceDate: string; partyName: string | null; partyTaxCode: string | null; partyAddress: string | null;
-  invoiceGroupCode: string | null; taxCode: string | null; taxAmount: string; adjustsInvoiceId: number | null }
+  invoiceGroupCode: string | null; headerGroupCode?: string | null; taxCode: string | null; taxAmount: string; adjustsInvoiceId: number | null }
 interface InvoiceDoc { id: string; voucherType: string; voucherNo: string | null; state: string; postingDate: string; documentDate: string; description: string | null; partyCode: string | null; partyName: string | null;
   dueDate: string | null; currencyCode: string; fxRate: string | null; version: number; periodStatus: 'open' | 'soft_locked' | 'hard_locked'; hashed: boolean; invoices: InvoiceRef[]; items: ItemDto[]; warnings?: { code: string; message: string }[] }
 interface FormValues { postingDate: Dayjs; documentDate: Dayjs; partyCode?: string | null; currencyCode?: string; fxRate?: string | null; dueDate?: Dayjs | null; description?: string | null;
@@ -92,9 +92,9 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
   // Tải chứng từ có sẵn vào form và lưới.
   useEffect(() => {
     const d = v.data; if (!d) return;
-    const inv = d.invoices[0];
+    const inv = d.invoices[0]; const headerGroup = inv?.headerGroupCode ?? inv?.invoiceGroupCode; // nhóm đầu hóa đơn đã lưu; hóa đơn cũ không có thì nhóm dòng đầu
     form.setFieldsValue({ postingDate: dayjs(d.postingDate), documentDate: dayjs(d.documentDate), partyCode: d.partyCode, currencyCode: d.currencyCode, fxRate: d.fxRate, dueDate: d.dueDate ? dayjs(d.dueDate) : null, description: d.description,
-      formNo: inv?.formNo ?? '', serial: inv?.serial ?? '', invoiceNo: inv?.invoiceNo ?? '', invoiceDate: dayjs(inv?.invoiceDate ?? d.documentDate), ...(inv?.invoiceGroupCode ? { invoiceGroupCode: inv.invoiceGroupCode } : {}) });
+      formNo: inv?.formNo ?? '', serial: inv?.serial ?? '', invoiceNo: inv?.invoiceNo ?? '', invoiceDate: dayjs(inv?.invoiceDate ?? d.documentDate), ...(headerGroup ? { invoiceGroupCode: headerGroup } : {}) });
     const loaded = d.items.map(rowOf); for (const r of loaded) snaps.current.set(r, snapOf(r));
     setAll(d.state === 'draft' ? [...loaded, emptyInvRow()] : loaded);
     setParty(d.partyCode ? { code: d.partyCode, name: inv?.partyName ?? d.partyName ?? '', taxCode: inv?.partyTaxCode ?? '', address: inv?.partyAddress ?? '', defaultAccount: undefined } : null);

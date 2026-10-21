@@ -203,7 +203,7 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput): Pr
       const baseAmount = lineNos.reduce((s, n) => s.plus(detail.baseVnd[Number(n)] ?? 0), D(0)).toFixed(0);
       const taxAmount = code === null ? '0' : D(detail.taxVnd[code] ?? 0).toFixed(0);
       if (D(baseAmount).isZero() && D(taxAmount).isZero()) continue;
-      rows.push({ direction: scope, formNo: input.invoice.formNo, serial: input.invoice.serial, invoiceNo: input.invoice.invoiceNo, invoiceDate: input.invoice.invoiceDate, partyId, invoiceGroupId: groupFor(code),
+      rows.push({ direction: scope, formNo: input.invoice.formNo, serial: input.invoice.serial, invoiceNo: input.invoice.invoiceNo, invoiceDate: input.invoice.invoiceDate, partyId, invoiceGroupId: groupFor(code), headerGroupId: group.id,
         taxCodeId: code === null ? null : ids.get(code)!, baseAmount, taxAmount, isImport: input.invoice.isImport, adjustsInvoiceId: input.invoice.adjustsInvoiceId ?? null,
         partyTaxCode: input.invoice.partyTaxCode, partyName: input.invoice.partyName, partyAddress: input.invoice.partyAddress });
     }
