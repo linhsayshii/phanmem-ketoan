@@ -160,7 +160,7 @@ export async function summaryDoc(trx: Trx, auth: Auth, tenantId: string, q: { ac
 
 // ---- Tuổi nợ ----
 // Khoản gốc cộng các khoản con đánh giá lại (open_item.parent_id, chỉ có VND) theo hạn và ngày chứng từ của khoản gốc; chỉ khoản còn dư khác 0.
-// Dư còn lại tại cuối ngày asOf lấy từ fn_open_items_at (cùng nguồn Danh sách khoản công nợ và Đánh giá lại), ở đây chỉ lọc tài khoản, đối tượng và gộp khoản con về khoản gốc.
+// Dư còn lại tại cuối ngày asOf lấy từ fn_open_items_at (cùng nguồn với Đánh giá lại; Danh sách khoản công nợ tự tính dư nhưng có kiểm thử khớp tổng với tuổi nợ), ở đây chỉ lọc tài khoản, đối tượng và gộp khoản con về khoản gốc.
 interface Item { itemId: number; partyCode: string; partyName: string; docNo: string | null; docDate: string; dueDate: string | null; residual: string; daysDue: number | null; daysDoc: number }
 async function loadItems(trx: Trx, tenantId: string, s: Scope, asOf: string, partyId: string | undefined, by: 'due' | 'doc'): Promise<Item[]> {
   const r = await sql<Item>`
