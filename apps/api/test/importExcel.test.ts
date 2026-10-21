@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
 import FormData from 'form-data';
-import { deflateRawSync } from 'node:zlib';
+import JSZip from 'jszip';
 import { bootstrapTenant, createTestApp, TEST_PASSWORD, type TestApp } from './helpers.js';
 import { buildTemplate, parseWorkbook } from '../src/modules/master/importExcel.js';
 import { assertZipSafe, excelDate, readSheet, zodIssueVi } from '../src/modules/master/excelSheet.js';
@@ -260,49 +260,65 @@ describe('nhập Excel', () => {
   });
 });
 
-// Dựng zip thật (tiêu đề cục bộ + thư mục trung tâm + EOCD) để kiểm tra trần giải nén; `declared` giả kích thước khai báo, `eocdCount` giả số mục ở EOCD.
-function zipOf(entries: { data: Buffer; method?: 0 | 8 | 99; declared?: number }[], opts: { eocdCount?: number; zip64?: boolean } = {}): Buffer {
-  const locals: Buffer[] = []; const cds: Buffer[] = []; let off = 0;
-  entries.forEach((e, i) => {
-    const method = e.method ?? 8; const body = method === 8 ? deflateRawSync(e.data) : e.data; const name = Buffer.from(`f${i}.bin`);
-    const l = Buffer.alloc(30); l.writeUInt32LE(0x04034b50, 0); l.writeUInt16LE(method, 8); l.writeUInt32LE(body.length, 18); l.writeUInt32LE(e.data.length, 22); l.writeUInt16LE(name.length, 26);
-    const c = Buffer.alloc(46); c.writeUInt32LE(0x02014b50, 0); c.writeUInt16LE(method, 10); c.writeUInt32LE(body.length, 20); c.writeUInt32LE(e.declared ?? e.data.length, 24); c.writeUInt16LE(name.length, 28); c.writeUInt32LE(off, 42);
-    locals.push(l, name, body); cds.push(c, name); off += 30 + name.length + body.length;
-  });
-  const cd = Buffer.concat(cds); const eocd = Buffer.alloc(22); eocd.writeUInt32LE(0x06054b50, 0);
-  eocd.writeUInt16LE(opts.zip64 ? 0xffff : opts.eocdCount ?? entries.length, 10); eocd.writeUInt32LE(cd.length, 12); eocd.writeUInt32LE(off, 16);
-  return Buffer.concat([...locals, cd, eocd]);
+// Zip nhỏ dựng bằng chính JSZip mà exceljs dùng; các kiểu tấn công chỉnh byte như kịch bản của người rà soát. Trần nhỏ (1.000 byte) thay cho 100/200 MB.
+const lim = { entry: 1000, total: 1500, entries: 3 };
+async function baseZip(entries: Record<string, number>, compression: 'DEFLATE' | 'STORE' = 'DEFLATE'): Promise<Buffer> {
+  const z = new JSZip(); for (const [name, n] of Object.entries(entries)) z.file(name, Buffer.alloc(n));
+  return z.generateAsync({ type: 'nodebuffer', compression });
 }
+const eocdOf = (b: Buffer) => b.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+const cdHeaders = (b: Buffer) => { const out: number[] = []; let p = b.readUInt32LE(eocdOf(b) + 16); while (b.readUInt32LE(p) === 0x02014b50) { out.push(p); p += 46 + b.readUInt16LE(p + 28) + b.readUInt16LE(p + 30) + b.readUInt16LE(p + 32); } return out; };
+const entryLen = (b: Buffer, h: number) => 46 + b.readUInt16LE(h + 28) + b.readUInt16LE(h + 30) + b.readUInt16LE(h + 32);
 
 describe('chặn tệp zip nén bom', () => {
-  const zeros = (n: number) => Buffer.alloc(n);
-  const lim = { entry: 1000, total: 1500, entries: 2 };
   const tooLarge = expect.objectContaining({ code: 'IMPORT_FILE_TOO_LARGE' });
-  it('tệp xlsx thật qua được; kích thước thật vượt trần (mục, tổng) bị từ chối dù khai báo nhỏ hay EOCD ghi ít mục', async () => {
-    assertZipSafe(await workbookWith([party('KHZ1')]));
-    assertZipSafe(zipOf([{ data: zeros(900) }, { data: zeros(500), method: 0 }], { }), { ...lim, entries: 5 });
-    expect(() => assertZipSafe(zipOf([{ data: zeros(5000) }]), lim)).toThrow(tooLarge);
-    expect(() => assertZipSafe(zipOf([{ data: zeros(900) }, { data: zeros(900) }]), lim)).toThrow(tooLarge); // tổng 1800 > 1500
-    // EOCD ghi 1 mục nhưng còn mục bom phía sau (JSZip bỏ qua số mục ở EOCD)
-    expect(() => assertZipSafe(zipOf([{ data: zeros(10) }, { data: zeros(5000) }], { eocdCount: 1 }), lim)).toThrow(tooLarge);
-    // khai báo 100 nhưng thật 5000
-    expect(() => assertZipSafe(zipOf([{ data: zeros(5000), declared: 100 }]), lim)).toThrow(tooLarge);
-    // mục lưu nguyên (stored) cũng tính theo độ dài thật
-    expect(() => assertZipSafe(zipOf([{ data: zeros(2000), method: 0 }]), lim)).toThrow(tooLarge);
-    expect(() => assertZipSafe(zipOf([{ data: zeros(1) }, { data: zeros(1) }, { data: zeros(1) }]), lim)).toThrow(tooLarge); // quá 2 mục
+  const invalid = expect.objectContaining({ code: 'IMPORT_BAD_FILE', message: 'Tệp không phải xlsx hợp lệ' });
+  it('tệp xlsx thật và zip trong trần qua được; mục hoặc tổng vượt trần, quá nhiều mục bị từ chối', async () => {
+    await assertZipSafe(await workbookWith([party('KHZ1')]));
+    await assertZipSafe(await baseZip({ a: 900, b: 500 }), lim);
+    await assertZipSafe(await baseZip({ a: 900, b: 500 }, 'STORE'), lim);
+    await expect(assertZipSafe(await baseZip({ a: 5000 }), lim)).rejects.toThrow(tooLarge);
+    await expect(assertZipSafe(await baseZip({ a: 900, b: 900 }), lim)).rejects.toThrow(tooLarge); // tổng 1800 > 1500
+    await expect(assertZipSafe(await baseZip({ a: 2000 }, 'STORE'), lim)).rejects.toThrow(tooLarge);
+    await expect(assertZipSafe(await baseZip({ a: 1, b: 1, c: 1, d: 1 }), lim)).rejects.toThrow(tooLarge); // quá 3 mục
   });
 
-  it('ZIP64, phương thức nén lạ, dữ liệu nén hỏng và tệp không phải zip bị từ chối', () => {
-    expect(() => assertZipSafe(zipOf([{ data: zeros(1) }], { zip64: true }))).toThrow(tooLarge);
-    expect(() => assertZipSafe(zipOf([{ data: zeros(1), method: 99 }]))).toThrow(expect.objectContaining({ code: 'IMPORT_BAD_FILE', message: 'Tệp không phải xlsx hợp lệ' }));
-    const broken = zipOf([{ data: Buffer.from('xin chào xin chào') }]); broken.fill(0xff, 30 + 6, 30 + 12);
-    expect(() => assertZipSafe(broken)).toThrow(expect.objectContaining({ code: 'IMPORT_BAD_FILE' }));
-    expect(() => assertZipSafe(Buffer.from('hello'))).toThrow(expect.objectContaining({ code: 'IMPORT_BAD_FILE' }));
-    expect(() => assertZipSafe(Buffer.alloc(200, 7))).toThrow(expect.objectContaining({ code: 'IMPORT_BAD_FILE' }));
+  it('qua mặt bằng EOCD ghi ít mục, kích thước khai báo giả, khoảng hở trước EOCD hoặc trường đĩa ZIP64 đều vẫn bị chặn theo kích thước thật', async () => {
+    const small = { a: 10, b: 5000 };
+    // EOCD ghi 1 mục, mục bom ở sau
+    let z = await baseZip(small); let e = eocdOf(z); z.writeUInt16LE(1, e + 10); z.writeUInt16LE(1, e + 8);
+    await expect(assertZipSafe(z, lim)).rejects.toThrow(tooLarge);
+    // khai báo 100 byte, thật 5000
+    z = await baseZip(small); for (const h of cdHeaders(z)) if (z.readUInt32LE(h + 24) === 5000) z.writeUInt32LE(100, h + 24);
+    await expect(assertZipSafe(z, lim)).rejects.toThrow(tooLarge);
+    // khoảng hở: [đệm][mục][thư mục mồi][rác][thư mục thật][EOCD]; JSZip đọc thư mục thật, ta cũng vậy vì dùng chính JSZip
+    z = await baseZip(small); e = eocdOf(z);
+    const cdOff = z.readUInt32LE(e + 16); const cdSize = z.readUInt32LE(e + 12); const heads = cdHeaders(z);
+    const locals = z.subarray(0, cdOff); const realCD = Buffer.from(z.subarray(cdOff, cdOff + cdSize)); const dec = Buffer.from(z.subarray(heads[0]!, heads[0]! + entryLen(z, heads[0]!)));
+    const J = 4; const P = dec.length + J; dec.writeUInt32LE(dec.readUInt32LE(42) + P, 42);
+    const gap = Buffer.concat([Buffer.alloc(P, 0x41), locals, dec, Buffer.alloc(J), realCD, Buffer.alloc(22)]);
+    const ge = gap.length - 22; gap.writeUInt32LE(0x06054b50, ge); gap.writeUInt16LE(1, ge + 8); gap.writeUInt16LE(1, ge + 10); gap.writeUInt32LE(realCD.length, ge + 12); gap.writeUInt32LE(P + locals.length, ge + 16);
+    await expect(assertZipSafe(gap, lim)).rejects.toThrow(tooLarge);
+    // ZIP64 bật bằng trường đĩa: EOCD chỉ thư mục mồi, bản ghi ZIP64 chỉ thư mục thật
+    z = await baseZip(small); e = eocdOf(z);
+    const h0 = cdHeaders(z)[0]!; const d2 = Buffer.from(z.subarray(h0, h0 + entryLen(z, h0))); const shift = d2.length;
+    const fix = (cd: Buffer) => { const c = Buffer.from(cd); let p = 0; while (p + 46 <= c.length && c.readUInt32LE(p) === 0x02014b50) { c.writeUInt32LE(c.readUInt32LE(p + 42) + shift, p + 42); p += entryLen(c, p); } return c; };
+    const decoy = fix(d2); const rcd = fix(realCD); const lcl = z.subarray(0, z.readUInt32LE(e + 16));
+    const rec = Buffer.alloc(56); rec.writeUInt32LE(0x06064b50, 0); rec.writeBigUInt64LE(44n, 4); rec.writeUInt16LE(45, 12); rec.writeUInt16LE(45, 14);
+    rec.writeBigUInt64LE(2n, 24); rec.writeBigUInt64LE(2n, 32); rec.writeBigUInt64LE(BigInt(rcd.length), 40); rec.writeBigUInt64LE(BigInt(shift + lcl.length + 76), 48);
+    const loc = Buffer.alloc(20); loc.writeUInt32LE(0x07064b50, 0); loc.writeBigUInt64LE(BigInt(shift + lcl.length), 8); loc.writeUInt32LE(1, 16);
+    const eo = Buffer.alloc(22); eo.writeUInt32LE(0x06054b50, 0); eo.writeUInt16LE(0xffff, 4); eo.writeUInt16LE(1, 8); eo.writeUInt16LE(1, 10); eo.writeUInt32LE(decoy.length, 12); eo.writeUInt32LE(0, 16);
+    const z64 = Buffer.concat([decoy, lcl, rec, loc, rcd, Buffer.alloc(76), eo]);
+    await expect(assertZipSafe(z64, lim)).rejects.toThrow(tooLarge);
   });
 
-  it('nhập danh mục với tệp bom (mục thật 101 MB) trả 400 IMPORT_FILE_TOO_LARGE, tệp rác trả IMPORT_BAD_FILE', async () => {
-    const bomb = await upload('party', zipOf([{ data: zeros(101 * 1024 * 1024), declared: 50 }]), 'validate');
+  it('dữ liệu nén hỏng và tệp không phải zip bị từ chối; nhập danh mục với tệp bom 101 MB trả 400 IMPORT_FILE_TOO_LARGE', async () => {
+    const broken = await baseZip({ a: 100 }, 'STORE'); const corrupt = await baseZip({ a: 3000 }); corrupt.fill(0xff, 40, 60);
+    await expect(assertZipSafe(corrupt, lim)).rejects.toThrow(invalid);
+    await expect(assertZipSafe(broken.subarray(0, 20), lim)).rejects.toThrow(invalid);
+    await expect(assertZipSafe(Buffer.from('hello'))).rejects.toThrow(invalid);
+    await expect(assertZipSafe(Buffer.alloc(200, 7))).rejects.toThrow(invalid);
+    const bomb = await upload('party', await baseZip({ 'x.bin': 101 * 1024 * 1024 }), 'validate');
     expect(bomb.statusCode).toBe(400); expect(bomb.json().error.code).toBe('IMPORT_FILE_TOO_LARGE');
     const junk = await upload('party', Buffer.from('không phải excel, chỉ là chữ'), 'validate');
     expect(junk.statusCode).toBe(400); expect(junk.json().error.code).toBe('IMPORT_BAD_FILE');

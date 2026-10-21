@@ -211,6 +211,19 @@ describe('nhập phiếu thu chi', () => {
     expect((await sql<{ state: string }>`SELECT state FROM voucher WHERE tenant_id = ${t.tenantId}::uuid AND id = ${ids[2]!.id}::uuid`.execute(ctx.t.admin)).rows[0]!.state).toBe('draft');
   });
 
+  it('đổi thứ tự dòng trong nhóm không đổi khóa (không tạo trùng); hóa đơn không ghi nhóm đã hủy báo "đổi nội dung dòng", không nhắc số nhóm', async () => {
+    const t = await tenant();
+    const a = pt('M', { amount: '100' }); const b = pt('M', { amount: '200', description: 'dòng hai' });
+    expect((await t.upload('thu-chi', await t.book('thu-chi', [a, b]), 'commit')).json()).toMatchObject({ created: 1, existing: 0 });
+    expect((await t.upload('thu-chi', await t.book('thu-chi', [b, a]), 'commit')).json()).toMatchObject({ created: 0, existing: 1 });
+    const file = await t.book('bang-ke-mua', [bk(null)]);
+    expect((await t.upload('bang-ke-mua', file, 'commit')).json()).toMatchObject({ created: 1 });
+    const id = (await sql<{ id: string }>`SELECT id FROM voucher WHERE tenant_id = ${t.tenantId}::uuid AND voucher_type <> 'PT' AND idempotency_key LIKE 'import:bang-ke-mua:%'`.execute(ctx.t.admin)).rows[0]!.id;
+    expect((await t.call('POST', `/api/vouchers/${id}/discard`)).statusCode).toBe(200);
+    const r = await t.upload('bang-ke-mua', file, 'commit');
+    expect(r.json().errors[0].message).toMatch(/Dòng 4 đã nhập thành chứng từ .* nay đã hủy; đổi nội dung dòng để nhập lại/);
+  });
+
   it('kiểm tra (validate) không bao giờ ghi sổ dù có autoPost; Tài khoản Nợ trùng Có và nhóm bắt đầu bằng # là lỗi', async () => {
     const t = await tenant();
     const v = await t.upload('thu-chi', await t.book('thu-chi', [pt('A')]), 'validate', '&autoPost=true');

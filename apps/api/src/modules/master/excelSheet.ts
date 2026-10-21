@@ -1,7 +1,8 @@
 import ExcelJS from 'exceljs';
 import type { ZodIssue } from 'zod';
 import { parseVnNumber } from '@kt/domain';
-import { inflateRawSync } from 'node:zlib';
+import type { Readable } from 'node:stream';
+import JSZip from 'jszip';
 import { AppError } from '../../plugins/errors.js';
 import type { ColumnDef } from './catalogs.js';
 
@@ -69,54 +70,36 @@ function cellValue(c: ColumnDef, cell: ExcelJS.Cell): Parsed {
 const group = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 
 const ZIP_LIMITS = { total: 200 * 1024 * 1024, entry: 100 * 1024 * 1024, entries: 10_000 };
-// Chống zip bomb: kích thước giải nén khai báo trong zip là dữ liệu do người gửi tệp khai nên không tin; tự giải nén từng mục (inflateRawSync có trần) TRƯỚC khi nạp sổ làm việc và cộng dồn kích thước thật.
-// Duyệt thư mục trung tâm như JSZip: đọc các tiêu đề liên tiếp đến khi hết chữ ký, bỏ qua số mục ghi ở EOCD. Chi phí: giải nén hai lần (một lần ở đây, một lần khi nạp), bộ nhớ tối đa ~ trần tổng.
-// ZIP64 (tệp hoặc mục hơn 4 GB / 65.535 mục) và phương thức nén khác stored/deflate không hỗ trợ: tệp Excel hợp lệ không cần.
-export function assertZipSafe(buf: Buffer, limits: Partial<typeof ZIP_LIMITS> = {}): void {
+// Chống zip bomb: kích thước giải nén khai báo trong zip là dữ liệu do người gửi tệp khai nên không tin. Nạp mục lục bằng chính JSZip mà exceljs dùng (cùng phiên bản, nên cùng cách đọc thư mục trung tâm: không lệch pha) rồi giải nén từng mục theo luồng, đếm byte thật và hủy luồng khi vượt trần.
+// Chi phí: giải nén hai lần (một lần ở đây, một lần khi exceljs nạp); bộ nhớ chỉ ở mức một mảnh luồng vì không gom dữ liệu.
+export async function assertZipSafe(buf: Buffer, limits: Partial<typeof ZIP_LIMITS> = {}): Promise<void> {
   const lim = { ...ZIP_LIMITS, ...limits };
-  const bad = () => new AppError('IMPORT_BAD_FILE', 'Không đọc được file Excel', 400);
   const invalid = () => new AppError('IMPORT_BAD_FILE', 'Tệp không phải xlsx hợp lệ', 400);
-  const zip64 = () => new AppError('IMPORT_FILE_TOO_LARGE', 'Tệp Excel quá lớn hoặc dùng định dạng ZIP64, không hỗ trợ', 400);
   const tooBig = (m: string) => new AppError('IMPORT_FILE_TOO_LARGE', m, 400);
-  if (buf.length < 22) throw bad();
-  let eocd = -1;
-  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 65535); i--) if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
-  if (eocd < 0) throw bad();
-  if (eocd >= 20 && buf.readUInt32LE(eocd - 20) === 0x07064b50) throw zip64();
-  const count = buf.readUInt16LE(eocd + 10); const cdSize = buf.readUInt32LE(eocd + 12); const cdOffset = buf.readUInt32LE(eocd + 16);
-  if (count === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) throw zip64();
-  if (cdOffset + cdSize > eocd) throw bad();
-  let p = cdOffset; let total = 0; let n = 0;
-  while (p + 46 <= buf.length && buf.readUInt32LE(p) === 0x02014b50) {
-    if (++n > lim.entries) throw tooBig(`Tệp nén có hơn ${group(lim.entries)} mục`);
-    const method = buf.readUInt16LE(p + 10); const csize = buf.readUInt32LE(p + 20); const local = buf.readUInt32LE(p + 42);
-    p += 46 + buf.readUInt16LE(p + 28) + buf.readUInt16LE(p + 30) + buf.readUInt16LE(p + 32);
-    if (csize === 0xffffffff || local === 0xffffffff) throw zip64();
-    if (local + 30 > buf.length || buf.readUInt32LE(local) !== 0x04034b50) throw bad();
-    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
-    if (start + csize > buf.length) throw bad();
-    const data = buf.subarray(start, start + csize);
-    const cap = Math.min(lim.entry, Math.max(1, lim.total - total));
-    let size: number;
-    if (method === 0) size = csize;
-    else if (method === 8) {
-      if (csize === 0) continue;
-      try { size = inflateRawSync(data, { maxOutputLength: cap }).length; } catch (e) {
-        if ((e as { code?: string }).code === 'ERR_BUFFER_TOO_LARGE' || e instanceof RangeError) throw tooBig(cap === lim.entry ? 'Tệp Excel giải nén quá lớn (một mục vượt 100 MB)' : 'Tệp Excel giải nén quá lớn (vượt 200 MB)');
-        throw invalid();
-      }
-    } else throw invalid();
-    if (size > lim.entry) throw tooBig('Tệp Excel giải nén quá lớn (một mục vượt 100 MB)');
-    total += size;
-    if (total > lim.total) throw tooBig('Tệp Excel giải nén quá lớn (vượt 200 MB)');
+  let zip: JSZip;
+  try { zip = await JSZip.loadAsync(buf); } catch { throw invalid(); }
+  const files = Object.values(zip.files);
+  if (files.length > lim.entries) throw tooBig(`Tệp nén có hơn ${group(lim.entries)} mục`);
+  let total = 0;
+  for (const f of files) {
+    if (f.dir) continue;
+    const cap = Math.min(lim.entry, lim.total - total);
+    total += await new Promise<number>((resolve, reject) => {
+      let size = 0; const st = f.nodeStream() as Readable;
+      st.on('data', (c: Buffer) => {
+        size += c.length;
+        if (size > cap) { st.destroy(); reject(tooBig(cap === lim.entry ? 'Tệp Excel giải nén quá lớn (một mục vượt 100 MB)' : 'Tệp Excel giải nén quá lớn (vượt 200 MB)')); }
+      });
+      st.on('error', () => reject(invalid()));
+      st.on('end', () => resolve(size));
+    });
   }
-  if (n === 0) throw bad();
 }
 
 // Đọc sheet: kiểm số dòng TRƯỚC khi đọc ô nào (actualRowCount chỉ đếm dòng có giá trị); cột ánh xạ theo khóa ở dòng `keyRow` (thứ tự cột tùy ý, cột không bắt buộc có thể vắng).
 // Trả các dòng có dữ liệu (chỉ chứa ô đọc được) và lỗi cấp ô; dòng trống bị bỏ qua. Kiểm tra nghiệp vụ theo từng dòng là việc của người gọi.
 export async function readSheet(buf: Buffer, opts: SheetOptions): Promise<{ rows: { row: number; values: Record<string, unknown> }[]; errors: ImportError[] }> {
-  assertZipSafe(buf);
+  await assertZipSafe(buf);
   const wb = new ExcelJS.Workbook();
   try { await wb.xlsx.load(buf as unknown as ArrayBuffer); } catch { throw new AppError('IMPORT_BAD_FILE', 'Không đọc được file Excel', 400); }
   const ws = wb.getWorksheet(opts.sheet) ?? wb.worksheets[0];

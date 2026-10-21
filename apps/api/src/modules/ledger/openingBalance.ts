@@ -232,7 +232,7 @@ const txt = (cell: ExcelJS.Cell) => { const v = plainCell(cell.value); return v 
 const day = (cell: ExcelJS.Cell): string | null | undefined => { const v = plainCell(cell.value); return v === null || v === undefined || (typeof v === 'string' && v.trim() === '') ? null : excelDate(v) ?? undefined; };
 
 export async function parseOpeningWorkbook(trx: Trx, year: number, buffer: Buffer): Promise<{ rows: OpeningRow[]; errors: ImportError[] }> {
-  assertZipSafe(buffer);
+  await assertZipSafe(buffer);
   const wb = new ExcelJS.Workbook();
   try { await wb.xlsx.load(buffer as unknown as ArrayBuffer); } catch { throw new AppError('IMPORT_BAD_FILE', 'Không đọc được file Excel', 400); }
   const ws = wb.getWorksheet('Du_lieu') ?? wb.worksheets[0];

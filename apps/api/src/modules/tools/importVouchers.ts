@@ -186,8 +186,8 @@ function locate(spec: Spec, items: Item[], f: { code: string; message: string })
 const dupKey = (kind: Kind, v: Rec) => `${kind === 'bang-ke-mua' ? (v.partyTaxCode || v.partyCode)!.trim().toUpperCase() : ''}|${(v.serial ?? '').trim().toUpperCase()}|${v.invoiceNo!.trim().replace(/^0+/, '')}`;
 
 // Khóa lũy đẳng theo NỘI DUNG nhóm (số nhóm + các dòng theo thứ tự trong tệp), không theo cả tệp: sửa một nhóm rồi nhập lại tệp thì chỉ nhóm đó là mới.
-// Số nhóm nằm trong băm nên hai nhóm giống hệt nhau nhưng khác số nhóm vẫn là hai chứng từ; dòng bảng kê không ghi nhóm dùng nhóm rỗng.
-const groupKey = (kind: Kind, items: Item[]) => `import:${kind}:` + createHash('sha256').update(JSON.stringify([items[0]!.v.group ?? '', items.map((i) => Object.entries(i.v).filter(([, x]) => x !== undefined).sort(([a], [b]) => (a < b ? -1 : 1)))])).digest('hex');
+// Các dòng được sắp xếp nên đổi thứ tự dòng trong nhóm không đổi khóa. Số nhóm nằm trong băm nên hai nhóm giống hệt nhau nhưng khác số nhóm vẫn là hai chứng từ; dòng bảng kê không ghi nhóm dùng nhóm rỗng.
+const groupKey = (kind: Kind, items: Item[]) => `import:${kind}:` + createHash('sha256').update(JSON.stringify([items[0]!.v.group ?? '', items.map((i) => JSON.stringify(Object.entries(i.v).filter(([, x]) => x !== undefined).sort(([a], [b]) => (a < b ? -1 : 1)))).sort()])).digest('hex');
 
 export interface Prepared { kind: Kind; groups: Map<string, Item[]>; rows: number; errors: ImportError[] }
 
@@ -253,7 +253,7 @@ export async function runImport(trx: Transaction<Database>, ctx: { tenantId: str
     const who = named ? `Nhóm "${g}"` : `Dòng ${first.row}`; const col = named ? 'group' : 'invoiceNo';
     if (!old) { todo.push([g, items]); continue; }
     const no = old.no ?? `nháp (${old.type})`;
-    if (STATE_VI[old.state]) errors.push({ row: first.row, column: col, message: `${who} đã nhập thành chứng từ ${no} nay đã ${STATE_VI[old.state]}; đổi số nhóm hoặc nội dung để nhập lại` });
+    if (STATE_VI[old.state]) errors.push({ row: first.row, column: col, message: `${who} đã nhập thành chứng từ ${no} nay đã ${STATE_VI[old.state]}; ${named ? 'đổi số nhóm hoặc nội dung' : 'đổi nội dung dòng'} để nhập lại` });
     else { existing++; if (old.state === 'draft' && o.autoPost) warnings.push({ row: first.row, column: col, message: `${who} đã nhập trước đó thành bản nháp ${no}, không tự ghi sổ lại; hãy mở chứng từ để ghi sổ` }); }
   }
 
