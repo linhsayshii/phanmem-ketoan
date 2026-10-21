@@ -40,6 +40,17 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
 ### Hạn chế đã biết của GĐ2
 
 - Tỷ giá xuất quỹ (Task 10): chuyển tiền giữa hai tài khoản tiền cùng loại ngoại tệ (chuyển tiền nội bộ giữa hai TK 1122, rút tiền gửi ngoại tệ về quỹ 1112, nộp quỹ ngoại tệ vào ngân hàng) mà có chứng từ ghi lùi: chứng từ XQ tính lại bên chuyển đi theo bình quân di động, đối ứng 515/635; bên nhận giữ giá trị đã ghi cho đến khi chi hết nguyên tệ hoặc đánh giá lại cuối kỳ. Cách sửa đúng: đẩy phần lệch sang nhóm nhận thay vì 515/635, cần một lượt duyệt chung theo ngày qua các nhóm.
+- Đánh giá lại ngoại tệ cuối kỳ (Task 13):
+  - Mỗi loại tiền chỉ có một tỷ giá đánh giá lại cho tài sản và một cho nợ phải trả. TT99 TK413 mục 1.5.1 và 4.2 yêu cầu tiền gửi không kỳ hạn đánh giá lại theo tỷ giá của ngân hàng nơi mở tài khoản. Cần thêm tỷ giá theo ngân hàng (`bank_account`).
+  - Chưa loại trừ khoản phải thu đã trích lập dự phòng nợ khó đòi (TT99 1.5.1) vì chưa có phân hệ dự phòng. Làm khi có phân hệ dự phòng (GĐ6).
+  - Chứng từ DG theo TT99 ghi gộp Có 515 và Nợ 635. Khi nhập chỉ tiêu B02 TT99 từ văn bản gốc, chỉ tiêu doanh thu và chi phí tài chính phải trình bày chênh lệch đánh giá lại theo số thuần (TT99 1.5.2, 4.2).
+  - Chỉ đánh giá lại tiền, tiền gửi (111x, 112x) và 131, 331. Chưa đánh giá lại 113, 1281, 244, 341, 1388, 3388 và các khoản mục tiền tệ khác (TT99 1.3 a, c, d).
+  - Nhóm tiền có nguyên tệ bằng 0 nhưng còn dư VND (công ty dùng phương pháp tỷ giá đích danh) vẫn cần tỷ giá của ngày đánh giá lại; thiếu tỷ giá thì báo `FX_RATE_MISSING`, dù số đánh giá lại không phụ thuộc tỷ giá.
+  - Đảo chứng từ có khoản công nợ đã đánh giá lại: chênh lệch đánh giá lại còn lại được kết chuyển bằng chứng từ CL ghi ngày muộn hơn trong hai ngày (ngày đảo, ngày DG). Kỳ của ngày đó phải ghi được. Khi chạy lại đánh giá lại, CL đó ghi ngày đảo. Nếu kỳ chứa ngày đảo đã khóa sổ mà người chạy không có quyền ghi lùi, hoặc phân hệ công nợ của kỳ đó đã khóa, cả lần chạy lại bị hủy. Thông báo lỗi nêu kỳ sau, dễ gây khó hiểu. CL do lần chạy lại sinh ra vẫn mang diễn giải "khi đảo chứng từ…" và chưa liên kết với `fx_run`.
+  - Chứng từ đảo ghi ngày trước ngày DG: sau khi chạy lại, cùng ngày có cả lãi 515 và lỗ 635 bằng nhau, số thuần bằng 0 (xử lý cùng mục trình bày thuần B02 ở trên).
+  - Mỗi lần chạy lại có thay đổi, bước đóng khoản con của khoản gốc đã đảo quét mọi nhóm đối trừ loại đảo của công ty (có chỉ mục `parent_id`, chưa đo trên dữ liệu lớn). Có thể giới hạn vào các khoản gốc mà lần chạy chạm tới.
+  - Số dư đầu kỳ (DK) đã được đánh giá lại thì không sửa được: phải chạy lại đánh giá lại sau khi sửa, nhưng DK chưa có đường gỡ khoản con.
+  - Route đối trừ công nợ không giữ khóa `fx`. Một lần đối trừ chạy đúng lúc đang đánh giá lại có thể để lại khoản con mồ côi (cửa sổ rất hẹp).
 
 ## 4. Chờ người dùng
 
