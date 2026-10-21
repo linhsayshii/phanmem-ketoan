@@ -271,7 +271,7 @@ Ký hiệu: **B** = Baseline (mọi phần mềm Việt Nam đều có, bắt bu
 | Lương tối thiểu vùng | 5.310.000 / 4.730.000 / 4.140.000 / 3.700.000 | 01/01/2026 | NĐ 293/2025 |
 | Làm thêm | 150/200/300%, đêm +30%, thêm giờ đêm +20% | — | BLLĐ 2019 Đ98 |
 | Lệ phí môn bài | Bãi bỏ | 01/01/2026 | NQ 198/2025 k7 Đ10, NĐ 362/2025 |
-| Quản lý thuế, tờ khai | Luật 108/2025 + NĐ 252/2026 + TT 89/2026 (thay TT 80/2021); TNCN tiền lương khai quý; mẫu cũ cho kỳ trước 01/07/2026 | 01/07/2026 | TT 89/2026 Đ22, Đ100 |
+| Quản lý thuế, tờ khai | Luật 108/2025 + NĐ 252/2026 + TT 89/2026 (thay TT 80/2021); TNCN tiền lương khai quý; mẫu cũ cho kỳ trước 01/07/2026 | 01/07/2026 | TT 89/2026 Đ99, Đ100 |
 | Hóa đơn điện tử | NĐ 123/2020 + NĐ 70/2025 + TT 32/2025 đến 30/06/2026; NĐ 254/2026 + TT 91/2026 từ 01/07/2026; định dạng XML QĐ 1450/QĐ-TCT (sửa bởi QĐ 1510/QĐ-TCT) | 01/06/2025; 01/07/2026 | — |
 | Chữ ký điện tử | Luật GDĐT 20/2023, NĐ 23/2025; ký số từ xa TT 16/2019/TT-BTTTT | 10/04/2025 | — |
 | Dữ liệu cá nhân, lưu trữ | Luật 91/2025 + NĐ 356/2025 (01/01/2026); Luật An ninh mạng 116/2025 (01/07/2026): dữ liệu người dùng lưu tại Việt Nam | 2026 | — |
