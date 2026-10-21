@@ -11,3 +11,4 @@ export * from './numbering.js';
 export * from './reportFormula.js';
 export * from './voucherTypes.js';
 export * from './fx.js';
+export * from './tax.js';

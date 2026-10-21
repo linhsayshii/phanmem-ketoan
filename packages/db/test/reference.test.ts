@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'kysely';
-import { isReportComplete, loadCoaTemplate, loadReportTemplates, REPORT_CODES, REPORT_REGIMES } from '@kt/coa-data';
+import { isReportComplete, loadCoaTemplate, loadLegalParams, loadReportTemplates, REPORT_CODES, REPORT_REGIMES } from '@kt/coa-data';
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { createDb, createPool } from '../src/client.js';
@@ -61,5 +61,17 @@ describe('dữ liệu tham chiếu', () => {
     }
     expect(await n('TT200', 'B02')).toBe(0);
     await expect(sql`INSERT INTO report_template(regime, report_code, line_code, label, source, side, sort_order) VALUES ('TT133','B01','1','x','balance','net_debit',1)`.execute(t.db)).rejects.toThrow(/permission denied/);
+  });
+  it('legal_param nạp từ legal-params.json; đồng bộ lại là upsert theo (mã, ngày hiệu lực): sửa dòng lệch, xóa dòng không còn trong tệp; app_user không sửa được', async () => {
+    const rows = async () => (await sql<{ code: string; value: unknown; valid_from: string; valid_to: string | null; source: string }>`SELECT code, value, to_char(valid_from, 'YYYY-MM-DD') AS valid_from, to_char(valid_to, 'YYYY-MM-DD') AS valid_to, source FROM legal_param ORDER BY code, valid_from`.execute(t.admin)).rows;
+    const file = loadLegalParams().map((r) => ({ code: r.code, value: r.value, valid_from: r.validFrom, valid_to: r.validTo, source: r.source })).sort((a, b) => a.code.localeCompare(b.code) || a.valid_from.localeCompare(b.valid_from));
+    expect(await rows()).toEqual(file);
+    await sql`UPDATE legal_param SET value = '"TT00"', source = 'sai' WHERE code = 'vat_return_template' AND valid_from = '2026-07-01'`.execute(t.admin);
+    await sql`INSERT INTO legal_param(code, value, valid_from, source) VALUES ('thua', '1', '2020-01-01', 'x')`.execute(t.admin);
+    await syncReferenceData(adminUrl);
+    await syncReferenceData(adminUrl);
+    expect(await rows()).toEqual(file);
+    await expect(sql`INSERT INTO legal_param(code, value, valid_from, source) VALUES ('x', '1', '2020-01-01', 'x')`.execute(t.db)).rejects.toThrow(/permission denied/);
+    await expect(sql`INSERT INTO legal_param(code, value, valid_from, source) VALUES ('vat_return_template', '1', '2026-07-01', 'x')`.execute(t.admin)).rejects.toThrow(/duplicate key/);
   });
 });

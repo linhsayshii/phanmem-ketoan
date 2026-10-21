@@ -18,19 +18,24 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   project: { code: 'DA01', name: 'Dự án 01', party_code: 'KH001' },
   uom: { code: 'KG', name: 'Kilogram' },
   exchange_rate: { currency_code: 'USD', rate_date: '2026-01-15', rate_type: 'transfer_avg', rate: '25400.5' },
+  tax_code: { code: 'TT3', name: 'GTGT trực tiếp 3%', kind: 'vat', method: 'direct', rate: '3', scope: 'sale', price_include: true },
+  tax_distribution: { tax_code_code: 'V10', document_type: 'invoice', scope: 'sale', line_type: 'base', factor_percent: '100', report_tag: 'sale_base' },
 };
 
 describe('danh mục khung', () => {
   it('GET /api/catalogs liệt kê định nghĩa có cột và nhãn tiếng Việt', async () => {
     const r = await ctx.app.inject({ method: 'GET', url: '/api/catalogs', headers: { cookie } });
     const names = (r.json() as { name: string; label: string; columns: unknown[] }[]).map((d) => d.name);
-    expect(names).toEqual(expect.arrayContaining(['party', 'department', 'employee', 'currency', 'exchange_rate', 'bank', 'bank_account', 'payment_method', 'tax_code', 'invoice_group', 'cost_item', 'project', 'uom', 'party_group']));
+    expect(names).toEqual(expect.arrayContaining(['party', 'department', 'employee', 'currency', 'exchange_rate', 'bank', 'bank_account', 'payment_method', 'tax_code', 'tax_distribution', 'invoice_group', 'cost_item', 'project', 'uom', 'party_group']));
     expect((r.json() as { name: string; label: string }[]).find((d) => d.name === 'party')!.label).toBe('Đối tượng');
   });
 
   it('công ty mới có sẵn loại tiền, hình thức thanh toán, loại thuế, nhóm hóa đơn, đơn vị tính', async () => {
     const tax = await ctx.app.inject({ method: 'GET', url: '/api/catalogs/tax_code', headers: { cookie } });
-    expect((tax.json().rows as { code: string }[]).map((x) => x.code)).toEqual(expect.arrayContaining(['V0', 'V5', 'V8', 'V10', 'KCT', 'NK', 'TTDB']));
+    expect((tax.json().rows as { code: string }[]).map((x) => x.code)).toEqual(expect.arrayContaining(['V0', 'V5', 'V8', 'V10', 'KCT', 'NK', 'TTDB', 'TNCN_KT']));
+    const dist = await ctx.app.inject({ method: 'GET', url: '/api/catalogs/tax_distribution?q=3335', headers: { cookie } });
+    expect(dist.json().rows).toEqual([expect.objectContaining({ tax_code_code: 'TNCN_KT', document_type: 'invoice', scope: 'purchase', line_type: 'tax', factor_percent: '-100.0000', account_code: '3335' }),
+      expect.objectContaining({ tax_code_code: 'TNCN_KT', document_type: 'refund', factor_percent: '-100.0000', account_code: '3335' })]);
     const cur = await ctx.app.inject({ method: 'GET', url: '/api/catalogs/currency', headers: { cookie } });
     expect((cur.json().rows as { code: string }[]).map((x) => x.code)).toEqual(expect.arrayContaining(['VND', 'USD']));
   });
@@ -71,11 +76,11 @@ describe('danh mục khung', () => {
   });
 
   it('phân trang theo size/page, total là tổng số dòng', async () => {
-    const pages = await Promise.all([1, 2, 3].map((page) => ctx.app.inject({ method: 'GET', url: `/api/catalogs/tax_code?size=3&page=${page}`, headers: { cookie } })));
+    const pages = await Promise.all([1, 2, 3].map((page) => ctx.app.inject({ method: 'GET', url: `/api/catalogs/payment_method?size=2&page=${page}`, headers: { cookie } })));
     const rows = pages.map((r) => r.json() as { rows: { code: string }[]; total: number });
-    expect(rows.map((r) => r.rows.length)).toEqual([3, 3, 2]);
-    expect(rows.every((r) => r.total === 8)).toBe(true);
-    expect(new Set(rows.flatMap((r) => r.rows.map((x) => x.code))).size).toBe(8);
+    expect(rows.map((r) => r.rows.length)).toEqual([2, 1, 0]);
+    expect(rows.every((r) => r.total === 3)).toBe(true);
+    expect(new Set(rows.flatMap((r) => r.rows.map((x) => x.code))).size).toBe(3);
   });
 
   it('người chỉ xem đọc được danh mục nhưng thêm/sửa/xóa bị 403', async () => {
@@ -109,6 +114,10 @@ describe('danh mục khung', () => {
       ['exchange_rate', { currency_code: 'USD', rate_date: '2026-02-30', rate_type: 'buy', rate: '25000' }],
       ['tax_code', { code: 'XX', name: 'X', kind: 'vat', rate: '1000' }],
       ['tax_code', { code: 'XX', name: 'X', kind: 'vat', rate: '100.01' }],
+      ['tax_code', { code: 'XX', name: 'X', kind: 'vat', method: 'khac' }],
+      ['tax_distribution', { tax_code_code: 'V10', document_type: 'invoice', scope: 'sale', line_type: 'tax', factor_percent: '100.5', account_code: '33311' }],
+      ['tax_distribution', { tax_code_code: 'V10', document_type: 'invoice', scope: 'sale', line_type: 'tax', factor_percent: '-100.00001', account_code: '33311' }],
+      ['tax_distribution', { tax_code_code: 'V10', document_type: 'invoice', scope: 'both', line_type: 'tax', factor_percent: '100', account_code: '33311' }],
       ['invoice_group', { scope: 'sale', code: 'XX', name: 'X', rate: '101' }],
       ['party', { code: 'XX', name: 'X', credit_limit: '100.5' }],
       ['party', { code: 'XX', name: 'X', payment_term_days: 3651 }],

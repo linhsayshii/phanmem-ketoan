@@ -11,6 +11,9 @@ const vnd = z.string().regex(VND_AMOUNT_RE);
 const exRate = z.string().regex(/^\d{1,10}(\.\d{1,10})?$/).refine((v) => Number(v) > 0);
 // Thuế suất % numeric(5,2): không quá 100.
 const pct = z.string().regex(/^\d{1,3}(\.\d{1,2})?$/).refine((v) => Number(v) <= 100);
+// Tỷ lệ phân bổ thuế numeric(7,4) trong [-100, 100]: âm là khấu trừ tại nguồn.
+const factor = z.string().regex(/^-?\d{1,3}(\.\d{1,4})?$/).refine((v) => Math.abs(Number(v)) <= 100);
+const SCOPE_OPTIONS = [{ value: 'purchase', label: 'Mua vào' }, { value: 'sale', label: 'Bán ra' }];
 // Ngày ISO hợp lệ: loại 2026-02-30 bằng cách dựng lại ngày UTC rồi so chuỗi.
 export const dateIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => {
   const [y, m, d] = s.split('-').map(Number) as [number, number, number];
@@ -70,10 +73,21 @@ const defs: CatalogDef[] = [
     schema: z.object({ code, name: text(false), is_active: z.boolean().optional() }),
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên', type: 'text', required: true }] },
   { name: 'tax_code', table: 'tax_code', label: 'Loại thuế', uniqueBy: ['code'], sort: 'code', searchIn: ['code', 'name'],
-    schema: z.object({ code, name: text(false), kind: z.enum(['vat', 'import', 'excise']), rate: pct.nullable().optional(), is_exempt: z.boolean().optional(), in_declaration: z.boolean().optional(), is_active: z.boolean().optional() }),
+    schema: z.object({ code, name: text(false), kind: z.enum(['vat', 'pit', 'import', 'excise']), rate: pct.nullable().optional(), is_exempt: z.boolean().optional(), in_declaration: z.boolean().optional(),
+      scope: z.enum(['sale', 'purchase', 'both']).optional(), method: z.enum(['deduct', 'direct', 'none']).optional(), price_include: z.boolean().optional(), is_active: z.boolean().optional() }),
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên', type: 'text', required: true },
-      { key: 'kind', label: 'Loại', type: 'select', required: true, options: [{ value: 'vat', label: 'GTGT' }, { value: 'import', label: 'Nhập khẩu' }, { value: 'excise', label: 'TTĐB' }] },
-      { key: 'rate', label: 'Thuế suất %', type: 'number' }, { key: 'is_exempt', label: 'Không chịu thuế', type: 'boolean' }, { key: 'in_declaration', label: 'Lên tờ khai', type: 'boolean' }] },
+      { key: 'kind', label: 'Loại', type: 'select', required: true, options: [{ value: 'vat', label: 'GTGT' }, { value: 'pit', label: 'TNCN' }, { value: 'import', label: 'Nhập khẩu' }, { value: 'excise', label: 'TTĐB' }] },
+      { key: 'rate', label: 'Thuế suất %', type: 'number' }, { key: 'is_exempt', label: 'Không chịu thuế', type: 'boolean' }, { key: 'in_declaration', label: 'Lên tờ khai', type: 'boolean' },
+      { key: 'scope', label: 'Áp dụng', type: 'select', options: [...SCOPE_OPTIONS, { value: 'both', label: 'Mua vào và bán ra' }] },
+      { key: 'method', label: 'Phương pháp', type: 'select', options: [{ value: 'deduct', label: 'Khấu trừ' }, { value: 'direct', label: 'Trực tiếp trên doanh thu' }, { value: 'none', label: 'Không tính thuế' }] },
+      { key: 'price_include', label: 'Giá đã gồm thuế', type: 'boolean' }] },
+  { name: 'tax_distribution', table: 'tax_distribution', label: 'Phân bổ thuế', uniqueBy: ['tax_code_code', 'document_type', 'scope', 'line_type', 'account_code'], sort: 'tax_code_id', searchIn: ['account_code', 'report_tag'],
+    schema: z.object({ tax_code_code: code, document_type: z.enum(['invoice', 'refund']), scope: z.enum(['sale', 'purchase']), line_type: z.enum(['base', 'tax']), factor_percent: factor, account_code: text(), report_tag: text() }),
+    columns: [{ key: 'tax_code_code', label: 'Loại thuế', type: 'text', required: true, lookup: { catalog: 'tax_code' } },
+      { key: 'document_type', label: 'Chứng từ', type: 'select', required: true, options: [{ value: 'invoice', label: 'Hóa đơn' }, { value: 'refund', label: 'Giảm giá, trả lại' }] },
+      { key: 'scope', label: 'Mua/Bán', type: 'select', required: true, options: SCOPE_OPTIONS },
+      { key: 'line_type', label: 'Dòng', type: 'select', required: true, options: [{ value: 'tax', label: 'Tiền thuế' }, { value: 'base', label: 'Giá tính thuế' }] },
+      { key: 'factor_percent', label: 'Tỷ lệ %', type: 'number', required: true }, { key: 'account_code', label: 'Tài khoản', type: 'text' }, { key: 'report_tag', label: 'Nhãn báo cáo', type: 'text' }] },
   { name: 'invoice_group', table: 'invoice_group', label: 'Nhóm hóa đơn', uniqueBy: ['scope', 'code'], sort: 'code', searchIn: ['code', 'name'],
     schema: z.object({ scope: z.enum(['purchase', 'sale']), code, name: text(false), rate: pct.nullable().optional(), is_active: z.boolean().optional() }),
     columns: [{ key: 'scope', label: 'Mua/Bán', type: 'select', required: true, options: [{ value: 'purchase', label: 'Mua vào' }, { value: 'sale', label: 'Bán ra' }] },

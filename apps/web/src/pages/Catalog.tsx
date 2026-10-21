@@ -19,8 +19,8 @@ type Row = Record<string, unknown>;
 const idOf = (r: Row) => String(r['id'] ?? r['code']);
 // Cột số nguyên của API nhận số JSON chứ không phải chuỗi (cùng quy tắc với nhập Excel).
 const isIntKey = (key: string) => key.endsWith('_days') || key === 'minor_unit';
-// Số lẻ theo cột DB: tỷ giá numeric(20,10), thuế suất numeric(5,2), còn lại số nguyên.
-const scaleOf = (catalog: string, key: string) => (key === 'rate' ? (catalog === 'exchange_rate' ? 10 : catalog === 'tax_code' || catalog === 'invoice_group' ? 2 : 0) : 0);
+// Số lẻ theo cột DB: tỷ giá numeric(20,10), thuế suất numeric(5,2), tỷ lệ phân bổ thuế numeric(7,4), còn lại số nguyên.
+const scaleOf = (catalog: string, key: string) => (key === 'factor_percent' ? 4 : key === 'rate' ? (catalog === 'exchange_rate' ? 10 : catalog === 'tax_code' || catalog === 'invoice_group' ? 2 : 0) : 0);
 const QUICK_ADD = [{ key: 'code', label: 'Mã' }, { key: 'name', label: 'Tên' }];
 
 export function FieldFor({ c, catalog, canQuickAdd }: { c: ColumnDef; catalog: string; canQuickAdd: boolean }) {

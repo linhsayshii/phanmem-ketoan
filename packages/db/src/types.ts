@@ -93,6 +93,11 @@ export interface PaymentMethodTable { id: Generated<number>; tenant_id: string; 
 export interface TaxCodeTable {
   id: Generated<number>; tenant_id: string; code: string; name: string; kind: string; rate: Numeric | null;
   is_exempt: Generated<boolean>; in_declaration: Generated<boolean>; is_active: Generated<boolean>;
+  scope: Generated<string>; method: Generated<string>; price_include: Generated<boolean>;
+}
+export interface TaxDistributionTable {
+  id: Generated<number>; tenant_id: string; tax_code_id: number; document_type: string; scope: string; line_type: string;
+  factor_percent: Numeric; account_code: string | null; report_tag: string | null;
 }
 export interface InvoiceGroupTable {
   id: Generated<number>; tenant_id: string; scope: string; code: string; name: string; rate: Numeric | null; is_active: Generated<boolean>;
@@ -237,6 +242,7 @@ export interface Database {
   bank_account: BankAccountTable;
   payment_method: PaymentMethodTable;
   tax_code: TaxCodeTable;
+  tax_distribution: TaxDistributionTable;
   invoice_group: InvoiceGroupTable;
   cost_item: CostItemTable;
   project: ProjectTable;

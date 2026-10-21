@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { PERMISSIONS } from '@kt/domain';
-import { COA_REGIMES, loadCoaTemplate, loadFxRules, loadReportTemplates } from '@kt/coa-data';
+import { COA_REGIMES, loadCoaTemplate, loadFxRules, loadLegalParams, loadReportTemplates } from '@kt/coa-data';
 
 export async function syncReferenceData(adminUrl: string): Promise<void> {
   const client = new pg.Client({ connectionString: adminUrl });
@@ -48,6 +48,18 @@ export async function syncReferenceData(adminUrl: string): Promise<void> {
         else await client.query('DELETE FROM fx_rule WHERE regime = $1', [regime]);
       }
     }
+    // Tham số pháp lý theo ngày hiệu lực (legal-params.json): upsert theo (mã, ngày hiệu lực), xóa dòng không còn trong tệp. Không dùng ON CONFLICT:
+    // khóa duy nhất (code, valid_from) có từ 0031, DB tạm dừng ở migration trước đó (kiểm thử backfill) vẫn đồng bộ được.
+    const params = loadLegalParams();
+    for (const r of params) {
+      await client.query(
+        `WITH u AS (UPDATE legal_param SET value = $3, valid_to = $4, source = $5 WHERE code = $1 AND valid_from = $2 RETURNING 1)
+         INSERT INTO legal_param(code, valid_from, value, valid_to, source) SELECT $1, $2, $3, $4, $5 WHERE NOT EXISTS (SELECT 1 FROM u)`,
+        [r.code, r.validFrom, JSON.stringify(r.value), r.validTo, r.source]);
+    }
+    await client.query(
+      'DELETE FROM legal_param WHERE (code, valid_from) NOT IN (SELECT a, b FROM unnest($1::text[], $2::date[]) AS t(a, b))',
+      [params.map((r) => r.code), params.map((r) => r.validFrom)]);
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { await client.end(); }
 }
