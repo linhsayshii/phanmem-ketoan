@@ -135,12 +135,13 @@ describe('Màn hình hóa đơn dịch vụ: thuế và bút toán xem trước 
     await vi.waitFor(() => expect(taxCol()[0]).toBe('100000'), slow);
     fireEvent.change(await screen.findByLabelText('Thuế ghi trên hóa đơn V10'), { target: { value: '100001' } });
     fireEvent.change(screen.getByLabelText('Số hóa đơn'), { target: { value: '0000123' } });
+    fireEvent.change(screen.getByLabelText('Mã số thuế'), { target: { value: '0109999999' } }); // MST in trên hóa đơn khác danh mục
     fireEvent.click(screen.getByRole('button', { name: /Lưu/ }));
     await vi.waitFor(() => expect(post()).toBeDefined(), slow);
     const json = (post()![1] as { json: Record<string, unknown> }).json;
     expect(json).toMatchObject({ voucherType: 'HDB', partyCode: 'KH001', currencyCode: 'VND',
       items: [{ description: 'Phí tư vấn', accountCode: '5113', amountCurrency: '1000000', discountCurrency: '0', taxCodes: ['V10'] }],
-      invoice: { invoiceNo: '0000123', invoiceGroupCode: '10', declaredTax: { V10: '100001' } } });
+      invoice: { invoiceNo: '0000123', invoiceGroupCode: '10', declaredTax: { V10: '100001' }, partyTaxCode: '0109999999', partyName: 'Công ty A', partyAddress: '12 Phố Huế, Hà Nội' } });
     expect((json['items'] as unknown[]).length).toBe(1); // dòng trống không gửi
     await vi.waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith({ to: '/chung-tu/$type/$id', params: { type: 'HDB', id: 'i1' } }), slow);
   }, 60_000);
@@ -185,8 +186,7 @@ describe('Màn hình hóa đơn dịch vụ: thuế và bút toán xem trước 
 
 // Giảm giá, trả lại: chọn hóa đơn gốc đã ghi sổ của cùng đối tượng, cùng chiều (GGB -> HDB, GGM -> HDM).
 describe.each([['GGB', 'HDB', 'HDB00001'], ['GGM', 'HDM', 'HDM00001']] as const)('Màn hình %s: hóa đơn gốc %s', (type, orig, origNo) => {
-  const vouchers = [{ id: 'v1', voucherType: orig, voucherNo: origNo, postingDate: '2026-03-05', partyName: 'Công ty A' },
-    { id: 'v2', voucherType: orig, voucherNo: `${orig}00002`, postingDate: '2026-03-06', partyName: 'Công ty B' }]; // cùng từ khóa tìm nhưng khác đối tượng: phải bị lọc
+  const vouchers = [{ id: 'v1', voucherType: orig, voucherNo: origNo, postingDate: '2026-03-05', partyName: 'Công ty A' }]; // máy chủ đã lọc theo partyCode: giao diện không lọc lại
   const invoiceRow = (id: number, no: string, taxCode = 'V10') => ({ id, formNo: null, serial: null, invoiceNo: no, invoiceDate: '2026-03-05', taxCode, adjustsInvoiceId: null });
   let origInvoices = [invoiceRow(11, '0000123')];
   afterEach(() => { mocks.api.mockReset(); });
@@ -207,7 +207,7 @@ describe.each([['GGB', 'HDB', 'HDB00001'], ['GGM', 'HDM', 'HDM00001']] as const)
   const openSelect = (placeholder: string) => fireEvent.mouseDown(screen.getByText(placeholder).closest('.ant-select')!.querySelector('.ant-select-selector')!);
   const pickVoucher = async () => {
     fireEvent.change(screen.getByLabelText('lookup-party'), { target: { value: 'KH001' } });
-    await vi.waitFor(() => expect(mocks.api).toHaveBeenCalledWith(`/api/vouchers?type=${orig}&state=posted&q=${encodeURIComponent('Công ty A')}&size=200`), slow);
+    await vi.waitFor(() => expect(mocks.api).toHaveBeenCalledWith(`/api/vouchers?type=${orig}&state=posted&partyCode=KH001&size=200`), slow);
     openSelect('Chọn chứng từ gốc');
     fireEvent.click(await screen.findByText(`${origNo} - 05/03/2026`, undefined, slow));
   };
@@ -217,10 +217,9 @@ describe.each([['GGB', 'HDB', 'HDB00001'], ['GGM', 'HDM', 'HDM00001']] as const)
     expect(await screen.findByText('Chọn đối tượng trước', undefined, slow)).toBeInTheDocument();
     expect(mocks.api.mock.calls.some(([p]) => String(p).startsWith('/api/vouchers'))).toBe(false);
     fireEvent.change(screen.getByLabelText('lookup-party'), { target: { value: 'KH001' } });
-    await vi.waitFor(() => expect(mocks.api).toHaveBeenCalledWith(`/api/vouchers?type=${orig}&state=posted&q=${encodeURIComponent('Công ty A')}&size=200`), slow);
+    await vi.waitFor(() => expect(mocks.api).toHaveBeenCalledWith(`/api/vouchers?type=${orig}&state=posted&partyCode=KH001&size=200`), slow);
     openSelect('Chọn chứng từ gốc');
     expect(await screen.findByText(`${origNo} - 05/03/2026`, undefined, slow)).toBeInTheDocument();
-    expect(screen.queryByText(`${orig}00002 - 06/03/2026`)).not.toBeInTheDocument();
   }, 60_000);
 
   it('chọn hóa đơn gốc một dòng: tự điền số hóa đơn; Lưu gửi voucherType và adjustsInvoiceId; bút toán xem trước ngược chiều', async () => {

@@ -1,0 +1,84 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import InvoiceRegisterPage, { registerRows } from '../src/pages/InvoiceRegister.js';
+
+const apiMock = vi.hoisted(() => vi.fn());
+const auth = vi.hoisted(() => ({ canPrint: true }));
+vi.mock('../src/auth.js', () => ({ useAuth: () => ({ me: { userId: 'u', tenantId: 't', sensitive: [] }, can: (p: string) => p !== 'report.print' || auth.canPrint }) }));
+vi.mock('../src/api/client.js', async (orig) => ({ ...(await orig<Record<string, unknown>>()), api: apiMock }));
+
+interface GridColumn { headerName?: string; field?: string; valueGetter?: (p: { data: unknown }) => unknown; valueFormatter?: (p: { value: unknown }) => string }
+vi.mock('@kt/ui', async () => {
+  const { useState } = await import('react');
+  return {
+    KeyboardGrid: ({ rows, columns }: { rows: Record<string, unknown>[]; columns: GridColumn[] }) => (
+      <div data-testid="grid">{rows.map((r, i) => (
+        <div key={i} data-testid="row">
+          {columns.map((c) => { const raw = c.valueGetter ? c.valueGetter({ data: r }) : r[c.field ?? '']; return <span key={c.headerName} data-col={c.headerName}>{c.valueFormatter ? c.valueFormatter({ value: raw }) : String(raw ?? '')}</span>; })}
+        </div>))}</div>),
+    useRememberedFilter: (_key: string, initial: unknown) => useState(initial),
+  };
+});
+
+const line = (o: Record<string, unknown> = {}) => ({ stt: 1, groupCode: '01', groupName: 'HHDV khấu trừ', formNo: '01GTKT', serial: 'AA/26E', invoiceNo: '0000123', invoiceDate: '2026-03-05', partyName: 'Công ty A', partyTaxCode: '0100109106',
+  baseAmount: '1000000', taxRate: '10', taxAmount: '100000', voucherId: 'v1', voucherNo: 'HDM00001', voucherType: 'HDM', kind: 'original', ...o });
+const register = { label: 'Tháng 3/2026', groups: [{ code: '01', name: 'HHDV khấu trừ', rows: [line(), line({ stt: 2, invoiceNo: '0000124', baseAmount: '-500000', taxAmount: '-50000', kind: 'reversal' })], baseTotal: '500000', taxTotal: '50000' }],
+  totals: { baseAmount: '500000', taxAmount: '50000' }, otherTaxes: { rows: [line({ stt: 1, invoiceNo: 'NK1', taxRate: null, baseAmount: '2000000', taxAmount: '200000' })], baseTotal: '2000000', taxTotal: '200000' } };
+const reconcile = { purchaseTaxInvoices: '50000', debit1331: '60000', saleTaxInvoices: '0', credit33311: '0',
+  differences: [{ voucherId: 'v9', voucherNo: 'PKT00009', voucherType: 'PKT', direction: 'purchase', invoiceTax: '0', ledgerTax: '10000' }] };
+
+const calls = () => apiMock.mock.calls.map((c) => String(c[0]));
+const lastCall = (path: string) => { const u = calls().filter((c) => c.startsWith(path)).at(-1); return u ? new URLSearchParams(u.split('?')[1]) : undefined; };
+const renderPage = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><InvoiceRegisterPage /></QueryClientProvider>);
+const cell = (row: HTMLElement, col: string) => row.querySelector(`[data-col="${col}"]`)?.textContent;
+let vatPeriod = 'month';
+
+describe('Bảng kê hóa đơn', () => {
+  beforeEach(() => {
+    auth.canPrint = true; vatPeriod = 'month';
+    apiMock.mockImplementation(async (url: string) => (url === '/api/settings' ? { vat_period: vatPeriod } : url.startsWith('/api/tax/reconcile') ? reconcile : register));
+  });
+  afterEach(() => { apiMock.mockReset(); });
+
+  it('Mua vào: gọi đúng chiều và kỳ, hiện dòng nhóm, hóa đơn, cộng nhóm, tổng cộng và thuế nhập khẩu tách riêng', async () => {
+    renderPage();
+    const rows = await screen.findAllByTestId('row');
+    const q = lastCall('/api/tax/invoices')!;
+    expect([q.get('direction'), q.get('periodKind'), q.get('year')]).toEqual(['purchase', 'month', String(new Date().getFullYear())]);
+    expect(rows.map((r) => cell(r, 'Tên người bán/mua'))).toEqual(['Nhóm 01 – HHDV khấu trừ', 'Công ty A', 'Công ty A', 'Cộng nhóm 01', 'Tổng cộng', expect.stringContaining('Thuế nhập khẩu'), 'Công ty A', 'Cộng']);
+    expect([cell(rows[1]!, 'Số hóa đơn'), cell(rows[1]!, 'Thuế suất'), cell(rows[1]!, 'Thuế GTGT'), cell(rows[1]!, 'Ngày')]).toEqual(['0000123', '10%', '100.000', '05/03/2026']);
+    expect(cell(rows[2]!, 'Số chứng từ')).toBe('HDM00001 (đảo)');
+    expect([cell(rows[3]!, 'Giá trị chưa thuế'), cell(rows[4]!, 'Thuế GTGT')]).toEqual(['500.000', '50.000']);
+  });
+
+  it('Bán ra gọi direction=sale; công ty kê khai theo quý thì chỉ gọi kỳ quý', async () => {
+    vatPeriod = 'quarter';
+    renderPage();
+    await userEvent.click(screen.getByRole('tab', { name: 'Bán ra' }));
+    await screen.findAllByTestId('row');
+    const q = lastCall('/api/tax/invoices?direction=sale')!;
+    expect(q.get('periodKind')).toBe('quarter');
+    expect(calls().some((c) => c.includes('periodKind=month'))).toBe(false);
+  });
+
+  it('Đối chiếu: hiện bốn số tổng và chứng từ lệch', async () => {
+    renderPage();
+    await userEvent.click(screen.getByRole('tab', { name: 'Đối chiếu' }));
+    const rows = await screen.findAllByTestId('row');
+    expect(screen.getByText(/Phát sinh Nợ TK 1331/).textContent).toContain('60.000');
+    expect([cell(rows[0]!, 'Số chứng từ'), cell(rows[0]!, 'Thuế trên hóa đơn'), cell(rows[0]!, 'Thuế trên sổ cái'), cell(rows[0]!, 'Chênh lệch')]).toEqual(['PKT00009', '0', '10.000', '10.000']);
+  });
+
+  it('Nút Xuất Excel chỉ hiện khi có quyền in', async () => {
+    auth.canPrint = false;
+    renderPage();
+    await screen.findAllByTestId('row');
+    expect(screen.queryByRole('button', { name: 'Xuất Excel' })).toBeNull();
+  });
+
+  it('registerRows: kỳ không có hóa đơn thì không có dòng tổng', () => {
+    expect(registerRows({ ...register, groups: [], otherTaxes: { rows: [], baseTotal: '0', taxTotal: '0' } } as never)).toEqual([]);
+  });
+});

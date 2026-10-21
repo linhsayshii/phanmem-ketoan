@@ -59,7 +59,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
   const [reverse, setReverse] = useState<{ date: Dayjs; description: string } | null>(null);
   const [dirty, setDirty] = useState(false);
   const [idempotencyKey] = useState(() => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`); // bấm lưu hai lần liền khi tạo mới không sinh hai chứng từ
-  const live = useRef({ declared, adjusts }); live.current = { declared, adjusts }; // đọc sau khi chờ ô đang sửa chốt giá trị
+  const live = useRef({ declared, adjusts, party }); live.current = { declared, adjusts, party }; // đọc sau khi chờ ô đang sửa chốt giá trị
 
   const v = useQuery({ queryKey: ['invoice', id], queryFn: () => api<InvoiceDoc>(`/api/invoices/${id}`), enabled: !isNew });
   const defsQ = useTaxDefs(); const groupsQ = useInvoiceGroups();
@@ -97,7 +97,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
       formNo: inv?.formNo ?? '', serial: inv?.serial ?? '', invoiceNo: inv?.invoiceNo ?? '', invoiceDate: dayjs(inv?.invoiceDate ?? d.documentDate), ...(inv?.invoiceGroupCode ? { invoiceGroupCode: inv.invoiceGroupCode } : {}) });
     const loaded = d.items.map(rowOf); for (const r of loaded) snaps.current.set(r, snapOf(r));
     setAll(d.state === 'draft' ? [...loaded, emptyInvRow()] : loaded);
-    setParty(d.partyCode ? { code: d.partyCode, name: d.partyName ?? '', taxCode: inv?.partyTaxCode ?? '', address: inv?.partyAddress ?? '', defaultAccount: undefined } : null);
+    setParty(d.partyCode ? { code: d.partyCode, name: inv?.partyName ?? d.partyName ?? '', taxCode: inv?.partyTaxCode ?? '', address: inv?.partyAddress ?? '', defaultAccount: undefined } : null);
     setAdjusts(inv?.adjustsInvoiceId ?? null); setOrigVoucher(null); setOrigInvoices([]);
     setDeclared({}); seeded.current = false; setDirty(false);
   }, [v.data, form, setAll]);
@@ -173,7 +173,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
     for (const [c, s] of Object.entries(declaredTax)) if (!VND_AMOUNT_RE.test(s)) throw new Error(`Thuế ghi trên hóa đơn ${c}: nhập số tiền nguyên đồng`);
     return { voucherType: eff.code, postingDate: iso(f.postingDate), documentDate: iso(f.documentDate), partyCode: f.partyCode ?? '', currencyCode: f.currencyCode ?? 'VND',
       ...((f.currencyCode ?? 'VND') !== 'VND' && f.fxRate ? { fxRate: f.fxRate } : {}), ...(f.dueDate ? { dueDate: iso(f.dueDate) } : {}), description: text(f.description), items,
-      invoice: { formNo: text(f.formNo), serial: text(f.serial), invoiceNo: (f.invoiceNo ?? '').trim(), invoiceDate: iso(f.invoiceDate), invoiceGroupCode: f.invoiceGroupCode ?? '',
+      invoice: { ...(live.current.party ? { partyTaxCode: live.current.party.taxCode.trim(), partyName: live.current.party.name.trim(), partyAddress: live.current.party.address.trim() } : {}), formNo: text(f.formNo), serial: text(f.serial), invoiceNo: (f.invoiceNo ?? '').trim(), invoiceDate: iso(f.invoiceDate), invoiceGroupCode: f.invoiceGroupCode ?? '',
         ...(refund ? { adjustsInvoiceId: live.current.adjusts } : {}), ...(Object.keys(declaredTax).length ? { declaredTax } : {}) } };
   };
   // Lưu bản đang nhập; ghi sổ (F9) lưu trước rồi mới ghi để không ghi sổ bản cũ trên máy chủ.
@@ -249,8 +249,8 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
   };
   // Hóa đơn gốc của giảm giá, trả lại: chỉ hóa đơn đã ghi sổ của cùng đối tượng, cùng chiều (GGB -> HDB, GGM -> HDM).
   const origType = eff.code === 'GGB' ? 'HDB' : 'HDM';
-  const origList = useQuery({ queryKey: ['orig-invoices', origType, party?.name], enabled: refund && editable && !!party?.name,
-    queryFn: async () => (await api<{ rows: ListRow[] }>(`/api/vouchers?type=${origType}&state=posted&q=${encodeURIComponent(party!.name)}&size=200`)).rows.filter((r) => r.partyName === party!.name) });
+  const origList = useQuery({ queryKey: ['orig-invoices', origType, party?.code], enabled: refund && editable && !!party?.code,
+    queryFn: async () => (await api<{ rows: ListRow[] }>(`/api/vouchers?type=${origType}&state=posted&partyCode=${encodeURIComponent(party!.code)}&size=200`)).rows });
   const pickOrig = async (vid: string) => {
     try {
       const d = await api<InvoiceDoc>(`/api/invoices/${vid}`);
@@ -296,9 +296,9 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
       <Col span={5}><Form.Item label="Số hóa đơn" name="invoiceNo" rules={[{ required: true, whitespace: true, message: 'Nhập số hóa đơn' }]}><Input maxLength={30} /></Form.Item></Col>
       <Col span={5}><Form.Item label="Ngày hóa đơn" name="invoiceDate" rules={[{ required: true, message: 'Nhập ngày hóa đơn' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
       <Col span={6}><Form.Item label="Nhóm kê khai (F4)" name="invoiceGroupCode" rules={[{ required: true, message: 'Chọn nhóm kê khai' }]}><LookupSelect catalog="invoice_group" fetcher={groupsOf} /></Form.Item></Col>
-      <Col span={6}><Form.Item label="Mã số thuế" htmlFor="party-tax-code"><Input id="party-tax-code" readOnly value={party?.taxCode ?? ''} /></Form.Item></Col>
-      <Col span={8}><Form.Item label="Tên đơn vị" htmlFor="party-name"><Input id="party-name" readOnly value={party?.name ?? ''} /></Form.Item></Col>
-      <Col span={10}><Form.Item label="Địa chỉ" htmlFor="party-address"><Input id="party-address" readOnly value={party?.address ?? ''} /></Form.Item></Col>
+      <Col span={6}><Form.Item label="Mã số thuế" htmlFor="party-tax-code"><Input id="party-tax-code" disabled={!editable || !party} value={party?.taxCode ?? ''} onChange={(e) => party && setParty({ ...party, taxCode: e.target.value })} /></Form.Item></Col>
+      <Col span={8}><Form.Item label="Tên đơn vị" htmlFor="party-name"><Input id="party-name" disabled={!editable || !party} value={party?.name ?? ''} onChange={(e) => party && setParty({ ...party, name: e.target.value })} /></Form.Item></Col>
+      <Col span={10}><Form.Item label="Địa chỉ" htmlFor="party-address"><Input id="party-address" disabled={!editable || !party} value={party?.address ?? ''} onChange={(e) => party && setParty({ ...party, address: e.target.value })} /></Form.Item></Col>
       {refund && <>
         <Col span={10}><Form.Item label="Hóa đơn gốc" required validateStatus={adjusts == null && dirty ? 'warning' : ''} help={adjusts == null && dirty ? 'Chọn hóa đơn đã ghi sổ của cùng đối tượng' : undefined}>
           <Select showSearch optionFilterProp="label" placeholder={party ? 'Chọn chứng từ gốc' : 'Chọn đối tượng trước'} disabled={!editable || !party} value={origVoucher} loading={origList.isFetching} onChange={(vid) => void pickOrig(vid)}
