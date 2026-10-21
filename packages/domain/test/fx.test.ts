@@ -24,11 +24,11 @@ describe('quy đổi ngoại tệ', () => {
     expect(proportionalVnd('1', '3', '3.0000')).toBe('1');
     expect(() => proportionalVnd('100', '0', '1')).toThrow();
   });
-  it('proportionalVnd: chia nhiều lần cộng lại đúng bằng số dư VND', () => {
-    // số dư nguyên tệ chia thành các phần (4 chữ số lẻ); mỗi lần lấy một phần của số dư còn lại, lần cuối lấy hết
+  it('proportionalVnd: mỗi lần lấy nằm trong số dư và lệch phép chia chính xác không quá 1 đồng; chia nhiều lần cộng lại đúng bằng số dư VND', () => {
+    // số dư nguyên tệ chia thành các phần (4 chữ số lẻ, mỗi phần tới 10^9 đơn vị); mỗi lần lấy một phần của số dư còn lại, lần cuối lấy hết
     const arb = fc.record({
       residualVnd: fc.bigInt({ min: 0n, max: 10n ** 15n }),
-      parts: fc.array(fc.bigInt({ min: 1n, max: 10n ** 10n }), { minLength: 1, maxLength: 12 }),
+      parts: fc.array(fc.bigInt({ min: 1n, max: 10n ** 13n }), { minLength: 1, maxLength: 12 }),
     });
     fc.assert(fc.property(arb, ({ residualVnd, parts }) => {
       const cur = (x: bigint) => D(x.toString()).div(10_000).toFixed(4);
@@ -36,6 +36,9 @@ describe('quy đổi ngoại tệ', () => {
       const taken: string[] = [];
       for (const p of parts) {
         const v = proportionalVnd(restVnd, cur(restCur), cur(p));
+        const exact = D(cur(p)).times(restVnd).div(cur(restCur)); // part × số dư VND / số dư nguyên tệ, không làm tròn tỷ giá
+        expect(D(v).gte(0) && D(v).lte(restVnd), `lấy ${v} ngoài [0, ${restVnd}]`).toBe(true);
+        expect(D(v).minus(exact).abs().lte(1), `lấy ${v}, chính xác ${exact.toString()}`).toBe(true);
         taken.push(v); restVnd = D(restVnd).minus(v).toFixed(0); restCur -= p;
       }
       expect(restCur).toBe(0n);

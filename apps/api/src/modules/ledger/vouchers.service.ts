@@ -240,7 +240,7 @@ const failIfSystem = (sourceDocType: string | null) => {
   const msg = sourceDocType ? SYSTEM_MSG[sourceDocType] : undefined;
   if (msg) throw new AppError('VOUCHER_SYSTEM_GENERATED', msg, 409);
 };
-async function assertNotSystemGenerated(trx: Trx, id: string) {
+export async function assertNotSystemGenerated(trx: Trx, id: string) {
   failIfSystem((await trx.selectFrom('voucher').select('source_doc_type').where('id', '=', id).executeTakeFirst())?.source_doc_type ?? null);
 }
 

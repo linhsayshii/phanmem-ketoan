@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'kysely';
-import { todayVn, toVnd } from '@kt/domain';
+import { toVnd } from '@kt/domain';
+import { AppError } from '../src/plugins/errors.js';
+import { fxRulesFor } from '../src/modules/cash/fx.js';
 import { createTestApp, type TestApp } from './helpers.js';
 import { setupLedgerTenant } from './invariants/helpers.js';
 
@@ -32,15 +34,20 @@ async function tenant() {
       lines: [L('6422', vnd, '0', { amountCurrency: qty }), L('1122', '0', vnd, { amountCurrency: `-${qty}` })] });
   };
   const run = (fiscalYear = 2026, periodNo = 1) => call('POST', '/api/fx/outflow-adjust', { fiscalYear, periodNo });
-  const runOk = async (periodNo = 1) => { const r = await run(2026, periodNo); expect(r.statusCode, r.body).toBe(200); return r.json() as { runId: number; voucherIds: string[]; reversedVoucherIds: string[] }; };
+  type RunOut = { runId: number; voucherIds: string[]; reversedVoucherIds: string[]; unchanged: boolean; stalePeriods: number[] };
+  const runOk = async (periodNo = 1) => { const r = await run(2026, periodNo); expect(r.statusCode, r.body).toBe(200); return r.json() as RunOut; };
   const voucher = async (id: string) => (await call('GET', `/api/vouchers/${id}`)).json();
   // Số dư VND và nguyên tệ của 1122 / 0022001 theo loại tiền cuối ngày `asOf`.
   const balance = async (asOf: string, currency = 'USD') => {
     const r = await call('GET', `/api/cash/balance?accountCode=1122&bankAccountNo=${BANK}&currency=${currency}&asOf=${asOf}`);
     expect(r.statusCode, r.body).toBe(200); const { balance: vnd, balanceCurrency } = r.json() as { balance: string; balanceCurrency: string }; return { balance: vnd, balanceCurrency };
   };
+  // Số phát sinh ròng (Nợ − Có) của tài khoản trong khoảng ngày, cộng thẳng từ dòng đã ghi sổ (cả chứng từ đã bị đảo và bản đảo).
+  const net = async (code: string, from: string, to: string) => (await sql<{ n: string }>`SELECT coalesce(sum(l.debit - l.credit), 0)::text AS n
+    FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
+    WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND a.code = ${code} AND l.posting_date BETWEEN ${from}::date AND ${to}::date`.execute(ctx.t.admin)).rows[0]!.n;
   const activeXq = async () => (await sql<{ id: string }>`SELECT id FROM voucher WHERE tenant_id = ${tenantId}::uuid AND voucher_type = 'XQ' AND state = 'posted' AND reversal_of_id IS NULL`.execute(ctx.t.admin)).rows.map((r) => r.id);
-  return { cookie, tenantId, call, cat, post, receive, pay, run, runOk, voucher, balance, activeXq };
+  return { cookie, tenantId, call, cat, post, receive, pay, run, runOk, voucher, balance, net, activeXq };
 }
 type Line = { accountCode: string; debit: string; credit: string; amountCurrency?: string; fxRate?: string; bankAccountNo?: string | null };
 const lines = (v: { lines: Line[] }) => v.lines.map((l) => [l.accountCode, l.debit, l.credit, l.amountCurrency, l.fxRate ?? null, l.bankAccountNo ?? null]);
@@ -92,7 +99,7 @@ describe('tỷ giá xuất quỹ bình quân di động', () => {
     await backdatedScenario(t);
     expect(await t.balance('2026-01-31')).toEqual({ balance: '25300000', balanceCurrency: '1000.0000' }); // trước điều chỉnh: lệch bình quân
     const r = await t.runOk();
-    expect(r.voucherIds).toHaveLength(1); expect(r.reversedVoucherIds).toEqual([]);
+    expect(r).toMatchObject({ reversedVoucherIds: [], unchanged: false, stalePeriods: [] }); expect(r.voucherIds).toHaveLength(1);
     const xq = await t.voucher(r.voucherIds[0]!);
     expect(xq).toMatchObject({ voucherType: 'XQ', state: 'posted', postingDate: '2026-01-31', sourceDocType: 'fx_outflow', currencyCode: 'VND' });
     expect(xq.voucherNo).toEqual(expect.any(String)); expect(xq.sourceDocId).toEqual(expect.any(String));
@@ -107,40 +114,59 @@ describe('tỷ giá xuất quỹ bình quân di động', () => {
     await t.pay('2026-02-10', '1000', '25266.667');
     expect((await t.runOk(2)).voucherIds).toEqual([]);
     expect(await t.balance('2026-02-28')).toEqual({ balance: '0', balanceCurrency: '0.0000' });
+    // chạy lại kỳ 1 sau khi đã chạy kỳ 2: báo kỳ 2 cần chạy lại
+    expect(await t.runOk(1)).toMatchObject({ voucherIds: [], reversedVoucherIds: [], unchanged: true, stalePeriods: [2] });
+  }, 60_000);
+
+  it('đảo giấy báo Có kỳ trước vào kỳ đang chạy: bản đảo giữ số đã ghi, không phải lần xuất quỹ', async () => {
+    const t = await tenant();
+    const wrong = await t.receive('2026-01-05', '1000', '25000');
+    await t.receive('2026-02-02', '1000', '25400');
+    expect((await t.call('POST', `/api/vouchers/${wrong.id}/reverse`, { postingDate: '2026-02-10' })).statusCode).toBe(201);
+    expect((await t.runOk(2)).voucherIds).toEqual([]);
+    expect(await t.balance('2026-02-28')).toEqual({ balance: '25400000', balanceCurrency: '1000.0000' });
   }, 60_000);
 
   it('chạy lại cùng kỳ đảo XQ cũ, chỉ còn một XQ hiệu lực; không lệch thì không sinh chứng từ', async () => {
     const t = await tenant();
     const backdated = await backdatedScenario(t);
     const first = await t.runOk();
+    // chạy lại không có gì đổi: không đảo, không sinh, chỉ ghi nhật ký
+    expect(await t.runOk()).toMatchObject({ voucherIds: [], reversedVoucherIds: [], unchanged: true });
+    expect(await t.activeXq()).toEqual(first.voucherIds);
+
+    // thêm phiếu chi 25/01: 100 USD ghi @25.000 = 2.500.000, đúng 100 × 25.266,667 = 2.526.667 → lệch cả kỳ −33.333 − 26.667 = −60.000
+    const extra = await t.pay('2026-01-25', '100', '25000');
     const second = await t.runOk();
-    expect(second.reversedVoucherIds).toEqual(first.voucherIds);
-    expect(second.voucherIds).toHaveLength(1); expect(second.voucherIds[0]).not.toBe(first.voucherIds[0]);
+    expect(second).toMatchObject({ reversedVoucherIds: first.voucherIds, unchanged: false }); expect(second.voucherIds).toHaveLength(1);
     expect(await t.activeXq()).toEqual(second.voucherIds);
     const old = await t.voucher(first.voucherIds[0]!);
     expect(old.state).toBe('reversed');
-    const rev = await t.voucher(old.reversedById);
-    expect(rev).toMatchObject({ voucherType: 'XQ', postingDate: '2026-01-31', sourceDocType: 'fx_outflow' }); // kỳ mở: đảo ngày cuối kỳ
-    expect(lines(await t.voucher(second.voucherIds[0]!))).toEqual(lines(await t.voucher(first.voucherIds[0]!)));
-    expect(await t.balance('2026-01-31')).toEqual({ balance: '25266667', balanceCurrency: '1000.0000' });
-    const runs = await sql<{ voucher_ids: string[]; reversed_voucher_ids: string[]; kind: string; period_no: number; run_date: string }>`
-      SELECT voucher_ids, reversed_voucher_ids, kind, period_no, run_date::text FROM fx_run WHERE tenant_id = ${t.tenantId}::uuid ORDER BY id`.execute(ctx.t.admin);
-    expect(runs.rows).toEqual([
-      { voucher_ids: first.voucherIds, reversed_voucher_ids: [], kind: 'outflow', period_no: 1, run_date: '2026-01-31' },
-      { voucher_ids: second.voucherIds, reversed_voucher_ids: first.voucherIds, kind: 'outflow', period_no: 1, run_date: '2026-01-31' }]);
+    expect(await t.voucher(old.reversedById)).toMatchObject({ voucherType: 'XQ', postingDate: '2026-01-31', sourceDocType: 'fx_outflow' }); // đảo ngày cuối kỳ
+    expect(lines(await t.voucher(second.voucherIds[0]!))).toEqual([['1122', '0', '60000', '0.0000', null, BANK], ['635', '60000', '0', '60000.0000', null, null]]);
+    expect(await t.balance('2026-01-31')).toEqual({ balance: '22740000', balanceCurrency: '900.0000' }); // 25.266.667 − 2.526.667
+    const runs = await sql<{ voucher_ids: string[]; reversed_voucher_ids: string[]; kind: string; period_no: number; run_date: string; params: { unchanged?: boolean } }>`
+      SELECT voucher_ids, reversed_voucher_ids, kind, period_no, run_date::text, params FROM fx_run WHERE tenant_id = ${t.tenantId}::uuid ORDER BY id`.execute(ctx.t.admin);
+    expect(runs.rows.map(({ params, ...r }) => ({ ...r, unchanged: params.unchanged }))).toEqual([
+      { voucher_ids: first.voucherIds, reversed_voucher_ids: [], kind: 'outflow', period_no: 1, run_date: '2026-01-31', unchanged: false },
+      { voucher_ids: [], reversed_voucher_ids: [], kind: 'outflow', period_no: 1, run_date: '2026-01-31', unchanged: true },
+      { voucher_ids: second.voucherIds, reversed_voucher_ids: first.voucherIds, kind: 'outflow', period_no: 1, run_date: '2026-01-31', unchanged: false }]);
 
-    // bỏ phiếu chi ghi lùi: bình quân trở về 25.200 = tỷ giá đã ghi ở phiếu chi 20/01 → chạy lại chỉ đảo XQ cũ, không sinh mới
-    const un = await t.call('POST', `/api/vouchers/${backdated.id}/unpost`);
-    expect(un.statusCode, un.body).toBe(200);
-    const third = await t.runOk();
-    expect(third).toMatchObject({ voucherIds: [], reversedVoucherIds: second.voucherIds });
+    // bỏ hai phiếu chi gây lệch: bình quân trở về 25.200 = tỷ giá đã ghi ở phiếu chi 20/01 → chạy lại chỉ đảo XQ cũ, không sinh mới
+    for (const v of [backdated, extra]) { const un = await t.call('POST', `/api/vouchers/${v.id}/unpost`); expect(un.statusCode, un.body).toBe(200); }
+    expect(await t.runOk()).toMatchObject({ voucherIds: [], reversedVoucherIds: second.voucherIds, unchanged: false });
     expect(await t.activeXq()).toEqual([]);
     expect(await t.balance('2026-01-31')).toEqual({ balance: '37800000', balanceCurrency: '1500.0000' });
 
     // phiếu chi sai tỷ giá rồi đảo trong cùng kỳ: cặp chứng từ triệt tiêu, không sinh lãi/lỗ tỷ giá
     const wrong = await t.pay('2026-01-25', '100', '26000');
-    expect((await t.call('POST', `/api/vouchers/${wrong.id}/reverse`, { postingDate: '2026-01-26' })).statusCode).toBe(201);
+    const r1 = await t.call('POST', `/api/vouchers/${wrong.id}/reverse`, { postingDate: '2026-01-26' });
+    expect(r1.statusCode).toBe(201);
     expect((await t.runOk()).voucherIds).toEqual([]);
+    // đảo tiếp bản đảo (27/01): bản đảo của bản đảo là lần chi thật 100 USD, ghi 2.600.000, đúng 100 × 25.200 = 2.520.000 → lãi 80.000
+    expect((await t.call('POST', `/api/vouchers/${r1.json().id}/reverse`, { postingDate: '2026-01-27' })).statusCode).toBe(201);
+    const again = await t.runOk();
+    expect(lines(await t.voucher(again.voucherIds[0]!))).toEqual([['1122', '80000', '0', '0.0000', null, BANK], ['515', '0', '80000', '-80000.0000', null, null]]);
   }, 60_000);
 
   it('hai loại tiền USD, EUR trên cùng tài khoản ngân hàng điều chỉnh riêng; lệch dương ghi Nợ tiền / Có 515', async () => {
@@ -164,7 +190,7 @@ describe('tỷ giá xuất quỹ bình quân di động', () => {
     expect(await t.balance('2026-01-31', 'EUR')).toEqual({ balance: '44000000', balanceCurrency: '1600.0000' }); // 1.600 × 27.500
   }, 60_000);
 
-  it('XQ không bỏ ghi sổ/hủy được qua route chung', async () => {
+  it('XQ không bỏ ghi sổ/hủy/đảo được qua route chung', async () => {
     const t = await tenant();
     await backdatedScenario(t);
     const [id] = (await t.runOk()).voucherIds;
@@ -172,22 +198,33 @@ describe('tỷ giá xuất quỹ bình quân di động', () => {
       const r = await t.call('POST', `/api/vouchers/${id}/${act}`);
       expect(r.statusCode, act).toBe(409); expect(r.json().error.code, act).toBe('VOUCHER_SYSTEM_GENERATED');
     }
+    const rev = await t.call('POST', `/api/vouchers/${id}/reverse`, { postingDate: '2026-02-01' });
+    expect(rev.statusCode).toBe(409); expect(rev.json().error.code).toBe('VOUCHER_SYSTEM_GENERATED');
     const manual = await t.call('POST', '/api/vouchers', { voucherType: 'XQ', postingDate: '2026-01-31', documentDate: '2026-01-31', lines: [L('635', '1'), L('1121', '0', '1')] });
     expect(manual.statusCode).toBe(409); expect(manual.json().error.code).toBe('VOUCHER_TYPE_SYSTEM');
     expect((await t.voucher(id!)).state).toBe('posted');
   }, 60_000);
 
-  it('kỳ khóa mềm: đảo XQ cũ ngày hôm nay, XQ mới vẫn ngày cuối kỳ; kỳ khóa cứng → 409 PERIOD_HARD_LOCKED; phương pháp đích danh không chạy', async () => {
+  it('kỳ khóa mềm: đảo XQ cũ và ghi XQ mới cùng ngày cuối kỳ; kỳ khóa cứng → 409 PERIOD_HARD_LOCKED; phương pháp đích danh không chạy', async () => {
     const t = await tenant();
     await backdatedScenario(t);
     const first = await t.runOk();
     const lock = async (level: string, no = 1) => { const r = await t.call('POST', `/api/periods/2026/${no}/lock`, { level }); expect(r.statusCode, r.body).toBe(200); };
     await lock('soft');
+    // chạy lại không đổi: không chạm chứng từ của kỳ đã khóa
+    expect(await t.runOk()).toMatchObject({ voucherIds: [], reversedVoucherIds: [], unchanged: true });
+    expect(await t.balance('2026-01-31')).toEqual({ balance: '25266667', balanceCurrency: '1000.0000' });
+    expect(await t.net('635', '2026-01-01', '2026-01-31')).toBe('33333');
+    // ghi lùi phiếu chi vào kỳ khóa mềm (có quyền ghi lùi) rồi chạy lại: đảo XQ cũ ngày 31/01, XQ mới ngày 31/01, tháng 1 chỉ còn một khoản điều chỉnh
+    await t.pay('2026-01-25', '100', '25000');
     const second = await t.runOk();
-    const rev = await t.voucher((await t.voucher(first.voucherIds[0]!)).reversedById);
-    expect(rev.postingDate).toBe(todayVn() > '2026-01-31' ? todayVn() : '2026-01-31');
+    expect(second.reversedVoucherIds).toEqual(first.voucherIds);
+    expect((await t.voucher((await t.voucher(first.voucherIds[0]!)).reversedById)).postingDate).toBe('2026-01-31');
     expect((await t.voucher(second.voucherIds[0]!)).postingDate).toBe('2026-01-31');
     expect(await t.activeXq()).toEqual(second.voucherIds);
+    expect(await t.balance('2026-01-31')).toEqual({ balance: '22740000', balanceCurrency: '900.0000' });
+    expect(await t.net('635', '2026-01-01', '2026-01-31')).toBe('60000');
+    expect(await t.net('635', '2026-02-01', '2026-12-31')).toBe('0');
 
     await lock('hard', 0); await lock('hard'); // khóa cứng theo thứ tự, kỳ 0 (số dư đầu kỳ) trước
     const hard = await t.run();
@@ -200,6 +237,26 @@ describe('tỷ giá xuất quỹ bình quân di động', () => {
     const specific = await t.run(2026, 2);
     expect(specific.statusCode).toBe(409); expect(specific.json().error.code).toBe('FX_OUTFLOW_METHOD_SPECIFIC');
     expect((await t.call('PUT', '/api/settings', { fx_outflow_method: 'fifo' })).statusCode).toBe(400); // FIFO không làm
+  }, 60_000);
+
+  it('chế độ chưa có tài khoản lãi/lỗ tỷ giá trong fx-rules.json → 409 FX_RULES_MISSING', () => {
+    expect(fxRulesFor('TT133')).toMatchObject({ gainAccount: '515', lossAccount: '635' });
+    let err: unknown;
+    try { fxRulesFor('TT58'); } catch (e) { err = e; }
+    expect(err).toBeInstanceOf(AppError);
+    expect(err).toMatchObject({ code: 'FX_RULES_MISSING', status: 409 });
+  });
+
+  it('đổi chế độ TT133 sang TT99: tỷ giá xuất quỹ theo tài khoản ngân hàng chỉ cộng dòng của chế độ năm đang xem', async () => {
+    const t = await tenant();
+    await t.receive('2026-01-05', '1000', '25000'); // năm 2026 TT133, TK 1122
+    const fy = await t.call('POST', '/api/fiscal-years', { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT99' });
+    expect(fy.statusCode, fy.body).toBe(201);
+    // năm 2027 TT99: cùng tài khoản ngân hàng chuyển sang TK 112; dòng TK 1122 của năm cũ không được cộng vào số dư năm mới
+    await sql`UPDATE bank_account SET gl_account_code = '112' WHERE tenant_id = ${t.tenantId}::uuid AND account_no = ${BANK}`.execute(ctx.t.admin);
+    const r = await t.call('GET', `/api/fx/outflow-rate?accountCode=112&bankAccountNo=${BANK}&currency=USD&date=2027-01-10`);
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json()).toEqual({ rate: null, balance: '0', balanceCurrency: '0.0000' });
   }, 60_000);
 });
 

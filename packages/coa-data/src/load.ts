@@ -51,11 +51,9 @@ export function loadReportTemplates(opts: { onlyComplete?: boolean } = {}): Repo
   return out;
 }
 
-// Tài khoản lãi/lỗ chênh lệch tỷ giá theo chế độ (data/tax/fx-rules.json, mỗi chế độ kèm nguồn văn bản). Task chênh lệch tỷ giá đối trừ dùng lại; đánh giá lại ngoại tệ bổ sung khóa riêng.
+// Tài khoản lãi/lỗ chênh lệch tỷ giá theo chế độ (data/tax/fx-rules.json, mỗi chế độ kèm nguồn văn bản); chế độ chưa có trong tệp thì undefined
+// (API đổi thành 409 FX_RULES_MISSING qua fxRulesFor). Task chênh lệch tỷ giá đối trừ dùng lại; đánh giá lại ngoại tệ bổ sung khóa riêng.
 export interface FxRules { gainAccount: string; lossAccount: string; source: string }
-export function loadFxRules(regime: Regime): FxRules {
-  const all = JSON.parse(readFileSync(dataPath('tax', 'fx-rules.json'), 'utf8')) as Partial<Record<Regime, FxRules>>;
-  const r = all[regime];
-  if (!r) throw new Error(`fx-rules.json: chưa có quy tắc tỷ giá cho chế độ ${regime}`);
-  return r;
+export function loadFxRules(regime: Regime): FxRules | undefined {
+  return (JSON.parse(readFileSync(dataPath('tax', 'fx-rules.json'), 'utf8')) as Partial<Record<Regime, FxRules>>)[regime];
 }

@@ -1,8 +1,8 @@
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
-import { loadFxRules } from '@kt/coa-data';
-import { avgRate, D, formatVnDate, proportionalVnd, todayVn, ZERO, type Decimal, type Regime } from '@kt/domain';
+import { loadFxRules, type FxRules } from '@kt/coa-data';
+import { avgRate, D, formatVnDate, proportionalVnd, ZERO, type Decimal, type Regime } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { getSettings, type Settings } from '../core/settings.js';
 import * as S from '../ledger/vouchers.service.js';
@@ -34,6 +34,13 @@ export async function fxRunSourceId(trx: Trx, tenantId: string, runId: number): 
   return (await sql<{ id: string }>`SELECT md5(${`${tenantId}:fx_run:${runId}`})::uuid::text AS id`.execute(trx)).rows[0]!.id;
 }
 
+// Tài khoản lãi/lỗ tỷ giá của chế độ (fx-rules.json); chế độ chưa có quy tắc thì 409. Chênh lệch tỷ giá đối trừ và đánh giá lại dùng chung.
+export function fxRulesFor(regime: string): FxRules {
+  const r = loadFxRules(regime as Regime);
+  if (!r) throw new AppError('FX_RULES_MISSING', `Chưa khai báo tài khoản lãi, lỗ chênh lệch tỷ giá cho chế độ kế toán ${regime}`, 409);
+  return r;
+}
+
 export const adjustInput = z.object({ fiscalYear: z.number().int(), periodNo: z.number().int().min(1).max(15) });
 interface TraversalRow { accountId: number; accountCode: string; bankAccountId: number | null; bankAccountNo: string | null; currency: string; inPeriod: boolean; isOut: boolean; debit: string; credit: string; cur: string }
 interface Group { accountCode: string; bankAccountNo: string | null; currency: string; vnd: Decimal; cur: Decimal; diff: Decimal }
@@ -41,7 +48,7 @@ interface Group { accountCode: string; bankAccountNo: string | null; currency: s
 // Tính lại tỷ giá xuất quỹ bình quân di động của kỳ: duyệt dòng đã ghi sổ của từng (tài khoản tiền, tài khoản ngân hàng, loại tiền ngoại tệ) đến hết kỳ,
 // theo (ngày, Nợ trước Có, lúc ghi sổ, dòng). Dòng Có trong kỳ có nguyên tệ là lần xuất: giá trị đúng = nguyên tệ × bình quân tại lúc xuất; dòng Có kỳ trước
 // và dòng chỉ VND (nguyên tệ 0: điều chỉnh, đánh giá lại) giữ số đã ghi. Tổng lệch (đã ghi − đúng) khác 0 thì sinh một chứng từ XQ ngày cuối kỳ, mỗi nhóm một cặp dòng
-// với 515/635. Chạy lại cùng kỳ đảo XQ của các lần trước rồi sinh mới.
+// với 515/635. Chạy lại cùng kỳ đảo XQ của các lần trước (cùng ngày cuối kỳ) rồi sinh mới; kết quả không đổi thì không chạm sổ.
 export async function runOutflowAdjust(trx: Trx, ctx: { tenantId: string; userId: string; canBackdate: boolean }, input: z.infer<typeof adjustInput>) {
   await sql`SELECT pg_advisory_xact_lock(hashtext('fx_outflow'), hashtext(${ctx.tenantId}::text))`.execute(trx);
   if ((await getSettings(trx, ctx.tenantId)).fx_outflow_method !== 'moving_average')
@@ -55,25 +62,23 @@ export async function runOutflowAdjust(trx: Trx, ctx: { tenantId: string; userId
     await sql`SELECT set_config('app.override_soft_lock', 'on', true)`.execute(trx);
   }
 
-  // Đảo XQ còn hiệu lực của các lần chạy trước: kỳ mở đảo ngày cuối kỳ; kỳ khóa sổ đảo ngày hôm nay (không trước ngày chứng từ gốc).
-  const today = todayVn();
-  const reverseDate = p.status === 'open' || today < p.date_to ? p.date_to : today;
+  // XQ còn hiệu lực của các lần chạy trước cùng kỳ.
   const prev = (await sql<{ id: string }>`SELECT v.id FROM fx_run r CROSS JOIN LATERAL unnest(r.voucher_ids) AS u(id) JOIN voucher v ON v.id = u.id
     WHERE r.kind = 'outflow' AND r.fiscal_year = ${fy} AND r.period_no = ${pn} AND v.state = 'posted' ORDER BY r.id, v.id`.execute(trx)).rows.map((r) => r.id);
-  for (const id of prev) await S.reverseVoucher(trx, id, { postingDate: reverseDate });
 
   const rows = (await sql<TraversalRow>`
     SELECT l.account_id AS "accountId", a.code AS "accountCode", l.bank_account_id AS "bankAccountId", ba.account_no AS "bankAccountNo", l.currency_code AS currency,
-           (v.fiscal_year = ${fy} AND v.period_no = ${pn}) AS "inPeriod", (l.credit > 0 OR (l.debit = 0 AND l.amount_currency < 0)) AS "isOut",
+           (v.fiscal_year = ${fy} AND v.period_no = ${pn} AND (v.reversal_of_id IS NULL OR o.posting_date >= ${p.date_from}::date)) AS "inPeriod", (l.credit > 0 OR (l.debit = 0 AND l.amount_currency < 0)) AS "isOut",
            l.debit::text AS debit, l.credit::text AS credit, l.amount_currency::text AS cur
     FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id LEFT JOIN bank_account ba ON ba.id = l.bank_account_id
     LEFT JOIN voucher o ON o.id = v.reversal_of_id LEFT JOIN voucher r ON r.id = v.reversed_by_id
     WHERE v.state IN ('posted', 'reversed') AND l.posting_date <= ${p.date_to}::date AND a.regime = ${p.regime} AND a.subledger_kind IN ('cash', 'bank') AND l.currency_code <> 'VND'
       -- XQ của chính kỳ này và bản đảo của chúng (bản đảo có thể nằm ở kỳ sau khi kỳ này đã khóa sổ)
       AND NOT coalesce(v.source_doc_type = 'fx_outflow' AND coalesce(o.fiscal_year, v.fiscal_year) = ${fy} AND coalesce(o.period_no, v.period_no) = ${pn}, false)
-      -- chứng từ trong kỳ đã bị đảo trước hết kỳ: gốc và bản đảo triệt tiêu, không phải lần xuất quỹ
-      AND NOT coalesce(o.posting_date >= ${p.date_from}::date, false)
-      AND NOT coalesce(r.posting_date <= ${p.date_to}::date AND v.posting_date >= ${p.date_from}::date, false)
+      -- chứng từ gốc trong kỳ đã bị đảo trước hết kỳ: gốc và bản đảo triệt tiêu, không phải lần xuất quỹ. Chỉ ghép cặp với chứng từ gốc:
+      -- đảo của một bản đảo là lần thu/chi thật, vẫn duyệt. Bản đảo của chứng từ kỳ trước giữ số đã ghi ("inPeriod" sai).
+      AND NOT coalesce(o.reversal_of_id IS NULL AND o.posting_date >= ${p.date_from}::date, false)
+      AND NOT coalesce(v.reversal_of_id IS NULL AND r.posting_date <= ${p.date_to}::date AND v.posting_date >= ${p.date_from}::date, false)
     ORDER BY l.account_id, l.bank_account_id NULLS FIRST, l.currency_code, l.posting_date, "isOut", v.posted_at, v.id, l.line_no`.execute(trx)).rows;
 
   // shortcut: duyệt từng dòng cả lịch sử của nhóm; dữ liệu lớn thì cộng gộp các dòng trước kỳ (đều giữ số đã ghi) thành số dư đầu kỳ rồi chỉ duyệt dòng trong kỳ.
@@ -90,7 +95,7 @@ export async function runOutflowAdjust(trx: Trx, ctx: { tenantId: string; userId
   }
 
   const adjust = [...groups.values()].filter((g) => !g.diff.isZero());
-  const rules = adjust.length ? loadFxRules(p.regime as Regime) : undefined; // chỉ cần khi có điều chỉnh
+  const rules = adjust.length ? fxRulesFor(p.regime) : undefined; // chỉ cần khi có điều chỉnh
   const summary = adjust.map((g) => ({ accountCode: g.accountCode, bankAccountNo: g.bankAccountNo, currency: g.currency, difference: g.diff.toFixed(0) }));
   // Lệch dương: đã ghi Có tiền nhiều hơn giá trị đúng, ghi Nợ lại tiền / Có lãi tỷ giá; lệch âm: Nợ lỗ tỷ giá / Có tiền.
   const lines = adjust.flatMap((g) => {
@@ -102,15 +107,28 @@ export async function runOutflowAdjust(trx: Trx, ctx: { tenantId: string; userId
     ];
   });
 
-  const run = await trx.insertInto('fx_run').values({ tenant_id: ctx.tenantId, kind: 'outflow', fiscal_year: fy, period_no: pn, run_date: p.date_to, reversed_voucher_ids: prev,
-    params: JSON.stringify({ groups: summary }), created_by: ctx.userId }).returning('id').executeTakeFirstOrThrow();
+  // Kết quả trùng hệt XQ đang hiệu lực (cùng nhóm, cùng số) thì không đảo, không sinh: chạy lại không đổi không chạm sổ của kỳ (kể cả kỳ đã khóa sổ).
+  const keyOf = (x: { code: string; bankNo?: string | null | undefined; currency: string; debit: string; credit: string }) => `${x.code}|${x.bankNo ?? ''}|${x.currency}|${x.debit}|${x.credit}`;
+  const active = prev.length ? (await sql<{ code: string; bankNo: string | null; currency: string; debit: string; credit: string }>`
+    SELECT a.code, ba.account_no AS "bankNo", l.currency_code AS currency, l.debit::text AS debit, l.credit::text AS credit
+    FROM voucher_line l JOIN account a ON a.id = l.account_id LEFT JOIN bank_account ba ON ba.id = l.bank_account_id WHERE l.voucher_id = ANY(${prev}::uuid[])`.execute(trx)).rows : [];
+  const unchanged = active.map(keyOf).sort().join('\n') === lines.map((l) => keyOf({ code: l.accountCode, bankNo: l.bankAccountNo, currency: l.currencyCode, debit: l.debit, credit: l.credit })).sort().join('\n');
+  const reversed = unchanged ? [] : prev;
+  // Đảo ngày cuối kỳ, cùng kỳ với XQ mới; kỳ khóa sổ đã bật quyền ghi lùi ở trên.
+  for (const id of reversed) await S.reverseVoucher(trx, id, { postingDate: p.date_to });
+
+  const run = await trx.insertInto('fx_run').values({ tenant_id: ctx.tenantId, kind: 'outflow', fiscal_year: fy, period_no: pn, run_date: p.date_to, reversed_voucher_ids: reversed,
+    params: JSON.stringify({ groups: summary, unchanged, ...(unchanged ? { note: 'không đổi' } : {}) }), created_by: ctx.userId }).returning('id').executeTakeFirstOrThrow();
   const voucherIds: string[] = [];
-  if (lines.length) {
+  if (lines.length && !unchanged) {
     const v = await S.createSystemVoucher(trx, ctx, { voucherType: 'XQ', postingDate: p.date_to, documentDate: p.date_to, description: `Điều chỉnh tỷ giá xuất quỹ kỳ ${pn}/${fy}`, currencyCode: 'VND', lines },
       { type: 'fx_outflow', id: await fxRunSourceId(trx, ctx.tenantId, run.id) });
     await S.postVoucher(trx, v.id);
     voucherIds.push(v.id);
     await trx.updateTable('fx_run').set({ voucher_ids: voucherIds }).where('id', '=', run.id).execute();
   }
-  return { runId: run.id, voucherIds, reversedVoucherIds: prev, groups: summary };
+  // Kỳ sau cùng năm đã chạy: bình quân đầu kỳ của chúng có thể đã đổi, cần chạy lại theo thứ tự kỳ.
+  const stalePeriods = (await trx.selectFrom('fx_run').select('period_no').distinct().where('kind', '=', 'outflow').where('fiscal_year', '=', fy).where('period_no', '>', pn)
+    .orderBy('period_no').execute()).map((r) => r.period_no);
+  return { runId: run.id, voucherIds, reversedVoucherIds: reversed, unchanged, stalePeriods, groups: summary };
 }

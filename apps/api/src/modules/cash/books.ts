@@ -22,9 +22,10 @@ async function findBank(trx: Trx, accountNo: string): Promise<BankRef> {
   return { id: r.id, accountNo: r.account_no, glAccountCode: r.gl_account_code, currencyCode: r.currency_code, accountName: r.account_name, branch: r.branch, bankName: r.bank_name };
 }
 interface Scope { regime: string; prefix: string; bankId?: number | 'none' | undefined; currency?: string | undefined }
-// Điều kiện trên dòng chứng từ `l` (bí danh account `a`).
+// Điều kiện trên dòng chứng từ `l` (bí danh account `a`). Mọi nhánh lọc theo chế độ của năm đang xem: đổi chế độ thì số dư năm mới vào bằng DK trên hệ tài khoản mới,
+// dòng của tài khoản ngân hàng ở hệ cũ không được cộng thêm lần nữa.
 const lineScope = (s: Scope) => s.bankId === undefined ? sql`a.regime = ${s.regime} AND starts_with(a.code, ${s.prefix})`
-  : s.bankId === 'none' ? sql`a.regime = ${s.regime} AND starts_with(a.code, ${s.prefix}) AND l.bank_account_id IS NULL` : sql`l.bank_account_id = ${s.bankId}`;
+  : s.bankId === 'none' ? sql`a.regime = ${s.regime} AND starts_with(a.code, ${s.prefix}) AND l.bank_account_id IS NULL` : sql`a.regime = ${s.regime} AND l.bank_account_id = ${s.bankId}`;
 const currencyOf = (s: Scope) => (s.currency ? sql`AND l.currency_code = ${s.currency}` : sql``);
 
 // Số dư ròng (Nợ - Có) cuối ngày `asOf` và số dư nguyên tệ. Không lọc tài khoản ngân hàng: dùng fn_balances_at (số dư kỳ + dòng trong kỳ, cùng nguồn với Bảng cân đối số phát sinh);

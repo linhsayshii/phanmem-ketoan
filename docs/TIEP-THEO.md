@@ -37,6 +37,10 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
 - [ ] **GĐ6 — Lương, giá thành, hợp đồng** (5–6 tuần).
 - [ ] **GĐ7 — Mở rộng**: hộ kinh doanh TT 152/2025, siêu nhỏ TT 58/2026, hình thức sổ khác, đa chi nhánh/hợp nhất, ngân sách, song ngữ, mobile, trợ lý AI.
 
+### Hạn chế đã biết của GĐ2
+
+- Tỷ giá xuất quỹ (Task 10): chuyển tiền giữa hai tài khoản tiền cùng loại ngoại tệ (chuyển tiền nội bộ giữa hai TK 1122, rút tiền gửi ngoại tệ về quỹ 1112, nộp quỹ ngoại tệ vào ngân hàng) mà có chứng từ ghi lùi: chứng từ XQ tính lại bên chuyển đi theo bình quân di động, đối ứng 515/635; bên nhận giữ giá trị đã ghi cho đến khi chi hết nguyên tệ hoặc đánh giá lại cuối kỳ. Cách sửa đúng: đẩy phần lệch sang nhóm nhận thay vì 515/635, cần một lượt duyệt chung theo ngày qua các nhóm.
+
 ## 4. Chờ người dùng
 
 | Việc | Vì sao cần người dùng | Ảnh hưởng nếu chưa có |
