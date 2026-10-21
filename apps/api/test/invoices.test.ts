@@ -183,6 +183,7 @@ describe('kiểm tra trùng hóa đơn đầu vào', () => {
     const r = await t.pc([t.decl('ab/26e', '00 00123')]);
     expect(err(r)).toEqual([409, 'INVOICE_DUPLICATE']);
     expect(r.json().error.message).toContain(hdm.voucherNo);
+    expect(r.json().error.details).toEqual({ voucherId: hdm.id, voucherNo: hdm.voucherNo, voucherType: 'HDM' });
     // Số hóa đơn khác thì nhập được, bảng kê lưu kèm chứng từ.
     const ok = await t.pc([t.decl('AB/26E', '0000124')]);
     expect(ok.statusCode, ok.body).toBe(201);
@@ -194,7 +195,9 @@ describe('kiểm tra trùng hóa đơn đầu vào', () => {
     const t = await withTaxCode();
     const draft = await t.create(t.invoice('HDM', { autoPost: false }, { serial: 'AB/26E', invoiceNo: '0000200', invoiceDate: '2026-03-05' }));
     expect(draft.state).toBe('draft');
-    expect(err(await t.pc([t.decl('AB/26E', '0000200')]))).toEqual([409, 'INVOICE_DUPLICATE']);
+    const dup = await t.pc([t.decl('AB/26E', '0000200')]);
+    expect(err(dup)).toEqual([409, 'INVOICE_DUPLICATE']);
+    expect(dup.json().error.details).toEqual({ voucherId: draft.id, voucherNo: null, voucherType: 'HDM' }); // bản nháp chưa có số
     const d = await t.call('POST', `/api/vouchers/${draft.id}/discard`);
     expect(d.statusCode, d.body).toBe(200);
     const ok = await t.pc([t.decl('AB/26E', '0000200')]);

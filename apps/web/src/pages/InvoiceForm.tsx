@@ -84,6 +84,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
   const setAll = useCallback((next: InvRow[]) => { rowsRef.current = next; setRows(next); }, []);
   // Mọi thay đổi dòng do người dùng thực hiện đi qua đây: dẫn xuất thành tiền, chiết khấu tại chỗ rồi báo mảng mới.
   const changeRows = useCallback((next: InvRow[]) => {
+    // deriveRow chạy cả ở đây (dán, thêm dòng) lẫn ở valueSetter của cột (sửa ô); hai nơi dùng chung snaps nên tính lại một lần là đủ
     for (const r of next) { deriveRow(r, snaps.current.get(r) ?? BLANK_SNAP, dp); snaps.current.set(r, snapOf(r)); }
     setAll(next); setDirty(true);
   }, [dp, setAll]);
@@ -324,7 +325,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
         {mayEdit && <Button onClick={() => save.mutate(false)} type="primary" loading={save.isPending} disabled={!ready}>Lưu (Ctrl+S)</Button>}
         {mayEdit && mayPost && <Button onClick={() => save.mutate(true)} disabled={!ready || save.isPending}>Ghi sổ (F9)</Button>}
         {!isNew && mayUnpost && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'unpost' }))}>Bỏ ghi sổ</Button>}
-        {!isNew && mayReverse && v.data && <Button onClick={() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo} ngày ${formatVnDate(p)}` }); }}>Đảo</Button>}
+        {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo} ngày ${formatVnDate(p)}` }); })}>Đảo</Button>}
         {!isNew && editable && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy chứng từ?', content: 'Số chứng từ (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
         {!isNew && can('voucher.print') && <Button href={`/api/vouchers/${id}/print?format=pdf`} target="_blank">In</Button>}
       </Space>}>

@@ -30,19 +30,13 @@ export const groupFetcher = (groups: GroupRow[], scope: 'sale' | 'purchase') => 
 export const errorText = (e: unknown): string => e instanceof ApiError ? `${e.message} (${e.code})`
   : (e as { errorFields?: { errors: string[] }[] } | null)?.errorFields?.[0]?.errors[0] ?? (e instanceof Error ? e.message : String(e));
 
-// Báo lỗi lưu chứng từ. INVOICE_DUPLICATE nêu số chứng từ đã nhập hóa đơn ("... đã nhập ở chứng từ HDM00007"): kèm nút mở chứng từ đó
-// (tra số ra id qua danh sách chứng từ). Hóa đơn trùng ở một bản nháp chưa có số ("nháp (HDM)") hoặc trùng ngay trong chứng từ này thì chỉ có chữ.
+// Báo lỗi lưu chứng từ. INVOICE_DUPLICATE mang details { voucherId, voucherNo, voucherType } của chứng từ đã nhập hóa đơn đó: kèm nút mở chứng từ.
+// Trùng ngay trong chứng từ đang lập (không có details) thì chỉ có chữ.
 export function reportError(e: unknown, navigate: ReturnType<typeof useNavigate>): void {
-  const no = e instanceof ApiError && e.code === 'INVOICE_DUPLICATE' ? /ở chứng từ (?!nháp)(\S+)$/.exec(e.message)?.[1] : undefined;
-  if (!no) { void message.error(errorText(e)); return; }
-  const open = async () => {
-    try {
-      const r = await api<{ rows: { id: string; voucherType: string; voucherNo: string | null }[] }>(`/api/vouchers?q=${encodeURIComponent(no)}&size=5`);
-      const hit = r.rows.find((x) => x.voucherNo === no);
-      if (hit) void navigate({ to: '/chung-tu/$type/$id', params: { type: hit.voucherType, id: hit.id } }); else void message.warning(`Không tìm thấy chứng từ ${no}`);
-    } catch (err) { void message.error(errorText(err)); }
-  };
-  void message.error({ duration: 10, content: <span>{errorText(e)} <Button type="link" size="small" onClick={() => void open()}>Mở chứng từ {no}</Button></span> });
+  const d = e instanceof ApiError && e.code === 'INVOICE_DUPLICATE' ? e.details as { voucherId?: string; voucherNo?: string | null; voucherType?: string } | undefined : undefined;
+  if (!d?.voucherId || !d.voucherType) { void message.error(errorText(e)); return; }
+  const open = () => void navigate({ to: '/chung-tu/$type/$id', params: { type: d.voucherType!, id: d.voucherId! } });
+  void message.error({ duration: 10, content: <span>{errorText(e)} <Button type="link" size="small" onClick={open}>Mở chứng từ {d.voucherNo ?? 'nháp'}</Button></span> });
 }
 
 // Hộp chọn từ danh mục khi bấm F4 trong ô của lưới: đưa con trỏ vào ô tìm ngay khi mở (antd Modal tự giữ tiêu điểm ở khung).

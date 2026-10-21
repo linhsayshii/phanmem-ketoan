@@ -7,7 +7,7 @@ import { declaredBody } from '../src/pages/DeclaredInvoices.js';
 
 type Row = Record<string, string>;
 const mocks = vi.hoisted(() => {
-  class ApiError extends Error { constructor(public code: string, message: string, public status = 409) { super(message); } }
+  class ApiError extends Error { constructor(public code: string, message: string, public status = 409, public details?: unknown) { super(message); } }
   return { api: vi.fn(), ApiError, navigate: vi.fn(), grid: { props: null as null | { rows: Record<string, string>[]; onRowsChange(r: unknown[]): void; addRowTemplate(): Record<string, string> } },
     lookupRows: {} as Record<string, object> };
 });
@@ -145,12 +145,12 @@ describe('Màn hình hóa đơn dịch vụ: thuế và bút toán xem trước 
     await vi.waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith({ to: '/chung-tu/$type/$id', params: { type: 'HDB', id: 'i1' } }), slow);
   }, 60_000);
 
-  it('hóa đơn mua trùng: thông báo kèm liên kết mở chứng từ đã nhập', async () => {
+  it('hóa đơn mua trùng: details của lỗi cho liên kết mở thẳng chứng từ đã nhập, không tra cứu theo số', async () => {
     mocks.api.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path === '/api/invoices/tax-defs') return TAX_DEFS;
       if (path.startsWith('/api/catalogs/invoice_group')) return { rows: GROUPS, total: GROUPS.length };
-      if (path === '/api/invoices' && init?.method === 'POST') throw new mocks.ApiError('INVOICE_DUPLICATE', 'Hóa đơn 01GTKT 1C26TAA 0000123 đã nhập ở chứng từ HDM00007');
-      if (path.startsWith('/api/vouchers?')) return { rows: [{ id: 'v7', voucherType: 'HDM', voucherNo: 'HDM00007' }], total: 1 };
+      if (path === '/api/invoices' && init?.method === 'POST') throw new mocks.ApiError('INVOICE_DUPLICATE', 'Hóa đơn 01GTKT 1C26TAA 0000123 đã nhập ở chứng từ HDM00007', 409,
+        { voucherId: 'v7', voucherNo: 'HDM00007', voucherType: 'HDM' });
       return [];
     });
     renderNew('HDM');
@@ -161,7 +161,112 @@ describe('Màn hình hóa đơn dịch vụ: thuế và bút toán xem trước 
     fireEvent.click(screen.getByRole('button', { name: /Lưu/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Mở chứng từ HDM00007' }, slow));
     await vi.waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith({ to: '/chung-tu/$type/$id', params: { type: 'HDM', id: 'v7' } }), slow);
-    expect(mocks.api).toHaveBeenCalledWith('/api/vouchers?q=HDM00007&size=5');
+    expect(mocks.api.mock.calls.some(([p]) => String(p).startsWith('/api/vouchers'))).toBe(false);
+  }, 60_000);
+
+  it('hóa đơn trùng với bản nháp (chưa có số): nút mở chứng từ nháp', async () => {
+    mocks.api.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/invoices/tax-defs') return TAX_DEFS;
+      if (path.startsWith('/api/catalogs/invoice_group')) return { rows: GROUPS, total: GROUPS.length };
+      if (path === '/api/invoices' && init?.method === 'POST') throw new mocks.ApiError('INVOICE_DUPLICATE', 'Hóa đơn 0000123 đã nhập ở chứng từ nháp (HDM)', 409,
+        { voucherId: 'v8', voucherNo: null, voucherType: 'HDM' });
+      return [];
+    });
+    renderNew('HDM');
+    fireEvent.change(screen.getByLabelText('lookup-party'), { target: { value: 'KH001' } });
+    edit(0, { accountCode: '6422', amount: '1000000', taxCodes: 'V10' });
+    await vi.waitFor(() => expect(taxCol()[0]).toBe('100000'), slow);
+    fireEvent.change(screen.getByLabelText('Số hóa đơn'), { target: { value: '0000123' } });
+    fireEvent.click(screen.getByRole('button', { name: /Lưu/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Mở chứng từ nháp' }, slow));
+    await vi.waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith({ to: '/chung-tu/$type/$id', params: { type: 'HDM', id: 'v8' } }), slow);
+  }, 60_000);
+});
+
+// Giảm giá, trả lại: chọn hóa đơn gốc đã ghi sổ của cùng đối tượng, cùng chiều (GGB -> HDB, GGM -> HDM).
+describe.each([['GGB', 'HDB', 'HDB00001'], ['GGM', 'HDM', 'HDM00001']] as const)('Màn hình %s: hóa đơn gốc %s', (type, orig, origNo) => {
+  const vouchers = [{ id: 'v1', voucherType: orig, voucherNo: origNo, postingDate: '2026-03-05', partyName: 'Công ty A' },
+    { id: 'v2', voucherType: orig, voucherNo: `${orig}00002`, postingDate: '2026-03-06', partyName: 'Công ty B' }]; // cùng từ khóa tìm nhưng khác đối tượng: phải bị lọc
+  const invoiceRow = (id: number, no: string, taxCode = 'V10') => ({ id, formNo: null, serial: null, invoiceNo: no, invoiceDate: '2026-03-05', taxCode, adjustsInvoiceId: null });
+  let origInvoices = [invoiceRow(11, '0000123')];
+  afterEach(() => { mocks.api.mockReset(); });
+  beforeEach(() => {
+    mocks.grid.props = null; mocks.navigate.mockReset();
+    origInvoices = [invoiceRow(11, '0000123')];
+    mocks.lookupRows['KH001'] = { id: 1, code: 'KH001', name: 'Công ty A', tax_code: '0100109106', address: '12 Phố Huế, Hà Nội', default_account_code: null };
+    mocks.api.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/invoices/tax-defs') return TAX_DEFS;
+      if (path.startsWith('/api/catalogs/invoice_group')) return { rows: GROUPS, total: GROUPS.length };
+      if (path === '/api/invoices' && init?.method === 'POST') return { id: 'i1', voucherType: type, voucherNo: null, state: 'draft', version: 1 };
+      if (path.startsWith('/api/vouchers?')) return { rows: vouchers, total: vouchers.length };
+      if (path === '/api/invoices/v1') return { id: 'v1', voucherType: orig, invoices: origInvoices };
+      return [];
+    });
+  });
+  // antd Select trong jsdom: mở bằng mouseDown vào vùng chọn rồi bấm tùy chọn
+  const openSelect = (placeholder: string) => fireEvent.mouseDown(screen.getByText(placeholder).closest('.ant-select')!.querySelector('.ant-select-selector')!);
+  const pickVoucher = async () => {
+    fireEvent.change(screen.getByLabelText('lookup-party'), { target: { value: 'KH001' } });
+    await vi.waitFor(() => expect(mocks.api).toHaveBeenCalledWith(`/api/vouchers?type=${orig}&state=posted&q=${encodeURIComponent('Công ty A')}&size=200`), slow);
+    openSelect('Chọn chứng từ gốc');
+    fireEvent.click(await screen.findByText(`${origNo} - 05/03/2026`, undefined, slow));
+  };
+
+  it('chưa chọn đối tượng thì chưa chọn được hóa đơn gốc; chọn xong chỉ liệt kê hóa đơn của đúng đối tượng đó', async () => {
+    renderNew(type);
+    expect(await screen.findByText('Chọn đối tượng trước', undefined, slow)).toBeInTheDocument();
+    expect(mocks.api.mock.calls.some(([p]) => String(p).startsWith('/api/vouchers'))).toBe(false);
+    fireEvent.change(screen.getByLabelText('lookup-party'), { target: { value: 'KH001' } });
+    await vi.waitFor(() => expect(mocks.api).toHaveBeenCalledWith(`/api/vouchers?type=${orig}&state=posted&q=${encodeURIComponent('Công ty A')}&size=200`), slow);
+    openSelect('Chọn chứng từ gốc');
+    expect(await screen.findByText(`${origNo} - 05/03/2026`, undefined, slow)).toBeInTheDocument();
+    expect(screen.queryByText(`${orig}00002 - 06/03/2026`)).not.toBeInTheDocument();
+  }, 60_000);
+
+  it('chọn hóa đơn gốc một dòng: tự điền số hóa đơn; Lưu gửi voucherType và adjustsInvoiceId; bút toán xem trước ngược chiều', async () => {
+    renderNew(type);
+    await pickVoucher();
+    expect(await screen.findByDisplayValue('0000123', undefined, slow)).toBeInTheDocument();
+    expect(mocks.api).toHaveBeenCalledWith('/api/invoices/v1');
+    edit(0, { description: 'Giảm giá', accountCode: '5213', amount: '1000000', taxCodes: 'V10' });
+    await vi.waitFor(() => expect(taxCol()[0]).toBe('100000'), slow);
+    // giảm giá bán: Nợ doanh thu, Nợ thuế GTGT đầu ra / Có 131; trả lại mua: Nợ 331 / Có chi phí, Có thuế GTGT đầu vào
+    await vi.waitFor(() => expect(ledgerSides()).toEqual(type === 'GGB'
+      ? [['5213', '1.000.000', ''], ['33311', '100.000', ''], ['131', '', '1.100.000']]
+      : [['5213', '', '1.000.000'], ['1331', '', '100.000'], ['331', '1.100.000', '']]), slow);
+    fireEvent.change(screen.getByLabelText('Số hóa đơn'), { target: { value: '0000999' } });
+    fireEvent.click(screen.getByRole('button', { name: /Lưu/ }));
+    await vi.waitFor(() => expect(post()).toBeDefined(), slow);
+    expect((post()![1] as { json: { voucherType: string; invoice: Record<string, unknown> } }).json).toMatchObject({ voucherType: type, invoice: { adjustsInvoiceId: 11, invoiceNo: '0000999' } });
+  }, 60_000);
+
+  it('hóa đơn gốc nhiều dòng: phải chọn thêm dòng; đổi đối tượng thì bỏ hóa đơn gốc đã chọn', async () => {
+    origInvoices = [invoiceRow(11, '0000123'), invoiceRow(12, '0000124', 'V5')];
+    renderNew(type);
+    await pickVoucher();
+    await screen.findByText('Chọn dòng', undefined, slow); // chờ GET /api/invoices/v1 trả về
+    openSelect('Chọn dòng');
+    fireEvent.click(await screen.findByText('0000124 - V5', undefined, slow));
+    edit(0, { accountCode: '5213', amount: '1000000', taxCodes: 'V10' });
+    await vi.waitFor(() => expect(taxCol()[0]).toBe('100000'), slow);
+    fireEvent.change(screen.getByLabelText('Số hóa đơn'), { target: { value: '0000999' } });
+    fireEvent.click(screen.getByRole('button', { name: /Lưu/ }));
+    await vi.waitFor(() => expect(post()).toBeDefined(), slow);
+    expect((post()![1] as { json: { invoice: Record<string, unknown> } }).json.invoice).toMatchObject({ adjustsInvoiceId: 12 });
+    mocks.lookupRows['KH002'] = { id: 2, code: 'KH002', name: 'Công ty B', tax_code: '', address: '', default_account_code: null };
+    fireEvent.change(screen.getByLabelText('lookup-party'), { target: { value: 'KH002' } });
+    expect(await screen.findByText('Chọn chứng từ gốc', undefined, slow)).toBeInTheDocument();
+  }, 60_000);
+
+  it('chưa chọn hóa đơn gốc thì Lưu báo lỗi và không gửi', async () => {
+    renderNew(type);
+    fireEvent.change(screen.getByLabelText('lookup-party'), { target: { value: 'KH001' } });
+    edit(0, { accountCode: '5213', amount: '1000000', taxCodes: 'V10' });
+    await vi.waitFor(() => expect(taxCol()[0]).toBe('100000'), slow);
+    fireEvent.change(screen.getByLabelText('Số hóa đơn'), { target: { value: '0000999' } });
+    fireEvent.click(screen.getByRole('button', { name: /Lưu/ }));
+    expect(await screen.findByText(/Chọn hóa đơn gốc ở tab Hóa đơn/, undefined, slow)).toBeInTheDocument();
+    expect(post()).toBeUndefined();
   }, 60_000);
 });
 

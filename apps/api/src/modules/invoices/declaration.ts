@@ -64,7 +64,9 @@ async function assertNotDuplicate(trx: Trx, tenantId: string, voucherId: string,
   if (!h) return;
   const label = [blank(r.formNo), blank(r.serial), r.invoiceNo].filter(Boolean).join(' ');
   if (h.voucher_id === voucherId) throw new AppError('INVOICE_DUPLICATE', `Hóa đơn ${label} khai báo hai lần trong cùng chứng từ`, 409);
-  throw new AppError('INVOICE_DUPLICATE', `Hóa đơn ${label} đã nhập ở chứng từ ${h.voucher_no ?? `nháp (${h.voucher_type})`}`, 409);
+  // details: màn hình mở chứng từ đã nhập bằng id, không phân tích thông báo; voucherNo null là bản nháp chưa có số.
+  throw new AppError('INVOICE_DUPLICATE', `Hóa đơn ${label} đã nhập ở chứng từ ${h.voucher_no ?? `nháp (${h.voucher_type})`}`, 409,
+    { voucherId: h.voucher_id, voucherNo: h.voucher_no, voucherType: h.voucher_type });
 }
 
 // Ghi các dòng kê khai của một chứng từ nháp: chụp tên, mã số thuế, địa chỉ đối tượng tại thời điểm lập, tính kỳ kê khai, kiểm trùng hóa đơn đầu vào.
