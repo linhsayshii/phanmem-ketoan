@@ -3,9 +3,12 @@ import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
 import { assertPrint, respondReport } from '../reporting/routes.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
+import { companyInfo } from '../reporting/print/bookSet.js';
 import { invoiceRegister, reconcileDoc, reconcileTax, registerDoc } from './register.js';
 import { offsetInput, runVatOffset } from './vatOffset.js';
-import { createReturn, finalizeReturn, getReturn, listReturns, returnInput, returnUpdate, updateReturn } from './vatReturn.js';
+import { createReturn, finalizeReturn, getReturn, listReturns, returnDoc, returnInput, returnUpdate, updateReturn } from './vatReturn.js';
+import { XML_FORMATS } from './xml/index.js';
+import { AppError } from '../../plugins/errors.js';
 
 const period = { year: z.coerce.number().int().min(2000).max(2100), period: z.coerce.number().int().min(1).max(12), periodKind: z.enum(['month', 'quarter']).default('month') };
 
@@ -42,6 +45,30 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     app.withTenant(req, (trx) => updateReturn(trx, req.auth!.tenantId!, req.params.id, req.body), SNAPSHOT_RW));
   app.post('/api/tax/vat-returns/:id/finalize', { preHandler: app.requirePermission('tax_return.finalize'), schema: { params: numId } }, async (req) =>
     app.withTenant(req, (trx) => finalizeReturn(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.params.id), SNAPSHOT_RW));
+
+  // In tờ khai theo bố cục mẫu (html, pdf): cần thêm report.print; bản nháp in kèm chữ "bản nháp".
+  app.get('/api/tax/vat-returns/:id/print', { preHandler: app.requirePermission('tax_return.view'), schema: { params: numId, querystring: z.object({ format: z.enum(['html', 'pdf']).default('pdf') }) } }, async (req, reply) => {
+    assertPrint(req.auth!);
+    const { doc, name } = await app.withTenant(req, async (trx) => returnDoc(trx, req.auth!.tenantId!, await getReturn(trx, req.params.id)), READ_SNAPSHOT);
+    return respondReport(reply, [doc], req.query.format, name);
+  });
+
+  // Xuất XML qua adapter định dạng (XML_FORMATS). Chỉ tờ khai đã chốt: bản nháp có thể còn lệch sổ. verified = false: tiêu đề x-kt-unverified để màn hình cảnh báo "chưa kiểm chứng với HTKK".
+  app.get('/api/tax/vat-returns/:id/xml', { preHandler: app.requirePermission('tax_return.view'), schema: { params: numId, querystring: z.object({ format: z.string().default('htkk-01gtgt') }) } }, async (req, reply) => {
+    if (!req.auth!.permissions.has('tax.view')) throw new AppError('FORBIDDEN', 'Thiếu quyền tax.view', 403);
+    const fmt = XML_FORMATS[req.query.format];
+    if (!fmt || !Object.hasOwn(XML_FORMATS, req.query.format)) throw new AppError('XML_FORMAT_INVALID', `Định dạng XML "${req.query.format}" không có; dùng ${Object.keys(XML_FORMATS).join(', ')}`, 400);
+    const { ret, company } = await app.withTenant(req, async (trx) => {
+      const r = await getReturn(trx, req.params.id); const c = await companyInfo(trx, req.auth!.tenantId!, '', null);
+      return { ret: r, company: c };
+    }, READ_SNAPSHOT);
+    if (ret.status !== 'final') throw new AppError('TAX_RETURN_NOT_FINAL', 'Chỉ xuất XML tờ khai đã chốt', 409);
+    if (!company.taxCode) throw new AppError('COMPANY_TAX_CODE_MISSING', 'Công ty chưa có mã số thuế: nhập ở Cài đặt công ty trước khi xuất XML', 409);
+    const xml = fmt.render(ret, { name: company.name, taxCode: company.taxCode, address: company.address, legalRep: company.legalRep });
+    const file = `${fmt.formCode.replace('/', '')}_${company.taxCode}_${ret.periodKind === 'month' ? 'T' : 'Q'}${ret.period}-${ret.year}${ret.revision ? `-BS${ret.revision}` : ''}.xml`;
+    if (!fmt.verified) reply.header('x-kt-unverified', '1');
+    return reply.type('application/xml; charset=utf-8').header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file)}`).send(xml);
+  });
 
   // Khấu trừ thuế GTGT cuối kỳ (chứng từ KTT); kỳ khóa sổ cần quyền ghi lùi ngày.
   app.post('/api/tax/vat-offset', { preHandler: app.requirePermission('tax.offset'), schema: { body: offsetInput } }, async (req) => {

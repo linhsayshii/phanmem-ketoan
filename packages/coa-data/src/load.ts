@@ -89,3 +89,11 @@ export function loadVatTemplate(version: 'TT89' | 'TT80'): VatTemplate {
   if (!isVatTemplateComplete(version)) throw new Error(`Chưa có mẫu tờ khai 01/GTGT ${version === 'TT80' ? 'theo TT 80/2021/TT-BTC' : 'theo TT 89/2026/TT-BTC'} đối chiếu văn bản gốc (status.json 01GTGT_${version})`);
   return JSON.parse(readFileSync(dataPath('tax', VAT_FILE[version]), 'utf8')) as VatTemplate;
 }
+
+// Định dạng xuất XML tờ khai cho phần mềm của cơ quan thuế (data/tax/<id>.json): mọi mã đặc thù (tên thẻ, mã tờ khai, phiên bản) nằm ở đây, không nằm trong mã.
+// verified = false: chưa đối chiếu với tệp kết xuất thật của HTKK (chưa có XSD công khai); người dùng được cảnh báo khi tải.
+export interface TaxXmlFormatData {
+  id: string; verified: boolean; note: string; formCode: string; templateVersions: string[]; root: string; encoding: string;
+  headerTag: string; bodyTag: string; header: [string, string][]; returnKind: { first: string; supplement: string }; tags: Record<string, string>;
+}
+export function loadTaxXmlFormat(id: string): TaxXmlFormatData { return JSON.parse(readFileSync(dataPath('tax', `${id}.json`), 'utf8')) as TaxXmlFormatData; }

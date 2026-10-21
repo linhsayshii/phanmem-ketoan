@@ -6,6 +6,8 @@ import { D, evalVatReturn, VAT_SHARED_GROUP, vatInvoiceKey, VND_AMOUNT_MSG, VND_
 import { AppError } from '../../plugins/errors.js';
 import { getSettings } from '../core/settings.js';
 import { legalParam } from '../core/legal.js';
+import { companyInfo } from '../reporting/print/bookSet.js';
+import type { ReportDoc } from '../reporting/print/html.js';
 import { invoiceRegister, specOf, type PeriodKind, type PeriodQ } from './register.js';
 
 // Tờ khai thuế GTGT 01/GTGT: số liệu hóa đơn lấy từ bảng kê (invoiceRegister, cùng truy vấn với màn hình bảng kê), chỉ tiêu tính theo mẫu dữ liệu của @kt/coa-data
@@ -188,4 +190,15 @@ export async function finalizeReturn(trx: Trx, ctx: { tenantId: string; userId: 
     throw new AppError('TAX_RETURN_STALE', `Số liệu sổ đã thay đổi kể từ lần tính trước (${changed.map((x) => `[${x.code}]`).join(', ') || 'mẫu tờ khai'}): lưu lại nháp để tính lại và kiểm tra trước khi chốt`, 409, { changed });
   await trx.updateTable('tax_return').set({ status: 'final', finalized_by: ctx.userId, finalized_at: sql<string>`now()` }).where('id', '=', id).execute();
   return { ...(await getReturn(trx, id)), hints: c.hints, warnings: c.warnings };
+}
+
+// Tài liệu in theo bố cục mẫu: chỉ tiêu theo thứ tự và mục của mẫu dữ liệu; không thêm chữ ban hành ngoài mẫu. Chỉ tiêu cờ [21] in dạng ô đánh dấu.
+export async function returnDoc(trx: Trx, tenantId: string, r: TaxReturnDto): Promise<{ doc: ReportDoc; name: string }> {
+  const t = loadVatTemplate(r.templateVersion as VatTemplate['version']); const s = specOf({ year: r.year, period: r.period, periodKind: r.periodKind });
+  const rows = t.lines.map((l) => ({ section: l.section, code: `[${l.code}]`, label: l.kind === 'flag' ? `${l.label}: ${r.values[l.code] === 'X' ? '[X]' : '[ ]'}` : l.label, value: l.kind === 'flag' ? '' : r.values[l.code] ?? '' }));
+  const doc: ReportDoc = { title: 'Tờ khai thuế giá trị gia tăng', formNo: FORM, issuedBy: '', company: await companyInfo(trx, tenantId, '', null), landscape: false, sheetName: 'Tờ khai 01-GTGT',
+    subtitle: `Kỳ tính thuế: ${s.label}. ${r.revision ? `Khai bổ sung lần ${r.revision}` : 'Khai lần đầu'}${r.status === 'final' ? '' : ' (bản nháp, chưa chốt)'}`,
+    columns: [{ key: 'section', label: 'Mục', width: '10%' }, { key: 'code', label: 'Mã', width: '8%' }, { key: 'label', label: 'Chỉ tiêu' }, { key: 'value', label: 'Giá trị (VND)', type: 'number', width: '18%' }],
+    rows, outro: ['Chỉ tiêu [41], [43] hiện số dương: là phần âm của biểu thức [36]-[22]+[37]-[38]-[39a] đổi dấu (mẫu ghi điều kiện ≤ 0).'] };
+  return { doc, name: `to-khai-01-gtgt-${r.year}-${r.periodKind === 'month' ? 'T' : 'Q'}${r.period}${r.revision ? `-bo-sung-${r.revision}` : ''}` };
 }

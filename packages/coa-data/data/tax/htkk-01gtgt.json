@@ -1,0 +1,99 @@
+{
+  "id": "htkk-01gtgt",
+  "verified": false,
+  "note": "Chưa kiểm chứng với HTKK: chưa có XSD hay tệp kết xuất mẫu (xem Chờ người dùng trong docs/TIEP-THEO.md). Tên thẻ, thứ tự thẻ, mã tờ khai và phiên bản dưới đây là giả định tạm của phần mềm, không phải đặc tả của HTKK; khi có tệp kết xuất mẫu từ HTKK chỉ cần sửa tệp này (và bộ dựng nếu cấu trúc khác), rồi đổi verified thành true.",
+  "formCode": "01/GTGT",
+  "templateVersions": [
+    "TT89"
+  ],
+  "root": "HSoThueDTu",
+  "encoding": "UTF-8",
+  "header": [
+    [
+      "maTKhai",
+      "01/GTGT"
+    ],
+    [
+      "tenTKhai",
+      "Tờ khai thuế giá trị gia tăng"
+    ],
+    [
+      "phienBanMau",
+      "{templateVersion}"
+    ],
+    [
+      "kyKKhai",
+      "{periodLabel}"
+    ],
+    [
+      "kyKKhaiTuNgay",
+      "{from}"
+    ],
+    [
+      "kyKKhaiDenNgay",
+      "{to}"
+    ],
+    [
+      "loaiTKhai",
+      "{returnKind}"
+    ],
+    [
+      "soLanBoSung",
+      "{revision}"
+    ],
+    [
+      "maSoThue",
+      "{taxCode}"
+    ],
+    [
+      "tenNNT",
+      "{companyName}"
+    ],
+    [
+      "diaChiNNT",
+      "{address}"
+    ],
+    [
+      "nguoiDaiDien",
+      "{legalRep}"
+    ]
+  ],
+  "headerTag": "TTinChung",
+  "bodyTag": "CTieuTKhaiChinh",
+  "returnKind": {
+    "first": "C",
+    "supplement": "B"
+  },
+  "tags": {
+    "21": "ct21",
+    "22": "ct22",
+    "23": "ct23",
+    "24": "ct24",
+    "25": "ct25",
+    "26": "ct26",
+    "27": "ct27",
+    "28": "ct28",
+    "29": "ct29",
+    "30": "ct30",
+    "31": "ct31",
+    "32": "ct32",
+    "33": "ct33",
+    "34": "ct34",
+    "35": "ct35",
+    "36": "ct36",
+    "37": "ct37",
+    "38": "ct38",
+    "40": "ct40",
+    "41": "ct41",
+    "42": "ct42",
+    "43": "ct43",
+    "23a": "ct23a",
+    "24a": "ct24a",
+    "32a": "ct32a",
+    "32b": "ct32b",
+    "34a": "ct34a",
+    "39a": "ct39a",
+    "40a": "ct40a",
+    "40b": "ct40b"
+  }
+}
