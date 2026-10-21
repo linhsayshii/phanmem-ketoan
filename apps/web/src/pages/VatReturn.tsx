@@ -64,7 +64,8 @@ export default function VatReturnPage() {
   const rows = useMemo(() => (all.data ?? []).filter((r) => r.year === f.year && r.periodKind === kind && r.period === period), [all.data, f.year, kind, period]);
   const cur = rows.find((r) => r.id === selId) ?? rows[0];
   const isDraft = cur?.status === 'draft';
-  const prev = useQuery({ queryKey: ['vat-hints', cur?.id, cur?.values], enabled: !!cur && isDraft, queryFn: () => api<Preview>(`/api/tax/vat-returns/${cur!.id}/hints`), retry: false });
+  const prev = useQuery({ queryKey: ['vat-hints', cur?.id, cur?.values], enabled: !!cur && isDraft, queryFn: () => api<Preview>(`/api/tax/vat-returns/${cur!.id}/hints`), retry: false,
+    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[1] === cur?.id ? prev : undefined) }); // giữ cờ khóa [22] khi tải lại sau lưu
   const xmlFormats = useQuery({ queryKey: ['xml-formats'], enabled: can('tax.view'), queryFn: () => api<{ id: string; verified: boolean }[]>('/api/tax/xml-formats'), retry: false });
   const xmlUnverified = xmlFormats.data?.find((x) => x.id === 'htkk-01gtgt')?.verified === false;
   const hints = prev.data?.hints ?? {}; const warnings = prev.data?.warnings ?? [];
