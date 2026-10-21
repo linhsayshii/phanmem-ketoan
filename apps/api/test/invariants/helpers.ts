@@ -61,6 +61,27 @@ export function byAccount(keyed: Record<string, string>): Record<string, string>
   for (const [k, v] of Object.entries(keyed)) { const code = k.split('|')[0]!; m.set(code, (m.get(code) ?? 0n) + BigInt(v)); }
   return Object.fromEntries([...m].filter(([, v]) => v !== 0n).map(([k, v]) => [k, v.toString()]));
 }
+// Bất biến 5: Σ dư VND các khoản công nợ (kể cả khoản con của đánh giá lại) theo `mã TK|mã đối tượng` tại cuối ngày asOf, bỏ khóa có tổng 0.
+export async function openItemsByParty(ctx: TestApp, tenantId: string, asOf: string): Promise<Record<string, string>> {
+  const r = await sql<{ k: string; n: string }>`SELECT a.code || '|' || p.code AS k, sum(x.residual)::text AS n FROM fn_open_items_at(${tenantId}::uuid, ${asOf}::date) x
+    JOIN account a ON a.id = x.account_id JOIN party p ON p.id = x.party_id GROUP BY 1 HAVING sum(x.residual) <> 0`.execute(ctx.t.admin);
+  return Object.fromEntries(r.rows.map((x) => [x.k, x.n]));
+}
+// Từ kết quả sumFromLines (khóa `TK|đối tượng|tiền tệ`): giữ tài khoản công nợ (reconcile, PARTY_ACCOUNTS: các tài khoản duy nhất của bộ sinh có đối tượng), cộng gộp các loại tiền về `TK|đối tượng`, bỏ tổng 0.
+export function onlyPartyAccounts(keyed: Record<string, string>): Record<string, string> {
+  const m = new Map<string, bigint>();
+  for (const [k, v] of Object.entries(keyed)) {
+    const [code, party] = k.split('|') as [string, string];
+    if (PARTY_ACCOUNTS.includes(code)) m.set(`${code}|${party}`, (m.get(`${code}|${party}`) ?? 0n) + BigInt(v));
+  }
+  return Object.fromEntries([...m].filter(([, v]) => v !== 0n).map(([k, v]) => [k, v.toString()]));
+}
+// Tỷ giá USD nguyên đồng, một vài mức cố định để có cặp cùng tỷ giá (VND = nguyên tệ × tỷ giá chính xác, qua được LINE_FX_MISMATCH).
+export const arbUsdRate = fc.constantFrom('24000', '24500', '25000', '25500', '26000');
+// Thao tác ngoại tệ: đánh giá lại ở cuối một tháng ngẫu nhiên của 2026, với tỷ giá nhập tay hoặc theo tỷ giá chuyển khoản trung bình đã khai báo.
+export type RevalOp = { kind: 'reval'; date: string; rate: string | undefined };
+export const arbFxOps: fc.Arbitrary<RevalOp> = fc.record({ kind: fc.constant('reval' as const), date: fc.integer({ min: 1, max: 12 }).map((m) => `2026-${String(m).padStart(2, '0')}-${new Date(Date.UTC(2026, m, 0)).getUTCDate()}`),
+  rate: fc.option(arbUsdRate, { nil: undefined }) });
 export const recompute = (ctx: TestApp, cookie: string) => ctx.app.inject({ method: 'POST', url: '/api/balances/recompute', headers: { cookie } });
 
 // Bất biến 4: tại ngày `to`, Tài sản (loại 1–2) = Nợ phải trả (3) + Vốn chủ sở hữu (4) + Lãi lỗ chưa kết chuyển (−(5..9)), tính từ Bảng cân đối số phát sinh cấp 1.
