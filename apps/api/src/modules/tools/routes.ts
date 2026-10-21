@@ -1,12 +1,13 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { sql, type Transaction } from 'kysely';
-import type { Database } from '@kt/db';
+import { READ_SNAPSHOT, type Database } from '@kt/db';
 import { z } from 'zod';
 import { SENSITIVE_FLAGS_ALL } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { dateIso, type CatalogDef } from '../master/catalogs.js';
 import { getRow, listRows, updateRow } from '../master/crud.js';
 import { runDataChecks } from './dataCheck.js';
+import { findDuplicates, ignorePair } from './dedupe.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { buildAuthorityPackage, collectAuthorityData } from './exportAuthority.js';
 import { buildVoucherTemplate, isKind, prepareImport, runImport, templateFileName, type ImportReport } from './importVouchers.js';
@@ -51,6 +52,13 @@ const routes: FastifyPluginAsyncZod = async (app) => {
 
   app.post('/api/data-check/run', { preHandler: app.requirePermission('data_check.run'), schema: { body: z.object({ from: dateIso, to: dateIso, codes: z.array(z.string()).optional() }) } },
     async (req) => app.withTenant(req, (trx) => runDataChecks(trx, req.body)));
+
+  // Khử trùng chứng từ: đọc trong ảnh chụp nhất quán; xử lý trùng dùng hành động chứng từ sẵn có (discard, reverse) từ màn hình.
+  const range = z.object({ from: dateIso, to: dateIso }).refine((b) => b.from <= b.to, { message: 'Từ ngày phải trước hoặc bằng đến ngày' });
+  app.get('/api/tools/duplicates', { preHandler: app.requirePermission('dedupe.run'), schema: { querystring: range } },
+    async (req) => app.withTenant(req, (trx) => findDuplicates(trx, req.auth!.tenantId!, req.auth!, req.query), READ_SNAPSHOT));
+  app.post('/api/tools/duplicates/ignore', { preHandler: app.requirePermission('dedupe.run'), schema: { body: z.object({ a: z.string().uuid(), b: z.string().uuid() }) } },
+    async (req) => { await app.withTenant(req, (trx) => ignorePair(trx, req.auth!.tenantId!, req.auth!.userId, req.body.a.toLowerCase(), req.body.b.toLowerCase())); return { ok: true }; });
 
   // Đường tĩnh /api/catalogs/data_check_rule được find-my-way ưu tiên hơn /api/catalogs/:name của khung danh mục chung.
   const base = '/api/catalogs/data_check_rule';

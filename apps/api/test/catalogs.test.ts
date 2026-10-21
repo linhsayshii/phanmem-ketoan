@@ -19,6 +19,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   uom: { code: 'KG', name: 'Kilogram' },
   exchange_rate: { currency_code: 'USD', rate_date: '2026-01-15', rate_type: 'transfer_avg', rate: '25400.5' },
   tax_code: { code: 'TT3', name: 'GTGT trực tiếp 3%', kind: 'vat', method: 'direct', rate: '3', scope: 'sale', price_include: true },
+  voucher_dup_rule: { type_a: 'PC', type_b: 'PKT', days_window: 5 },
   tax_distribution: { tax_code_code: 'V10', document_type: 'invoice', scope: 'sale', line_type: 'base', factor_percent: '100', report_tag: 'sale_base' },
 };
 

@@ -99,6 +99,10 @@ export interface TaxDistributionTable {
   id: Generated<number>; tenant_id: string; tax_code_id: number; document_type: string; scope: string; line_type: string;
   factor_percent: Numeric; account_code: string | null; report_tag: string | null;
 }
+export interface VoucherDupRuleTable {
+  id: Generated<number>; tenant_id: string; type_a: string; type_b: string; days_window: Generated<number>; match_party: Generated<boolean>; match_counter_account: Generated<boolean>; is_active: Generated<boolean>;
+}
+export interface VoucherDupIgnoreTable { tenant_id: string; voucher_a: string; voucher_b: string; created_by: string; created_at: Generated<Date> }
 export interface InvoiceGroupTable {
   id: Generated<number>; tenant_id: string; scope: string; code: string; name: string; rate: Numeric | null; is_active: Generated<boolean>;
 }
@@ -266,6 +270,8 @@ export interface Database {
   tax_code: TaxCodeTable;
   tax_distribution: TaxDistributionTable;
   invoice_group: InvoiceGroupTable;
+  voucher_dup_rule: VoucherDupRuleTable;
+  voucher_dup_ignore: VoucherDupIgnoreTable;
   cost_item: CostItemTable;
   project: ProjectTable;
   uom: UomTable;

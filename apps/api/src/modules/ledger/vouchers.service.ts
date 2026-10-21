@@ -413,6 +413,14 @@ export async function deleteDraft(trx: Trx, id: string): Promise<void> {
   await trx.deleteFrom('voucher_line').where('voucher_id', '=', id).execute(); // chứng từ đã ghi sổ: trigger dòng chặn (LINE_IMMUTABLE); nháp đã có số: trigger chứng từ chặn
   if (!(await trx.deleteFrom('voucher').where('id', '=', id).returning('id').executeTakeFirst())) throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy chứng từ', 404);
 }
+// Cột của một dòng danh sách chứng từ: dùng chung cho danh sách và cho màn khử trùng (dòng theo danh sách id).
+const LIST_COLUMNS = ['v.id', 'v.voucher_type as voucherType', 'v.voucher_no as voucherNo', 'v.posting_date as postingDate', 'v.state', 'v.description', 'p.name as partyName',
+  sql<string>`(SELECT coalesce(sum(debit),0) FROM voucher_line l WHERE l.voucher_id = v.id AND l.posting_date = v.posting_date)`.as('totalDebit')] as const;
+export async function voucherListRowsByIds(trx: Trx, ids: string[]): Promise<Map<string, VoucherListRow>> {
+  if (!ids.length) return new Map();
+  const rows = await trx.selectFrom('voucher as v').leftJoin('party as p', 'p.id', 'v.party_id').where('v.id', 'in', ids).select(LIST_COLUMNS).execute();
+  return new Map(rows.map((r) => [r.id, r]));
+}
 export async function listVouchers(trx: Trx, f: { type?: string | undefined; from?: string | undefined; to?: string | undefined; state?: string | undefined; q?: string | undefined; partyCode?: string | undefined; page: number; size: number }): Promise<{ rows: VoucherListRow[]; total: number }> {
   let q = trx.selectFrom('voucher as v').leftJoin('party as p', 'p.id', 'v.party_id');
   const types = f.type?.split(',').map((t) => t.trim()).filter(Boolean) ?? []; // type nhận danh sách mã cách nhau dấu phẩy
@@ -423,8 +431,7 @@ export async function listVouchers(trx: Trx, f: { type?: string | undefined; fro
   if (f.partyCode) q = q.where('p.code', '=', f.partyCode);
   if (f.q) { const like = likePattern(f.q); q = q.where((eb) => eb.or([eb('v.voucher_no', 'ilike', like), eb('v.description', 'ilike', like), eb('p.name', 'ilike', like)])); }
   const total = Number((await q.select(sql<string>`count(*)`.as('n')).executeTakeFirstOrThrow()).n);
-  const rows = await q.select(['v.id', 'v.voucher_type as voucherType', 'v.voucher_no as voucherNo', 'v.posting_date as postingDate', 'v.state', 'v.description', 'p.name as partyName',
-      sql<string>`(SELECT coalesce(sum(debit),0) FROM voucher_line l WHERE l.voucher_id = v.id AND l.posting_date = v.posting_date)`.as('totalDebit')])
+  const rows = await q.select(LIST_COLUMNS)
     .orderBy('v.posting_date', 'desc').orderBy('v.seq_no', 'desc').orderBy('v.created_at', 'desc').limit(f.size).offset((f.page - 1) * f.size).execute();
   return { rows, total };
 }
