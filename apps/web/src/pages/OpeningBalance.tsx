@@ -118,7 +118,7 @@ export default function OpeningBalancePage() {
       await Promise.all([qc.invalidateQueries({ queryKey: ['opening', year] }), refreshDk()]); void message.success('Đã bỏ ghi sổ số dư đầu kỳ, sửa số dư rồi ghi sổ lại'); }) });
 
   const columns = useMemo<ColDef<Row>[]>(() => [
-    codeCol('accountCode', 'TK (F4)', 110, (d) => { if (!bankCodes.has(d.accountCode)) { d.bankAccountNo = null; d.bankName = null; } }), { field: 'accountName', headerName: 'Tên tài khoản', flex: 1, editable: false },
+    codeCol('accountCode', 'TK (F4)', 110, (d) => { d.bankAccountNo = null; d.bankName = null; }), { field: 'accountName', headerName: 'Tên tài khoản', flex: 1, editable: false },
     codeCol('partyCode', 'Đối tượng (F4)', 130),
     { ...codeCol('bankAccountNo', 'TK ngân hàng (F4)', 150), editable: (p) => bankCodes.has(p.data?.accountCode ?? ''), tooltipField: 'bankName' }, { field: 'currencyCode', headerName: 'Loại tiền', width: 90, valueParser: (p) => String(p.newValue ?? '').trim().toUpperCase() },
     numCol('debit', 'Dư Nợ', false), numCol('credit', 'Dư Có', false), numCol('debitCurrency', 'Dư Nợ NT', true), numCol('creditCurrency', 'Dư Có NT', true),
@@ -155,9 +155,9 @@ export default function OpeningBalancePage() {
         {lookup && <div ref={lookupBox}><LookupSelect catalog={LOOKUP_CATALOG[lookup.col]!} style={{ width: '100%' }} {...(lookup.col === 'accountCode' ? { fetcher: accountFetcher } : lookup.col === 'bankAccountNo' ? { fetcher: bankAccountFetcher } : { quickAddFields: quickAdd })}
           onChange={(code, picked) => {
             if (code !== null) {
-              const copy = [...rowsRef.current]; const nameField = NAME_FIELD[lookup.col as keyof typeof NAME_FIELD];
+              const copy = [...rowsRef.current]; const nameField = NAME_FIELD[lookup.col as keyof typeof NAME_FIELD]; const prev = copy[lookup.row]!.accountCode;
               copy[lookup.row] = { ...copy[lookup.row]!, [lookup.col]: code, [nameField]: picked?.name ?? null };
-              if (lookup.col === 'accountCode' && !bankCodes.has(code)) copy[lookup.row] = { ...copy[lookup.row]!, bankAccountNo: null, bankName: null }; // tài khoản không phải tiền gửi thì bỏ tài khoản ngân hàng cũ
+              if (lookup.col === 'accountCode' && code !== prev) copy[lookup.row] = { ...copy[lookup.row]!, bankAccountNo: null, bankName: null }; // đổi tài khoản thì tài khoản ngân hàng cũ không còn khớp tài khoản sổ cái
               setAll(copy);
             }
             setLookup(null);

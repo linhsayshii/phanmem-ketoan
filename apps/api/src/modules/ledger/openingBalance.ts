@@ -178,7 +178,9 @@ export async function unpostOpening(trx: Trx, tenantId: string, year: number): P
 // ===== Excel =====
 const COLS = [['accountCode', 'Số hiệu TK (*)'], ['partyCode', 'Mã đối tượng'], ['bankAccountNo', 'Tài khoản ngân hàng'], ['currencyCode', 'Loại tiền (*)'], ['debit', 'Dư Nợ'], ['credit', 'Dư Có'],
   ['debitCurrency', 'Dư Nợ nguyên tệ'], ['creditCurrency', 'Dư Có nguyên tệ']] as const;
-const BANK_HEADER = COLS[2][1];
+type ColKey = (typeof COLS)[number][0];
+const NEW_KEYS: ColKey[] = COLS.map((c) => c[0]); const OLD_KEYS = NEW_KEYS.filter((k) => k !== 'bankAccountNo'); // mẫu cũ (trước khi có số dư theo tài khoản ngân hàng) không có cột Tài khoản ngân hàng
+const normHeader = (s: string) => s.normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
 const snake = (k: string) => k.replace(/[A-Z]/g, (m) => '_' + m.toLowerCase());
 
 export async function openingTemplate(): Promise<Buffer> {
@@ -210,15 +212,17 @@ export async function parseOpeningWorkbook(trx: Trx, year: number, buffer: Buffe
   const ws = wb.getWorksheet('Du_lieu') ?? wb.worksheets[0];
   if (!ws) throw new AppError('IMPORT_NO_SHEET', 'Không tìm thấy sheet Du_lieu', 400);
   if (ws.rowCount > MAX_ROWS + 3) throw new AppError('IMPORT_TOO_LARGE', 'File vượt quá 20.000 dòng', 400);
+  // Bố cục cột nhận biết bằng tiêu đề dòng 1, phải khớp đúng một trong hai mẫu (mẫu cũ thì các cột sau dịch sang trái một ô); tiêu đề lạ thì từ chối, không đoán, kẻo đọc lệch cột Nợ/Có.
+  const headerIs = (keys: ColKey[]) => keys.every((k, i) => normHeader(txt(ws.getRow(1).getCell(i + 1))) === normHeader(COLS.find((c) => c[0] === k)![1]));
+  const cols = headerIs(NEW_KEYS) ? NEW_KEYS : headerIs(OLD_KEYS) ? OLD_KEYS : null;
+  if (!cols) throw new AppError('IMPORT_BAD_HEADER', `Tiêu đề cột ở dòng 1 không đúng mẫu. Cần: ${COLS.map((c) => c[1]).join(', ')} (hoặc mẫu cũ không có cột Tài khoản ngân hàng). Hãy tải lại mẫu Excel.`, 400);
   const { regime } = await openingPeriod(trx, year);
   const accounts = new Map((await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', regime).execute()).map((a) => [a.code, a]));
   const banks = new Map((await trx.selectFrom('bank_account').select(['account_no', 'gl_account_code']).execute()).map((b) => [b.account_no, b]));
   const parties = new Set((await trx.selectFrom('party').select('code').execute()).map((p) => p.code));
   const currencies = new Set((await trx.selectFrom('currency').select('code').execute()).map((c) => c.code));
   const rows: OpeningRow[] = []; const errors: ImportError[] = []; const seen = new Map<string, number>();
-  // Mẫu cũ (trước khi có số dư theo tài khoản ngân hàng) không có cột Tài khoản ngân hàng: nhận biết bằng tiêu đề ở dòng 1, các cột sau dịch sang trái một ô.
-  const cols = txt(ws.getRow(1).getCell(3)) === BANK_HEADER ? COLS.map((c) => c[0]) : COLS.map((c) => c[0]).filter((k) => k !== 'bankAccountNo');
-  const cell = (row: ExcelJS.Row, key: (typeof COLS)[number][0]) => row.getCell(cols.indexOf(key) + 1);
+  const cell = (row: ExcelJS.Row, key: ColKey) => row.getCell(cols.indexOf(key) + 1);
   ws.eachRow((row, i) => {
     if (i <= 2 || (i === 3 && txt(row.getCell(1)) === 'VI_DU')) return; // dòng 1 nhãn, dòng 2 khóa kỹ thuật (ẩn), dòng 3 ví dụ nếu còn
     if (cols.every((_, k) => txt(row.getCell(k + 1)) === '')) return;
@@ -252,6 +256,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     app.withTenant(req, (trx) => listOpening(trx, req.params.year)));
   app.put('/api/opening-balance/:year', { preHandler: app.requirePermission('opening_balance.update'), schema: { params: yearParam, body: z.object({ rows: z.array(openingRow) }) } }, async (req) =>
     ({ count: await app.withTenant(req, (trx) => replaceOpening(trx, req.auth!.tenantId!, req.params.year, req.body.rows)) }));
+  // Trả cả cảnh báo (phần tử có warning: true, không chặn ghi sổ): mảng không còn phần tử lỗi mới là hợp lệ.
   app.get('/api/opening-balance/:year/check', { preHandler: app.requirePermission('opening_balance.view'), schema: { params: yearParam } }, async (req) =>
     app.withTenant(req, (trx) => checkOpening(trx, req.params.year)));
   app.post('/api/opening-balance/:year/post', { preHandler: app.requirePermission('opening_balance.update'), schema: { params: yearParam } }, async (req) => {

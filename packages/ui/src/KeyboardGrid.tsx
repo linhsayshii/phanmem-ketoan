@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef, type GetRowIdParams, type GridApi } from 'ag-grid-community';
-import { gridKeyAction, isImeComposing, type GridKeyAction } from '@kt/domain';
+import { gridKeyAction, isImeComposing, nextCellOnEnter, type GridKeyAction } from '@kt/domain';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -9,12 +9,6 @@ export interface KeyboardGridProps<T> {
   rows: T[]; columns: ColDef<T>[]; onRowsChange: (rows: T[]) => void; addRowTemplate: () => T;
   onLookup?: (colId: string, rowIndex: number) => void; height?: number | string; readOnly?: boolean;
   lockRows?: boolean; // số dòng cố định: không thêm/chèn/xóa dòng bằng phím (vd. chứng từ đã ghi sổ), vẫn sửa được ô
-}
-
-// Chuyển ô sang (row, col) và vào chế độ sửa. Dòng mới thêm chỉ có sau khi chủ cập nhật `rows` và lưới áp dụng, nên chờ tới khi dòng xuất hiện.
-function goTo<T>(api: GridApi<T>, row: number, col: string, tries = 10): void {
-  if (row >= api.getDisplayedRowCount() && tries > 0) { setTimeout(() => goTo(api, row, col, tries - 1), 20); return; }
-  api.setFocusedCell(row, col); api.startEditingCell({ rowIndex: row, colKey: col });
 }
 
 export function KeyboardGrid<T extends object>({ rows, columns, onRowsChange, addRowTemplate, onLookup, height = 320, readOnly, lockRows }: KeyboardGridProps<T>) {
@@ -29,6 +23,18 @@ export function KeyboardGrid<T extends object>({ rows, columns, onRowsChange, ad
   const colDefs = useMemo(() => columns.map((c) => ({ ...c, editable: readOnly ? false : c.editable ?? true })), [columns, readOnly]);
   const editableIdx = useMemo(() => colDefs.map((c, i) => (c.editable ? i : -1)).filter((i) => i >= 0), [colDefs]);
   const colId = (i: number) => (colDefs[i]?.colId ?? colDefs[i]?.field) as string | undefined;
+  // Chuyển ô sang (row, col) và vào chế độ sửa. Dòng mới thêm chỉ có sau khi chủ cập nhật `rows` và lưới áp dụng, nên chờ tới khi dòng xuất hiện.
+  // Cột có `editable` là hàm theo dòng: ô không sửa được ở dòng đích thì bỏ qua, sang ô sửa được kế tiếp như Enter (gridKeyAction chỉ biết cột, không biết dòng).
+  const goTo = (api: GridApi<T>, row: number, col: number, tries = 10, hops = 0): void => {
+    if (row >= api.getDisplayedRowCount() && tries > 0) { setTimeout(() => goTo(api, row, col, tries - 1, hops), 20); return; }
+    const id = colId(col); const node = api.getDisplayedRowAtIndex(row); const column = id === undefined ? null : api.getColumn(id);
+    if (node && column && !column.isCellEditable(node) && hops < 2 * editableIdx.length) { // chặn vòng lặp khi dòng không có ô nào sửa được
+      const m = nextCellOnEnter({ row, col }, { rowCount: api.getDisplayedRowCount(), editableCols: editableIdx });
+      if (m.addRow) { if (lockRows) return; emit([...rowsRef.current, addRowTemplate()]); }
+      goTo(api, m.row, m.col, 10, hops + 1); return;
+    }
+    if (id !== undefined) { api.setFocusedCell(row, id); api.startEditingCell({ rowIndex: row, colKey: id }); }
+  };
   // Mọi quyết định phím nằm ở gridKeyAction (hàm thuần trong @kt/domain); ở đây chỉ áp dụng kết quả.
   const decide = useCallback((ev: KeyboardEvent, rowIndex: number | null, id: string, api: GridApi<T>) =>
     gridKeyAction(ev, { row: rowIndex ?? 0, col: colDefs.findIndex((c) => (c.colId ?? c.field) === id) },
@@ -43,8 +49,7 @@ export function KeyboardGrid<T extends object>({ rows, columns, onRowsChange, ad
       case 'move': {
         api.stopEditing();
         if (action.addRow) emit([...rowsRef.current, addRowTemplate()]);
-        const target = action.pos.col >= 0 ? colId(action.pos.col) : undefined;
-        if (target !== undefined) goTo(api, action.pos.row, target);
+        if (action.pos.col >= 0) goTo(api, action.pos.row, action.pos.col);
       }
     }
   };

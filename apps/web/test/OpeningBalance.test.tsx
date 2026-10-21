@@ -6,12 +6,12 @@ import OpeningBalancePage from '../src/pages/OpeningBalance.js';
 
 const mocks = vi.hoisted(() => {
   class ApiError extends Error { constructor(public code: string, message: string, public status = 409, public details?: unknown) { super(message); } }
-  return { api: vi.fn(), ApiError, perms: { has: (_c: string): boolean => true }, grid: { columns: [] as { field?: string; editable?: unknown }[] } };
+  return { api: vi.fn(), ApiError, perms: { has: (_c: string): boolean => true }, grid: { columns: [] as { field?: string; editable?: unknown; valueSetter?: unknown }[] } };
 });
 vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: mocks.ApiError }));
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: (c: string) => mocks.perms.has(c) }) }));
 // lưới AG Grid và ô tra danh mục nặng trong jsdom và không thuộc điều đang kiểm tra (nút theo quyền/trạng thái tải); đường nhập phím được kiểm bằng trình duyệt
-vi.mock('@kt/ui', () => ({ KeyboardGrid: (p: { columns: { field?: string; editable?: unknown }[] }) => { mocks.grid.columns = p.columns; return null; }, LookupSelect: () => null }));
+vi.mock('@kt/ui', () => ({ KeyboardGrid: (p: { columns: { field?: string; editable?: unknown; valueSetter?: unknown }[] }) => { mocks.grid.columns = p.columns; return null; }, LookupSelect: () => null }));
 
 vi.setConfig({ testTimeout: 30_000 });
 const years = [{ fiscalYear: 2026, regime: 'TT133', dateFrom: '2026-01-01' }];
@@ -105,6 +105,16 @@ describe('Màn hình Số dư đầu kỳ', () => {
       expect(editable()({ data: { accountCode: '131' } })).toBe(false);
       expect(editable()({ data: { accountCode: '1111' } })).toBe(false);
       expect(editable()({ data: { accountCode: '' } })).toBe(false);
+    });
+
+    it('đổi mã tài khoản của dòng thì bỏ tài khoản ngân hàng cũ (không còn khớp TK sổ cái); giữ nguyên mã thì giữ', async () => {
+      apiBank();
+      renderPage();
+      await waitFor(() => expect(mocks.grid.columns.find((c) => c.field === 'accountCode')).toBeDefined());
+      const setter = mocks.grid.columns.find((c) => c.field === 'accountCode')!.valueSetter as unknown as (p: { data: Record<string, unknown>; newValue: string }) => boolean;
+      const row = () => ({ accountCode: '1121', accountName: 'Tiền gửi', bankAccountNo: '0011001', bankName: 'Vietcombank' });
+      const same = row(); expect(setter({ data: same, newValue: '1121' })).toBe(false); expect(same.bankAccountNo).toBe('0011001');
+      const moved = row(); expect(setter({ data: moved, newValue: '1122' })).toBe(true); expect(moved).toMatchObject({ accountCode: '1122', bankAccountNo: null, bankName: null });
     });
 
     it('Lưu gửi kèm bankAccountNo của dòng', async () => {

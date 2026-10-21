@@ -436,10 +436,27 @@ describe('API số dư đầu kỳ theo tài khoản ngân hàng', () => {
     ws.addRow(['Số hiệu TK (*)', 'Mã đối tượng', 'Loại tiền (*)', 'Dư Nợ', 'Dư Có', 'Dư Nợ nguyên tệ', 'Dư Có nguyên tệ']);
     ws.addRow(['account_code', 'party_code', 'currency_code', 'debit', 'credit', 'debit_currency', 'credit_currency']); ws.getRow(2).hidden = true;
     ws.addRow(['1121', null, 'VND', 70, 0, 0, 0]); ws.addRow(['131', 'KH001', 'VND', 30, 0, 0, 0]); ws.addRow(['4111', null, 'VND', 0, 100, 0, 0]); ws.addRow(['9999', null, 'VND', 1, 0, 0, 0]);
+    ws.addRow(['1122', null, 'USD', 25, 0, 1.5, 0]); // dòng 7: nguyên tệ ở cột 6 (Dư Nợ nguyên tệ) của mẫu cũ
     expect((await upload(wb, 'validate', 2026, c6)).json().errors).toEqual([{ row: 6, column: 'account_code', message: expect.stringContaining('9999') }]);
     ws.spliceRows(6, 1);
-    expect((await upload(wb, 'commit', 2026, c6)).json()).toMatchObject({ inserted: 3, errors: [] });
-    const rows = (await list(2026, c6)).json() as { accountCode: string; bankAccountNo: string | null; debit: string; credit: string; currencyCode: string }[];
-    expect(rows.map((r) => [r.accountCode, r.bankAccountNo, r.currencyCode, r.debit, r.credit])).toEqual([['1121', null, 'VND', '70', '0'], ['131', null, 'VND', '30', '0'], ['4111', null, 'VND', '0', '100']]);
+    expect((await upload(wb, 'commit', 2026, c6)).json()).toMatchObject({ inserted: 4, errors: [] });
+    const rows = (await list(2026, c6)).json() as { accountCode: string; bankAccountNo: string | null; debit: string; credit: string; currencyCode: string; debitCurrency: string }[];
+    expect(rows.map((r) => [r.accountCode, r.bankAccountNo, r.currencyCode, r.debit, r.credit, r.debitCurrency])).toEqual([['1121', null, 'VND', '70', '0', '0.0000'], ['1122', null, 'USD', '25', '0', '1.5000'], ['131', null, 'VND', '30', '0', '0.0000'], ['4111', null, 'VND', '0', '100', '0.0000']]);
+  }, 30_000);
+
+  it('nhập Excel: tiêu đề dòng 1 lạ thì từ chối 400 nêu tiêu đề cần có (không đoán bố cục, kẻo đọc lệch cột Nợ/Có); tiêu đề đúng sau khi chuẩn hóa khoảng trắng và hoa thường vẫn nhận', async () => {
+    const wrong = async (edit: (ws: ExcelJS.Worksheet) => void) => {
+      const { wb, ws } = await sheet(); ws.addRow(['1121', null, null, 'VND', 100, 0, 0, 0]); edit(ws);
+      const r = await upload(wb, 'validate', 2026, c6); expect(r.statusCode, r.body).toBe(400);
+      expect(r.json().error).toMatchObject({ code: 'IMPORT_BAD_HEADER', message: expect.stringContaining('Tài khoản ngân hàng') });
+      expect(r.json().error.message).toContain('Dư Nợ nguyên tệ');
+    };
+    await wrong((ws) => { ws.getRow(1).getCell(3).value = 'Tài khoản NH'; });                  // tên khác ở cột ngân hàng
+    await wrong((ws) => { ws.getRow(1).getCell(4).value = 'Loại tiền'; });                      // thiếu "(*)"
+    await wrong((ws) => { ws.getRow(1).getCell(8).value = null; });                             // cột cuối trống
+    await wrong((ws) => { ws.getRow(1).getCell(3).value = 'Tai khoan ngan hang'; });            // không dấu
+    const { wb, ws } = await sheet(); ws.addRow(['1121', null, null, 'VND', 100, 0, 0, 0]);
+    ws.getRow(1).getCell(3).value = '  tài  khoản NGÂN hàng '; ws.getRow(1).getCell(5).value = 'dư nợ';
+    const ok = await upload(wb, 'commit', 2026, c6); expect(ok.statusCode, ok.body).toBe(200); expect(ok.json()).toMatchObject({ inserted: 1, errors: [] });
   }, 30_000);
 });
