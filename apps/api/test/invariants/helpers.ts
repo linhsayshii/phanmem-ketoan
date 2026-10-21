@@ -76,8 +76,9 @@ export function onlyPartyAccounts(keyed: Record<string, string>): Record<string,
   }
   return Object.fromEntries([...m].filter(([, v]) => v !== 0n).map(([k, v]) => [k, v.toString()]));
 }
-// Tỷ giá USD nguyên đồng, một vài mức cố định để có cặp cùng tỷ giá (VND = nguyên tệ × tỷ giá chính xác, qua được LINE_FX_MISMATCH).
-export const arbUsdRate = fc.constantFrom('24000', '24500', '25000', '25500', '26000');
+// Tỷ giá USD: một vài mức cố định để có cặp cùng tỷ giá, kèm hai mức lẻ tối đa 2 chữ số thập phân để chạy đường làm tròn (VND = làm tròn nguyên tệ × tỷ giá,
+// trong dung sai 1 đồng của LINE_FX_MISMATCH).
+export const arbUsdRate = fc.constantFrom('24000', '24500', '25000', '25500', '26000', '24750.5', '25123.25');
 // Thao tác ngoại tệ: đánh giá lại ở cuối một tháng ngẫu nhiên của 2026, với tỷ giá nhập tay hoặc theo tỷ giá chuyển khoản trung bình đã khai báo.
 export type RevalOp = { kind: 'reval'; date: string; rate: string | undefined };
 export const arbFxOps: fc.Arbitrary<RevalOp> = fc.record({ kind: fc.constant('reval' as const), date: fc.integer({ min: 1, max: 12 }).map((m) => `2026-${String(m).padStart(2, '0')}-${new Date(Date.UTC(2026, m, 0)).getUTCDate()}`),
