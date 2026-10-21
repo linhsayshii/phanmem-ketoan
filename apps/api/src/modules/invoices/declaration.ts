@@ -32,6 +32,8 @@ export interface VoucherInvoiceDto {
 export interface InvoiceRow {
   direction: 'purchase' | 'sale'; formNo: string | null | undefined; serial: string | null | undefined; invoiceNo: string; invoiceDate: string; partyId: string | null;
   invoiceGroupId: number | null; taxCodeId: number | null; baseAmount: string; taxAmount: string; isImport?: boolean | undefined; adjustsInvoiceId?: number | null; note?: string | null | undefined;
+  // Ghi đè thông tin đối tượng trên hóa đơn (bỏ trống: lấy từ danh mục); kiểm trùng và khóa tư vấn dùng mã số thuế đã ghi đè.
+  partyTaxCode?: string | null | undefined; partyName?: string | null | undefined; partyAddress?: string | null | undefined;
 }
 
 // Kỳ kê khai chứa ngày hóa đơn: tháng 1-12, hoặc quý 1-4 theo cài đặt vat_period của công ty.
@@ -41,6 +43,9 @@ export function declarePeriod(invoiceDate: string, vatPeriod: 'month' | 'quarter
 }
 
 const blank = (s: string | null | undefined): string | null => (s?.trim() ? s.trim() : null);
+type PartySnap = { name: string; tax_code: string | null; address: string | null };
+// Thông tin đối tượng hiệu lực của dòng hóa đơn: giá trị ghi đè nếu có, không thì danh mục.
+const effectiveParty = (r: InvoiceRow, p: PartySnap | undefined) => ({ name: blank(r.partyName) ?? p?.name ?? null, taxCode: blank(r.partyTaxCode) ?? p?.tax_code ?? null, address: blank(r.partyAddress) ?? p?.address ?? null });
 
 // Khóa kiểm trùng của một hóa đơn đầu vào, cùng chuẩn hóa với chỉ mục (fn_invoice_key): người bán không có mã số thuế thì thêm đối tượng.
 async function duplicateKey(trx: Trx, tenantId: string, r: InvoiceRow, partyTaxCode: string | null): Promise<string> {
@@ -73,22 +78,22 @@ async function assertNotDuplicate(trx: Trx, tenantId: string, voucherId: string,
 export async function insertInvoiceRows(trx: Trx, tenantId: string, voucherId: string, rows: InvoiceRow[]): Promise<void> {
   if (!rows.length) return;
   const { vat_period: vatPeriod } = await getSettings(trx, tenantId);
-  const parties = new Map<string, { name: string; tax_code: string | null; address: string | null }>();
+  const parties = new Map<string, PartySnap>();
   for (const id of new Set(rows.flatMap((r) => (r.partyId ? [r.partyId] : [])))) {
     const p = await trx.selectFrom('party').select(['name', 'tax_code', 'address']).where('id', '=', id).executeTakeFirstOrThrow();
     parties.set(id, p);
   }
   // Khóa tư vấn theo khóa hóa đơn, mọi khóa trước khi kiểm tra và theo thứ tự khóa: hai yêu cầu đồng thời không cùng qua kiểm tra, và hai chứng từ khai chung hai hóa đơn ngược thứ tự không chờ nhau thành vòng (deadlock).
   const keys = new Set<string>();
-  for (const r of rows) if (r.direction === 'purchase') keys.add(await duplicateKey(trx, tenantId, r, (r.partyId ? parties.get(r.partyId)! : undefined)?.tax_code ?? null));
+  for (const r of rows) if (r.direction === 'purchase') keys.add(await duplicateKey(trx, tenantId, r, effectiveParty(r, r.partyId ? parties.get(r.partyId) : undefined).taxCode));
   for (const key of [...keys].sort()) await sql`SELECT pg_advisory_xact_lock(hashtextextended(${'invoice_duplicate:' + key}, 0))`.execute(trx);
   for (const r of rows) {
-    const p = r.partyId ? parties.get(r.partyId)! : undefined;
-    if (r.direction === 'purchase') await assertNotDuplicate(trx, tenantId, voucherId, r, p?.tax_code ?? null);
+    const p = effectiveParty(r, r.partyId ? parties.get(r.partyId) : undefined);
+    if (r.direction === 'purchase') await assertNotDuplicate(trx, tenantId, voucherId, r, p.taxCode);
     const d = declarePeriod(r.invoiceDate, vatPeriod);
     await trx.insertInto('voucher_invoice').values({
       tenant_id: tenantId, voucher_id: voucherId, direction: r.direction, form_no: blank(r.formNo), serial: blank(r.serial), invoice_no: r.invoiceNo, invoice_date: r.invoiceDate,
-      party_id: r.partyId, party_name: p?.name ?? null, party_tax_code: p?.tax_code ?? null, party_address: p?.address ?? null, invoice_group_id: r.invoiceGroupId, tax_code_id: r.taxCodeId,
+      party_id: r.partyId, party_name: p.name, party_tax_code: p.taxCode, party_address: p.address, invoice_group_id: r.invoiceGroupId, tax_code_id: r.taxCodeId,
       base_amount: r.baseAmount, tax_amount: r.taxAmount, is_import: r.isImport ?? false, adjusts_invoice_id: r.adjustsInvoiceId ?? null, declare_year: d.year, declare_period: d.period, note: blank(r.note),
     }).execute();
   }

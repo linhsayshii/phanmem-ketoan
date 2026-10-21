@@ -413,13 +413,14 @@ export async function deleteDraft(trx: Trx, id: string): Promise<void> {
   await trx.deleteFrom('voucher_line').where('voucher_id', '=', id).execute(); // chứng từ đã ghi sổ: trigger dòng chặn (LINE_IMMUTABLE); nháp đã có số: trigger chứng từ chặn
   if (!(await trx.deleteFrom('voucher').where('id', '=', id).returning('id').executeTakeFirst())) throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy chứng từ', 404);
 }
-export async function listVouchers(trx: Trx, f: { type?: string | undefined; from?: string | undefined; to?: string | undefined; state?: string | undefined; q?: string | undefined; page: number; size: number }): Promise<{ rows: VoucherListRow[]; total: number }> {
+export async function listVouchers(trx: Trx, f: { type?: string | undefined; from?: string | undefined; to?: string | undefined; state?: string | undefined; q?: string | undefined; partyCode?: string | undefined; page: number; size: number }): Promise<{ rows: VoucherListRow[]; total: number }> {
   let q = trx.selectFrom('voucher as v').leftJoin('party as p', 'p.id', 'v.party_id');
   const types = f.type?.split(',').map((t) => t.trim()).filter(Boolean) ?? []; // type nhận danh sách mã cách nhau dấu phẩy
   if (types.length) q = q.where('v.voucher_type', 'in', types);
   if (f.from) q = q.where('v.posting_date', '>=', f.from);
   if (f.to) q = q.where('v.posting_date', '<=', f.to);
   if (f.state) q = q.where('v.state', '=', f.state);
+  if (f.partyCode) q = q.where('p.code', '=', f.partyCode);
   if (f.q) { const like = likePattern(f.q); q = q.where((eb) => eb.or([eb('v.voucher_no', 'ilike', like), eb('v.description', 'ilike', like), eb('p.name', 'ilike', like)])); }
   const total = Number((await q.select(sql<string>`count(*)`.as('n')).executeTakeFirstOrThrow()).n);
   const rows = await q.select(['v.id', 'v.voucher_type as voucherType', 'v.voucher_no as voucherNo', 'v.posting_date as postingDate', 'v.state', 'v.description', 'p.name as partyName',

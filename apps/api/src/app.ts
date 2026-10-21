@@ -31,6 +31,7 @@ import reportingRoutes from './modules/reporting/routes.js';
 import cashRoutes from './modules/cash/routes.js';
 import toolsRoutes from './modules/tools/routes.js';
 import arapRoutes from './modules/arap/routes.js';
+import taxRoutes from './modules/tax/routes.js';
 import invoiceRoutes from './modules/invoices/routes.js';
 
 declare module 'fastify' { interface FastifyInstance { config: Config; boss: PgBoss | null } }
@@ -69,6 +70,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(cashRoutes);
   await app.register(toolsRoutes);
   await app.register(arapRoutes);
+  await app.register(taxRoutes);
   await app.register(invoiceRoutes);
   app.get('/api/health', async () => ({ ok: true }));
   return app;

@@ -20,6 +20,7 @@ export const invoiceItemInput = z.object({
 });
 export const invoiceHeaderInput = z.object({
   formNo: optText(20), serial: optText(20), invoiceNo: z.string().trim().min(1).max(30), invoiceDate: dateIso, invoiceGroupCode: z.string().min(1), isImport: z.boolean().optional(),
+  partyTaxCode: optText(20), partyName: optText(300), partyAddress: optText(500), // ghi đè thông tin đối tượng trên hóa đơn (bỏ trống: lấy từ danh mục)
   adjustsInvoiceId: z.number().int().positive().optional(), // bắt buộc với giảm giá, trả lại (GGB, GGM): dòng của hóa đơn gốc
   declaredTax: z.record(z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG)).optional(), // thuế GTGT ghi trên hóa đơn theo mã thuế (VND), lệch số tính theo dòng thì dồn vào dòng thuế lớn nhất
 });
@@ -188,7 +189,8 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput): Pr
       const taxAmount = code === null ? '0' : D(detail.taxVnd[code] ?? 0).toFixed(0);
       if (D(baseAmount).isZero() && D(taxAmount).isZero()) continue;
       rows.push({ direction: scope, formNo: input.invoice.formNo, serial: input.invoice.serial, invoiceNo: input.invoice.invoiceNo, invoiceDate: input.invoice.invoiceDate, partyId, invoiceGroupId: group.id,
-        taxCodeId: code === null ? null : ids.get(code)!, baseAmount, taxAmount, isImport: input.invoice.isImport, adjustsInvoiceId: input.invoice.adjustsInvoiceId ?? null });
+        taxCodeId: code === null ? null : ids.get(code)!, baseAmount, taxAmount, isImport: input.invoice.isImport, adjustsInvoiceId: input.invoice.adjustsInvoiceId ?? null,
+        partyTaxCode: input.invoice.partyTaxCode, partyName: input.invoice.partyName, partyAddress: input.invoice.partyAddress });
     }
     await insertInvoiceRows(trx, tenantId, voucherId, rows);
   };
