@@ -256,6 +256,16 @@ describe('đối chiếu thuế hóa đơn với sổ cái', () => {
     expect(r).toMatchObject({ purchaseTaxInvoices: '1000000', debit1331: '1000000', saleTaxInvoices: '1000000', credit33311: '1000000', differences: [] });
   });
 
+  it('phiếu thu ghi Có 33311 không hóa đơn (thuế đầu ra chưa kê khai) vẫn là chênh lệch', async () => {
+    const t = await tenant();
+    const pt = await t.call('POST', '/api/vouchers', { voucherType: 'PT', postingDate: '2026-03-20', documentDate: '2026-03-20', partyCode: 'KH001', autoPost: true,
+      lines: [{ accountCode: '1111', debit: '1100000', credit: '0' }, { accountCode: '5113', debit: '0', credit: '1000000' }, { accountCode: '33311', debit: '0', credit: '100000' }] });
+    expect(pt.statusCode, pt.body).toBe(201);
+    const r = await t.recon(3);
+    expect(r.credit33311).toBe('100000');
+    expect(r.differences).toEqual([expect.objectContaining({ voucherId: pt.json().id, invoiceTax: '0', ledgerTax: '100000' })]);
+  });
+
   it('mã thuế phân bổ chia đôi hai tài khoản (50/50) không bị báo lệch giả', async () => {
     const t = await tenant();
     await t.admin(sql`UPDATE tax_distribution d SET factor_percent = 50 FROM tax_code c WHERE c.id = d.tax_code_id AND c.tenant_id = ${t.tenantId}::uuid AND c.code = 'V10' AND d.scope = 'purchase' AND d.account_code = '1331'`);

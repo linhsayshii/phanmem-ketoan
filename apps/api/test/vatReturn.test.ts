@@ -18,17 +18,22 @@ async function tenant() {
   const { cookie, tenantId } = await setupLedgerTenant(ctx, `VR${Date.now()}${n++}`);
   const call = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object, c = cookie): Promise<Res> => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload ? { payload } : {}) }) as unknown as Promise<Res>;
   let no = 0;
-  const invoice = async (voucherType: 'HDB' | 'HDM', date: string, amount: string, taxCode: string, group: string) => {
+  // items: [số tiền, mã thuế] mỗi dòng hàng; trả về phản hồi thô (kiểm lỗi).
+  const post = (voucherType: 'HDB' | 'HDM', date: string, items: [string, string][], group: string) => {
     const sale = voucherType === 'HDB';
-    const r = await call('POST', '/api/invoices', { voucherType, postingDate: date, documentDate: date, partyCode: sale ? 'KH001' : 'NCC001', autoPost: true,
-      items: [{ description: 'Hàng', accountCode: sale ? '5113' : '6422', amountCurrency: amount, taxCodes: [taxCode] }],
+    return call('POST', '/api/invoices', { voucherType, postingDate: date, documentDate: date, partyCode: sale ? 'KH001' : 'NCC001', autoPost: true,
+      items: items.map(([amount, taxCode]) => ({ description: 'Hàng', accountCode: sale ? '5113' : '6422', amountCurrency: amount, taxCodes: [taxCode] })),
       invoice: { serial: 'C26TAA', invoiceNo: String(++no).padStart(7, '0'), invoiceDate: date, invoiceGroupCode: group } });
-    expect(r.statusCode, r.body).toBe(201); return r.json() as { id: string };
   };
+  const invoice = async (voucherType: 'HDB' | 'HDM', date: string, amount: string, taxCode: string, group: string) => {
+    const r = await post(voucherType, date, [[amount, taxCode]], group); expect(r.statusCode, r.body).toBe(201); return r.json() as { id: string };
+  };
+  const setting = async (vatPeriod: 'month' | 'quarter') => expect((await call('PUT', '/api/settings', { vat_period: vatPeriod })).statusCode).toBe(200);
+  const year2027 = async () => expect((await call('POST', '/api/fiscal-years', { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT133' })).statusCode).toBe(201);
   const create = async (body: object): Promise<Ret> => { const r = await call('POST', '/api/tax/vat-returns', body); expect(r.statusCode, r.body).toBe(201); return r.json(); };
   const month = (period: number, more: object = {}) => ({ year: 2026, periodKind: 'month', period, ...more });
   const finalize = async (id: number): Promise<Ret> => { const r = await call('POST', `/api/tax/vat-returns/${id}/finalize`); expect(r.statusCode, r.body).toBe(200); return r.json(); };
-  return { cookie, tenantId, call, invoice, create, month, finalize };
+  return { cookie, tenantId, call, post, invoice, create, month, finalize, setting, year2027 };
 }
 
 describe('tờ khai 01/GTGT', () => {
@@ -103,10 +108,21 @@ describe('tờ khai 01/GTGT', () => {
     const r1 = await t.create(t.month(7, { revision: 1, manual: { '42': M(3) } }));
     expect(r1).toMatchObject({ revision: 1, status: 'draft' });
     await t.finalize(r1.id);
-    // kỳ sau lấy [43] của lần bổ sung cuối đã chốt
+    // TT 89/2026 Phụ lục II điểm 3: [22] vẫn lấy tờ khai lần đầu; bổ sung làm giảm số chuyển kỳ sau 3tr thì khai [37] của kỳ phát hiện
     const aug = await t.create(t.month(8));
-    expect(aug.values['22']).toBe(M(7));
-    expect(aug.hints['22']).toContain('bổ sung lần 1');
+    expect(aug.values['22']).toBe(M(10));
+    expect(aug.hints['22']).toContain('tờ khai lần đầu tháng 7/2026');
+    await ctx.t.admin.transaction().execute(async (trx) => { // giả lập bổ sung chốt trong tháng 8 (kỳ phát hiện); trigger chặn sửa dòng đã chốt nên tắt trigger trong giao dịch này
+      await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+      await sql`UPDATE tax_return SET finalized_at = '2026-08-15 10:00+07' WHERE id = ${r1.id}`.execute(trx);
+    });
+    const re = await t.call('PUT', `/api/tax/vat-returns/${aug.id}`, {});
+    expect(re.statusCode, re.body).toBe(200);
+    expect(re.json().hints['37']).toContain('Gợi ý 3000000');
+    expect(re.json().hints['37']).toContain('tháng 7/2026 lần 1');
+    expect(re.json().warnings.join(' ')).not.toContain('nhập tay không dùng'); // [22] đã lưu lấy từ kỳ trước, không phải nhập tay
+    const adj = await t.call('PUT', `/api/tax/vat-returns/${aug.id}`, { manual: { '37': M(3) } });
+    expect([adj.json().values['37'], adj.json().values['41'], adj.json().values['43']]).toEqual([M(3), M(7), M(7)]); // = [43] của tờ khai bổ sung
     const list = await t.call('GET', '/api/tax/vat-returns?year=2026');
     expect((list.json() as Ret[]).map((x) => [x.id, x.revision, x.status])).toEqual([[aug.id, 0, 'draft'], [r1.id, 1, 'final'], [r0.id, 0, 'final']]);
     expect((await t.call('GET', `/api/tax/vat-returns/${r0.id}`)).json()).toMatchObject({ id: r0.id, status: 'final', revision: 0 });
@@ -152,5 +168,77 @@ describe('tờ khai 01/GTGT', () => {
     const vien = `sid=${login.cookies.find((x) => x.name === 'sid')!.value}`;
     expect((await t.call('PUT', `/api/tax/vat-returns/${q.id}`, {}, vien)).statusCode).toBe(200);
     expect(err(await t.call('POST', `/api/tax/vat-returns/${q.id}/finalize`, undefined, vien))).toEqual([403, 'FORBIDDEN']);
+  });
+  it('chốt khóa đúng số đã thấy: sổ đổi sau lần tính thì 409 TAX_RETURN_STALE, không ghi gì; lưu lại nháp thì chốt được', async () => {
+    const t = await tenant();
+    await t.invoice('HDM', '2026-07-05', M(100), 'V10', '01');
+    const r = await t.create(t.month(7));
+    await t.invoice('HDM', '2026-07-06', M(20), 'V10', '01');
+    const stale = await t.call('POST', `/api/tax/vat-returns/${r.id}/finalize`);
+    expect(err(stale)).toEqual([409, 'TAX_RETURN_STALE']);
+    expect(stale.json().error.details.changed).toEqual(expect.arrayContaining([{ code: '24', stored: M(10), fresh: M(12) }, { code: '43', stored: M(10), fresh: M(12) }]));
+    expect((await t.call('GET', `/api/tax/vat-returns/${r.id}`)).json()).toMatchObject({ status: 'draft', values: { '24': M(10) } });
+    expect((await t.call('PUT', `/api/tax/vat-returns/${r.id}`, {})).json().values['24']).toBe(M(12));
+    expect((await t.finalize(r.id)).values['24']).toBe(M(12));
+  });
+
+  it('hóa đơn bán ra nhiều thuế suất: nhóm theo từng dòng mã thuế', async () => {
+    const t = await tenant();
+    expect((await t.post('HDB', '2026-07-10', [[M(100), 'V10'], [M(50), 'KCT']], '10')).statusCode).toBe(201);
+    expect((await t.post('HDB', '2026-07-11', [[M(20), 'V5'], [M(30), 'V10']], '10')).statusCode).toBe(201);
+    expect((await t.post('HDB', '2026-07-12', [[M(7), 'KKK'], [M(3), 'KCT']], 'KCT')).statusCode).toBe(201); // nhóm KCT không nhận dòng KKK
+    expect((await t.post('HDB', '2026-07-13', [[M(9), 'KCT'], [M(1), 'V10']], 'NPV')).statusCode).toBe(201); // nhóm NPV nhận dòng KCT, dòng V10 sang nhóm 10
+    const r = await t.create(t.month(7));
+    expect([r.values['26'], r.values['30'], r.values['31'], r.values['32'], r.values['33'], r.values['32a'], r.values['34a']])
+      .toEqual([M(53), M(20), M(1), M(131), String(13_100_000), M(7), M(9)]);
+    await sql`DELETE FROM invoice_group WHERE tenant_id = ${t.tenantId}::uuid AND scope = 'sale' AND code = '00'`.execute(ctx.t.admin); // không còn nhóm 0%
+    const bad = await t.post('HDB', '2026-07-14', [[M(20), 'V0']], '10');
+    expect(err(bad)).toEqual([400, 'INVOICE_GROUP_MISMATCH']);
+    expect(bad.json().error.message).toContain('Dòng thuế V0');
+  });
+
+  it('[22] qua mốc năm (tháng 12 → tháng 1, quý 4 → quý 1) và khi đổi kỳ khai tháng ↔ quý; cả tháng 12 lẫn quý 4 cùng chốt thì cảnh báo', async () => {
+    const t = await tenant();
+    await t.year2027();
+    await t.invoice('HDM', '2026-10-05', M(50), 'V10', '01');
+    await t.invoice('HDM', '2026-12-05', M(100), 'V10', '01');
+    const dec = await t.create(t.month(12));
+    await t.finalize(dec.id);
+    expect(dec.values['43']).toBe(M(10));
+    expect((await t.create({ year: 2027, periodKind: 'month', period: 1 })).values['22']).toBe(M(10)); // tháng 12 → tháng 1
+    await t.setting('quarter');
+    const q4 = await t.create({ year: 2026, periodKind: 'quarter', period: 4 });
+    await t.finalize(q4.id);
+    expect(q4.values['43']).toBe(M(15));
+    const q1 = await t.create({ year: 2027, periodKind: 'quarter', period: 1 }); // quý 4 → quý 1: chọn tờ khai quý, cảnh báo có cả tháng 12
+    expect(q1.values['22']).toBe(M(15));
+    expect(q1.warnings.join(' ')).toContain('cả tờ khai tháng và tờ khai quý');
+  });
+
+  it('đổi kỳ khai: tháng 12 → quý 1 năm sau, quý 4 → tháng 1 năm sau; thuế suất 8% ngoài thời gian giảm thuế thì cảnh báo', async () => {
+    const t = await tenant();
+    await t.year2027();
+    await t.invoice('HDM', '2026-12-05', M(100), 'V10', '01');
+    await t.finalize((await t.create(t.month(12))).id);
+    await t.setting('quarter');
+    await t.invoice('HDB', '2027-01-10', M(100), 'V8', '08'); // 2027: hết hiệu lực vat_reduced_rate (31/12/2026)
+    const q1 = await t.create({ year: 2027, periodKind: 'quarter', period: 1 });
+    expect(q1.values['22']).toBe(M(10));
+    expect(q1.warnings.join(' ')).toContain('ngoài thời gian giảm thuế GTGT');
+
+    const u = await tenant();
+    await u.year2027();
+    await u.setting('quarter');
+    await u.invoice('HDM', '2026-11-05', M(40), 'V10', '01');
+    await u.finalize((await u.create({ year: 2026, periodKind: 'quarter', period: 4 })).id);
+    await u.setting('month');
+    expect((await u.create({ year: 2027, periodKind: 'month', period: 1 })).values['22']).toBe(M(4));
+  });
+
+  it('ghi đè được số âm', async () => {
+    const t = await tenant();
+    const r = await t.create(t.month(7, { overrides: { '25': '-5' } }));
+    expect([r.values['25'], r.values['36']]).toEqual(['-5', '5']);
+    expect(err(await t.call('POST', '/api/tax/vat-returns', t.month(8, { manual: { '37': '-5' } })))).toEqual([400, 'VALIDATION']); // nhập tay vẫn không âm
   });
 });

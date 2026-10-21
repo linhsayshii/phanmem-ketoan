@@ -172,8 +172,23 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput): Pr
     }
     await trx.insertInto('voucher_item_line').values(itemRows).execute();
 
-    const group = await trx.selectFrom('invoice_group').select('id').where('scope', '=', scope).where('code', '=', input.invoice.invoiceGroupCode).executeTakeFirst();
+    const groupRows = await trx.selectFrom('invoice_group').select(['id', 'code', 'rate']).where('scope', '=', scope).execute();
+    const group = groupRows.find((g) => g.code === input.invoice.invoiceGroupCode);
     if (!group) throw new AppError('LOOKUP_NOT_FOUND', `Không có nhóm hóa đơn ${scope === 'sale' ? 'bán' : 'mua'} mã "${input.invoice.invoiceGroupCode}"`, 404);
+    const headerIsTaxCode = !!(await trx.selectFrom('tax_code').select('id').where('code', '=', group.code).executeTakeFirst());
+    // Bán ra: nhóm kê khai theo từng dòng mã thuế (một hóa đơn có thể nhiều thuế suất, mỗi thuế suất một chỉ tiêu của tờ khai). Thứ tự: nhóm đầu hóa đơn nếu khớp thuế suất
+    // của mã (nhóm không thuế suất như KTGT, NPV nhận mọi mã không thuế suất; nhóm mang mã của một mã thuế khác, vd. KCT với dòng KKK, thì không); không thì nhóm cùng mã
+    // với mã thuế (KCT, KKK); không nữa thì nhóm cùng thuế suất (00, 05, 08, 10); không có thì 400. Mua vào giữ nhóm đầu hóa đơn (nhóm là mục đích sử dụng, không phải thuế suất).
+    const groupFor = (code: string | null): number => {
+      const d = code === null ? undefined : defs[code];
+      if (scope !== 'sale' || !d || d.kind !== 'vat') return group.id;
+      const sameRate = (g: { rate: string | null }) => (g.rate === null ? d.rate === null : d.rate !== null && D(g.rate).eq(d.rate));
+      const ownGroup = groupRows.find((g) => g.code === code);
+      if (sameRate(group) && (group.code === code || !headerIsTaxCode || !ownGroup)) return group.id;
+      const g = ownGroup ?? (d.rate === null ? undefined : groupRows.find((x) => x.rate !== null && sameRate(x)));
+      if (!g) throw new AppError('INVOICE_GROUP_MISMATCH', `Dòng thuế ${code}: nhóm kê khai ${group.code} không khớp thuế suất ${d.rate === null ? '(không thuế suất)' : `${D(d.rate).toString()}%`} và không có nhóm bán ra cùng mã hoặc cùng thuế suất; chọn nhóm khác hoặc khai báo nhóm kê khai`, 400);
+      return g.id;
+    };
     const partyId = party.id;
     if (input.invoice.adjustsInvoiceId !== undefined) { // hóa đơn gốc: cùng chiều, cùng đối tượng, chưa hủy; không tự đối trừ công nợ
       const orig = await trx.selectFrom('voucher_invoice as i').innerJoin('voucher as v', 'v.id', 'i.voucher_id').select('i.id')
@@ -188,7 +203,7 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput): Pr
       const baseAmount = lineNos.reduce((s, n) => s.plus(detail.baseVnd[Number(n)] ?? 0), D(0)).toFixed(0);
       const taxAmount = code === null ? '0' : D(detail.taxVnd[code] ?? 0).toFixed(0);
       if (D(baseAmount).isZero() && D(taxAmount).isZero()) continue;
-      rows.push({ direction: scope, formNo: input.invoice.formNo, serial: input.invoice.serial, invoiceNo: input.invoice.invoiceNo, invoiceDate: input.invoice.invoiceDate, partyId, invoiceGroupId: group.id,
+      rows.push({ direction: scope, formNo: input.invoice.formNo, serial: input.invoice.serial, invoiceNo: input.invoice.invoiceNo, invoiceDate: input.invoice.invoiceDate, partyId, invoiceGroupId: groupFor(code),
         taxCodeId: code === null ? null : ids.get(code)!, baseAmount, taxAmount, isImport: input.invoice.isImport, adjustsInvoiceId: input.invoice.adjustsInvoiceId ?? null,
         partyTaxCode: input.invoice.partyTaxCode, partyName: input.invoice.partyName, partyAddress: input.invoice.partyAddress });
     }

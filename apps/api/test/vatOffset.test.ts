@@ -9,7 +9,7 @@ afterAll(async () => { await ctx.close(); });
 
 type Res = { statusCode: number; body: string; json: () => any }; // eslint-disable-line @typescript-eslint/no-explicit-any
 const err = (r: Res) => [r.statusCode, r.json().error?.code];
-interface Offset { amount: string; voucherId: string | null; reversedVoucherIds: string[]; unchanged: boolean; outputBalance: string; inputBalances: { accountCode: string; balance: string }[] }
+interface Offset { laterOffsetDates: string[]; amount: string; voucherId: string | null; reversedVoucherIds: string[]; unchanged: boolean; outputBalance: string; inputBalances: { accountCode: string; balance: string }[] }
 const M = (x: number) => String(x * 1_000_000);
 
 async function tenant() {
@@ -59,6 +59,19 @@ describe('khấu trừ thuế GTGT cuối kỳ', () => {
     expect((await t.voucher(r.voucherId!)).lines.map((l) => [l.accountCode, l.debit, l.credit])).toEqual([['33311', M(30), '0'], ['1331', '0', M(17)], ['1332', '0', M(13)]]);
     // ngày sau trong kỳ: dư Có 33311 đã về 0 nên không sinh thêm
     expect(await t.runOk('2026-08-31')).toMatchObject({ amount: '0', voucherId: null });
+  });
+
+  it('chạy lại ngày trước khi đã có KTT ngày sau: báo laterOffsetDates và cảnh báo, không tự chạy lại', async () => {
+    const t = await tenant();
+    await t.pkt('2026-07-10', sale(M(30)));
+    await t.pkt('2026-07-12', buy('1331', M(12)));
+    const aug = await t.runOk('2026-08-31');
+    expect(aug).toMatchObject({ amount: M(12), laterOffsetDates: [], warnings: [] });
+    await t.pkt('2026-07-20', buy('1331', M(5)));
+    const jul = await t.runOk('2026-07-31');
+    expect(jul).toMatchObject({ amount: M(17), laterOffsetDates: ['2026-08-31'] });
+    expect((jul as Offset & { warnings: string[] }).warnings.join(' ')).toContain('31/08/2026');
+    expect((await t.voucher(aug.voucherId!)).state).toBe('posted'); // KTT 31/8 giữ nguyên
   });
 
   it('kỳ khóa mềm cần quyền ghi lùi; khóa cứng 409; không có kỳ 404; quyền tax.offset', async () => {

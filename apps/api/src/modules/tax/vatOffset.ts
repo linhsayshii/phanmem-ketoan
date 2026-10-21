@@ -55,5 +55,9 @@ export async function runVatOffset(trx: Trx, ctx: { tenantId: string; userId: st
     await S.postVoucher(trx, v.id);
     voucherId = v.id;
   }
-  return { date, amount: amount.toFixed(0), outputBalance: output.toFixed(0), inputBalances: inputs.map((b) => ({ accountCode: b.code, balance: D(b.balance).toFixed(0) })), voucherId, reversedVoucherIds: reversed, unchanged };
+  // KTT của các ngày sau đã tính trên số dư cũ: không tự chạy lại (kỳ sau có thể đã khóa), báo để chạy lại theo thứ tự ngày.
+  const laterOffsetDates = (await trx.selectFrom('voucher').select('posting_date').distinct().where('source_doc_type', '=', 'vat_offset').where('state', '=', 'posted').where('reversal_of_id', 'is', null)
+    .where('posting_date', '>', date).orderBy('posting_date').execute()).map((r) => r.posting_date);
+  const warnings = !unchanged && laterOffsetDates.length ? [`Đã có khấu trừ thuế các ngày sau tính trên số dư cũ: chạy lại khấu trừ thuế theo thứ tự các ngày ${laterOffsetDates.map(formatVnDate).join(', ')}`] : [];
+  return { date, amount: amount.toFixed(0), laterOffsetDates, warnings, outputBalance: output.toFixed(0), inputBalances: inputs.map((b) => ({ accountCode: b.code, balance: D(b.balance).toFixed(0) })), voucherId, reversedVoucherIds: reversed, unchanged };
 }

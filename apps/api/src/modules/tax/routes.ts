@@ -10,6 +10,8 @@ import { createReturn, finalizeReturn, getReturn, listReturns, returnInput, retu
 const period = { year: z.coerce.number().int().min(2000).max(2100), period: z.coerce.number().int().min(1).max(12), periodKind: z.enum(['month', 'quarter']).default('month') };
 
 const numId = z.object({ id: z.coerce.number().int().positive() });
+// Lập, sửa, chốt tờ khai đọc nhiều truy vấn (bảng kê mua, bán, kỳ trước): một ảnh chụp, vẫn ghi được. Lập đồng thời cùng kỳ: bản sau gặp UNIQUE (409 DUPLICATE).
+const SNAPSHOT_RW = { isolation: 'repeatable read' as const };
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   // Bảng kê hóa đơn nội bộ theo kỳ kê khai; in (html/pdf/xlsx) cần thêm report.print. Dựng trong giao dịch REPEATABLE READ READ ONLY, PDF/Excel dựng ngoài giao dịch.
@@ -35,11 +37,11 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     app.withTenant(req, (trx) => listReturns(trx, req.query.year), READ_SNAPSHOT));
   app.get('/api/tax/vat-returns/:id', { preHandler: app.requirePermission('tax_return.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => getReturn(trx, req.params.id), READ_SNAPSHOT));
   app.post('/api/tax/vat-returns', { preHandler: app.requirePermission('tax_return.create'), schema: { body: returnInput } }, async (req, reply) =>
-    reply.status(201).send(await app.withTenant(req, (trx) => createReturn(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.body))));
+    reply.status(201).send(await app.withTenant(req, (trx) => createReturn(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.body), SNAPSHOT_RW)));
   app.put('/api/tax/vat-returns/:id', { preHandler: app.requirePermission('tax_return.update'), schema: { params: numId, body: returnUpdate } }, async (req) =>
-    app.withTenant(req, (trx) => updateReturn(trx, req.auth!.tenantId!, req.params.id, req.body)));
+    app.withTenant(req, (trx) => updateReturn(trx, req.auth!.tenantId!, req.params.id, req.body), SNAPSHOT_RW));
   app.post('/api/tax/vat-returns/:id/finalize', { preHandler: app.requirePermission('tax_return.finalize'), schema: { params: numId } }, async (req) =>
-    app.withTenant(req, (trx) => finalizeReturn(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.params.id)));
+    app.withTenant(req, (trx) => finalizeReturn(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.params.id), SNAPSHOT_RW));
 
   // Khấu trừ thuế GTGT cuối kỳ (chứng từ KTT); kỳ khóa sổ cần quyền ghi lùi ngày.
   app.post('/api/tax/vat-offset', { preHandler: app.requirePermission('tax.offset'), schema: { body: offsetInput } }, async (req) => {

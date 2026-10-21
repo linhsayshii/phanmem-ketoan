@@ -3,7 +3,8 @@ import { FormulaError, parseFormula, type Expr } from './reportFormula.js';
 
 // Tính tờ khai 01/GTGT từ mẫu dữ liệu (@kt/coa-data data/tax/01gtgt-*.json). Kiểu ở đây là phần cấu trúc @kt/domain cần: VatTemplate của @kt/coa-data gán được vào
 // (@kt/coa-data phụ thuộc @kt/domain nên không nhập ngược kiểu của nó).
-// Công thức: [mã] nối bằng + và - (cú pháp parseFormula của báo cáo tài chính, chỉ được dùng chỉ tiêu và số; mã tài khoản, đối ứng bị từ chối).
+// Công thức: [mã] và hằng số nguyên nối bằng + và - (cú pháp parseFormula của báo cáo tài chính). Parser đọc số nguyên như tiền tố tài khoản: ở đây đó là hằng;
+// tài khoản có loại trừ, đối ứng N/C và số lẻ bị từ chối (tờ khai tính bằng đồng nguyên).
 export interface VatFormLine {
   code: string; kind: 'flag' | 'carry' | 'invoice' | 'formula' | 'manual';
   invoice?: { direction: 'purchase' | 'sale'; groups: string[]; field: 'base' | 'tax'; importOnly?: boolean };
@@ -22,7 +23,9 @@ const TAXABLE = '27'; const TOTAL = '34';
 
 function refsOnlyLines(e: Expr, src: string): void {
   if (e.kind === 'bin') { refsOnlyLines(e.left, src); refsOnlyLines(e.right, src); return; }
-  if (e.kind !== 'line' && e.kind !== 'num') throw new FormulaError(`Công thức "${src}": chỉ được tham chiếu chỉ tiêu [mã] và số`);
+  if (e.kind === 'num' && e.value.includes('.')) throw new FormulaError(`Công thức "${src}": hằng số phải là số nguyên ("${e.value}")`);
+  const constant = e.kind === 'account' && e.exclude.length === 0 && /^\d+$/.test(e.prefix);
+  if (e.kind !== 'line' && e.kind !== 'num' && !constant) throw new FormulaError(`Công thức "${src}": chỉ được tham chiếu chỉ tiêu [mã] và hằng số nguyên`);
 }
 
 export function evalVatReturn(t: VatFormTemplate, inputs: VatReturnInputs): Record<string, string> {
@@ -35,7 +38,7 @@ export function evalVatReturn(t: VatFormTemplate, inputs: VatReturnInputs): Reco
   const inv = (key: string) => int(inputs.invoice[key] ?? '0', `Số liệu hóa đơn ${key}`);
 
   const value = new Map<string, Decimal>(); const visiting = new Set<string>();
-  const evalExpr = (e: Expr): Decimal => e.kind === 'bin' ? (e.op === '+' ? evalExpr(e.left).plus(evalExpr(e.right)) : evalExpr(e.left).minus(evalExpr(e.right))) : e.kind === 'line' ? evalLine(e.code) : e.kind === 'num' ? D(e.value) : ZERO;
+  const evalExpr = (e: Expr): Decimal => e.kind === 'bin' ? (e.op === '+' ? evalExpr(e.left).plus(evalExpr(e.right)) : evalExpr(e.left).minus(evalExpr(e.right))) : e.kind === 'line' ? evalLine(e.code) : e.kind === 'num' ? D(e.value) : e.kind === 'account' ? D(e.prefix) : ZERO;
   const evalInvoice = (l: VatFormLine): Decimal => {
     const i = l.invoice!;
     const part = (g: string) => inv(vatInvoiceKey(i.direction, g, i.field, i.importOnly ?? false));

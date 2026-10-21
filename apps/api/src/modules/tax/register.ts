@@ -132,16 +132,19 @@ async function taxAccounts(trx: Trx): Promise<Record<Direction, string[]>> {
 }
 
 // Phát sinh thuế của sổ cái theo chứng từ (Nợ − Có tài khoản thuế mua, Có − Nợ tài khoản thuế bán). Bỏ chứng từ khấu trừ thuế cuối kỳ (vat_offset): chuyển 33311 sang 1331, không có hóa đơn;
-// bỏ chứng từ số dư đầu kỳ (DK): số dư mang sang không phải phát sinh trong kỳ. Bỏ phần thuế bán ra của chứng từ nộp thuế GTGT: không có hóa đơn (kể cả chứng từ gốc của bản đảo)
-// và có dòng tiền 111/112 (Nợ 33311 / Có tiền, hoặc bản đảo của nó); phiếu chi mua hàng ghi Nợ 1331 không hóa đơn vẫn là chênh lệch.
-// shortcut: chỉ xét chứng từ gốc một cấp (reversal_of_id); đảo của bản đảo của chứng từ có hóa đơn hiếm, nếu cần thì đi hết chuỗi đảo như effectiveRows.
+// bỏ chứng từ số dư đầu kỳ (DK): số dư mang sang không phải phát sinh trong kỳ. Bỏ phần thuế bán ra của chứng từ nộp thuế GTGT: chứng từ gốc (chính nó, hoặc chứng từ bị đảo
+// với bản đảo) không có hóa đơn, ghi Nợ ròng tài khoản thuế bán ra và có dòng tiền 111/112 (Nợ 33311 / Có tiền, hoặc bản đảo của nó). Phiếu thu ghi Có 33311 không hóa đơn
+// (thuế đầu ra chưa kê khai) và phiếu chi ghi Nợ 1331 không hóa đơn vẫn là chênh lệch.
+// shortcut: chỉ xét chứng từ gốc một cấp (reversal_of_id); đảo của bản đảo hiếm, nếu cần thì đi hết chuỗi đảo như effectiveRows.
 async function ledgerTax(trx: Trx, acc: Record<Direction, string[]>, where: ReturnType<typeof sql>) {
   const r = await sql<{ voucher_id: string; purchase: string; sale: string }>`
     SELECT l.voucher_id, coalesce(sum(CASE WHEN a.code = ANY(${acc.purchase}::text[]) THEN l.debit - l.credit ELSE 0 END), 0)::text AS purchase,
            coalesce(sum(CASE WHEN a.code = ANY(${acc.sale}::text[]) AND NOT pay.is_payment THEN l.credit - l.debit ELSE 0 END), 0)::text AS sale
     FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
       CROSS JOIN LATERAL (SELECT NOT EXISTS (SELECT 1 FROM voucher_invoice i WHERE i.voucher_id IN (v.id, v.reversal_of_id))
-        AND EXISTS (SELECT 1 FROM voucher_line cl JOIN account ca ON ca.id = cl.account_id WHERE cl.voucher_id = v.id AND (ca.code LIKE '111%' OR ca.code LIKE '112%')) AS is_payment) pay
+        AND EXISTS (SELECT 1 FROM voucher_line cl JOIN account ca ON ca.id = cl.account_id WHERE cl.voucher_id = v.id AND (ca.code LIKE '111%' OR ca.code LIKE '112%'))
+        AND (SELECT coalesce(sum(ol.debit - ol.credit), 0) FROM voucher_line ol JOIN account oa ON oa.id = ol.account_id
+             WHERE ol.voucher_id = coalesce(v.reversal_of_id, v.id) AND oa.code = ANY(${acc.sale}::text[])) > 0 AS is_payment) pay
     WHERE v.state IN ('posted', 'reversed') AND v.source_doc_type IS DISTINCT FROM 'vat_offset' AND v.voucher_type <> 'DK' AND a.code = ANY(${[...acc.purchase, ...acc.sale]}::text[]) AND ${where}
     GROUP BY l.voucher_id`.execute(trx);
   return new Map(r.rows.map((x) => [x.voucher_id, x]));

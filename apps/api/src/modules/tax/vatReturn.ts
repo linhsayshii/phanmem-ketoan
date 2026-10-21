@@ -9,15 +9,18 @@ import { legalParam } from '../core/legal.js';
 import { invoiceRegister, specOf, type PeriodKind, type PeriodQ } from './register.js';
 
 // Tờ khai thuế GTGT 01/GTGT: số liệu hóa đơn lấy từ bảng kê (invoiceRegister, cùng truy vấn với màn hình bảng kê), chỉ tiêu tính theo mẫu dữ liệu của @kt/coa-data
-// (evalVatReturn). Lần đầu revision 0; đã chốt thì lập bổ sung revision n + 1. [22] = [43] của tờ khai đã chốt (lần bổ sung cuối) của kỳ liền trước.
+// (evalVatReturn). Lần đầu revision 0; đã chốt thì lập bổ sung revision n + 1. [22] = [43] của tờ khai lần đầu đã chốt của kỳ liền trước; chênh lệch số còn được khấu trừ
+// chuyển kỳ sau của tờ khai bổ sung khai vào [38] (tăng) hoặc [37] (giảm) của kỳ phát hiện sai sót, không qua [22] (TT 89/2026 Phụ lục II điểm 3 a, b, c, d, trang 517-518).
 type Trx = Transaction<Database>;
 const FORM = '01/GTGT';
 const amounts = z.record(z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG));
+// Ghi đè được âm: vd. [25] khi trả lại hàng mua (GGM) lớn hơn mua vào trong kỳ.
+const overridesIn = z.record(z.string().regex(/^-?\d{1,16}$/, 'Số ghi đè phải là số nguyên VND tối đa 16 chữ số, có thể âm'));
 export const returnInput = z.object({
   year: z.number().int().min(2000).max(2100), periodKind: z.enum(['month', 'quarter']), period: z.number().int().min(1).max(12), revision: z.number().int().min(0).optional(),
-  manual: amounts.optional(), overrides: amounts.optional(),
+  manual: amounts.optional(), overrides: overridesIn.optional(),
 });
-export const returnUpdate = z.object({ manual: amounts.optional(), overrides: amounts.optional() });
+export const returnUpdate = z.object({ manual: amounts.optional(), overrides: overridesIn.optional() });
 
 const lock = (trx: Trx, tenantId: string) => sql`SELECT pg_advisory_xact_lock(hashtext('tax_return'), hashtext(${tenantId}::text))`.execute(trx);
 
@@ -31,12 +34,13 @@ async function templateFor(trx: Trx, from: string, label: string): Promise<VatTe
   return loadVatTemplate(version);
 }
 
-// Chỉ tiêu nhập tay đã lưu: dòng 'manual' của mẫu và [22] (dùng lại khi kỳ trước chưa có tờ khai đã chốt).
+// Chỉ tiêu nhập tay đã lưu: dòng 'manual' của mẫu và [22] (chỉ dùng khi kỳ trước chưa có tờ khai lần đầu đã chốt; có thì compute bỏ qua, không cảnh báo).
 const manualOf = (t: VatTemplate, values: Record<string, string>) =>
   Object.fromEntries(t.lines.filter((l) => l.kind === 'manual' || l.kind === 'carry').flatMap((l) => (values[l.code] !== undefined ? [[l.code, values[l.code]!]] : [])));
 
 interface Computed { version: string; values: Record<string, string>; hints: Record<string, string>; warnings: string[] }
-async function compute(trx: Trx, q: PeriodQ, manual: Record<string, string>, overrides: Record<string, string>): Promise<Computed> {
+// explicitManual: manual do người dùng gửi trong yêu cầu này (không phải đọc lại từ values đã lưu); chỉ khi đó mới cảnh báo [22] nhập tay không dùng.
+async function compute(trx: Trx, q: PeriodQ, manual: Record<string, string>, overrides: Record<string, string>, explicitManual: boolean): Promise<Computed> {
   const s = specOf(q); const t = await templateFor(trx, s.from, s.label);
   const allowManual = new Set(t.lines.filter((l) => l.kind === 'manual' || l.kind === 'carry').map((l) => l.code));
   for (const c of Object.keys(manual)) if (!allowManual.has(c)) throw new AppError('VALIDATION', `Chỉ tiêu [${c}] không nhập tay được`, 400);
@@ -61,23 +65,45 @@ async function compute(trx: Trx, q: PeriodQ, manual: Record<string, string>, ove
   }
   if (group08 && !isVatRate8Verified()) warnings.push('Hóa đơn bán ra thuế suất 8% đang cộng vào chỉ tiêu [32]/[33] (thuế suất 10%): mẫu 01/GTGT TT 89/2026 không có dòng 8% và văn bản chưa nói khai ở chỉ tiêu nào, đây là giả định tạm của phần mềm; lập kèm Mẫu số 01 Phụ lục II NĐ 174/2025/NĐ-CP');
   const outside: string[] = [];
-  for (const x of rate8) if (!(await legalParam(trx, 'vat_reduced_rate', x.date))) outside.push(`${x.no} (${x.date})`);
+  for (const date of [...new Set(rate8.map((x) => x.date))]) if (!(await legalParam(trx, 'vat_reduced_rate', date))) outside.push(...rate8.filter((x) => x.date === date).map((x) => `${x.no} (${x.date})`));
   if (outside.length) warnings.push(`Hóa đơn dùng thuế suất 8% ngoài thời gian giảm thuế GTGT (tham số vat_reduced_rate): ${[...new Set(outside)].join(', ')}`);
 
-  // [22]: [43] của tờ khai đã chốt có kỳ kết thúc ở tháng liền trước kỳ này (kỳ trước có thể là tháng hoặc quý khi công ty đổi kỳ khai giữa các năm).
-  const prev = await trx.selectFrom('tax_return').select(['year', 'period', 'period_kind', 'revision', sql<string>`values->>'43'`.as('carry')]).where('form_code', '=', FORM).where('status', '=', 'final')
-    .where(sql<boolean>`year * 12 + CASE period_kind WHEN 'month' THEN period ELSE period * 3 END = ${s.lo - 1}`).orderBy('revision', 'desc').orderBy('id', 'desc').executeTakeFirst();
+  // [22]: [43] của tờ khai lần đầu đã chốt có kỳ kết thúc ở tháng liền trước kỳ này (kỳ trước có thể là tháng hoặc quý khi công ty đổi kỳ khai giữa các năm).
+  // Tờ khai bổ sung của kỳ trước không đổi [22]: chênh lệch của nó vào [37]/[38] của kỳ phát hiện (gợi ý ở dưới).
+  const kindName = (k: string) => (k === 'month' ? 'tháng' : 'quý');
+  const cands = await trx.selectFrom('tax_return').select(['year', 'period', 'period_kind', sql<string>`values->>'43'`.as('carry')]).where('form_code', '=', FORM).where('status', '=', 'final')
+    .where('revision', '=', 0).where(sql<boolean>`year * 12 + CASE period_kind WHEN 'month' THEN period ELSE period * 3 END = ${s.lo - 1}`).execute();
+  // Cả tờ khai tháng 12 lẫn quý 4 cùng chốt (không hợp lệ): lấy tờ khai cùng loại kỳ với kỳ này (không lưu cài đặt kỳ khai theo năm), cảnh báo.
+  const prev = cands.find((c) => c.period_kind === q.periodKind) ?? cands[0];
+  if (cands.length > 1) warnings.push(`Kỳ trước có cả tờ khai tháng và tờ khai quý đã chốt: [${carryLine}] lấy từ tờ khai ${kindName(prev!.period_kind)} ${prev!.period}/${prev!.year}; kiểm tra lại kỳ khai`);
   let carry: string;
   if (prev) {
     carry = prev.carry ?? '0';
-    hints[carryLine] = `Lấy chỉ tiêu [43] của tờ khai ${prev.period_kind === 'month' ? 'tháng' : 'quý'} ${prev.period}/${prev.year}${prev.revision ? ` bổ sung lần ${prev.revision}` : ''} đã chốt`;
-    if (manual[carryLine] !== undefined && manual[carryLine] !== carry) warnings.push(`Chỉ tiêu [${carryLine}] nhập tay không dùng: đã có tờ khai kỳ trước đã chốt`);
+    hints[carryLine] = `Lấy chỉ tiêu [43] của tờ khai lần đầu ${kindName(prev.period_kind)} ${prev.period}/${prev.year} đã chốt`;
+    if (explicitManual && manual[carryLine] !== undefined && manual[carryLine] !== carry) warnings.push(`Chỉ tiêu [${carryLine}] nhập tay không dùng: đã có tờ khai kỳ trước đã chốt`);
   } else {
     carry = manual[carryLine] ?? '0';
     const p = await trx.selectFrom('fiscal_period').select('regime').where('date_from', '<=', s.from).where('date_to', '>=', s.from).where('period_no', '>', 0).executeTakeFirst();
     const bal = p ? (await sql<{ v: string }>`SELECT coalesce(sum(l.debit - l.credit), 0)::text AS v FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
       WHERE v.state IN ('posted', 'reversed') AND l.posting_date < ${s.from}::date AND a.regime = ${p.regime} AND a.code LIKE '133%'`.execute(trx)).rows[0]!.v : '0';
     hints[carryLine] = `Kỳ trước chưa có tờ khai đã chốt: nhập tay; gợi ý số dư Nợ TK 133 đầu kỳ ${D(bal).toFixed(0)}`;
+  }
+
+  // Tờ khai bổ sung đã chốt của các kỳ trước, chốt trong kỳ này (coi là kỳ phát hiện sai sót): chênh lệch [43] so với lần khai liền trước của cùng kỳ là số gợi ý cho
+  // [38] (tăng) hoặc [37] (giảm). Chỉ gợi ý: người dùng nhập [37]/[38] (còn gồm các điều chỉnh khác theo ghi chú 5 của mẫu).
+  const supp = (await sql<{ year: number; period: number; period_kind: string; revision: number; delta: string }>`
+    SELECT b.year, b.period, b.period_kind, b.revision, (coalesce(b.values->>'43', '0')::numeric - coalesce(a.values->>'43', '0')::numeric)::text AS delta
+    FROM tax_return b JOIN tax_return a ON a.form_code = b.form_code AND a.year = b.year AND a.period_kind = b.period_kind AND a.period = b.period AND a.revision = b.revision - 1
+    WHERE b.form_code = ${FORM} AND b.status = 'final' AND b.revision > 0
+      AND b.year * 12 + CASE b.period_kind WHEN 'month' THEN b.period ELSE b.period * 3 END < ${s.lo}
+      AND (b.finalized_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN ${s.from}::date AND ${s.to}::date
+    ORDER BY b.year, b.period, b.revision`.execute(trx)).rows.filter((x) => !D(x.delta).isZero());
+  for (const [code, sign, word] of [['38', 1, 'tăng'], ['37', -1, 'giảm']] as const) {
+    const list = supp.filter((x) => D(x.delta).times(sign).gt(0));
+    if (!list.length || !t.lines.some((l) => l.code === code)) continue;
+    const total = list.reduce((a, x) => a.plus(D(x.delta).abs()), D(0)).toFixed(0);
+    hints[code] = `Gợi ý ${total}: tờ khai bổ sung ${list.map((x) => `${kindName(x.period_kind)} ${x.period}/${x.year} lần ${x.revision} (${D(x.delta).abs().toFixed(0)})`).join(', ')} làm ${word} số thuế còn được khấu trừ chuyển kỳ sau; khai vào [${code}] kỳ phát hiện (TT 89/2026 Phụ lục II điểm 3)`;
+    warnings.push(`Có tờ khai bổ sung kỳ trước làm ${word} số thuế còn được khấu trừ: khai ${total} vào chỉ tiêu [${code}] (xem gợi ý)`);
   }
 
   const values = evalVatReturn(t, { invoice, carry, manual, overrides });
@@ -130,7 +156,7 @@ export async function createReturn(trx: Trx, ctx: { tenantId: string; userId: st
   const revision = latest ? latest.revision + 1 : 0;
   if (input.revision !== undefined && input.revision !== revision) throw new AppError('TAX_RETURN_REVISION', revision === 0 ? 'Kỳ này chưa có tờ khai: lập lần đầu (revision 0)' : `Lần bổ sung tiếp theo của kỳ này là lần ${revision}`, 409);
   const overrides = input.overrides ?? {};
-  const c = await compute(trx, q, input.manual ?? {}, overrides);
+  const c = await compute(trx, q, input.manual ?? {}, overrides, true);
   const r = await trx.insertInto('tax_return').values({ tenant_id: ctx.tenantId, form_code: FORM, template_version: c.version, period_kind: q.periodKind, year: q.year, period: q.period, revision,
     values: JSON.stringify(c.values), overrides: JSON.stringify(overrides), created_by: ctx.userId }).returning('id').executeTakeFirstOrThrow();
   return { ...(await getReturn(trx, r.id)), hints: c.hints, warnings: c.warnings };
@@ -147,15 +173,19 @@ async function draftOf(trx: Trx, tenantId: string, id: number): Promise<Row> {
 export async function updateReturn(trx: Trx, tenantId: string, id: number, input: z.infer<typeof returnUpdate>) {
   const r = await draftOf(trx, tenantId, id);
   const overrides = input.overrides ?? r.overrides;
-  const c = await compute(trx, qOf(r), input.manual ?? manualOf(loadVatTemplate(r.template_version as VatTemplate['version']), r.values), overrides);
+  const c = await compute(trx, qOf(r), input.manual ?? manualOf(loadVatTemplate(r.template_version as VatTemplate['version']), r.values), overrides, input.manual !== undefined);
   await trx.updateTable('tax_return').set({ template_version: c.version, values: JSON.stringify(c.values), overrides: JSON.stringify(overrides) }).where('id', '=', id).execute();
   return { ...(await getReturn(trx, id)), hints: c.hints, warnings: c.warnings };
 }
 
-// Chốt: tính lại lần cuối theo sổ tại lúc chốt (số chốt khớp sổ, [43] chuyển kỳ sau đúng), rồi khóa (trigger chặn sửa, xóa).
+// Chốt khóa đúng số người dùng đã thấy: tính lại theo sổ hiện tại để kiểm; lệch số đã lưu thì 409 TAX_RETURN_STALE (không ghi gì), người dùng lưu lại nháp để tính lại
+// và kiểm tra rồi mới chốt. Khớp thì chỉ đổi trạng thái (trigger chặn sửa, xóa từ đó).
 export async function finalizeReturn(trx: Trx, ctx: { tenantId: string; userId: string }, id: number) {
   const r = await draftOf(trx, ctx.tenantId, id);
-  const c = await compute(trx, qOf(r), manualOf(loadVatTemplate(r.template_version as VatTemplate['version']), r.values), r.overrides);
-  await trx.updateTable('tax_return').set({ template_version: c.version, values: JSON.stringify(c.values), status: 'final', finalized_by: ctx.userId, finalized_at: sql<string>`now()` }).where('id', '=', id).execute();
+  const c = await compute(trx, qOf(r), manualOf(loadVatTemplate(r.template_version as VatTemplate['version']), r.values), r.overrides, false);
+  const changed = [...new Set([...Object.keys(r.values), ...Object.keys(c.values)])].filter((k) => r.values[k] !== c.values[k]).map((code) => ({ code, stored: r.values[code] ?? null, fresh: c.values[code] ?? null }));
+  if (changed.length || c.version !== r.template_version)
+    throw new AppError('TAX_RETURN_STALE', `Số liệu sổ đã thay đổi kể từ lần tính trước (${changed.map((x) => `[${x.code}]`).join(', ') || 'mẫu tờ khai'}): lưu lại nháp để tính lại và kiểm tra trước khi chốt`, 409, { changed });
+  await trx.updateTable('tax_return').set({ status: 'final', finalized_by: ctx.userId, finalized_at: sql<string>`now()` }).where('id', '=', id).execute();
   return { ...(await getReturn(trx, id)), hints: c.hints, warnings: c.warnings };
 }
