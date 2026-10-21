@@ -6,12 +6,12 @@ import OpeningBalancePage from '../src/pages/OpeningBalance.js';
 
 const mocks = vi.hoisted(() => {
   class ApiError extends Error { constructor(public code: string, message: string, public status = 409, public details?: unknown) { super(message); } }
-  return { api: vi.fn(), ApiError, perms: { has: (_c: string): boolean => true }, grid: { columns: [] as { field?: string; editable?: unknown; valueSetter?: unknown; valueParser?: unknown; valueFormatter?: unknown }[] } };
+  return { api: vi.fn(), ApiError, perms: { has: (_c: string): boolean => true }, grid: { columns: [] as { field?: string; editable?: unknown; valueSetter?: unknown; valueParser?: unknown; valueFormatter?: unknown }[], rows: [] as Record<string, unknown>[] } };
 });
 vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: mocks.ApiError }));
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: (c: string) => mocks.perms.has(c) }) }));
 // lưới AG Grid và ô tra danh mục nặng trong jsdom và không thuộc điều đang kiểm tra (nút theo quyền/trạng thái tải); đường nhập phím được kiểm bằng trình duyệt
-vi.mock('@kt/ui', () => ({ KeyboardGrid: (p: { columns: { field?: string; editable?: unknown; valueSetter?: unknown; valueParser?: unknown; valueFormatter?: unknown }[] }) => { mocks.grid.columns = p.columns; return null; }, LookupSelect: () => null }));
+vi.mock('@kt/ui', () => ({ KeyboardGrid: (p: { rows: Record<string, unknown>[]; columns: { field?: string; editable?: unknown; valueSetter?: unknown; valueParser?: unknown; valueFormatter?: unknown }[] }) => { mocks.grid.columns = p.columns; mocks.grid.rows = p.rows; return null; }, LookupSelect: () => null }));
 
 vi.setConfig({ testTimeout: 30_000 });
 const years = [{ fiscalYear: 2026, regime: 'TT133', dateFrom: '2026-01-01' }];
@@ -144,8 +144,8 @@ describe('Màn hình Số dư đầu kỳ', () => {
       currencyCode: 'VND', debit: '100', credit: '0', debitCurrency: '0', creditCurrency: '0' };
     const accounts = [{ code: '1121', subledgerKind: 'bank' }, { code: '131', subledgerKind: 'receivable' }, { code: '331', subledgerKind: 'payable' }, { code: '1111', subledgerKind: null }];
     const apiDoc = () => mocks.api.mockImplementation(async (path: string) =>
-      path === '/api/fiscal-years' ? years : path === '/api/opening-balance/2026' ? [saved131] : path === '/api/accounts?regime=TT133' ? accounts : []);
-    type Col = { field?: string; editable?: unknown; valueSetter?: unknown; valueParser?: unknown; valueFormatter?: unknown };
+      path === '/api/fiscal-years' ? years : path === '/api/opening-balance/2026' ? [{ ...saved131 }] : path === '/api/accounts?regime=TT133' ? accounts : []);
+    type Col = { field?: string; editable?: unknown; valueSetter?: unknown; valueParser?: unknown; valueFormatter?: unknown; cellStyle?: unknown; tooltipValueGetter?: unknown };
     const col = (field: string) => mocks.grid.columns.find((c) => c.field === field) as Col;
 
     it('Số chứng từ, Ngày chứng từ, Hạn thanh toán chỉ sửa được ở dòng tài khoản công nợ', async () => {
@@ -159,16 +159,39 @@ describe('Màn hình Số dư đầu kỳ', () => {
       }
     });
 
-    it('ô ngày nhận dd/mm/yyyy, để trống là không có, chữ sai giữ giá trị cũ; hiện dạng dd/mm/yyyy', async () => {
+    it('ô ngày nhận dd/mm/yyyy, để trống là không có; hiện dạng dd/mm/yyyy', async () => {
       apiDoc();
       renderPage();
       await waitFor(() => expect(col('docDate')).toBeDefined());
-      const parse = col('docDate').valueParser as (p: { newValue: unknown; oldValue: unknown }) => string | null;
-      const format = col('dueDate').valueFormatter as (p: { value: unknown }) => string;
-      expect(parse({ newValue: '15/11/2025', oldValue: null })).toBe('2025-11-15');
-      expect(parse({ newValue: '', oldValue: '2025-11-15' })).toBeNull();
-      expect(parse({ newValue: '31/02/2025', oldValue: '2025-11-15' })).toBe('2025-11-15');
-      expect([format({ value: '2026-01-15' }), format({ value: null })]).toEqual(['15/01/2026', '']);
+      const set = col('docDate').valueSetter as (p: { data: Record<string, unknown>; newValue: unknown }) => boolean;
+      const format = col('dueDate').valueFormatter as (p: { value: unknown; data?: Record<string, unknown> }) => string;
+      const row: Record<string, unknown> = { docDate: null };
+      set({ data: row, newValue: '15/11/2025' }); expect(row.docDate).toBe('2025-11-15');
+      set({ data: row, newValue: '' }); expect(row.docDate).toBeNull();
+      expect([format({ value: '2026-01-15', data: {} }), format({ value: null, data: {} })]).toEqual(['15/01/2026', '']);
+    });
+
+    it('ngày sai (31/02/2026): ô báo lỗi, giữ chữ đã gõ, Lưu bị chặn nêu dòng; sửa đúng thì hết lỗi và lưu được', async () => {
+      apiDoc();
+      renderPage();
+      const save = await screen.findByRole('button', { name: 'Lưu' });
+      await waitFor(() => expect(save).toBeEnabled());
+      const c = col('dueDate');
+      const set = c.valueSetter as (p: { data: Record<string, unknown>; newValue: unknown }) => boolean;
+      const style = c.cellStyle as (p: { data: Record<string, unknown> }) => Record<string, string>;
+      const tip = c.tooltipValueGetter as (p: { data: Record<string, unknown> }) => string | undefined;
+      const format = c.valueFormatter as (p: { value: unknown; data: Record<string, unknown> }) => string;
+      const row = mocks.grid.rows[0]!; // dòng 131 đã lưu, AG Grid ghi thẳng vào đối tượng dòng
+      set({ data: row, newValue: '31/02/2026' });
+      expect(row.dueDate).toBe('2026-01-15'); // giá trị hợp lệ cũ không bị ghi đè bằng ngày không có thật
+      expect([format({ value: row.dueDate, data: row }), tip({ data: row }), style({ data: row }).color]).toEqual(['31/02/2026', 'Ngày không hợp lệ, nhập dạng dd/mm/yyyy', '#cf1322']);
+      await userEvent.click(save);
+      expect(await screen.findByText('Dòng 1: Ngày không hợp lệ, nhập dạng dd/mm/yyyy')).toBeInTheDocument();
+      expect(mocks.api.mock.calls.filter(([, init]) => (init as { method?: string } | undefined)?.method === 'PUT')).toHaveLength(0);
+      set({ data: row, newValue: '28/02/2026' });
+      expect([row.dueDate, format({ value: row.dueDate, data: row }), tip({ data: row }), style({ data: row }).color]).toEqual(['2026-02-28', '28/02/2026', undefined, '']);
+      await userEvent.click(save);
+      await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/opening-balance/2026', { method: 'PUT', json: { rows: [expect.objectContaining({ accountCode: '131', dueDate: '2026-02-28' })] } }));
     });
 
     it('đổi sang tài khoản không theo dõi công nợ thì bỏ số, ngày chứng từ và hạn; đổi giữa hai tài khoản công nợ thì giữ', async () => {

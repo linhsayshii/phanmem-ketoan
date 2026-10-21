@@ -308,12 +308,12 @@ describe('chứng từ', () => {
     const jobs = async () => (await sql<{ n: number }>`SELECT count(*) AS n FROM pgboss.job WHERE name = 'balance.recompute' AND data->>'tenantId' = ${tenantId}`.execute(ctx.t.admin)).rows[0]!.n;
     await expect.poll(jobs, { timeout: 5000 }).toBeGreaterThan(0);
   });
-  it('chứng từ 5.000 dòng tạo và ghi sổ dưới 5 giây (kiểm cân bằng một lần mỗi giao dịch)', async () => {
+  it('chứng từ 5.000 dòng tạo và ghi sổ dưới 10 giây (kiểm cân bằng một lần mỗi giao dịch)', async () => {
     const lines = Array.from({ length: 2500 }, () => [L('1111', '10'), L('5113', '0', '10')]).flat();
     const t0 = Date.now();
     const c = await create(pkt('2026-01-20', lines)); expect(c.statusCode, c.body.slice(0, 200)).toBe(201);
     const p = await post(c.json().id); expect(p.statusCode, p.body.slice(0, 200)).toBe(200);
-    expect(Date.now() - t0).toBeLessThan(5000);
+    expect(Date.now() - t0).toBeLessThan(10_000); // GĐ1.5 quyết định 6: đo ~3,5 giây, VPS 2 CPU dùng chung nên chừa biên; O(n²) cũ mất 18 giây vẫn đỏ
     expect((await sql<{ n: number }>`SELECT count(*)::int AS n FROM voucher_balance_pending`.execute(ctx.t.admin)).rows[0]!.n).toBe(0);
   }, 60_000);
 });

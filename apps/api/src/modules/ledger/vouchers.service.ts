@@ -314,10 +314,12 @@ export async function updatePostedMeta(trx: Trx, id: string, version: number, in
     const r = await trx.updateTable('voucher_line').set(set as never).where('voucher_id', '=', id).where('line_no', '=', l.lineNo).executeTakeFirst();
     if (!r.numUpdatedRows) throw new AppError('LINE_NOT_FOUND', `Chứng từ không có dòng ${l.lineNo}`, 404);
   }
-  // Hạn thanh toán của khoản công nợ đi theo hạn của dòng (cùng thứ tự ưu tiên như fn_open_items_create).
-  if (input.lines?.some((l) => l.dueDate !== undefined))
+  // Hạn thanh toán của khoản công nợ đi theo hạn của dòng (cùng thứ tự ưu tiên như fn_open_items_create), chỉ dòng có đổi hạn:
+  // khoản khác giữ hạn đã tính lúc ghi sổ dù số ngày được nợ của đối tượng đã đổi.
+  const dueLines = (input.lines ?? []).filter((l) => l.dueDate !== undefined).map((l) => l.lineNo);
+  if (dueLines.length)
     await sql`UPDATE open_item o SET due_date = coalesce(l.due_date, v.due_date, o.doc_date + p.payment_term_days) FROM voucher_line l, voucher v, party p
-      WHERE o.voucher_id = ${id}::uuid AND l.id = o.voucher_line_id AND l.posting_date = o.line_posting_date AND v.id = o.voucher_id AND p.id = o.party_id`.execute(trx);
+      WHERE o.voucher_id = ${id}::uuid AND o.line_no = ANY(${dueLines}::int[]) AND l.id = o.voucher_line_id AND l.posting_date = o.line_posting_date AND v.id = o.voucher_id AND p.id = o.party_id`.execute(trx);
   // Một lần UPDATE cuối để trigger tăng version đúng một nấc (kể cả khi chỉ đổi chiều phân tích của dòng).
   await trx.updateTable('voucher').set({ description: input.description !== undefined ? input.description : sql<string | null>`description` }).where('id', '=', id).execute();
   return getVoucher(trx, id);

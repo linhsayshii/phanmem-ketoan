@@ -53,8 +53,15 @@ describe('công nợ theo chứng từ (open_item)', () => {
     expect(await items(h.id)).toEqual([expect.objectContaining({ line_no: 2, account: '331', party: 'NCC001', due_date: '2026-04-30', amount: '-40', amount_currency: '-40.0000' })]); // khoản Có mang số âm
     // sửa hạn của dòng sau khi ghi sổ: hạn của khoản đi theo; bỏ hạn dòng thì về hạn theo số ngày được nợ
     const version = () => call('GET', `/api/vouchers/${v.id}`).then((r) => r.json().version as number);
-    expect((await call('PUT', `/api/vouchers/${v.id}`, { version: await version(), lines: [{ lineNo: 2, dueDate: '2026-02-20' }, { lineNo: 1, dueDate: null }] })).statusCode).toBe(200);
-    expect((await items(v.id)).map((i) => i.due_date)).toEqual(['2026-02-02', '2026-02-20', null]);
+    expect((await call('PUT', `/api/vouchers/${v.id}`, { version: await version(), lines: [{ lineNo: 1, dueDate: null }] })).statusCode).toBe(200);
+    expect((await items(v.id)).map((i) => i.due_date)).toEqual(['2026-02-02', '2026-02-02', null]);
+    // số ngày được nợ của KH001 đổi sau đó: sửa hạn dòng 2 không tính lại hạn của khoản dòng 1
+    const term = (n: number) => sql`UPDATE party SET payment_term_days = ${n} WHERE tenant_id = ${tenantId}::uuid AND code = 'KH001'`.execute(ctx.t.admin);
+    await term(45);
+    try {
+      expect((await call('PUT', `/api/vouchers/${v.id}`, { version: await version(), lines: [{ lineNo: 2, dueDate: '2026-02-20' }] })).statusCode).toBe(200);
+      expect((await items(v.id)).map((i) => i.due_date)).toEqual(['2026-02-02', '2026-02-20', null]);
+    } finally { await term(30); }
     const un = await call('POST', `/api/vouchers/${v.id}/unpost`); expect(un.statusCode, un.body).toBe(200);
     expect(await items(v.id)).toEqual([]);
     expect((await call('POST', `/api/vouchers/${v.id}/post`)).statusCode).toBe(200); // ghi sổ lại sinh lại
@@ -176,12 +183,12 @@ describe('công nợ theo chứng từ (open_item)', () => {
     expect((await get('131', viewer)).statusCode).toBe(403);
   });
 
-  it('chứng từ 5.000 dòng công nợ tạo và ghi sổ dưới 5 giây, mỗi dòng 131 một open_item', async () => {
+  it('chứng từ 5.000 dòng công nợ tạo và ghi sổ dưới 10 giây, mỗi dòng 131 một open_item', async () => {
     const lines = Array.from({ length: 2500 }, () => [K('131', 'KH001', '10'), L('5113', '0', '10')]).flat();
     const t0 = Date.now();
     const c = await call('POST', '/api/vouchers', { voucherType: 'PKT', postingDate: '2026-05-20', documentDate: '2026-05-20', lines }); expect(c.statusCode, c.body.slice(0, 200)).toBe(201);
     const p = await call('POST', `/api/vouchers/${c.json().id}/post`); expect(p.statusCode, p.body.slice(0, 200)).toBe(200);
-    expect(Date.now() - t0).toBeLessThan(5000);
+    expect(Date.now() - t0).toBeLessThan(10_000); // GĐ1.5 quyết định 6: đo ~4 giây, VPS 2 CPU dùng chung nên chừa biên; O(n²) cũ mất 18 giây vẫn đỏ
     expect((await sql<{ n: number }>`SELECT count(*)::int AS n FROM open_item WHERE voucher_id = ${c.json().id}::uuid`.execute(ctx.t.admin)).rows[0]!.n).toBe(2500);
   }, 60_000);
 });

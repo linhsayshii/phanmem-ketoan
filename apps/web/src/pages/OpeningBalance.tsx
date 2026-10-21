@@ -11,8 +11,11 @@ import { accountFetcherFor, bankAccountFetcher } from '../lookups.js';
 import { parseAmount } from './VoucherForm.js';
 
 // accountName, partyName, bankName và id chỉ để hiển thị; máy chủ không nhận. docNo, docDate, dueDate: số dư công nợ theo từng hóa đơn.
+// badDates: chữ gõ sai ở ô ngày (chưa lưu được), ô báo lỗi tới khi sửa.
+type DateField = 'docDate' | 'dueDate';
 type Row = { accountCode: string; accountName: string; partyCode: string | null; partyName: string | null; bankAccountNo: string | null; bankName: string | null;
-  docNo: string | null; docDate: string | null; dueDate: string | null; currencyCode: string; debit: string; credit: string; debitCurrency: string; creditCurrency: string };
+  docNo: string | null; docDate: string | null; dueDate: string | null; currencyCode: string; debit: string; credit: string; debitCurrency: string; creditCurrency: string;
+  badDates?: Partial<Record<DateField, string>> };
 interface Issue { code: string; message: string; accountCode?: string; partyCode?: string | null; warning?: boolean }
 interface FiscalYear { fiscalYear: number; regime: string; dateFrom: string }
 interface ImportResult { total: number; inserted: number; errors: { row: number; column: string; message: string }[]; errorCount?: number }
@@ -33,15 +36,23 @@ const numCol = (field: keyof Row, headerName: string, foreign: boolean): ColDef<
   valueFormatter: (p) => { const v = (p.value as string) || '0'; return formatVnNumber(v, foreign ? D(v).decimalPlaces() : 0); },
   valueParser: (p) => (foreign ? parseForeign(p.newValue, p.oldValue) : parseAmount(p.newValue, p.oldValue)),
   cellEditorParams: { useFormatter: true } }); // ô sửa hiện số dạng 1.500.000 để parseVnNumber đọc lại được
-// Ô ngày nhập dd/mm/yyyy (để trống là không có); chữ sai thì giữ giá trị cũ.
-const dateCol = (field: 'docDate' | 'dueDate', headerName: string, editable: (d: Row | undefined) => boolean): ColDef<Row> => ({ field, headerName, width: 120, editable: (p) => editable(p.data),
-  valueFormatter: (p) => (p.value ? formatVnDate(p.value as string) : ''),
-  valueParser: (p) => { const t = String(p.newValue ?? '').trim(); return t === '' ? null : parseVnDate(t) ?? (p.oldValue as string | null) ?? null; },
+// Ô ngày nhập dd/mm/yyyy (để trống là không có); chữ sai (vd. 31/02/2026) thì ô đỏ giữ chữ đã gõ kèm chú thích, Lưu/Kiểm tra/Ghi sổ bị chặn tới khi sửa.
+const DATE_ERROR = 'Ngày không hợp lệ, nhập dạng dd/mm/yyyy';
+const dateCol = (field: DateField, headerName: string, editable: (d: Row | undefined) => boolean): ColDef<Row> => ({ field, headerName, width: 120, editable: (p) => editable(p.data),
+  valueFormatter: (p) => p.data?.badDates?.[field] ?? (p.value ? formatVnDate(p.value as string) : ''),
+  valueSetter: (p) => {
+    const t = String(p.newValue ?? '').trim(); const iso = t === '' ? null : parseVnDate(t);
+    const bad = { ...p.data.badDates }; delete bad[field];
+    if (t !== '' && iso === null) bad[field] = t; else p.data[field] = iso;
+    p.data.badDates = bad; return true;
+  },
+  cellStyle: (p) => (p.data?.badDates?.[field] ? { color: '#cf1322', backgroundColor: '#fff1f0' } : { color: '', backgroundColor: '' }), // '' gỡ màu lỗi khi đã sửa
+  tooltipValueGetter: (p) => (p.data?.badDates?.[field] ? DATE_ERROR : undefined),
   cellEditorParams: { useFormatter: true } });
 // Đổi mã thì xóa tên cũ (tên đúng chỉ có sau khi lưu hoặc chọn từ danh mục), không để tên của mã trước lại bên cạnh mã mới.
 const codeCol = (field: keyof typeof NAME_FIELD, headerName: string, width: number, after?: (d: Row) => void): ColDef<Row> => ({ field, headerName, width,
   valueSetter: (p) => {
-    const d = p.data as Record<string, string | null>; const empty = field === 'accountCode' ? '' : null; // mã đối tượng và tài khoản ngân hàng trống là null, mã tài khoản trống là ''
+    const d = p.data as unknown as Record<string, string | null>; const empty = field === 'accountCode' ? '' : null; // mã đối tượng và tài khoản ngân hàng trống là null, mã tài khoản trống là ''
     if (d[field] === p.newValue) return false;
     d[field] = (p.newValue as string) || empty; d[NAME_FIELD[field]] = empty; after?.(p.data); return true;
   } });
@@ -98,6 +109,8 @@ export default function OpeningBalancePage() {
   const flushEditing = async () => { (document.activeElement as HTMLElement | null)?.blur(); await new Promise((r) => setTimeout(r, 0)); };
   const persist = async () => {
     await flushEditing();
+    const bad = rowsRef.current.findIndex((r) => r.accountCode.trim() !== '' && Object.keys(r.badDates ?? {}).length > 0);
+    if (bad >= 0) throw new Error(`Dòng ${bad + 1}: ${DATE_ERROR}`);
     const keep = rowsRef.current.map((r, i) => [r, i] as const).filter(([r]) => r.accountCode.trim() !== '');
     const body = keep.map(([r]) => ({ accountCode: r.accountCode.trim(), partyCode: r.partyCode || null, bankAccountNo: r.bankAccountNo || null, docNo: r.docNo || null, docDate: r.docDate || null, dueDate: r.dueDate || null, currencyCode: r.currencyCode || 'VND',
       debit: r.debit || '0', credit: r.credit || '0', debitCurrency: r.debitCurrency || '0', creditCurrency: r.creditCurrency || '0' }));
@@ -127,7 +140,7 @@ export default function OpeningBalancePage() {
       await Promise.all([qc.invalidateQueries({ queryKey: ['opening', year] }), refreshDk()]); void message.success('Đã bỏ ghi sổ số dư đầu kỳ, sửa số dư rồi ghi sổ lại'); }) });
 
   // Đổi tài khoản thì tài khoản ngân hàng cũ không còn khớp tài khoản sổ cái; sang tài khoản không theo dõi công nợ thì bỏ số, ngày chứng từ và hạn.
-  const resetForAccount = useCallback((d: Row) => { d.bankAccountNo = null; d.bankName = null; if (!arapCodes.has(d.accountCode)) { d.docNo = null; d.docDate = null; d.dueDate = null; } }, [arapCodes]);
+  const resetForAccount = useCallback((d: Row) => { d.bankAccountNo = null; d.bankName = null; if (!arapCodes.has(d.accountCode)) { d.docNo = null; d.docDate = null; d.dueDate = null; delete d.badDates; } }, [arapCodes]);
   const isArapRow = useCallback((d: Row | undefined) => arapCodes.has(d?.accountCode ?? ''), [arapCodes]);
   const columns = useMemo<ColDef<Row>[]>(() => [
     codeCol('accountCode', 'TK (F4)', 110, resetForAccount), { field: 'accountName', headerName: 'Tên tài khoản', flex: 1, editable: false },
