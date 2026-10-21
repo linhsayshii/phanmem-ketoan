@@ -37,7 +37,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
 
   // Tờ khai 01/GTGT: lập (lần đầu hoặc bổ sung), sửa nháp, chốt; danh sách và chi tiết đọc trong giao dịch REPEATABLE READ READ ONLY.
   app.get('/api/tax/vat-returns', { preHandler: app.requirePermission('tax_return.view'), schema: { querystring: z.object({ year: z.coerce.number().int().min(2000).max(2100).optional() }) } }, async (req) =>
-    app.withTenant(req, (trx) => listReturns(trx, req.query.year), READ_SNAPSHOT));
+    app.withTenant(req, (trx) => listReturns(trx, req.auth!.tenantId!, req.query.year), READ_SNAPSHOT));
   app.get('/api/tax/vat-template', { preHandler: app.requirePermission('tax_return.view'), schema: { querystring: z.object(period) } }, async (req) =>
     app.withTenant(req, (trx) => templateOfPeriod(trx, req.query), READ_SNAPSHOT));
   app.get('/api/tax/vat-returns/:id/hints', { preHandler: app.requirePermission('tax_return.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => previewReturn(trx, req.params.id), READ_SNAPSHOT));
@@ -55,6 +55,9 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     const { doc, name } = await app.withTenant(req, async (trx) => returnDoc(trx, req.auth!.tenantId!, await getReturn(trx, req.params.id)), READ_SNAPSHOT);
     return respondReport(reply, [doc], req.query.format, name);
   });
+
+  // Các định dạng XML có và đã kiểm chứng chưa: màn hình cảnh báo trước khi tải.
+  app.get('/api/tax/xml-formats', { preHandler: app.requirePermission('tax_return.view') }, async () => Object.values(XML_FORMATS).map((f) => ({ id: f.id, formCode: f.formCode, verified: f.verified })));
 
   // Xuất XML qua adapter định dạng (XML_FORMATS). Chỉ tờ khai đã chốt: bản nháp có thể còn lệch sổ. verified = false: tiêu đề x-kt-unverified để màn hình cảnh báo "chưa kiểm chứng với HTKK".
   app.get('/api/tax/vat-returns/:id/xml', { preHandler: app.requirePermission('tax_return.view'), schema: { params: numId, querystring: z.object({ format: z.string().default('htkk-01gtgt') }) } }, async (req, reply) => {

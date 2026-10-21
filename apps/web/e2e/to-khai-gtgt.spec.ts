@@ -12,7 +12,7 @@ async function signIn(page: Page, request: APIRequestContext) {
   await expect(page).not.toHaveURL(/dang-nhap/);
 }
 
-test('Tờ khai GTGT tháng 8/2026: tính, nhập [37], chốt, xuất XML kèm cảnh báo chưa kiểm chứng', async ({ page, request }) => {
+test('Tờ khai GTGT tháng 8/2026: tính, nhập [37], chốt, xuất XML, cảnh báo chưa kiểm chứng hiện trước khi tải', async ({ page, request }) => {
   await signIn(page, request);
   // Dữ liệu E2E dùng chung giữa các lần chạy: kỳ tháng 8/2026 đã chốt ở lần trước thì lần này lập bổ sung.
   expect((await request.put('/api/settings', { data: { vat_period: 'month' } })).ok()).toBeTruthy();
@@ -25,8 +25,10 @@ test('Tờ khai GTGT tháng 8/2026: tính, nhập [37], chốt, xuất XML kèm 
   await page.locator('.ant-select', { has: page.getByRole('combobox', { name: 'Kỳ' }) }).click(); await page.locator('.ant-select-item-option', { hasText: /^Tháng 8$/ }).click();
 
   const calc = page.getByRole('button', { name: 'Tính tờ khai' }); const supp = page.getByRole('button', { name: 'Lập bổ sung' });
-  await expect(calc.or(supp)).toBeVisible();
-  if (await calc.isVisible()) await calc.click(); else await supp.click();
+  const recalc = page.getByRole('button', { name: /Tính lại/ });
+  await expect(calc.or(supp).or(recalc)).toBeVisible();
+  // Lần chạy trước hỏng giữa chừng có thể để lại bản nháp của kỳ: dùng luôn bản nháp đó.
+  if (await calc.isVisible()) await calc.click(); else if (await supp.isVisible()) await supp.click();
 
   // [37] nhập tay sửa được; [36] tính từ công thức nên chỉ đọc
   const c37 = page.getByRole('textbox', { name: 'Chỉ tiêu 37' });
@@ -42,11 +44,11 @@ test('Tờ khai GTGT tháng 8/2026: tính, nhập [37], chốt, xuất XML kèm 
   await expect(page.getByText('Đã chốt', { exact: true }).first()).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Chỉ tiêu 37' })).toHaveCount(0); // đã chốt: khóa ô
 
+  await expect(page.getByText('XML chưa kiểm chứng với HTKK').first()).toBeVisible(); // cảnh báo hiện trước khi tải
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Xuất XML' }).click();
   const file = await download;
   expect(file.suggestedFilename()).toMatch(/^01GTGT_0100109106_T8-2026(-BS\d+)?\.xml$/);
   const xml = await readFile((await file.path())!, 'utf8');
   expect(xml).toContain('0100109106'); expect(xml).toContain('1500000');
-  await expect(page.getByText('XML chưa kiểm chứng với HTKK')).toBeVisible();
 });

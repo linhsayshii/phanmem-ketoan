@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import VatReturnPage, { periodEnd, periodOfInstant, supplementNotes, type TaxReturn } from '../src/pages/VatReturn.js';
+import VatReturnPage, { periodEnd, supplementNotes, type TaxReturn } from '../src/pages/VatReturn.js';
 import { ApiError } from '../src/api/client.js';
 
 const apiMock = vi.hoisted(() => vi.fn());
-vi.mock('../src/auth.js', () => ({ useAuth: () => ({ me: { userId: 'u', tenantId: 't', sensitive: [] }, can: () => true }) }));
+const perms = vi.hoisted(() => ({ denied: new Set<string>() }));
+vi.mock('../src/auth.js', () => ({ useAuth: () => ({ me: { userId: 'u', tenantId: 't', sensitive: [] }, can: (p: string) => !perms.denied.has(p) }) }));
 vi.mock('../src/api/client.js', async (orig) => ({ ...(await orig<Record<string, unknown>>()), api: apiMock }));
 vi.mock('@kt/ui', async (orig) => ({ ...(await orig<Record<string, unknown>>()), useRememberedFilter: (_k: string, init: object) => [{ ...init, year: 2026, period: 7 }, () => undefined] }));
 
@@ -21,17 +22,18 @@ const TEMPLATE = { version: 'TT89', validFrom: '2026-07-01', source: 'TT 89/2026
 const ret = (o: Partial<TaxReturn> = {}): TaxReturn => ({ id: 1, formCode: '01/GTGT', templateVersion: 'TT89', periodKind: 'month', year: 2026, period: 7, revision: 0, status: 'draft',
   values: { '21': '', '22': '0', '25': '5000000', '32': '300000000', '36': '25000000', '37': '', '43': '0' }, overrides: {}, createdAt: '2026-08-01T01:00:00Z', finalizedAt: null, ...o });
 let list: TaxReturn[] = []; let tplError: ApiError | null = null; let finalizeError: ApiError | null = null;
-const PREVIEW = { hints: { '37': 'Gợi ý 1000000: tờ khai bổ sung tháng 5/2026 lần 1 làm giảm số thuế còn được khấu trừ' }, warnings: ['Chỉ tiêu [25] phân bổ thuế đầu vào dùng chung là gợi ý của phần mềm'], changed: [] as { code: string; stored: string | null; fresh: string | null }[] };
+const PREVIEW = { hints: { '37': 'Gợi ý 1000000: tờ khai bổ sung tháng 5/2026 lần 1 làm giảm số thuế còn được khấu trừ' }, warnings: ['Chỉ tiêu [25] phân bổ thuế đầu vào dùng chung là gợi ý của phần mềm'], carryLocked: false, changed: [] as { code: string; stored: string | null; fresh: string | null }[] };
 const calls = () => apiMock.mock.calls as [string, { method?: string; json?: Record<string, unknown> } | undefined][];
 
 const renderPage = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><VatReturnPage /></QueryClientProvider>);
 
 beforeEach(() => {
-  list = [ret()]; tplError = null; finalizeError = null; PREVIEW.changed = [];
+  list = [ret()]; tplError = null; finalizeError = null; PREVIEW.changed = []; PREVIEW.carryLocked = false; perms.denied = new Set();
   apiMock.mockImplementation(async (url: string, init?: { method?: string }) => {
     if (url === '/api/settings') return { vat_period: 'month' };
     if (url.startsWith('/api/tax/vat-template')) { if (tplError) throw tplError; return TEMPLATE; }
     if (url === '/api/tax/vat-returns') return list;
+    if (url === '/api/tax/xml-formats') return [{ id: 'htkk-01gtgt', formCode: '01/GTGT', verified: false }];
     if (url.endsWith('/hints')) return PREVIEW;
     if (url.endsWith('/finalize')) { if (finalizeError) throw finalizeError; return ret({ status: 'final' }); }
     if (init?.method === 'PUT') return ret();
@@ -54,7 +56,7 @@ describe('Tờ khai thuế GTGT', () => {
     expect(await screen.findByText(/Gợi ý 1000000/)).toBeInTheDocument();
     expect(screen.getByText(/phân bổ thuế đầu vào dùng chung là gợi ý/)).toBeInTheDocument();
     const link = within(screen.getByText('[32]').closest('tr')!).getByRole('link');
-    expect(link.getAttribute('href')).toBe('/thue/bang-ke-hoa-don?direction=sale&year=2026&period=7&periodKind=month&group=10%2C08');
+    expect(link.getAttribute('href')).toBe('/thue/bang-ke-hoa-don?direction=sale&year=2026&period=7&periodKind=month&group=10%2C08&field=base');
   });
 
   it('Tính lại gửi chỉ tiêu nhập tay đã sửa kèm ghi đè hiện có', async () => {
@@ -76,6 +78,32 @@ describe('Tờ khai thuế GTGT', () => {
     expect(screen.queryByRole('button', { name: 'Chốt' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Lập bổ sung' }));
     expect(calls().some(([u, i]) => u === '/api/tax/vat-returns' && i?.method === 'POST' && JSON.stringify(i.json) === JSON.stringify({ year: 2026, periodKind: 'month', period: 7, revision: 1 }))).toBe(true);
+  });
+
+  it('đã chốt: cảnh báo XML chưa kiểm chứng với HTKK hiện ngay cạnh nút, trước khi tải', async () => {
+    list = [ret({ status: 'final', finalizedAt: '2026-08-10T03:00:00Z' })];
+    renderPage();
+    expect(await screen.findByText('XML chưa kiểm chứng với HTKK')).toBeInTheDocument();
+    expect(calls().some(([u]) => u === '/api/tax/xml-formats')).toBe(true);
+  });
+
+  it('thiếu quyền tax.view: không có nút Xuất XML, không gọi danh sách định dạng', async () => {
+    perms.denied = new Set(['tax.view']); list = [ret({ status: 'final', finalizedAt: '2026-08-10T03:00:00Z' })];
+    renderPage();
+    await screen.findByText('[37]');
+    expect(screen.queryByRole('button', { name: 'Xuất XML' })).toBeNull();
+    expect(calls().some(([u]) => u === '/api/tax/xml-formats')).toBe(false);
+  });
+
+  it('kỳ trước đã chốt (carryLocked): [22] khóa; Tính lại không gửi [22]; có sửa [37] vẫn gửi [37]', async () => {
+    PREVIEW.carryLocked = true;
+    renderPage();
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Chỉ tiêu 37' }), '1500000'); await userEvent.tab();
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Chỉ tiêu 22' })).toBeNull());
+    expect(screen.getByText('Lấy từ tờ khai kỳ trước đã chốt')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Tính lại/ }));
+    const put = calls().find(([u, i]) => u === '/api/tax/vat-returns/1' && i?.method === 'PUT')!;
+    expect(put[1]!.json).toEqual({ manual: { '37': '1500000' }, overrides: {} });
   });
 
   it('nháp: Xuất XML bị khóa cho tới khi chốt', async () => {
@@ -122,20 +150,19 @@ describe('Tờ khai thuế GTGT', () => {
 
 describe('tờ khai bổ sung và kỳ phát hiện', () => {
   const first = (o: Partial<TaxReturn>) => ret({ status: 'final', finalizedAt: '2026-08-05T00:00:00Z', ...o });
-  it('kỳ chứa ngày chốt tính theo giờ Việt Nam; kỳ quý; ngày cuối kỳ', () => {
-    expect(periodOfInstant('2026-09-30T18:00:00Z', 'month')).toEqual({ year: 2026, period: 10 }); // 01/10 giờ Việt Nam
-    expect(periodOfInstant('2026-09-30T18:00:00Z', 'quarter')).toEqual({ year: 2026, period: 4 });
+  const disc = (period: number) => ({ discovery: { year: 2026, periodKind: 'month' as const, period } }); // kỳ phát hiện do máy chủ tính
+  it('ngày cuối kỳ', () => {
     expect([periodEnd('month', 2026, 2), periodEnd('quarter', 2026, 3)]).toEqual(['2026-02-28', '2026-09-30']);
   });
   it('bổ sung đã chốt: chênh lệch [43] so với lần trước; kỳ phát hiện đã có tờ khai chốt thì nhắc không khai lại', () => {
-    const all = [first({ id: 1, period: 5, values: { '43': '4000000' } }), first({ id: 2, period: 5, revision: 1, values: { '43': '3000000' }, finalizedAt: '2026-08-12T02:00:00Z' }), first({ id: 3, period: 8, finalizedAt: '2026-09-05T00:00:00Z' })];
-    const notes = supplementNotes(all, 'month');
+    const all = [first({ id: 1, period: 5, values: { '43': '4000000' } }), first({ id: 2, period: 5, revision: 1, values: { '43': '3000000' }, finalizedAt: '2026-08-12T02:00:00Z', ...disc(8) }), first({ id: 3, period: 8, finalizedAt: '2026-09-05T00:00:00Z' })];
+    const notes = supplementNotes(all);
     expect(notes).toHaveLength(1);
     expect(notes[0]!.delta).toBe('-1000000'); expect(notes[0]!.foundIn).toEqual({ year: 2026, period: 8, kind: 'month' }); expect(notes[0]!.foundFinal?.id).toBe(3);
-    expect(supplementNotes(all.filter((r) => r.id !== 3), 'month')[0]!.foundFinal).toBeNull();
+    expect(supplementNotes(all.filter((r) => r.id !== 3))[0]!.foundFinal).toBeNull();
   });
   it('màn hình hiện nhắc nhở khi kỳ phát hiện đã chốt', async () => {
-    list = [ret({ id: 3, period: 7 }), first({ id: 1, period: 5, values: { '43': '4000000' } }), first({ id: 2, period: 5, revision: 1, values: { '43': '3000000' }, finalizedAt: '2026-08-12T02:00:00Z' }), first({ id: 4, period: 8, finalizedAt: '2026-09-05T00:00:00Z' })];
+    list = [ret({ id: 3, period: 7 }), first({ id: 1, period: 5, values: { '43': '4000000' } }), first({ id: 2, period: 5, revision: 1, values: { '43': '3000000' }, finalizedAt: '2026-08-12T02:00:00Z', ...disc(8) }), first({ id: 4, period: 8, finalizedAt: '2026-09-05T00:00:00Z' })];
     renderPage();
     expect(await screen.findByText(/Tờ khai kỳ đó đã chốt: nếu đã khai \[37\]\/\[38\] cho chênh lệch này thì không khai lại/)).toBeInTheDocument();
   });

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import InvoiceRegisterPage, { registerRows, urlSelection } from '../src/pages/InvoiceRegister.js';
+import InvoiceRegisterPage, { filterRegister, registerRows, urlSelection } from '../src/pages/InvoiceRegister.js';
 
 const apiMock = vi.hoisted(() => vi.fn());
 const auth = vi.hoisted(() => ({ canPrint: true }));
@@ -80,10 +80,22 @@ describe('Bảng kê hóa đơn', () => {
     expect(screen.queryByRole('button', { name: 'Xuất Excel' })).toBeNull();
   });
 
-  it('urlSelection: đọc chiều, kỳ và nhóm từ đường dẫn; tham số sai bị bỏ qua', () => {
-    expect(urlSelection('?direction=sale&year=2026&period=7&periodKind=month&group=10,%2008')).toEqual({ tab: 'sale', sel: { periodKind: 'month', year: 2026, period: 7 }, groups: ['10', '08'] });
-    expect(urlSelection('?direction=x&year=2026&period=13&periodKind=month')).toEqual({ tab: null, sel: null, groups: [] });
-    expect(urlSelection('')).toEqual({ tab: null, sel: null, groups: [] });
+  it('urlSelection: đọc chiều, kỳ, nhóm, hàng nhập khẩu và chỉ tiêu từ đường dẫn; tham số sai bị bỏ qua', () => {
+    expect(urlSelection('?direction=sale&year=2026&period=7&periodKind=month&group=10,%2008')).toEqual({ tab: 'sale', sel: { periodKind: 'month', year: 2026, period: 7 }, groups: ['10', '08'], importOnly: false, field: null });
+    expect(urlSelection('?direction=purchase&year=2026&period=7&periodKind=month&group=01&importOnly=1&field=tax')).toMatchObject({ groups: ['01'], importOnly: true, field: 'tax' });
+    expect(urlSelection('?direction=x&year=2026&period=13&periodKind=month&field=x')).toEqual({ tab: null, sel: null, groups: [], importOnly: false, field: null });
+    expect(urlSelection('')).toEqual({ tab: null, sel: null, groups: [], importOnly: false, field: null });
+  });
+
+  it('filterRegister: lọc nhóm và hàng nhập khẩu, cộng nhóm và tổng cộng tính lại từ dòng còn lại', () => {
+    const g = (code: string, rows: unknown[]) => ({ code, name: code, rows, baseTotal: '0', taxTotal: '0' });
+    const r = { ...register, groups: [g('01', [line({ baseAmount: '1000', taxAmount: '100', isImport: true }), line({ baseAmount: '5000', taxAmount: '500' })]), g('02', [line({ baseAmount: '300', taxAmount: '30', isImport: true })])],
+      totals: { baseAmount: '6300', taxAmount: '630' } } as never;
+    expect(filterRegister(r, { groups: [], importOnly: false })).toBe(r);
+    const imp = filterRegister(r, { groups: [], importOnly: true });
+    expect([imp.groups.map((x) => [x.code, x.rows.length, x.baseTotal, x.taxTotal]), imp.totals]).toEqual([[['01', 1, '1000', '100'], ['02', 1, '300', '30']], { baseAmount: '1300', taxAmount: '130' }]);
+    const g1 = filterRegister(r, { groups: ['01'], importOnly: false });
+    expect([g1.groups.map((x) => x.code), g1.totals]).toEqual([['01'], { baseAmount: '6000', taxAmount: '600' }]);
   });
 
   it('mở từ tờ khai: gọi đúng chiều và kỳ trên đường dẫn, chỉ giữ nhóm được chọn, Bỏ lọc trả đủ nhóm', async () => {

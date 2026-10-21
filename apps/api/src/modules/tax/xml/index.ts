@@ -5,8 +5,9 @@ import { makeHtkk01Gtgt } from './htkk01gtgt.js';
 export interface CompanyInfo { name: string; taxCode: string; address: string | null; legalRep: string | null }
 export interface TaxReturnXmlFormat { id: string; formCode: string; templateVersions: string[]; verified: boolean; render(ret: TaxReturnDto, company: CompanyInfo): string }
 
-// Thoát ký tự đặc biệt của XML 1.0 và bỏ ký tự điều khiển không được phép (tên công ty do người dùng nhập).
+// Thoát ký tự đặc biệt của XML 1.0 và bỏ ký tự điều khiển, U+FFFE/U+FFFF và nửa cặp thay thế (surrogate) lẻ không được phép (tên công ty do người dùng nhập).
 // eslint-disable-next-line no-control-regex
-export const escapeXml = (s: string): string => s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!);
+export const escapeXml = (s: string): string => s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '').replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '')
+  .replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!);
 
 export const XML_FORMATS: Record<string, TaxReturnXmlFormat> = { 'htkk-01gtgt': makeHtkk01Gtgt(escapeXml) };

@@ -15,8 +15,9 @@ type Kind = 'month' | 'quarter';
 export interface TemplateLine { code: string; label: string; section: string; kind: 'flag' | 'carry' | 'invoice' | 'formula' | 'manual'; invoice?: { direction: 'purchase' | 'sale'; groups: string[]; field: 'base' | 'tax'; importOnly?: boolean };
   formula?: string; clamp?: string; overridable?: boolean; note?: string }
 interface Template { version: string; validFrom: string; source: string; lines: TemplateLine[] }
-export interface TaxReturn { id: number; formCode: string; templateVersion: string; periodKind: Kind; year: number; period: number; revision: number; status: 'draft' | 'final'; values: Record<string, string>; overrides: Record<string, string>; createdAt: string; finalizedAt: string | null }
-interface Preview { hints: Record<string, string>; warnings: string[]; changed: Changed[] }
+export interface TaxReturn { id: number; formCode: string; templateVersion: string; periodKind: Kind; year: number; period: number; revision: number; status: 'draft' | 'final'; values: Record<string, string>; overrides: Record<string, string>; createdAt: string; finalizedAt: string | null;
+  discovery?: { year: number; periodKind: Kind; period: number } | null } // discovery: kỳ phát hiện sai sót của tờ khai bổ sung đã chốt, do máy chủ tính
+interface Preview { hints: Record<string, string>; warnings: string[]; carryLocked: boolean; changed: Changed[] }
 interface Changed { code: string; stored: string | null; fresh: string | null }
 interface OffsetResult { date: string; amount: string; laterOffsetDates: string[]; warnings: string[]; unchanged: boolean; voucherId: string | null }
 
@@ -25,25 +26,20 @@ export const periodLabel = (r: { periodKind: Kind; period: number; year: number 
 const revisionLabel = (n: number) => (n === 0 ? 'Lần đầu' : `Bổ sung lần ${n}`);
 // Ngày cuối kỳ (mặc định cho khấu trừ thuế cuối kỳ).
 export const periodEnd = (kind: Kind, year: number, period: number): string => dayjs(`${year}-${String(kind === 'month' ? period : period * 3).padStart(2, '0')}-01`).endOf('month').format('YYYY-MM-DD');
-// Kỳ chứa một thời điểm (giờ Việt Nam, UTC+7): kỳ phát hiện sai sót của tờ khai bổ sung là kỳ chứa ngày chốt.
-export function periodOfInstant(iso: string, kind: Kind): { year: number; period: number } {
-  const d = new Date(new Date(iso).getTime() + 7 * 3600_000); const m = d.getUTCMonth() + 1;
-  return { year: d.getUTCFullYear(), period: kind === 'month' ? m : Math.ceil(m / 3) };
-}
 export interface SupplementNote { ret: TaxReturn; delta: string; foundIn: { year: number; period: number; kind: Kind }; foundFinal: TaxReturn | null }
-// Mỗi tờ khai bổ sung đã chốt: chênh lệch [43] so với lần khai liền trước và kỳ phát hiện sai sót (kỳ chứa ngày chốt). Kỳ đó đã có tờ khai chốt thì nhắc không khai điều chỉnh hai lần.
-export function supplementNotes(all: TaxReturn[], kind: Kind): SupplementNote[] {
+// Mỗi tờ khai bổ sung đã chốt: chênh lệch [43] so với lần khai liền trước và kỳ phát hiện sai sót (kỳ chứa ngày chốt, máy chủ trả trong danh sách). Kỳ đó đã có tờ khai chốt thì nhắc không khai điều chỉnh hai lần.
+export function supplementNotes(all: TaxReturn[]): SupplementNote[] {
   const same = (a: TaxReturn, b: TaxReturn) => a.year === b.year && a.period === b.period && a.periodKind === b.periodKind;
-  return all.filter((r) => r.revision > 0 && r.status === 'final' && r.finalizedAt).map((ret) => {
+  return all.filter((r) => r.revision > 0 && r.status === 'final' && r.discovery).map((ret) => {
     const prev = all.find((x) => same(x, ret) && x.revision === ret.revision - 1);
-    const at = periodOfInstant(ret.finalizedAt!, kind);
-    const foundFinal = all.find((x) => x.revision === 0 && x.status === 'final' && x.periodKind === kind && x.year === at.year && x.period === at.period) ?? null;
-    return { ret, delta: D(ret.values['43'] ?? 0).minus(prev?.values['43'] ?? 0).toFixed(0), foundIn: { ...at, kind }, foundFinal };
+    const at = ret.discovery!;
+    const foundFinal = all.find((x) => x.revision === 0 && x.status === 'final' && x.periodKind === at.periodKind && x.year === at.year && x.period === at.period) ?? null;
+    return { ret, delta: D(ret.values['43'] ?? 0).minus(prev?.values['43'] ?? 0).toFixed(0), foundIn: { year: at.year, period: at.period, kind: at.periodKind }, foundFinal };
   });
 }
 
 const money = (v: string | undefined) => (v === undefined || v === '' ? '' : formatVnNumber(v));
-const registerHref = (l: TemplateLine, r: TaxReturn) => `/thue/bang-ke-hoa-don?${new URLSearchParams({ direction: l.invoice!.direction, year: String(r.year), period: String(r.period), periodKind: r.periodKind, group: l.invoice!.groups.join(',') })}`;
+const registerHref = (l: TemplateLine, r: TaxReturn) => `/thue/bang-ke-hoa-don?${new URLSearchParams({ direction: l.invoice!.direction, year: String(r.year), period: String(r.period), periodKind: r.periodKind, group: l.invoice!.groups.join(','), field: l.invoice!.field, ...(l.invoice!.importOnly ? { importOnly: '1' } : {}) })}`;
 
 export default function VatReturnPage() {
   const { me, can } = useAuth();
@@ -60,7 +56,6 @@ export default function VatReturnPage() {
   const [offsetOpen, setOffsetOpen] = useState(false);
   const [offsetDate, setOffsetDate] = useState<string>('');
   const [offsetRes, setOffsetRes] = useState<OffsetResult | null>(null);
-  const [xmlUnverified, setXmlUnverified] = useState(false);
   const dirty = Object.keys(edits).length + Object.keys(ovr).length > 0;
   const guard = useUnsavedChanges(dirty);
 
@@ -70,7 +65,10 @@ export default function VatReturnPage() {
   const cur = rows.find((r) => r.id === selId) ?? rows[0];
   const isDraft = cur?.status === 'draft';
   const prev = useQuery({ queryKey: ['vat-hints', cur?.id, cur?.values], enabled: !!cur && isDraft, queryFn: () => api<Preview>(`/api/tax/vat-returns/${cur!.id}/hints`), retry: false });
+  const xmlFormats = useQuery({ queryKey: ['xml-formats'], enabled: can('tax.view'), queryFn: () => api<{ id: string; verified: boolean }[]>('/api/tax/xml-formats'), retry: false });
+  const xmlUnverified = xmlFormats.data?.find((x) => x.id === 'htkk-01gtgt')?.verified === false;
   const hints = prev.data?.hints ?? {}; const warnings = prev.data?.warnings ?? [];
+  const carryLocked = prev.data?.carryLocked === true; // kỳ trước đã có tờ khai lần đầu đã chốt: máy chủ bỏ [22] nhập tay
   const reset = () => { setEdits({}); setOvr({}); setStale(null); };
   useEffect(reset, [cur?.id]);
 
@@ -80,7 +78,7 @@ export default function VatReturnPage() {
   // Gửi toàn bộ chỉ tiêu nhập tay hiện có (đã lưu cộng phần sửa) và toàn bộ ghi đè: máy chủ thay thế phần tương ứng.
   const payload = () => {
     const manual: Record<string, string> = {};
-    for (const c of manualCodes) { const v = c in edits ? edits[c] : cur?.values[c]; if (v !== null && v !== undefined && v !== '') manual[c] = v; }
+    for (const c of manualCodes) { const carryFixed = carryLocked && !(c in edits) && tpl.data?.lines.find((l) => l.code === c)?.kind === 'carry'; const v = carryFixed ? undefined : c in edits ? edits[c] : cur?.values[c]; if (v !== null && v !== undefined && v !== '') manual[c] = v; }
     const overrides: Record<string, string> = { ...(cur?.overrides ?? {}) };
     for (const [c, v] of Object.entries(ovr)) { if (v === null) delete overrides[c]; else overrides[c] = v; }
     return { manual, overrides };
@@ -112,7 +110,7 @@ export default function VatReturnPage() {
     if (!cur) return null;
     const lockedHere = !isDraft || !can('tax_return.update');
     if (l.kind === 'flag') return <span style={{ fontWeight: 600 }}>{cur.values[l.code] === 'X' ? '[X] Có' : '[ ] Không'}</span>;
-    const editable = !lockedHere && (l.kind === 'manual' || l.kind === 'carry' || l.overridable);
+    const editable = !lockedHere && (l.kind === 'manual' || (l.kind === 'carry' && !carryLocked) || l.overridable);
     if (!editable) return <span className="vat-num" style={{ fontVariantNumeric: 'tabular-nums' }}>{money(cur.values[l.code]) || (isDraft ? '' : '0')}</span>;
     const isOvr = !!l.overridable;
     const shown = isOvr ? (l.code in ovr ? ovr[l.code] ?? cur.values[l.code] : cur.values[l.code]) : valueOf(l.code);
@@ -124,7 +122,7 @@ export default function VatReturnPage() {
     if (hasOvr) return <Space size={4}><Tag color="orange">Ghi đè</Tag>{isDraft && can('tax_return.update') && <Button size="small" type="link" onClick={() => setOvr((o) => ({ ...o, [l.code]: null }))}>Bỏ ghi đè</Button>}</Space>;
     if (l.kind === 'invoice' && cur) return <a href={registerHref(l, cur)} target="_blank" rel="noopener noreferrer">Hóa đơn {l.invoice!.direction === 'sale' ? 'bán ra' : 'mua vào'} ({l.invoice!.groups.join(', ')})</a>;
     if (l.kind === 'formula') return <Tag>Tự tính</Tag>;
-    if (l.kind === 'carry') return <Tag color="blue">Kỳ trước chuyển sang</Tag>;
+    if (l.kind === 'carry') return <Tag color="blue">{carryLocked ? 'Lấy từ tờ khai kỳ trước đã chốt' : 'Kỳ trước chuyển sang'}</Tag>;
     if (l.kind === 'manual') return <Tag color="geekblue">Nhập tay</Tag>;
     return null;
   };
@@ -142,7 +140,7 @@ export default function VatReturnPage() {
     { title: 'Nguồn', width: 220, render: (_: unknown, l) => source(l) },
   ];
 
-  const supp = useMemo(() => supplementNotes(all.data ?? [], kind), [all.data, kind]);
+  const supp = useMemo(() => supplementNotes(all.data ?? []), [all.data]);
   const changed = (stale ?? prev.data?.changed ?? []);
   const tplError = tpl.error as Error | null;
   const latest = rows[0];
@@ -153,7 +151,6 @@ export default function VatReturnPage() {
     if (!res.ok) { let m = 'Không xuất được XML'; try { m = ((await res.json()) as { error?: { message?: string } }).error?.message ?? m; } catch { /* không có thân JSON */ } void message.error(m); return; }
     const name = /filename\*=UTF-8''([^;]+)/.exec(res.headers.get('content-disposition') ?? '')?.[1];
     const url = URL.createObjectURL(await res.blob()); const a = document.createElement('a'); a.href = url; a.download = name ? decodeURIComponent(name) : 'to-khai-01-gtgt.xml'; a.click(); URL.revokeObjectURL(url);
-    setXmlUnverified(res.headers.get('x-kt-unverified') === '1');
   };
   const setPeriod = (next: { year?: number; period?: number }) => guard(() => { setSelId(null); setF({ ...f, ...next }); });
 
@@ -177,13 +174,13 @@ export default function VatReturnPage() {
           {cur && isDraft && can('tax_return.finalize') && <Button loading={finalize.isPending} onClick={confirmFinalize}>Chốt</Button>}
           {latest && latest.status === 'final' && can('tax_return.create') && <Button loading={create.isPending} onClick={() => create.mutate(latest.revision + 1)}>Lập bổ sung</Button>}
           {can('tax.offset') && <Button onClick={() => { setOffsetRes(null); setOffsetDate(periodEnd(kind, f.year, period)); setOffsetOpen(true); }}>Khấu trừ thuế cuối kỳ</Button>}
-          {cur && <Tooltip title={cur.status === 'final' ? '' : 'Chốt tờ khai trước khi xuất XML'}><Button disabled={cur.status !== 'final'} onClick={() => void exportXml()}>Xuất XML</Button></Tooltip>}
+          {cur && can('tax.view') && <Tooltip title={cur.status === 'final' ? (xmlUnverified ? 'XML chưa kiểm chứng với HTKK' : '') : 'Chốt tờ khai trước khi xuất XML'}><Button disabled={cur.status !== 'final'} onClick={() => void exportXml()}>Xuất XML</Button></Tooltip>}
           {cur && can('report.print') && <Button onClick={() => window.open(`/api/tax/vat-returns/${cur.id}/print?format=pdf`, '_blank')}>In</Button>}
           {dirty && <Typography.Text type="warning">Có thay đổi chưa lưu (Ctrl+S)</Typography.Text>}
         </Space>
       )}
 
-      {xmlUnverified && <Alert type="warning" showIcon message="XML chưa kiểm chứng với HTKK" description="Tên thẻ, mã mẫu và phiên bản trong tệp là giả định tạm của phần mềm (chưa có XSD hoặc tệp mẫu của HTKK). Nạp thử vào HTKK và đối chiếu số liệu trước khi nộp." />}
+      {cur?.status === 'final' && can('tax.view') && xmlUnverified && <Alert type="warning" showIcon message="XML chưa kiểm chứng với HTKK" description="Tên thẻ, mã mẫu và phiên bản trong tệp là giả định tạm của phần mềm (chưa có XSD hoặc tệp mẫu của HTKK). Nạp thử vào HTKK và đối chiếu số liệu trước khi nộp." />}
       {changed.length > 0 && isDraft && (
         <Alert type="error" showIcon message="Số liệu sổ đã thay đổi kể từ lần tính trước: lưu lại nháp để tính lại và kiểm tra trước khi chốt" action={can('tax_return.update') ? <Button size="small" loading={save.isPending} onClick={recalc}>Lưu lại nháp</Button> : undefined}
           description={<ul style={{ margin: 0, paddingLeft: 18 }}>{changed.map((c) => <li key={c.code}>[{c.code}]: đã lưu {money(c.stored ?? '') || '(trống)'} → theo sổ hiện tại {money(c.fresh ?? '') || '(trống)'}</li>)}</ul>} />)}

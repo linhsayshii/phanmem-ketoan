@@ -88,6 +88,21 @@ describe('xuất XML tờ khai 01/GTGT', () => {
     expect(err(await n0.call('GET', `/api/tax/vat-returns/${id0}/xml`))).toEqual([409, 'COMPANY_TAX_CODE_MISSING']);
   });
 
+  it('thiếu tax.view: 403 FORBIDDEN dù có tax_return.view', async () => {
+    const t = await tenant(); const id = await t.ret(true);
+    const roles = (await t.call('GET', '/api/roles')).json() as { id: string; code: string }[];
+    const xem = roles.find((r) => r.code === 'xem')!;
+    const put = await ctx.app.inject({ method: 'PUT', url: `/api/roles/${xem.id}/permissions`, headers: { cookie: t.cookie }, payload: { permissions: ['tax_return.view'] } }); expect(put.statusCode, put.body).toBe(200);
+    const username = `vx_xem_${Date.now()}${n++}`;
+    expect((await t.call('POST', '/api/users', { username, fullName: 'X', password: 'Matkhau1!', roleCode: 'xem', sensitiveFlags: [] })).statusCode).toBe(201);
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+    const viewer = `sid=${login.cookies.find((x) => x.name === 'sid')!.value}`;
+    expect(err(await t.call('GET', `/api/tax/vat-returns/${id}/xml`, undefined, viewer))).toEqual([403, 'FORBIDDEN']);
+    expect((await t.call('GET', `/api/tax/vat-returns/${id}`, undefined, viewer)).statusCode).toBe(200);
+    const fm = await t.call('GET', '/api/tax/xml-formats', undefined, viewer);
+    expect(fm.json()).toEqual([{ id: 'htkk-01gtgt', formCode: '01/GTGT', verified: false }]);
+  });
+
   it('in tờ khai: HTML theo bố cục mẫu (mọi chỉ tiêu, số lưu), bản nháp ghi rõ', async () => {
     const t = await tenant(); const id = await t.ret(false);
     const r = await t.call('GET', `/api/tax/vat-returns/${id}/print?format=html`);
@@ -95,6 +110,8 @@ describe('xuất XML tờ khai 01/GTGT', () => {
     expect(r.body).toContain('TỜ KHAI THUẾ GIÁ TRỊ GIA TĂNG'); expect(r.body).toContain('Mẫu số 01/GTGT'); expect(r.body).toContain('bản nháp, chưa chốt');
     for (const l of loadVatTemplate('TT89').lines) expect(r.body, `[${l.code}]`).toContain(`[${l.code}]`);
     expect(r.body).toContain('300.000.000');
+    expect(r.body).toContain('Chỉ tiêu [41] hiện số dương: là phần âm của biểu thức [36]-[22]+[37]-[38]-[39a] đổi dấu'); // chú thích dựng từ clamp/formula của mẫu
+    expect(r.body).toContain('Chỉ tiêu [43] = [41]-[42]');
   });
 });
 
@@ -102,6 +119,8 @@ describe('escapeXml', () => {
   it('thoát & < > " \' và bỏ ký tự điều khiển; XML_FORMATS chỉ có htkk-01gtgt, verified=false', () => {
     expect(escapeXml('a&b<c>"d\'e\u0001\u000Bf')).toBe('a&amp;b&lt;c&gt;&quot;d&apos;ef');
     expect(escapeXml('Tiếng Việt: đồng')).toBe('Tiếng Việt: đồng');
+    expect(escapeXml('a\uD83D\uDE00b')).toBe('a\uD83D\uDE00b'); // cặp thay thế đủ giữ nguyên
+    expect(escapeXml('a\uD83Db\uDE00c\uFFFEd\uFFFFe')).toBe('abcde'); // nửa cặp lẻ, U+FFFE, U+FFFF bị bỏ
     expect(Object.keys(XML_FORMATS)).toEqual(['htkk-01gtgt']);
     expect(XML_FORMATS['htkk-01gtgt']).toMatchObject({ verified: false, formCode: '01/GTGT', templateVersions: ['TT89'] });
   });
@@ -117,9 +136,17 @@ describe('mẫu và gợi ý cho màn hình tờ khai', () => {
     expect(err(await t.call('GET', '/api/tax/vat-template?year=2026&periodKind=month&period=6'))).toEqual([409, 'VAT_TEMPLATE_UNAVAILABLE']);
   });
 
+  it('hints: kỳ trước có tờ khai lần đầu đã chốt thì carryLocked = true (khóa ô [22])', async () => {
+    const t = await tenant(); await t.ret(true);
+    const c = await t.call('POST', '/api/tax/vat-returns', { year: 2026, periodKind: 'month', period: 8 }); expect(c.statusCode, c.body).toBe(201);
+    expect(c.json().carryLocked).toBe(true);
+    expect((await t.call('GET', `/api/tax/vat-returns/${c.json().id}/hints`)).json().carryLocked).toBe(true);
+  });
+
   it('hints: nháp trả gợi ý [25] và số lệch rỗng; sổ đổi sau khi lập thì changed nêu chỉ tiêu; đã chốt thì rỗng', async () => {
     const t = await tenant(); const id = await t.ret(false);
     const h = (await t.call('GET', `/api/tax/vat-returns/${id}/hints`)).json();
+    expect(h.carryLocked).toBe(false); // kỳ trước chưa có tờ khai đã chốt: [22] nhập tay được
     expect(h.changed).toEqual([]); expect(h.hints['25']).toContain('Gợi ý'); expect(Array.isArray(h.warnings)).toBe(true);
     await t.call('POST', '/api/invoices', { voucherType: 'HDB', postingDate: '2026-07-20', documentDate: '2026-07-20', partyCode: 'KH001', autoPost: true, items: [{ accountCode: '5113', amountCurrency: '100000000', taxCodes: ['V10'] }],
       invoice: { serial: 'C26TAA', invoiceNo: '0000002', invoiceDate: '2026-07-20', invoiceGroupCode: '10' } });
@@ -128,6 +155,6 @@ describe('mẫu và gợi ý cho màn hình tờ khai', () => {
     expect((await t.call('POST', `/api/tax/vat-returns/${id}/finalize`)).statusCode).toBe(409);
     const put = await ctx.app.inject({ method: 'PUT', url: `/api/tax/vat-returns/${id}`, headers: { cookie: t.cookie }, payload: {} }); expect(put.statusCode, put.body).toBe(200);
     expect((await t.call('POST', `/api/tax/vat-returns/${id}/finalize`)).statusCode).toBe(200);
-    expect((await t.call('GET', `/api/tax/vat-returns/${id}/hints`)).json()).toEqual({ hints: {}, warnings: [], changed: [] });
+    expect((await t.call('GET', `/api/tax/vat-returns/${id}/hints`)).json()).toEqual({ hints: {}, warnings: [], carryLocked: false, changed: [] });
   });
 });

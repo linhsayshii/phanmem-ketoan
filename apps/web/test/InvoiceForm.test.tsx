@@ -180,7 +180,7 @@ describe('Màn hình hóa đơn dịch vụ: thuế và bút toán xem trước 
     await vi.waitFor(() => expect(taxCol()[0]).toBe('100000'), slow);
     fireEvent.change(screen.getByLabelText('Số hóa đơn'), { target: { value: '0000123' } });
     fireEvent.click(screen.getByRole('button', { name: /Lưu/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Mở chứng từ HDM00007' }, slow));
+    fireEvent.click(await screen.findByText('Mở chứng từ HDM00007', undefined, slow)); // findByText: findByRole chậm trên DOM antd lớn
     await vi.waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith({ to: '/chung-tu/$type/$id', params: { type: 'HDM', id: 'v7' } }), slow);
     expect(mocks.api.mock.calls.some(([p]) => String(p).startsWith('/api/vouchers'))).toBe(false);
   }, 60_000);
@@ -199,7 +199,7 @@ describe('Màn hình hóa đơn dịch vụ: thuế và bút toán xem trước 
     await vi.waitFor(() => expect(taxCol()[0]).toBe('100000'), slow);
     fireEvent.change(screen.getByLabelText('Số hóa đơn'), { target: { value: '0000123' } });
     fireEvent.click(screen.getByRole('button', { name: /Lưu/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Mở chứng từ nháp' }, slow));
+    fireEvent.click(await screen.findByText('Mở chứng từ nháp', undefined, slow));
     await vi.waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith({ to: '/chung-tu/$type/$id', params: { type: 'HDM', id: 'v8' } }), slow);
   }, 60_000);
 });

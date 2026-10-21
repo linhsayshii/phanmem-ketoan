@@ -125,6 +125,7 @@ describe('tờ khai 01/GTGT', () => {
     expect([adj.json().values['37'], adj.json().values['41'], adj.json().values['43']]).toEqual([M(3), M(7), M(7)]); // = [43] của tờ khai bổ sung
     const list = await t.call('GET', '/api/tax/vat-returns?year=2026');
     expect((list.json() as Ret[]).map((x) => [x.id, x.revision, x.status])).toEqual([[aug.id, 0, 'draft'], [r1.id, 1, 'final'], [r0.id, 0, 'final']]);
+    expect((list.json() as { discovery: unknown }[]).map((x) => x.discovery)).toEqual([null, { year: 2026, periodKind: 'month', period: 8 }, null]); // kỳ phát hiện của bổ sung = kỳ chứa ngày chốt (15/8)
     expect((await t.call('GET', `/api/tax/vat-returns/${r0.id}`)).json()).toMatchObject({ id: r0.id, status: 'final', revision: 0 });
     expect(err(await t.call('GET', '/api/tax/vat-returns/999999999'))).toEqual([404, 'TAX_RETURN_NOT_FOUND']);
   });

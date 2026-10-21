@@ -40,7 +40,11 @@ export async function templateFor(trx: Trx, from: string, label: string): Promis
 const manualOf = (t: VatTemplate, values: Record<string, string>) =>
   Object.fromEntries(t.lines.filter((l) => l.kind === 'manual' || l.kind === 'carry').flatMap((l) => (values[l.code] !== undefined ? [[l.code, values[l.code]!]] : [])));
 
-interface Computed { version: string; values: Record<string, string>; hints: Record<string, string>; warnings: string[] }
+// Chỉ tiêu lệch giữa số đã lưu và số tính lại theo sổ hiện tại (chốt dùng để chặn, xem trước dùng để báo).
+export const diffValues = (stored: Record<string, string>, fresh: Record<string, string>) =>
+  [...new Set([...Object.keys(stored), ...Object.keys(fresh)])].filter((k) => stored[k] !== fresh[k]).map((code) => ({ code, stored: stored[code] ?? null, fresh: fresh[code] ?? null }));
+
+interface Computed { version: string; values: Record<string, string>; hints: Record<string, string>; warnings: string[]; carryLocked: boolean }
 // explicitManual: manual do người dùng gửi trong yêu cầu này (không phải đọc lại từ values đã lưu); chỉ khi đó mới cảnh báo [22] nhập tay không dùng.
 async function compute(trx: Trx, q: PeriodQ, manual: Record<string, string>, overrides: Record<string, string>, explicitManual: boolean): Promise<Computed> {
   const s = specOf(q); const t = await templateFor(trx, s.from, s.label);
@@ -120,7 +124,7 @@ async function compute(trx: Trx, q: PeriodQ, manual: Record<string, string>, ove
       : 'Gợi ý của phần mềm: thuế nhóm 01 cộng thuế nhóm 03 phân bổ theo tỷ lệ doanh thu chịu thuế; sửa khi cần';
     if (sharedTax && !D(sharedTax).isZero()) warnings.push(`Chỉ tiêu [${l.code}] phân bổ thuế đầu vào dùng chung theo tỷ lệ doanh thu là gợi ý của phần mềm, không phải số của văn bản; kiểm tra trước khi chốt`);
   }
-  return { version: t.version, values, hints, warnings };
+  return { version: t.version, values, hints, warnings, carryLocked: !!prev };
 }
 
 const COLS = ['id', 'form_code', 'template_version', 'period_kind', 'year', 'period', 'revision', 'status', 'values', 'overrides', 'created_at', 'finalized_at'] as const;
@@ -138,10 +142,16 @@ async function rowOf(trx: Trx, id: number, forUpdate = false): Promise<Row> {
 }
 const qOf = (r: Row): PeriodQ => ({ year: r.year, period: r.period, periodKind: r.period_kind as PeriodKind });
 
-export async function listReturns(trx: Trx, year?: number): Promise<TaxReturnDto[]> {
-  let q = trx.selectFrom('tax_return').select(COLS).where('form_code', '=', FORM);
+// Danh sách kèm kỳ phát hiện sai sót của tờ khai bổ sung đã chốt: kỳ (theo kỳ khai của công ty) chứa ngày chốt theo giờ Việt Nam. Màn hình dùng số này, không tự tính lại.
+export interface Discovery { year: number; periodKind: PeriodKind; period: number }
+export type TaxReturnListItem = TaxReturnDto & { discovery: Discovery | null };
+export async function listReturns(trx: Trx, tenantId: string, year?: number): Promise<TaxReturnListItem[]> {
+  const kind = (await getSettings(trx, tenantId)).vat_period;
+  const local = sql<string>`(finalized_at AT TIME ZONE 'Asia/Ho_Chi_Minh')`;
+  let q = trx.selectFrom('tax_return').select([...COLS, sql<number>`extract(year from ${local})::int`.as('fy'), sql<number>`extract(month from ${local})::int`.as('fm')]).where('form_code', '=', FORM);
   if (year !== undefined) q = q.where('year', '=', year);
-  return (await q.orderBy('year', 'desc').orderBy('period_kind').orderBy('period', 'desc').orderBy('revision', 'desc').execute()).map((r) => dto(r as Row));
+  return (await q.orderBy('year', 'desc').orderBy('period_kind').orderBy('period', 'desc').orderBy('revision', 'desc').execute()).map((r) => ({ ...dto(r as unknown as Row),
+    discovery: r.revision > 0 && r.status === 'final' && r.fy !== null ? { year: r.fy, periodKind: kind, period: kind === 'month' ? r.fm : Math.ceil(r.fm / 3) } : null }));
 }
 export const getReturn = async (trx: Trx, id: number): Promise<TaxReturnDto> => dto(await rowOf(trx, id));
 
@@ -161,7 +171,7 @@ export async function createReturn(trx: Trx, ctx: { tenantId: string; userId: st
   const c = await compute(trx, q, input.manual ?? {}, overrides, true);
   const r = await trx.insertInto('tax_return').values({ tenant_id: ctx.tenantId, form_code: FORM, template_version: c.version, period_kind: q.periodKind, year: q.year, period: q.period, revision,
     values: JSON.stringify(c.values), overrides: JSON.stringify(overrides), created_by: ctx.userId }).returning('id').executeTakeFirstOrThrow();
-  return { ...(await getReturn(trx, r.id)), hints: c.hints, warnings: c.warnings };
+  return { ...(await getReturn(trx, r.id)), hints: c.hints, warnings: c.warnings, carryLocked: c.carryLocked };
 }
 
 async function draftOf(trx: Trx, tenantId: string, id: number): Promise<Row> {
@@ -177,7 +187,7 @@ export async function updateReturn(trx: Trx, tenantId: string, id: number, input
   const overrides = input.overrides ?? r.overrides;
   const c = await compute(trx, qOf(r), input.manual ?? manualOf(loadVatTemplate(r.template_version as VatTemplate['version']), r.values), overrides, input.manual !== undefined);
   await trx.updateTable('tax_return').set({ template_version: c.version, values: JSON.stringify(c.values), overrides: JSON.stringify(overrides) }).where('id', '=', id).execute();
-  return { ...(await getReturn(trx, id)), hints: c.hints, warnings: c.warnings };
+  return { ...(await getReturn(trx, id)), hints: c.hints, warnings: c.warnings, carryLocked: c.carryLocked };
 }
 
 // Chốt khóa đúng số người dùng đã thấy: tính lại theo sổ hiện tại để kiểm; lệch số đã lưu thì 409 TAX_RETURN_STALE (không ghi gì), người dùng lưu lại nháp để tính lại
@@ -185,11 +195,11 @@ export async function updateReturn(trx: Trx, tenantId: string, id: number, input
 export async function finalizeReturn(trx: Trx, ctx: { tenantId: string; userId: string }, id: number) {
   const r = await draftOf(trx, ctx.tenantId, id);
   const c = await compute(trx, qOf(r), manualOf(loadVatTemplate(r.template_version as VatTemplate['version']), r.values), r.overrides, false);
-  const changed = [...new Set([...Object.keys(r.values), ...Object.keys(c.values)])].filter((k) => r.values[k] !== c.values[k]).map((code) => ({ code, stored: r.values[code] ?? null, fresh: c.values[code] ?? null }));
+  const changed = diffValues(r.values, c.values);
   if (changed.length || c.version !== r.template_version)
     throw new AppError('TAX_RETURN_STALE', `Số liệu sổ đã thay đổi kể từ lần tính trước (${changed.map((x) => `[${x.code}]`).join(', ') || 'mẫu tờ khai'}): lưu lại nháp để tính lại và kiểm tra trước khi chốt`, 409, { changed });
   await trx.updateTable('tax_return').set({ status: 'final', finalized_by: ctx.userId, finalized_at: sql<string>`now()` }).where('id', '=', id).execute();
-  return { ...(await getReturn(trx, id)), hints: c.hints, warnings: c.warnings };
+  return { ...(await getReturn(trx, id)), hints: c.hints, warnings: c.warnings, carryLocked: c.carryLocked };
 }
 
 // Mẫu chỉ tiêu áp dụng cho kỳ (màn hình dựng bảng từ đây, không viết cứng danh sách chỉ tiêu). Kỳ trước 01/7/2026 chưa có mẫu: 409 VAT_TEMPLATE_UNAVAILABLE.
@@ -198,10 +208,17 @@ export async function templateOfPeriod(trx: Trx, q: PeriodQ): Promise<VatTemplat
 // Gợi ý, cảnh báo và số lệch so với sổ hiện tại của tờ khai nháp (chỉ đọc, không ghi): màn hình mở lại nháp vẫn thấy gợi ý [37]/[38], [25]; tờ khai đã chốt không có (số đã khóa).
 export async function previewReturn(trx: Trx, id: number) {
   const r = await rowOf(trx, id);
-  if (r.status === 'final') return { hints: {} as Record<string, string>, warnings: [] as string[], changed: [] as { code: string; stored: string | null; fresh: string | null }[] };
+  if (r.status === 'final') return { hints: {} as Record<string, string>, warnings: [] as string[], carryLocked: false, changed: [] as { code: string; stored: string | null; fresh: string | null }[] };
   const c = await compute(trx, qOf(r), manualOf(loadVatTemplate(r.template_version as VatTemplate['version']), r.values), r.overrides, false);
-  const changed = [...new Set([...Object.keys(r.values), ...Object.keys(c.values)])].filter((k) => r.values[k] !== c.values[k]).map((code) => ({ code, stored: r.values[code] ?? null, fresh: c.values[code] ?? null }));
-  return { hints: c.hints, warnings: c.warnings, changed };
+  const changed = diffValues(r.values, c.values);
+  return { hints: c.hints, warnings: c.warnings, carryLocked: c.carryLocked, changed };
+}
+
+// Chú thích dấu in dưới tờ khai, dựng từ mẫu dữ liệu (clamp/formula): chỉ tiêu clamp negativePart lưu số dương là phần âm của biểu thức đổi dấu; chỉ tiêu tính từ nó cùng dấu dương.
+function signNotes(t: VatTemplate): string[] {
+  const clamped = t.lines.filter((l) => l.clamp === 'negativePart' && l.formula);
+  return [...clamped.map((l) => `Chỉ tiêu [${l.code}] hiện số dương: là phần âm của biểu thức ${l.formula} đổi dấu (mẫu ghi điều kiện ≤ 0).`),
+    ...t.lines.filter((l) => l.formula && !l.clamp && clamped.some((c) => l.formula!.includes(`[${c.code}]`))).map((l) => `Chỉ tiêu [${l.code}] = ${l.formula}, tính từ số dương nói trên.`)];
 }
 
 // Tài liệu in theo bố cục mẫu: chỉ tiêu theo thứ tự và mục của mẫu dữ liệu; không thêm chữ ban hành ngoài mẫu. Chỉ tiêu cờ [21] in dạng ô đánh dấu.
@@ -211,6 +228,6 @@ export async function returnDoc(trx: Trx, tenantId: string, r: TaxReturnDto): Pr
   const doc: ReportDoc = { title: 'Tờ khai thuế giá trị gia tăng', formNo: FORM, issuedBy: '', company: await companyInfo(trx, tenantId, '', null), landscape: false, sheetName: 'Tờ khai 01-GTGT',
     subtitle: `Kỳ tính thuế: ${s.label}. ${r.revision ? `Khai bổ sung lần ${r.revision}` : 'Khai lần đầu'}${r.status === 'final' ? '' : ' (bản nháp, chưa chốt)'}`,
     columns: [{ key: 'section', label: 'Mục', width: '10%' }, { key: 'code', label: 'Mã', width: '8%' }, { key: 'label', label: 'Chỉ tiêu' }, { key: 'value', label: 'Giá trị (VND)', type: 'number', width: '18%' }],
-    rows, outro: ['Chỉ tiêu [41], [43] hiện số dương: là phần âm của biểu thức [36]-[22]+[37]-[38]-[39a] đổi dấu (mẫu ghi điều kiện ≤ 0).'] };
+    rows, outro: signNotes(t) };
   return { doc, name: `to-khai-01-gtgt-${r.year}-${r.periodKind === 'month' ? 'T' : 'Q'}${r.period}${r.revision ? `-bo-sung-${r.revision}` : ''}` };
 }
