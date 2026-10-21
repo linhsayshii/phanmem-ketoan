@@ -13,10 +13,10 @@ export type PeriodKind = 'month' | 'quarter';
 export interface PeriodQ { year: number; period: number; periodKind: PeriodKind }
 
 // lo..hi: khoảng tháng tuyệt đối (năm × 12 + tháng) của kỳ chọn. Dòng hóa đơn có kỳ tuyệt đối riêng (xem effectiveRows), nên đổi tháng/quý giữa các năm không làm sai kỳ cũ.
-interface Spec { year: number; lo: number; hi: number; from: string; to: string; label: string }
+export interface Spec { year: number; lo: number; hi: number; from: string; to: string; label: string }
 const pad = (n: number) => String(n).padStart(2, '0');
 
-function specOf(q: PeriodQ): Spec {
+export function specOf(q: PeriodQ): Spec {
   const max = q.periodKind === 'month' ? 12 : 4;
   if (q.period < 1 || q.period > max) throw new AppError('VALIDATION', q.periodKind === 'month' ? 'Tháng phải từ 1 đến 12' : 'Quý phải từ 1 đến 4', 400);
   const m1 = q.periodKind === 'month' ? q.period : 3 * q.period - 2; const m2 = q.periodKind === 'month' ? q.period : 3 * q.period;
@@ -132,12 +132,16 @@ async function taxAccounts(trx: Trx): Promise<Record<Direction, string[]>> {
 }
 
 // Phát sinh thuế của sổ cái theo chứng từ (Nợ − Có tài khoản thuế mua, Có − Nợ tài khoản thuế bán). Bỏ chứng từ khấu trừ thuế cuối kỳ (vat_offset): chuyển 33311 sang 1331, không có hóa đơn;
-// bỏ chứng từ số dư đầu kỳ (DK): số dư mang sang không phải phát sinh trong kỳ.
+// bỏ chứng từ số dư đầu kỳ (DK): số dư mang sang không phải phát sinh trong kỳ. Bỏ phần thuế bán ra của chứng từ nộp thuế GTGT: không có hóa đơn (kể cả chứng từ gốc của bản đảo)
+// và có dòng tiền 111/112 (Nợ 33311 / Có tiền, hoặc bản đảo của nó); phiếu chi mua hàng ghi Nợ 1331 không hóa đơn vẫn là chênh lệch.
+// shortcut: chỉ xét chứng từ gốc một cấp (reversal_of_id); đảo của bản đảo của chứng từ có hóa đơn hiếm, nếu cần thì đi hết chuỗi đảo như effectiveRows.
 async function ledgerTax(trx: Trx, acc: Record<Direction, string[]>, where: ReturnType<typeof sql>) {
   const r = await sql<{ voucher_id: string; purchase: string; sale: string }>`
     SELECT l.voucher_id, coalesce(sum(CASE WHEN a.code = ANY(${acc.purchase}::text[]) THEN l.debit - l.credit ELSE 0 END), 0)::text AS purchase,
-           coalesce(sum(CASE WHEN a.code = ANY(${acc.sale}::text[]) THEN l.credit - l.debit ELSE 0 END), 0)::text AS sale
+           coalesce(sum(CASE WHEN a.code = ANY(${acc.sale}::text[]) AND NOT pay.is_payment THEN l.credit - l.debit ELSE 0 END), 0)::text AS sale
     FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
+      CROSS JOIN LATERAL (SELECT NOT EXISTS (SELECT 1 FROM voucher_invoice i WHERE i.voucher_id IN (v.id, v.reversal_of_id))
+        AND EXISTS (SELECT 1 FROM voucher_line cl JOIN account ca ON ca.id = cl.account_id WHERE cl.voucher_id = v.id AND (ca.code LIKE '111%' OR ca.code LIKE '112%')) AS is_payment) pay
     WHERE v.state IN ('posted', 'reversed') AND v.source_doc_type IS DISTINCT FROM 'vat_offset' AND v.voucher_type <> 'DK' AND a.code = ANY(${[...acc.purchase, ...acc.sale]}::text[]) AND ${where}
     GROUP BY l.voucher_id`.execute(trx);
   return new Map(r.rows.map((x) => [x.voucher_id, x]));

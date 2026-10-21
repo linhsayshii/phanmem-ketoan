@@ -199,6 +199,10 @@ export interface AmortizationScheduleTable {
   start_year: number; start_period: number; description: string | null; is_active: Generated<boolean>; created_by: string | null; created_at: Generated<string>;
 }
 export interface AmortizationLineTable { id: Generated<number>; tenant_id: string; schedule_id: number; seq: number; fiscal_year: number; period_no: number; amount: Numeric; voucher_id: string | null }
+export interface TaxReturnTable {
+  id: Generated<number>; tenant_id: string; form_code: string; template_version: string; period_kind: string; year: number; period: number; revision: Generated<number>; status: Generated<string>;
+  values: JSONColumnType<Record<string, string>>; overrides: ColumnType<Record<string, string>, string | undefined, string>; created_by: string | null; created_at: Generated<string>; finalized_by: string | null; finalized_at: string | null;
+}
 export interface BalanceStaleTable { tenant_id: string; stale_year: number; stale_period: number; marked_at: Generated<string> }
 export interface AccountPeriodBalanceTable {
   tenant_id: string; account_id: number; fiscal_year: number; period_no: number; currency_code: string; party_id: Generated<string>;
@@ -285,6 +289,7 @@ export interface Database {
   fx_run: FxRunTable;
   amortization_schedule: AmortizationScheduleTable;
   amortization_line: AmortizationLineTable;
+  tax_return: TaxReturnTable;
   closing_step: ClosingStepTable;
   closing_run: ClosingRunTable;
   report_template: ReportTemplateTable;

@@ -242,6 +242,20 @@ describe('đối chiếu thuế hóa đơn với sổ cái', () => {
     expect((await t.recon(4)).differences).toEqual([]);
   });
 
+  it('chứng từ khấu trừ thuế (KTT) và nộp thuế GTGT (Nợ 33311 / Có tiền, kể cả bản đảo) không phải lệch và không vào tổng sổ cái', async () => {
+    const t = await tenant();
+    await t.create(t.invoice('HDM', '2026-03-10', '0000001'));
+    await t.create(t.invoice('HDB', '2026-03-11', '0000002'));
+    const pay = await t.call('POST', '/api/vouchers', { voucherType: 'PC', postingDate: '2026-03-20', documentDate: '2026-03-20', partyCode: 'NCC001', autoPost: true,
+      lines: [{ accountCode: '33311', debit: '700000', credit: '0' }, { accountCode: '1111', debit: '0', credit: '700000' }] });
+    expect(pay.statusCode, pay.body).toBe(201);
+    expect((await t.call('POST', `/api/vouchers/${pay.json().id}/reverse`, { postingDate: '2026-03-25' })).statusCode).toBe(201);
+    const off = await t.call('POST', '/api/tax/vat-offset', { date: '2026-03-31' });
+    expect(off.statusCode, off.body).toBe(200); expect(off.json().amount).toBe('1000000');
+    const r = await t.recon(3);
+    expect(r).toMatchObject({ purchaseTaxInvoices: '1000000', debit1331: '1000000', saleTaxInvoices: '1000000', credit33311: '1000000', differences: [] });
+  });
+
   it('mã thuế phân bổ chia đôi hai tài khoản (50/50) không bị báo lệch giả', async () => {
     const t = await tenant();
     await t.admin(sql`UPDATE tax_distribution d SET factor_percent = 50 FROM tax_code c WHERE c.id = d.tax_code_id AND c.tenant_id = ${t.tenantId}::uuid AND c.code = 'V10' AND d.scope = 'purchase' AND d.account_code = '1331'`);
