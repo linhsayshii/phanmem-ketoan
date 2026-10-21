@@ -103,7 +103,7 @@ async function compute(trx: Trx, q: PeriodQ, manual: Record<string, string>, ove
     if (!list.length || !t.lines.some((l) => l.code === code)) continue;
     const total = list.reduce((a, x) => a.plus(D(x.delta).abs()), D(0)).toFixed(0);
     hints[code] = `Gợi ý ${total}: tờ khai bổ sung ${list.map((x) => `${kindName(x.period_kind)} ${x.period}/${x.year} lần ${x.revision} (${D(x.delta).abs().toFixed(0)})`).join(', ')} làm ${word} số thuế còn được khấu trừ chuyển kỳ sau; khai vào [${code}] kỳ phát hiện (TT 89/2026 Phụ lục II điểm 3)`;
-    warnings.push(`Có tờ khai bổ sung kỳ trước làm ${word} số thuế còn được khấu trừ: khai ${total} vào chỉ tiêu [${code}] (xem gợi ý)`);
+    warnings.push(`Có tờ khai bổ sung kỳ trước làm ${word} số thuế còn được khấu trừ: khai ${total} vào chỉ tiêu [${code}] (xem gợi ý). Phần mềm coi kỳ phát hiện sai sót là kỳ chứa ngày chốt tờ khai bổ sung; nếu đã khai ở kỳ khác thì không khai lại; nếu đã đề nghị hoàn ([42]) xem TT 89/2026 Phụ lục II điểm 3 b.2`);
   }
 
   const values = evalVatReturn(t, { invoice, carry, manual, overrides });

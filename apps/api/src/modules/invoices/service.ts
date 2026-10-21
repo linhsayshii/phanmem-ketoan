@@ -172,7 +172,7 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput): Pr
     }
     await trx.insertInto('voucher_item_line').values(itemRows).execute();
 
-    const groupRows = await trx.selectFrom('invoice_group').select(['id', 'code', 'rate']).where('scope', '=', scope).execute();
+    const groupRows = await trx.selectFrom('invoice_group').select(['id', 'code', 'rate']).where('scope', '=', scope).orderBy('code').execute(); // thứ tự cố định khi hai nhóm cùng thuế suất
     const group = groupRows.find((g) => g.code === input.invoice.invoiceGroupCode);
     if (!group) throw new AppError('LOOKUP_NOT_FOUND', `Không có nhóm hóa đơn ${scope === 'sale' ? 'bán' : 'mua'} mã "${input.invoice.invoiceGroupCode}"`, 404);
     const headerIsTaxCode = !!(await trx.selectFrom('tax_code').select('id').where('code', '=', group.code).executeTakeFirst());
