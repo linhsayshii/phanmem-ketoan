@@ -889,6 +889,12 @@ it('khấu trừ thuế: dư Có 33311 30tr, dư Nợ 1331 12tr → KTT 12tr; ch
 
 Model: sonnet.
 
+**Việc mang sang từ Task 23 (controller thêm, bắt buộc):**
+- Lưu nhóm kê khai đầu hóa đơn bán ra (cột mới trên `voucher_invoice` hoặc chứng từ, migration mới), hoặc hiện nhóm theo từng dòng thuế trên màn hình hóa đơn: hiện nay nhóm đầu đọc lại từ dòng `voucher_invoice` đầu tiên, nên hóa đơn KTGT/NPV có dòng có thuế suất đứng trước khi lưu lại sẽ chuyển dòng KCT sang nhóm KCT. Phải xong trước khi xuất XML.
+- Màn hình tờ khai hiện `hints` và `warnings` (gợi ý [37]/[38] từ tờ khai bổ sung kỳ trước, giả định 8%, [25]); chốt gặp 409 `TAX_RETURN_STALE` thì hiện các chỉ tiêu lệch (mã, đã lưu, tính lại) và cho lưu lại nháp.
+- Gợi ý [37]/[38] chỉ hiện trên tờ khai của kỳ chứa ngày chốt tờ khai bổ sung; tờ khai kỳ đó đã chốt thì màn hình danh sách tờ khai bổ sung cần nhắc người dùng (không tự khai hai lần).
+- Khấu trừ thuế cuối kỳ: kết quả có `laterOffsetDates` thì hiện cảnh báo chạy lại các ngày sau theo thứ tự.
+
 **Files:**
 - Create: `apps/api/src/modules/tax/xml/index.ts`, `apps/api/src/modules/tax/xml/htkk01gtgt.ts`, `packages/coa-data/data/tax/htkk-01gtgt.json`, `apps/web/src/pages/VatReturn.tsx`, `apps/web/e2e/to-khai-gtgt.spec.ts`
 - Modify: `apps/api/src/modules/tax/routes.ts`, `apps/web/src/router.tsx`

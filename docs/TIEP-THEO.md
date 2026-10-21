@@ -55,6 +55,13 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
   - Lịch kiểm tài khoản theo chế độ kế toán của kỳ bắt đầu. Lịch kéo sang năm có chế độ khác (TT133 sang TT99) mà tài khoản không có ở chế độ mới thì chỉ báo lỗi khi chạy kỳ đó.
   - Năm chưa tạo được giả định 12 kỳ. Năm tạo sau với số kỳ khác 12 thì lịch đã phân bổ không xếp lại được: chạy kỳ báo `AMORTIZATION_PERIOD_LAYOUT`, người dùng ngừng lịch và lập lịch mới cho phần còn lại.
   - Chạy lại và gỡ lịch luôn đảo chứng từ PB vào ngày cuối kỳ, kể cả kỳ mở (giống chứng từ tỷ giá xuất quỹ Task 10, vì guard 0030 chặn bỏ ghi sổ chứng từ tự động).
+- Tờ khai 01/GTGT (Task 23):
+  - Kỳ trước 01/7/2026 trả 409 `VAT_TEMPLATE_UNAVAILABLE` vì chưa có văn bản gốc TT 80/2021 (mục 4).
+  - Hàng bán thuế suất 8% tạm cộng vào [32]/[33], có cảnh báo (mục 4).
+  - [25] (thuế đầu vào dùng chung phân bổ theo tỷ lệ doanh thu chịu thuế) là cách tính của phần mềm, người dùng ghi đè được.
+  - Tờ khai bổ sung kỳ trước: [22] luôn lấy [43] của tờ khai lần đầu đã chốt của kỳ trước; chênh lệch bổ sung chỉ được gợi ý vào [37]/[38] của kỳ chứa ngày chốt tờ khai bổ sung (TT 89/2026 Phụ lục II điểm 3), "kỳ phát hiện" là giả định của phần mềm.
+  - Đối chiếu thuế: chứng từ nộp thuế GTGT nhận diện khi không có hóa đơn, có dòng 111/112 và dư Nợ thuần 33311; nộp qua tài khoản trung gian (3388/1388) vẫn hiện là lệch.
+  - Chạy lại khấu trừ thuế một ngày không tự chạy lại các ngày sau (chỉ cảnh báo `laterOffsetDates`).
 
 ## 4. Chờ người dùng
 
