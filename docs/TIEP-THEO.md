@@ -62,6 +62,12 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
   - Tờ khai bổ sung kỳ trước: [22] luôn lấy [43] của tờ khai lần đầu đã chốt của kỳ trước; chênh lệch bổ sung chỉ được gợi ý vào [37]/[38] của kỳ chứa ngày chốt tờ khai bổ sung (TT 89/2026 Phụ lục II điểm 3), "kỳ phát hiện" là giả định của phần mềm.
   - Đối chiếu thuế: chứng từ nộp thuế GTGT nhận diện khi không có hóa đơn, có dòng 111/112 và dư Nợ thuần 33311; nộp qua tài khoản trung gian (3388/1388) vẫn hiện là lệch.
   - Chạy lại khấu trừ thuế một ngày không tự chạy lại các ngày sau (chỉ cảnh báo `laterOffsetDates`).
+- Nhập chứng từ từ Excel (Task 25):
+  - Tối đa 2.000 nhóm và 20.000 dòng mỗi tệp, chạy đồng bộ trong một yêu cầu (khoảng 25 giây cho 2.000 nhóm, cả lượt Kiểm tra); tệp lớn hơn cần việc nền pg-boss (GĐ sau).
+  - Mỗi nhóm chạy trong một SAVEPOINT của cùng giao dịch. Vượt 64 giao dịch con, PostgreSQL đánh dấu tràn bộ đệm giao dịch con và các phiên khác phải tra `pg_subtrans` khi kiểm tra khả kiến: chậm phiên khác trong lượt nhập, không sai kết quả, không giữ thêm khóa. Hướng xử lý: lượt Nhập không dùng SAVEPOINT khi lượt Kiểm tra vừa sạch, hoặc đẩy sang việc nền.
+  - Lượt Kiểm tra không ghi sổ nên không phát hiện lỗi chỉ có khi ghi sổ (kỳ đã khóa, quỹ âm); lỗi này hiện ở lượt Nhập.
+  - Khóa chống nhập trùng tính theo nội dung từng nhóm (số nhóm + các dòng đã sắp xếp): sửa một nhóm rồi nhập lại tạo chứng từ mới cho nhóm đó, chứng từ cũ vẫn còn.
+  - Tệp xlsx giải nén thật có giới hạn (100 MB mỗi mục, 200 MB tổng, 10.000 mục) bằng chính JSZip mà exceljs dùng; tệp 20 MB có hàng trăm nghìn mục thư mục vẫn tốn vài giây trong bước đọc thư mục (exceljs cũng tốn như vậy).
 
 ## 4. Chờ người dùng
 
