@@ -4,7 +4,7 @@ import type { Database } from '@kt/db';
 import { buildInvoiceLedgerDetail, computeTaxes, D, toVnd, VND_AMOUNT_MSG, VND_AMOUNT_RE, voucherTypeDef, type TaxDef, type TaxResult } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { createInvoiceVoucher, dateIso, fxRate, getVoucher, updateInvoiceDraft, type LineInput, type VoucherDto, type VoucherInput } from '../ledger/vouchers.service.js';
-import { deleteInvoiceRows, insertInvoiceRows, type InvoiceRow } from './declaration.js';
+import { deleteInvoiceRows, insertInvoiceRows, partyOverride, type InvoiceRow } from './declaration.js';
 
 type Trx = Transaction<Database>;
 
@@ -20,7 +20,7 @@ export const invoiceItemInput = z.object({
 });
 export const invoiceHeaderInput = z.object({
   formNo: optText(20), serial: optText(20), invoiceNo: z.string().trim().min(1).max(30), invoiceDate: dateIso, invoiceGroupCode: z.string().min(1), isImport: z.boolean().optional(),
-  partyTaxCode: optText(20), partyName: optText(300), partyAddress: optText(500), // ghi đè thông tin đối tượng trên hóa đơn (bỏ trống: lấy từ danh mục)
+  ...partyOverride, // ghi đè thông tin đối tượng trên hóa đơn (bỏ trống: lấy từ danh mục)
   adjustsInvoiceId: z.number().int().positive().optional(), // bắt buộc với giảm giá, trả lại (GGB, GGM): dòng của hóa đơn gốc
   declaredTax: z.record(z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG)).optional(), // thuế GTGT ghi trên hóa đơn theo mã thuế (VND), lệch số tính theo dòng thì dồn vào dòng thuế lớn nhất
 });

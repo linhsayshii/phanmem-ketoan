@@ -1,7 +1,7 @@
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
-import { VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
+import { TAX_CODE_RE, VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { getSettings } from '../core/settings.js';
 
@@ -13,12 +13,16 @@ type Trx = Transaction<Database>;
 export const DECLARING_TYPES: readonly string[] = ['PC', 'BN', 'PKT'];
 
 const optText = (max: number) => z.string().max(max).nullable().optional();
+// Ghi đè thông tin đối tượng trên hóa đơn: mã số thuế đúng định dạng danh mục; chuỗi rỗng hoặc null là không ghi đè.
+export const partyOverride = {
+  partyTaxCode: z.string().trim().regex(TAX_CODE_RE, 'Mã số thuế gồm 10 số hoặc 10 số-3 số').or(z.literal('')).nullable().optional(), partyName: optText(300), partyAddress: optText(500),
+};
 export const voucherInvoiceInput = z.object({
   formNo: optText(20), serial: optText(20), invoiceNo: z.string().trim().min(1).max(30), invoiceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   partyCode: z.string().nullable().optional(), // bỏ trống: lấy đối tượng của chứng từ
   invoiceGroupCode: z.string().min(1), taxCode: z.string().min(1),
   baseAmount: z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG), taxAmount: z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG),
-  isImport: z.boolean().optional(), note: optText(500),
+  isImport: z.boolean().optional(), note: optText(500), ...partyOverride,
 });
 export type VoucherInvoiceInput = z.infer<typeof voucherInvoiceInput>;
 
@@ -94,7 +98,7 @@ export async function insertInvoiceRows(trx: Trx, tenantId: string, voucherId: s
     await trx.insertInto('voucher_invoice').values({
       tenant_id: tenantId, voucher_id: voucherId, direction: r.direction, form_no: blank(r.formNo), serial: blank(r.serial), invoice_no: r.invoiceNo, invoice_date: r.invoiceDate,
       party_id: r.partyId, party_name: p.name, party_tax_code: p.taxCode, party_address: p.address, invoice_group_id: r.invoiceGroupId, tax_code_id: r.taxCodeId,
-      base_amount: r.baseAmount, tax_amount: r.taxAmount, is_import: r.isImport ?? false, adjusts_invoice_id: r.adjustsInvoiceId ?? null, declare_year: d.year, declare_period: d.period, note: blank(r.note),
+      base_amount: r.baseAmount, tax_amount: r.taxAmount, is_import: r.isImport ?? false, adjusts_invoice_id: r.adjustsInvoiceId ?? null, declare_year: d.year, declare_period: d.period, declare_period_kind: vatPeriod, note: blank(r.note),
     }).execute();
   }
 }
@@ -128,7 +132,7 @@ export async function resolveDeclared(trx: Trx, items: VoucherInvoiceInput[], vo
       partyId = p.id;
     }
     rows.push({ direction: 'purchase', formNo: x.formNo, serial: x.serial, invoiceNo: x.invoiceNo, invoiceDate: x.invoiceDate, partyId, invoiceGroupId: group.id, taxCodeId: tax.id,
-      baseAmount: x.baseAmount, taxAmount: x.taxAmount, isImport: x.isImport, note: x.note });
+      baseAmount: x.baseAmount, taxAmount: x.taxAmount, isImport: x.isImport, note: x.note, partyTaxCode: x.partyTaxCode, partyName: x.partyName, partyAddress: x.partyAddress });
   }
   return rows;
 }

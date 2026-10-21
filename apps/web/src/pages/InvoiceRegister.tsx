@@ -11,7 +11,7 @@ import { useAuth } from '../auth.js';
 // Bảng kê hóa đơn mua vào/bán ra (nội bộ, không phải mẫu bắt buộc) và đối chiếu thuế hóa đơn với sổ cái. Số liệu từ /api/tax/*.
 interface Line { stt: number; groupCode: string; groupName: string; formNo: string | null; serial: string | null; invoiceNo: string; invoiceDate: string; partyName: string | null; partyTaxCode: string | null;
   baseAmount: string; taxRate: string | null; taxAmount: string; voucherId: string; voucherNo: string | null; voucherType: string; kind: 'original' | 'reversal' }
-interface Register { label: string; groups: { code: string; name: string; rows: Line[]; baseTotal: string; taxTotal: string }[]; totals: { baseAmount: string; taxAmount: string };
+interface Register { label: string; note: string | null; groups: { code: string; name: string; rows: Line[]; baseTotal: string; taxTotal: string }[]; totals: { baseAmount: string; taxAmount: string };
   otherTaxes: { rows: Line[]; baseTotal: string; taxTotal: string } }
 interface Reconcile { purchaseTaxInvoices: string; debit1331: string; saleTaxInvoices: string; credit33311: string;
   differences: { voucherId: string; voucherNo: string | null; voucherType: string; direction: 'purchase' | 'sale'; invoiceTax: string; ledgerTax: string }[] }
@@ -55,14 +55,11 @@ export default function InvoiceRegisterPage() {
   const [tab, setTab] = useState<TabKey>('purchase');
   const now = dayjs();
   const [f, setF] = useRememberedFilter('tax-register', { periodKind: 'month', year: now.year(), period: now.month() + 1 }, `${me?.tenantId}:${me?.userId}`);
-  // Công ty kê khai theo quý thì chỉ chọn được kỳ quý (máy chủ từ chối kỳ tháng).
-  const settings = useQuery({ queryKey: ['settings'], queryFn: () => api<{ vat_period: 'month' | 'quarter' }>('/api/settings') });
-  const quarterOnly = settings.data?.vat_period === 'quarter';
-  const kind = quarterOnly ? 'quarter' : f.periodKind as 'month' | 'quarter';
+  const kind = f.periodKind as 'month' | 'quarter';
   const period = Math.min(f.period, kind === 'month' ? 12 : 4);
   const qs = new URLSearchParams({ year: String(f.year), period: String(period), periodKind: kind });
-  const url = settings.isSuccess || settings.isError ? (tab === 'reconcile' ? `/api/tax/reconcile?${qs}` : `/api/tax/invoices?direction=${tab}&${qs}`) : null;
-  const data = useQuery({ queryKey: ['tax-register', url], queryFn: () => api<Register | Reconcile>(url!), enabled: !!url, retry: false });
+  const url = tab === 'reconcile' ? `/api/tax/reconcile?${qs}` : `/api/tax/invoices?direction=${tab}&${qs}`;
+  const data = useQuery({ queryKey: ['tax-register', url], queryFn: () => api<Register | Reconcile>(url), retry: false });
   const rows = useMemo(() => (tab !== 'reconcile' && data.data && 'groups' in data.data ? registerRows(data.data) : []), [tab, data.data]);
 
   const stat = (label: string, value: string) => <span key={label}>{label}: <b>{formatVnNumber(value)}</b></span>;
@@ -72,7 +69,7 @@ export default function InvoiceRegisterPage() {
     if (!d) return <Alert type="info" message="Đang tải…" />;
     if ('differences' in d) return (
       <Space direction="vertical" style={{ width: '100%' }}>
-        <Space size="large" wrap>{stat('Thuế mua vào trên hóa đơn', d.purchaseTaxInvoices)}{stat('Phát sinh Nợ TK 1331', d.debit1331)}{stat('Thuế bán ra trên hóa đơn', d.saleTaxInvoices)}{stat('Phát sinh Có TK 33311', d.credit33311)}</Space>
+        <Space size="large" wrap>{stat('Thuế GTGT đầu vào trên hóa đơn', d.purchaseTaxInvoices)}{stat('Thuế GTGT đầu vào trên sổ cái (thuần Nợ − Có, mọi TK thuế đầu vào)', d.debit1331)}{stat('Thuế GTGT đầu ra trên hóa đơn', d.saleTaxInvoices)}{stat('Thuế GTGT đầu ra trên sổ cái (thuần Có − Nợ, mọi TK thuế đầu ra)', d.credit33311)}</Space>
         {d.differences.length === 0 ? <Alert type="success" showIcon message="Thuế trên hóa đơn khớp sổ cái ở mọi chứng từ của kỳ" />
           : <><Alert type="warning" showIcon message={`${d.differences.length} chứng từ lệch giữa thuế trên hóa đơn và thuế ghi sổ`} />
             <KeyboardGrid<Diff> rows={d.differences} columns={diffColumns} onRowsChange={() => undefined} addRowTemplate={() => ({} as Diff)} readOnly height="calc(100vh - 380px)" /></>}
@@ -80,6 +77,7 @@ export default function InvoiceRegisterPage() {
     const r = d as Register;
     return (
       <Space direction="vertical" style={{ width: '100%' }}>
+        {r.note && <Alert type="info" showIcon message={r.note} />}
         <Space size="large" wrap>{stat('Giá trị chưa thuế', r.totals.baseAmount)}{stat('Thuế GTGT', r.totals.taxAmount)}</Space>
         {rows.length === 0 ? <Alert type="info" showIcon message={`Không có hóa đơn ${tab === 'purchase' ? 'mua vào' : 'bán ra'} trong ${r.label.toLowerCase()}`} />
           : <KeyboardGrid<Row> rows={rows} columns={registerColumns} onRowsChange={() => undefined} addRowTemplate={() => ({} as Row)} readOnly height="calc(100vh - 380px)" />}
@@ -90,11 +88,11 @@ export default function InvoiceRegisterPage() {
     <Space direction="vertical" size={8} style={{ width: '100%' }}>
       <Space wrap>
         <h2 style={{ margin: 0 }}>Bảng kê hóa đơn</h2>
-        <Segmented aria-label="Loại kỳ kê khai" value={kind} onChange={(v) => setF({ ...f, periodKind: String(v) })} options={[{ value: 'month', label: 'Tháng', disabled: quarterOnly }, { value: 'quarter', label: 'Quý' }]} />
+        <Segmented aria-label="Loại kỳ kê khai" value={kind} onChange={(v) => setF({ ...f, periodKind: String(v) })} options={[{ value: 'month', label: 'Tháng' }, { value: 'quarter', label: 'Quý' }]} />
         <InputNumber aria-label="Năm" min={2000} max={2100} precision={0} value={f.year} onChange={(v) => v && setF({ ...f, year: v })} style={{ width: 90 }} />
         <Select aria-label="Kỳ" style={{ width: 120 }} value={period} onChange={(v) => setF({ ...f, period: v })}
           options={Array.from({ length: kind === 'month' ? 12 : 4 }, (_, i) => ({ value: i + 1, label: `${kind === 'month' ? 'Tháng' : 'Quý'} ${i + 1}` }))} />
-        {can('report.print') && <Button disabled={tab === 'reconcile' || !url} onClick={() => window.open(`${url}&format=xlsx`, '_blank')}>Xuất Excel</Button>}
+        {can('report.print') && <Button onClick={() => window.open(`${url}&format=xlsx`, '_blank')}>Xuất Excel</Button>}
       </Space>
       <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={[{ key: 'purchase', label: 'Mua vào' }, { key: 'sale', label: 'Bán ra' }, { key: 'reconcile', label: 'Đối chiếu' }]} />
       {body()}

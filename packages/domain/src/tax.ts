@@ -1,6 +1,9 @@
 import { D, Decimal, ZERO, sum } from './money.js';
 import { toVnd } from './fx.js';
 
+// Mã số thuế đối tượng: 10 số, hoặc 10 số + gạch + 3 số (đơn vị phụ thuộc). Dùng chung danh mục đối tượng và ghi đè trên hóa đơn.
+export const TAX_CODE_RE = /^\d{10}(-\d{3})?$/;
+
 // Động cơ thuế (đặc tả mục 6 "Thuế"): mã thuế (bảng tax_code) + phân bổ thuế (tax_distribution) theo loại chứng từ, mua/bán, dòng cơ sở/dòng thuế.
 // Thuế khấu trừ tại nguồn (TNCN) là phân bổ âm. Dòng phân bổ "base" chỉ gắn nhãn báo cáo cho cơ sở tính thuế, không sinh bút toán.
 export interface TaxDistribution { documentType: 'invoice' | 'refund'; scope: 'sale' | 'purchase'; lineType: 'base' | 'tax'; factorPercent: string; accountCode: string | null; reportTag: string | null }

@@ -33,12 +33,11 @@ const calls = () => apiMock.mock.calls.map((c) => String(c[0]));
 const lastCall = (path: string) => { const u = calls().filter((c) => c.startsWith(path)).at(-1); return u ? new URLSearchParams(u.split('?')[1]) : undefined; };
 const renderPage = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><InvoiceRegisterPage /></QueryClientProvider>);
 const cell = (row: HTMLElement, col: string) => row.querySelector(`[data-col="${col}"]`)?.textContent;
-let vatPeriod = 'month';
 
 describe('Bảng kê hóa đơn', () => {
   beforeEach(() => {
-    auth.canPrint = true; vatPeriod = 'month';
-    apiMock.mockImplementation(async (url: string) => (url === '/api/settings' ? { vat_period: vatPeriod } : url.startsWith('/api/tax/reconcile') ? reconcile : register));
+    auth.canPrint = true;
+    apiMock.mockImplementation(async (url: string) => (url.startsWith('/api/tax/reconcile') ? reconcile : register));
   });
   afterEach(() => { apiMock.mockReset(); });
 
@@ -53,21 +52,24 @@ describe('Bảng kê hóa đơn', () => {
     expect([cell(rows[3]!, 'Giá trị chưa thuế'), cell(rows[4]!, 'Thuế GTGT')]).toEqual(['500.000', '50.000']);
   });
 
-  it('Bán ra gọi direction=sale; công ty kê khai theo quý thì chỉ gọi kỳ quý', async () => {
-    vatPeriod = 'quarter';
+  it('Bán ra gọi direction=sale; ghi chú của máy chủ về kỳ kê khai theo quý được hiển thị', async () => {
+    apiMock.mockImplementation(async () => ({ ...register, note: 'Hóa đơn của kỳ kê khai theo quý hiển thị ở tháng cuối quý.' }));
     renderPage();
     await userEvent.click(screen.getByRole('tab', { name: 'Bán ra' }));
     await screen.findAllByTestId('row');
-    const q = lastCall('/api/tax/invoices?direction=sale')!;
-    expect(q.get('periodKind')).toBe('quarter');
-    expect(calls().some((c) => c.includes('periodKind=month'))).toBe(false);
+    expect(lastCall('/api/tax/invoices?direction=sale')!.get('periodKind')).toBe('month');
+    expect(screen.getByText(/tháng cuối quý/)).toBeTruthy();
   });
 
   it('Đối chiếu: hiện bốn số tổng và chứng từ lệch', async () => {
     renderPage();
     await userEvent.click(screen.getByRole('tab', { name: 'Đối chiếu' }));
     const rows = await screen.findAllByTestId('row');
-    expect(screen.getByText(/Phát sinh Nợ TK 1331/).textContent).toContain('60.000');
+    expect(screen.getByText(/Thuế GTGT đầu vào trên sổ cái/).textContent).toContain('60.000');
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    await userEvent.click(screen.getByRole('button', { name: 'Xuất Excel' }));
+    expect(String(open.mock.calls[0]![0])).toMatch(/^\/api\/tax\/reconcile\?.*&format=xlsx$/);
+    open.mockRestore();
     expect([cell(rows[0]!, 'Số chứng từ'), cell(rows[0]!, 'Thuế trên hóa đơn'), cell(rows[0]!, 'Thuế trên sổ cái'), cell(rows[0]!, 'Chênh lệch')]).toEqual(['PKT00009', '0', '10.000', '10.000']);
   });
 

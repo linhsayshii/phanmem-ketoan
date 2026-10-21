@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Database } from '@kt/db';
-import { VND_AMOUNT_RE } from '@kt/domain';
+import { TAX_CODE_RE, VND_AMOUNT_RE } from '@kt/domain';
 
 export interface ColumnDef { key: string; label: string; type: 'text' | 'number' | 'boolean' | 'date' | 'select'; required?: boolean; options?: { value: string; label: string }[]; lookup?: { catalog: string }; width?: number }
 // nullsNotDistinct: ràng buộc duy nhất của bảng là UNIQUE NULLS NOT DISTINCT (NULL trùng NULL), nhập Excel kiểm trùng theo IS NULL.
@@ -32,7 +32,7 @@ const defs: CatalogDef[] = [
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên nhóm', type: 'text', required: true }] },
   { name: 'party', table: 'party', label: 'Đối tượng', uniqueBy: ['code'], sort: 'code', searchIn: ['code', 'name', 'tax_code'],
     schema: z.object({ code, name: text(false), is_customer: z.boolean().optional(), is_vendor: z.boolean().optional(), is_employee: z.boolean().optional(),
-      group_code: text(), tax_code: z.string().regex(/^\d{10}(-\d{3})?$/).nullable().optional(), id_number: text(), id_issue_date: dateIso.nullable().optional(), id_issue_place: text(),
+      group_code: text(), tax_code: z.string().regex(TAX_CODE_RE).nullable().optional(), id_number: text(), id_issue_date: dateIso.nullable().optional(), id_issue_place: text(),
       address: text(), invoice_address: text(), contact_name: text(), phone: text(), email: z.string().email().nullable().optional(),
       payment_term_days: z.number().int().min(0).max(3650).nullable().optional(), credit_limit: vnd.nullable().optional(), default_account_code: text(), note: text(), is_active: z.boolean().optional() }),
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên đối tượng', type: 'text', required: true },

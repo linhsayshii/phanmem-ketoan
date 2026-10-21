@@ -72,15 +72,28 @@ describe('bảng kê hóa đơn mua vào/bán ra', () => {
     expect(flat(await t.reg('purchase', 2, 'month', 2025))).toEqual([]);
   });
 
-  it('kỳ kê khai khác ngày hóa đơn thì hóa đơn thuộc kỳ đã chọn; kê khai theo quý không tách được theo tháng', async () => {
+  it('kỳ kê khai khác ngày hóa đơn thì hóa đơn thuộc kỳ đã chọn', async () => {
     const t = await tenant();
     const v = await t.create(t.invoice('HDM', '2026-03-10', '0000200', { autoPost: false }));
     await t.admin(sql`UPDATE voucher_invoice SET declare_period = 4 WHERE voucher_id = ${v.id}::uuid`); // khai bổ sung sang tháng sau
     expect((await t.call('POST', `/api/vouchers/${v.id}/post`)).statusCode).toBe(200);
     expect(flat(await t.reg('purchase', 3))).toEqual([]);
     expect(flat(await t.reg('purchase', 4)).map((x) => x.invoiceNo)).toEqual(['0000200']);
+  });
+
+  it('đổi kỳ kê khai tháng sang quý: hóa đơn kỳ tháng vẫn đúng tháng và vào quý chứa nó, hóa đơn kỳ quý chỉ hiện ở quý (tháng cuối quý kèm ghi chú)', async () => {
+    const t = await tenant();
+    await t.create(t.invoice('HDM', '2026-01-10', '0001200')); await t.create(t.invoice('HDM', '2026-02-10', '0001201'));
     expect((await t.call('PUT', '/api/settings', { vat_period: 'quarter' })).statusCode).toBe(200);
-    expect(err(await t.call('GET', '/api/tax/invoices?direction=purchase&year=2026&period=4&periodKind=month'))).toEqual([400, 'VALIDATION']);
+    await t.create(t.invoice('HDM', '2026-04-10', '0001202')); await t.create(t.invoice('HDM', '2026-05-10', '0001203'));
+    const no = async (p: number, k: 'month' | 'quarter') => flat(await t.reg('purchase', p, k)).map((x) => x.invoiceNo);
+    expect(await no(1, 'month')).toEqual(['0001200']); expect(await no(2, 'month')).toEqual(['0001201']);
+    expect(await no(1, 'quarter')).toEqual(['0001200', '0001201']);
+    expect(await no(2, 'quarter')).toEqual(['0001202', '0001203']);
+    expect(await no(4, 'month')).toEqual([]); expect(await no(5, 'month')).toEqual([]); expect(await no(6, 'month')).toEqual(['0001202', '0001203']);
+    expect(((await t.reg('purchase', 6)) as Register & { note: string | null }).note).toContain('quý');
+    expect(((await t.reg('purchase', 1)) as Register & { note: string | null }).note).toBeNull();
+    expect((await t.recon(2, 'quarter')).purchaseTaxInvoices).toBe('2000000');
   });
 
   it('chứng từ đảo ở kỳ sau: kỳ sau kê khai điều chỉnh giảm (số âm) theo hóa đơn gốc, kỳ gốc vẫn giữ hóa đơn', async () => {
@@ -94,6 +107,26 @@ describe('bảng kê hóa đơn mua vào/bán ra', () => {
     expect(flat(apr).map((x) => [x.invoiceNo, x.baseAmount, x.taxAmount, x.kind, x.voucherId])).toEqual([['0000300', '-10000000', '-1000000', 'reversal', rev.json().id]]);
     expect(apr.totals).toEqual({ baseAmount: '-10000000', taxAmount: '-1000000' });
     expect((await t.reg('purchase', 2, 'quarter')).totals.taxAmount).toBe('-1000000');
+  });
+
+  it('chứng từ đảo ghi trước kỳ kê khai đã ghi đè của hóa đơn gốc thì kê khai cùng kỳ với hóa đơn gốc (triệt tiêu)', async () => {
+    const t = await tenant();
+    const v = await t.create(t.invoice('HDM', '2026-03-10', '0000350', { autoPost: false }));
+    await t.admin(sql`UPDATE voucher_invoice SET declare_period = 5 WHERE voucher_id = ${v.id}::uuid`);
+    expect((await t.call('POST', `/api/vouchers/${v.id}/post`)).statusCode).toBe(200);
+    expect((await t.call('POST', `/api/vouchers/${v.id}/reverse`, { postingDate: '2026-04-15' })).statusCode).toBe(201);
+    for (const p of [3, 4, 5]) expect(flat(await t.reg('purchase', p))).toEqual([]);
+    expect((await t.reg('purchase', 2, 'quarter')).totals.taxAmount).toBe('0');
+  });
+
+  it('chứng từ bỏ ghi sổ (về nháp) biến mất khỏi bảng kê, ghi sổ lại thì hiện lại', async () => {
+    const t = await tenant();
+    const v = await t.create(t.invoice('HDM', '2026-03-10', '0000360'));
+    expect(flat(await t.reg('purchase', 3))).toHaveLength(1);
+    expect((await t.call('POST', `/api/vouchers/${v.id}/unpost`)).statusCode).toBe(200);
+    expect(flat(await t.reg('purchase', 3))).toEqual([]);
+    expect((await t.call('POST', `/api/vouchers/${v.id}/post`)).statusCode).toBe(200);
+    expect(flat(await t.reg('purchase', 3))).toHaveLength(1);
   });
 
   it('chứng từ đảo cùng kỳ: cả hai triệt tiêu, bảng kê không hiện', async () => {
@@ -135,6 +168,20 @@ describe('bảng kê hóa đơn mua vào/bán ra', () => {
     expect(err(await t.call('POST', '/api/invoices', dup))).toEqual([409, 'INVOICE_DUPLICATE']);
     // không ghi đè: KH002 không có MST nên khác đối tượng thì không trùng
     expect((await t.call('POST', '/api/invoices', t.invoice('HDM', '2026-03-11', '0000700', { partyCode: 'KH002' }))).statusCode).toBe(201);
+  });
+
+  it('MST ghi đè kiểm tra cùng quy tắc danh mục đối tượng: sai định dạng 400, rỗng là không ghi đè; hóa đơn kê khai trên PC cũng ghi đè và kiểm trùng được', async () => {
+    const t = await tenant();
+    const bad = ['123', 'abcdefghij', '0312345678-12'];
+    for (const m of bad) expect(err(await t.call('POST', '/api/invoices', t.invoice('HDM', '2026-03-10', '0001300', {}, { partyTaxCode: m })))).toEqual([400, 'VALIDATION']);
+    expect(err(await t.pc('2026-03-12', [t.decl('0001301', { partyTaxCode: '12' })]))).toEqual([400, 'VALIDATION']);
+    await t.create(t.invoice('HDM', '2026-03-10', '0001302', {}, { partyTaxCode: '' }));
+    await t.create(t.invoice('HDM', '2026-03-10', '0001303', {}, { partyTaxCode: '0312345678-001' }));
+    expect(flat(await t.reg('purchase', 3)).map((x) => [x.invoiceNo, x.partyTaxCode])).toEqual([['0001302', '0312345678'], ['0001303', '0312345678-001']]);
+    expect((await t.pc('2026-03-12', [t.decl('0001304', { partyTaxCode: '0109999999', partyName: 'Bên ghi đè', partyAddress: 'Hà Nội' })])).statusCode).toBe(201);
+    expect(flat(await t.reg('purchase', 3)).find((x) => x.invoiceNo === '0001304')).toMatchObject({ partyTaxCode: '0109999999', partyName: 'Bên ghi đè' });
+    const dup = await t.pc('2026-03-13', [t.decl('0001304', { partyCode: 'KH002', partyTaxCode: '0109999999' })]);
+    expect(err(dup)).toEqual([409, 'INVOICE_DUPLICATE']);
   });
 
   it('danh sách chứng từ lọc theo mã đối tượng ở máy chủ (ô chọn hóa đơn gốc)', async () => {
@@ -200,5 +247,41 @@ describe('đối chiếu thuế hóa đơn với sổ cái', () => {
     expect((await t.recon(3)).differences).toEqual([]);
     const apr = await t.recon(4);
     expect(apr.differences).toEqual([]); expect(apr.purchaseTaxInvoices).toBe('-1000000'); expect(apr.debit1331).toBe('-1000000');
+  });
+
+  it('số dư đầu kỳ (DK) trên 1331, 33311 không tính vào tổng sổ cái và không sinh lệch (tháng 1, quý 1)', async () => {
+    const t = await tenant();
+    const R = (accountCode: string, debit = '0', credit = '0') => ({ accountCode, partyCode: null, currencyCode: 'VND', debit, credit, debitCurrency: '0', creditCurrency: '0' });
+    expect((await t.call('PUT', '/api/opening-balance/2026', { rows: [R('1331', '500000'), R('33311', '0', '300000'), R('4111', '0', '200000')] })).statusCode).toBe(200);
+    const p = await t.call('POST', '/api/opening-balance/2026/post'); expect(p.statusCode, p.body).toBe(200);
+    await t.create(t.invoice('HDM', '2026-01-10', '0001400'));
+    for (const r of [await t.recon(1), await t.recon(1, 'quarter')]) {
+      expect(r).toMatchObject({ purchaseTaxInvoices: '1000000', debit1331: '1000000', saleTaxInvoices: '0', credit33311: '0' }); expect(r.differences).toEqual([]);
+    }
+  });
+
+  it('giảm giá hàng bán (GGB) và hàng mua (GGM) cân với sổ cái: thuần Có/Nợ, không báo lệch', async () => {
+    const t = await tenant();
+    const hdb = await t.create(t.invoice('HDB', '2026-03-10', '0001500')); const hdm = await t.create(t.invoice('HDM', '2026-03-10', '0001501'));
+    const small = (acc: string) => ({ items: [{ description: 'Giảm giá', accountCode: acc, amountCurrency: '1000000', taxCodes: ['V10'] }] });
+    await t.create(t.invoice('GGB', '2026-03-20', '0001502', small('5113'), { adjustsInvoiceId: hdb.invoices[0]!.id }));
+    await t.create(t.invoice('GGM', '2026-03-20', '0001503', small('6422'), { adjustsInvoiceId: hdm.invoices[0]!.id }));
+    const r = await t.recon(3);
+    expect(r).toMatchObject({ purchaseTaxInvoices: '900000', debit1331: '900000', saleTaxInvoices: '900000', credit33311: '900000' }); expect(r.differences).toEqual([]);
+  });
+
+  it('xuất Excel đối chiếu; thiếu quyền in thì 403', async () => {
+    const t = await tenant();
+    await t.create(t.invoice('HDM', '2026-03-10', '0001600'));
+    const q = '/api/tax/reconcile?year=2026&period=3&periodKind=month';
+    const x = await t.call('GET', `${q}&format=xlsx`);
+    expect(x.statusCode).toBe(200); expect(String(x.headers['content-type'])).toContain('spreadsheetml');
+    await t.admin(sql`DELETE FROM role_permission WHERE tenant_id = ${t.tenantId}::uuid AND permission_code = 'report.print' AND role_id IN (SELECT id FROM role WHERE tenant_id = ${t.tenantId}::uuid AND code = 'xem')`);
+    const username = `xem_${Date.now()}`;
+    expect((await t.call('POST', '/api/users', { username, fullName: 'Xem', password: 'Matkhau1!', roleCode: 'xem', sensitiveFlags: [] })).statusCode).toBe(201);
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+    const xem = `sid=${login.cookies.find((c) => c.name === 'sid')!.value}`;
+    expect((await t.call('GET', q, undefined, xem)).statusCode).toBe(200);
+    expect(err(await t.call('GET', `${q}&format=xlsx`, undefined, xem))).toEqual([403, 'FORBIDDEN']);
   });
 });

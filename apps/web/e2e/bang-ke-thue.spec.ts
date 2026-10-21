@@ -43,7 +43,7 @@ test('Bảng kê hóa đơn: hóa đơn mua vào có trong bảng kê tháng 12,
 
   // Đối chiếu: hóa đơn HDM tự sinh bút toán thuế nên không thể là chứng từ lệch
   await page.getByRole('tab', { name: 'Đối chiếu' }).click();
-  await expect(page.getByText(/Phát sinh Nợ TK 1331/)).toBeVisible();
+  await expect(page.getByText(/Thuế GTGT đầu vào trên sổ cái/)).toBeVisible();
   await expect(page.locator('.ag-center-cols-container .ag-row', { hasText: invoiceNo })).toHaveCount(0);
 
   // Menu "Thuế" dẫn tới màn này

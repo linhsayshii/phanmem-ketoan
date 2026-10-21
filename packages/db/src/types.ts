@@ -177,7 +177,7 @@ export interface VoucherItemLineTable {
 export interface VoucherInvoiceTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; direction: string; form_no: string | null; serial: string | null; invoice_no: string; invoice_date: DateOnly;
   party_id: string | null; party_name: string | null; party_tax_code: string | null; party_address: string | null; invoice_group_id: number | null; tax_code_id: number | null;
-  base_amount: Numeric; tax_amount: Numeric; is_import: Generated<boolean>; adjusts_invoice_id: number | null; declare_year: number | null; declare_period: number | null; note: string | null;
+  base_amount: Numeric; tax_amount: Numeric; is_import: Generated<boolean>; adjusts_invoice_id: number | null; declare_year: number | null; declare_period: number | null; declare_period_kind: Generated<string>; note: string | null;
 }
 // Quy tắc tỷ giá theo chế độ, nạp từ fx-rules.json (bảng tham chiếu dùng chung).
 export interface FxRuleTable { regime: string; rules: ColumnType<unknown, string, string> }
