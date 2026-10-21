@@ -1,0 +1,334 @@
+{
+  "form": "01/GTGT",
+  "version": "TT89",
+  "validFrom": "2026-07-01",
+  "validTo": null,
+  "source": "TT 89/2026/TT-BTC ngày 30/6/2026 của Bộ trưởng Bộ Tài chính, Phụ lục I, mẫu số 01/GTGT, trang 241-243 của tệp PDF (trang 241: bảng chỉ tiêu [21]-[40a]; trang 242: [40b]-[43] và ghi chú 1-5; trang 243: ghi chú 5-7); văn bản gốc ~/legal-docs/tt89-2026/pdf/89-btc.signed.pdf, nhãn đối chiếu ảnh form01gtgt-p241..p243.png. Hiệu lực từ 01/7/2026 (Điều 99 khoản 1).",
+  "lines": [
+    {
+      "code": "21",
+      "label": "Không phát sinh hoạt động mua, bán trong kỳ (đánh dấu \"X\")",
+      "section": "A",
+      "kind": "flag"
+    },
+    {
+      "code": "22",
+      "label": "Thuế giá trị gia tăng còn được khấu trừ kỳ trước chuyển sang",
+      "section": "B",
+      "kind": "carry"
+    },
+    {
+      "code": "23",
+      "label": "Giá trị và thuế giá trị gia tăng của hàng hóa, dịch vụ mua vào",
+      "section": "C.I.1",
+      "kind": "invoice",
+      "invoice": {
+        "direction": "purchase",
+        "groups": [
+          "01",
+          "02",
+          "03",
+          "04"
+        ],
+        "field": "base"
+      },
+      "note": "Cột \"Giá trị hàng hóa, dịch vụ (chưa có thuế giá trị gia tăng)\"."
+    },
+    {
+      "code": "24",
+      "label": "Giá trị và thuế giá trị gia tăng của hàng hóa, dịch vụ mua vào",
+      "section": "C.I.1",
+      "kind": "invoice",
+      "invoice": {
+        "direction": "purchase",
+        "groups": [
+          "01",
+          "02",
+          "03",
+          "04"
+        ],
+        "field": "tax"
+      },
+      "note": "Cột \"Thuế giá trị gia tăng\"."
+    },
+    {
+      "code": "23a",
+      "label": "Trong đó: hàng hóa nhập khẩu",
+      "section": "C.I.1",
+      "kind": "invoice",
+      "invoice": {
+        "direction": "purchase",
+        "groups": [
+          "01",
+          "02",
+          "03",
+          "04"
+        ],
+        "field": "base",
+        "importOnly": true
+      }
+    },
+    {
+      "code": "24a",
+      "label": "Trong đó: hàng hóa nhập khẩu",
+      "section": "C.I.1",
+      "kind": "invoice",
+      "invoice": {
+        "direction": "purchase",
+        "groups": [
+          "01",
+          "02",
+          "03",
+          "04"
+        ],
+        "field": "tax",
+        "importOnly": true
+      }
+    },
+    {
+      "code": "25",
+      "label": "Thuế giá trị gia tăng của hàng hóa, dịch vụ mua vào được khấu trừ kỳ này",
+      "section": "C.I.2",
+      "kind": "invoice",
+      "invoice": {
+        "direction": "purchase",
+        "groups": [
+          "01",
+          "03"
+        ],
+        "field": "tax"
+      },
+      "overridable": true,
+      "note": "Không in công thức trên mẫu. Cách tính của phần mềm (không phải văn bản gốc): thuế nhóm 01 (dùng riêng cho hàng chịu thuế) cộng thuế nhóm 03 (dùng chung) nhân tỷ lệ doanh thu chịu thuế [27]/([26]+[27]+[34a]); người dùng sửa được khi phân bổ thuế đầu vào dùng chung."
+    },
+    {
+      "code": "26",
+      "label": "Hàng hóa, dịch vụ bán ra không chịu thuế giá trị gia tăng",
+      "section": "C.II.1",
+      "kind": "invoice",
+      "invoice": {
+        "direction": "sale",
+        "groups": [
+          "KCT"
+        ],
+        "field": "base"
+      }
+    },
+    {
+      "code": "27",
+      "label": "Hàng hóa, dịch vụ bán ra chịu thuế giá trị gia tăng",
+      "section": "C.II.2",
+      "kind": "formula",
+      "formula": "[29]+[30]+[32]+[32a]-[32b]",
+      "note": "Cột \"Giá trị hàng hóa, dịch vụ\"."
+    },
+    {
+      "code": "28",
+      "label": "Hàng hóa, dịch vụ bán ra chịu thuế giá trị gia tăng",
+      "section": "C.II.2",
+      "kind": "formula",
+      "formula": "[31]+[33]",
+      "note": "Cột \"Thuế giá trị gia tăng\"."
+    },
+    {
+      "code": "29",
+      "label": "Hàng hoá, dịch vụ bán ra chịu thuế suất 0%",
+      "section": "C.II.2.a",
+      "kind": "invoice",
+      "invoice": {
+        "direction": "sale",
+        "groups": [
+          "00"
+        ],
+        "field": "base"
+      }
+    },
+    {
+      "code": "30",
+      "label": "Hàng hoá, dịch vụ bán ra chịu thuế suất 5%",
+      "section": "C.II.2.b",
+      "kind": "invoice",
+      "invoice": {
+        "direction": "sale",
+        "groups": [
+          "05"
+        ],
+        "field": "base"
+      }
+    },
+    {
+      "code": "31",
+      "label": "Hàng hoá, dịch vụ bán ra chịu thuế suất 5%",
+      "section": "C.II.2.b",
+      "kind": "invoice",
+      "invoice": {
+        "direction": "sale",
+        "groups": [
+          "05"
+        ],
+        "field": "tax"
+      }
+    },
+    {
+      "code": "32",
+      "label": "Hàng hoá, dịch vụ bán ra chịu thuế suất 10%",
+      "section": "C.II.2.c",
+      "kind": "invoice",
+      "invoice": {
+        "direction": "sale",
+        "groups": [
+          "10",
+          "08"
+        ],
+        "field": "base"
+      },
+      "note": "Mẫu in chỉ có dòng thuế suất 0%, 5%, 10%, không có dòng 8%. Nhóm 08 (thuế suất 8% theo NĐ 174/2025/NĐ-CP) gộp vào [32]/[33] chỉ là giả định tạm của phần mềm: TT 89/2026 trang 241-243, Phụ lục II và NĐ 174/2025 Điều 1 không nói 8% khai ở chỉ tiêu nào (NĐ 174 Điều 1 khoản 6 chỉ yêu cầu lập Mẫu số 01 Phụ lục II của Nghị định kèm tờ khai). Chưa đối chiếu: status.json 01GTGT_TT89_rate8 = false."
+    },
+    {
+      "code": "33",
+      "label": "Hàng hoá, dịch vụ bán ra chịu thuế suất 10%",
+      "section": "C.II.2.c",
+      "kind": "invoice",
+      "invoice": {
+        "direction": "sale",
+        "groups": [
+          "10",
+          "08"
+        ],
+        "field": "tax"
+      },
+      "note": "Mẫu in chỉ có dòng thuế suất 0%, 5%, 10%, không có dòng 8%. Nhóm 08 (thuế suất 8% theo NĐ 174/2025/NĐ-CP) gộp vào [32]/[33] chỉ là giả định tạm của phần mềm: TT 89/2026 trang 241-243, Phụ lục II và NĐ 174/2025 Điều 1 không nói 8% khai ở chỉ tiêu nào (NĐ 174 Điều 1 khoản 6 chỉ yêu cầu lập Mẫu số 01 Phụ lục II của Nghị định kèm tờ khai). Chưa đối chiếu: status.json 01GTGT_TT89_rate8 = false."
+    },
+    {
+      "code": "32a",
+      "label": "Hàng hoá, dịch vụ bán ra không kê khai tính nộp thuế",
+      "section": "C.II.2.d",
+      "kind": "invoice",
+      "invoice": {
+        "direction": "sale",
+        "groups": [
+          "KKK"
+        ],
+        "field": "base"
+      }
+    },
+    {
+      "code": "32b",
+      "label": "Hàng hoá, dịch vụ bán ra không tính vào giá tính thuế giá trị gia tăng",
+      "section": "C.II.2.e",
+      "kind": "invoice",
+      "invoice": {
+        "direction": "sale",
+        "groups": [
+          "KTGT"
+        ],
+        "field": "base"
+      },
+      "note": "Ghi chú 3 của mẫu: khai giá trị hàng hóa, dịch vụ không tính vào giá tính thuế theo quy định của pháp luật thuế giá trị gia tăng."
+    },
+    {
+      "code": "34a",
+      "label": "Hàng hoá, dịch vụ bán ra không thuộc phạm vi điều chỉnh của pháp luật thuế giá trị gia tăng",
+      "section": "C.II.3",
+      "kind": "invoice",
+      "invoice": {
+        "direction": "sale",
+        "groups": [
+          "NPV"
+        ],
+        "field": "base"
+      },
+      "note": "Ghi chú 4 của mẫu: khai doanh thu theo khoản 2 Điều 40 Nghị định 181/2025/NĐ-CP và các văn bản sửa đổi, bổ sung."
+    },
+    {
+      "code": "34",
+      "label": "Tổng doanh thu và thuế giá trị gia tăng của hàng hóa, dịch vụ bán ra",
+      "section": "C.II.4",
+      "kind": "formula",
+      "formula": "[26]+[27]+[34a]",
+      "note": "Cột \"Giá trị hàng hóa, dịch vụ\"."
+    },
+    {
+      "code": "35",
+      "label": "Tổng doanh thu và thuế giá trị gia tăng của hàng hóa, dịch vụ bán ra",
+      "section": "C.II.4",
+      "kind": "formula",
+      "formula": "[28]",
+      "note": "Cột \"Thuế giá trị gia tăng\"."
+    },
+    {
+      "code": "36",
+      "label": "Thuế giá trị gia tăng phát sinh trong kỳ",
+      "section": "C.III",
+      "kind": "formula",
+      "formula": "[35]-[25]"
+    },
+    {
+      "code": "37",
+      "label": "Điều chỉnh giảm",
+      "section": "C.IV.1",
+      "kind": "manual",
+      "note": "Điều chỉnh giảm thuế còn được khấu trừ của các kỳ trước; ghi chú 5 của mẫu."
+    },
+    {
+      "code": "38",
+      "label": "Điều chỉnh tăng",
+      "section": "C.IV.2",
+      "kind": "manual",
+      "note": "Điều chỉnh tăng thuế còn được khấu trừ của các kỳ trước; ghi chú 5 của mẫu."
+    },
+    {
+      "code": "39a",
+      "label": "Thuế giá trị gia tăng nhận bàn giao được khấu trừ trong kỳ",
+      "section": "C.V",
+      "kind": "manual",
+      "note": "Ghi chú 6 của mẫu."
+    },
+    {
+      "code": "40a",
+      "label": "Thuế giá trị gia tăng phải nộp của hoạt động sản xuất kinh doanh trong kỳ",
+      "section": "C.VI.1",
+      "kind": "formula",
+      "formula": "[36]-[22]+[37]-[38]-[39a]",
+      "clamp": "positivePart",
+      "note": "Mẫu in: {[40a]=([36]-[22]+[37]-[38]-[39a]) ≥ 0}."
+    },
+    {
+      "code": "40b",
+      "label": "Thuế giá trị gia tăng mua vào của dự án đầu tư được bù trừ với thuế GTGT còn phải nộp của hoạt động sản xuất kinh doanh cùng kỳ tính thuế",
+      "section": "C.VI.2",
+      "kind": "manual",
+      "note": "Mẫu in: [40b] ≤ [40a]. Ghi chú 7: tổng thuế đã khai tại chỉ tiêu [28a] và [28b] của Tờ khai mẫu số 02/GTGT."
+    },
+    {
+      "code": "40",
+      "label": "Thuế giá trị gia tăng còn phải nộp trong kỳ",
+      "section": "C.VI.3",
+      "kind": "formula",
+      "formula": "[40a]-[40b]"
+    },
+    {
+      "code": "41",
+      "label": "Thuế giá trị gia tăng chưa khấu trừ hết kỳ này",
+      "section": "C.VI.4",
+      "kind": "formula",
+      "formula": "[36]-[22]+[37]-[38]-[39a]",
+      "clamp": "negativePart",
+      "note": "Mẫu in: {[41]=([36]-[22]+[37]-[38]-[39a]) ≤ 0}, tức biểu thức âm (ảnh trang 242 là \"≤ 0\", OCR đọc \"< 0\"). clamp negativePart lấy phần âm đổi dấu thành số dương để [43] và [42] cùng dấu; Task 23 phải giữ quy ước này khi in tờ khai."
+    },
+    {
+      "code": "42",
+      "label": "Thuế giá trị gia tăng đề nghị hoàn",
+      "section": "C.VI.4.1",
+      "kind": "manual",
+      "note": "Mẫu in: [42] ≤ [41]."
+    },
+    {
+      "code": "43",
+      "label": "Thuế giá trị gia tăng còn được khấu trừ chuyển kỳ sau",
+      "section": "C.VI.4.2",
+      "kind": "formula",
+      "formula": "[41]-[42]"
+    }
+  ]
+}

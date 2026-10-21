@@ -65,3 +65,22 @@ export function loadFxRules(regime: Regime): FxRules | undefined {
 // Cổng dữ liệu pháp lý theo dòng: status.json legalParam_<code>@<validFrom> = false khi dòng còn phần chưa đối chiếu văn bản gốc (nhãn, sync vẫn nạp mọi dòng).
 export interface LegalParam { code: string; value: unknown; validFrom: string; validTo: string | null; source: string }
 export function loadLegalParams(): LegalParam[] { return JSON.parse(readFileSync(dataPath('tax', 'legal-params.json'), 'utf8')) as LegalParam[]; }
+
+// Chỉ tiêu tờ khai 01/GTGT theo phiên bản mẫu (data/tax/01gtgt-tt89.json, 01gtgt-tt80.json), nhập từ văn bản gốc; cổng status.json 01GTGT_TT89, 01GTGT_TT80.
+// Chưa có tệp của phiên bản nào thì loadVatTemplate ném lỗi (API trả 409 VAT_TEMPLATE_UNAVAILABLE).
+export type VatLineKind = 'flag' | 'carry' | 'invoice' | 'formula' | 'manual';
+export interface VatTemplateLine {
+  code: string; label: string; section: string; kind: VatLineKind;
+  invoice?: { direction: 'purchase' | 'sale'; groups: string[]; field: 'base' | 'tax'; importOnly?: boolean };
+  formula?: string; clamp?: 'positivePart' | 'negativePart'; overridable?: boolean; note?: string;
+}
+export interface VatTemplate { form: '01/GTGT'; version: 'TT89' | 'TT80'; validFrom: string; validTo: string | null; source: string; lines: VatTemplateLine[] }
+const VAT_FILE = { TT89: '01gtgt-tt89.json', TT80: '01gtgt-tt80.json' } as const;
+export function isVatTemplateComplete(version: 'TT89' | 'TT80'): boolean {
+  const p = dataPath('tax', 'status.json');
+  return existsSync(p) && (JSON.parse(readFileSync(p, 'utf8')) as Record<string, unknown>)[`01GTGT_${version}`] === true && existsSync(dataPath('tax', VAT_FILE[version]));
+}
+export function loadVatTemplate(version: 'TT89' | 'TT80'): VatTemplate {
+  if (!isVatTemplateComplete(version)) throw new Error(`Chưa có mẫu tờ khai 01/GTGT ${version === 'TT80' ? 'theo TT 80/2021/TT-BTC' : 'theo TT 89/2026/TT-BTC'} đối chiếu văn bản gốc (status.json 01GTGT_${version})`);
+  return JSON.parse(readFileSync(dataPath('tax', VAT_FILE[version]), 'utf8')) as VatTemplate;
+}
