@@ -52,7 +52,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.post('/api/fx/revaluation', { preHandler: app.requirePermission('fx.run'),
     schema: { body: revaluationInput, querystring: z.object({ dryRun: z.enum(['true', 'false']).default('false') }) } }, async (req) => {
     const auth = req.auth!;
-    const c = { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') };
+    const c = { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked'), sensitive: auth.sensitive };
     if (req.query.dryRun === 'true') {
       const out = await app.withTenant(req, (trx) => previewRevaluation(trx, c, req.body), READ_SNAPSHOT);
       // Dòng công nợ chỉ cho người có cờ xem công nợ tương ứng: thiếu cờ thì chặn cả bản xem trước, không trả thiếu dòng.

@@ -10,7 +10,7 @@ import { cashBalanceAt } from './books.js';
 
 type Trx = Transaction<Database>;
 type RateType = Settings['fx_rate_type'];
-const RATE_TYPE_LABEL: Record<RateType, string> = { transfer_avg: 'mua bán chuyển khoản trung bình', buy: 'mua', sell: 'bán' };
+export const RATE_TYPE_LABEL: Record<RateType, string> = { transfer_avg: 'mua bán chuyển khoản trung bình', buy: 'mua', sell: 'bán' };
 
 // Tỷ giá theo ngày: tỷ giá có ngày lớn nhất không sau `date`; không nêu loại thì theo loại tỷ giá ghi sổ trong cài đặt.
 export async function rateAt(trx: Trx, tenantId: string, p: { currency: string; date: string; type?: RateType | undefined }) {
@@ -134,8 +134,8 @@ export async function runOutflowAdjust(trx: Trx, ctx: { tenantId: string; userId
   // Kỳ sau cùng năm đã chạy: bình quân đầu kỳ của chúng có thể đã đổi, cần chạy lại theo thứ tự kỳ.
   const stalePeriods = (await trx.selectFrom('fx_run').select('period_no').distinct().where('kind', '=', 'outflow').where('fiscal_year', '=', fy).where('period_no', '>', pn)
     .orderBy('period_no').execute()).map((r) => r.period_no);
-  // Đánh giá lại từ đầu kỳ trở đi tính trên số dư tiền trước lần điều chỉnh này: chạy lại đánh giá lại các ngày đó.
+  // Đánh giá lại (có sinh DG) từ đầu kỳ trở đi tính trên số dư tiền trước lần điều chỉnh này: chạy lại đánh giá lại các ngày đó.
   const staleRevaluations = unchanged ? [] : (await trx.selectFrom('fx_run').select('run_date').distinct().where('kind', '=', 'revaluation').where('run_date', '>=', p.date_from)
-    .orderBy('run_date').execute()).map((r) => r.run_date);
+    .where(sql<boolean>`cardinality(voucher_ids) > 0`).orderBy('run_date').execute()).map((r) => r.run_date);
   return { runId: run.id, voucherIds, reversedVoucherIds: reversed, unchanged, stalePeriods, staleRevaluations, groups: summary };
 }

@@ -2,15 +2,16 @@ import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
 import type { FxRules } from '@kt/coa-data';
-import { D, formatVnDate, toVnd, ZERO } from '@kt/domain';
+import { D, formatVnDate, sensitiveDenial, toVnd, ZERO } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { getSettings } from '../core/settings.js';
 import * as S from '../ledger/vouchers.service.js';
 import { isoDate } from '../reporting/routes.js';
-import { fxLock, fxRulesFor, fxRunSourceId, rateAt } from './fx.js';
+import { fxLock, fxRulesFor, fxRunSourceId, RATE_TYPE_LABEL, rateAt } from './fx.js';
 
 type Trx = Transaction<Database>;
-type Ctx = { tenantId: string; userId: string; canBackdate: boolean };
+// sensitive: cờ dữ liệu nhạy cảm của người gọi; thiếu cờ của tài khoản thì thông báo lỗi, cảnh báo không nêu số chứng từ.
+type Ctx = { tenantId: string; userId: string; canBackdate: boolean; sensitive: Set<string> };
 // rates: tỷ giá nhập tay theo loại tiền, dùng cho cả tài sản và nợ phải trả; loại tiền không nhập thì lấy tỷ giá theo ngày của loại cấu hình.
 export const revaluationInput = z.object({ date: isoDate, rates: z.record(z.string().regex(/^[A-Z]{3}$/, 'Mã loại tiền gồm 3 chữ in hoa'), S.fxRate).optional() });
 type Input = z.infer<typeof revaluationInput>;
@@ -22,7 +23,8 @@ export interface RevaluationLine {
 }
 type Line = S.SystemVoucherInput['lines'][number];
 interface CashRow { kind: string; accountCode: string; bankAccountNo: string | null; currency: string; balance: string; cur: string }
-interface ItemRow { openItemId: number; kind: string | null; accountCode: string; partyCode: string; docNo: string | null; currency: string; dueDate: string | null; balance: string; cur: string }
+interface ItemRow { openItemId: number; kind: string | null; accountCode: string; partyCode: string; docNo: string | null; currency: string; dueDate: string | null; balance: string; cur: string;
+  partyCur: string; reversed: boolean; settledAfter: boolean }
 
 // Tính đánh giá lại tại ngày (dùng cho xem trước và chạy thật). DG đang hiệu lực của các lần chạy trước cùng ngày được loại khỏi số dư, vì chạy lại sẽ đảo chúng cùng ngày.
 async function compute(trx: Trx, ctx: Ctx, input: Input) {
@@ -38,35 +40,50 @@ async function compute(trx: Trx, ctx: Ctx, input: Input) {
   const prev = (await sql<{ id: string }>`SELECT v.id FROM fx_run r CROSS JOIN LATERAL unnest(r.voucher_ids) WITH ORDINALITY AS u(id, ord) JOIN voucher v ON v.id = u.id
     WHERE r.kind = 'revaluation' AND r.run_date = ${date}::date AND v.state = 'posted' ORDER BY r.id, u.ord`.execute(trx)).rows.map((r) => r.id);
 
+  const settings = await getSettings(trx, ctx.tenantId);
+  // Tỷ giá xuất quỹ đích danh không có XQ: nhóm tiền hết nguyên tệ còn dư VND cũng kết chuyển ở đây (đánh giá lại về 0).
+  const specific = settings.fx_outflow_method === 'specific';
   const cash = (await sql<CashRow>`
     SELECT a.subledger_kind AS kind, a.code AS "accountCode", ba.account_no AS "bankAccountNo", l.currency_code AS currency, sum(l.debit - l.credit)::text AS balance, sum(l.amount_currency)::text AS cur
     FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id LEFT JOIN bank_account ba ON ba.id = l.bank_account_id
     WHERE v.state IN ('posted', 'reversed') AND l.posting_date <= ${date}::date AND a.regime = ${p.regime} AND a.subledger_kind IN ('cash', 'bank') AND l.currency_code <> 'VND'
       AND v.id <> ALL(${prev}::uuid[])
-    GROUP BY a.subledger_kind, a.code, l.bank_account_id, ba.account_no, l.currency_code HAVING sum(l.amount_currency) <> 0
+    GROUP BY a.subledger_kind, a.code, l.bank_account_id, ba.account_no, l.currency_code HAVING sum(l.amount_currency) <> 0 OR (${specific}::boolean AND sum(l.debit - l.credit) <> 0)
     ORDER BY a.code, ba.account_no NULLS FIRST, l.currency_code`.execute(trx)).rows;
   // Khoản công nợ gốc còn dư nguyên tệ; dư VND của nhóm = dư khoản gốc + dư các khoản con (đánh giá lại các kỳ trước).
+  // reversed: khoản gốc đã đảo sau ngày (chưa có khoản con ở lần chạy trước): không đánh giá lại, vì khoản con sinh ra sẽ không còn khoản gốc để đối trừ cùng.
+  // settledAfter: đã đối trừ (không phải đảo) ngày sau ngày đánh giá lại. partyCur: dư nguyên tệ thuần của đối tượng trên tài khoản, loại tiền.
   const items = (await sql<ItemRow>`
     WITH r AS (SELECT * FROM fn_open_items_at(${ctx.tenantId}::uuid, ${date}::date)),
-    ch AS (SELECT o.parent_id, sum(r.residual) AS vnd FROM r JOIN open_item o ON o.id = r.item_id WHERE o.parent_id IS NOT NULL AND o.voucher_id <> ALL(${prev}::uuid[]) GROUP BY o.parent_id)
-    SELECT o.id::int AS "openItemId", a.subledger_kind AS kind, a.code AS "accountCode", pa.code AS "partyCode", o.doc_no AS "docNo", o.currency_code AS currency, o.due_date AS "dueDate",
-           (r.residual + coalesce(ch.vnd, 0))::text AS balance, r.residual_currency::text AS cur
-    FROM r JOIN open_item o ON o.id = r.item_id JOIN account a ON a.id = o.account_id JOIN party pa ON pa.id = o.party_id LEFT JOIN ch ON ch.parent_id = o.id
-    WHERE o.parent_id IS NULL AND o.currency_code <> 'VND' AND a.regime = ${p.regime} AND r.residual_currency <> 0
-    ORDER BY a.code, pa.code, o.doc_date, o.id`.execute(trx)).rows;
+    ch AS (SELECT o.parent_id, sum(r.residual) AS vnd FROM r JOIN open_item o ON o.id = r.item_id WHERE o.parent_id IS NOT NULL AND o.voucher_id <> ALL(${prev}::uuid[]) GROUP BY o.parent_id),
+    b AS (
+      SELECT o.id, o.account_id, o.party_id, o.currency_code, o.doc_no, o.doc_date, o.due_date, a.subledger_kind, a.code, pa.code AS party_code,
+             r.residual + coalesce(ch.vnd, 0) AS balance, r.residual_currency AS cur,
+             EXISTS (SELECT 1 FROM settlement s WHERE s.tenant_id = o.tenant_id AND (s.debit_item_id = o.id OR s.credit_item_id = o.id) AND s.kind = 'reversal' AND s.settle_date > ${date}::date)
+               AND NOT EXISTS (SELECT 1 FROM open_item c WHERE c.tenant_id = o.tenant_id AND c.parent_id = o.id AND c.voucher_id = ANY(${prev}::uuid[])) AS reversed,
+             EXISTS (SELECT 1 FROM settlement s WHERE s.tenant_id = o.tenant_id AND (s.debit_item_id = o.id OR s.credit_item_id = o.id) AND s.kind <> 'reversal'
+               AND s.settle_date > ${date}::date AND s.amount_currency <> 0) AS settled_after
+      FROM r JOIN open_item o ON o.id = r.item_id JOIN account a ON a.id = o.account_id JOIN party pa ON pa.id = o.party_id LEFT JOIN ch ON ch.parent_id = o.id
+      WHERE o.parent_id IS NULL AND o.currency_code <> 'VND' AND a.regime = ${p.regime} AND r.residual_currency <> 0)
+    SELECT id::int AS "openItemId", subledger_kind AS kind, code AS "accountCode", party_code AS "partyCode", doc_no AS "docNo", currency_code AS currency, due_date AS "dueDate",
+           balance::text, cur::text, reversed, settled_after AS "settledAfter",
+           sum(CASE WHEN reversed THEN 0 ELSE cur END) OVER (PARTITION BY account_id, party_id, currency_code)::text AS "partyCur"
+    FROM b ORDER BY code, party_code, doc_date, id`.execute(trx)).rows;
 
-  const settings = await getSettings(trx, ctx.tenantId);
   let rules: FxRules | undefined;
   const ruleSet = async () => (rules ??= await fxRulesFor(trx, p.regime));
-  const ratesUsed = new Map<string, string>();
-  // Tài sản (tiền, khoản dư Nợ) theo loại tỷ giá tài sản, nợ phải trả (khoản dư Có) theo loại tỷ giá nợ phải trả: cài đặt công ty, không có thì theo chế độ.
+  const ratesUsed = new Map<string, { currency: string; rateType: string; rate: string; rateDate: string | null }>();
+  // Tài sản (tiền, đối tượng dư Nợ thuần) theo loại tỷ giá tài sản, nợ phải trả (đối tượng dư Có thuần) theo loại tỷ giá nợ phải trả: cài đặt công ty, không có thì theo chế độ.
   const rateFor = async (currency: string, asset: boolean) => {
     const given = input.rates?.[currency];
     const rateType = given ? 'input' : asset ? settings.fx_reval_rate_asset ?? (await ruleSet()).assetRate : settings.fx_reval_rate_liability ?? (await ruleSet()).liabilityRate;
     const key = `${currency}|${rateType}`;
-    let rate = ratesUsed.get(key);
-    if (rate === undefined) ratesUsed.set(key, rate = given ?? (await rateAt(trx, ctx.tenantId, { currency, date, type: rateType as Exclude<typeof rateType, 'input'> })).rate);
-    return { rateType, rate };
+    let used = ratesUsed.get(key);
+    if (!used) {
+      const r = given ? { rate: given, rateDate: null } : await rateAt(trx, ctx.tenantId, { currency, date, type: rateType as Exclude<typeof rateType, 'input'> });
+      ratesUsed.set(key, used = { currency, rateType, rate: r.rate, rateDate: r.rateDate });
+    }
+    return { rateType, rate: used.rate };
   };
   const rows: (RevaluationLine & { dueDate: string | null })[] = [];
   const add = async (r: Omit<RevaluationLine, 'balanceCurrency' | 'rateType' | 'rate' | 'revalued' | 'difference'> & { cur: string; balance: string; dueDate: string | null }, asset: boolean) => {
@@ -76,7 +93,21 @@ async function compute(trx: Trx, ctx: Ctx, input: Input) {
     rows.push({ ...rest, balanceCurrency: cur, rateType, rate, revalued, difference: D(revalued).minus(r.balance).toFixed(0) });
   };
   for (const g of cash) await add({ ...g, partyCode: null, openItemId: null, docNo: null, dueDate: null }, true);
-  for (const o of items) await add({ ...o, bankAccountNo: null }, D(o.cur).gt(0));
+  const vn = formatVnDate(date);
+  // Số chứng từ chỉ nêu khi người gọi có cờ xem mọi tài khoản liên quan.
+  const docList = (xs: { kind: string | null; accountCode: string; docNo: string | null }[]) =>
+    xs.some((x) => sensitiveDenial(ctx, { subledger_kind: x.kind, code: x.accountCode })) ? null : [...new Set(xs.map((x) => x.docNo ?? '(không số)'))].join(', ');
+  const warnings: string[] = [];
+  const after = new Set<number>(); // khoản gốc đã đối trừ sau ngày đánh giá lại
+  for (const { partyCur, reversed, settledAfter, ...o } of items) {
+    if (settledAfter) after.add(o.openItemId);
+    if (reversed) { const docs = docList([o]); warnings.push(`${docs ? `Khoản công nợ của chứng từ ${docs}` : 'Có khoản công nợ'} đã đảo sau ngày ${vn}: không đánh giá lại`); continue; }
+    // Khoản ứng trước (người mua trả trước: phải thu dư Có; trả trước người bán: phải trả dư Nợ) không phải khoản mục tiền tệ: bỏ cả đối tượng.
+    // Còn lại mọi khoản của đối tượng theo một loại tỷ giá, theo dấu dư thuần (tài sản / nợ phải trả).
+    const pc = D(partyCur);
+    if ((o.kind === 'receivable' && pc.lt(0)) || (o.kind === 'payable' && pc.gt(0))) continue;
+    await add({ ...o, bankAccountNo: null }, pc.isZero() ? o.kind !== 'payable' : pc.gt(0));
+  }
 
   // Chênh dương (tài sản tăng, nợ phải trả giảm) là lãi, chênh âm là lỗ. Dòng trên khoản mục: nguyên tệ 0, không tỷ giá; dòng công nợ là khoản con của khoản gốc (reval_of).
   const diffs = rows.filter((r) => r.difference !== '0');
@@ -111,21 +142,36 @@ async function compute(trx: Trx, ctx: Ctx, input: Input) {
     WHERE l.voucher_id = ANY(${prev}::uuid[])`.execute(trx)).rows : [];
   const unchanged = active.map(keyOf).sort().join('\n') === [...main, ...transfer].map((l) => keyOf({ code: l.accountCode, bankNo: l.bankAccountNo, party: l.partyCode, currency: l.currencyCode ?? 'VND',
     debit: l.debit, credit: l.credit, revalOf: l.extraDims?.reval_of })).sort().join('\n');
-  // Chạy lại phải đảo DG cũ: khoản con đã được đối trừ (thu, trả sau đánh giá lại) thì người dùng hủy đối trừ trước, không tự hủy.
-  if (!unchanged && prev.length) {
-    const docs = (await sql<{ doc: string | null }>`SELECT DISTINCT po.doc_no AS doc FROM open_item o JOIN open_item po ON po.id = o.parent_id
-      WHERE o.voucher_id = ANY(${prev}::uuid[]) AND EXISTS (SELECT 1 FROM settlement s WHERE s.tenant_id = o.tenant_id AND (s.debit_item_id = o.id OR s.credit_item_id = o.id) AND s.kind <> 'reversal')
-      ORDER BY 1`.execute(trx)).rows.map((r) => r.doc ?? '(không số)');
-    if (docs.length) throw new AppError('FX_REVALUATION_SETTLED', `Khoản điều chỉnh đánh giá lại ngày ${formatVnDate(date)} của chứng từ ${docs.join(', ')} đã được đối trừ: hãy hủy đối trừ các chứng từ đó trước rồi chạy lại đánh giá lại`, 409);
+  if (!unchanged) {
+    // Chạy lại phải đảo DG cũ: khoản con đã được đối trừ (thu, trả sau đánh giá lại) thì người dùng hủy đối trừ trước, không tự hủy.
+    if (prev.length) {
+      const settled = (await sql<{ kind: string | null; accountCode: string; docNo: string | null }>`SELECT DISTINCT a.subledger_kind AS kind, a.code AS "accountCode", po.doc_no AS "docNo"
+        FROM open_item o JOIN open_item po ON po.id = o.parent_id JOIN account a ON a.id = po.account_id
+        WHERE o.voucher_id = ANY(${prev}::uuid[]) AND EXISTS (SELECT 1 FROM settlement s WHERE s.tenant_id = o.tenant_id AND (s.debit_item_id = o.id OR s.credit_item_id = o.id) AND s.kind <> 'reversal')
+        ORDER BY 3`.execute(trx)).rows;
+      const docs = docList(settled);
+      if (settled.length) throw new AppError('FX_REVALUATION_SETTLED', docs ? `Khoản điều chỉnh đánh giá lại ngày ${vn} của chứng từ ${docs} đã được đối trừ: hãy hủy đối trừ các chứng từ đó trước rồi chạy lại đánh giá lại`
+        : `Khoản điều chỉnh đánh giá lại ngày ${vn} đã được đối trừ: hãy hủy đối trừ các khoản đó trước rồi chạy lại đánh giá lại`, 409);
+    }
+    // Khoản gốc có chênh lệch đã đối trừ ngày sau ngày đánh giá lại (lập trước lần chạy): khoản con sinh sau sẽ không đối trừ được cùng khoản gốc (lãi lỗ khống, dư kẹt).
+    const hit = rows.filter((r) => r.openItemId && after.has(r.openItemId) && r.difference !== '0');
+    if (hit.length) {
+      const docs = docList(hit);
+      throw new AppError('FX_REVALUATION_SETTLED_AFTER', `${docs ? `Khoản công nợ của chứng từ ${docs}` : 'Có khoản công nợ'} đã được đối trừ sau ngày ${vn}: hủy đối trừ các chứng từ sau ngày ${vn}, chạy đánh giá lại, rồi đối trừ lại`, 409);
+    }
   }
   const totals = { gain: gain.toFixed(0), loss: loss.toFixed(0), net: gain.minus(loss).toFixed(0) };
-  return { p, prev, rows, main, transfer, unchanged, totals, ratesUsed: Object.fromEntries(ratesUsed) };
+  const rates = [...ratesUsed.values()];
+  // Tỷ giá lấy theo ngày gần nhất đến ngày đánh giá lại: ngày tỷ giá trước đó thì cảnh báo, không chặn.
+  for (const r of rates) if (r.rateDate && r.rateDate < date)
+    warnings.push(`Tỷ giá ${RATE_TYPE_LABEL[r.rateType as keyof typeof RATE_TYPE_LABEL]} của ${r.currency} lấy ngày ${formatVnDate(r.rateDate)}, trước ngày đánh giá lại ${vn}`);
+  return { p, prev, rows, main, transfer, unchanged, totals, rates, warnings };
 }
 
 // Xem trước: các khoản mục, tỷ giá, chênh lệch dự kiến; không ghi gì.
 export async function previewRevaluation(trx: Trx, ctx: Ctx, input: Input) {
   const c = await compute(trx, ctx, input);
-  return { dryRun: true, date: input.date, fiscalYear: c.p.fiscal_year, periodNo: c.p.period_no, unchanged: c.unchanged, totals: c.totals,
+  return { dryRun: true, date: input.date, fiscalYear: c.p.fiscal_year, periodNo: c.p.period_no, unchanged: c.unchanged, totals: c.totals, rates: c.rates, warnings: c.warnings,
     lines: c.rows.map(({ dueDate: _, ...l }) => l) satisfies RevaluationLine[] };
 }
 
@@ -138,7 +184,7 @@ export async function runRevaluation(trx: Trx, ctx: Ctx, input: Input) {
   const reversed = c.unchanged ? [] : c.prev;
   for (const id of reversed) await S.reverseVoucher(trx, id, { postingDate: date });
   const run = await trx.insertInto('fx_run').values({ tenant_id: ctx.tenantId, kind: 'revaluation', fiscal_year: c.p.fiscal_year, period_no: c.p.period_no, run_date: date, reversed_voucher_ids: reversed,
-    params: JSON.stringify({ rates: c.ratesUsed, totals: c.totals, unchanged: c.unchanged, ...(c.unchanged ? { note: 'không đổi' } : {}) }), created_by: ctx.userId }).returning('id').executeTakeFirstOrThrow();
+    params: JSON.stringify({ rates: c.rates, totals: c.totals, unchanged: c.unchanged, ...(c.unchanged ? { note: 'không đổi' } : {}) }), created_by: ctx.userId }).returning('id').executeTakeFirstOrThrow();
   const voucherIds: string[] = [];
   if (!c.unchanged && c.main.length) {
     const source = { type: 'fx_revaluation', id: await fxRunSourceId(trx, ctx.tenantId, run.id) };
@@ -153,6 +199,6 @@ export async function runRevaluation(trx: Trx, ctx: Ctx, input: Input) {
   }
   // Đánh giá lại các ngày sau tính trên số dư (khoản con) cũ: chạy lại theo thứ tự ngày.
   const staleRevaluations = c.unchanged ? [] : (await trx.selectFrom('fx_run').select('run_date').distinct().where('kind', '=', 'revaluation').where('run_date', '>', date)
-    .orderBy('run_date').execute()).map((r) => r.run_date);
+    .where(sql<boolean>`cardinality(voucher_ids) > 0`).orderBy('run_date').execute()).map((r) => r.run_date);
   return { runId: run.id, date, voucherIds, reversedVoucherIds: reversed, unchanged: c.unchanged, staleRevaluations, totals: c.totals };
 }
