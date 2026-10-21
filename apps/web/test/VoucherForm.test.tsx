@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, createRouter } from '@tanstack/react-router';
 import type * as ReactRouter from '@tanstack/react-router';
 import { todayVn } from '@kt/domain';
-import VoucherForm from '../src/pages/VoucherForm.js';
+import VoucherForm, { settleTargets, emptyLine, type Line } from '../src/pages/VoucherForm.js';
 import VoucherList from '../src/pages/VoucherList.js';
 import { routeTree } from '../src/router.js';
 
@@ -17,7 +17,9 @@ vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: mocks.ApiErro
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: () => true, loading: false }) }));
 // Lưới AG Grid nặng trong jsdom: thay bằng danh sách mã tài khoản để quan sát dòng đối ứng được điền.
 vi.mock('@kt/ui', () => ({
-  KeyboardGrid: ({ rows }: { rows: { accountCode: string }[] }) => <ul>{rows.map((r, i) => <li key={i} data-testid={`tk-${i}`}>{r.accountCode}</li>)}</ul>,
+  // Hộp thoại Chọn chứng từ công nợ dùng cùng lưới: dòng có docNo là khoản công nợ, nút "Chọn <số>" đặt số đối trừ bằng đủ số còn dư (như Enter ở ô trống).
+  KeyboardGrid: ({ rows, onRowsChange }: { rows: { accountCode?: string; docNo?: string; remain?: string }[]; onRowsChange: (r: object[]) => void }) => <ul>{rows.map((r, i) =>
+    <li key={i} data-testid={r.docNo ? `khoan-${r.docNo}` : `tk-${i}`}>{r.accountCode}{r.docNo && <button onClick={() => onRowsChange(rows.map((x) => (x === r ? { ...x, pick: x.remain } : x)))}>Chọn {r.docNo}</button>}</li>)}</ul>,
   LookupSelect: () => null, VnNumberInput: ({ scale, ...p }: { scale?: number; value?: string }) => <input {...p} value={p.value ?? ''} readOnly data-scale={scale} />, useHotkeys: () => undefined, useRememberedFilter: (_k: string, init: unknown) => [init, () => undefined],
   useUnsavedChanges: () => (proceed: () => void) => proceed(),
 }));
@@ -130,6 +132,53 @@ describe('Màn hình chứng từ theo loại', () => {
     expect(await screen.findByLabelText('Tỷ giá', {}, slow)).toHaveValue('');
     await vi.waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/settings'));
     expect(mocks.api.mock.calls.some(([p]) => String(p).startsWith('/api/fx/outflow-rate'))).toBe(false);
+  });
+});
+
+describe('Chọn chứng từ công nợ trên phiếu thu/chi', () => {
+  beforeEach(() => { mocks.route.type = 'PT'; mocks.route.id = 'v1'; });
+  afterEach(() => { mocks.api.mockReset(); mocks.navigate.mockReset(); });
+  const ln = (accountCode: string, debit: string, credit: string, partyCode: string | null = null): Line => ({ ...emptyLine(), accountCode, debit, credit, partyCode });
+  const draftPt = { id: 'v1', voucherType: 'PT', voucherNo: null, postingDate: '2026-01-05', documentDate: '2026-01-05', state: 'draft', description: 'Thu tiền hàng', partyCode: 'KH01',
+    currencyCode: 'VND', fxRate: null, version: 1, totalDebit: '600000', periodStatus: 'open', hashed: false, lines: [line(1, '1111', '600000', '0'), { ...line(2, '131', '0', '600000'), partyCode: 'KH01' }] };
+  const item = { id: 7, voucherId: 'i1', voucherNo: 'BH00001', voucherType: 'BH', accountCode: '131', partyCode: 'KH01', docNo: 'HD01', docDate: '2025-12-20', dueDate: null,
+    currency: 'VND', amount: '600000', amountCurrency: '0', residual: '600000', residualCurrency: '0' };
+
+  it('settleTargets: chỉ dòng 131/331; bên khoản ngược bên dòng; dòng trống số tiền theo bản chất tài khoản; đối tượng dòng đè tiêu đề', () => {
+    const t = settleTargets([ln('1111', '600000', '0'), ln('131', '0', '600000', 'KH01'), ln('331', '300000', '0'), ln('131', '0', '0'), ln('331', '0', '0')], 'NCC01');
+    expect(t.map((x) => [x.index, x.accountCode, x.side, x.partyCode, x.amount])).toEqual([[1, '131', 'debit', 'KH01', '600000'], [2, '331', 'credit', 'NCC01', '300000'], [3, '131', 'debit', 'NCC01', null], [4, '331', 'credit', 'NCC01', null]]);
+  });
+
+  it('mở hộp thoại, chọn khoản của đối tượng và TK dòng 131, áp dụng rồi lưu: dòng mang kế hoạch đối trừ', async () => {
+    mocks.api.mockImplementation(async (path: string) => {
+      if (path === '/api/fiscal-years') return years;
+      if (path === '/api/vouchers/v1') return draftPt;
+      return path.startsWith('/api/open-items') ? [item] : [];
+    });
+    renderForm();
+    const open = await screen.findByRole('button', { name: /Chọn chứng từ công nợ/ }, slow);
+    await vi.waitFor(() => expect(open).toBeEnabled(), slow);
+    await userEvent.click(open);
+    const dialog = await screen.findByRole('dialog', {}, slow);
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Chọn HD01' }, slow));
+    expect(within(dialog).getByText(/Tổng chọn đối trừ/)).toHaveTextContent('600.000');
+    const q = new URLSearchParams(mocks.api.mock.calls.map(([p]) => String(p)).find((p) => p.startsWith('/api/open-items'))!.split('?')[1]);
+    expect([q.get('accountCode'), q.get('partyCode'), q.get('onlyOpen'), q.get('asOf')]).toEqual(['131', 'KH01', 'true', '2026-01-05']);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Áp dụng' }));
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument(), slow);
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await vi.waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/vouchers/v1', expect.objectContaining({ method: 'PUT' })), slow);
+    const put = mocks.api.mock.calls.find(([, init]) => init?.method === 'PUT')![1] as { json: { lines: { accountCode: string; settle?: object[] }[] } };
+    expect(put.json.lines.find((l) => l.accountCode === '131')?.settle).toEqual([{ openItemId: 7, amount: '600000' }]);
+    expect(put.json.lines.find((l) => l.accountCode === '1111')).not.toHaveProperty('settle');
+  });
+
+  it('phiếu kế toán không có nút Chọn chứng từ công nợ', async () => {
+    mocks.route.type = 'PKT'; mocks.route.id = 'moi';
+    mocks.api.mockImplementation(async (path: string) => (path === '/api/fiscal-years' ? years : []));
+    renderForm();
+    await screen.findByText('Phiếu kế toán (mới)');
+    expect(screen.queryByRole('button', { name: /Chọn chứng từ công nợ/ })).not.toBeInTheDocument();
   });
 });
 

@@ -11,11 +11,12 @@ import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor, bankAccountFetcher, regimeFor, type FiscalYearRef } from '../lookups.js';
 import { STATE_LABEL, typeLabel } from './VoucherList.js';
+import { SettleDialog, type SettleEntry, type SettleTarget } from './settleCommon.js';
 
 // Các trường *Name chỉ để hiển thị; còn lại (employeeCode, dueDate, extraDims...) được giữ nguyên khi lưu lại để không mất dữ liệu chứng từ lập từ nơi khác.
-// amountCurrency (nguyên tệ, có dấu), fxRate và bankAccountNo (tài khoản ngân hàng ghi đè của dòng) chỉ gửi khi có ý nghĩa, xem `linesBody`.
+// amountCurrency (nguyên tệ, có dấu), fxRate, bankAccountNo (tài khoản ngân hàng ghi đè của dòng) và settle (kế hoạch đối trừ công nợ) chỉ gửi khi có ý nghĩa, xem `linesBody`.
 export interface Line { lineNo?: number; accountCode: string; accountName?: string; partyName?: string | null; description: string | null; debit: string; credit: string;
-  amountCurrency?: string | undefined; fxRate?: string | undefined; bankAccountNo?: string | null | undefined; partyCode: string | null; departmentCode: string | null; projectCode: string | null; costItemCode: string | null }
+  amountCurrency?: string | undefined; fxRate?: string | undefined; bankAccountNo?: string | null | undefined; settle?: SettleEntry[] | undefined; partyCode: string | null; departmentCode: string | null; projectCode: string | null; costItemCode: string | null }
 interface Voucher { id: string; voucherType: string; voucherNo: string | null; postingDate: string; documentDate: string; state: string; description: string | null; partyCode: string | null;
   personName?: string | null; personAddress?: string | null; attachmentsCount?: number | null; bankAccountNo?: string | null; counterBankAccountNo?: string | null; partyBankAccountNo?: string | null;
   dueDate?: string | null; purpose?: string | null; periodStatus: 'open' | 'soft_locked' | 'hard_locked'; hashed: boolean;
@@ -74,9 +75,23 @@ const HEADER_BODY: Partial<Record<HeaderField, (f: FormValues) => object>> = {
   partyBankAccount: (f) => ({ partyBankAccountNo: text(f.partyBankAccountNo) }), dueDate: (f) => ({ dueDate: f.dueDate ? iso(f.dueDate) : null }), purpose: (f) => ({ purpose: f.purpose ?? null }),
 };
 // Dòng gửi lên: ngoại tệ mới có nguyên tệ; tỷ giá dòng trùng tỷ giá tiêu đề thì để máy chủ lấy theo tiêu đề; tài khoản ngân hàng dòng để trống thì máy chủ lấy theo tiêu đề.
-const linesBody = (rows: Line[], f: FormValues) => cleanLines(rows).map(({ amountCurrency, fxRate, bankAccountNo, ...l }) => ({ ...l,
+const linesBody = (rows: Line[], f: FormValues) => cleanLines(rows).map(({ amountCurrency, fxRate, bankAccountNo, settle, ...l }) => ({ ...l, ...(settle?.length ? { settle } : {}),
   ...((f.currencyCode ?? 'VND') !== 'VND' && amountCurrency ? { amountCurrency } : {}),
   ...(fxRate && !(f.fxRate && D(fxRate).eq(f.fxRate)) ? { fxRate } : {}), ...(bankAccountNo ? { bankAccountNo } : {}) }));
+
+// Loại chứng từ chọn được khoản công nợ để đối trừ khi ghi sổ (kế hoạch đối trừ ở dòng).
+const SETTLE_TYPES = ['PT', 'PC', 'BC', 'BN', 'BT'];
+// Dòng công nợ (131/331) có thể gắn đối trừ; bên khoản cần liệt kê ngược với bên dòng: dòng Có 131 thu tiền hóa đơn (khoản Nợ), dòng Nợ 331 trả tiền hóa đơn mua (khoản Có).
+// Dòng chưa nhập số tiền thì theo bản chất tài khoản: 131 là khoản Nợ, 331 là khoản Có.
+export function settleTargets(rows: Line[], headerParty: string | null | undefined): SettleTarget[] {
+  return rows.flatMap((l, index) => {
+    const asset = l.accountCode.startsWith('131'); const liability = l.accountCode.startsWith('331');
+    if (!asset && !liability) return [];
+    const side = D(l.credit || '0').gt(0) ? 'debit' : D(l.debit || '0').gt(0) ? 'credit' : asset ? 'debit' : 'credit';
+    const amount = side === 'debit' ? l.credit : l.debit;
+    return [{ index, accountCode: l.accountCode, partyCode: l.partyCode || headerParty || '', side, amount: amount && amount !== '0' ? amount : null, settle: l.settle ?? [] } satisfies SettleTarget];
+  });
+}
 
 const initialLines = (def: VoucherTypeDef): Line[] => (def.moneyKind === 'cash' ? [{ ...emptyLine(), accountCode: '1111' }, emptyLine()] : [emptyLine(), emptyLine()]);
 const counterAccountsOf = (p: CashPurpose, regime: string): string[] => p.counterAccounts[regime as keyof CashPurpose['counterAccounts']] ?? p.counterAccounts.TT99;
@@ -96,6 +111,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const linesRef = useRef(lines); // bản mới nhất, đọc đồng bộ khi lưu (state có thể chưa kịp render sau khi ô vừa chốt giá trị)
   const [lookup, setLookup] = useState<{ col: string; row: number } | null>(null);
   const [reverse, setReverse] = useState<{ date: Dayjs; description: string } | null>(null);
+  const [settleOpen, setSettleOpen] = useState(false);
   const lookupBox = useRef<HTMLDivElement>(null); // hộp thoại chọn danh mục: đưa con trỏ vào ô tìm ngay khi mở (antd Modal tự giữ tiêu điểm ở khung)
   const [idempotencyKey] = useState(() => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`); // (randomUUID cần HTTPS) bấm lưu hai lần liền khi tạo mới không sinh hai chứng từ
   const v = useQuery({ queryKey: ['voucher', id], queryFn: () => api<Voucher>(`/api/vouchers/${id}`), enabled: !isNew });
@@ -142,6 +158,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const postingIso = postingDate?.isValid() ? iso(postingDate) : undefined;
   const currency = Form.useWatch('currencyCode', form) ?? 'VND';
   const bankAccountNo = Form.useWatch('bankAccountNo', form);
+  const headerParty = Form.useWatch('partyCode', form);
   // Tồn quỹ (tiền mặt) hoặc số dư tiền gửi (đã chọn tài khoản ngân hàng) cuối ngày hạch toán; chưa đủ dữ kiện hoặc không xem được thì không hiện.
   const cashAccount = eff.moneyKind === 'cash' ? lines.find((l) => l.accountCode.startsWith('111'))?.accountCode : eff.moneyKind === 'bank' && bankAccountNo ? '112' : undefined;
   const cashBalance = useQuery({ queryKey: ['cash-balance', cashAccount, bankAccountNo, currency, postingIso], enabled: !!cashAccount && !!postingIso && can('voucher.view'), retry: false,
@@ -159,6 +176,8 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     if (rate && (!cur || cur === autoRate.current)) { autoRate.current = rate; form.setFieldsValue({ fxRate: rate }); }
   }, [outflowRate.data, form]);
   const regime = regimeFor(years.data ?? [], postingIso);
+  const settleList = settleTargets(lines, headerParty); const settleCount = settleList.reduce((n, t) => n + t.settle.length, 0);
+  const maySettle = editable && SETTLE_TYPES.includes(eff.code) && can('settlement.view') && can('settlement.create');
   const accountFetcher = useMemo(() => accountFetcherFor(postingIso), [postingIso]);
   const t = totals(lines); const balanced = isBalanced(cleanLines(lines).map((l) => ({ debit: l.debit, credit: l.credit })));
 
@@ -296,6 +315,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   return (
     <Card title={<Space><span>{typeLabel(eff)} {v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}</span><Tag>{STATE_LABEL[state]}</Tag></Space>}
       extra={<Space>
+        {maySettle && <Button onClick={() => setSettleOpen(true)} disabled={settleList.length === 0} title={settleList.length === 0 ? 'Nhập dòng tài khoản 131 hoặc 331 để chọn chứng từ công nợ' : undefined}>Chọn chứng từ công nợ{settleCount > 0 && <Tag style={{ marginLeft: 8, marginRight: 0 }}>{settleCount}</Tag>}</Button>}
         {mayEdit && <Button onClick={() => save.mutate(false)} type="primary" loading={save.isPending} disabled={!ready}>Lưu (Ctrl+S)</Button>}
         {mayEdit && mayPost && <Button onClick={() => save.mutate(true)} disabled={!ready || !balanced || save.isPending}>Ghi sổ (F9)</Button>}
         {!isNew && mayUnpost && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'unpost' }))}>Bỏ ghi sổ</Button>}
@@ -334,6 +354,8 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
           {...(lookup.col === 'accountCode' ? { fetcher: accountFetcher } : lookup.col === 'bankAccountNo' ? { fetcher: bankAccountFetcher } : { quickAddFields: quickAdd })}
           onChange={(code) => { if (code !== null) { const copy = [...linesRef.current]; copy[lookup.row] = { ...copy[lookup.row]!, [lookup.col]: code }; changeRows(copy); } setLookup(null); }} /></div>}
       </Modal>
+      {maySettle && <SettleDialog open={settleOpen} targets={settleList} currency={currency} asOf={postingIso} onClose={() => setSettleOpen(false)}
+        onApply={(index, settle) => changeRows(linesRef.current.map((l, i) => (i === index ? { ...l, settle } : l)))} />}
       <Modal open={!!reverse} title="Lập chứng từ đảo" okText="Lập chứng từ đảo" cancelText="Không" destroyOnHidden onCancel={() => setReverse(null)}
         okButtonProps={{ loading: action.isPending, disabled: !reverse?.date }}
         onOk={() => { if (reverse) action.mutate({ act: 'reverse', body: { postingDate: iso(reverse.date), ...(reverse.description.trim() ? { description: reverse.description.trim() } : {}) } }); }}>

@@ -30,6 +30,7 @@ test('lập Phiếu thu bằng bàn phím, ghi sổ F9', async ({ page, request 
   await expect(page.locator('.ag-center-cols-container [col-id="accountCode"]', { hasText: '131' })).toBeVisible(); // hasText: lưới có thể giữ tạm dòng trống cũ cạnh dòng mới nên không chọn theo row-index
   // Đối tượng: F4 mở danh sách, chọn khách hàng
   await page.getByLabel('Đối tượng').focus(); await page.keyboard.press('F4');
+  await page.keyboard.type('KH-E2E'); // danh sách ảo chỉ dựng vài dòng đầu: các spec khác thêm khách hàng nên phải lọc theo mã
   await page.locator('.ant-select-item-option', { hasText: /KH-E2E/ }).click(); // role=option của antd là bản ẩn dành cho trình đọc màn hình
 
   // dòng 1 là TK 1111 điền sẵn: nhập số tiền ở Nợ, dòng 131 tự lấy cùng số tiền ở Có

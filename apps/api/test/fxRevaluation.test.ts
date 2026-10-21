@@ -505,4 +505,21 @@ describe('đánh giá lại số dư ngoại tệ cuối kỳ', () => {
     expect([await count(), await t.sumsMatch('2026-12-31')]).toEqual([before, sumsBefore]);
     expect([(await t.residual(inv))?.cur, (await t.residual(rcv))?.cur]).toEqual(['10', '-10']); // cả hai khoản vẫn còn nguyên
   });
+
+  it('GET /api/fx/runs: nhật ký chạy đánh giá lại kèm số chứng từ sinh ra và đã đảo; lọc theo loại; thiếu fx.run → 403', async () => {
+    const t = await tenant();
+    await t.usdInvoice('2026-01-10', '1000', '25000');
+    const first = await t.revalOk();
+    const second = await t.revalOk({ rates: { USD: '25700' } }); // chạy lại cùng ngày: đảo DG lần một
+    const list = await t.call('GET', '/api/fx/runs');
+    expect(list.statusCode, list.body).toBe(200);
+    const runs = list.json() as { id: number; kind: string; fiscalYear: number; periodNo: number; runDate: string; voucherIds: string[]; voucherNos: string[]; reversedVoucherIds: string[]; reversedVoucherNos: string[] }[];
+    expect(runs.map((r) => r.id)).toEqual([second.runId, first.runId]); // mới nhất trước
+    expect(runs[0]).toMatchObject({ kind: 'revaluation', fiscalYear: 2026, periodNo: 1, runDate: '2026-01-31', voucherIds: second.voucherIds, reversedVoucherIds: first.voucherIds });
+    expect(runs[0]!.voucherNos).toEqual([expect.stringMatching(/^DG/), expect.stringMatching(/^DG/)]); // DG chính và DG kết chuyển 413
+    expect(runs[0]!.reversedVoucherNos).toEqual(runs[1]!.voucherNos);
+    expect((await t.call('GET', '/api/fx/runs?kind=outflow')).json()).toEqual([]);
+    expect(((await t.call('GET', '/api/fx/runs?kind=revaluation&limit=1')).json() as unknown[]).length).toBe(1);
+    expect(err(await t.call('GET', '/api/fx/runs', undefined, await t.userWith('xem', [])))).toEqual([403, 'FORBIDDEN']);
+  });
 });
