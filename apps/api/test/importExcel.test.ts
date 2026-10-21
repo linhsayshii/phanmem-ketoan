@@ -3,7 +3,7 @@ import ExcelJS from 'exceljs';
 import FormData from 'form-data';
 import { bootstrapTenant, createTestApp, TEST_PASSWORD, type TestApp } from './helpers.js';
 import { buildTemplate, parseWorkbook } from '../src/modules/master/importExcel.js';
-import { excelDate, readSheet, zodIssueVi } from '../src/modules/master/excelSheet.js';
+import { assertZipSafe, excelDate, readSheet, zodIssueVi } from '../src/modules/master/excelSheet.js';
 import { catalogByName } from '../src/modules/master/catalogs.js';
 
 let ctx: TestApp; let cookie: string;
@@ -256,5 +256,37 @@ describe('nhập Excel', () => {
       const r = await upload('party', await workbookWith([party('KHW1', 'Không quyền')]), mode, headers);
       expect(r.statusCode).toBe(403); expect(r.json().error.code).toBe('FORBIDDEN');
     }
+  });
+});
+
+// Dựng zip tối thiểu chỉ có thư mục trung tâm: đủ để kiểm tra kích thước khai báo, không cần nén thật.
+function fakeZip(sizes: number[], opts: { zip64?: boolean; declaredCount?: number } = {}): Buffer {
+  const entries = sizes.map((size) => { const e = Buffer.alloc(46); e.writeUInt32LE(0x02014b50, 0); e.writeUInt32LE(size, 24); return e; });
+  const cd = Buffer.concat(entries);
+  const eocd = Buffer.alloc(22); eocd.writeUInt32LE(0x06054b50, 0);
+  const n = opts.declaredCount ?? sizes.length;
+  eocd.writeUInt16LE(opts.zip64 ? 0xffff : n, 10); eocd.writeUInt32LE(cd.length, 12); eocd.writeUInt32LE(0, 16);
+  return Buffer.concat([cd, eocd]);
+}
+
+describe('chặn tệp zip nén bom', () => {
+  const MB = 1024 * 1024;
+  it('tệp xlsx hợp lệ qua được; mục lớn, tổng lớn, quá nhiều mục, ZIP64 và tệp không phải zip bị từ chối', async () => {
+    assertZipSafe(await workbookWith([party('KHZ1')]));
+    assertZipSafe(fakeZip([10 * MB, 10 * MB]));
+    const tooLarge = { code: 'IMPORT_FILE_TOO_LARGE', status: 400 };
+    expect(() => assertZipSafe(fakeZip([101 * MB]))).toThrow(expect.objectContaining(tooLarge));
+    expect(() => assertZipSafe(fakeZip([90 * MB, 90 * MB, 90 * MB]))).toThrow(expect.objectContaining(tooLarge));
+    expect(() => assertZipSafe(fakeZip([], { declaredCount: 10_001 }))).toThrow(expect.objectContaining(tooLarge));
+    expect(() => assertZipSafe(fakeZip([1], { zip64: true }))).toThrow(expect.objectContaining(tooLarge));
+    expect(() => assertZipSafe(Buffer.from('hello'))).toThrow(expect.objectContaining({ code: 'IMPORT_BAD_FILE' }));
+    expect(() => assertZipSafe(Buffer.alloc(200, 7))).toThrow(expect.objectContaining({ code: 'IMPORT_BAD_FILE' }));
+  });
+
+  it('nhập danh mục với tệp bom trả 400 IMPORT_FILE_TOO_LARGE, tệp rác trả IMPORT_BAD_FILE', async () => {
+    const bomb = await upload('party', fakeZip([150 * MB]), 'validate');
+    expect(bomb.statusCode).toBe(400); expect(bomb.json().error.code).toBe('IMPORT_FILE_TOO_LARGE');
+    const junk = await upload('party', Buffer.from('không phải excel, chỉ là chữ'), 'validate');
+    expect(junk.statusCode).toBe(400); expect(junk.json().error.code).toBe('IMPORT_BAD_FILE');
   });
 });

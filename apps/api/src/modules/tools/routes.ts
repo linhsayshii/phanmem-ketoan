@@ -9,7 +9,7 @@ import { getRow, listRows, updateRow } from '../master/crud.js';
 import { runDataChecks } from './dataCheck.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { buildAuthorityPackage, collectAuthorityData } from './exportAuthority.js';
-import { buildVoucherTemplate, isKind, runImport, templateFileName, type ImportReport } from './importVouchers.js';
+import { buildVoucherTemplate, isKind, prepareImport, runImport, templateFileName, type ImportReport } from './importVouchers.js';
 
 class Rollback extends Error { constructor(public report: ImportReport) { super('rollback'); } } // hoàn tác giao dịch nhưng vẫn trả báo cáo
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -34,9 +34,10 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     if (autoPost && !auth.permissions.has('voucher.post')) throw new AppError('FORBIDDEN', 'Thiếu quyền voucher.post', 403);
     const file = await req.file(); if (!file) throw new AppError('IMPORT_NO_FILE', 'Thiếu tệp', 400);
     const buf = await file.toBuffer();
+    const prep = await prepareImport(kind, buf); // đọc và kiểm tệp trước, không giữ giao dịch
     try {
       const report = await app.withOverride(req, async (trx) => {
-        const r = await runImport(trx, { tenantId: auth.tenantId!, userId: auth.userId }, kind, buf, autoPost);
+        const r = await runImport(trx, { tenantId: auth.tenantId!, userId: auth.userId }, prep, { autoPost, validateOnly: mode === 'validate' });
         if (mode === 'validate' || r.errorCount) throw new Rollback(r);
         return r;
       });

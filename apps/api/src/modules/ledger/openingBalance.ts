@@ -6,6 +6,7 @@ import type { Database } from '@kt/db';
 import { D, formatVnDate, formatVnNumber, parseVnNumber, sum, VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { excelDate, MAX_ERRORS, MAX_ROWS, plainCell, type ImportError } from '../master/importExcel.js';
+import { assertZipSafe } from '../master/excelSheet.js';
 import { isoDate } from '../reporting/routes.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { getVoucher, postVoucher, type VoucherDto } from './vouchers.service.js';
@@ -231,6 +232,7 @@ const txt = (cell: ExcelJS.Cell) => { const v = plainCell(cell.value); return v 
 const day = (cell: ExcelJS.Cell): string | null | undefined => { const v = plainCell(cell.value); return v === null || v === undefined || (typeof v === 'string' && v.trim() === '') ? null : excelDate(v) ?? undefined; };
 
 export async function parseOpeningWorkbook(trx: Trx, year: number, buffer: Buffer): Promise<{ rows: OpeningRow[]; errors: ImportError[] }> {
+  assertZipSafe(buffer);
   const wb = new ExcelJS.Workbook();
   try { await wb.xlsx.load(buffer as unknown as ArrayBuffer); } catch { throw new AppError('IMPORT_BAD_FILE', 'Không đọc được file Excel', 400); }
   const ws = wb.getWorksheet('Du_lieu') ?? wb.worksheets[0];

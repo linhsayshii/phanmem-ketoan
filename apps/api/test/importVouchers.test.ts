@@ -91,7 +91,27 @@ describe('nhập phiếu thu chi', () => {
     const usd = pt('U', { debitAccount: '1112', currency: 'USD', fxRate: '25400', amountCurrency: '1000', amount: '25400000' });
     expect((await t.upload('thu-chi', await t.book('thu-chi', [usd]), 'commit', '&autoPost=true')).json()).toMatchObject({ created: 1, posted: 1, errors: [] });
     const bad = await t.upload('thu-chi', await t.book('thu-chi', [{ ...usd, group: 'V', fxRate: null }]), 'validate');
-    expect(bad.json().errors).toEqual([{ row: 4, column: 'fxRate', message: expect.stringContaining('tỷ giá') }]);
+    expect(bad.json().errors).toMatchObject([{ row: 4, column: 'fxRate', columnLabel: 'Tỷ giá', message: expect.stringContaining('tỷ giá') }]);
+  });
+
+  it('ngoại tệ: số tiền VND lệch quá 1 đồng so với nguyên tệ x tỷ giá là lỗi ở cột amount; bỏ trống thì tự tính; nguyên tệ 0 là lỗi', async () => {
+    const t = await tenant();
+    const usd = pt('U', { debitAccount: '1112', currency: 'USD', fxRate: 25400.5, amountCurrency: 1000, amount: 25400500 });
+    const r = await t.upload('thu-chi', await t.book('thu-chi', [
+      usd, { ...usd, group: 'V', amount: 1 }, { ...usd, group: 'W', amount: 25400501 }, { ...usd, group: 'X', amount: 25400502 }, { ...usd, group: 'Y', amount: null }, { ...usd, group: 'Z', amountCurrency: 0, amount: null },
+      pt('K', { fxRate: 25000 }),
+    ]), 'validate');
+    const by = Object.fromEntries((r.json().errors as { row: number; column: string; message: string }[]).map((e) => [e.row, e]));
+    expect(Object.keys(by)).toEqual(['5', '7', '9', '10']); // dòng 4 đúng, 6 lệch đúng 1 đồng (cho phép), 8 để trống (tự tính)
+    expect(by[5]).toMatchObject({ column: 'amount', message: expect.stringContaining('25400500') });
+    expect(by[7]).toMatchObject({ column: 'amount', message: expect.stringContaining('lệch') });
+    expect(by[9]).toMatchObject({ column: 'amountCurrency' });
+    expect(by[10]).toMatchObject({ column: 'currency', message: expect.stringContaining('VND') });
+    // sạch lỗi: số tiền để trống lấy theo nguyên tệ x tỷ giá làm tròn nửa lên
+    const ok = await t.upload('thu-chi', await t.book('thu-chi', [{ ...usd, amount: null }]), 'commit');
+    expect(ok.json()).toMatchObject({ created: 1, errors: [] });
+    const dr = (await sql<{ d: string }>`SELECT l.debit::text AS d FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id WHERE v.tenant_id = ${t.tenantId}::uuid AND l.debit > 0`.execute(ctx.t.admin)).rows;
+    expect(dr).toEqual([{ d: '25400500' }]);
   });
 
   it('ánh xạ cột theo dòng khóa: đổi thứ tự cột vẫn nhập đúng; thiếu cột khóa bắt buộc → 400 IMPORT_COLUMN_MISSING', async () => {
@@ -145,20 +165,53 @@ describe('nhập phiếu thu chi', () => {
     console.log(`1.000 chứng từ x2 lần: ${Date.now() - t0} ms`);
   });
 
-  it('nhập lại đúng tệp đã nhập: created = 0, existing đủ, không chứng từ trùng; tệp khác nội dung thì nhập mới', async () => {
+  it('nhập lại đúng tệp: created = 0, existing đủ; sửa một nhóm rồi nhập lại chỉ nhóm đó là mới; nhóm giống hệt nhưng khác số nhóm là hai chứng từ', async () => {
     const t = await tenant();
     const file = await t.book('thu-chi', [pt('A'), pt('B', { amount: '2000000' })]);
     expect((await t.upload('thu-chi', file, 'commit', '&autoPost=true')).json()).toMatchObject({ created: 2, existing: 0, posted: 2 });
     const again = await t.upload('thu-chi', file, 'commit', '&autoPost=true');
-    expect(again.json()).toMatchObject({ total: 2, created: 0, existing: 2, posted: 0, errors: [] });
+    expect(again.json()).toMatchObject({ total: 2, created: 0, existing: 2, posted: 0, errors: [], warnings: [] });
     expect(await t.imported()).toBe(2);
-    expect((await t.upload('thu-chi', await t.book('thu-chi', [pt('A'), pt('B', { amount: '2000001' })]), 'commit')).json()).toMatchObject({ created: 2, existing: 0 });
-    expect(await t.imported()).toBe(4);
+    // sửa nhóm B: A không đổi nên bỏ qua, B là chứng từ mới
+    expect((await t.upload('thu-chi', await t.book('thu-chi', [pt('A'), pt('B', { amount: '2000001' })]), 'commit')).json()).toMatchObject({ created: 1, existing: 1 });
+    expect(await t.imported()).toBe(3);
+    // hai nhóm giống hệt nhau, khác số nhóm: hai chứng từ; nhập lại thì cả hai đã có
+    const twin = await t.book('thu-chi', [pt('P1', { amount: '777000' }), pt('P2', { amount: '777000' })]);
+    expect((await t.upload('thu-chi', twin, 'commit')).json()).toMatchObject({ created: 2, existing: 0 });
+    expect((await t.upload('thu-chi', twin, 'commit')).json()).toMatchObject({ created: 0, existing: 2 });
+    expect(await t.imported()).toBe(5);
   });
 
-  it('quá 5.000 chứng từ → 400 IMPORT_TOO_MANY_GROUPS; quá 20.000 dòng → 400 IMPORT_TOO_MANY_ROWS, trước khi ghi', async () => {
+  it('nhóm đã nhập nay đã hủy hoặc đảo → lỗi dòng, không âm thầm coi là đã có; nhóm còn nháp + Ghi sổ ngay → cảnh báo, không tự ghi sổ', async () => {
     const t = await tenant();
-    const many = await t.upload('thu-chi', await t.book('thu-chi', Array.from({ length: 5001 }, (_, i) => pt(`G${i}`))), 'validate');
+    const file = await t.book('thu-chi', [pt('A'), pt('B', { amount: '2000000' }), pt('C', { amount: '3000000' })]);
+    expect((await t.upload('thu-chi', file, 'commit')).json()).toMatchObject({ created: 3 });
+    const ids = (await sql<{ id: string; amount: string }>`SELECT v.id, l.debit::text AS amount FROM voucher v JOIN voucher_line l ON l.voucher_id = v.id WHERE v.tenant_id = ${t.tenantId}::uuid AND l.debit > 0 ORDER BY l.debit`.execute(ctx.t.admin)).rows;
+    expect((await t.call('POST', `/api/vouchers/${ids[0]!.id}/discard`)).statusCode).toBe(200); // A bị hủy
+    expect((await t.call('POST', `/api/vouchers/${ids[1]!.id}/post`)).statusCode).toBe(200);
+    expect((await t.call('POST', `/api/vouchers/${ids[1]!.id}/reverse`, { postingDate: '2026-03-20' })).statusCode).toBe(201); // B đã ghi sổ rồi bị đảo
+    const r = await t.upload('thu-chi', file, 'commit', '&autoPost=true');
+    expect(r.json()).toMatchObject({ created: 0, posted: 0, errorCount: 2, errors: [
+      { row: 4, column: 'group', message: expect.stringMatching(/Nhóm "A" đã nhập thành chứng từ .* nay đã hủy; đổi số nhóm hoặc nội dung để nhập lại/) },
+      { row: 5, column: 'group', message: expect.stringMatching(/Nhóm "B" .* nay đã đảo;/) }] });
+    // chỉ nhóm C (nháp) còn lại: có cảnh báo, không ghi sổ
+    const only = await t.upload('thu-chi', await t.book('thu-chi', [pt('C', { amount: '3000000' })]), 'commit', '&autoPost=true');
+    expect(only.json()).toMatchObject({ created: 0, existing: 1, posted: 0, errors: [], warnings: [{ row: 4, column: 'group', message: expect.stringContaining('bản nháp') }] });
+    expect((await sql<{ state: string }>`SELECT state FROM voucher WHERE tenant_id = ${t.tenantId}::uuid AND id = ${ids[2]!.id}::uuid`.execute(ctx.t.admin)).rows[0]!.state).toBe('draft');
+  });
+
+  it('kiểm tra (validate) không bao giờ ghi sổ dù có autoPost; Tài khoản Nợ trùng Có và nhóm bắt đầu bằng # là lỗi', async () => {
+    const t = await tenant();
+    const v = await t.upload('thu-chi', await t.book('thu-chi', [pt('A')]), 'validate', '&autoPost=true');
+    expect(v.json()).toMatchObject({ created: 1, posted: 0, errors: [] });
+    expect(await t.imported()).toBe(0);
+    const bad = await t.upload('thu-chi', await t.book('thu-chi', [pt('B', { creditAccount: '1111' }), pt('#C')]), 'validate');
+    expect(bad.json().errors).toMatchObject([{ row: 4, column: 'creditAccount' }, { row: 5, column: 'group', message: expect.stringContaining('#') }]);
+  });
+
+  it('quá 2.000 chứng từ → 400 IMPORT_TOO_MANY_GROUPS; quá 20.000 dòng → 400 IMPORT_TOO_MANY_ROWS, trước khi ghi', async () => {
+    const t = await tenant();
+    const many = await t.upload('thu-chi', await t.book('thu-chi', Array.from({ length: 2001 }, (_, i) => pt(`G${i}`))), 'validate');
     expect(many.statusCode).toBe(400); expect(many.json().error.code).toBe('IMPORT_TOO_MANY_GROUPS');
     const big = await t.upload('thu-chi', await t.book('thu-chi', Array.from({ length: 20_001 }, (_, i) => pt(`G${i % 4000}`))), 'validate');
     expect(big.statusCode).toBe(400); expect(big.json().error.code).toBe('IMPORT_TOO_MANY_ROWS');
@@ -194,7 +247,10 @@ describe('nhập bảng kê hóa đơn', () => {
   it('thông tin tiêu đề trong nhóm không thống nhất → lỗi đúng dòng và cột; tiền thuế thiếu mã thuế → lỗi', async () => {
     const t = await tenant();
     const r = await t.upload('bang-ke-mua', await t.book('bang-ke-mua', [bk('A'), bk('A', { taxCode: 'V8', invoiceDate: '2026-03-11' }), bk('B', { invoiceNo: '2', taxCode: null })]), 'validate');
-    expect(r.json().errors).toEqual(expect.arrayContaining([{ row: 5, column: 'invoiceDate', message: expect.stringContaining('dòng 4') }, { row: 6, column: 'taxCode', message: expect.stringContaining('mã thuế') }]));
+    expect(r.json().errors).toEqual(expect.arrayContaining([expect.objectContaining({ row: 5, column: 'invoiceDate', message: expect.stringContaining('dòng 4') }), expect.objectContaining({ row: 6, column: 'taxCode', message: expect.stringContaining('mã thuế') })]));
+    // cùng mã thuế: một dòng ghi tiền thuế, dòng kia bỏ trống → lỗi ở dòng bỏ trống
+    const mix = await t.upload('bang-ke-mua', await t.book('bang-ke-mua', [bk('A'), bk('A', { taxAmount: null })]), 'validate');
+    expect(mix.json().errors).toMatchObject([{ row: 5, column: 'taxAmount', message: expect.stringContaining('V10') }]);
   });
 
   it('bảng kê bán: hóa đơn bán dịch vụ ghi sổ Nợ 131, Có 5113 và 33311; nhóm hóa đơn sai báo ở cột invoiceGroupCode', async () => {
@@ -204,6 +260,10 @@ describe('nhập bảng kê hóa đơn', () => {
     expect(r.json(), r.body).toMatchObject({ created: 1, posted: 1 });
     const l = (await sql<{ code: string; d: string; c: string }>`SELECT a.code, l.debit::text AS d, l.credit::text AS c FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id WHERE v.tenant_id = ${t.tenantId}::uuid ORDER BY l.line_no`.execute(ctx.t.admin)).rows;
     expect(l).toEqual([{ code: '5113', d: '0', c: '10000000' }, { code: '33311', d: '0', c: '1000000' }, { code: '131', d: '11000000', c: '0' }]);
+    // hóa đơn bán trùng (cùng ký hiệu, số hóa đơn dù khác cách viết) với hóa đơn đã có, tệp khác nội dung: lỗi; hóa đơn khác thì được
+    const dup = await t.upload('bang-ke-ban', await t.book('bang-ke-ban', [bk('S9', { ...sale, serial: 'c26 tbb', description: 'tệp khác' }), bk('S8', { ...sale, invoiceNo: '2' })]), 'commit');
+    expect(dup.json()).toMatchObject({ created: 0, errorCount: 1, errors: [{ row: 4, column: 'invoiceNo', message: expect.stringContaining('đã nhập ở chứng từ') }] });
+    expect((await t.upload('bang-ke-ban', await t.book('bang-ke-ban', [bk('S8', { ...sale, invoiceNo: '2' })]), 'commit')).json()).toMatchObject({ created: 1, errors: [] });
     const bad = await t.upload('bang-ke-ban', await t.book('bang-ke-ban', [bk('S2', { ...sale, invoiceNo: '77', invoiceGroupCode: '01' })]), 'commit');
     expect(bad.json()).toMatchObject({ created: 0, errors: [{ row: 4, column: 'invoiceGroupCode' }] });
   });

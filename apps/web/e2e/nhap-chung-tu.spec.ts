@@ -35,11 +35,11 @@ test('Nhập chứng từ từ Excel: tệp có lỗi báo dòng và cột, tệ
   const upload = page.locator('input[type=file]');
   const nhap = page.getByRole('button', { name: 'Nhập', exact: true });
 
-  // Ngày hạch toán không phải ngày: lỗi nêu cột postingDate; nút Nhập vẫn khóa
+  // Ngày hạch toán không phải ngày: lỗi nêu cột Ngày hạch toán; nút Nhập vẫn khóa
   await upload.setInputFiles(await fileFrom(request, { ...good, postingDate: 'không phải ngày' }));
   await page.getByRole('button', { name: 'Kiểm tra' }).click();
   await expect(page.getByText(/1 lỗi, chưa tạo chứng từ nào/)).toBeVisible();
-  await expect(page.locator('.ant-table-row', { hasText: 'postingDate' })).toContainText('Ngày không hợp lệ');
+  await expect(page.locator('.ant-table-row', { hasText: 'Ngày hạch toán' })).toContainText('Ngày không hợp lệ');
   await expect(nhap).toBeDisabled();
 
   // Tệp đúng: Kiểm tra không ghi gì, rồi Nhập tạo bản nháp
