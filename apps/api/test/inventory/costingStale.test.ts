@@ -154,4 +154,60 @@ describe('giá vốn chưa cập nhật và điều chỉnh giá nhập', () => 
     expect((await t.call('PUT', `/api/stock-vouchers/${pn.id}/receipt-price`, { lines: [{ lineNo: 1, unitCost: '2' }] }, noCost)).statusCode).toBe(403);
     expect((await t.call('PUT', `/api/stock-vouchers/${pn.id}/receipt-price`, { lines: [{ lineNo: 9, unitCost: '2' }] })).statusCode).toBe(400);
   }, 90_000);
+
+  // Σ giá trị còn lại theo kho = số dư TK kho trên sổ cái ở mọi ngày kiểm (QĐ 234)
+  const same = async (t: Awaited<ReturnType<typeof tenant>>) => {
+    expect(await t.drift()).toEqual([]);
+  };
+  const setup = async () => {
+    const t = await tenant();
+    await t.wh('K1', 'avg_period', '155'); await t.item('TP1');
+    return t;
+  };
+  const FEB = { periodFrom: '2026-02-01', periodTo: '2026-02-28' };
+  const put = (t: Awaited<ReturnType<typeof tenant>>, id: string, unitCost: string) => t.call('PUT', `/api/stock-vouchers/${id}/receipt-price`, { lines: [{ lineNo: 1, unitCost }] });
+
+  it('sửa giá +200 rồi −200 (tổng 0): GV cũ đảo, không GV mới, lớp về chưa ghi nhận; lần sau không đổi; lớp khớp 155', async () => {
+    const t = await setup();
+    const pn = await t.nhapTp('2026-01-02', 'K1', [{ itemCode: 'TP1', quantity: '100', unitPrice: '10' }]);
+    await t.runOk(); await put(t, pn.id, '12'); await t.runOk(); await same(t);
+    expect((await put(t, pn.id, '10')).statusCode).toBe(200);
+    const r = await t.runOk();
+    expect(r.voucherIds).toHaveLength(0); expect(r.unchanged).toBe(false);
+    expect((await sql<{ v: string | null }>`SELECT voucher_id AS v FROM stock_cost_layer WHERE tenant_id = ${t.tenantId}::uuid AND kind = 'adjustment'`.execute(ctx.t.admin)).rows.every((x) => x.v === null)).toBe(true);
+    await same(t); expect(await t.bal('155', 'K1')).toBe('1000');
+    expect((await t.runOk()).unchanged).toBe(true); await same(t);
+  }, 90_000);
+
+  it('bỏ ghi sổ phiếu nhập có điều chỉnh đã vào GV: STOCK_COST_ADJUSTED 409; đảo phiếu vẫn được, xuất đảo theo giá nhập + điều chỉnh', async () => {
+    const t = await setup();
+    const pn = await t.nhapTp('2026-01-02', 'K1', [{ itemCode: 'TP1', quantity: '100', unitPrice: '10' }]);
+    await t.runOk(); await put(t, pn.id, '12');
+    // chưa ghi nhận: bỏ ghi sổ được (lớp mất theo phát sinh)
+    await t.runOk(); await same(t);
+    const u = await t.call('POST', `/api/vouchers/${pn.id}/unpost`, {});
+    expect(u.statusCode, u.body).toBe(409); expect(u.json().error.code).toBe('STOCK_COST_ADJUSTED');
+    const rev = await t.call('POST', `/api/vouchers/${pn.id}/reverse`, { postingDate: '2026-01-25' });
+    expect(rev.statusCode, rev.body).toBe(201);
+    await t.runOk(); await same(t);
+    expect(await t.bal('155', 'K1')).toBe('0'); expect((await t.runOk()).unchanged).toBe(true); await same(t);
+  }, 90_000);
+
+  it('điều chỉnh chưa ghi nhận của tháng sau không lọt vào lớp khi chạy lại tháng trước; tháng sau chạy xong thì khớp', async () => {
+    const t = await setup();
+    await t.nhapTp('2026-01-02', 'K1', [{ itemCode: 'TP1', quantity: '100', unitPrice: '10' }]); await t.pxk('2026-01-10', 'K1', [{ itemCode: 'TP1', quantity: '10' }]);
+    const feb = await t.nhapTp('2026-02-02', 'K1', [{ itemCode: 'TP1', quantity: '100', unitPrice: '10' }]); await t.pxk('2026-02-10', 'K1', [{ itemCode: 'TP1', quantity: '10' }]);
+    await t.runOk(); await t.runOk(FEB); await same(t);
+    expect((await put(t, feb.id, '12')).statusCode).toBe(200); await same(t);
+    await t.runOk(); await same(t); // chạy lại tháng 1 khi điều chỉnh tháng 2 còn chưa ghi nhận
+    const r = await t.runOk(FEB); expect(r.voucherIds).toHaveLength(1); await same(t);
+  }, 90_000);
+
+  it('summary.delta chỉ cộng lớp mới ghi nhận: chạy lại không đổi báo 0', async () => {
+    const t = await setup();
+    const pn = await t.nhapTp('2026-01-02', 'K1', [{ itemCode: 'TP1', quantity: '100', unitPrice: '10' }]);
+    await t.runOk(); await put(t, pn.id, '12');
+    expect((await t.runOk()).summary.delta).toBe('200');
+    const again = await t.runOk(); expect(again.unchanged).toBe(true); expect(again.summary.delta).toBe('0');
+  }, 90_000);
 });
