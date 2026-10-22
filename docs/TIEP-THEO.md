@@ -82,6 +82,7 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
   - Màn hình chứng từ xóa kế hoạch đối trừ trong `useEffect` khi đổi đối tượng; Ctrl+S ngay lúc đó có thể gửi kế hoạch cũ, máy chủ kiểm lại khi ghi sổ (sai chiều hoặc vượt dư bị từ chối) nên không sai sổ. E2E `ty-gia` tích lũy hóa đơn trên DB E2E dùng lâu: dọn DB E2E định kỳ.
   - Dòng giá đã gồm thuế có cả GTGT và TNCN: TNCN không tính lại sau khi làm tròn số thuế GTGT khai báo (lệch vài đồng, hiếm).
   - Danh mục chưa có kiểm thử Playwright và tài liệu người dùng riêng (làm đầu GĐ3 cùng danh mục VTHH); E2E sổ quỹ rớt một lần khi chạy cả bộ.
+- Hiệu năng ghi sổ (`docs/dev/hieu-nang.md`): việc ghi nhiều chứng từ trong một giao dịch trên công ty chưa được `ANALYZE` có thể chọn sai chỉ mục cho tra cứu `voucher` theo `id`. Từ 0042 kiểm cân bằng chỉ đọc dòng có `posting_date` bằng ngày chứng từ (`fn_line_before` và `trg_voucher_date_sync` bảo đảm); hai giao dịch cùng sửa một chứng từ nháp chưa khóa dòng chứng từ trong `fn_line_before`, về lý thuyết có thể để một dòng lệch ngày (không đi qua API được).
 - Soát lỗi GĐ2 (Task 27):
   - Quy tắc có cờ nhạy cảm bị bỏ cả quy tắc khi người dùng thiếu một cờ (`skipped`), không lọc từng dòng; `SO_DU_SAI_LOAI` nay cần `view_cost`.
   - `THUE_LECH` sao lại logic đối chiếu thuế của `register.ts` bằng SQL (có kiểm thử so khớp), danh sách loại giảm giá/trả lại GGB/GGM viết cứng vì cờ `refund` chỉ có trong TypeScript.
