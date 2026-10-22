@@ -199,7 +199,7 @@ describe('mua hàng hóa (MH, TLM)', () => {
     const rv = await call('POST', `/api/vouchers/${inv.id}/reverse`, { postingDate: '2026-03-20' }); expect(rv.statusCode, rv.body).toBe(201);
   });
 
-  it('lập kèm ghi sổ: thiếu stock_voucher.post thì 403; MH, TLM không in mẫu kho và tổng tiền danh sách bị che khi thiếu view_cost', async () => {
+  it('lập kèm ghi sổ: thiếu stock_voucher.post thì 403; tổng tiền danh sách bị che khi thiếu view_cost', async () => {
     const roles = (await call('GET', '/api/roles')).json() as { id: string; code: string }[];
     await call('PUT', `/api/roles/${roles.find((r) => r.code === 'xem')!.id}/permissions`, { permissions: ['voucher.view', 'voucher.create', 'voucher.post', 'voucher.print', 'stock_voucher.view', 'stock_voucher.create'] });
     const username = `mh_${Date.now()}`;
@@ -209,6 +209,6 @@ describe('mua hàng hóa (MH, TLM)', () => {
     const r = await ctx.app.inject({ method: 'POST', url: '/api/invoices', headers: { cookie: c }, payload: mh([line('A1', '1', '10')]) });
     expect(r.statusCode).toBe(403);
     const made = await create(mh([line('A1', '1', '10')]));
-    const pr = await call('GET', `/api/vouchers/${made.id}/print`); expect(pr.statusCode).toBe(409); expect(code(pr)).toBe('PRINT_FORM_NOT_READY');
+    const pr = await call('GET', `/api/vouchers/${made.id}/print`); expect(pr.statusCode, pr.body).toBe(200); expect(pr.body).toContain('PHIẾU NHẬP KHO');
   });
 });

@@ -25,6 +25,9 @@ const FORMS: Record<string, Record<string, string>> = {
   '08a-TT': { TT99: '08a - TT', TT133: '08a - TT' },
   '08b-TT': { TT99: '08b - TT', TT133: '08b - TT' },
   // Biên bản kiểm kê vật tư, công cụ, sản phẩm, hàng hóa (TT99: "Biên bản tổng hợp kiểm kê..."): "Mẫu số 05 - VT" có trong văn bản gốc của cả TT 133/2016 (Phụ lục 3) và TT 99/2025.
+  // Phiếu nhập kho, phiếu xuất kho: "Mẫu số 01 - VT", "02 - VT" có trong văn bản gốc của cả TT 133/2016 và TT 99/2025; TT200 chưa có văn bản gốc nên không in số mẫu.
+  '01-VT': { TT99: '01 - VT', TT133: '01 - VT' },
+  '02-VT': { TT99: '02 - VT', TT133: '02 - VT' },
   '05-VT': { TT99: '05 - VT', TT133: '05 - VT' }, // TT200: chưa có văn bản gốc đối chiếu nên không in số mẫu
   // Sổ chi tiết vật liệu, dụng cụ, sản phẩm, hàng hóa: TT99 S10-DN, TT133 S06-DNN. Thẻ kho (Sổ kho): TT99 S12-DN, TT133 S08-DNN (đối chiếu ~/legal-docs; S10-DNN và S12-DNN của TT133 là sổ khác). TT200 chưa có văn bản gốc nên không in số mẫu.
   'stock-ledger': { TT99: 'S10-DN', TT133: 'S06-DNN' },

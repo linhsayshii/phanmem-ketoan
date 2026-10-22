@@ -12,6 +12,7 @@ import { postWithCashCheck, reverseWithCashCheck, unpostWithCashCheck } from '..
 import { redactCost } from '../invoices/sales.js';
 import { formNoFor, voucherFormFor } from '../reporting/print/forms.js';
 import { renderCashVoucherHtml, type BankInfo } from '../reporting/print/cashVoucherHtml.js';
+import { renderStockVoucherHtml, stockPrintLines } from '../reporting/print/stockVoucherHtml.js';
 import { renderPdf } from '../reporting/print/pdf.js';
 import { renderVoucherHtml } from '../reporting/print/voucherHtml.js';
 import { assertSensitive } from '../reporting/ledgers.js';
@@ -47,8 +48,10 @@ export async function withStockWarnings<T extends { warnings?: unknown[] }>(trx:
   return w.length ? { ...dto, warnings: [...(dto.warnings ?? []), ...w] } : dto;
 }
 // Số liệu theo dòng chỉ trả khi cờ nhạy cảm (công nợ, giá vốn) che từng tài khoản cho phép.
-export async function assertVoucherSensitive(trx: Trx, auth: Auth, v: { id: string; lines: { accountCode: string }[] }) {
+// opts.costOptional: mẫu in phiếu kho 01-VT, 02-VT bỏ cột giá trị khi thiếu view_cost nên không đòi cờ này; cờ công nợ vẫn bắt buộc.
+export async function assertVoucherSensitive(trx: Trx, auth: Auth, v: { id: string; lines: { accountCode: string }[] }, opts: { costOptional?: boolean } = {}) {
   if (!v.lines.length) return;
+  if (opts.costOptional) auth = { ...auth, sensitive: new Set([...auth.sensitive, 'view_cost']) };
   const { regime } = await trx.selectFrom('voucher as v').innerJoin('fiscal_period as p', 'p.fiscal_year', 'v.fiscal_year').select('p.regime').where('v.id', '=', v.id).limit(1).executeTakeFirstOrThrow();
   const accs = await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', regime).where('code', 'in', [...new Set(v.lines.map((l) => l.accountCode))]).execute();
   for (const a of accs) assertSensitive(auth, a);
@@ -78,19 +81,25 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.get('/api/vouchers/:id/print', { preHandler: app.requirePermission('voucher.print'), schema: { params: idParam, querystring: z.object({ format: z.enum(['html', 'pdf']).default('html'), form: z.string().default('default') }) } }, async (req, reply) => {
     const { html, v, form } = await app.withTenant(req, async (trx) => {
       const v = await S.getVoucher(trx, req.params.id);
-      await assertVoucherSensitive(trx, req.auth!, v); // in không được lộ dòng công nợ, giá vốn mà GET chứng từ chặn
       // Mẫu in hợp lệ lấy từ cấu hình loại chứng từ; 'default' là mẫu đầu của loại, loại không có mẫu riêng (Phiếu kế toán) in phiếu kế toán.
-      if (voucherTypeDef(v.voucherType)?.module === 'inventory') throw new AppError('PRINT_FORM_NOT_READY', 'Mẫu in phiếu kho chưa có', 409); // mẫu 01-VT, 02-VT làm ở Task 19
       const allowed = voucherTypeDef(v.voucherType)?.printForms ?? [];
       const form = req.query.form === 'default' ? allowed[0] : req.query.form;
-      if (createsStockMoves(v.voucherType) && (form === '01-VT' || form === '02-VT')) throw new AppError('PRINT_FORM_NOT_READY', 'Mẫu in phiếu kho chưa có', 409);
+      if (voucherTypeDef(v.voucherType)?.module === 'inventory' && !form) throw new AppError('PRINT_FORM_NOT_READY', 'Mẫu in phiếu kho chưa có', 409);
+      const stockForm = form === '01-VT' || form === '02-VT';
       if (form !== undefined && !allowed.includes(form)) throw new AppError('PRINT_FORM_INVALID', `Mẫu in "${req.query.form}" không dùng được cho chứng từ loại ${v.voucherType}`, 400);
+      if (stockForm) await requireStockPerm(trx, req.auth!, v.id, 'stock_voucher.view');
+      await assertVoucherSensitive(trx, req.auth!, v, { costOptional: stockForm }); // in không được lộ dòng công nợ, giá vốn mà GET chứng từ chặn (phiếu kho 01-VT, 02-VT chỉ bỏ cột giá trị khi thiếu view_cost)
       const t = await trx.selectFrom('tenant').selectAll().where('id', '=', req.auth!.tenantId!).executeTakeFirstOrThrow();
       // chế độ kế toán gắn với năm tài chính của chứng từ (một công ty có thể giữ nhiều chế độ)
       const { regime } = await trx.selectFrom('voucher as v').innerJoin('fiscal_period as p', 'p.fiscal_year', 'v.fiscal_year').select('p.regime').where('v.id', '=', v.id).executeTakeFirstOrThrow();
       const f = form ? voucherFormFor(regime, form) : formNoFor(regime, 'PKT');
       const c = { name: t.name, address: t.address, taxCode: t.tax_code, legalRep: t.legal_rep, chiefAccountant: t.chief_accountant, formNo: f?.formNo ?? '', issuedBy: f?.issuedBy ?? '' };
       if (!form) return { v, form, html: renderVoucherHtml(v, c) };
+      if (stockForm) {
+        const lines = await stockPrintLines(trx, v.id, form, v.voucherType);
+        if (!lines.length) throw new AppError('PRINT_NO_ITEMS', 'Chứng từ không có dòng hàng để in phiếu kho', 409);
+        return { v, form, html: renderStockVoucherHtml(v, c, lines, { form, showCost: req.auth!.sensitive.has('view_cost') }) };
+      }
       const banks = form === 'giay-bao' || form === 'unc' ? await bankInfos(trx, v.id) : {};
       // loại sổ chi tiết của tài khoản (tìm dòng quỹ/ngân hàng) và tên tiền ngoại tệ, cho số tiền trên phiếu
       const kinds = Object.fromEntries((await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', regime).where('code', 'in', [...new Set(v.lines.map((l) => l.accountCode))]).execute()).map((a) => [a.code, a.subledger_kind]));

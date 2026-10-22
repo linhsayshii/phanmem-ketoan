@@ -129,7 +129,7 @@ describe('phiếu kho', () => {
     expect((await moves(v.id)).map((m) => `${m.code}:${m.direction}`)).toEqual(['SP1:out', 'SP2:out']);
   });
 
-  it('route chung: thiếu view_cost → GET phiếu kho 403 và tổng tiền danh sách là null; thiếu stock_voucher.post → ghi sổ chung 403; in phiếu kho → 409 PRINT_FORM_NOT_READY', async () => {
+  it('route chung: thiếu view_cost → GET phiếu kho 403 và tổng tiền danh sách là null; thiếu stock_voucher.post → ghi sổ chung 403; in phiếu kho cần stock_voucher.view', async () => {
     const made = (await stock('PXK', 'sale', '2026-03-03', [{ itemCode: 'SP1', uomCode: 'CAI', quantity: '1' }])).json();
     const roles = (await call('GET', '/api/roles')).json() as { id: string; code: string }[];
     await call('PUT', `/api/roles/${roles.find((r) => r.code === 'xem')!.id}/permissions`, { permissions: ['voucher.view', 'voucher.post', 'stock_voucher.view'] });
@@ -142,8 +142,7 @@ describe('phiếu kho', () => {
     const list = (await call('GET', '/api/vouchers?type=PXK&from=2026-03-03&to=2026-03-03', undefined, c)).json().rows as { totalDebit: string | null }[];
     expect(list.length).toBeGreaterThan(0); expect(list.every((x) => x.totalDebit === null)).toBe(true);
     expect((await call('POST', `/api/vouchers/${made.id}/post`, {}, c)).statusCode).toBe(403);
-    const pr = await call('GET', `/api/vouchers/${made.id}/print`);
-    expect(pr.statusCode).toBe(409); expect(pr.json().error.code).toBe('PRINT_FORM_NOT_READY');
+    expect((await call('GET', `/api/vouchers/${made.id}/print`)).statusCode).toBe(200);
   });
 
   it('tồn khả dụng: mã kho hoặc hàng lạ → 404', async () => {
