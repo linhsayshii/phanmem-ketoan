@@ -173,4 +173,66 @@ describe('chi phí mua hàng (CPM) phân bổ vào giá nhập kho', () => {
       items: [{ itemCode: 'H2', uomCode: 'CAI', warehouseCode: 'K1', quantity: '1', amountCurrency: '10', taxCodes: [], importTax: '1' }], invoice: { invoiceNo: 'X2', invoiceDate: '2026-01-08', invoiceGroupCode: '01' } });
     expect(bad2.statusCode).toBe(400);
   });
+
+  it('CPM đã đảo: phiếu nhập (PNK, MH) bỏ ghi sổ rồi sửa nháp được; phân bổ cũ giữ chứng từ và số dòng đã chụp', async () => {
+    const t = await tenant();
+    const alloc = async (cpmId: string) => (await sql<{ receipt_line_id: string | null; receipt_voucher_id: string; receipt_line_no: number }>`
+      SELECT receipt_line_id::text, receipt_voucher_id::text, receipt_line_no FROM landed_cost_alloc WHERE voucher_id = ${cpmId}::uuid ORDER BY id`.execute(ctx.t.admin)).rows;
+    const mh = await t.call('POST', '/api/invoices', { voucherType: 'MH', stockMode: 'through_stock', postingDate: '2026-01-05', documentDate: '2026-01-05', partyCode: 'NCC1', autoPost: true,
+      items: [{ itemCode: 'H2', uomCode: 'CAI', warehouseCode: 'K1', quantity: '5', unitPrice: '200', amountCurrency: '1000', taxCodes: [] }], invoice: { invoiceNo: 'M1', invoiceDate: '2026-01-05', invoiceGroupCode: '01' } });
+    expect(mh.statusCode, mh.body).toBe(201);
+    for (const [kind, receiptId] of [['PNK', (await t.pnk('2026-01-05', [{ itemCode: 'H1', quantity: '10', unitPrice: '100' }])).id], ['MH', mh.json().id as string]] as const) {
+      const c = await t.cpm({ receiptVoucherIds: [receiptId], costLines: [{ accountCode: '1111', amount: '50' }], autoPost: true });
+      expect(c.statusCode, c.body).toBe(201);
+      const rv = await t.call('POST', `/api/vouchers/${c.json().id}/reverse`, { postingDate: '2026-01-11' }); expect(rv.statusCode, rv.body).toBe(201);
+      const un = await t.call('POST', `/api/vouchers/${receiptId}/unpost`, {}); expect(un.statusCode, `${kind} ${un.body}`).toBe(200);
+      const cur = kind === 'PNK' ? (await t.call('GET', `/api/stock-vouchers/${receiptId}`)).json() : (await t.call('GET', `/api/invoices/${receiptId}`)).json();
+      // sửa nháp: dòng hàng bị xóa và ghi lại (trước đây khóa ngoại của landed_cost_alloc chặn, 409 REFERENCED)
+      const put = kind === 'PNK'
+        ? await t.call('PUT', `/api/stock-vouchers/${receiptId}`, { version: cur.version, voucherType: 'PNK', stockKind: 'purchase', postingDate: '2026-01-05', warehouseCode: 'K1', partyCode: 'NCC1', items: [{ itemCode: 'H1', uomCode: 'CAI', quantity: '12', unitPrice: '100' }] })
+        : await t.call('PUT', `/api/invoices/${receiptId}`, { version: cur.version, voucherType: 'MH', stockMode: 'through_stock', postingDate: '2026-01-05', documentDate: '2026-01-05', partyCode: 'NCC1',
+          items: [{ itemCode: 'H2', uomCode: 'CAI', warehouseCode: 'K1', quantity: '6', unitPrice: '200', amountCurrency: '1200', taxCodes: [] }], invoice: { invoiceNo: 'M1', invoiceDate: '2026-01-05', invoiceGroupCode: '01' } });
+      expect(put.statusCode, `${kind} ${put.body}`).toBe(200);
+      expect(await alloc(c.json().id)).toEqual([{ receipt_line_id: null, receipt_voucher_id: receiptId, receipt_line_no: 1 }]);
+      const hist = (await t.call('GET', `/api/landed-costs/${c.json().id}`)).json();
+      expect(hist).toMatchObject({ state: 'reversed', receiptVoucherIds: [receiptId] });
+      expect(hist.allocations).toEqual([expect.objectContaining({ voucherId: receiptId, voucherNo: cur.voucherNo, lineNo: 1, amount: '50' })]);
+      expect((await t.call('POST', `/api/vouchers/${receiptId}/post`, {})).statusCode).toBe(200);
+    }
+    // CPM nháp hoặc đã ghi sổ vẫn chặn sửa phân bổ của CPM đã đảo (chỉ SET NULL của khóa ngoại được qua)
+    const any = (await sql<{ id: string }>`SELECT id::text FROM landed_cost_alloc WHERE tenant_id = ${t.tenantId}::uuid LIMIT 1`.execute(ctx.t.admin)).rows[0]!;
+    await expect(sql`UPDATE landed_cost_alloc SET amount = 1 WHERE id = ${any.id}::bigint`.execute(ctx.t.admin)).rejects.toThrow(/VOUCHER_POSTED_EDIT/);
+    expect(await t.drift()).toEqual([]);
+  });
+
+  it('nhập khẩu: giá tính thuế GTGT theo tờ khai (vatImportBase) lên bảng kê và chỉ tiêu [23]/[23a]; mã NK, TTĐB trên dòng bị chặn', async () => {
+    const t = await tenant();
+    const body = (over: object) => ({ voucherType: 'MH', stockMode: 'through_stock', postingDate: '2026-07-08', documentDate: '2026-07-08', partyCode: 'NCC1', currencyCode: 'USD', fxRate: '25000',
+      items: [{ itemCode: 'H1', uomCode: 'CAI', warehouseCode: 'K1', quantity: '100', unitPrice: '10', amountCurrency: '1000', taxCodes: [], importMode: true,
+        importTax: '2500000', vatImport: '2900000', vatImportCode: 'V10', vatImportBase: '29000000', ...over }],
+      invoice: { invoiceNo: '105000000001', invoiceDate: '2026-07-08', invoiceGroupCode: '01' } });
+    const r = await t.call('POST', '/api/invoices', { ...body({}), autoPost: true });
+    expect(r.statusCode, r.body).toBe(201);
+    expect(r.json().items[0]).toMatchObject({ vatImportBase: '29000000' });
+    expect(await t.layers(r.json().id)).toEqual([{ kind: 'receipt', value: '27500000', voucher_id: null, item: 'H1' }]); // giá nhập không đổi: hàng + NK
+    const reg = (await t.call('GET', '/api/tax/invoices?direction=purchase&year=2026&period=7&periodKind=month')).json();
+    expect(reg.groups.flatMap((g: { rows: unknown[] }) => g.rows)).toEqual([expect.objectContaining({ taxCode: 'V10', baseAmount: '29000000', taxAmount: '2900000', isImport: true })]);
+    const ret = await t.call('POST', '/api/tax/vat-returns', { year: 2026, periodKind: 'month', period: 7 });
+    expect(ret.statusCode, ret.body).toBe(201);
+    expect([ret.json().values['23'], ret.json().values['23a'], ret.json().values['24'], ret.json().values['24a']]).toEqual(['29000000', '29000000', '2900000', '2900000']);
+    for (const taxCodes of [['NK'], ['TTDB']]) {
+      const bad = await t.call('POST', '/api/invoices', body({ taxCodes }));
+      expect(bad.statusCode).toBe(400); expect(code(bad)).toBe('IMPORT_LINE_INVALID');
+    }
+    const noCode = await t.call('POST', '/api/invoices', body({ vatImport: undefined, vatImportCode: undefined }));
+    expect(noCode.statusCode).toBe(400);
+    const notImport = await t.call('POST', '/api/invoices', body({ importMode: undefined, importTax: undefined, vatImport: undefined, vatImportCode: undefined }));
+    expect(notImport.statusCode).toBe(400);
+    // mã NK ngừng dùng: dòng thuế NK không lên phần thuế khác của bảng kê
+    const nkOf = async (id: string) => (await sql<{ code: string }>`SELECT c.code FROM voucher_invoice i JOIN tax_code c ON c.id = i.tax_code_id WHERE i.voucher_id = ${id}::uuid AND c.kind = 'import'`.execute(ctx.t.admin)).rows;
+    expect(await nkOf(r.json().id)).toEqual([{ code: 'NK' }]);
+    await sql`UPDATE tax_code SET is_active = false WHERE tenant_id = ${t.tenantId}::uuid AND code = 'NK'`.execute(ctx.t.admin);
+    const off = await t.call('POST', '/api/invoices', { ...body({}), invoice: { invoiceNo: '105000000002', invoiceDate: '2026-07-08', invoiceGroupCode: '01' } });
+    expect(off.statusCode, off.body).toBe(201); expect(await nkOf(off.json().id)).toEqual([]);
+  });
 });

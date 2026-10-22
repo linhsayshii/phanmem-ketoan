@@ -84,7 +84,7 @@ Không sửa, không bỏ ghi sổ được MH hoặc Phiếu nhập kho khi ch�
 
 ### Chi phí mua hàng
 
-Menu Mua hàng, "Chi phí mua hàng" (loại CPM) ghi chi phí vận chuyển, bốc xếp, bảo hiểm... của hàng đã nhập kho và phân bổ vào giá nhập.
+Menu Mua hàng, "Chi phí mua hàng" (loại CPM) ghi chi phí vận chuyển, bốc xếp, bảo hiểm... của hàng đã nhập kho và phân bổ vào giá nhập. Chứng từ CPM chỉ bằng VND: chi phí bằng ngoại tệ (cước quốc tế) quy đổi ra đồng trước khi nhập.
 
 1. Nhập Ngày hạch toán, Ngày chứng từ, Đối tượng (nhà cung cấp dịch vụ) và chọn cách phân bổ: **Theo giá trị** hoặc **Theo số lượng**.
 2. Tab **Phiếu nhập**: chọn khoảng ngày rồi đánh dấu các chứng từ nhập đã ghi sổ cần phân bổ. Danh sách gồm Phiếu nhập kho mua hàng và Mua hàng hóa nhập kho cùng hóa đơn, có ngày không sau ngày hạch toán của CPM.
@@ -108,6 +108,7 @@ Trên "Mua hàng hóa", đánh dấu **Hàng nhập khẩu** ở đầu tab Hàn
 
 - **Thuế NK:** ghi Nợ TK kho / Có 3333.
 - **Thuế TTĐB:** ghi Nợ TK kho / Có 3332.
-- **Thuế GTGT hàng NK** và **Mã thuế GTGT NK (F4):** ghi Nợ 1331 / Có 33312. Dòng hàng nhập khẩu không ghi mã thuế GTGT ở cột Mã thuế.
+- **Thuế GTGT hàng NK** và **Mã thuế GTGT NK (F4):** ghi Nợ 1331 / Có 33312. Dòng hàng nhập khẩu không ghi mã thuế GTGT, mã thuế nhập khẩu hay mã thuế TTĐB ở cột Mã thuế.
+- **Giá tính thuế GTGT NK:** giá tính thuế GTGT ghi trên tờ khai (trị giá tính thuế theo tỷ giá hải quan cộng thuế NK, TTĐB). Để trống thì phần mềm lấy tiền hàng quy đổi theo tỷ giá hóa đơn + thuế NK + thuế TTĐB; nên nhập theo tờ khai vì tỷ giá hải quan và trị giá CIF thường khác.
 
-Giá nhập kho = tiền hàng quy đổi VND + thuế NK + thuế TTĐB. Hóa đơn có thể bằng ngoại tệ; các dòng thuế luôn là VND. Ở tab Hóa đơn, ghi số tờ khai hải quan vào ô Số hóa đơn. Bảng kê mua vào có một dòng thuế GTGT hàng nhập (giá tính thuế = tiền hàng + thuế NK + thuế TTĐB) và các dòng thuế NK, TTĐB ở phần thuế khác. Chi phí vận chuyển, bảo hiểm hàng nhập ghi bằng Chi phí mua hàng như trên.
+Giá nhập kho = tiền hàng quy đổi VND + thuế NK + thuế TTĐB. Hóa đơn có thể bằng ngoại tệ; các dòng thuế luôn là VND. Mỗi tờ khai hải quan lập một chứng từ Mua hàng hóa: ở tab Hóa đơn, ghi số tờ khai vào ô Số hóa đơn; tờ khai nhiều mặt hàng thì nhập nhiều dòng hàng trên cùng chứng từ. Bảng kê mua vào có một dòng thuế GTGT hàng nhập (giá tính thuế theo cột Giá tính thuế GTGT NK), lên chỉ tiêu [23], [23a] của tờ khai 01/GTGT, và các dòng thuế NK, TTĐB ở phần thuế khác. Chi phí vận chuyển, bảo hiểm hàng nhập ghi bằng Chi phí mua hàng như trên.

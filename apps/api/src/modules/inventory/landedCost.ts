@@ -97,7 +97,7 @@ async function build(trx: Trx, input: LandedCostInput, auth?: Auth) {
   const voucher: S.VoucherInput = { voucherType: 'CPM', postingDate: input.postingDate, documentDate: input.documentDate ?? input.postingDate, description: input.description ?? null,
     partyCode: input.partyCode ?? null, currencyCode: 'VND', attachmentsCount: input.attachmentsCount ?? null, lines: lineSet,
     ...(input.invoices?.length && { invoices: input.invoices }), ...(input.idempotencyKey && { idempotencyKey: input.idempotencyKey }) };
-  const rows = (tenantId: string, voucherId: string) => lines.map((l) => ({ tenant_id: tenantId, voucher_id: voucherId, receipt_line_id: l.id, amount: alloc[String(l.id)]!, basis: input.basis }));
+  const rows = (tenantId: string, voucherId: string) => lines.map((l) => ({ tenant_id: tenantId, voucher_id: voucherId, receipt_line_id: l.id, receipt_voucher_id: l.voucherId, receipt_line_no: l.lineNo, amount: alloc[String(l.id)]!, basis: input.basis }));
   return { voucher, rows };
 }
 
@@ -105,8 +105,12 @@ export async function getLandedCost(trx: Trx, id: string): Promise<LandedCostDto
   const v = await S.getVoucher(trx, id);
   if (v.voucherType !== 'CPM') throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy chứng từ chi phí mua hàng', 404);
   const src = v.reversalOfId ?? id; // chứng từ đảo không có phân bổ riêng: hiện phân bổ của chứng từ gốc
-  const al = await trx.selectFrom('landed_cost_alloc').select(['receipt_line_id', 'amount', 'basis']).where('voucher_id', '=', src).orderBy('id').execute();
-  const lines = al.length ? await receiptLines(trx, sql`l.id = ANY(${al.map((a) => a.receipt_line_id)}::bigint[])`) : [];
+  const al = await trx.selectFrom('landed_cost_alloc').select(['id', 'receipt_line_id', 'receipt_voucher_id', 'receipt_line_no', 'amount', 'basis']).where('voucher_id', '=', src).orderBy('id').execute();
+  const live = al.some((a) => a.receipt_line_id !== null) ? await receiptLines(trx, sql`l.id = ANY(${al.flatMap((a) => (a.receipt_line_id === null ? [] : [a.receipt_line_id]))}::bigint[])`) : [];
+  // Phiếu nhập đã bỏ ghi sổ (không còn phát sinh nhập) hoặc đã sửa nháp (dòng cũ bị xóa, receipt_line_id NULL): chỉ còn chứng từ và số dòng đã chụp.
+  const rv = new Map((al.length ? await trx.selectFrom('voucher').select(['id', 'voucher_no', 'posting_date']).where('id', 'in', [...new Set(al.map((a) => a.receipt_voucher_id))]).execute() : []).map((r) => [r.id, r]));
+  const lines = al.map((a): ReceiptLineDto => live.find((l) => l.id === a.receipt_line_id) ?? { id: a.receipt_line_id ?? -a.id, voucherId: a.receipt_voucher_id, voucherNo: rv.get(a.receipt_voucher_id)?.voucher_no ?? null,
+    postingDate: String(rv.get(a.receipt_voucher_id)?.posting_date ?? ''), lineNo: a.receipt_line_no, itemCode: '', itemName: '', warehouseCode: '', quantity: '0', value: '0', accountCode: '' });
   const costLines: LandedCostDto['costLines'] = [];
   const base = v.reversalOfId ? await S.getVoucher(trx, src) : v;
   base.lines.forEach((l, i) => {
@@ -115,7 +119,7 @@ export async function getLandedCost(trx: Trx, id: string): Promise<LandedCostDto
     costLines.push({ accountCode: l.accountCode, amount: D(l.credit).minus(vat).toFixed(0), vatAmount: vat, description: l.description ?? null, partyCode: l.partyCode ?? null });
   });
   return { ...v, basis: (al[0]?.basis ?? 'value') as LandedCostDto['basis'], receiptVoucherIds: [...new Set(lines.map((l) => l.voucherId))], costLines,
-    allocations: lines.map((l) => ({ ...l, amount: al.find((a) => a.receipt_line_id === l.id)!.amount })) };
+    allocations: lines.map((l, i) => ({ ...l, amount: al[i]!.amount })) };
 }
 
 type Ctx = { tenantId: string; userId: string; auth?: Auth };

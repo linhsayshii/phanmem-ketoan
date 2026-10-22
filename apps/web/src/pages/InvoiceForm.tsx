@@ -18,7 +18,7 @@ import { codesOf, defaultGroup, deriveRow, emptyInvRow, importLedger, isBlankRow
 interface ItemDto { lineNo: number; description: string | null; quantity: string | null; unitPrice: string | null; amountCurrency: string; discountRate: string | null; discountAmountCurrency: string;
   taxCodes: string[]; accountCode: string; departmentCode: string | null; projectCode: string | null; costItemCode: string | null;
   id?: number; itemCode?: string | null; uomCode?: string | null; warehouseCode?: string | null; lotNo?: string | null; expiryDate?: string | null; receiptVoucherId?: string | null; linkLineId?: number | null;
-  importMode?: boolean; importTax?: string | null; specialConsumptionTax?: string | null; vatImport?: string | null; vatImportCode?: string | null }
+  importMode?: boolean; importTax?: string | null; specialConsumptionTax?: string | null; vatImport?: string | null; vatImportCode?: string | null; vatImportBase?: string | null }
 interface InvoiceRef { id: number; formNo: string | null; serial: string | null; invoiceNo: string; invoiceDate: string; partyName: string | null; partyTaxCode: string | null; partyAddress: string | null;
   invoiceGroupCode: string | null; headerGroupCode?: string | null; taxCode: string | null; taxAmount: string; adjustsInvoiceId: number | null }
 interface InvoiceDoc { id: string; voucherType: string; voucherNo: string | null; state: string; postingDate: string; documentDate: string; description: string | null; partyCode: string | null; partyName: string | null;
@@ -41,7 +41,7 @@ const rowOf = (it: ItemDto): InvRow => ({ description: it.description ?? '', acc
   discountRate: plain(it.discountRate), discount: D(it.discountAmountCurrency).isZero() ? '' : plain(it.discountAmountCurrency), taxCodes: it.taxCodes.join(','), taxAmount: '',
   departmentCode: it.departmentCode ?? '', projectCode: it.projectCode ?? '', costItemCode: it.costItemCode ?? '',
   itemCode: it.itemCode ?? '', uomCode: it.itemCode ? it.uomCode ?? '' : '', warehouseCode: it.warehouseCode ?? '', lotNo: it.lotNo ?? '', expiryDate: it.expiryDate ?? '', sourceLineId: it.linkLineId ? String(it.linkLineId) : '',
-  importTax: plain(it.importTax), specialConsumptionTax: plain(it.specialConsumptionTax), vatImport: plain(it.vatImport), vatImportCode: it.vatImportCode ?? '' });
+  importTax: plain(it.importTax), specialConsumptionTax: plain(it.specialConsumptionTax), vatImport: plain(it.vatImport), vatImportCode: it.vatImportCode ?? '', vatImportBase: plain(it.vatImportBase) });
 const money = (v: string): string => (D(v).isZero() ? '' : formatVnNumber(v, D(v).decimalPlaces()));
 
 // Ô số của lưới: nhập theo định dạng Việt Nam (1.000.000,5), để trống là chưa nhập, chữ sai hoặc quá giới hạn thì giữ giá trị cũ.
@@ -187,7 +187,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
       ...(goodsLine ? { itemCode: r.itemCode.trim(), uomCode: r.uomCode.trim(), ...(r.warehouseCode.trim() ? { warehouseCode: r.warehouseCode.trim() } : {}), ...(r.lotNo.trim() ? { lotNo: r.lotNo.trim() } : {}),
         ...(r.expiryDate.trim() ? { expiryDate: r.expiryDate.trim() } : {}), ...(r.sourceLineId.trim() ? { sourceLineId: Number(r.sourceLineId) } : {}) } : {}),
       ...(imp ? { importMode: true, ...(r.importTax ? { importTax: r.importTax } : {}), ...(r.specialConsumptionTax ? { specialConsumptionTax: r.specialConsumptionTax } : {}), ...(r.vatImport ? { vatImport: r.vatImport } : {}),
-        ...(r.vatImportCode.trim() ? { vatImportCode: r.vatImportCode.trim() } : {}) } : {}) }];
+        ...(r.vatImportCode.trim() ? { vatImportCode: r.vatImportCode.trim() } : {}), ...(r.vatImportBase ? { vatImportBase: r.vatImportBase } : {}) } : {}) }];
   });
   const body = (f: FormValues) => {
     const items = itemsBody();
@@ -265,7 +265,8 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
       ...(isMH && importMode ? [numCol('importTax', 'Thuế NK (đồng)', (n) => VND_AMOUNT_RE.test(n), { width: 130, headerTooltip: 'Thuế nhập khẩu theo tờ khai hải quan' }),
         numCol('specialConsumptionTax', 'Thuế TTĐB (đồng)', (n) => VND_AMOUNT_RE.test(n), { width: 140, headerTooltip: 'Thuế tiêu thụ đặc biệt hàng nhập khẩu theo tờ khai' }),
         numCol('vatImport', 'Thuế GTGT hàng NK (đồng)', (n) => VND_AMOUNT_RE.test(n), { width: 170, headerTooltip: 'Thuế GTGT hàng nhập khẩu theo tờ khai (Nợ 1331 / Có 33312)' }),
-        { field: 'vatImportCode', headerName: 'Mã thuế GTGT NK (F4)', width: 160 }] satisfies ColDef<InvRow>[] : []),
+        { field: 'vatImportCode', headerName: 'Mã thuế GTGT NK (F4)', width: 160 },
+        numCol('vatImportBase', 'Giá tính thuế GTGT NK (đồng)', (n) => VND_AMOUNT_RE.test(n), { width: 190, headerTooltip: 'Theo tờ khai hải quan; để trống: tiền hàng quy đổi + thuế NK + thuế TTĐB' })] satisfies ColDef<InvRow>[] : []),
       { field: 'departmentCode', headerName: 'Bộ phận', width: 100 }, { field: 'projectCode', headerName: 'Vụ việc', width: 100 }, { field: 'costItemCode', headerName: 'Khoản mục', width: 110 },
     ] satisfies ColDef<InvRow>[]).map(live);
   }, [scope, isVnd, dp, goodsDoc, isMH, stockMode, importMode]);
