@@ -595,16 +595,20 @@ describe('B02 TT99: số thuần chênh lệch đánh giá lại', () => {
     const r = await b02(t); expect([r['22'], r['23']]).toEqual(['0', '0']);
   });
 
-  it('đảo khoản gốc sau ngày DG rồi chạy lại đánh giá lại: DG lãi, CL lỗ, đảo DG và CL lãi bù nhau, mã 22 chỉ còn lãi của lần chạy mới', async () => {
+  it('đảo khoản gốc ngày 10/02 rồi chạy lại đánh giá lại 31/01: DG2 đánh giá lại cả KH001 (700.000) và KH002 (140.000), CL2 lỗ 100.000; B02 mã 22 = 140.000, mã 23 = 0', async () => {
     const t = await tenant('TT99');
     const inv = await t.usdInvoice('2026-01-10', '1000', '25000');
     const first = await t.revalOk(); // @25.600: lãi 600.000 (DG1)
     await t.lock('soft');
     expect((await t.call('POST', `/api/vouchers/${inv.id}/reverse`, { postingDate: '2026-02-10' })).statusCode).toBe(201); // CL1: lỗ 600.000
     await t.usdInvoice('2026-01-20', '200', '25000', 'KH002');
-    const again = await t.revalOk({ rates: { USD: '25700' } }); // đảo DG1, DG2 lãi 140.000 (KH002), thêm CL đóng phần dư khoản con đã đảo
+    const again = await t.revalOk({ rates: { USD: '25700' } }); // đảo DG1, ghi DG2 (KH001 700.000 + KH002 140.000), thêm CL2
     expect(again.reversedVoucherIds).toEqual(first.voucherIds);
     expect(await t.cls()).toHaveLength(2);
+    // khoản gốc KH001 còn mở ngày 31/01 (bản đảo ngày 10/02) nên DG2 đánh giá lại cả KH001 lẫn KH002; 515 chỉ một dòng tổng, chi tiết theo đối tượng nằm ở các dòng 131
+    expect(await t.lines(again.voucherIds[0]!)).toEqual([['131', 'KH001', null, '700000', '0', '0.0000', null], ['131', 'KH002', null, '140000', '0', '0.0000', null], ['515', null, null, '0', '840000', '-840000.0000', null]]);
+    // CL2 = lỗ 100.000: số dư khoản con KH001 −600.000 (DG1 đã đảo) + 700.000 (DG2)
+    expect(await t.lines((await t.cls())[1]!)).toEqual([['635', null, null, '100000', '0', '100000.0000', null], ['131', 'KH001', null, '0', '100000', '0.0000', null]]);
     expect([await t.net('515'), await t.net('635')]).toEqual(['-840000', '700000']); // gộp (cùng số với kịch bản ở trên): chênh ròng 140.000 = lãi KH002; các khoản của KH001 tự bù
     const r = await b02(t); expect([r['22'], r['23']]).toEqual(['140000', '0']);
   });
