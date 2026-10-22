@@ -16,6 +16,7 @@ import { renderStockVoucherHtml, stockPrintLines } from '../reporting/print/stoc
 import { renderPdf } from '../reporting/print/pdf.js';
 import { renderVoucherHtml } from '../reporting/print/voucherHtml.js';
 import { assertSensitive } from '../reporting/ledgers.js';
+import { cashFlowCodes } from '../reporting/financial.js';
 
 const idParam = z.object({ id: z.string().uuid() });
 // Sửa chứng từ đã ghi sổ: phải có diễn giải hoặc ít nhất một dòng cần sửa (thân {} hay chỉ { version } không đổi gì).
@@ -63,6 +64,9 @@ const routes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/api/voucher-types', { preHandler: app.requireAuth }, async (req) => app.withTenant(req, (trx) => trx.selectFrom('voucher_type').selectAll().where('is_active', '=', true).orderBy('code').execute()));
 
+  // Danh mục mã luồng tiền (F4 ở dòng tiền) theo chế độ của kỳ chứa ngày hạch toán.
+  app.get('/api/cash-flow-codes', { preHandler: app.requireAuth, schema: { querystring: z.object({ date: S.dateIso }) } }, async (req) =>
+    app.withTenant(req, async (trx) => cashFlowCodes(trx, (await S.periodOf(trx, req.query.date, 'PKT')).regime)));
   app.get('/api/vouchers', { preHandler: app.requirePermission('voucher.view'), schema: { querystring: z.object({ type: z.string().optional(), from: S.dateIso.optional(), to: S.dateIso.optional(),
       state: z.enum(['draft', 'posted', 'reversed', 'cancelled']).optional(), q: z.string().optional(), partyCode: z.string().optional(), page: z.coerce.number().int().min(1).default(1), size: z.coerce.number().int().min(1).max(500).default(50) }) } },
     async (req) => app.withTenant(req, async (trx) => {

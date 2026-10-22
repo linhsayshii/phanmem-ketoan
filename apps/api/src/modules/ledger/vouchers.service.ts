@@ -6,6 +6,7 @@ import { CASH_PURPOSES, D, HEADER_FIELD_LABELS, sum, SYSTEM_VOUCHER_TYPES, VND_A
 import { AppError } from '../../plugins/errors.js';
 import { likePattern } from '../master/crud.js';
 import { assertSensitive } from '../reporting/ledgers.js';
+import { cashFlowCodes } from '../reporting/financial.js';
 import { DECLARING_TYPES, deleteInvoiceRows, insertInvoiceRows, listInvoiceRows, resolveDeclared, voucherInvoiceInput, type VoucherInvoiceDto } from '../invoices/declaration.js';
 
 export const dateIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -24,6 +25,8 @@ export const lineInput = z.object({
   partyCode: z.string().nullable().optional(), departmentCode: z.string().nullable().optional(), projectCode: z.string().nullable().optional(),
   costItemCode: z.string().nullable().optional(), employeeCode: z.string().nullable().optional(), description: z.string().nullable().optional(),
   dueDate: dateIso.nullable().optional(), extraDims: z.record(z.string()).optional(), bankAccountNo: optText(50),
+  // Mã luồng tiền (mã chỉ tiêu B03) chỉ ở dòng tài khoản tiền; hạn (dueDate) của dòng tài khoản không theo khoản là ngày đáo hạn (B01 tách ngắn hạn, dài hạn).
+  cashFlowCode: z.string().max(10).nullable().optional(),
   // Hàng và kho của dòng sổ cái (phiếu kho đặt; dòng tài khoản kho bắt buộc có hàng).
   itemCode: z.string().nullable().optional(), warehouseCode: z.string().nullable().optional(),
   // Kế hoạch đối trừ (thu/chi từ hóa đơn, bù trừ công nợ): khoản công nợ của dòng đối trừ với các khoản này khi ghi sổ.
@@ -41,7 +44,7 @@ export const voucherInput = z.object({
 });
 export const metaInput = z.object({
   description: z.string().nullable().optional(),
-  lines: z.array(lineInput.pick({ departmentCode: true, projectCode: true, costItemCode: true, employeeCode: true, description: true, dueDate: true }).extend({ lineNo: z.number().int() })).optional(),
+  lines: z.array(lineInput.pick({ departmentCode: true, projectCode: true, costItemCode: true, employeeCode: true, description: true, dueDate: true, cashFlowCode: true }).extend({ lineNo: z.number().int() })).optional(),
 });
 export type VoucherInput = z.infer<typeof voucherInput>;
 export type LineInput = z.infer<typeof lineInput>;
@@ -114,6 +117,7 @@ async function resolveLine(lookup: Lookup, l: LineInput, currency: string, heade
     employee_id: (await lookup('employee', l.employeeCode)) as number | null,
     item_id: (await lookup('item', l.itemCode)) as number | null, warehouse_id: (await lookup('warehouse', l.warehouseCode)) as number | null,
     extra_dims: JSON.stringify(l.extraDims ?? {}), description: l.description ?? null, due_date: l.dueDate ?? null, bank_account_id: null as number | null,
+    cash_flow_code: l.cashFlowCode || null,
   };
 }
 type ResolvedLine = Awaited<ReturnType<typeof resolveLine>>;
@@ -129,7 +133,7 @@ export async function getVoucher(trx: Trx, id: string): Promise<VoucherDto> {
     .leftJoin('party as p', 'p.id', 'l.party_id').leftJoin('department as d', 'd.id', 'l.department_id').leftJoin('project as pr', 'pr.id', 'l.project_id')
     .leftJoin('cost_item as ci', 'ci.id', 'l.cost_item_id').leftJoin('employee as e', 'e.id', 'l.employee_id').leftJoin('bank_account as lb', 'lb.id', 'l.bank_account_id')
     .select(['l.line_no', 'a.code as account_code', 'a.name as account_name', 'l.debit', 'l.credit', 'l.amount_currency', 'l.fx_rate', 'p.code as party_code', 'p.name as party_name',
-      'd.code as department_code', 'pr.code as project_code', 'ci.code as cost_item_code', 'e.code as employee_code', 'l.description', 'l.due_date', 'l.extra_dims', 'lb.account_no as bank_account_no'])
+      'd.code as department_code', 'pr.code as project_code', 'ci.code as cost_item_code', 'e.code as employee_code', 'l.description', 'l.due_date', 'l.extra_dims', 'lb.account_no as bank_account_no', 'l.cash_flow_code'])
     .where('l.voucher_id', '=', id).where('l.posting_date', '=', v.posting_date).orderBy('l.line_no').execute(); // posting_date: chỉ quét partition của tháng chứng từ
   // Kế hoạch đối trừ của chứng từ nháp (ghi sổ thì đã áp và xóa)
   const plans = new Map<number, NonNullable<LineInput['settle']>>();
@@ -144,7 +148,7 @@ export async function getVoucher(trx: Trx, id: string): Promise<VoucherDto> {
     totalDebit: sum(lines.map((l) => l.debit)).toString(), invoices: await listInvoiceRows(trx, id),
     lines: lines.map((l) => ({ lineNo: l.line_no, accountCode: l.account_code, accountName: l.account_name, debit: l.debit, credit: l.credit, amountCurrency: l.amount_currency, fxRate: l.fx_rate ?? undefined,
       partyCode: l.party_code, partyName: l.party_name, departmentCode: l.department_code, projectCode: l.project_code, costItemCode: l.cost_item_code, employeeCode: l.employee_code,
-      description: l.description, dueDate: l.due_date, extraDims: l.extra_dims as Record<string, string>, bankAccountNo: l.bank_account_no, ...(plans.has(l.line_no) && { settle: plans.get(l.line_no) }) })),
+      description: l.description, dueDate: l.due_date, extraDims: l.extra_dims as Record<string, string>, bankAccountNo: l.bank_account_no, cashFlowCode: l.cash_flow_code, ...(plans.has(l.line_no) && { settle: plans.get(l.line_no) }) })),
   };
 }
 
@@ -206,6 +210,17 @@ function assertTypeRules(def: VoucherTypeDef, input: VoucherInput, lines: Resolv
   }
 }
 
+// Mã luồng tiền: chỉ ở dòng tài khoản tiền mặt, tiền gửi (B03 lấy chiều thu/chi theo bên Nợ/Có của dòng tiền) và phải là dòng luồng tiền của B03 của chế độ.
+async function assertCashFlowCodes(trx: Trx, regime: string, lines: { lineNo: number; code: string | null | undefined; kind: string | null }[]) {
+  const coded = lines.filter((l) => l.code);
+  if (!coded.length) return;
+  const valid = new Set((await cashFlowCodes(trx, regime)).map((c) => c.code));
+  for (const l of coded) {
+    if (l.kind !== 'cash' && l.kind !== 'bank') throw new AppError('CASH_FLOW_CODE_INVALID', `Dòng ${l.lineNo}: mã luồng tiền chỉ ghi ở dòng tài khoản tiền mặt, tiền gửi`, 400);
+    if (!valid.has(l.code!)) throw new AppError('CASH_FLOW_CODE_INVALID', `Dòng ${l.lineNo}: mã luồng tiền "${l.code}" không có trong Báo cáo lưu chuyển tiền tệ của chế độ ${regime}`, 400);
+  }
+}
+
 type BankRef = { id: number; gl: string };
 // Tra tài khoản ngân hàng của công ty theo số tài khoản, nhớ kết quả trong một lần ghi.
 function bankLookup(trx: Trx) {
@@ -243,6 +258,7 @@ async function prepareVoucher(trx: Trx, lookup: Lookup, input: SystemVoucherInpu
   for (const l of input.lines) lines.push(await resolveLine(lookup, l, l.currencyCode ?? input.currencyCode, input.fxRate));
   const def = voucherTypeDef(input.voucherType);
   if (def) assertTypeRules(def, input, lines, lookup.accounts, regime);
+  await assertCashFlowCodes(trx, regime, lines.map((l, i) => ({ lineNo: i + 1, code: l.cash_flow_code, kind: lookup.accounts.get(l.account_id)?.kind ?? null })));
   // Dòng riêng ghi tài khoản ngân hàng thì dùng; dòng trên tài khoản ngân hàng không ghi thì lấy của tiêu đề. Chuyển tiền nội bộ: dòng Có là tài khoản chuyển đi (bankAccountNo), dòng Nợ là tài khoản nhận (counterBankAccountNo).
   const transfer = def?.header.includes('counterBankAccount') ?? false;
   for (const [i, r] of lines.entries()) {
@@ -350,7 +366,7 @@ async function insertVoucher(trx: Trx, ctx: { tenantId: string; userId: string; 
 }
 
 async function lockAndCheckVersion(trx: Trx, id: string, version: number) {
-  const v = await trx.selectFrom('voucher').select(['id', 'version', 'state', 'tenant_id', 'voucher_no', 'voucher_type', 'fiscal_year', 'source_doc_type']).where('id', '=', id).forUpdate().executeTakeFirst();
+  const v = await trx.selectFrom('voucher').select(['id', 'version', 'state', 'tenant_id', 'voucher_no', 'voucher_type', 'fiscal_year', 'period_no', 'source_doc_type']).where('id', '=', id).forUpdate().executeTakeFirst();
   if (!v) throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy chứng từ', 404);
   if (v.version !== version) throw new AppError('VERSION_CONFLICT', 'Chứng từ đã được người khác sửa, hãy tải lại', 409);
   return v;
@@ -398,10 +414,18 @@ export async function updatePostedMeta(trx: Trx, id: string, version: number, in
   if (input.description === undefined && !input.lines?.length) return getVoucher(trx, id);
   if (input.lines?.length) failIfSystem(v.source_doc_type); // diễn giải ở đầu chứng từ vẫn sửa được; dòng thì không
   const lookup = lookupIn(trx);
+  const coded = (input.lines ?? []).filter((l) => l.cashFlowCode);
+  if (coded.length) {
+    const kinds = new Map((await trx.selectFrom('voucher_line as l').innerJoin('account as a', 'a.id', 'l.account_id').select(['l.line_no', 'a.subledger_kind'])
+      .where('l.voucher_id', '=', id).where('l.line_no', 'in', coded.map((l) => l.lineNo)).execute()).map((r) => [r.line_no, r.subledger_kind]));
+    const { regime } = await trx.selectFrom('fiscal_period').select('regime').where('fiscal_year', '=', v.fiscal_year).where('period_no', '=', v.period_no).executeTakeFirstOrThrow();
+    await assertCashFlowCodes(trx, regime, coded.map((l) => ({ lineNo: l.lineNo, code: l.cashFlowCode, kind: kinds.get(l.lineNo) ?? null })));
+  }
   for (const l of input.lines ?? []) {
     const set: Record<string, unknown> = {};
     if (l.description !== undefined) set['description'] = l.description;
     if (l.dueDate !== undefined) set['due_date'] = l.dueDate;
+    if (l.cashFlowCode !== undefined) set['cash_flow_code'] = l.cashFlowCode || null;
     if (l.departmentCode !== undefined) set['department_id'] = await lookup('department', l.departmentCode);
     if (l.projectCode !== undefined) set['project_id'] = await lookup('project', l.projectCode);
     if (l.costItemCode !== undefined) set['cost_item_id'] = await lookup('cost_item', l.costItemCode);
@@ -435,7 +459,7 @@ export async function duplicateVoucher(trx: Trx, ctx: { tenantId: string; userId
     fxRate: src.fxRate ?? undefined, personName: src.personName, personAddress: src.personAddress, attachmentsCount: src.attachmentsCount, bankAccountNo: src.bankAccountNo,
     counterBankAccountNo: src.counterBankAccountNo, partyBankAccountNo: src.partyBankAccountNo, dueDate: src.dueDate, purpose: src.purpose,
     lines: src.lines.map((l) => ({ accountCode: l.accountCode, debit: l.debit, credit: l.credit, amountCurrency: l.amountCurrency, fxRate: l.fxRate, partyCode: l.partyCode,
-      departmentCode: l.departmentCode, projectCode: l.projectCode, costItemCode: l.costItemCode, employeeCode: l.employeeCode, description: l.description, dueDate: l.dueDate, extraDims: l.extraDims, bankAccountNo: l.bankAccountNo })) });
+      departmentCode: l.departmentCode, projectCode: l.projectCode, costItemCode: l.costItemCode, employeeCode: l.employeeCode, description: l.description, dueDate: l.dueDate, extraDims: l.extraDims, bankAccountNo: l.bankAccountNo, cashFlowCode: l.cashFlowCode })) });
 }
 export async function deleteDraft(trx: Trx, id: string): Promise<void> {
   await assertNotSystemGenerated(trx, id);

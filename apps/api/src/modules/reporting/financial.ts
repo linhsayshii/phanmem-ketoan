@@ -1,6 +1,6 @@
 import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
-import { D, evaluateReport, parseFormula, sum, ZERO, type Decimal, type Expr, type ReportLineDef, type Resolver, type Side, type Source } from '@kt/domain';
+import { D, evaluateReport, parseFormula, sum, ZERO, type AccountRef, type Decimal, type Expr, type ReportLineDef, type Resolver, type Side, type Source } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { assertSensitive, regimeOf } from './ledgers.js';
 import { formNoFor } from './print/forms.js';
@@ -31,11 +31,21 @@ export async function copyReportTemplates(trx: Trx, tenantId: string, regime: st
 // ---- Dữ liệu sổ cái của một báo cáo ----
 // Mỗi nguồn đọc đúng một lần cho cả báo cáo (không truy vấn lại cho từng hạng tử; fn_balances_at có thể phải quét sổ khi số dư kỳ đang bẩn), rồi từng hạng tử lọc theo tiền tố trong bộ nhớ.
 // Mọi truy vấn lọc theo chế độ của báo cáo: một công ty giữ nhiều hệ tài khoản trùng mã nên tiền tố '511' không được quét sang hệ khác.
-interface Unit { code: string; name: string; kind: string | null; partyCode: string | null; d: Decimal; c: Decimal }
-interface PairUnit { dcode: string; dname: string; dkind: string | null; ccode: string; cname: string; ckind: string | null; amount: Decimal }
+// long: phần dài hạn của số dư (chỉ khi báo cáo dùng LT(...)); đơn vị số dư khi đó tách thành phần ngắn hạn và phần dài hạn, mỗi phần lấy bên Nợ/Có riêng.
+interface Unit { code: string; name: string; kind: string | null; partyCode: string | null; d: Decimal; c: Decimal; long?: true }
+// cf: mã luồng tiền của cặp (mã của dòng Nợ, không có thì của dòng Có); cfSign +1 khi mã ở dòng Nợ (tiền vào), -1 khi ở dòng Có (tiền ra).
+interface PairUnit { dcode: string; dname: string; dkind: string | null; ccode: string; cname: string; ckind: string | null; amount: Decimal; cf: string | null; cfSign: number }
 const once = <T>(f: () => Promise<T>): (() => Promise<T>) => { let v: Promise<T> | undefined; return () => (v ??= f()); };
 
-export function reportData(trx: Trx, tenantId: string, regime: string, p: { from: string; to: string }) {
+const unitOf = (r: { code: string; name: string; kind: string | null; partyCode: string | null }, n: Decimal, long: boolean): Unit =>
+  ({ code: r.code, name: r.name, kind: r.kind, partyCode: r.partyCode, d: n.gt(0) ? n : ZERO, c: n.lt(0) ? n.neg() : ZERO, ...(long && { long: true as const }) });
+// Phần dài hạn của tài khoản không theo khoản (vay, tiền gửi có kỳ hạn...) lấy từ hạn ở dòng: dòng trả nợ không ghi hạn trừ vào phần ngắn hạn trước,
+// nên phần dài hạn cùng dấu với số dư và không vượt số dư.
+const clampLong = (n: Decimal, l: Decimal): Decimal => (n.isZero() || l.isZero() || n.isNeg() !== l.isNeg() ? ZERO : l.abs().gt(n.abs()) ? n : l);
+// Báo cáo dùng LT(...) (B01 TT99): mới đọc kỳ hạn, vì phải đọc thêm khoản công nợ và dòng có hạn.
+export const usesLongTerm = (formulas: (string | null)[]) => formulas.some((f) => /LT\s*\(/.test(f ?? ''));
+
+export function reportData(trx: Trx, tenantId: string, regime: string, p: { from: string; to: string }, opts: { longTerm?: boolean } = {}) {
   // Phát sinh trong kỳ không gồm chứng từ kết chuyển (KC và bản đảo của KC mang cờ is_closing), nếu không doanh thu/chi phí về 0.
   // onlyReval: chỉ nhóm đánh giá lại ngoại tệ cuối kỳ = dòng của chứng từ DG (source_doc_type 'fx_revaluation', gồm bản đảo do chạy lại; DG của TT133 qua 413 rồi kết chuyển cũng cùng loại)
   // và của chứng từ CL sinh khi đảo khoản công nợ đã đánh giá lại (đối trừ kiểu 'reversal' kèm fx_voucher_id): CL đó gỡ chênh lệch đánh giá lại của chính khoản ấy. CL đối trừ thông thường ('fx') và XQ không thuộc nhóm.
@@ -48,28 +58,54 @@ export function reportData(trx: Trx, tenantId: string, regime: string, p: { from
       GROUP BY a.id`.execute(trx)).rows.map((r) => ({ code: r.code, name: r.name, kind: r.kind, partyCode: null, d: D(r.d), c: D(r.c) }));
   return {
     // Đơn vị số dư: tài khoản công nợ theo từng đối tượng, tài khoản khác theo tài khoản; dư ròng gộp loại tiền. Nợ/Có của đơn vị là phần dư một bên.
-    balance: once(async (): Promise<Unit[]> => (await sql<{ code: string; name: string; kind: string | null; partyCode: string | null; net: string }>`
+    // Kỳ hạn (opts.longTerm): phần dài hạn = kỳ hạn còn lại trên 12 tháng kể từ ngày báo cáo. Tài khoản công nợ theo hạn thanh toán của từng khoản còn dư (open_item.due_date) tại ngày báo cáo,
+    // không chặn theo số dư (khoản dài hạn và khoản trả trước ngắn hạn của cùng đối tượng trình bày riêng hai bên); tài khoản khác theo hạn ghi ở dòng (voucher_line.due_date, ngày đáo hạn), chặn bởi clampLong.
+    balance: once(async (): Promise<Unit[]> => {
+      const base = (await sql<{ code: string; name: string; kind: string | null; partyCode: string | null; net: string }>`
       SELECT a.code, a.name, a.subledger_kind AS kind, pt.code AS "partyCode", x.n::text AS net FROM (
         SELECT a.id, CASE WHEN a.subledger_kind IN ('receivable','payable') THEN b.party_id END AS party_id, sum(b.debit - b.credit) AS n
         FROM fn_balances_at(${tenantId}::uuid, ${p.to}::date) b JOIN account a ON a.id = b.account_id WHERE a.regime = ${regime}
         GROUP BY 1, 2 HAVING sum(b.debit - b.credit) <> 0) x
-      JOIN account a ON a.id = x.id LEFT JOIN party pt ON pt.id = x.party_id`.execute(trx)).rows.map((r) => { const n = D(r.net); return { code: r.code, name: r.name, kind: r.kind, partyCode: r.partyCode, d: n.gt(0) ? n : ZERO, c: n.lt(0) ? n.neg() : ZERO }; })),
+      JOIN account a ON a.id = x.id LEFT JOIN party pt ON pt.id = x.party_id`.execute(trx)).rows;
+      if (!opts.longTerm) return base.map((r) => unitOf(r, D(r.net), false));
+      const cutoff = shiftYear(p.to, 1);
+      const long = (await sql<{ code: string; name: string; kind: string | null; partyCode: string | null; net: string }>`
+      SELECT a.code, a.name, a.subledger_kind AS kind, pt.code AS "partyCode", x.n::text AS net FROM (
+        SELECT o.account_id AS id, o.party_id, sum(o.residual) AS n FROM fn_open_items_at(${tenantId}::uuid, ${p.to}::date) o
+        WHERE o.due_date > ${cutoff}::date GROUP BY 1, 2
+        UNION ALL
+        SELECT l.account_id, NULL::uuid, sum(l.debit - l.credit) FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
+        WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND l.posting_date <= ${p.to}::date AND l.due_date > ${cutoff}::date
+          AND a.subledger_kind IS DISTINCT FROM 'receivable' AND a.subledger_kind IS DISTINCT FROM 'payable' GROUP BY 1) x
+      JOIN account a ON a.id = x.id LEFT JOIN party pt ON pt.id = x.party_id WHERE a.regime = ${regime} AND x.n <> 0`.execute(trx)).rows;
+      const key = (r: { code: string; partyCode: string | null }) => `${r.code}|${r.partyCode ?? ''}`;
+      const rows = new Map(base.map((r) => [key(r), { r, n: D(r.net), l: ZERO }]));
+      for (const r of long) { const k = key(r); const x = rows.get(k); if (x) x.l = D(r.net); else rows.set(k, { r, n: ZERO, l: D(r.net) }); }
+      return [...rows.values()].flatMap(({ r, n, l }) => {
+        const lt = r.kind === 'receivable' || r.kind === 'payable' ? l : clampLong(n, l);
+        return [unitOf(r, n.minus(lt), false), ...(lt.isZero() ? [] : [unitOf(r, lt, true)])];
+      });
+    }),
     movement: once(() => movementRows(false)),
     reval: once(() => movementRows(true)),
     // Đối ứng gồm cả chứng từ kết chuyển; cả hai tài khoản của cặp phải thuộc chế độ của báo cáo.
-    pair: once(async (): Promise<PairUnit[]> => (await sql<{ dcode: string; dname: string; dkind: string | null; ccode: string; cname: string; ckind: string | null; amount: string }>`
-      SELECT ad.code AS dcode, ad.name AS dname, ad.subledger_kind AS dkind, ac.code AS ccode, ac.name AS cname, ac.subledger_kind AS ckind, sum(p.amount)::text AS amount
+    // Mã luồng tiền đọc từ hai dòng của cặp (cùng posting_date với cặp: chỉ quét partition của tháng).
+    pair: once(async (): Promise<PairUnit[]> => (await sql<{ dcode: string; dname: string; dkind: string | null; ccode: string; cname: string; ckind: string | null; amount: string; cf: string | null; cfSign: number }>`
+      SELECT ad.code AS dcode, ad.name AS dname, ad.subledger_kind AS dkind, ac.code AS ccode, ac.name AS cname, ac.subledger_kind AS ckind, sum(p.amount)::text AS amount,
+             coalesce(dl.cash_flow_code, cl.cash_flow_code) AS cf, CASE WHEN dl.cash_flow_code IS NOT NULL THEN 1 ELSE -1 END AS "cfSign"
       FROM voucher_pair p JOIN voucher v ON v.id = p.voucher_id JOIN account ad ON ad.id = p.debit_account_id JOIN account ac ON ac.id = p.credit_account_id
+        LEFT JOIN voucher_line dl ON dl.id = p.debit_line_id AND dl.posting_date = p.posting_date LEFT JOIN voucher_line cl ON cl.id = p.credit_line_id AND cl.posting_date = p.posting_date
       WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND ad.regime = ${regime} AND ac.regime = ${regime}
         AND p.posting_date BETWEEN ${p.from}::date AND ${p.to}::date
-      GROUP BY ad.id, ac.id`.execute(trx)).rows.map((r) => ({ ...r, amount: D(r.amount) }))),
+      GROUP BY ad.id, ac.id, 8, 9`.execute(trx)).rows.map((r) => ({ ...r, amount: D(r.amount) }))),
   };
 }
 type ReportData = ReturnType<typeof reportData>;
 const underAny = (code: string, prefixes: string[]) => prefixes.some((x) => code.startsWith(x));
 const matches = (code: string, ref: { prefix: string; exclude: string[] }) => code.startsWith(ref.prefix) && !underAny(code, ref.exclude);
 const pick = (side: Side, u: { d: Decimal; c: Decimal }): Decimal => side === 'debit' ? u.d : side === 'credit' ? u.c : side === 'net_debit' ? u.d.minus(u.c) : u.c.minus(u.d);
-const pairMatches = (r: PairUnit, debit: string[], credit: string[]) => underAny(r.dcode, debit) && underAny(r.ccode, credit);
+const pairMatches = (r: PairUnit, debit: string[], credit: string[], excludeCoded?: true) => underAny(r.dcode, debit) && underAny(r.ccode, credit) && !(excludeCoded && r.cf !== null);
+const matchesAny = (code: string, refs: AccountRef[]) => refs.some((r) => matches(code, r));
 
 // Đơn vị phát sinh sau khi trừ nhóm đánh giá lại (hậu tố !REVAL); đơn vị chỉ gồm nhóm đó còn Nợ = Có = 0, giữ lại vì cộng 0 không đổi số.
 async function movementWithoutReval(data: ReportData): Promise<Unit[]> {
@@ -87,8 +123,10 @@ async function netReval(data: ReportData): Promise<{ gain: Decimal; loss: Decima
 export function sqlResolver(data: ReportData): Resolver {
   return {
     async account(ref, source, side) { return sum((ref.excludeReval ? await movementWithoutReval(data) : await data[source]()).filter((u) => matches(u.code, ref)).map((u) => pick(side, u))); },
-    async pair(debit, credit) { return sum((await data.pair()).filter((r) => pairMatches(r, debit, credit)).map((r) => r.amount)); },
+    async pair(debit, credit, o) { return sum((await data.pair()).filter((r) => pairMatches(r, debit, credit, o?.excludeCoded)).map((r) => r.amount)); },
     reval: () => netReval(data),
+    async longTerm(refs, side) { return sum((await data.balance()).filter((u) => u.long && matchesAny(u.code, refs)).map((u) => pick(side, u))); },
+    async cashFlow(code) { return sum((await data.pair()).filter((r) => r.cf === code).map((r) => r.amount.times(r.cfSign))); },
   };
 }
 
@@ -122,7 +160,8 @@ export async function evaluateFinancialReport(trx: Trx, tenantId: string, q: { r
   const regime = await regimeOf(trx, q);
   const { def, lines } = await loadDef(trx, q.reportCode, regime);
   const defs: ReportLineDef[] = lines.map((l) => ({ lineCode: l.line_code, formula: l.formula, source: l.source as Source, side: l.side as Side }));
-  const run = (from: string, to: string) => evaluateReport(defs, sqlResolver(reportData(trx, tenantId, regime, { from, to })));
+  const longTerm = usesLongTerm(lines.map((l) => l.formula));
+  const run = (from: string, to: string) => evaluateReport(defs, sqlResolver(reportData(trx, tenantId, regime, { from, to }, { longTerm })));
   const current = await run(q.from, q.to);
   // B01: cột so sánh là "số đầu năm" = dư tại ngày trước ngày đầu năm tài chính chứa `to` (gồm DK kỳ 0); B02/B03: cùng kỳ năm trước khi được yêu cầu.
   const compareTo = q.reportCode === 'B01' ? dayBeforeIso(await yearStartOf(trx, q.to)) : q.comparePrevYear ? shiftYear(q.to, -1) : null;
@@ -139,7 +178,7 @@ export async function evaluateFinancialReport(trx: Trx, tenantId: string, q: { r
 // Các hạng tử tài khoản/đối ứng của công thức kèm dấu (+1/-1); số và dòng [x] không có tài khoản trực tiếp nên bỏ qua.
 function signedTerms(e: Expr, sign = 1): { sign: number; term: Expr }[] {
   if (e.kind === 'bin') return [...signedTerms(e.left, sign), ...signedTerms(e.right, e.op === '-' ? -sign : sign)];
-  return e.kind === 'account' || e.kind === 'pair' || e.kind === 'reval' ? [{ sign, term: e }] : [];
+  return e.kind === 'account' || e.kind === 'pair' || e.kind === 'reval' || e.kind === 'lt' || e.kind === 'cf' ? [{ sign, term: e }] : [];
 }
 
 // Truy ngược cấp 1: các đơn vị (tài khoản, đối tượng; hoặc cặp Nợ/Có với nguồn đối ứng) tạo nên chỉ tiêu, dùng đúng dữ liệu, tiền tố, loại trừ và dấu của công thức nên cộng lại bằng giá trị chỉ tiêu.
@@ -151,7 +190,7 @@ export async function drillLine(trx: Trx, tenantId: string, q: { reportCode: str
   const l = lines.find((x) => x.line_code === q.lineCode);
   if (!l) throw new AppError('REPORT_LINE_NOT_FOUND', `Báo cáo ${q.reportCode} không có dòng ${q.lineCode}`, 404);
   if (!l.formula?.trim()) return { accounts: [] };
-  const data = reportData(trx, tenantId, regime, q); const side = l.side as Side;
+  const data = reportData(trx, tenantId, regime, q, { longTerm: usesLongTerm([l.formula]) }); const side = l.side as Side;
   const rows = new Map<string, DrillRow>();
   const add = (key: string, row: Omit<DrillRow, 'amount'>, amount: Decimal) => rows.set(key, { ...row, amount: (rows.get(key)?.amount ?? ZERO).plus(amount) });
   for (const { sign, term } of signedTerms(parseFormula(l.formula))) {
@@ -162,9 +201,13 @@ export async function drillLine(trx: Trx, tenantId: string, q: { reportCode: str
       // Số thuần đánh giá lại là một con số của cả nhóm, không tách theo tài khoản: một dòng kind 'reval_net' mang mã 515 (lãi) hoặc 635 (lỗ), khác dòng tài khoản 515/635 thật.
       const net = await netReval(data); const gain = term.side === 'gain';
       add(`REVAL|${term.side}`, { kind: 'reval_net', accountCode: gain ? REVAL_GAIN_PREFIX : REVAL_LOSS_PREFIX, accountName: `Chênh lệch đánh giá lại ngoại tệ cuối kỳ (${gain ? 'lãi' : 'lỗ'} thuần)`, partyCode: null, checks: [] }, (gain ? net.gain : net.loss).times(sign));
-    } else if (term.kind === 'pair') {
-      for (const r of await data.pair()) if (pairMatches(r, term.debit, term.credit))
-        add(`${r.dcode}|${r.ccode}`, { accountCode: r.dcode, accountName: r.dname, counterAccountCode: r.ccode, partyCode: null, checks: [{ code: r.dcode, kind: r.dkind }, { code: r.ccode, kind: r.ckind }] }, r.amount.times(sign));
+    } else if (term.kind === 'lt') {
+      for (const u of await data.balance()) if (u.long && matchesAny(u.code, term.refs))
+        add(`${u.code}|${u.partyCode ?? ''}`, { accountCode: u.code, accountName: u.name, partyCode: u.partyCode, checks: [{ code: u.code, kind: u.kind }] }, pick(side, u).times(sign));
+    } else if (term.kind === 'pair' || term.kind === 'cf') {
+      // Cặp có mã luồng tiền: theo dấu tiền vào/ra của mã (CF), cùng khóa với cặp không mã nên cặp cùng tài khoản gộp một dòng.
+      for (const r of await data.pair()) if (term.kind === 'cf' ? r.cf === term.code : pairMatches(r, term.debit, term.credit, term.excludeCoded))
+        add(`${r.dcode}|${r.ccode}`, { accountCode: r.dcode, accountName: r.dname, counterAccountCode: r.ccode, partyCode: null, checks: [{ code: r.dcode, kind: r.dkind }, { code: r.ccode, kind: r.ckind }] }, r.amount.times(term.kind === 'cf' ? sign * r.cfSign : sign));
     }
   }
   const out = [...rows.values()].filter((r) => !r.amount.isZero())
@@ -178,7 +221,7 @@ export interface ReportLineInput { lineCode: string; label: string; parentLineCo
 
 // Lưu toàn bộ dòng của một báo cáo. Kiểm tra trước khi ghi: cú pháp công thức, dòng [x] tồn tại, không vòng lặp (chạy thử với bộ giải trả 0), mã dòng không trùng, dòng cha tồn tại.
 export async function saveReportDef(trx: Trx, tenantId: string, regime: string, reportCode: string, lines: ReportLineInput[]): Promise<void> {
-  await evaluateReport(lines.map((l) => ({ lineCode: l.lineCode, formula: l.formula, source: l.source, side: l.side })), { account: async () => ZERO, pair: async () => ZERO, reval: async () => ({ gain: ZERO, loss: ZERO }) });
+  await evaluateReport(lines.map((l) => ({ lineCode: l.lineCode, formula: l.formula, source: l.source, side: l.side })), { account: async () => ZERO, pair: async () => ZERO, reval: async () => ({ gain: ZERO, loss: ZERO }), longTerm: async () => ZERO, cashFlow: async () => ZERO });
   const codes = new Set(lines.map((l) => l.lineCode));
   if (codes.size !== lines.length) throw new AppError('VALIDATION', 'Mã dòng bị trùng', 400);
   for (const l of lines) if (l.parentLineCode && !codes.has(l.parentLineCode)) throw new AppError('VALIDATION', `Dòng ${l.lineCode}: không có dòng cha ${l.parentLineCode}`, 400);
@@ -194,4 +237,10 @@ export async function saveReportDef(trx: Trx, tenantId: string, regime: string, 
   await trx.deleteFrom('report_line').where('report_def_id', '=', d.id).execute();
   if (lines.length) await trx.insertInto('report_line').values(lines.map((l, i) => ({ tenant_id: tenantId, report_def_id: d.id, line_code: l.lineCode, label: l.label, parent_line_code: l.parentLineCode, source: l.source, side: l.side,
     formula: l.formula, sort_order: i + 1, is_bold: l.isBold, negate: l.negate, note_ref: l.noteRef }))).execute();
+}
+
+// Danh mục mã luồng tiền của chế độ: các dòng luồng tiền (nguồn đối ứng, có dòng cha) của định nghĩa B03 của công ty; công ty chưa có B03 thì rỗng.
+export async function cashFlowCodes(trx: Trx, regime: string): Promise<{ code: string; name: string }[]> {
+  return trx.selectFrom('report_line as l').innerJoin('report_def as d', 'd.id', 'l.report_def_id').select(['l.line_code as code', 'l.label as name'])
+    .where('d.report_code', '=', 'B03').where('d.regime', '=', regime).where('l.source', '=', 'pair').where('l.parent_line_code', 'is not', null).orderBy('l.sort_order').execute();
 }

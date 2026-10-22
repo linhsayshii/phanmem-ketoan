@@ -31,8 +31,9 @@ describe('mẫu báo cáo tài chính', () => {
   });
   it('định dạng: đối ứng có dấu phẩy được bọc nháy; chỉ tiêu tiêu biểu đúng văn bản gốc', () => {
     const get = (r: Regime, c: string, l: string) => rows.find((x) => x.regime === r && x.reportCode === c && x.lineCode === l);
-    expect(get('TT99', 'B03', '03')).toMatchObject({ formula: 'N334/C111,112,113', negate: true, source: 'pair' });
-    expect(get('TT99', 'B01', '135')).toMatchObject({ formula: '1388+334+338+141+244', source: 'balance', side: 'debit', parentLineCode: '130' });
+    expect(get('TT99', 'B03', '03')).toMatchObject({ formula: 'N334/C111,112,113!CF-CF(03)', negate: true, source: 'pair' });
+    expect(get('TT99', 'B01', '135')).toMatchObject({ formula: '1388+334+338+141+244-LT(1388,334,338,141,244)', source: 'balance', side: 'debit', parentLineCode: '130' });
+    expect(get('TT99', 'B01', '215')).toMatchObject({ formula: 'LT(1388,334,338,141,244)', source: 'balance', side: 'debit', parentLineCode: '210' });
     expect(get('TT133', 'B01', '124')).toMatchObject({ formula: '2291+2292', side: 'credit', negate: true });
   });
   it('cây tổng khép kín: tổng tài sản, tổng nguồn vốn, lợi nhuận sau thuế, lưu chuyển tiền thuần', () => {
@@ -71,5 +72,10 @@ describe('mẫu báo cáo tài chính', () => {
   it('B02 TT99: chỉ mã 22 và 23 dùng số thuần đánh giá lại (dòng phát sinh); TT133 không dùng', () => {
     const withReval = rows.filter((r) => /REVAL/.test(r.formula ?? '')).map((r) => [r.regime, r.reportCode, r.lineCode, r.source, r.formula]);
     expect(withReval).toEqual([['TT99', 'B02', '22', 'movement', '515!REVAL + REVAL_GAIN'], ['TT99', 'B02', '23', 'movement', '635!REVAL + REVAL_LOSS']]);
+  });
+  it('kỳ hạn và mã luồng tiền: LT chỉ ở dòng số dư B01 TT99; mỗi dòng luồng tiền B03 bỏ cặp có mã (!CF) và cộng CF(mã của chính nó) theo chiều thu/chi', () => {
+    for (const r of rows.filter((x) => /LT\(/.test(x.formula ?? ''))) expect([r.regime, r.reportCode, r.source]).toEqual(['TT99', 'B01', 'balance']);
+    for (const regime of REGIMES) for (const l of rows.filter((x) => x.regime === regime && x.reportCode === 'B03' && x.source === 'pair' && x.parentLineCode))
+      expect(l.formula, `${regime}/B03/${l.lineCode}`).toMatch(new RegExp(`^N[^!]+!CF${l.negate ? '-' : '\\+'}CF\\(${l.lineCode}\\)$`));
   });
 });

@@ -169,6 +169,7 @@ export interface VoucherLineTable {
   cost_item_id: number | null; contract_id: number | null; employee_id: number | null; asset_id: number | null;
   // jsonb NOT NULL DEFAULT '{}': Generated<JSONColumnType<...>> không bung được kiểu lồng nên khai báo thẳng ColumnType.
   extra_dims: ColumnType<Record<string, unknown>, string | undefined, string>; description: string | null; due_date: DateOnly | null; bank_account_id: number | null;
+  cash_flow_code: string | null; // mã chỉ tiêu B03 (dòng tiền), 0066
 }
 export interface VoucherCounterTable { tenant_id: string; voucher_type: string; fiscal_year: number; last_no: Generated<number> }
 export interface VoucherLineHistoryTable {

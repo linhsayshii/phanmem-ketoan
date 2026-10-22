@@ -2,13 +2,20 @@ import { D, ZERO, type Decimal } from './money.js';
 
 export type Side = 'debit' | 'credit' | 'net_debit' | 'net_credit';
 export type Source = 'balance' | 'movement' | 'pair' | 'lines';
-export type Expr = { kind: 'bin'; op: '+' | '-'; left: Expr; right: Expr } | { kind: 'line'; code: string } | { kind: 'pair'; debit: string[]; credit: string[] } | { kind: 'account'; prefix: string; exclude: string[]; excludeReval?: true } | { kind: 'reval'; side: 'gain' | 'loss' } | { kind: 'num'; value: string };
+export interface AccountRef { prefix: string; exclude: string[] }
+export type Expr = { kind: 'bin'; op: '+' | '-'; left: Expr; right: Expr } | { kind: 'line'; code: string } | { kind: 'pair'; debit: string[]; credit: string[]; excludeCoded?: true }
+  | { kind: 'account'; prefix: string; exclude: string[]; excludeReval?: true } | { kind: 'reval'; side: 'gain' | 'loss' } | { kind: 'num'; value: string }
+  | { kind: 'lt'; refs: AccountRef[] } | { kind: 'cf'; code: string };
 export interface ReportLineDef { lineCode: string; formula: string | null; source: Source; side: Side }
 // excludeReval (hậu tố !REVAL): trừ các dòng thuộc nhóm đánh giá lại ngoại tệ cuối kỳ. reval(): lãi/lỗ thuần của nhóm đó (luôn >= 0, một trong hai bằng 0).
+// longTerm (LT(tk,...)): phần dài hạn (kỳ hạn còn lại trên 12 tháng kể từ ngày báo cáo) của số dư các tài khoản, lấy theo bên `side` của dòng.
+// excludeCoded (hậu tố !CF ở đối ứng): bỏ các cặp có dòng mang mã luồng tiền; cashFlow (CF(mã)): luồng tiền thuần (thu dương, chi âm) của các dòng tiền gắn mã đó.
 export interface Resolver {
   account(ref: { prefix: string; exclude: string[]; excludeReval?: true }, source: 'balance' | 'movement', side: Side): Promise<Decimal>;
-  pair(debit: string[], credit: string[]): Promise<Decimal>;
+  pair(debit: string[], credit: string[], opts?: { excludeCoded: true }): Promise<Decimal>;
   reval(): Promise<{ gain: Decimal; loss: Decimal }>;
+  longTerm(refs: AccountRef[], side: Side): Promise<Decimal>;
+  cashFlow(code: string): Promise<Decimal>;
 }
 
 // Lỗi công thức (cú pháp, vòng lặp, dòng không tồn tại): tầng API dịch thành 400 FORMULA_INVALID.
@@ -16,7 +23,7 @@ export class FormulaError extends Error {
   constructor(message: string) { super(message); this.name = 'FormulaError'; }
 }
 
-type Tok = { t: 'code' | 'line' | 'op' | 'lp' | 'rp' | 'comma' | 'N' | 'C' | 'slash' | 'noreval' | 'reval'; v: string };
+type Tok = { t: 'code' | 'line' | 'op' | 'lp' | 'rp' | 'comma' | 'N' | 'C' | 'slash' | 'noreval' | 'reval' | 'nocf' | 'lt' | 'cf'; v: string };
 function tokenize(src: string): Tok[] {
   const out: Tok[] = []; let i = 0;
   while (i < src.length) {
@@ -28,8 +35,8 @@ function tokenize(src: string): Tok[] {
     if (ch === ')') { out.push({ t: 'rp', v: ch }); i++; continue; }
     if (ch === ',') { out.push({ t: 'comma', v: ch }); i++; continue; }
     if (ch === '/') { out.push({ t: 'slash', v: ch }); i++; continue; }
-    const word = /^(!REVAL|REVAL_GAIN|REVAL_LOSS)(?![\w])/.exec(src.slice(i));
-    if (word) { const w = word[1]!; out.push({ t: w === '!REVAL' ? 'noreval' : 'reval', v: w }); i += w.length; continue; }
+    const word = /^(!REVAL|REVAL_GAIN|REVAL_LOSS|!CF|CF|LT)(?![\w])/.exec(src.slice(i));
+    if (word) { const w = word[1]!; out.push({ t: w === '!REVAL' ? 'noreval' : w === '!CF' ? 'nocf' : w === 'CF' ? 'cf' : w === 'LT' ? 'lt' : 'reval', v: w }); i += w.length; continue; }
     if (ch === 'N' || ch === 'C') { out.push({ t: ch, v: ch }); i++; continue; }
     if (/\d/.test(ch)) {
       let j = i; while (j < src.length && /[\d.]/.test(src[j]!)) j++;
@@ -51,7 +58,29 @@ export function parseFormula(src: string): Expr {
     const t = peek(); if (!t) return fail('thiếu hạng tử');
     if (t.t === 'line') { next(); return { kind: 'line', code: t.v }; }
     if (t.t === 'reval') { next(); return { kind: 'reval', side: t.v === 'REVAL_GAIN' ? 'gain' : 'loss' }; }
-    if (t.t === 'N') { next(); const d = codes(); if (peek()?.t !== 'slash') fail('cần / sau danh sách Nợ'); next(); if (peek()?.t !== 'C') fail('cần C sau /'); next(); return { kind: 'pair', debit: d, credit: codes() }; }
+    if (t.t === 'N') {
+      next(); const d = codes(); if (peek()?.t !== 'slash') fail('cần / sau danh sách Nợ'); next(); if (peek()?.t !== 'C') fail('cần C sau /'); next();
+      const c = codes(); return peek()?.t === 'nocf' && next() ? { kind: 'pair', debit: d, credit: c, excludeCoded: true } : { kind: 'pair', debit: d, credit: c };
+    }
+    // LT(tk[(loại trừ)], ...): phần dài hạn của số dư; CF(mã): luồng tiền gắn mã.
+    if (t.t === 'lt') {
+      next(); if (peek()?.t !== 'lp') fail('cần ( sau LT'); next();
+      const refs: AccountRef[] = [];
+      do {
+        const c = next(); if (!c || c.t !== 'code' || c.v.includes('.')) fail('LT cần mã tài khoản');
+        let exclude: string[] = [];
+        if (peek()?.t === 'lp') { next(); exclude = codes(); if (peek()?.t !== 'rp') fail('thiếu )'); next(); }
+        refs.push({ prefix: c!.v, exclude });
+      } while (peek()?.t === 'comma' && next());
+      if (peek()?.t !== 'rp') fail('thiếu ) của LT'); next();
+      return { kind: 'lt', refs };
+    }
+    if (t.t === 'cf') {
+      next(); if (peek()?.t !== 'lp') fail('cần ( sau CF'); next();
+      const c = next(); if (!c || c.t !== 'code' || c.v.includes('.')) fail('CF cần mã luồng tiền');
+      if (peek()?.t !== 'rp') fail('thiếu ) của CF'); next();
+      return { kind: 'cf', code: c!.v };
+    }
     if (t.t === 'code') {
       next();
       if (t.v.includes('.')) return { kind: 'num', value: t.v };
@@ -75,6 +104,7 @@ export function formulaRefs(e: Expr): { lines: string[]; accounts: string[] } {
   const walk = (x: Expr) => {
     if (x.kind === 'bin') { walk(x.left); walk(x.right); } else if (x.kind === 'line') lines.push(x.code);
     else if (x.kind === 'account') accounts.push(x.prefix, ...x.exclude); else if (x.kind === 'pair') accounts.push(...x.debit, ...x.credit);
+    else if (x.kind === 'lt') for (const r of x.refs) accounts.push(r.prefix, ...r.exclude);
   };
   walk(e); return { lines, accounts };
 }
@@ -87,7 +117,11 @@ export async function evaluateReport(lines: ReportLineDef[], resolver: Resolver)
       case 'num': return D(e.value);
       case 'bin': { const a = await evalExpr(e.left, l); const b = await evalExpr(e.right, l); return e.op === '+' ? a.plus(b) : a.minus(b); }
       case 'line': return evalLine(e.code);
-      case 'pair': return resolver.pair(e.debit, e.credit);
+      case 'pair': return e.excludeCoded ? resolver.pair(e.debit, e.credit, { excludeCoded: true }) : resolver.pair(e.debit, e.credit);
+      case 'lt':
+        if (l.source !== 'balance') throw new FormulaError(`Dòng [${l.lineCode}]: LT(...) chỉ dùng cho dòng lấy số dư (nguồn balance)`);
+        return resolver.longTerm(e.refs, l.side);
+      case 'cf': return resolver.cashFlow(e.code);
       case 'account':
         if (e.excludeReval && l.source !== 'movement') throw new FormulaError(`Dòng [${l.lineCode}]: !REVAL chỉ dùng cho dòng lấy phát sinh (nguồn movement)`);
         return resolver.account({ prefix: e.prefix, exclude: e.exclude, ...(e.excludeReval && { excludeReval: true as const }) }, l.source === 'movement' ? 'movement' : 'balance', l.side);
