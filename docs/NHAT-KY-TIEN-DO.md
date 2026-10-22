@@ -51,3 +51,29 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-22 09:20 | GĐ2 | bộ kiểm thử web nhanh khoảng 7 lần (lược luật CSS trước getComputedStyle của jsdom) | a75a4d7 | web 210 kiểm thử, 171 giây, xanh
 2026-10-22 09:40 | GĐ2 | đo perf:100k: báo cáo không đổi (BCĐPS 180 ms); ghi sổ chậm do DB đo chưa ANALYZE và quét mọi phân vùng; 0042 cắt phân vùng | ea6752e 5441ced 59dcf0d 044266e | 25.000 chứng từ 229 → 100 giây; cùng điều kiện 5.000 chứng từ: GĐ1.5 36,5 / GĐ2 42,8 / sau 0042 19,3 giây
 2026-10-22 10:50 | GĐ2 | cổng cuối và kiểm trên bản sao sạch, tag gd2-hoan-tat | 02a33d5 | lint, typecheck sạch; test 1166/1166; bất biến + sample-xyz + sample-abc 27/27; e2e 20/20
+2026-10-22 10:13 | GĐ3 | kế hoạch chi tiết GĐ3 (24 tác vụ) | aa2c83e | (tài liệu)
+2026-10-22 10:23 | GĐ3 | T1 quyền GĐ3, cờ view_cost cho tài khoản kho (0043) | aa2c83e..4118462 | rà soát sạch
+2026-10-22 10:46 | GĐ3 | T2 danh mục VTHH, nhóm hàng, ĐVT quy đổi, kho (0044), Playwright Danh mục | 4118462..8d64d4b | rà soát sạch (1 Important chuyển T5)
+2026-10-22 10:55 | GĐ3 | T3 bảng giá bán/mua theo nhóm khách, thời gian, bậc số lượng (0045) | 51c7ebc..d6d48f5 | rà soát sạch
+2026-10-22 11:10 | GĐ3 | T4 động cơ giá vốn 4 phương pháp (packages/domain) | d6d48f5..b31e4ae | rà soát sạch (1 vòng sửa)
+2026-10-22 11:39 | GĐ3 | T5 sổ kho stock_move, lớp giá, gán giá, lần chạy (0046, 0047) | b977245..ca47e06 | rà soát sạch (1 vòng sửa)
+2026-10-22 12:25 | GĐ3 | T6 phiếu nhập, xuất, chuyển kho (0048) | 796dcc6..ba58dba | rà soát sạch (1 vòng sửa)
+2026-10-22 12:36 | GĐ3 | T7 kiểm soát tồn âm, tồn bị tiêu thụ, thứ tự trong ngày | f2dec1b..8fdb242 | rà soát sạch
+2026-10-22 14:17 | GĐ3 | T8 tính giá vốn, chứng từ GV, chạy lại bằng đảo (0049, 0050) | 8fdb242..869bcbc | rà soát sạch (opus, 1 vòng sửa)
+2026-10-22 15:09 | GĐ3 | T9 tồn kho đầu kỳ theo kho/lô, nhập Excel (0051) | 86bdf50..e3c1fd0 | rà soát sạch (1 vòng sửa)
+2026-10-22 15:45 | GĐ3 | T10 giá vốn "chưa cập nhật", điều chỉnh giá nhập thành phẩm (0052, 0053) | e3c1fd0..35602c9 | rà soát sạch (opus, 1 vòng sửa)
+2026-10-22 17:09 | GĐ3 | T11 mua hàng hóa qua kho, hàng về trước/hóa đơn về trước, trả lại (0054–0056) | 35602c9..f5998d8 | rà soát sạch (2 vòng sửa)
+2026-10-22 18:04 | GĐ3 | T12 chi phí mua hàng, mua hàng nhập khẩu (0057, 0058) | ff7e76b..e5da7c8 | rà soát sạch (opus, 1 vòng sửa)
+2026-10-22 19:32 | GĐ3 | T13 bán hàng hóa kiêm phiếu xuất, hàng bán bị trả lại, gửi bán, xuất khẩu (0059, 0060) | e5da7c8..2fc696b | rà soát sạch (3 vòng sửa)
+2026-10-22 20:02 | GĐ3 | T14 báo giá, đơn bán, đơn mua, hợp đồng, chuyển thành chứng từ (0061) | 0d5ff66..cc6e463 | api 756, rà soát sạch (1 vòng sửa)
+2026-10-22 21:20 | GĐ3 | T15 lắp ráp, tháo dỡ tích hợp tính giá vốn (0062) | d416c65..bf21908 | api 764, rà soát sạch (opus, 2 vòng sửa)
+2026-10-22 22:11 | GĐ3 | T16 kiểm kê kho, biên bản 05-VT theo chế độ, mở lại biên bản (0063) | 1828249..6ce6e6c | api 775, rà soát sạch (2 vòng sửa)
+2026-10-22 22:50 | GĐ3 | T17 báo cáo kho NXT, S10-DN/S06-DNN, S12-DN/S08-DNN, bảng kê, hạn dùng, đối chiếu | 43f4982..7e07a33 | api 781, rà soát sạch (1 vòng sửa)
+2026-10-22 23:50 | GĐ3 | T18 báo cáo bán hàng, mua hàng, lãi gộp; nhân viên bán hàng trên hóa đơn | 8c22bf0..be0843c | api 785, rà soát sạch (2 vòng sửa)
+2026-10-23 00:23 | GĐ3 | T19 in phiếu nhập kho 01-VT, phiếu xuất kho 02-VT | 916dda9..ba5b457 | api 790, rà soát sạch (1 vòng sửa)
+2026-10-23 01:00 | GĐ3 | T20 soát lỗi kho (0064, 0065) | 4ab5cec..171b342 | api 798, rà soát sạch (1 vòng sửa)
+2026-10-23 01:58 | GĐ3 | T21 kỳ hạn ngắn/dài hạn B01 TT99, mã luồng tiền B03 (0066) | 0cd0251..e6709dd | api 805, bất biến 19, rà soát sạch (opus, 1 vòng sửa)
+2026-10-23 02:34 | GĐ3 | T22 dữ liệu mẫu ABC có kho, 4 phương pháp, số kỳ vọng tính tay (người rà soát tự tính lại 9 mẫu) | 1a40c15 | api 811, bất biến 19
+2026-10-23 04:21 | GĐ3 | T23 bất biến 7 sổ kho; perf:costing 54.000 dòng: 17,8–20,3 giây mỗi phương pháp | 193698a | api 811, inv7 xanh (FC_RUNS=40)
+2026-10-23 05:23 | GĐ3 | tài liệu người dùng; rà soát toàn nhánh (opus: 1 Critical, 2 Important, 10 Minor) và đợt sửa: trả lại hàng mua sau chi phí mua, quyền xóa chứng từ kho, TK kho mặc định 156 trong đối chiếu/soát lỗi (0067, 0068), Ctrl+S tồn kho đầu kỳ | 47ce682, 6d3bf68..4620551 | db 107, api 818, web 215, lint/typecheck sạch
+2026-10-23 06:00 | GĐ3 | cổng cuối và kiểm trên bản sao sạch tại 4620551 (migrate 0001–0068, seed ABC+XYZ), tag gd3-hoan-tat | 4620551 | lint, typecheck sạch; test 1408/1408; bất biến + sample-xyz 20/20; e2e 37/37
