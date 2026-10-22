@@ -1,7 +1,7 @@
 import type { Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
-import { buildInvoiceLedgerDetail, computeTaxes, D, toVnd, VND_AMOUNT_MSG, VND_AMOUNT_RE, voucherTypeDef, type TaxDef, type TaxResult } from '@kt/domain';
+import { buildInvoiceLedgerDetail, computeTaxes, D, toVnd, type Decimal, VND_AMOUNT_MSG, VND_AMOUNT_RE, voucherTypeDef, type TaxDef, type TaxResult } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { createInvoiceVoucher, dateIso, fxRate, getVoucher, updateInvoiceDraft, type LineInput, type VoucherDto, type VoucherInput } from '../ledger/vouchers.service.js';
 import { deleteInvoiceRows, insertInvoiceRows, partyOverride, type InvoiceRow } from './declaration.js';
@@ -22,6 +22,9 @@ export const invoiceItemInput = z.object({
   discountRate: z.string().regex(/^\d{1,3}(\.\d{1,4})?$/).refine((s) => Number(s) <= 100, 'Tỷ lệ chiết khấu tối đa 100%').optional(),
   itemCode: z.string().min(1).nullable().optional(), warehouseCode: z.string().min(1).nullable().optional(), lotNo: optText(50), mfgDate: dateIso.nullable().optional(), expiryDate: dateIso.nullable().optional(),
   sourceLineId: z.number().int().positive().optional(),
+  // Hàng nhập khẩu (chỉ dòng hàng của MH): thuế nhập khẩu, tiêu thụ đặc biệt, GTGT hàng nhập theo tờ khai hải quan (VND, nhập tay; không có biểu thuế), vatImportCode là mã thuế GTGT của số thuế đó.
+  importMode: z.boolean().optional(), importTax: z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG).optional(), specialConsumptionTax: z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG).optional(),
+  vatImport: z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG).optional(), vatImportCode: z.string().min(1).optional(),
 });
 export const invoiceHeaderInput = z.object({
   formNo: optText(20), serial: optText(20), invoiceNo: z.string().trim().min(1).max(30), invoiceDate: dateIso, invoiceGroupCode: z.string().min(1), isImport: z.boolean().optional(),
@@ -41,6 +44,7 @@ export interface ItemLineDto {
   lineNo: number; description: string | null; quantity: string | null; unitPrice: string | null; uomCode: string | null; amountCurrency: string; amount: string; discountRate: string;
   discountAmountCurrency: string; discountAmount: string; taxCodes: string[]; taxAmount: string; accountCode: string; departmentCode: string | null; projectCode: string | null; costItemCode: string | null;
   id: number; itemCode: string | null; warehouseCode: string | null; lotNo: string | null; mfgDate: string | null; expiryDate: string | null; receiptVoucherId: string | null; linkLineId: number | null;
+  importMode: boolean; importTax: string | null; specialConsumptionTax: string | null; vatImport: string | null; vatImportCode: string | null;
 }
 export type InvoiceDto = VoucherDto & { items: ItemLineDto[]; receiptState: string | null; warnings?: { code: string; message: string; lineNo?: number }[] };
 
@@ -53,12 +57,13 @@ async function itemsOf(trx: Trx, voucherId: string): Promise<ItemLineDto[]> {
     .leftJoin('item as it', 'it.id', 'l.item_id').leftJoin('warehouse as w', 'w.id', 'l.warehouse_id')
     .select(['l.id', 'l.line_no', 'l.description', 'l.quantity', 'l.unit_price', 'u.code as uom_code', 'l.amount_currency', 'l.amount', 'l.discount_rate', 'l.discount_amount_currency', 'l.discount_amount', 'l.tax_codes', 'l.tax_amount',
       'a.code as account_code', 'd.code as department_code', 'p.code as project_code', 'c.code as cost_item_code', 'it.code as item_code', 'w.code as wh_code', 'l.lot_no', 'l.mfg_date', 'l.expiry_date',
-      'l.receipt_voucher_id', 'l.link_line_id'])
+      'l.receipt_voucher_id', 'l.link_line_id', 'l.import_mode', 'l.import_tax', 'l.excise_tax', 'l.import_vat', 'l.import_vat_code'])
     .where('l.voucher_id', '=', voucherId).orderBy('l.line_no').execute();
   return rows.map((r) => ({ lineNo: r.line_no, description: r.description, quantity: r.quantity, unitPrice: r.unit_price, uomCode: r.uom_code, amountCurrency: r.amount_currency, amount: r.amount, discountRate: r.discount_rate,
     discountAmountCurrency: r.discount_amount_currency, discountAmount: r.discount_amount, taxCodes: r.tax_codes, taxAmount: r.tax_amount, accountCode: r.account_code, departmentCode: r.department_code,
     projectCode: r.project_code, costItemCode: r.cost_item_code, id: r.id, itemCode: r.item_code, warehouseCode: r.wh_code, lotNo: r.lot_no, mfgDate: r.mfg_date, expiryDate: r.expiry_date,
-    receiptVoucherId: r.receipt_voucher_id, linkLineId: r.link_line_id }));
+    receiptVoucherId: r.receipt_voucher_id, linkLineId: r.link_line_id,
+    importMode: r.import_mode, importTax: r.import_tax, specialConsumptionTax: r.excise_tax, vatImport: r.import_vat, vatImportCode: r.import_vat_code }));
 }
 
 // Chứng từ phải là loại hóa đơn (HDB, HDM, GGB, GGM), nếu không thì coi như không có hóa đơn.
@@ -141,8 +146,17 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput, opt
     ? await resolvePurchase(trx, { input, regime, counterAccountCode, partyId: party.id, ...(opt.selfId && { selfId: opt.selfId }), ...(opt.auth && { auth: opt.auth }), perm: opt.perm })
     : { lines: input.items.map(() => null), receiptState: null, warnings: [] };
   const acctOf = (k: number): string => purchase.lines[k]?.accountCode ?? input.items[k]!.accountCode!;
+  const isImp = (k: number): boolean => !!input.items[k]!.importMode;
 
-  const { defs, ids, scopes } = await loadTaxDefs(trx, [...new Set(input.items.flatMap((i) => i.taxCodes))]);
+  const { defs, ids, scopes } = await loadTaxDefs(trx, [...new Set(input.items.flatMap((i) => [...i.taxCodes, ...(i.vatImportCode ? [i.vatImportCode] : [])]))]);
+  for (const [k, it] of input.items.entries()) { // nhập khẩu: số thuế theo tờ khai hải quan; GTGT hàng nhập không đi qua mã thuế của dòng (người bán nước ngoài không xuất hóa đơn GTGT)
+    const n = k + 1; const any = !!(it.importTax || it.specialConsumptionTax || it.vatImport || it.vatImportCode);
+    if (!it.importMode) { if (any) throw new AppError('VALIDATION', `Dòng ${n}: thuế nhập khẩu, TTĐB, GTGT hàng nhập chỉ nhập ở dòng hàng nhập khẩu (importMode)`, 400); continue; }
+    if (input.voucherType !== 'MH' || !purchase.lines[k]) throw new AppError('IMPORT_LINE_INVALID', `Dòng ${n}: hàng nhập khẩu chỉ dùng cho dòng hàng hóa của hóa đơn mua hàng hóa`, 400);
+    if (it.taxCodes.some((c) => defs[c]?.kind === 'vat')) throw new AppError('IMPORT_LINE_INVALID', `Dòng ${n}: hàng nhập khẩu không ghi mã thuế GTGT trên dòng; nhập thuế GTGT hàng nhập theo tờ khai (vatImport, vatImportCode)`, 400);
+    if (D(it.vatImport ?? '0').gt(0) && !it.vatImportCode) throw new AppError('VALIDATION', `Dòng ${n}: chọn mã thuế GTGT của thuế GTGT hàng nhập`, 400);
+    if (it.vatImportCode && defs[it.vatImportCode]?.kind !== 'vat') throw new AppError('IMPORT_LINE_INVALID', `Dòng ${n}: "${it.vatImportCode}" không phải mã thuế GTGT`, 400);
+  }
   for (const [code, s] of scopes) if (s !== 'both' && s !== scope) throw new AppError('TAX_SCOPE_MISMATCH', `Mã thuế ${code} chỉ dùng cho hóa đơn ${s === 'sale' ? 'bán ra' : 'mua vào'}, không dùng cho ${def.name}`, 400);
   for (const [k, it] of input.items.entries()) { // một dòng hàng một thuế suất GTGT; TNCN khấu trừ được đi kèm. Bảng kê voucher_invoice gom theo mã GTGT của dòng nên nhiều mã sẽ làm mất thuế của mã sau
     const vats = it.taxCodes.filter((c) => defs[c]?.kind === 'vat');
@@ -157,11 +171,25 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput, opt
       ...(purchase.lines[k] && { itemCode: purchase.lines[k]!.itemCode, warehouseCode: purchase.lines[k]!.warehouseCode, ...(purchase.lines[k]!.offsetVnd && { offsetVnd: purchase.lines[k]!.offsetVnd }) }) })) });
   if (!detail.lines.length) throw new AppError('INVOICE_EMPTY', 'Hóa đơn không có số tiền nào để hạch toán', 400);
 
-  const lines: LineInput[] = detail.lines.map((l) => ({
+  const lines: (LineInput & { currencyCode?: string })[] = detail.lines.map((l) => ({
     accountCode: l.accountCode, debit: l.debit, credit: l.credit, ...(!isVnd && { amountCurrency: l.amountCurrency, ...(l.fxRate && { fxRate: l.fxRate }) }),
     ...(l.partyCode && { partyCode: l.partyCode }), ...(l.description && { description: l.description }), ...(l.dueDate && { dueDate: l.dueDate }),
     ...(l.departmentCode && { departmentCode: l.departmentCode }), ...(l.projectCode && { projectCode: l.projectCode }), ...(l.costItemCode && { costItemCode: l.costItemCode }),
     ...(l.itemCode && { itemCode: l.itemCode }), ...(l.warehouseCode && { warehouseCode: l.warehouseCode }) }));
+  // Nhập khẩu: thuế NK Có 3333, TTĐB Có 3332 vào TK của dòng hàng (kho, hoặc 151 khi hóa đơn về trước hàng); GTGT hàng nhập Nợ 1331 / Có 33312. Dòng VND (cả khi hóa đơn ngoại tệ: thuế nộp theo tờ khai bằng đồng).
+  const importedVnd = input.items.map(() => D(0));
+  for (const [k, it] of input.items.entries()) {
+    if (!isImp(k)) continue;
+    const pl = purchase.lines[k]!; const vndLine = isVnd ? {} : { currencyCode: 'VND' };
+    const stockSide = { itemCode: pl.itemCode, ...(pl.warehouseCode && { warehouseCode: pl.warehouseCode }) };
+    for (const [amt, acc, label] of [[it.importTax, '3333', 'Thuế nhập khẩu'], [it.specialConsumptionTax, '3332', 'Thuế tiêu thụ đặc biệt hàng nhập khẩu']] as const) {
+      if (!amt || D(amt).isZero()) continue;
+      importedVnd[k] = importedVnd[k]!.plus(amt);
+      lines.push({ accountCode: acctOf(k), debit: amt, credit: '0', ...stockSide, ...vndLine, description: `${label} dòng ${k + 1}` }, { accountCode: acc, debit: '0', credit: amt, ...vndLine, description: `${label} dòng ${k + 1}` });
+    }
+    if (it.vatImport && D(it.vatImport).gt(0))
+      lines.push({ accountCode: '1331', debit: it.vatImport, credit: '0', ...vndLine, description: `Thuế GTGT hàng nhập khẩu dòng ${k + 1}` }, { accountCode: '33312', debit: '0', credit: it.vatImport, ...vndLine, description: `Thuế GTGT hàng nhập khẩu dòng ${k + 1}` });
+  }
   const voucher: VoucherInput = { voucherType: input.voucherType, postingDate: input.postingDate, documentDate: input.documentDate, description: input.description ?? null, partyCode: input.partyCode,
     currencyCode: input.currencyCode, ...(rate && { fxRate: rate }), ...(dueDate && { dueDate }), ...(input.idempotencyKey && { idempotencyKey: input.idempotencyKey }), lines,
     ...(purchase.receiptState && { receiptState: purchase.receiptState }) };
@@ -192,7 +220,8 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput, opt
         tax_codes: it.taxCodes, tax_amount: [...taxOf[k]!.values()].reduce((acc, v) => acc.plus(v), D(0)).toFixed(0),
         account_id: (await lookup('account', acctOf(k), 'tài khoản'))!, department_id: await lookup('department', it.departmentCode, 'bộ phận'), project_id: await lookup('project', it.projectCode, 'vụ việc'),
         cost_item_id: await lookup('cost_item', it.costItemCode, 'khoản mục chi phí'),
-        ...pl?.row, ...(pl && { stock_value: detail.baseVnd[k + 1] ?? '0' }), ...(pl?.debitCode && { debit_account_id: await lookup('account', pl.debitCode, 'tài khoản') }), ...(pl?.creditCode && { credit_account_id: await lookup('account', pl.creditCode, 'tài khoản') }),
+        ...pl?.row, ...(pl && { stock_value: D(detail.baseVnd[k + 1] ?? '0').plus(importedVnd[k]!).toFixed(0) }),
+        ...(isImp(k) && { import_mode: true, import_tax: it.importTax ?? null, excise_tax: it.specialConsumptionTax ?? null, import_vat: it.vatImport ?? null, import_vat_code: it.vatImportCode ?? null }), ...(pl?.debitCode && { debit_account_id: await lookup('account', pl.debitCode, 'tài khoản') }), ...(pl?.creditCode && { credit_account_id: await lookup('account', pl.creditCode, 'tài khoản') }),
       });
     }
     await trx.insertInto('voucher_item_line').values(itemRows).execute();
@@ -222,7 +251,7 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput, opt
     }
     // Một dòng mỗi nhóm mã thuế: cơ sở và thuế là số VND đã ghi sổ (sau khi chia chênh làm tròn), nên bảng kê khớp đúng bút toán.
     const groups = new Map<string | null, string[]>();
-    for (const [k, it] of input.items.entries()) { const g = groupOf(it.taxCodes, defs); groups.set(g, [...(groups.get(g) ?? []), String(k + 1)]); }
+    for (const [k, it] of input.items.entries()) { if (isImp(k) && it.vatImportCode) continue; const g = groupOf(it.taxCodes, defs); groups.set(g, [...(groups.get(g) ?? []), String(k + 1)]); }
     const rows: InvoiceRow[] = [];
     for (const [code, lineNos] of groups) {
       const baseAmount = lineNos.reduce((s, n) => s.plus(detail.baseVnd[Number(n)] ?? 0), D(0)).toFixed(0);
@@ -232,6 +261,24 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput, opt
         taxCodeId: code === null ? null : ids.get(code)!, baseAmount, taxAmount, isImport: input.invoice.isImport, adjustsInvoiceId: input.invoice.adjustsInvoiceId ?? null,
         partyTaxCode: input.invoice.partyTaxCode, partyName: input.invoice.partyName, partyAddress: input.invoice.partyAddress });
     }
+    // Hàng nhập khẩu: GTGT hàng nhập lên bảng kê mua vào (is_import) theo mã GTGT của số thuế, cơ sở = giá trị hàng + thuế NK + TTĐB (VND); thuế NK, TTĐB liệt kê ở phần thuế khác
+    // nếu danh mục còn mã NK, TTDB (kind import, excise). Số hóa đơn là số trên tab Hóa đơn (với hàng nhập khẩu: số tờ khai hải quan).
+    const imp = new Map<string, { base: Decimal; tax: Decimal }>();
+    const add = (code: string, base: Decimal, tax: Decimal) => { const g = imp.get(code) ?? { base: D(0), tax: D(0) }; imp.set(code, { base: g.base.plus(base), tax: g.tax.plus(tax) }); };
+    const otherCodes = Object.fromEntries((await trx.selectFrom('tax_code').select(['code', 'kind']).where('kind', 'in', ['import', 'excise']).orderBy('code').execute()).reverse().map((r) => [r.kind, r.code]));
+    for (const [k, it] of input.items.entries()) {
+      if (!isImp(k)) continue;
+      const goodsVnd = D(detail.baseVnd[k + 1] ?? '0');
+      if (it.vatImportCode) add(it.vatImportCode, goodsVnd.plus(importedVnd[k]!), D(it.vatImport ?? '0')); // không có mã GTGT hàng nhập: dòng hàng kê như dòng không thuế (nhóm mã rỗng ở trên)
+      if (otherCodes['import'] && D(it.importTax ?? '0').gt(0)) add(otherCodes['import'], goodsVnd, D(it.importTax!));
+      if (otherCodes['excise'] && D(it.specialConsumptionTax ?? '0').gt(0)) add(otherCodes['excise'], goodsVnd.plus(it.importTax ?? '0'), D(it.specialConsumptionTax!));
+    }
+    let impIds = new Map<string, number>();
+    const extra = [...imp.keys()].filter((c) => !ids.has(c));
+    if (extra.length) impIds = new Map((await trx.selectFrom('tax_code').select(['id', 'code']).where('code', 'in', extra).execute()).map((r) => [r.code, r.id]));
+    for (const [code, g] of imp) rows.push({ direction: scope, formNo: input.invoice.formNo, serial: input.invoice.serial, invoiceNo: input.invoice.invoiceNo, invoiceDate: input.invoice.invoiceDate, partyId, invoiceGroupId: group.id, headerGroupId: group.id,
+      taxCodeId: ids.get(code) ?? impIds.get(code)!, baseAmount: g.base.toFixed(0), taxAmount: g.tax.toFixed(0), isImport: true, adjustsInvoiceId: null,
+      partyTaxCode: input.invoice.partyTaxCode, partyName: input.invoice.partyName, partyAddress: input.invoice.partyAddress });
     await insertInvoiceRows(trx, tenantId, voucherId, rows);
   };
   return { voucher, regime, postItems, warnings: purchase.warnings };

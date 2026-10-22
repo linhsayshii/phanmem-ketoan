@@ -260,9 +260,10 @@ const SYSTEM_TYPE_MSG: Record<string, string> = {
   KC: 'Chứng từ kết chuyển do hệ thống sinh ở màn hình Kết chuyển, không lập tay',
 };
 // Loại do hệ thống sinh (SYSTEM_VOUCHER_TYPES) không lập tay; hóa đơn, giảm giá, trả lại lập ở /api/invoices.
-const assertNotSystemType = (voucherType: string, allow?: 'items' | 'stock') => {
+const assertNotSystemType = (voucherType: string, allow?: 'items' | 'stock' | 'landed') => {
   const def = voucherTypeDef(voucherType);
   if (SYSTEM_VOUCHER_TYPES.includes(voucherType) || def?.manual === false) throw new AppError('VOUCHER_TYPE_SYSTEM', SYSTEM_TYPE_MSG[voucherType] ?? `${def?.name ?? voucherType} do hệ thống sinh, không lập tay`, 409);
+  if (voucherType === 'CPM') { if (allow !== 'landed') throw new AppError('VOUCHER_TYPE_USE_LANDED_COST', 'Chi phí mua hàng lập ở màn hình Chi phí mua hàng (phân bổ vào phiếu nhập), không lập qua chứng từ chung', 409); return; }
   if (def?.module === 'inventory') { if (allow !== 'stock') throw new AppError('VOUCHER_TYPE_USE_STOCK', `${def.name} lập ở màn hình Phiếu kho, không lập qua chứng từ chung`, 409); return; }
   if (def?.hasItems && allow !== 'items') throw new AppError('VOUCHER_TYPE_USE_INVOICE', `${def.name} lập ở màn hình Hóa đơn, không lập qua chứng từ chung`, 409);
 };
@@ -300,6 +301,15 @@ export const createInvoiceVoucher = (trx: Trx, ctx: { tenantId: string; userId: 
 export const createStockVoucherHeader = (trx: Trx, ctx: { tenantId: string; userId: string }, input: SystemVoucherInput): Promise<VoucherDto> => {
   assertNotSystemType(input.voucherType, 'stock');
   return insertVoucher(trx, ctx, input);
+};
+// Chi phí mua hàng (CPM) chỉ lập, sửa qua modules/inventory/landedCost, nơi dựng dòng Nợ TK kho theo phân bổ.
+export const createLandedCostVoucher = (trx: Trx, ctx: { tenantId: string; userId: string }, input: VoucherInput): Promise<VoucherDto> => {
+  assertNotSystemType(input.voucherType, 'landed');
+  return insertVoucher(trx, ctx, input);
+};
+export const updateLandedCostDraft = (trx: Trx, id: string, version: number, input: VoucherInput): Promise<VoucherDto> => {
+  assertNotSystemType(input.voucherType, 'landed');
+  return updateDraftCore(trx, id, version, input);
 };
 // Chứng từ do chức năng hệ thống sinh (loại trong SYSTEM_VOUCHER_TYPES được phép), ghi nguồn source_doc_type/source_doc_id ngay khi tạo; vẫn qua đủ tra cứu và quy tắc dòng như chứng từ lập tay.
 export const createSystemVoucher = (trx: Trx, ctx: { tenantId: string; userId: string }, input: SystemVoucherInput, source: { type: string; id: string }): Promise<VoucherDto> =>
@@ -349,6 +359,7 @@ export async function updateDraft(trx: Trx, id: string, version: number, input: 
   // Hóa đơn nháp chỉ sửa qua /api/invoices: đổi loại sang PKT... qua route chung sẽ để lại dòng hàng, dòng kê khai mồ côi (loại chứng từ có dòng hàng hay không là bất biến sau khi tạo: route chung không đổi sang loại hóa đơn, /api/invoices chỉ đổi giữa các loại hóa đơn; nên đọc không cần khóa).
   const cur = await trx.selectFrom('voucher').select('voucher_type').where('id', '=', id).executeTakeFirst();
   if (cur && voucherTypeDef(cur.voucher_type)?.module === 'inventory') throw new AppError('VOUCHER_TYPE_USE_STOCK', `${voucherTypeDef(cur.voucher_type)!.name} sửa ở màn hình Phiếu kho, không sửa qua chứng từ chung`, 409);
+  if (cur?.voucher_type === 'CPM') throw new AppError('VOUCHER_TYPE_USE_LANDED_COST', 'Chi phí mua hàng sửa ở màn hình Chi phí mua hàng, không sửa qua chứng từ chung', 409);
   if (cur && voucherTypeDef(cur.voucher_type)?.hasItems) throw new AppError('VOUCHER_TYPE_USE_INVOICE', `${voucherTypeDef(cur.voucher_type)!.name} sửa ở màn hình Hóa đơn, không sửa qua chứng từ chung`, 409);
   return updateDraftCore(trx, id, version, input, auth);
 }

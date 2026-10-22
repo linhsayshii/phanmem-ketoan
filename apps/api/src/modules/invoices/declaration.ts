@@ -9,8 +9,8 @@ import { getSettings } from '../core/settings.js';
 // Tệp này không import vouchers.service để tránh vòng phụ thuộc (vouchers.service dựng lược đồ zod khi nạp mô-đun).
 type Trx = Transaction<Database>;
 
-// Loại chứng từ tiền, phiếu kế toán được kèm hóa đơn đầu vào đã trả ngay; hóa đơn mua chưa trả lập ở HDM.
-export const DECLARING_TYPES: readonly string[] = ['PC', 'BN', 'PKT'];
+// Loại chứng từ tiền, phiếu kế toán được kèm hóa đơn đầu vào đã trả ngay; hóa đơn mua chưa trả lập ở HDM. Chi phí mua hàng (CPM) kèm hóa đơn của dịch vụ vận chuyển, bốc xếp...
+export const DECLARING_TYPES: readonly string[] = ['PC', 'BN', 'PKT', 'CPM'];
 
 const optText = (max: number) => z.string().max(max).nullable().optional();
 // Ghi đè thông tin đối tượng trên hóa đơn: mã số thuế đúng định dạng danh mục; chuỗi rỗng hoặc null là không ghi đè.
