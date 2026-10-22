@@ -32,3 +32,12 @@ Kế hoạch: `2026-10-22-giai-doan-3-chi-tiet.md`. Đánh số tiếp GĐ2 (k�
 205. Xuất cố định giá: thành tiền theo đơn giá cố định, chênh lệch so với lớp nằm lại trong tồn; bình quân cuối kỳ không tính xuất cố định vào giá bình quân — giá người dùng chốt thắng — tồn 0 vẫn còn giá trị khi mọi lần xuất đều cố định giá (soát lỗi kho T20 báo). (T4, 031869f)
 206. Đích danh: xuất thiếu lô báo `COSTING_LOT_MISSING` và tạm tính FIFO trên mọi lô để vẫn bảo toàn giá trị; lần chạy bị hủy ở T8 — lỗi nhập liệu không làm sai số liệu tạm — không. (T4, 031869f)
 207. Lỗi lập trình (nhập có `value=null`, ngày sau cuối kỳ, lượng ≤ 0, giá trị VND lẻ, lô đầu kỳ trùng hoặc không cộng đủ, lô âm cạnh lô khác cùng nhóm) ném `Error`, không vào `errors[]` — người gọi T8 bảo đảm đầu vào — T8 phải gộp lô âm chuyển kỳ thành một nhóm. (T4, b31e4ae)
+
+## Sổ kho
+
+208. Sửa sau rà soát T5 bằng migration bổ sung `0047_so_kho_sua.sql` (0046 đã đẩy); các migration sau dịch lên một số so với bảng kế hoạch (T6 dùng 0048…) — migration đã đẩy đóng băng — không. (T5, ca47e06)
+209. `STOCK_CONSUMED` tạm tính theo số dư: bỏ ghi sổ phiếu nhập làm tồn âm ở một ngày từ ngày nhập trở đi → `forbid` báo lỗi nêu chứng từ xuất, `warn` cho qua kèm cảnh báo, `allow` bỏ qua; T8 thêm `stock_cost_assignment.layer_id` và chặn khi lớp của phiếu nhập đang được gán, mọi cấu hình — trước T8 chưa có tham chiếu lớp — đến T8, cấu hình `allow` cho bỏ ghi sổ phiếu nhập đã xuất. (T5, ca47e06)
+210. Đảo phiếu xuất: lớp nhập đảo lấy giá trị theo thứ tự Σ gán giá hiện hành của move xuất gốc → `round(lượng × unit_cost)` → `round(lượng × fn_stock_estimate_cost)` tại ngày gốc; không bao giờ lấy `amount` dòng (là doanh thu ở hóa đơn bán) — tránh nhập lại hàng theo giá bán — không. (T5, ca47e06)
+211. Giá trị lớp nhập = `amount − discount_amount` của dòng vật tư — dòng hóa đơn mua giữ tiền hàng trước chiết khấu — không. (T5, ca47e06)
+212. `stock_move.seq` là cột identity theo thứ tự chèn; thứ tự tính giá dùng `(posting_date, day_order, seq_no, line_no)`, không dùng `seq` — ghi lùi không giữ được thứ tự lưu trữ — T8 sắp sai nếu dùng `seq`. (T5, 29fee79)
+213. Chặn chèn `stock_move` trực tiếp bằng trigger kiểm cờ phiên `app.stock_post` và chứng từ đã ghi sổ cùng ngày — chặn nhầm lẫn như `open_item`, không chặn `app_user` cố ý — như các bảng phụ đã có. (T5, ca47e06)
