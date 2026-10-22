@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Card, Col, DatePicker, Form, Input, Modal, Row, Segmented, Space, Table, Tag, message } from 'antd';
+import { Alert, Button, Card, Col, DatePicker, Dropdown, Form, Input, Modal, Row, Segmented, Space, Table, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
@@ -152,6 +152,7 @@ export default function AssemblyVoucher({ def, id }: { def: VoucherTypeDef; id: 
         {!isNew && mayUnpost && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'unpost' }))}>Bỏ ghi sổ</Button>}
         {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo}` }); })}>Đảo</Button>}
         {!isNew && editable && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy phiếu?', content: 'Số phiếu (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
+        {!isNew && can('voucher.print') && <Dropdown trigger={['click']} menu={{ items: [{ key: '02-VT', label: <a href={`/api/vouchers/${id}/print?format=pdf&form=02-VT`} target="_blank" rel="noreferrer">Phiếu xuất kho (vật tư đem lắp, tháo)</a> }, { key: '01-VT', label: <a href={`/api/vouchers/${id}/print?format=pdf&form=01-VT`} target="_blank" rel="noreferrer">Phiếu nhập kho (thành phẩm, linh kiện)</a> }] }}><Button>In ▾</Button></Dropdown>}
       </Space>}>
       {v.error && <Alert type="error" showIcon message={(v.error as Error).message} style={{ marginBottom: 12 }} />}
       {posted && <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Phiếu ghi sổ theo giá tạm tính; khi tính giá vốn, giá hàng nhập được cập nhật theo giá gán của hàng xuất và Phiếu giá vốn ghi phần chênh lệch." />}

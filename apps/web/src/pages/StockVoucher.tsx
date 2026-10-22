@@ -187,6 +187,7 @@ export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: str
         {!isNew && mayUnpost && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'unpost' }))}>Bỏ ghi sổ</Button>}
         {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo} ngày ${formatVnDate(p)}` }); })}>Đảo</Button>}
         {!isNew && editable && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy phiếu?', content: 'Số phiếu (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
+        {!isNew && can('voucher.print') && <Button href={`/api/vouchers/${id}/print?format=pdf`} target="_blank">In</Button>}
       </Space>}>
       {v.error && <Alert type="error" showIcon message={(v.error as Error).message} style={{ marginBottom: 12 }} />}
       {posted && stale.length > 0 && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={stale.map((x) => staleText(x)).join('; ')} />}

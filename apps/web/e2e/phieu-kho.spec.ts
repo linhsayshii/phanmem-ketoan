@@ -47,3 +47,15 @@ test('lập Phiếu nhập kho bằng bàn phím, ghi sổ F9, thấy tồn và 
   await expect(page.getByTestId('ledger-lines')).toContainText('156');
   await expect(page.getByTestId('on-hand')).toContainText('HANG-E2E');
 });
+
+test('phiếu nhập kho đã lưu có nút In, bản in 01-VT hiện tiêu đề và hàng', async ({ page, request }) => {
+  await signIn(page, request);
+  const r = await request.post('/api/stock-vouchers', { data: { voucherType: 'PNK', stockKind: 'purchase', postingDate: '2026-01-16', warehouseCode: 'KHO-E2E', partyCode: 'NCC-E2E', items: [{ itemCode: 'HANG-E2E', uomCode: 'CAI', quantity: '4', unitPrice: '1000' }] } });
+  expect(r.ok()).toBeTruthy();
+  const id = (await r.json()).id as string;
+  await page.goto(`/chung-tu/PNK/${id}`);
+  const inBtn = page.getByRole('link', { name: 'In', exact: true });
+  await expect(inBtn).toHaveAttribute('href', `/api/vouchers/${id}/print?format=pdf`);
+  const html = await (await request.get(`/api/vouchers/${id}/print`)).text();
+  expect(html).toContain('PHIẾU NHẬP KHO'); expect(html).toContain('HANG-E2E'); expect(html).toContain('Bốn nghìn đồng');
+});

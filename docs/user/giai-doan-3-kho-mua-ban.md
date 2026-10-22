@@ -136,6 +136,16 @@ Trên "Mua hàng hóa", đánh dấu **Hàng nhập khẩu** ở đầu tab Hàn
 
 Giá nhập kho = tiền hàng quy đổi VND + thuế NK + thuế TTĐB. Hóa đơn có thể bằng ngoại tệ; các dòng thuế luôn là VND. Mỗi tờ khai hải quan lập một chứng từ Mua hàng hóa: ở tab Hóa đơn, ghi số tờ khai vào ô Số hóa đơn; tờ khai nhiều mặt hàng thì nhập nhiều dòng hàng trên cùng chứng từ. Bảng kê mua vào có một dòng thuế GTGT hàng nhập (giá tính thuế theo cột Giá tính thuế GTGT NK), lên chỉ tiêu [23], [23a] của tờ khai 01/GTGT, và các dòng thuế NK, TTĐB ở phần thuế khác. Chi phí vận chuyển, bảo hiểm hàng nhập ghi bằng Chi phí mua hàng như trên.
 
+## In phiếu nhập kho, phiếu xuất kho
+
+Phiếu đã lưu có nút **In** (PDF). Mẫu theo chế độ kế toán của kỳ ghi sổ:
+
+- **Phiếu nhập kho (Mẫu số 01 - VT):** in cho Phiếu nhập kho, Mua hàng hóa, Hàng bán bị trả lại; phiếu lắp ráp, tháo dỡ in phần nhập kho qua menu **In**.
+- **Phiếu xuất kho (Mẫu số 02 - VT):** in cho Phiếu xuất kho, Phiếu chuyển kho (ghi thêm kho chuyển đến), Bán hàng hóa kiêm phiếu xuất, Trả lại hàng mua; phiếu lắp ráp, tháo dỡ in phần xuất kho.
+- Số mẫu và dòng "Ban hành theo/Kèm theo Thông tư" chép từ TT 133/2016 và TT 99/2025. Chế độ TT200 in không có số mẫu.
+- Hai cột số lượng ("Theo chứng từ", "Thực nhập" hoặc "Yêu cầu", "Thực xuất") đều lấy số lượng trên dòng phiếu, theo đơn vị tính đã nhập.
+- Người dùng có quyền xem phiếu kho nhưng **không có cờ xem giá vốn** vẫn in được cho thủ kho, nhưng bản in bỏ cột Đơn giá, Thành tiền và dòng tổng số tiền bằng chữ. Phiếu bán, mua hàng vẫn cần cờ xem công nợ như khi mở chứng từ.
+
 ## Lắp ráp, tháo dỡ
 
 Vào Chứng từ, Phiếu lắp ráp, tháo dỡ, bấm Thêm (Insert), chọn Lắp ráp hoặc Tháo dỡ (chọn được khi lập mới).

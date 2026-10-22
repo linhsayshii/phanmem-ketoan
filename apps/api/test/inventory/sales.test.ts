@@ -272,14 +272,15 @@ describe('bán hàng hóa: sửa sau rà soát (vòng 2)', () => {
 });
 
 describe('bán hàng hóa: sửa sau rà soát (vòng 3)', () => {
-  it('in chứng từ: TLB thiếu view_cost bị 403, có view_cost in được; phiếu thu không dòng nhạy cảm vẫn in khi thiếu view_receivable', async () => {
+  it('in chứng từ: TLB (in 01-VT) thiếu view_cost in được nhưng không có đơn giá, thiếu view_receivable bị 403; phiếu thu không dòng nhạy cảm vẫn in khi thiếu view_receivable', async () => {
     await pnk('R4', '2026-03-03', '10', '10');
     const b = await create(sale([sl('R4', '3', '20')]));
     const t = await create(tlb(b, await lineId(b.id), 'R4', '1', '20'));
     const perms = ['voucher.view', 'voucher.print', 'stock_voucher.view'];
     const noCost = await login(perms, ['view_receivable']);
     const r1 = await call('GET', `/api/vouchers/${t.id}/print`, undefined, noCost);
-    expect(r1.statusCode, r1.body).toBe(403);
+    expect(r1.statusCode, r1.body).toBe(200); expect(r1.body).not.toContain('Đơn giá');
+    expect((await call('GET', `/api/vouchers/${t.id}/print`, undefined, await login(perms, ['view_cost']))).statusCode).toBe(403);
     const withCost = await login(perms, ['view_receivable', 'view_cost']);
     const r2 = await call('GET', `/api/vouchers/${t.id}/print`, undefined, withCost);
     expect(r2.statusCode, r2.body.slice(0, 200)).toBe(200);
