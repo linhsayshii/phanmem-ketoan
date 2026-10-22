@@ -125,6 +125,22 @@ export interface WarehouseTable {
   id: Generated<number>; tenant_id: string; code: string; name: string; inventory_account_id: number | null; costing_method: string | null; kind: Generated<string>;
   branch_id: number | null; is_active: Generated<boolean>; created_at: Generated<Date>;
 }
+// Sổ kho (GĐ3): move bất biến sau ghi sổ; lớp giá (remaining có thể âm với kind 'deficit'); lần chạy giá vốn và giá gán.
+export interface StockMoveTable {
+  id: Generated<number>; tenant_id: string; voucher_id: string; item_line_id: number; item_id: number; warehouse_id: number; posting_date: DateOnly; seq: Generated<number>;
+  direction: string; quantity: Numeric; lot_no: string | null; expiry_date: DateOnly | null; transfer_id: string | null; reversal_of: number | null;
+}
+export interface StockCostLayerTable {
+  id: Generated<number>; tenant_id: string; move_id: number; item_id: number; warehouse_id: number; lot_no: string | null; kind: string; posting_date: DateOnly;
+  qty: Numeric; unit_cost: Numeric; value: Numeric; remaining_qty: Numeric; remaining_value: Numeric;
+}
+export interface CostingRunTable {
+  id: Generated<string>; tenant_id: string; period_from: DateOnly; period_to: DateOnly; method: string; warehouse_id: number | null; item_id: number | null; status: string;
+  voucher_ids: ColumnType<string[], string[] | undefined, string[]>; created_by: string | null; created_at: Generated<string>; summary: ColumnType<unknown, string | null | undefined, string | null>;
+}
+export interface StockCostAssignmentTable {
+  id: Generated<number>; tenant_id: string; run_id: string; move_id: number; unit_cost: Numeric; amount: Numeric; lot_no: string | null; is_current: Generated<boolean>;
+}
 export interface UomTable { id: Generated<number>; tenant_id: string; code: string; name: string; is_active: Generated<boolean> }
 
 export interface VoucherTypeTable {
@@ -140,6 +156,7 @@ export interface VoucherTable {
   posted_by: string | null; posted_at: Timestamp | null; version: Generated<number>; prev_hash: Buffer | null; row_hash: Buffer | null;
   person_name: string | null; person_address: string | null; attachments_count: number | null;
   bank_account_id: number | null; counter_bank_account_id: number | null; party_bank_account_id: string | null; due_date: DateOnly | null; purpose: string | null;
+  day_order: Generated<number>; stock_kind: string | null;
 }
 export interface VoucherLineTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; line_no: number; account_id: number; posting_date: DateOnly;
@@ -188,6 +205,8 @@ export interface VoucherItemLineTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; line_no: number; description: string | null; item_id: number | null; uom_id: number | null;
   quantity: Numeric | null; unit_price: Numeric | null; amount_currency: Numeric; amount: Numeric; discount_rate: NumericDefault; discount_amount_currency: NumericDefault;
   discount_amount: NumericDefault; tax_codes: Generated<string[]>; tax_amount: NumericDefault; account_id: number; department_id: number | null; project_id: number | null; cost_item_id: number | null;
+  warehouse_id: number | null; dest_warehouse_id: number | null; uom_factor: NumericDefault; base_quantity: Numeric | null; lot_no: string | null; mfg_date: DateOnly | null; expiry_date: DateOnly | null;
+  direction: string | null; debit_account_id: number | null; credit_account_id: number | null; unit_cost: Numeric | null; source_line_id: number | null; fixed_cost: Generated<boolean>;
 }
 // Bảng kê hóa đơn kê khai thuế: một dòng mỗi (hóa đơn, mã thuế).
 export interface VoucherInvoiceTable {
@@ -291,6 +310,10 @@ export interface Database {
   item: ItemTable;
   item_uom: ItemUomTable;
   warehouse: WarehouseTable;
+  stock_move: StockMoveTable;
+  stock_cost_layer: StockCostLayerTable;
+  costing_run: CostingRunTable;
+  stock_cost_assignment: StockCostAssignmentTable;
   voucher_type: VoucherTypeTable;
   voucher: VoucherTable;
   voucher_line: VoucherLineTable;
