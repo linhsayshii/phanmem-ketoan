@@ -32,8 +32,6 @@ test('lập Phiếu nhập kho bằng bàn phím, ghi sổ F9, thấy tồn và 
   // lưới: mã hàng, ĐVT, số lượng, đơn giá
   await page.locator('.ag-center-cols-container .ag-row[row-index="0"] [col-id="itemCode"]').dblclick();
   await page.keyboard.type('HANG-E2E'); await page.keyboard.press('Tab');
-  await expect(page.locator('.ag-center-cols-container [col-id="itemName"]', { hasText: 'Hàng E2E' })).toBeVisible(); // tên hàng và ĐVT cơ sở tra xong rồi mới nhập tiếp
-  await expect(page.locator('.ag-center-cols-container [col-id="uomCode"]', { hasText: 'CAI' })).toBeVisible();
   await page.keyboard.press('Tab');
   await page.keyboard.type('10'); await page.keyboard.press('Tab');
   await page.keyboard.type('25000'); await page.keyboard.press('Enter');

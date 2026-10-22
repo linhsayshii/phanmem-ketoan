@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { sql } from 'kysely';
 import { z } from 'zod';
+import { D } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 
 // Tồn khả dụng theo ĐVT cơ sở đến hết ngày (cộng stock_move vào, trừ ra; hàng chưa ghi sổ không tính).
@@ -11,9 +12,9 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       const r = await trx.selectFrom('stock_move as m').innerJoin('item as i', 'i.id', 'm.item_id').innerJoin('warehouse as w', 'w.id', 'm.warehouse_id')
         .select(sql<string>`coalesce(sum(CASE WHEN m.direction = 'in' THEN m.quantity ELSE -m.quantity END), 0)::text`.as('q'))
         .where('i.code', '=', req.query.itemCode).where('w.code', '=', req.query.warehouseCode).where('m.posting_date', '<=', req.query.date).executeTakeFirstOrThrow();
-      const ok = await trx.selectFrom('item').select('id').where('code', '=', req.query.itemCode).executeTakeFirst();
-      if (!ok) throw new AppError('LOOKUP_NOT_FOUND', `Không có vật tư hàng hóa mã "${req.query.itemCode}"`, 404);
-      return { itemCode: req.query.itemCode, warehouseCode: req.query.warehouseCode, date: req.query.date, quantity: Number(r.q).toFixed(4) };
+      if (!await trx.selectFrom('item').select('id').where('code', '=', req.query.itemCode).executeTakeFirst()) throw new AppError('ITEM_NOT_FOUND', `Không có vật tư hàng hóa mã "${req.query.itemCode}"`, 404);
+      if (!await trx.selectFrom('warehouse').select('id').where('code', '=', req.query.warehouseCode).executeTakeFirst()) throw new AppError('WAREHOUSE_NOT_FOUND', `Không có kho mã "${req.query.warehouseCode}"`, 404);
+      return { itemCode: req.query.itemCode, warehouseCode: req.query.warehouseCode, date: req.query.date, quantity: D(r.q).toFixed(4) };
     }));
 };
 export default routes;

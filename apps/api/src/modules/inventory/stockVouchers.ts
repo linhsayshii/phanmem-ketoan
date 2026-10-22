@@ -81,6 +81,7 @@ async function build(trx: Trx, input: StockVoucherInput, auth?: Auth) {
       unitCost = D(est.get(key)!).toFixed(4); amount = round0(D(r.base).times(unitCost));
       if (D(unitCost).isZero()) warnings.push({ code: 'COST_UNKNOWN', message: `Dòng ${r.n}: hàng ${r.it.itemCode} chưa có giá vốn, ghi giá 0 cho đến khi tính giá vốn`, lineNo: r.n });
     }
+    if (amount.length > 16) throw new AppError('AMOUNT_TOO_LARGE', `Dòng ${r.n}: thành tiền vượt quá 16 chữ số`, 400);
     return { ...r, unitCost, amount };
   }));
 
@@ -114,6 +115,7 @@ async function build(trx: Trx, input: StockVoucherInput, auth?: Auth) {
     add('credit', l.credit, l.it.itemCode, l.src.code, l.amount);
   }
   const ledger: S.LineInput[] = [...groups].map(([k, g]) => ({ ...g, [k.startsWith('debit') ? 'debit' : 'credit']: sums.get(k)!.toFixed(0) }));
+  if (!ledger.length) throw new AppError('STOCK_VALUE_ZERO', 'Phiếu chưa có giá trị để ghi sổ cái: nhập đơn giá hoặc kiểm tra giá vốn tạm tính', 409);
   return { regime, lines, ledger, accs, warnings, transfer, dir };
 }
 

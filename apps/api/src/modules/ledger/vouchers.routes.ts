@@ -12,6 +12,7 @@ import { formNoFor, voucherFormFor } from '../reporting/print/forms.js';
 import { renderCashVoucherHtml, type BankInfo } from '../reporting/print/cashVoucherHtml.js';
 import { renderPdf } from '../reporting/print/pdf.js';
 import { renderVoucherHtml } from '../reporting/print/voucherHtml.js';
+import { assertSensitive } from '../reporting/ledgers.js';
 
 const idParam = z.object({ id: z.string().uuid() });
 // Sửa chứng từ đã ghi sổ: phải có diễn giải hoặc ít nhất một dòng cần sửa (thân {} hay chỉ { version } không đổi gì).
@@ -28,6 +29,21 @@ async function bankInfos(trx: Transaction<Database>, voucherId: string): Promise
   return { own: info(own), party: info(party) };
 }
 
+type Trx = Transaction<Database>;
+type Auth = NonNullable<FastifyRequest['auth']>;
+// Chứng từ loại kho (module inventory) cần thêm quyền stock_voucher.*: quyền voucher.* chung chỉ mở chứng từ ngoài kho.
+async function requireStockPerm(trx: Trx, auth: Auth, id: string, perm: string) {
+  const r = await trx.selectFrom('voucher').select('voucher_type').where('id', '=', id).executeTakeFirst();
+  if (r && voucherTypeDef(r.voucher_type)?.module === 'inventory' && !auth.permissions.has(perm)) throw new AppError('FORBIDDEN', `Thiếu quyền ${perm}`, 403);
+}
+// Số liệu theo dòng chỉ trả khi cờ nhạy cảm (công nợ, giá vốn) che từng tài khoản cho phép.
+async function assertVoucherSensitive(trx: Trx, auth: Auth, v: { id: string; lines: { accountCode: string }[] }) {
+  if (!v.lines.length) return;
+  const { regime } = await trx.selectFrom('voucher as v').innerJoin('fiscal_period as p', 'p.fiscal_year', 'v.fiscal_year').select('p.regime').where('v.id', '=', v.id).limit(1).executeTakeFirstOrThrow();
+  const accs = await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', regime).where('code', 'in', [...new Set(v.lines.map((l) => l.accountCode))]).execute();
+  for (const a of accs) assertSensitive(auth, a);
+}
+
 const routes: FastifyPluginAsyncZod = async (app) => {
   // auth đi kèm để kiểm quyền đối trừ và cờ nhạy cảm của kế hoạch đối trừ trên dòng (settle).
   const ctx = (req: FastifyRequest) => ({ tenantId: req.auth!.tenantId!, userId: req.auth!.userId, auth: req.auth! });
@@ -36,13 +52,24 @@ const routes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/api/vouchers', { preHandler: app.requirePermission('voucher.view'), schema: { querystring: z.object({ type: z.string().optional(), from: S.dateIso.optional(), to: S.dateIso.optional(),
       state: z.enum(['draft', 'posted', 'reversed', 'cancelled']).optional(), q: z.string().optional(), partyCode: z.string().optional(), page: z.coerce.number().int().min(1).default(1), size: z.coerce.number().int().min(1).max(500).default(50) }) } },
-    async (req) => app.withTenant(req, (trx) => S.listVouchers(trx, req.query)));
-  app.get('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.view'), schema: { params: idParam } }, async (req) => app.withTenant(req, (trx) => S.getVoucher(trx, req.params.id)));
+    async (req) => app.withTenant(req, async (trx) => {
+      const out = await S.listVouchers(trx, req.query);
+      // phiếu kho: tổng tiền là giá trị tồn kho, che khi thiếu view_cost (không quét dòng từng phiếu)
+      if (!req.auth!.sensitive.has('view_cost')) out.rows = out.rows.map((r) => (voucherTypeDef(r.voucherType)?.module === 'inventory' ? { ...r, totalDebit: null as never } : r));
+      return out;
+    }));
+  app.get('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.view'), schema: { params: idParam } }, async (req) => app.withTenant(req, async (trx) => {
+    await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.view');
+    const v = await S.getVoucher(trx, req.params.id);
+    await assertVoucherSensitive(trx, req.auth!, v);
+    return v;
+  }));
 
   app.get('/api/vouchers/:id/print', { preHandler: app.requirePermission('voucher.print'), schema: { params: idParam, querystring: z.object({ format: z.enum(['html', 'pdf']).default('html'), form: z.string().default('default') }) } }, async (req, reply) => {
     const { html, v, form } = await app.withTenant(req, async (trx) => {
       const v = await S.getVoucher(trx, req.params.id);
       // Mẫu in hợp lệ lấy từ cấu hình loại chứng từ; 'default' là mẫu đầu của loại, loại không có mẫu riêng (Phiếu kế toán) in phiếu kế toán.
+      if (voucherTypeDef(v.voucherType)?.module === 'inventory') throw new AppError('PRINT_FORM_NOT_READY', 'Mẫu in phiếu kho chưa có', 409); // mẫu 01-VT, 02-VT làm ở Task 19
       const allowed = voucherTypeDef(v.voucherType)?.printForms ?? [];
       const form = req.query.form === 'default' ? allowed[0] : req.query.form;
       if (form !== undefined && !allowed.includes(form)) throw new AppError('PRINT_FORM_INVALID', `Mẫu in "${req.query.form}" không dùng được cho chứng từ loại ${v.voucherType}`, 400);
@@ -82,15 +109,15 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.post('/api/vouchers/:id/post', { preHandler: app.requirePermission('voucher.post'), schema: { params: idParam } }, async (req) => {
-    const dto = await app.withOverride(req, (trx) => postWithCashCheck(trx, req.auth!.tenantId!, req.params.id)); notifyRecompute(app, req.auth!.tenantId!); return dto; });
+    const dto = await app.withOverride(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.post'); return postWithCashCheck(trx, req.auth!.tenantId!, req.params.id); }); notifyRecompute(app, req.auth!.tenantId!); return dto; });
   app.post('/api/vouchers/:id/unpost', { preHandler: app.requirePermission('voucher.unpost'), schema: { params: idParam } }, async (req) => {
     if (!req.auth!.permissions.has('voucher.edit_posted')) throw new AppError('FORBIDDEN', 'Thiếu quyền sửa sau ghi sổ', 403);
-    const dto = await app.withTenant(req, (trx) => unpostWithCashCheck(trx, req.auth!.tenantId!, req.params.id)); notifyRecompute(app, req.auth!.tenantId!); return dto; });
+    const dto = await app.withTenant(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.post'); return unpostWithCashCheck(trx, req.auth!.tenantId!, req.params.id); }); notifyRecompute(app, req.auth!.tenantId!); return dto; });
   app.post('/api/vouchers/:id/reverse', { preHandler: app.requirePermission('voucher.post'), schema: { params: idParam, body: z.object({ postingDate: S.dateIso, description: z.string().optional() }) } }, async (req, reply) => {
     // Chứng từ hệ thống sinh (XQ, KC, DK...) chỉ đảo qua chức năng đã sinh ra nó (chạy lại); các bộ sinh gọi S.reverseVoucher trực tiếp nên không bị chặn.
-    const dto = await app.withOverride(req, async (trx) => { await S.assertNotSystemGenerated(trx, req.params.id); return reverseWithCashCheck(trx, req.auth!.tenantId!, req.params.id, req.body); });
+    const dto = await app.withOverride(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.post'); await S.assertNotSystemGenerated(trx, req.params.id); return reverseWithCashCheck(trx, req.auth!.tenantId!, req.params.id, req.body); });
     notifyRecompute(app, req.auth!.tenantId!); return reply.status(201).send(dto); });
-  app.post('/api/vouchers/:id/discard', { preHandler: app.requirePermission('voucher.delete'), schema: { params: idParam } }, async (req) => app.withTenant(req, (trx) => S.discardVoucher(trx, req.params.id)));
+  app.post('/api/vouchers/:id/discard', { preHandler: app.requirePermission('voucher.delete'), schema: { params: idParam } }, async (req) => app.withTenant(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.delete'); return S.discardVoucher(trx, req.params.id); }));
   app.post('/api/vouchers/:id/duplicate', { preHandler: app.requirePermission('voucher.create'), schema: { params: idParam, body: z.object({ postingDate: S.dateIso }) } }, async (req, reply) =>
     reply.status(201).send(await app.withOverride(req, (trx) => S.duplicateVoucher(trx, ctx(req), req.params.id, req.body.postingDate))));
   app.delete('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.delete'), schema: { params: idParam } }, async (req, reply) => { await app.withTenant(req, (trx) => S.deleteDraft(trx, req.params.id)); return reply.status(204).send(); });

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Card, Col, DatePicker, Form, Input, Modal, Row, Select, Space, Table, Tag, message } from 'antd';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import type { ColDef } from 'ag-grid-community';
+import type { ColDef, GridApi } from 'ag-grid-community';
 import dayjs, { type Dayjs } from 'dayjs';
 import { canTransition, D, decideEdit, formatVnDate, formatVnNumber, parseVnNumber, todayVn, type StockVoucherType, type VoucherState, type VoucherTypeDef } from '@kt/domain';
 import { KeyboardGrid, LookupSelect, useUnsavedChanges } from '@kt/ui';
@@ -43,6 +43,10 @@ export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: str
   const [serverCost, setServerCost] = useState<Record<number, { amount: string; unitCost: string | null }>>({});
   const [reverse, setReverse] = useState<{ date: Dayjs; description: string } | null>(null);
   const [dirty, setDirty] = useState(false);
+  // Cột giữ nguyên khi tên hàng, giá tạm tính về: valueGetter đọc ref, rồi refreshCells; dựng lại cột sẽ hủy ô đang gõ.
+  const gridApi = useRef<GridApi<StockRow> | null>(null);
+  const infoRef = useRef(info); const costRef = useRef(serverCost);
+  useEffect(() => { infoRef.current = info; costRef.current = serverCost; gridApi.current?.refreshCells({ columns: ['itemName', 'amount'], force: true }); }, [info, serverCost]);
   const [idempotencyKey] = useState(() => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
 
   const v = useQuery({ queryKey: ['stock-voucher', id], queryFn: () => api<StockDoc>(`/api/stock-vouchers/${id}`), enabled: !isNew });
@@ -80,7 +84,9 @@ export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: str
         if (!hit) return;
         setInfo((m) => ({ ...m, [code]: { name: hit.name, baseUom: hit.baseUom, tracking: hit.tracking } }));
         // ĐVT còn trống thì điền ĐVT cơ sở của hàng
-        const cur = rowsRef.current; if (cur.some((r) => r.itemCode.trim() === code && !r.uomCode)) setAll(cur.map((r) => (r.itemCode.trim() === code && !r.uomCode ? { ...r, uomCode: hit.baseUom } : r)));
+        // sửa tại chỗ (giữ danh tính dòng) để ô đang gõ ở dòng đó không bị hủy
+        for (const r of rowsRef.current) if (r.itemCode.trim() === code && !r.uomCode) r.uomCode = hit.baseUom;
+        gridApi.current?.refreshCells({ columns: ['uomCode'], force: true });
       }).catch(() => undefined);
     }
   }, [rows, info, setAll]);
@@ -149,15 +155,15 @@ export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: str
 
   const columns = useMemo<ColDef<StockRow>[]>(() => [
     { field: 'itemCode', headerName: 'Mã hàng (F4)', width: 130 },
-    { colId: 'itemName', headerName: 'Tên hàng', flex: 1, minWidth: 160, editable: false, valueGetter: (p) => (p.data ? info[p.data.itemCode.trim()]?.name ?? '' : '') },
+    { colId: 'itemName', headerName: 'Tên hàng', flex: 1, minWidth: 160, editable: false, valueGetter: (p) => (p.data ? infoRef.current[p.data.itemCode.trim()]?.name ?? '' : '') },
     { field: 'uomCode', headerName: 'ĐVT (F4)', width: 100 },
     numCol('quantity', 'Số lượng'),
     ...(withPrice ? [numCol('unitPrice', 'Đơn giá', 120)] : []),
     { colId: 'amount', headerName: withPrice ? 'Thành tiền' : 'Giá trị (giá tạm tính)', width: 150, editable: false, cellClass: 'ag-right-aligned-cell',
-      valueGetter: (p) => { if (!p.data) return ''; if (withPrice) return rowAmount(p.data); const k = serverCost[p.node?.rowIndex != null ? p.node.rowIndex + 1 : 0]; return editable ? '' : k?.amount ?? ''; },
+      valueGetter: (p) => { if (!p.data) return ''; if (withPrice) return rowAmount(p.data); const k = costRef.current[p.node?.rowIndex != null ? p.node.rowIndex + 1 : 0]; return editable ? '' : k?.amount ?? ''; },
       valueFormatter: (p) => money(p.value as string), headerTooltip: withPrice ? 'Số lượng x đơn giá' : 'Hiện sau khi lưu: số lượng x giá vốn tạm tính' },
     { field: 'lotNo', headerName: 'Số lô', width: 100 }, dateCol('mfgDate', 'Ngày sản xuất'), dateCol('expiryDate', 'Hạn dùng'),
-  ], [withPrice, info, serverCost, editable]);
+  ], [withPrice, editable]);
   const total = rows.reduce((s, r) => s.plus(withPrice ? rowAmount(r) || '0' : '0'), D(0)).toFixed();
   const savedTotal = Object.values(serverCost).reduce((s, k) => s.plus(k.amount), D(0)).toFixed();
   const onLookup = useCallback((col: string, row: number) => { if (editable && (col === 'itemCode' || col === 'uomCode')) setLookupRow(row); }, [editable]);
@@ -194,7 +200,7 @@ export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: str
         </Row>
       </Form>
       <KeyboardGrid<StockRow> rows={rows} columns={columns} readOnly={!editable} onRowsChange={changeRows} addRowTemplate={emptyStockRow}
-        onLookup={(col, row) => { lookupCol.current = col; onLookup(col, row); }} height={300} />
+        onLookup={(col, row) => { lookupCol.current = col; onLookup(col, row); }} height={300} onGridApi={(a) => { gridApi.current = a; }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24, marginTop: 8, flexWrap: 'wrap' }}>
         <span data-testid="on-hand">{codes.length > 0 && warehouse ? <>Tồn khả dụng tại kho {warehouse}: {codes.map((c, i) => <span key={c} style={{ marginRight: 12 }}>{c}: <b>{stocks[i]?.data ? formatVnNumber(stocks[i]!.data!.quantity, D(stocks[i]!.data!.quantity).decimalPlaces()) : '...'}</b> {info[c]?.baseUom ?? ''}</span>)}</> : null}</span>
         <b>{withPrice ? `Cộng: ${formatVnNumber(total)}` : posted || savedTotal !== '0' ? `Giá trị giá tạm tính: ${formatVnNumber(savedTotal)}` : ''}</b>

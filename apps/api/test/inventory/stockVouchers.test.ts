@@ -109,4 +109,45 @@ describe('phiếu kho', () => {
     expect((await call('GET', `/api/stock-vouchers/${made.id}`, undefined, c)).statusCode).toBe(403);
     expect((await call('POST', '/api/stock-vouchers', body, c)).statusCode).toBe(403);
   });
+
+  it('phiếu toàn giá trị 0 → 409 STOCK_VALUE_ZERO; thành tiền quá 16 chữ số → 400 AMOUNT_TOO_LARGE', async () => {
+    const z = await stock('PNK', 'purchase', '2026-03-01', [{ itemCode: 'SP1', uomCode: 'CAI', quantity: '1' }]);
+    expect(z.statusCode).toBe(409); expect(z.json().error.code).toBe('STOCK_VALUE_ZERO');
+    const big = await stock('PNK', 'purchase', '2026-03-01', [{ itemCode: 'SP1', uomCode: 'CAI', quantity: '9999999999', unitPrice: '9999999999' }]);
+    expect(big.statusCode).toBe(400); expect(big.json().error.code).toBe('AMOUNT_TOO_LARGE');
+  });
+
+  it('phiếu xuất lẫn hàng có giá vốn và hàng chưa có: cảnh báo COST_UNKNOWN một dòng, ghi sổ vẫn sinh stock_move cho cả hai', async () => {
+    await cat('item', { code: 'SP2', name: 'Hàng chưa có tồn', base_uom_code: 'CAI', kind: 'goods' });
+    // SP2 nhập giá 0 (cùng phiếu với SP1 có giá) nên có tồn mà chưa có giá vốn
+    const pn = (await stock('PNK', 'purchase', '2026-03-02', [{ itemCode: 'SP1', uomCode: 'CAI', quantity: '5', unitPrice: '10' }, { itemCode: 'SP2', uomCode: 'CAI', quantity: '5' }])).json(); await post(pn.id);
+    const r = await stock('PXK', 'sale', '2026-03-02', [{ itemCode: 'SP1', uomCode: 'CAI', quantity: '1' }, { itemCode: 'SP2', uomCode: 'CAI', quantity: '1' }]);
+    expect(r.statusCode, r.body).toBe(201);
+    const v = r.json();
+    expect(v.warnings).toHaveLength(1); expect(v.warnings[0]).toMatchObject({ code: 'COST_UNKNOWN', lineNo: 2 });
+    await post(v.id);
+    expect((await moves(v.id)).map((m) => `${m.code}:${m.direction}`)).toEqual(['SP1:out', 'SP2:out']);
+  });
+
+  it('route chung: thiếu view_cost → GET phiếu kho 403 và tổng tiền danh sách là null; thiếu stock_voucher.post → ghi sổ chung 403; in phiếu kho → 409 PRINT_FORM_NOT_READY', async () => {
+    const made = (await stock('PXK', 'sale', '2026-03-03', [{ itemCode: 'SP1', uomCode: 'CAI', quantity: '1' }])).json();
+    const roles = (await call('GET', '/api/roles')).json() as { id: string; code: string }[];
+    await call('PUT', `/api/roles/${roles.find((r) => r.code === 'xem')!.id}/permissions`, { permissions: ['voucher.view', 'voucher.post', 'stock_voucher.view'] });
+    const username = `kho_g_${Date.now()}`;
+    expect((await call('POST', '/api/users', { username, fullName: 'X', password: 'Matkhau1!', roleCode: 'xem', sensitiveFlags: [] })).statusCode).toBe(201);
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+    const c = `sid=${login.cookies.find((x) => x.name === 'sid')!.value}`;
+    expect((await call('GET', `/api/vouchers/${made.id}`, undefined, c)).statusCode).toBe(403);
+    expect((await call('GET', `/api/vouchers/${made.id}`)).statusCode).toBe(200);
+    const list = (await call('GET', '/api/vouchers?type=PXK&from=2026-03-03&to=2026-03-03', undefined, c)).json().rows as { totalDebit: string | null }[];
+    expect(list.length).toBeGreaterThan(0); expect(list.every((x) => x.totalDebit === null)).toBe(true);
+    expect((await call('POST', `/api/vouchers/${made.id}/post`, {}, c)).statusCode).toBe(403);
+    const pr = await call('GET', `/api/vouchers/${made.id}/print`);
+    expect(pr.statusCode).toBe(409); expect(pr.json().error.code).toBe('PRINT_FORM_NOT_READY');
+  });
+
+  it('tồn khả dụng: mã kho hoặc hàng lạ → 404', async () => {
+    expect((await call('GET', '/api/inventory/on-hand?itemCode=SP1&warehouseCode=KLA&date=2026-03-01')).json().error.code).toBe('WAREHOUSE_NOT_FOUND');
+    expect((await call('GET', '/api/inventory/on-hand?itemCode=LA&warehouseCode=K1&date=2026-03-01')).json().error.code).toBe('ITEM_NOT_FOUND');
+  });
 });
