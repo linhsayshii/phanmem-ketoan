@@ -44,3 +44,14 @@ export async function bankAccountFetcher(q: string, signal: AbortSignal): Promis
   if (!r.ok) return []; // phiên hết hạn / thiếu quyền: danh sách rỗng
   return ((await r.json()) as { rows: BankAccountRow[] }).rows.map((b) => ({ id: b.id, code: b.account_no, name: b.account_name || b.bank_code, ...(b.is_active === false ? { inactive: true } : {}) }));
 }
+
+// Mã luồng tiền (mã chỉ tiêu B03) theo chế độ của kỳ chứa ngày hạch toán; chưa có ngày hoặc thiếu quyền thì rỗng. Tạo một lần cho mỗi ngày (useMemo).
+export function cashFlowFetcherFor(postingDate?: string): (q: string, signal: AbortSignal) => Promise<LookupRow[]> {
+  return async (q, signal) => {
+    if (!postingDate) return [];
+    const r = await fetch(`/api/cash-flow-codes?date=${postingDate}`, { credentials: 'include', signal });
+    if (!r.ok) return [];
+    const k = q.trim().toLowerCase();
+    return ((await r.json()) as { code: string; name: string }[]).filter((c) => !k || c.code.startsWith(k) || c.name.toLowerCase().includes(k)).map((c) => ({ id: c.code, code: c.code, name: c.name }));
+  };
+}

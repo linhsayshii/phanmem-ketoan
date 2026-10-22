@@ -4,12 +4,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
 import dayjs, { type Dayjs } from 'dayjs';
-import { canTransition, CASH_PURPOSES, D, decideEdit, formatVnDate, formatVnNumber, HEADER_FIELD_LABELS, isBalanced, parseVnNumber, sum, todayVn, VND_AMOUNT_RE, voucherTypeDef,
+import { canTransition, CASH_PURPOSES, D, decideEdit, formatVnDate, formatVnNumber, HEADER_FIELD_LABELS, isBalanced, parseVnDate, parseVnNumber, sum, todayVn, VND_AMOUNT_RE, voucherTypeDef,
   type CashPurpose, type HeaderField, type VoucherState, type VoucherTypeDef } from '@kt/domain';
 import { KeyboardGrid, LookupSelect, VnNumberInput, useUnsavedChanges } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
-import { accountFetcherFor, bankAccountFetcher, regimeFor, type FiscalYearRef } from '../lookups.js';
+import { accountFetcherFor, bankAccountFetcher, cashFlowFetcherFor, regimeFor, type FiscalYearRef } from '../lookups.js';
 import { STATE_LABEL, typeLabel } from './VoucherList.js';
 import { SettleDialog, type SettleEntry, type SettleTarget } from './settleCommon.js';
 import { Attachments, iso, quickAdd, reportError, text } from './voucherCommon.js';
@@ -22,7 +22,8 @@ import { DECLARING_TYPES, DeclaredInvoices, clearPartySnapshot, declaredBody, de
 // Các trường *Name chỉ để hiển thị; còn lại (employeeCode, dueDate, extraDims...) được giữ nguyên khi lưu lại để không mất dữ liệu chứng từ lập từ nơi khác.
 // amountCurrency (nguyên tệ, có dấu), fxRate, bankAccountNo (tài khoản ngân hàng ghi đè của dòng) và settle (kế hoạch đối trừ công nợ) chỉ gửi khi có ý nghĩa, xem `linesBody`.
 export interface Line { lineNo?: number; accountCode: string; accountName?: string; partyName?: string | null; description: string | null; debit: string; credit: string;
-  amountCurrency?: string | undefined; fxRate?: string | undefined; bankAccountNo?: string | null | undefined; settle?: SettleEntry[] | undefined; settleSig?: string | undefined; partyCode: string | null; departmentCode: string | null; projectCode: string | null; costItemCode: string | null }
+  amountCurrency?: string | undefined; fxRate?: string | undefined; bankAccountNo?: string | null | undefined; settle?: SettleEntry[] | undefined; settleSig?: string | undefined; partyCode: string | null; departmentCode: string | null; projectCode: string | null; costItemCode: string | null;
+  dueDate?: string | null | undefined; cashFlowCode?: string | null | undefined }
 interface Voucher { id: string; voucherType: string; voucherNo: string | null; postingDate: string; documentDate: string; state: string; description: string | null; partyCode: string | null;
   personName?: string | null; personAddress?: string | null; attachmentsCount?: number | null; bankAccountNo?: string | null; counterBankAccountNo?: string | null; partyBankAccountNo?: string | null;
   dueDate?: string | null; purpose?: string | null; invoices?: Parameters<typeof declRowsOf>[0]; periodStatus: 'open' | 'soft_locked' | 'hard_locked'; hashed: boolean;
@@ -50,9 +51,9 @@ export function mirrorCashAmount(rows: Line[], side: 'debit' | 'credit', last: s
   return { rows: counter === '0' || counter === last ? [rows[0]!, { ...rows[1], [other]: cur }, ...rows.slice(2)] : rows, last: cur };
 }
 
-// Chứng từ đã ghi sổ chỉ sửa được diễn giải và các chiều phân tích của dòng (không đổi số tiền, tài khoản, số dòng).
-const META_COLS = ['description', 'departmentCode', 'projectCode', 'costItemCode'];
-const LOOKUP_CATALOG: Record<string, string> = { accountCode: 'account', partyCode: 'party', departmentCode: 'department', projectCode: 'project', costItemCode: 'cost_item', bankAccountNo: 'bank_account' };
+// Chứng từ đã ghi sổ chỉ sửa được diễn giải, các chiều phân tích, hạn và mã luồng tiền của dòng (không đổi số tiền, tài khoản, số dòng).
+const META_COLS = ['description', 'departmentCode', 'projectCode', 'costItemCode', 'dueDate', 'cashFlowCode'];
+const LOOKUP_CATALOG: Record<string, string> = { accountCode: 'account', partyCode: 'party', departmentCode: 'department', projectCode: 'project', costItemCode: 'cost_item', bankAccountNo: 'bank_account', cashFlowCode: 'cash_flow' };
 // Ô Nợ/Có: để trống (Backspace + Enter, Delete) là 0; chỉ nhận số nguyên không âm (tiền VND), chữ/số âm/số lẻ bị từ chối: giữ giá trị cũ.
 export function parseAmount(newValue: unknown, oldValue: unknown): string {
   const t = String(newValue ?? '').trim();
@@ -66,6 +67,12 @@ const numCol = (field: 'debit' | 'credit', headerName: string): ColDef<Line> => 
 const foreignCol: ColDef<Line> = { field: 'amountCurrency', headerName: 'Nguyên tệ (Nợ +, Có −)', width: 160, cellClass: 'ag-right-aligned-cell', cellEditorParams: { useFormatter: true },
   valueFormatter: (p) => { const s = p.value as string | undefined; return s ? formatVnNumber(s, D(s).decimalPlaces()) : ''; },
   valueParser: (p) => { const t = String(p.newValue ?? '').trim(); if (t === '') return undefined; const n = parseVnNumber(t); return n !== null && /^-?\d{1,16}(\.\d{1,4})?$/.test(n) ? n : p.oldValue; } };
+
+// Hạn của dòng (công nợ: hạn thanh toán; vay, tiền gửi có kỳ hạn: ngày đáo hạn; B01 tách ngắn hạn, dài hạn): nhập dd/mm/yyyy, để trống là không có, chữ sai giữ giá trị cũ.
+const dueCol: ColDef<Line> = { field: 'dueDate', headerName: 'Hạn thanh toán/đáo hạn', width: 130, cellEditorParams: { useFormatter: true },
+  headerTooltip: 'Công nợ: hạn thanh toán; vay, tiền gửi có kỳ hạn: ngày đáo hạn. Báo cáo tình hình tài chính xếp phần có hạn trên 12 tháng vào dài hạn',
+  valueFormatter: (p) => (p.value ? formatVnDate(p.value as string) : ''),
+  valueParser: (p) => { const t = String(p.newValue ?? '').trim(); return t === '' ? null : parseVnDate(t) ?? p.oldValue; } };
 
 // Trường tiêu đề đi vào thân yêu cầu; trường nào loại chứng từ không có thì không gửi.
 const HEADER_BODY: Partial<Record<HeaderField, (f: FormValues) => object>> = {
@@ -202,6 +209,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const settleList = settleTargets(lines, headerParty); const settleCount = settleList.reduce((n, t) => n + t.settle.length, 0);
   const maySettle = editable && SETTLE_TYPES.includes(eff.code) && can('settlement.view') && can('settlement.create');
   const accountFetcher = useMemo(() => accountFetcherFor(postingIso), [postingIso]);
+  const cashFlowFetcher = useMemo(() => cashFlowFetcherFor(postingIso), [postingIso]);
   const t = totals(lines); const balanced = isBalanced(cleanLines(lines).map((l) => ({ debit: l.debit, credit: l.credit })));
 
   const invalidate = (voucherId = id) => Promise.all([qc.invalidateQueries({ queryKey: ['voucher', voucherId] }), qc.invalidateQueries({ queryKey: ['vouchers'] }), qc.invalidateQueries({ queryKey: ['cash-balance'] })]);
@@ -230,7 +238,8 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     }
     if (isNew) return api<Voucher>('/api/vouchers', { method: 'POST', json: { ...body(f), idempotencyKey, ...(postAfter ? { autoPost: true } : {}) } });
     // sửa chứng từ đã ghi sổ: định vị dòng theo lineNo của máy chủ, không theo vị trí trên lưới
-    const meta = linesRef.current.filter((l) => l.lineNo !== undefined).map((l) => ({ lineNo: l.lineNo!, description: l.description, departmentCode: l.departmentCode, projectCode: l.projectCode, costItemCode: l.costItemCode }));
+    const meta = linesRef.current.filter((l) => l.lineNo !== undefined).map((l) => ({ lineNo: l.lineNo!, description: l.description, departmentCode: l.departmentCode, projectCode: l.projectCode, costItemCode: l.costItemCode,
+      dueDate: l.dueDate ?? null, cashFlowCode: l.cashFlowCode || null }));
     const saved = await api<Voucher>(`/api/vouchers/${id}`, { method: 'PUT', json: editable ? { ...body(f), version: v.data!.version } : { version: v.data!.version, description: f.description ?? null, lines: meta } });
     if (!postAfter) return saved;
     // đã lưu mà ghi sổ lỗi (chứng từ lệch, kỳ khóa...): tải lại để version khớp với bản vừa lưu, lần Ctrl+S sau không bị VERSION_CONFLICT
@@ -281,6 +290,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     { field: 'partyCode', headerName: 'Đối tượng (F4)', width: 130 }, { field: 'departmentCode', headerName: 'Bộ phận', width: 100 },
     { field: 'projectCode', headerName: 'Vụ việc', width: 100 }, { field: 'costItemCode', headerName: 'Khoản mục', width: 110 },
     ...(eff.moneyKind === 'bank' ? [{ field: 'bankAccountNo', headerName: 'TK ngân hàng (F4)', width: 150, headerTooltip: 'Để trống là lấy theo tài khoản ngân hàng ở tiêu đề' } satisfies ColDef<Line>] : []),
+    dueCol, { field: 'cashFlowCode', headerName: 'Mã luồng tiền (F4)', width: 140, headerTooltip: 'Chỉ ở dòng tiền mặt, tiền gửi: mã chỉ tiêu của Báo cáo lưu chuyển tiền tệ; để trống thì xếp theo tài khoản đối ứng' },
   ] satisfies ColDef<Line>[]).map((c) => ({ ...c, editable: editable || (metaOnly && META_COLS.includes(c.field as string)) })), [editable, metaOnly, currency, eff.moneyKind]);
   // Chứng từ đã ghi sổ: không thêm/xóa dòng (lineNo của máy chủ phải khớp).
   const onRowsChange = useCallback((rows: Line[]) => { if (editable || rows.length === linesRef.current.length) changeRows(rows); }, [editable, changeRows]);
@@ -384,7 +394,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
       {!isNew && <Attachments voucherId={id} canEdit={can('voucher.update')} />}
       <Modal open={!!lookup} onCancel={() => setLookup(null)} footer={null} title="Chọn từ danh mục" destroyOnHidden afterOpenChange={(o) => { if (o) lookupBox.current?.querySelector('input')?.focus(); }}>
         {lookup && <div ref={lookupBox}><LookupSelect catalog={LOOKUP_CATALOG[lookup.col]!} style={{ width: '100%' }}
-          {...(lookup.col === 'accountCode' ? { fetcher: accountFetcher } : lookup.col === 'bankAccountNo' ? { fetcher: bankAccountFetcher } : { quickAddFields: quickAdd })}
+          {...(lookup.col === 'accountCode' ? { fetcher: accountFetcher } : lookup.col === 'bankAccountNo' ? { fetcher: bankAccountFetcher } : lookup.col === 'cashFlowCode' ? { fetcher: cashFlowFetcher } : { quickAddFields: quickAdd })}
           onChange={(code) => { if (code !== null) { const copy = [...linesRef.current]; copy[lookup.row] = { ...copy[lookup.row]!, [lookup.col]: code }; changeRows(copy); } setLookup(null); }} /></div>}
       </Modal>
       {maySettle && <SettleDialog open={settleOpen} targets={settleList} currency={currency} asOf={postingIso} onClose={() => setSettleOpen(false)}
