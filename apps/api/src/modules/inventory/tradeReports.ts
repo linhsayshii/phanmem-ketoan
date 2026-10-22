@@ -12,7 +12,7 @@ import { companyInfo } from '../reporting/print/bookSet.js';
 import { banners, mvCte, resolveScope, type Banners, type ScopeInput } from './reports.js';
 
 type Trx = Transaction<Database>;
-// Báo cáo bán hàng, mua hàng lấy số từ dòng hàng (`voucher_item_line`, VND cơ sở) của chứng từ ghi sổ hoặc đã đảo: chứng từ gốc tính ở kỳ của nó, chứng từ đảo (bản sao dòng gốc) tính số âm ở kỳ đảo,
+// Báo cáo bán hàng, mua hàng lấy số từ dòng hàng (`voucher_item_line`, VND cơ sở) của chứng từ ghi sổ hoặc đã đảo: chứng từ gốc tính ở kỳ của nó, chứng từ đảo tính số âm (theo dòng của chứng từ gốc) ở kỳ đảo,
 // nên mỗi kỳ khớp sổ cái và báo cáo kỳ cũ không đổi khi đảo ở kỳ sau. Giảm giá bán, mua (GGB, GGM) là khoản giảm trừ cùng cột với hàng trả lại. Không phụ thuộc TK giảm trừ doanh thu từng chế độ.
 // Giá vốn bán = giá gán hiện hành của phát sinh kho của dòng (cùng công thức báo cáo kho `mvCte`), chưa tính giá vốn thì giá tạm tính (cờ `provisional`); hàng bán bị trả lại trừ giá vốn nhập lại.
 
@@ -34,11 +34,10 @@ const finish = (groupBy: string, rows: TradeRow[], limit: number | undefined, su
   return { groupBy, rows: shown, totals: sum(shown, sumKeys), costHidden, truncated, banners: b };
 };
 const none: Banners = { provisional: false, stale: [], messages: [] };
-// Chứng từ gốc (ghi sổ hoặc đã đảo) tính + ở kỳ của nó, chứng từ đảo (có bản sao dòng hàng của gốc) tính - ở kỳ đảo: mỗi kỳ khớp sổ cái, kỳ đã in không đổi khi đảo ở kỳ sau.
-const SG = sql`(CASE WHEN eff.reversal_of_id IS NULL THEN 1 ELSE -1 END)`;
-// Phân bổ chi phí mua không được chứng từ đảo sao chép: lấy từ chứng từ gốc, đổi dấu ở kỳ của chứng từ đảo (một cấp đảo).
+// Dòng hàng luôn lấy từ chứng từ gốc (không phụ thuộc bản sao của reverse_voucher, GGB/GGM đảo không có bản sao): gốc dấu + ở kỳ của nó, chứng từ đảo của nó dấu - ở kỳ đảo.
+// Mỗi kỳ khớp sổ cái, kỳ đã in không đổi khi đảo ở kỳ sau. shortcut: một cấp đảo, đảo của đảo chưa tính; nếu cần thì đi hết chuỗi như tax/register.ts effectiveRows.
 const EFF = sql`(eff.id = v.id OR eff.reversal_of_id = v.id)`;
-const SGL = sql`(CASE WHEN eff.id = v.id THEN 1 ELSE -1 END)`;
+const SG = sql`(CASE WHEN eff.id = v.id THEN 1 ELSE -1 END)`;
 const emp = sql`(SELECT x.employee_id FROM voucher_line x WHERE x.tenant_id = v.tenant_id AND x.voucher_id = v.id AND x.employee_id IS NOT NULL ORDER BY x.line_no LIMIT 1) AS employee_id`;
 const qtyTxt = (c: string) => `coalesce(sum(${c}), 0)::text`;
 
@@ -52,9 +51,9 @@ export async function salesReport(trx: Trx, q: { from: string; to: string; group
         CASE WHEN v.voucher_type = 'TLB' THEN ${SG} * coalesce(l.base_quantity, l.quantity * l.uom_factor, 0) ELSE 0 END AS ret_qty,
         CASE WHEN v.voucher_type = 'BH' THEN ${SG} * l.amount ELSE 0 END AS gross, CASE WHEN v.voucher_type = 'BH' THEN ${SG} * l.discount_amount ELSE 0 END AS disc,
         CASE WHEN v.voucher_type IN ('TLB', 'GGB') THEN ${SG} * (l.amount - l.discount_amount) ELSE 0 END AS ret, 0 AS cogs, false AS prov
-      FROM voucher_item_line l JOIN voucher v ON v.id = l.voucher_id JOIN voucher eff ON eff.id = v.id
+      FROM voucher_item_line l JOIN voucher v ON v.id = l.voucher_id JOIN voucher eff ON ${EFF}
         ${s.itemId !== undefined || s.groupIds ? sql`JOIN item si ON si.id = l.item_id` : sql``}
-      WHERE v.voucher_type IN ('BH', 'TLB', 'GGB') AND eff.state IN ('posted', 'reversed') AND eff.posting_date BETWEEN ${q.from}::date AND ${q.to}::date
+      WHERE v.reversal_of_id IS NULL AND v.voucher_type IN ('BH', 'TLB', 'GGB') AND eff.state IN ('posted', 'reversed') AND eff.posting_date BETWEEN ${q.from}::date AND ${q.to}::date
         ${s.itemId !== undefined ? sql`AND l.item_id = ${s.itemId}` : sql``} ${s.groupIds ? sql`AND si.group_id = ANY(${s.groupIds}::bigint[])` : sql``}
       ${cost ? sql`UNION ALL
       SELECT m.posting_date, v.party_id, m.item_id, ${emp}, 0, 0, 0, 0, 0, CASE WHEN m.direction = 'out' THEN m.val ELSE -m.val END, m.provisional
@@ -83,10 +82,10 @@ export async function purchasesReport(trx: Trx, q: { from: string; to: string; g
         CASE WHEN v.voucher_type = 'MH' THEN ${SG} * l.tax_amount ELSE -${SG} * l.tax_amount END AS tax,
         CASE WHEN v.voucher_type = 'MH' THEN ${SG} * coalesce(l.import_tax, 0) ELSE 0 END AS imp, CASE WHEN v.voucher_type = 'MH' THEN ${SG} * coalesce(l.excise_tax, 0) ELSE 0 END AS exc,
         CASE WHEN v.voucher_type = 'MH' THEN ${SG} * coalesce(l.import_vat, 0) ELSE 0 END AS impvat, 0 AS landed
-      FROM voucher_item_line l JOIN voucher v ON v.id = l.voucher_id JOIN voucher eff ON eff.id = v.id
-      WHERE v.voucher_type IN ('MH', 'TLM', 'GGM') AND eff.state IN ('posted', 'reversed') AND eff.posting_date BETWEEN ${q.from}::date AND ${q.to}::date ${flt}
+      FROM voucher_item_line l JOIN voucher v ON v.id = l.voucher_id JOIN voucher eff ON ${EFF}
+      WHERE v.reversal_of_id IS NULL AND v.voucher_type IN ('MH', 'TLM', 'GGM') AND eff.state IN ('posted', 'reversed') AND eff.posting_date BETWEEN ${q.from}::date AND ${q.to}::date ${flt}
       ${cost ? sql`UNION ALL
-      SELECT eff.posting_date, rv.party_id, l.item_id, 0, 0, 0, 0, 0, 0, 0, 0, 0, ${SGL} * a.amount
+      SELECT eff.posting_date, rv.party_id, l.item_id, 0, 0, 0, 0, 0, 0, 0, 0, 0, ${SG} * a.amount
       FROM landed_cost_alloc a JOIN voucher v ON v.id = a.voucher_id JOIN voucher eff ON ${EFF} JOIN voucher_item_line l ON l.tenant_id = a.tenant_id AND l.id = a.receipt_line_id JOIN voucher rv ON rv.id = l.voucher_id
       WHERE eff.state IN ('posted', 'reversed') AND eff.posting_date BETWEEN ${q.from}::date AND ${q.to}::date ${flt}` : sql``})
     SELECT ${g.key} AS key, ${g.name} AS name, ${sql.raw(qtyTxt('ln.qty'))} AS qty, ${sql.raw(qtyTxt('ln.ret_qty'))} AS "returnQty",

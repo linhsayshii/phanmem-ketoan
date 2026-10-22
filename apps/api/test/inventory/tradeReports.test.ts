@@ -104,4 +104,27 @@ describe('báo cáo bán hàng, mua hàng', () => {
     const text: string[] = []; wb.worksheets[0]!.eachRow((r) => r.eachCell((cell) => text.push(String(cell.value))));
     expect(text).toContain('Doanh thu thuần'); expect(text).not.toContain('Lãi gộp'); expect(text).not.toContain('Giá vốn');
   });
+
+  it('GGB, MH, GGM đảo khác kỳ: kỳ gốc giữ nguyên, kỳ đảo âm, tổng 0', async () => {
+    const rev = async (id: string, date: string) => expect((await call('POST', `/api/vouchers/${id}/reverse`, { postingDate: date })).statusCode).toBe(201);
+    const rep = async (kind: string, from: string, to: string) => (await call('GET', `/api/reports/${kind}?from=${from}&to=${to}&groupBy=month`)).json().rows[0];
+    const orig = await create(sale([sl('S1', '1', '1000')], '2026-06-01'));
+    const gg = await create({ voucherType: 'GGB', postingDate: '2026-06-02', documentDate: '2026-06-02', partyCode: 'KH001', autoPost: true,
+      items: [{ description: 'Giảm giá', accountCode: '5113', amountCurrency: '100', taxCodes: ['V10'] }],
+      invoice: { serial: 'C26TBB', invoiceNo: `G${seq++}`, invoiceDate: '2026-06-02', invoiceGroupCode: '10', adjustsInvoiceId: orig.invoices[0].id } });
+    await rev(gg.id, '2026-07-03');
+    expect(await rep('sales', '2026-06-01', '2026-06-30')).toMatchObject({ returns: '100', netRevenue: '900' });
+    expect(await rep('sales', '2026-07-01', '2026-07-31')).toMatchObject({ returns: '-100', netRevenue: '100' });
+    const tot = (await call('GET', '/api/reports/sales?from=2026-06-01&to=2026-07-31&groupBy=month')).json().totals;
+    expect(tot).toMatchObject({ returns: '0', netRevenue: '1000' });
+    const m = await create(mh([sl('S2', '10', '10')], '2026-08-01'));
+    const g2 = await create({ voucherType: 'GGM', postingDate: '2026-08-02', documentDate: '2026-08-02', partyCode: 'NCC001', autoPost: true,
+      items: [{ description: 'Giảm giá', accountCode: '6422', amountCurrency: '20', taxCodes: ['V10'] }],
+      invoice: { serial: 'C26TAA', invoiceNo: `GM${seq++}`, invoiceDate: '2026-08-02', invoiceGroupCode: '01', adjustsInvoiceId: m.invoices[0].id } });
+    expect(await rep('purchases', '2026-08-01', '2026-08-31')).toMatchObject({ purchaseValue: '100', returns: '20', netPurchase: '80' });
+    await rev(g2.id, '2026-09-02'); await rev(m.id, '2026-09-03');
+    expect(await rep('purchases', '2026-08-01', '2026-08-31')).toMatchObject({ purchaseValue: '100', returns: '20', netPurchase: '80' });
+    expect(await rep('purchases', '2026-09-01', '2026-09-30')).toMatchObject({ purchaseValue: '-100', returns: '-20', netPurchase: '-80' });
+    expect((await call('GET', '/api/reports/purchases?from=2026-08-01&to=2026-09-30&groupBy=month')).json().totals).toMatchObject({ netPurchase: '0' });
+  });
 });
