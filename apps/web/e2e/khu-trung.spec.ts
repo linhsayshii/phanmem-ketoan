@@ -75,7 +75,9 @@ test('Quy tắc khử trùng: sửa cửa sổ ngày trên màn Danh mục lưu 
   try {
     await page.goto('/danh-muc/voucher_dup_rule');
     const row = page.locator('.ag-row').filter({ has: page.locator('[col-id="type_a"]', { hasText: /^PKT$/ }) }).filter({ has: page.locator('[col-id="type_b"]', { hasText: /^PT$/ }) });
-    await row.getByRole('button', { name: 'Sửa' }).click();
+    // cột thao tác ghim phải: nút Sửa nằm ở vùng ghim, cùng row-index
+    const idx = await row.getAttribute('row-index');
+    await page.locator(`.ag-pinned-right-cols-container .ag-row[row-index="${idx}"]`).getByRole('button', { name: 'Sửa' }).click();
     await page.getByLabel('Cách tối đa (ngày)').fill(String(next));
     await page.getByRole('dialog').getByRole('button', { name: 'Đồng ý' }).click();
     await expect(page.getByText('Đã lưu')).toBeVisible();

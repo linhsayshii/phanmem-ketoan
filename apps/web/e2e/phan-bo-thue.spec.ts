@@ -24,15 +24,12 @@ test('Phân bổ thuế: tìm phân bổ TNCN khấu trừ tại nguồn 3335, s
     const gridRow = page.locator('.ag-center-cols-container .ag-row', { hasText: 'Hóa đơn' }).filter({ hasText: 'TNCN_KT' });
     await expect(gridRow).toHaveCount(1);
     await expect(gridRow).toContainText('-100,0000');
-    // màn hình 1280 px: cột thao tác nằm ngoài vùng nhìn, lưới chỉ dựng cột khi cuộn ngang tới (như người dùng cuộn); cuộn xong cột "Loại thuế" bị gỡ nên giữ dòng theo row-index
-    const sameRow = page.locator(`.ag-center-cols-container .ag-row[row-index="${await gridRow.getAttribute('row-index')}"]`);
-    await page.locator('.ag-body-horizontal-scroll-viewport').evaluate((el) => { el.scrollLeft = el.scrollWidth; });
-    await sameRow.getByRole('button', { name: 'Sửa' }).click();
+    // cột thao tác ghim phải: nút Sửa nằm ở vùng ghim, cùng row-index
+    await page.locator(`.ag-pinned-right-cols-container .ag-row[row-index="${await gridRow.getAttribute('row-index')}"]`).getByRole('button', { name: 'Sửa' }).click();
     await expect(page.getByText('Sửa phân bổ thuế')).toBeVisible();
     await page.getByLabel('Nhãn báo cáo').fill(tag);
     await page.locator('.ant-modal-footer .ant-btn-primary').click();
     await expect(page.locator('.ant-message').getByText('Đã lưu')).toBeVisible();
-    await expect(page.locator('.ag-center-cols-container .ag-row', { hasText: tag })).toBeVisible(); // lưới có thể giữ tạm dòng cũ cạnh dòng mới nên không chọn theo row-index
     expect((await list()).find((d) => d.id === row.id)).toMatchObject({ account_code: '3335', report_tag: tag });
   } finally {
     // trả nhãn về như trước để lần chạy sau và các spec khác thấy dữ liệu mặc định

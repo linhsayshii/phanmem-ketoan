@@ -11,6 +11,8 @@ async function signIn(page: Page, request: APIRequestContext) {
 
 test('Danh mục đối tượng: thêm, ngưng dùng, lọc', async ({ page, request }) => {
   await signIn(page, request);
+  // bộ lọc nhớ phía máy chủ còn "Ngưng dùng" từ lần chạy trước: đặt lại về mặc định
+  expect((await request.put('/api/prefs/filter:catalog:party', { data: { value: { q: '', active: 'true' } } })).ok()).toBeTruthy();
   const code = `DM${Date.now().toString(36).toUpperCase()}`; // mã duy nhất mỗi lần chạy
   await page.goto('/danh-muc/party');
   await expect(page.getByRole('heading', { name: 'Đối tượng' })).toBeVisible();
