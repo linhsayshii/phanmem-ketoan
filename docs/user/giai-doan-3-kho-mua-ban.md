@@ -149,3 +149,17 @@ Vào Chứng từ, Phiếu lắp ráp, tháo dỡ, bấm Thêm (Insert), chọn 
 - Phiếu ghi sổ theo giá tạm tính. Khi chạy Tính giá vốn, giá trị hàng nhập đổi theo giá gán của hàng xuất và hệ thống lập Phiếu giá vốn ghi phần chênh lệch (Nợ TK kho nhập, Có TK kho xuất). Chạy lại không đổi thì không lập thêm phiếu.
 - Bỏ ghi sổ không được nếu hàng nhập đã bị xuất tiếp; khi đó dùng Đảo.
 
+
+## Kiểm kê kho
+
+Vào **Kho > Kiểm kê kho** (`/kho/kiem-ke`).
+
+1. Chọn **Ngày kiểm kê** và **Kho** (F4 để tra cứu), bấm **Lập biên bản kiểm kê**. Hệ thống lấy tồn sổ cuối ngày kiểm kê theo từng hàng và từng lô.
+2. Nhập **Số đếm** thực tế (theo đơn vị tính cơ sở) vào lưới. Cột **Chênh lệch** tự tính: dương là thừa, âm là thiếu. Dòng để trống số đếm sẽ không được điều chỉnh. Có thể thêm dòng hàng chưa có tồn sổ bằng dòng trống cuối lưới (F4 tra mã hàng). Ctrl+S để lưu.
+3. Chọn **Lý do chênh lệch** cho từng dòng:
+   - Hàng thừa: "Chưa rõ nguyên nhân" ghi Có TK 3381; "Thừa ghi thu nhập khác" ghi Có TK 711.
+   - Hàng thiếu: "Chưa rõ nguyên nhân" ghi Nợ TK 1381; "Trong định mức" ghi Nợ TK 632; "Mất mát" ghi Nợ TK 811.
+4. Bấm **Điều chỉnh chênh lệch**. Hệ thống lập và ghi sổ ngay một Phiếu nhập kho (hàng thừa) và một Phiếu xuất kho (hàng thiếu), giá trị theo giá tạm tính của hàng. Chỉ điều chỉnh được một lần; biên bản chuyển sang "Đã điều chỉnh" và không sửa được nữa. Nếu kỳ đã khóa sổ hoặc tồn kho sẽ âm, việc điều chỉnh bị từ chối và biên bản vẫn ở trạng thái nháp.
+5. **In biên bản** theo Mẫu số 05-VT (Biên bản kiểm kê vật tư, công cụ, sản phẩm, hàng hóa). Biên bản không in giá trị.
+
+Quyền: xem, lập, sửa, xóa biên bản theo nhóm quyền kiểm kê kho; điều chỉnh cần thêm quyền lập và ghi sổ phiếu kho, và cờ xem giá vốn.
