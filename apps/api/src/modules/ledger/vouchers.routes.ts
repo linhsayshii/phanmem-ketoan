@@ -35,14 +35,16 @@ type Auth = NonNullable<FastifyRequest['auth']>;
 // Chứng từ loại kho (module inventory) cần thêm quyền stock_voucher.*: quyền voucher.* chung chỉ mở chứng từ ngoài kho.
 async function requireStockPerm(trx: Trx, auth: Auth, id: string, perm: string) {
   const r = await trx.selectFrom('voucher').select('voucher_type').where('id', '=', id).executeTakeFirst();
-  if (r && voucherTypeDef(r.voucher_type)?.module === 'inventory' && !auth.permissions.has(perm)) throw new AppError('FORBIDDEN', `Thiếu quyền ${perm}`, 403);
+  const stock = r && (voucherTypeDef(r.voucher_type)?.module === 'inventory' // MH, TLM mang dòng hàng nhập, xuất kho khi có hàng hóa
+    || ((r.voucher_type === 'MH' || r.voucher_type === 'TLM') && !!(await trx.selectFrom('voucher_item_line').select('id').where('voucher_id', '=', id).where('item_id', 'is not', null).limit(1).executeTakeFirst())));
+  if (stock && !auth.permissions.has(perm)) throw new AppError('FORBIDDEN', `Thiếu quyền ${perm}`, 403);
 }
 async function withStockWarnings<T extends { warnings?: unknown[] }>(trx: Trx, tenantId: string, dto: T, voucherId: string): Promise<T> {
   const w = await stockNegativeWarnings(trx, tenantId, voucherId);
   return w.length ? { ...dto, warnings: [...(dto.warnings ?? []), ...w] } : dto;
 }
 // Số liệu theo dòng chỉ trả khi cờ nhạy cảm (công nợ, giá vốn) che từng tài khoản cho phép.
-async function assertVoucherSensitive(trx: Trx, auth: Auth, v: { id: string; lines: { accountCode: string }[] }) {
+export async function assertVoucherSensitive(trx: Trx, auth: Auth, v: { id: string; lines: { accountCode: string }[] }) {
   if (!v.lines.length) return;
   const { regime } = await trx.selectFrom('voucher as v').innerJoin('fiscal_period as p', 'p.fiscal_year', 'v.fiscal_year').select('p.regime').where('v.id', '=', v.id).limit(1).executeTakeFirstOrThrow();
   const accs = await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', regime).where('code', 'in', [...new Set(v.lines.map((l) => l.accountCode))]).execute();

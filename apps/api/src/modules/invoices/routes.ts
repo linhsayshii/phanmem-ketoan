@@ -4,6 +4,7 @@ import { READ_SNAPSHOT } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
 import { postWithCashCheck } from '../cash/books.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
+import { assertVoucherSensitive } from '../ledger/vouchers.routes.js';
 import { createSchedule, deleteSchedule, getSchedule, listSchedules, runAmortization, runInput, scheduleInput, scheduleUpdate, updateSchedule } from './amortization.js';
 import { createInvoice, getInvoice, invoiceInput, listTaxDefs, updateInvoice } from './service.js';
 
@@ -18,7 +19,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     const tenantId = req.auth!.tenantId!;
     // Như POST /api/vouchers: gửi lại cùng idempotencyKey trả hóa đơn cũ, chỉ ghi sổ hóa đơn vừa tạo (nháp, version 1).
     const dto = await app.withOverride(req, async (trx) => {
-      const inv = await createInvoice(trx, { tenantId, userId: req.auth!.userId }, input);
+      const inv = await createInvoice(trx, { tenantId, userId: req.auth!.userId, auth: req.auth! }, input);
       return autoPost && inv.state === 'draft' && inv.version === 1 ? { ...inv, ...(await postWithCashCheck(trx, tenantId, inv.id)) } : inv;
     });
     if (dto.state === 'posted') notifyRecompute(app, tenantId);
@@ -26,11 +27,15 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
   app.put('/api/invoices/:id', { preHandler: app.requirePermission('voucher.update'), schema: { params: idParam, body: invoiceInput.extend({ version: z.number().int() }) } }, async (req) => {
     const { version, ...input } = req.body;
-    return app.withOverride(req, (trx) => updateInvoice(trx, { tenantId: req.auth!.tenantId! }, req.params.id, version, input));
+    return app.withOverride(req, (trx) => updateInvoice(trx, { tenantId: req.auth!.tenantId!, auth: req.auth! }, req.params.id, version, input));
   });
   // Danh mục mã thuế và phân bổ để trình duyệt xem trước thuế, bút toán bằng động cơ thuế; đứng trước :id (tuyến tĩnh thắng tuyến tham số).
   app.get('/api/invoices/tax-defs', { preHandler: app.requirePermission('voucher.view') }, async (req) => app.withTenant(req, (trx) => listTaxDefs(trx), READ_SNAPSHOT));
-  app.get('/api/invoices/:id', { preHandler: app.requirePermission('voucher.view'), schema: { params: idParam } }, async (req) => app.withTenant(req, (trx) => getInvoice(trx, req.params.id)));
+  app.get('/api/invoices/:id', { preHandler: app.requirePermission('voucher.view'), schema: { params: idParam } }, async (req) => app.withTenant(req, async (trx) => {
+    const inv = await getInvoice(trx, req.params.id);
+    if (inv.voucherType === 'MH' || inv.voucherType === 'TLM') await assertVoucherSensitive(trx, req.auth!, inv); // hóa đơn mua hàng hóa mang giá trị tồn kho: cần view_cost
+    return inv;
+  }));
 
   // ---- Doanh thu nhận trước: lịch phân bổ (3387 → doanh thu) và chạy phân bổ theo kỳ (chứng từ PB) ----
   app.get('/api/amortizations', { preHandler: app.requirePermission('amortization.view') }, async (req) => app.withTenant(req, (trx) => listSchedules(trx), READ_SNAPSHOT));

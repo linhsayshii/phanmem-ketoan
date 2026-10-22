@@ -25,19 +25,53 @@ export const stockVoucherInput = z.object({
   partyCode: z.string().nullable().optional(), personName: optText(200), attachmentsCount: z.number().int().min(0).max(999).nullable().optional(),
   warehouseCode: z.string().min(1), destWarehouseCode: z.string().nullable().optional(), description: z.string().nullable().optional(),
   items: z.array(stockItemInput).min(1, 'Phiếu phải có ít nhất một dòng hàng').max(500, 'Tối đa 500 dòng hàng mỗi phiếu'),
+  sourceInvoiceIds: z.array(z.string().uuid()).max(100).optional(), // chỉ PNK mua hàng: hóa đơn mua hàng hóa về trước (MH invoice_first); thành tiền lấy theo hóa đơn, Có 151
 });
 export type StockVoucherInput = z.infer<typeof stockVoucherInput>;
 export interface StockItemDto {
   lineNo: number; itemCode: string; itemName: string; uomCode: string; quantity: string; baseQuantity: string; uomFactor: string; unitPrice: string | null; unitCost: string | null; amount: string;
   lotNo: string | null; mfgDate: string | null; expiryDate: string | null; warehouseCode: string | null; destWarehouseCode: string | null; direction: string | null; debitAccountCode: string | null; creditAccountCode: string | null;
+  linkLineId: number | null; // dòng hóa đơn mua hàng hóa (về trước) mà dòng nhập này nhận hàng
 }
 export interface StockLedgerLineDto { lineNo: number; accountCode: string; accountName: string; debit: string; credit: string; itemCode: string | null; warehouseCode: string | null; partyCode: string | null }
 export interface StockVoucherDto extends Omit<S.VoucherDto, 'lines'> { stockKind: string | null; warehouseCode: string | null; destWarehouseCode: string | null; items: StockItemDto[]; ledgerLines: StockLedgerLineDto[]; warnings: { code: string; message: string; lineNo?: number }[] }
 
 const round0 = (d: Decimal) => d.toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toFixed(0);
 
+// PNK mua hàng theo hóa đơn về trước: mỗi dòng nhập ghép với dòng hóa đơn (MH invoice_first) cùng hàng còn đủ số lượng chưa nhận; thành tiền theo hóa đơn (chia tỷ lệ số lượng,
+// dòng nhận nốt phần còn lại lấy phần dư để tổng đúng bằng tiền hàng của hóa đơn). Số đã nhận tính từ các phiếu nhập khác (nháp hoặc đã ghi sổ) cùng liên kết.
+async function invoiceLinks(trx: Trx, input: StockVoucherInput, selfId?: string): Promise<({ lineId: number; amount: string } | null)[] | null> {
+  const ids = input.sourceInvoiceIds;
+  if (!ids?.length) return null;
+  if (input.voucherType !== 'PNK' || input.stockKind !== 'purchase') throw new AppError('VALIDATION', 'Hóa đơn nguồn (sourceInvoiceIds) chỉ dùng cho phiếu nhập kho mua hàng', 400);
+  const vs = await trx.selectFrom('voucher').select(['id', 'voucher_type', 'state', 'receipt_state']).where('id', 'in', ids).execute();
+  for (const id of ids) {
+    const v = vs.find((x) => x.id === id);
+    if (!v || v.voucher_type !== 'MH' || v.receipt_state !== 'invoice_first') throw new AppError('INVOICE_NOT_FOUND', 'Không tìm thấy hóa đơn mua hàng hóa về trước đã chọn', 404);
+    if (v.state !== 'posted') throw new AppError('INVOICE_NOT_POSTED', 'Hóa đơn mua hàng hóa chưa ghi sổ, không lập phiếu nhập theo hóa đơn được', 409);
+  }
+  const mh = await trx.selectFrom('voucher_item_line as l').select(['l.id', 'l.item_id', 'l.base_quantity', 'l.amount', 'l.discount_amount']).where('l.voucher_id', 'in', ids).where('l.item_id', 'is not', null).orderBy('l.voucher_id').orderBy('l.line_no').execute();
+  const got = mh.length ? await trx.selectFrom('voucher_item_line as l').innerJoin('voucher as v', 'v.id', 'l.voucher_id').select(['l.link_line_id', 'l.base_quantity', 'l.amount'])
+    .where('l.link_line_id', 'in', mh.map((m) => m.id)).where('v.voucher_type', '=', 'PNK').where('v.state', 'in', ['draft', 'posted']).$if(!!selfId, (q) => q.where('l.voucher_id', '<>', selfId!)).execute() : [];
+  const left = new Map(mh.map((m) => [m.id, { qty: D(m.base_quantity ?? 0).minus(got.filter((g) => g.link_line_id === m.id).reduce((s, g) => s.plus(g.base_quantity ?? 0), D(0))),
+    amt: D(m.amount).minus(m.discount_amount).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).minus(got.filter((g) => g.link_line_id === m.id).reduce((s, g) => s.plus(g.amount), D(0))) }]));
+  const itemIds = new Map((await trx.selectFrom('item').select(['id', 'code']).where('code', 'in', [...new Set(input.items.map((i) => i.itemCode))]).execute()).map((r) => [r.code, r.id]));
+  const uf = new Map((await trx.selectFrom('item_uom as iu').innerJoin('uom as u', 'u.id', 'iu.uom_id').select(['iu.item_id', 'u.code', 'iu.factor']).where('iu.item_id', 'in', [...itemIds.values()]).execute()).map((r) => [`${r.item_id}:${r.code}`, r.factor]));
+  return input.items.map((it, i) => {
+    const itemId = itemIds.get(it.itemCode); const factor = itemId === undefined ? undefined : uf.get(`${itemId}:${it.uomCode}`);
+    if (itemId === undefined || factor === undefined) return null; // build báo lỗi hàng, đơn vị tính
+    const base = D(toBaseQty(it.quantity, D(factor).toString()));
+    const m = mh.find((x) => x.item_id === itemId && left.get(x.id)!.qty.gte(base));
+    if (!m) throw new AppError('INVOICE_LINE_NOT_FOUND', `Dòng ${i + 1}: không có dòng hóa đơn mua cùng hàng ${it.itemCode} còn đủ số lượng chưa nhập kho`, 409);
+    const l = left.get(m.id)!;
+    const amount = base.eq(l.qty) ? l.amt : l.amt.times(base).div(l.qty).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+    left.set(m.id, { qty: l.qty.minus(base), amt: l.amt.minus(amount) });
+    return { lineId: m.id, amount: amount.toFixed(0) };
+  });
+}
+
 // Dựng dòng hàng và dòng sổ cái từ phiếu. Tài khoản tra theo mã trong chế độ của năm tài chính (không tin id lưu ở hàng/kho: có thể thuộc chế độ khác).
-async function build(trx: Trx, input: StockVoucherInput, auth?: Auth) {
+async function build(trx: Trx, input: StockVoucherInput, auth?: Auth, selfId?: string) {
   const kind = stockKindDef(input.voucherType, input.stockKind);
   if (!kind) throw new AppError('STOCK_KIND_INVALID', `Loại nghiệp vụ "${input.stockKind}" không dùng cho ${voucherTypeDef(input.voucherType)!.name}`, 400);
   const transfer = input.voucherType === 'CK'; const dir = input.voucherType === 'PNK' ? 'in' : 'out';
@@ -45,6 +79,7 @@ async function build(trx: Trx, input: StockVoucherInput, auth?: Auth) {
   if (transfer && !input.destWarehouseCode) throw new AppError('VALIDATION', 'Phiếu chuyển kho phải có kho nhận', 400);
   if (!transfer && input.destWarehouseCode) throw new AppError('VALIDATION', 'Kho nhận chỉ dùng cho phiếu chuyển kho', 400);
   const { regime } = await S.periodOf(trx, input.postingDate, input.voucherType);
+  const links = await invoiceLinks(trx, input, selfId);
 
   const itemCodes = [...new Set(input.items.map((i) => i.itemCode))];
   const items = new Map((await trx.selectFrom('item as i').leftJoin('account as ia', 'ia.id', 'i.inventory_account_id').select(['i.id', 'i.code', 'i.name', 'i.kind', 'i.tracking', 'i.is_active', 'ia.code as inv_code', 'i.base_uom_id'])
@@ -74,9 +109,11 @@ async function build(trx: Trx, input: StockVoucherInput, auth?: Auth) {
 
   // Giá tạm tính của dòng xuất, chuyển (tồn đến ngày phiếu).
   const est = new Map<string, string>(); const warnings: StockVoucherDto['warnings'] = [];
-  const priced = await Promise.all(rows.map(async (r) => {
-    let unitCost: string | null = null; let amount: string;
-    if (r.service || dir === 'in' && !transfer) {
+  const priced = await Promise.all(rows.map(async (r, i) => {
+    let unitCost: string | null = null; let amount: string; const link = links?.[i] ?? null;
+    if (link) {
+      amount = link.amount; // giá theo hóa đơn mua hàng hóa
+    } else if (r.service || dir === 'in' && !transfer) {
       amount = round0(D(r.it.quantity).times(r.it.unitPrice ?? '0'));
     } else {
       const key = `${r.item.id}:${r.src.id}`;
@@ -85,7 +122,7 @@ async function build(trx: Trx, input: StockVoucherInput, auth?: Auth) {
       if (!r.it.fixedUnitCost && D(unitCost).isZero()) warnings.push({ code: 'COST_UNKNOWN', message: `Dòng ${r.n}: hàng ${r.it.itemCode} chưa có giá vốn, ghi giá 0 cho đến khi tính giá vốn`, lineNo: r.n });
     }
     if (amount.length > 16) throw new AppError('AMOUNT_TOO_LARGE', `Dòng ${r.n}: thành tiền vượt quá 16 chữ số`, 400);
-    return { ...r, unitCost, amount };
+    return { ...r, unitCost, amount, link };
   }));
 
   // Tài khoản kho: kho, rồi hàng, rồi 156. Tài khoản đối ứng: dòng ghi đè, rồi mặc định của loại nghiệp vụ.
@@ -94,7 +131,7 @@ async function build(trx: Trx, input: StockVoucherInput, auth?: Auth) {
     const invCode = inv(r.src);
     let debit: string; let credit: string;
     if (transfer) { debit = r.it.debitAccountCode || inv(r.dst!); credit = r.it.creditAccountCode || invCode; }
-    else if (dir === 'in') { debit = r.it.debitAccountCode || invCode; credit = r.it.creditAccountCode || counterDefault; }
+    else if (dir === 'in') { debit = r.it.debitAccountCode || invCode; credit = r.it.creditAccountCode || (r.link ? '151' : counterDefault); }
     else { debit = r.it.debitAccountCode || counterDefault; credit = r.it.creditAccountCode || invCode; }
     return { ...r, debit, credit };
   });
@@ -124,10 +161,10 @@ async function build(trx: Trx, input: StockVoucherInput, auth?: Auth) {
 
 async function insertItems(trx: Trx, tenantId: string, voucherId: string, b: Awaited<ReturnType<typeof build>>) {
   const rows = b.lines.map((l) => ({
-    tenant_id: tenantId, voucher_id: voucherId, line_no: l.n, item_id: l.item.id, uom_id: l.u.uom_id, quantity: l.it.quantity, unit_price: b.dir === 'in' && !b.transfer || l.service ? (l.it.unitPrice ?? '0') : null,
+    tenant_id: tenantId, voucher_id: voucherId, line_no: l.n, item_id: l.item.id, uom_id: l.u.uom_id, quantity: l.it.quantity, unit_price: l.link ? D(l.amount).div(l.it.quantity).toFixed(4) : b.dir === 'in' && !b.transfer || l.service ? (l.it.unitPrice ?? '0') : null,
     amount_currency: l.amount, amount: l.amount, account_id: b.accs.get(b.dir === 'in' && !b.transfer ? l.debit : l.credit)!.id, warehouse_id: l.src.id, dest_warehouse_id: l.dst?.id ?? null,
     uom_factor: l.factor, base_quantity: l.base, lot_no: l.it.lotNo || null, mfg_date: l.it.mfgDate || null, expiry_date: l.it.expiryDate || null,
-    direction: b.transfer ? null : b.dir, debit_account_id: b.accs.get(l.debit)!.id, credit_account_id: b.accs.get(l.credit)!.id, unit_cost: l.unitCost, fixed_cost: !!l.it.fixedUnitCost,
+    direction: b.transfer ? null : b.dir, debit_account_id: b.accs.get(l.debit)!.id, credit_account_id: b.accs.get(l.credit)!.id, unit_cost: l.unitCost, fixed_cost: !!l.it.fixedUnitCost, link_line_id: l.link?.lineId ?? null,
   }));
   await trx.insertInto('voucher_item_line').values(rows).execute();
 }
@@ -146,7 +183,7 @@ export async function createStockVoucher(trx: Trx, ctx: Ctx, input: StockVoucher
 export async function updateStockVoucher(trx: Trx, ctx: Ctx, id: string, version: number, input: StockVoucherInput): Promise<StockVoucherDto> {
   const cur = await trx.selectFrom('voucher').select('voucher_type').where('id', '=', id).executeTakeFirst();
   if (!cur || voucherTypeDef(cur.voucher_type)?.module !== 'inventory') throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy phiếu kho', 404);
-  const b = await build(trx, input, ctx.auth);
+  const b = await build(trx, input, ctx.auth, id);
   const h = header(input, b.ledger);
   await S.updateStockDraftHeader(trx, id, version, { ...h, currencyCode: 'VND', lines: h.lines } as S.VoucherInput & { stockKind: string });
   await trx.deleteFrom('voucher_item_line').where('voucher_id', '=', id).execute();
@@ -163,7 +200,7 @@ export async function getStockVoucher(trx: Trx, id: string, auth?: Auth): Promis
     .leftJoin('warehouse as w', 'w.id', 'l.warehouse_id').leftJoin('warehouse as dw', 'dw.id', 'l.dest_warehouse_id')
     .leftJoin('account as da', 'da.id', 'l.debit_account_id').leftJoin('account as ca', 'ca.id', 'l.credit_account_id')
     .select(['l.line_no', 'i.code as item_code', 'i.name as item_name', 'u.code as uom_code', 'l.quantity', 'l.base_quantity', 'l.uom_factor', 'l.unit_price', 'l.unit_cost', 'l.amount', 'l.lot_no', 'l.mfg_date', 'l.expiry_date',
-      'w.code as wh', 'dw.code as dwh', 'l.direction', 'da.code as dcode', 'ca.code as ccode']).where('l.voucher_id', '=', id).orderBy('l.line_no').execute());
+      'w.code as wh', 'dw.code as dwh', 'l.direction', 'da.code as dcode', 'ca.code as ccode', 'l.link_line_id']).where('l.voucher_id', '=', id).orderBy('l.line_no').execute());
   const ledger = await trx.selectFrom('voucher_line as l').innerJoin('account as a', 'a.id', 'l.account_id').leftJoin('item as i', 'i.id', 'l.item_id').leftJoin('warehouse as w', 'w.id', 'l.warehouse_id').leftJoin('party as p', 'p.id', 'l.party_id')
     .select(['l.line_no', 'a.code', 'a.name', 'a.subledger_kind', 'l.debit', 'l.credit', 'i.code as item_code', 'w.code as wh', 'p.code as party_code'])
     .where('l.voucher_id', '=', id).where('l.posting_date', '=', v.postingDate).orderBy('l.line_no').execute();
@@ -172,7 +209,7 @@ export async function getStockVoucher(trx: Trx, id: string, auth?: Auth): Promis
   return {
     ...v, stockKind: kind, warehouseCode: fresh?.wh ?? null, destWarehouseCode: fresh?.dwh ?? null,
     items: items.map((r) => ({ lineNo: r.line_no, itemCode: r.item_code, itemName: r.item_name, uomCode: r.uom_code, quantity: r.quantity ?? '0', baseQuantity: r.base_quantity ?? r.quantity ?? '0', uomFactor: r.uom_factor, unitPrice: r.unit_price, unitCost: r.unit_cost,
-      amount: r.amount, lotNo: r.lot_no, mfgDate: r.mfg_date, expiryDate: r.expiry_date, warehouseCode: r.wh, destWarehouseCode: r.dwh, direction: r.direction, debitAccountCode: r.dcode, creditAccountCode: r.ccode })),
+      amount: r.amount, lotNo: r.lot_no, mfgDate: r.mfg_date, expiryDate: r.expiry_date, warehouseCode: r.wh, destWarehouseCode: r.dwh, direction: r.direction, debitAccountCode: r.dcode, creditAccountCode: r.ccode, linkLineId: r.link_line_id })),
     ledgerLines: ledger.map((l) => ({ lineNo: l.line_no, accountCode: l.code, accountName: l.name, debit: l.debit, credit: l.credit, itemCode: l.item_code, warehouseCode: l.wh, partyCode: l.party_code })),
     warnings: items.filter((r) => r.direction !== null || r.dwh !== null).filter((r) => r.unit_cost !== null && D(r.unit_cost).isZero())
       .map((r) => ({ code: 'COST_UNKNOWN', message: `Dòng ${r.line_no}: hàng ${r.item_code} chưa có giá vốn, ghi giá 0 cho đến khi tính giá vốn`, lineNo: r.line_no })),

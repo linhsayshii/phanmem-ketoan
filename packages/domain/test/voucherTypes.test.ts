@@ -10,7 +10,7 @@ describe('VOUCHER_TYPES', () => {
   });
 
   it('đủ 15 loại GĐ2 và 4 loại có sẵn; khóa trùng mã', () => {
-    expect(Object.keys(VOUCHER_TYPES).sort()).toEqual([...GD2_TYPES, 'PKT', 'DK', 'KC', 'PB', 'PNK', 'PXK', 'CK', 'GV'].sort());
+    expect(Object.keys(VOUCHER_TYPES).sort()).toEqual([...GD2_TYPES, 'PKT', 'DK', 'KC', 'PB', 'PNK', 'PXK', 'CK', 'GV', 'MH', 'TLM'].sort());
     for (const [k, d] of Object.entries(VOUCHER_TYPES)) expect(d.code).toBe(k);
   });
 
@@ -18,7 +18,7 @@ describe('VOUCHER_TYPES', () => {
     expect(SYSTEM_VOUCHER_TYPES).toEqual(['DK', 'KC', 'CL', 'DG', 'XQ', 'KTT', 'GV']);
     expect(Object.fromEntries(Object.values(VOUCHER_TYPES).map((d) => [d.code, d.module]))).toEqual({
       PKT: 'general', DK: 'general', KC: 'general', PB: 'general', PT: 'cash', PC: 'cash', BC: 'bank', BN: 'bank', CT: 'bank', QTU: 'general', BT: 'arap',
-      HDB: 'arap', HDM: 'arap', GGB: 'arap', GGM: 'arap', CL: 'arap', DG: 'general', XQ: 'general', KTT: 'general', PNK: 'inventory', PXK: 'inventory', CK: 'inventory', GV: 'inventory' });
+      HDB: 'arap', HDM: 'arap', GGB: 'arap', GGM: 'arap', CL: 'arap', DG: 'general', XQ: 'general', KTT: 'general', PNK: 'inventory', PXK: 'inventory', CK: 'inventory', GV: 'inventory', MH: 'arap', TLM: 'arap' });
     for (const d of Object.values(VOUCHER_TYPES)) expect(d.manual, d.code).toBe(!SYSTEM_VOUCHER_TYPES.includes(d.code));
   });
 
@@ -30,7 +30,7 @@ describe('VOUCHER_TYPES', () => {
   it('hóa đơn: có vật tư/dòng hàng, chiều mua bán, giảm giá trả lại; mẫu in PT/PC/BC/BN', () => {
     expect(['HDB', 'HDM', 'GGB', 'GGM'].map((c) => { const d = VOUCHER_TYPES[c]!; return [d.hasItems, d.invoiceDirection, d.refund ?? false]; }))
       .toEqual([[true, 'sale', false], [true, 'purchase', false], [true, 'sale', true], [true, 'purchase', true]]);
-    expect(Object.values(VOUCHER_TYPES).filter((d) => d.hasItems && !d.stockDirection).map((d) => d.code)).toEqual(['HDB', 'HDM', 'GGB', 'GGM']);
+    expect(Object.values(VOUCHER_TYPES).filter((d) => d.hasItems && !d.stockDirection).map((d) => d.code)).toEqual(['HDB', 'HDM', 'GGB', 'GGM', 'MH', 'TLM']);
     expect(Object.values(VOUCHER_TYPES).filter((d) => d.stockDirection).map((d) => [d.code, d.stockDirection])).toEqual([['PNK', 'in'], ['PXK', 'out'], ['CK', 'transfer']]);
     expect(['PT', 'PC', 'BC', 'BN'].map((c) => VOUCHER_TYPES[c]!.printForms)).toEqual([['01-TT'], ['02-TT'], ['giay-bao'], ['giay-bao', 'unc']]);
   });

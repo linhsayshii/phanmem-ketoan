@@ -157,7 +157,7 @@ export interface VoucherTable {
   posted_by: string | null; posted_at: Timestamp | null; version: Generated<number>; prev_hash: Buffer | null; row_hash: Buffer | null;
   person_name: string | null; person_address: string | null; attachments_count: number | null;
   bank_account_id: number | null; counter_bank_account_id: number | null; party_bank_account_id: string | null; due_date: DateOnly | null; purpose: string | null;
-  day_order: Generated<number>; stock_kind: string | null;
+  day_order: Generated<number>; stock_kind: string | null; receipt_state: string | null;
 }
 export interface VoucherLineTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; line_no: number; account_id: number; posting_date: DateOnly;
@@ -210,7 +210,7 @@ export interface VoucherItemLineTable {
   quantity: Numeric | null; unit_price: Numeric | null; amount_currency: Numeric; amount: Numeric; discount_rate: NumericDefault; discount_amount_currency: NumericDefault;
   discount_amount: NumericDefault; tax_codes: Generated<string[]>; tax_amount: NumericDefault; account_id: number; department_id: number | null; project_id: number | null; cost_item_id: number | null;
   warehouse_id: number | null; dest_warehouse_id: number | null; uom_factor: NumericDefault; base_quantity: Numeric | null; lot_no: string | null; mfg_date: DateOnly | null; expiry_date: DateOnly | null;
-  direction: string | null; debit_account_id: number | null; credit_account_id: number | null; unit_cost: Numeric | null; source_line_id: number | null; fixed_cost: Generated<boolean>;
+  direction: string | null; debit_account_id: number | null; credit_account_id: number | null; unit_cost: Numeric | null; source_line_id: number | null; fixed_cost: Generated<boolean>; receipt_voucher_id: string | null; link_line_id: number | null;
 }
 // Bảng kê hóa đơn kê khai thuế: một dòng mỗi (hóa đơn, mã thuế).
 export interface VoucherInvoiceTable {

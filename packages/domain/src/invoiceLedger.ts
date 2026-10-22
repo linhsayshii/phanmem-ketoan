@@ -3,15 +3,16 @@ import { toVnd } from './fx.js';
 import { TaxError, type TaxResult } from './tax.js';
 
 // Bút toán của hóa đơn mua/bán dịch vụ và giảm giá, trả lại (HDB, HDM, GGB, GGM). Kết quả của động cơ thuế (`computeTaxes`) vào, các dòng sổ cái ra.
-export interface InvoiceItemInput { lineNo: number; description: string | null; accountCode: string; amountCurrency: string; discountCurrency: string; taxCodes: string[]; departmentCode?: string | null; projectCode?: string | null; costItemCode?: string | null }
+export interface InvoiceItemInput { lineNo: number; description: string | null; accountCode: string; amountCurrency: string; discountCurrency: string; taxCodes: string[]; departmentCode?: string | null; projectCode?: string | null; costItemCode?: string | null;
+  itemCode?: string | null; warehouseCode?: string | null; offsetVnd?: string } // hàng, kho của dòng cơ sở (tài khoản kho); offsetVnd: giá tạm tính đã ghi ở phiếu nhập (VND), trừ khỏi dòng cơ sở (MH hàng về trước)
 export interface InvoiceLedgerInput { scope: 'sale' | 'purchase'; documentType: 'invoice' | 'refund'; counterAccountCode: string; partyCode: string; currency: string; fxRate: string | null; dueDate: string | null; items: InvoiceItemInput[]; tax: TaxResult;
   declaredTaxVnd?: Record<string, string> } // mã thuế có số ghi trên hóa đơn (chỉ dùng khóa): dòng thuế ngoại tệ của mã đó ghi đúng số VND của động cơ thuế
-export interface LedgerLine { accountCode: string; debit: string; credit: string; amountCurrency: string; fxRate: string | null; partyCode: string | null; description: string | null; dueDate: string | null; departmentCode?: string | null; projectCode?: string | null; costItemCode?: string | null }
+export interface LedgerLine { accountCode: string; debit: string; credit: string; amountCurrency: string; fxRate: string | null; partyCode: string | null; description: string | null; dueDate: string | null; departmentCode?: string | null; projectCode?: string | null; costItemCode?: string | null; itemCode?: string | null; warehouseCode?: string | null }
 // Số VND đã ghi sổ theo chiều của chứng từ (cơ sở luôn dương), để bảng kê hóa đơn (voucher_invoice) khớp đúng bút toán sau khi chia chênh làm tròn.
 // taxVnd theo mã thuế = tổng các dòng thuế cùng chiều với thuế (dương); mã chỉ có dòng khấu trừ (TNCN) thì là tổng các dòng đó (âm).
 export interface InvoiceLedgerDetail { lines: LedgerLine[]; baseVnd: Record<number, string>; taxVnd: Record<string, string> }
 
-interface Entry { account: string; cur: Decimal; vnd: Decimal; src: Partial<LedgerLine>; lineNo?: number; taxCode?: string; fixed?: boolean }
+interface Entry { account: string; cur: Decimal; vnd: Decimal; src: Partial<LedgerLine>; lineNo?: number; taxCode?: string; fixed?: boolean; offset?: Decimal }
 
 // Chiều Nợ dương. Hóa đơn mua Nợ chi phí/thuế, Có công nợ; hóa đơn bán ngược lại; giảm giá, trả lại đảo chiều toàn bộ so với hóa đơn cùng phạm vi.
 // Tiền VND: các dòng lấy đúng số của động cơ thuế nên cân sẵn (công nợ = cơ sở + thuế theo dấu, số thuế ghi trên hóa đơn đã nằm trong dòng thuế, không cộng lại roundingVnd).
@@ -33,8 +34,9 @@ export function buildInvoiceLedgerDetail(i: InvoiceLedgerInput): InvoiceLedgerDe
     const t = lineOf.get(it.lineNo);
     if (!t) throw new Error(`Dòng ${it.lineNo} không có kết quả tính thuế`);
     if (D(t.baseCurrency).isZero()) continue;
-    bases.push({ account: it.accountCode, cur: D(t.baseCurrency).times(sign), vnd: (isVnd ? D(t.baseVnd) : vndOf(t.baseCurrency)).times(sign), lineNo: it.lineNo,
-      src: { description: it.description, departmentCode: it.departmentCode ?? null, projectCode: it.projectCode ?? null, costItemCode: it.costItemCode ?? null } });
+    const offset = D(it.offsetVnd ?? 0); // chỉ VND (hóa đơn ngoại tệ hàng về trước không hỗ trợ)
+    bases.push({ account: it.accountCode, cur: D(t.baseCurrency).times(sign).minus(offset), vnd: (isVnd ? D(t.baseVnd) : vndOf(t.baseCurrency)).times(sign).minus(offset), lineNo: it.lineNo, offset,
+      src: { description: it.description, departmentCode: it.departmentCode ?? null, projectCode: it.projectCode ?? null, costItemCode: it.costItemCode ?? null, itemCode: it.itemCode ?? null, warehouseCode: it.warehouseCode ?? null } });
   }
   for (const p of i.tax.postings) {
     const exact = vndOf(p.amountCurrency); const fixed = declared.has(p.code);
@@ -64,7 +66,7 @@ export function buildInvoiceLedgerDetail(i: InvoiceLedgerInput): InvoiceLedgerDe
     fxRate: isVnd ? null : i.fxRate, partyCode: null, description: null, dueDate: null, ...e.src });
   const entries = [...bases, ...taxes, counter].filter((e) => !(e.cur.isZero() && e.vnd.isZero()));
   const baseVnd: Record<number, string> = Object.fromEntries(i.items.map((it) => [it.lineNo, '0']));
-  for (const e of bases) baseVnd[e.lineNo!] = e.vnd.times(sign).toFixed(0);
+  for (const e of bases) baseVnd[e.lineNo!] = e.vnd.times(sign).plus(e.offset ?? 0).toFixed(0);
   const taxVnd: Record<string, string> = {};
   for (const code of new Set(taxes.map((e) => e.taxCode!))) {
     const mine = taxes.filter((e) => e.taxCode === code).map((e) => e.vnd.times(sign));
