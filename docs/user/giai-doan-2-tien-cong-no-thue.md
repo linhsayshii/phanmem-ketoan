@@ -138,6 +138,7 @@ Menu Sổ cái > "Phân bổ doanh thu nhận trước" (cần quyền xem phân
 - "Chạy phân bổ kỳ": chọn "Năm tài chính", "Kỳ kế toán" rồi bấm nút. Mỗi lịch đến kỳ sinh một chứng từ phân bổ (PB), Nợ tài khoản nhận trước, Có tài khoản doanh thu, ghi ngày cuối kỳ. Chạy lại cùng kỳ thì đảo PB cũ và sinh mới (kết quả không đổi thì không sinh thêm); chạy lại hoặc xóa lịch luôn đảo PB ở ngày cuối kỳ kể cả khi kỳ đang mở.
 - Nếu năm tài chính chưa tạo, phần mềm tạm tính 12 kỳ. Khi năm đó tạo ra có số kỳ khác, lần chạy báo lỗi bố cục kỳ; hãy ngừng lịch cũ và tạo lịch mới cho phần còn lại. Sửa hoặc xóa lịch đúng lúc đang chạy phân bổ có thể báo xung đột; thử lại sau.
 - Tài khoản của lịch được kiểm tra theo chế độ kế toán của kỳ bắt đầu; lịch kéo sang năm khác chế độ sẽ báo lỗi ở kỳ đó khi chạy.
+- Lịch lập từ hóa đơn mà hóa đơn gốc đã đảo, đã hủy hoặc chưa ghi sổ thì không phân bổ kỳ đó: sau khi chạy, màn hình hiện cảnh báo "Bỏ qua … lịch vì chứng từ gốc không còn ghi sổ" kèm tên lịch và số chứng từ gốc. Ngừng lịch (khách hủy hợp đồng) hoặc sửa lịch rồi chạy lại.
 
 ## Bảng kê hóa đơn và đối chiếu thuế
 
@@ -167,6 +168,7 @@ Menu Thuế > "Tờ khai thuế GTGT" (cần quyền xem tờ khai). Kỳ khai t
 - "Tính lại (F9)" (và "Có thay đổi chưa lưu (Ctrl+S)") lưu bản nháp và tính lại từ sổ cái. Khi sổ đã đổi từ lần tính trước, màn hình báo lỗi đỏ và nút "Lưu lại nháp".
 - "Chốt" hỏi lại "Chốt tờ khai?". Khi chốt, phần mềm tính lại từ sổ cái và đối chiếu bản nháp; lệch thì từ chối và nêu các chỉ tiêu lệch, bạn lưu nháp lại rồi chốt. Tờ khai đã chốt bị khóa; muốn sửa phải lập tờ khai bổ sung.
 - "Xuất XML" chỉ bật sau khi chốt. "In" xuất PDF.
+- Tờ khai nháp lập nhầm kỳ xóa được bằng nút "Xóa nháp" (cần quyền xóa tờ khai, hỏi lại trước khi xóa). Tờ khai đã chốt không xóa được.
 
 **Khấu trừ thuế cuối kỳ**
 
@@ -238,6 +240,7 @@ Các việc dưới đây chưa làm hoặc làm có điều kiện. Ghi chú tr
 - Đảo chứng từ có khoản đã đánh giá lại: chứng từ CL ghi ở ngày muộn hơn giữa ngày đảo và ngày DG. Nếu kỳ đó bị khóa và bạn không có quyền ghi lùi, hoặc phân hệ công nợ bị khóa kỳ đó, cả lần đảo bị hủy và thông báo lỗi nêu kỳ muộn hơn (dễ gây khó hiểu). CL này mang diễn giải "khi đảo chứng từ..." và không gắn với lần chạy tỷ giá.
 - Chứng từ đảo có ngày trước ngày DG: sau khi chạy lại trong cùng ngày, lãi 515 và lỗ 635 bằng nhau, thuần 0.
 - Số dư đầu kỳ (DK) đã được đánh giá lại thì không sửa được.
+- Khoản công nợ đã được đánh giá lại chỉ đối trừ được từ ngày đánh giá lại trở đi. Phiếu thu ghi lùi trước ngày đó mà chọn khoản này trong "Chọn chứng từ công nợ" sẽ không ghi sổ được, thông báo nêu ngày đánh giá lại: bỏ chọn khoản, ghi sổ phiếu thu, rồi vào Đối trừ chứng từ đối trừ với ngày từ ngày đánh giá lại.
 - Hủy hoặc lập đối trừ cùng lúc với một lần chạy tỷ giá có thể để lại khoản con đơn lẻ trong trường hợp rất hiếm; chạy lại đánh giá lại để sửa.
 
 **Phân bổ doanh thu nhận trước**

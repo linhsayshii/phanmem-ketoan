@@ -239,3 +239,16 @@ Chi tiết từng hạn chế nằm ở `docs/TIEP-THEO.md`, mục "Hạn chế 
 181. Thiết lập minh họa của ABC, không phải dữ liệu pháp lý: thuế suất TNCN_KT 10%, tài khoản 131 theo dõi ngoại tệ để nhận số dư đầu kỳ USD; tờ khai quý 1–2 năm 2026 không lập vì chưa có mẫu TT80; chi USD làm bằng Giấy báo Nợ từ 1122 (không có quỹ ngoại tệ 1112) (Task 28, 35e5864).
 
 (ghi tiếp sau mỗi tác vụ)
+
+## Kết thúc GĐ2: rà soát toàn nhánh và đợt sửa
+
+182. Rà soát toàn nhánh `gd1-5-hoan-tat..0859dfc` (opus): 0 Critical, 3 Important, 5 Minor; RLS, `UNIQUE` có `tenant_id`, `search_path` của hàm `SECURITY DEFINER`, trigger `audit_event` kiểm trên DB phát triển đều đạt; không lộ cờ nhạy cảm ở route mới. Đợt sửa chia lô A (SQL công nợ), B (hóa đơn, phân bổ, thuế), C (giao diện, tài liệu), D (đo hiệu năng, tốc độ kiểm thử web).
+183. Đối trừ trước ngày đánh giá lại (T13-M10) giữ logic cũ, chỉ đổi thông báo: `settle_open_items` báo `SETTLEMENT_BEFORE_REVALUATION` nêu ngày DG và cách làm (migration 0040), vì đánh giá lại đã xét cả khoản Có chưa đối trừ của đối tượng nên sổ cái đúng; chỉ ngày đối trừ bị dời. Rà soát lô A bắt lỗi kiểm cả khoản con đã đóng (chạy lại đánh giá lại làm chênh lệch về 0 vẫn chặn): 0041 chỉ xét khoản con còn dư (579eb8e, b616487).
+184. Thiếu tài khoản lãi/lỗ tỷ giá là lỗi cấu hình: `FX_ACCOUNT_MISSING` 409 thay `LOOKUP_NOT_FOUND` 404, ở cả đối trừ (0040) và đóng khoản con khi đảo (0041).
+185. Migration đã đẩy là đóng băng, kể cả trong đợt sửa cuối giai đoạn: sửa 0040 bằng 0041 thay vì sửa tại chỗ.
+186. Commit 579eb8e của lô A gộp cả tệp lô C (ô kỳ khai thuế GTGT, soát lỗi đọc `READ_SNAPSHOT`, tài liệu người dùng) do controller đưa vào vùng chờ khi lô A đang chạy; đã đẩy nên giữ nguyên (sửa lịch sử cần force-push, bị cấm). Từ đây khi có subagent đang làm, controller và subagent chỉ `git add <đường dẫn>` của mình.
+187. Phân bổ doanh thu nhận trước bỏ qua lịch có chứng từ gốc còn tồn tại nhưng không ở trạng thái đã ghi sổ (nháp, đã đảo, đã hủy), trả `skipped` nêu tên lịch và số chứng từ; lịch không có chứng từ gốc (lịch tự do, hoặc chứng từ nháp đã xóa) vẫn chạy vì là cách dùng hợp lệ; không thêm migration (b0e8d59, 477db23).
+188. Thêm route xóa tờ khai nháp (`DELETE /api/tax/vat-returns/:id`, quyền `tax_return.delete` đã khai báo từ T23) thay vì gỡ quyền: tờ khai lập nhầm kỳ trước khi đổi `vat_period` cần xóa được; lập đồng thời cùng kỳ trả `TAX_RETURN_DRAFT_EXISTS` thay lỗi trùng chung (f743d48).
+189. Ô "Kỳ khai thuế GTGT" ở Thông tin công ty > Tùy chọn hệ thống; hóa đơn đã nhập trước khi đổi tháng sang quý vẫn gộp vào quý (#147) nên đổi muộn không hỏng dữ liệu.
+190. Bộ kiểm thử web chậm vì `getComputedStyle` của jsdom so khớp mọi luật CSS mà Ant Design chèn (hồ sơ CPU: khoảng 75% ở `nwsapi`). `vitest.setup.ts` lược mỗi stylesheet một lần, chỉ giữ luật có `display`, `visibility`, `opacity`, `pointer-events`: 1.226 giây tổng thời gian tệp xuống 171 giây, hết hai lần hết giờ (a75a4d7). Kiểm thử cần thuộc tính khác lấy từ lớp CSS phải thêm vào tập `READ`.
+191. Bỏ qua sau rà soát: link "Sửa chứng từ" của Soát lỗi (VoucherForm tự chuyển theo loại thật, chỉ thêm một lần tải); `replaceOpening` ghi đè nháp số dư đầu kỳ (chỉ ở seed trên DB phát triển cũ); kiểm thử đồng thời sửa/xóa lịch phân bổ với chạy kỳ (cùng khóa tư vấn, ghi hạn chế).

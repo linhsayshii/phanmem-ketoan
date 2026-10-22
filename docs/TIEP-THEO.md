@@ -51,10 +51,14 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
   - Mỗi lần chạy lại có thay đổi, bước đóng khoản con của khoản gốc đã đảo quét mọi nhóm đối trừ loại đảo của công ty (có chỉ mục `parent_id`, chưa đo trên dữ liệu lớn). Có thể giới hạn vào các khoản gốc mà lần chạy chạm tới.
   - Số dư đầu kỳ (DK) đã được đánh giá lại thì không sửa được: phải chạy lại đánh giá lại sau khi sửa, nhưng DK chưa có đường gỡ khoản con.
   - Route đối trừ công nợ không giữ khóa `fx`. Một lần đối trừ chạy đúng lúc đang đánh giá lại có thể để lại khoản con mồ côi (cửa sổ rất hẹp).
+  - Đối trừ một khoản đã đánh giá lại với ngày trước ngày đánh giá lại bị từ chối (`SETTLEMENT_BEFORE_REVALUATION`, nêu ngày DG). Phiếu thu ghi lùi kèm chọn khoản công nợ đó cũng không ghi sổ được: bỏ chọn khoản, ghi sổ, rồi đối trừ ở màn hình Đối trừ chứng từ với ngày từ ngày DG. Sổ cái vẫn đúng vì đánh giá lại đã xét khoản Có chưa đối trừ của đối tượng; chỉ ngày đối trừ bị dời.
+  - Chưa có kiểm thử chạy lại đánh giá lại khi kỳ sau đã khóa sổ mà người chạy không có quyền ghi lùi (hành vi đã mô tả ở trên).
 - Phân bổ doanh thu nhận trước (Task 20):
   - Lịch kiểm tài khoản theo chế độ kế toán của kỳ bắt đầu. Lịch kéo sang năm có chế độ khác (TT133 sang TT99) mà tài khoản không có ở chế độ mới thì chỉ báo lỗi khi chạy kỳ đó.
   - Năm chưa tạo được giả định 12 kỳ. Năm tạo sau với số kỳ khác 12 thì lịch đã phân bổ không xếp lại được: chạy kỳ báo `AMORTIZATION_PERIOD_LAYOUT`, người dùng ngừng lịch và lập lịch mới cho phần còn lại.
   - Chạy lại và gỡ lịch luôn đảo chứng từ PB vào ngày cuối kỳ, kể cả kỳ mở (giống chứng từ tỷ giá xuất quỹ Task 10, vì guard 0030 chặn bỏ ghi sổ chứng từ tự động).
+  - Chưa có kiểm thử đồng thời sửa/xóa lịch với chạy kỳ (cùng khóa tư vấn `amortization`, cập nhật `voucher_id` phải trúng đúng 1 dòng).
+  - Lịch có chứng từ gốc nháp, đã đảo hoặc đã hủy bị bỏ qua khi chạy kỳ (`skipped`); lịch tự do (không có chứng từ gốc) vẫn chạy.
 - Tờ khai 01/GTGT (Task 23):
   - Kỳ trước 01/7/2026 trả 409 `VAT_TEMPLATE_UNAVAILABLE` vì chưa có văn bản gốc TT 80/2021 (mục 4).
   - Hàng bán thuế suất 8% tạm cộng vào [32]/[33], có cảnh báo (mục 4).
@@ -62,6 +66,7 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
   - Tờ khai bổ sung kỳ trước: [22] luôn lấy [43] của tờ khai lần đầu đã chốt của kỳ trước; chênh lệch bổ sung chỉ được gợi ý vào [37]/[38] của kỳ chứa ngày chốt tờ khai bổ sung (TT 89/2026 Phụ lục II điểm 3), "kỳ phát hiện" là giả định của phần mềm.
   - Đối chiếu thuế: chứng từ nộp thuế GTGT nhận diện khi không có hóa đơn, có dòng 111/112 và dư Nợ thuần 33311; nộp qua tài khoản trung gian (3388/1388) vẫn hiện là lệch.
   - Chạy lại khấu trừ thuế một ngày không tự chạy lại các ngày sau (chỉ cảnh báo `laterOffsetDates`).
+  - Khấu trừ thuế (KTT) và gợi ý [22] đọc toàn bộ lịch sử dòng 33311/133x, không dùng số dư đã tính sẵn; đo cùng `perf:100k` (`docs/dev/hieu-nang.md`).
 - Nhập chứng từ từ Excel (Task 25):
   - Tối đa 2.000 nhóm và 20.000 dòng mỗi tệp, chạy đồng bộ trong một yêu cầu (khoảng 25 giây cho 2.000 nhóm, cả lượt Kiểm tra); tệp lớn hơn cần việc nền pg-boss (GĐ sau).
   - Mỗi nhóm chạy trong một SAVEPOINT của cùng giao dịch. Vượt 64 giao dịch con, PostgreSQL đánh dấu tràn bộ đệm giao dịch con và các phiên khác phải tra `pg_subtrans` khi kiểm tra khả kiến: chậm phiên khác trong lượt nhập, không sai kết quả, không giữ thêm khóa. Hướng xử lý: lượt Nhập không dùng SAVEPOINT khi lượt Kiểm tra vừa sạch, hoặc đẩy sang việc nền.
@@ -72,6 +77,11 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
   - Chưa đo `EXPLAIN ANALYZE` trên 100.000 chứng từ; ước tính 1–3 giây cho một năm. Đo trước khi tag GĐ2 hoặc khi có dữ liệu thật.
   - Đánh dấu "Không trùng" chưa xem lại hay gỡ được (cần màn hình danh sách cặp đã bỏ qua).
   - Người thiếu cờ xem công nợ/giá vốn không thấy cặp có tài khoản đó (có cảnh báo), trong khi danh sách chứng từ chung không lọc theo cờ (quyết định GĐ1 #244).
+- Công nợ và hóa đơn khác:
+  - Tuổi nợ tính số còn dư của mọi khoản của công ty trước khi lọc theo đối tượng (đúng số; số đo trong `docs/dev/hieu-nang.md`). Nếu chậm: hàm `fn_open_items_at` có tham số tài khoản (GĐ3).
+  - Màn hình chứng từ xóa kế hoạch đối trừ trong `useEffect` khi đổi đối tượng; Ctrl+S ngay lúc đó có thể gửi kế hoạch cũ, máy chủ kiểm lại khi ghi sổ (sai chiều hoặc vượt dư bị từ chối) nên không sai sổ. E2E `ty-gia` tích lũy hóa đơn trên DB E2E dùng lâu: dọn DB E2E định kỳ.
+  - Dòng giá đã gồm thuế có cả GTGT và TNCN: TNCN không tính lại sau khi làm tròn số thuế GTGT khai báo (lệch vài đồng, hiếm).
+  - Danh mục chưa có kiểm thử Playwright và tài liệu người dùng riêng (làm đầu GĐ3 cùng danh mục VTHH); E2E sổ quỹ rớt một lần khi chạy cả bộ.
 - Soát lỗi GĐ2 (Task 27):
   - Quy tắc có cờ nhạy cảm bị bỏ cả quy tắc khi người dùng thiếu một cờ (`skipped`), không lọc từng dòng; `SO_DU_SAI_LOAI` nay cần `view_cost`.
   - `THUE_LECH` sao lại logic đối chiếu thuế của `register.ts` bằng SQL (có kiểm thử so khớp), danh sách loại giảm giá/trả lại GGB/GGM viết cứng vì cờ `refund` chỉ có trong TypeScript.
@@ -92,6 +102,8 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
 | Văn bản gốc TT 200/2014/TT-BTC (Mẫu 01-TT, 02-TT) và văn bản chế độ TT 58 (nếu có mẫu chứng từ), chép vào `~/legal-docs/tt200-2014/`, `~/legal-docs/tt58/` | Chưa tải về VPS; luật dự án không cho chép mẫu từ trí nhớ | Phiếu thu, Phiếu chi của công ty theo TT200 hoặc TT58 in đúng bố cục nhưng không có dòng "Mẫu số" và chú thích ban hành |
 | Văn bản gốc TT 80/2021/TT-BTC (29/9/2021), Phụ lục II mẫu 01/GTGT: Công báo, vanban.chinhphu.vn, datafiles.chinhphu.vn không tìm được bản chính thức từ VPS. Cần tải và chép vào `~/legal-docs/tt80-2021/` | Trang luật chặn tải tự động; không chép mẫu từ trí nhớ hay bản sao không chính thức | Tờ khai 01/GTGT cho kỳ trước 01/7/2026 trả 409 `VAT_TEMPLATE_UNAVAILABLE` |
 | Xác nhận hàng bán thuế suất 8% (NĐ 174/2025) khai vào chỉ tiêu nào của 01/GTGT TT 89/2026, kèm công văn hướng dẫn của Cục Thuế nếu có | TT 89/2026 và NĐ 174/2025 không nêu chỉ tiêu; cần văn bản hướng dẫn hoặc thực tế HTKK | Nhóm 08 tạm gộp vào [32]/[33]; tờ khai cảnh báo khi kỳ có hóa đơn 8% (`isVatRate8Verified()` = false) |
+| Thuế suất khấu trừ thuế TNCN tại nguồn theo Luật Thuế TNCN số 109/2025/QH15 (văn bản gốc và thông tư hướng dẫn), chép vào `~/legal-docs/tncn-2025/` | Chưa có văn bản gốc trên VPS; không nhập thuế suất từ trí nhớ | Mã `TNCN_KT` không có thuế suất mặc định (người dùng tự nhập; dữ liệu mẫu ABC đặt 10% chỉ để minh họa) |
+| Kế toán trưởng rà `packages/coa-data/data/fx-rules.json` (tài khoản lãi/lỗ tỷ giá, tỷ giá áp dụng theo loại khoản mục từng chế độ) và ánh xạ nhóm kê khai hóa đơn sang chỉ tiêu 01/GTGT (`data/tax/01gtgt-tt89.json`, nhóm KKK/KTGT/NPV) | Cần phán đoán nghề nghiệp; TT200 chưa có văn bản gốc cho quy tắc tỷ giá | Đánh giá lại ngoại tệ và tờ khai dùng giả định của phần mềm ở các chỗ ghi chú |
 | Tên miền và cách triển khai thật (qua nginx proxy manager sẵn có hay không) | Đụng dịch vụ đang chạy trên VPS | Chỉ chạy được nội bộ qua SSH tunnel |
 
 ## 5. Ghi chú môi trường
