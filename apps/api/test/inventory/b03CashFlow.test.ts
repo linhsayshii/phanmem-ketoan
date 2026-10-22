@@ -91,4 +91,17 @@ describe('B03 TT99 trực tiếp: mã luồng tiền ở dòng tiền', () => {
     const b = await report('B03', '2026-06-30');
     expect(b('06')).toBe('400'); expect(b('50')).toBe('6200'); expect(b('70')).toBe('6200');
   });
+  it('chuyển tiền giữa hai tài khoản tiền không gắn được mã; cặp tiền sang tiền do ghép nhiều dòng bỏ mã, 50 + 60 + 61 = 70', async () => {
+    const t = await pkt('2026-07-01', [{ accountCode: '112', debit: '700', cashFlowCode: '33' }, { accountCode: '111', credit: '700' }]);
+    expect(t.statusCode, t.body).toBe(400); expect(t.json().error.code).toBe('CASH_FLOW_CODE_INVALID'); expect(t.json().error.message).toMatch(/chuyển tiền giữa các tài khoản tiền/);
+    const plain = await ok(pkt('2026-07-01', [{ accountCode: '112', debit: '600' }, { accountCode: '111', credit: '600' }]));
+    const meta = await call('PUT', `/api/vouchers/${plain.id}`, { version: plain.version, lines: [{ lineNo: 1, cashFlowCode: '33' }] });
+    expect(meta.statusCode, meta.body).toBe(400); expect(meta.json().error.code).toBe('CASH_FLOW_CODE_INVALID');
+    // Ghép Nợ/Có theo thứ tự dòng: cặp N111/C112 500 (tiền sang tiền, bỏ mã) và N111/C41111 500 (mã 01), N131/C41111 500 không phải tiền.
+    await ok(pkt('2026-07-02', [{ accountCode: '111', debit: '1000', cashFlowCode: '01' }, { accountCode: '131', debit: '500', partyCode: 'KH2' }, { accountCode: '112', credit: '500' }, { accountCode: '41111', credit: '1000' }]));
+    const r = await call('GET', '/api/reports/financial/B03?from=2026-07-01&to=2026-07-31'); expect(r.statusCode, r.body).toBe(200);
+    const b = (c: string) => (r.json().rows as Row[]).find((x) => x.lineCode === c)!.current;
+    expect(b('01')).toBe('500'); expect(b('33')).toBe('0'); expect(b('50')).toBe('500');
+    expect(b('60')).toBe('6200'); expect(b('61')).toBe('0'); expect(b('70')).toBe('6700'); // 111: 6.200 - 600 + 1.000; 112: 600 - 500
+  });
 });

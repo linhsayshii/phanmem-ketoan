@@ -45,6 +45,10 @@ const clampLong = (n: Decimal, l: Decimal): Decimal => (n.isZero() || l.isZero()
 // Báo cáo dùng LT(...) (B01 TT99): mới đọc kỳ hạn, vì phải đọc thêm khoản công nợ và dòng có hạn.
 export const usesLongTerm = (formulas: (string | null)[]) => formulas.some((f) => /LT\s*\(/.test(f ?? ''));
 
+// Tài khoản tiền và tương đương tiền của cặp đối ứng: loại sổ chi tiết tiền mặt, tiền gửi, cộng 113 (tiền đang chuyển, không có loại sổ chi tiết) theo tiền tố như dòng 60, 70 của B03.
+const CASH_SIDE = (a: 'ad' | 'ac') => sql.raw(`(coalesce(${a}.subledger_kind IN ('cash','bank'), false) OR ${a}.code LIKE '113%')`) // coalesce: loại NULL không được làm cả điều kiện thành NULL;
+export const isCashLike = (a: { code: string; kind: string | null } | undefined) => !!a && (a.kind === 'cash' || a.kind === 'bank' || a.code.startsWith('113'));
+
 export function reportData(trx: Trx, tenantId: string, regime: string, p: { from: string; to: string }, opts: { longTerm?: boolean } = {}) {
   // Phát sinh trong kỳ không gồm chứng từ kết chuyển (KC và bản đảo của KC mang cờ is_closing), nếu không doanh thu/chi phí về 0.
   // onlyReval: chỉ nhóm đánh giá lại ngoại tệ cuối kỳ = dòng của chứng từ DG (source_doc_type 'fx_revaluation', gồm bản đảo do chạy lại; DG của TT133 qua 413 rồi kết chuyển cũng cùng loại)
@@ -92,7 +96,9 @@ export function reportData(trx: Trx, tenantId: string, regime: string, p: { from
     // Mã luồng tiền đọc từ hai dòng của cặp (cùng posting_date với cặp: chỉ quét partition của tháng).
     pair: once(async (): Promise<PairUnit[]> => (await sql<{ dcode: string; dname: string; dkind: string | null; ccode: string; cname: string; ckind: string | null; amount: string; cf: string | null; cfSign: number }>`
       SELECT ad.code AS dcode, ad.name AS dname, ad.subledger_kind AS dkind, ac.code AS ccode, ac.name AS cname, ac.subledger_kind AS ckind, sum(p.amount)::text AS amount,
-             coalesce(dl.cash_flow_code, cl.cash_flow_code) AS cf, CASE WHEN dl.cash_flow_code IS NOT NULL THEN 1 ELSE -1 END AS "cfSign"
+             -- Cặp tiền sang tiền (chuyển tiền nội bộ, hoặc cặp do ghép nhiều Nợ nhiều Có tạo ra) không phải luồng tiền: bỏ mã, như dòng 60 triệt tiêu cặp đó.
+             CASE WHEN NOT (${CASH_SIDE('ad')} AND ${CASH_SIDE('ac')}) THEN coalesce(dl.cash_flow_code, cl.cash_flow_code) END AS cf,
+             CASE WHEN dl.cash_flow_code IS NOT NULL THEN 1 ELSE -1 END AS "cfSign"
       FROM voucher_pair p JOIN voucher v ON v.id = p.voucher_id JOIN account ad ON ad.id = p.debit_account_id JOIN account ac ON ac.id = p.credit_account_id
         LEFT JOIN voucher_line dl ON dl.id = p.debit_line_id AND dl.posting_date = p.posting_date LEFT JOIN voucher_line cl ON cl.id = p.credit_line_id AND cl.posting_date = p.posting_date
       WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND ad.regime = ${regime} AND ac.regime = ${regime}

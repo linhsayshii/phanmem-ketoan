@@ -6,7 +6,7 @@ import { CASH_PURPOSES, D, HEADER_FIELD_LABELS, sum, SYSTEM_VOUCHER_TYPES, VND_A
 import { AppError } from '../../plugins/errors.js';
 import { likePattern } from '../master/crud.js';
 import { assertSensitive } from '../reporting/ledgers.js';
-import { cashFlowCodes } from '../reporting/financial.js';
+import { cashFlowCodes, isCashLike } from '../reporting/financial.js';
 import { DECLARING_TYPES, deleteInvoiceRows, insertInvoiceRows, listInvoiceRows, resolveDeclared, voucherInvoiceInput, type VoucherInvoiceDto } from '../invoices/declaration.js';
 
 export const dateIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -211,8 +211,15 @@ function assertTypeRules(def: VoucherTypeDef, input: VoucherInput, lines: Resolv
 }
 
 // Mã luồng tiền: chỉ ở dòng tài khoản tiền mặt, tiền gửi (B03 lấy chiều thu/chi theo bên Nợ/Có của dòng tiền) và phải là dòng luồng tiền của B03 của chế độ.
-async function assertCashFlowCodes(trx: Trx, regime: string, lines: { lineNo: number; code: string | null | undefined; kind: string | null }[]) {
+// Chứng từ chỉ chuyển tiền giữa các tài khoản tiền (mọi dòng đối ứng bên kia là tiền) không có luồng tiền nên không gắn mã.
+type CfLine = { lineNo: number; code: string | null | undefined; kind: string | null; accountCode: string; debit: string; credit: string };
+async function assertCashFlowCodes(trx: Trx, regime: string, lines: CfLine[]) {
   const coded = lines.filter((l) => l.code);
+  for (const l of coded) {
+    const opposite = lines.filter((o) => (D(l.debit).gt(0) ? D(o.credit).gt(0) : D(o.debit).gt(0)));
+    if (opposite.length && opposite.every((o) => isCashLike({ code: o.accountCode, kind: o.kind })))
+      throw new AppError('CASH_FLOW_CODE_INVALID', `Dòng ${l.lineNo}: chuyển tiền giữa các tài khoản tiền không phải luồng tiền, không gắn mã luồng tiền`, 400);
+  }
   if (!coded.length) return;
   const valid = new Set((await cashFlowCodes(trx, regime)).map((c) => c.code));
   for (const l of coded) {
@@ -258,7 +265,7 @@ async function prepareVoucher(trx: Trx, lookup: Lookup, input: SystemVoucherInpu
   for (const l of input.lines) lines.push(await resolveLine(lookup, l, l.currencyCode ?? input.currencyCode, input.fxRate));
   const def = voucherTypeDef(input.voucherType);
   if (def) assertTypeRules(def, input, lines, lookup.accounts, regime);
-  await assertCashFlowCodes(trx, regime, lines.map((l, i) => ({ lineNo: i + 1, code: l.cash_flow_code, kind: lookup.accounts.get(l.account_id)?.kind ?? null })));
+  await assertCashFlowCodes(trx, regime, lines.map((l, i) => { const a = lookup.accounts.get(l.account_id); return { lineNo: i + 1, code: l.cash_flow_code, kind: a?.kind ?? null, accountCode: a?.code ?? '', debit: l.debit, credit: l.credit }; }));
   // Dòng riêng ghi tài khoản ngân hàng thì dùng; dòng trên tài khoản ngân hàng không ghi thì lấy của tiêu đề. Chuyển tiền nội bộ: dòng Có là tài khoản chuyển đi (bankAccountNo), dòng Nợ là tài khoản nhận (counterBankAccountNo).
   const transfer = def?.header.includes('counterBankAccount') ?? false;
   for (const [i, r] of lines.entries()) {
@@ -416,10 +423,10 @@ export async function updatePostedMeta(trx: Trx, id: string, version: number, in
   const lookup = lookupIn(trx);
   const coded = (input.lines ?? []).filter((l) => l.cashFlowCode);
   if (coded.length) {
-    const kinds = new Map((await trx.selectFrom('voucher_line as l').innerJoin('account as a', 'a.id', 'l.account_id').select(['l.line_no', 'a.subledger_kind'])
-      .where('l.voucher_id', '=', id).where('l.line_no', 'in', coded.map((l) => l.lineNo)).execute()).map((r) => [r.line_no, r.subledger_kind]));
+    const code = new Map(coded.map((l) => [l.lineNo, l.cashFlowCode]));
+    const all = await trx.selectFrom('voucher_line as l').innerJoin('account as a', 'a.id', 'l.account_id').select(['l.line_no', 'a.subledger_kind', 'a.code', 'l.debit', 'l.credit']).where('l.voucher_id', '=', id).execute();
     const { regime } = await trx.selectFrom('fiscal_period').select('regime').where('fiscal_year', '=', v.fiscal_year).where('period_no', '=', v.period_no).executeTakeFirstOrThrow();
-    await assertCashFlowCodes(trx, regime, coded.map((l) => ({ lineNo: l.lineNo, code: l.cashFlowCode, kind: kinds.get(l.lineNo) ?? null })));
+    await assertCashFlowCodes(trx, regime, all.map((r) => ({ lineNo: r.line_no, code: code.get(r.line_no) ?? null, kind: r.subledger_kind, accountCode: r.code, debit: r.debit, credit: r.credit })));
   }
   // Hạn cũ của các dòng gửi hạn: giao diện gửi lại hạn của mọi dòng khi lưu, chỉ dòng đổi hạn mới tính lại hạn khoản công nợ.
   const dueSent = (input.lines ?? []).filter((l) => l.dueDate !== undefined);
