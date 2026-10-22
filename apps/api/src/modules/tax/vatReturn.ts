@@ -170,7 +170,9 @@ export async function createReturn(trx: Trx, ctx: { tenantId: string; userId: st
   const overrides = input.overrides ?? {};
   const c = await compute(trx, q, input.manual ?? {}, overrides, true);
   const r = await trx.insertInto('tax_return').values({ tenant_id: ctx.tenantId, form_code: FORM, template_version: c.version, period_kind: q.periodKind, year: q.year, period: q.period, revision,
-    values: JSON.stringify(c.values), overrides: JSON.stringify(overrides), created_by: ctx.userId }).returning('id').executeTakeFirstOrThrow();
+    values: JSON.stringify(c.values), overrides: JSON.stringify(overrides), created_by: ctx.userId }).returning('id').executeTakeFirstOrThrow()
+    // Hai yêu cầu cùng kỳ: ảnh chụp REPEATABLE READ có trước khóa nên bản sau không thấy bản trước, va UNIQUE; báo như kỳ đã có tờ khai.
+    .catch((e: { code?: string; constraint?: string }) => { throw e.code === '23505' && e.constraint?.startsWith('tax_return_tenant_id_form_code') ? new AppError('TAX_RETURN_DRAFT_EXISTS', 'Kỳ này vừa có tờ khai được lập, tải lại danh sách', 409) : e; });
   return { ...(await getReturn(trx, r.id)), hints: c.hints, warnings: c.warnings, carryLocked: c.carryLocked };
 }
 
@@ -188,6 +190,12 @@ export async function updateReturn(trx: Trx, tenantId: string, id: number, input
   const c = await compute(trx, qOf(r), input.manual ?? manualOf(loadVatTemplate(r.template_version as VatTemplate['version']), r.values), overrides, input.manual !== undefined);
   await trx.updateTable('tax_return').set({ template_version: c.version, values: JSON.stringify(c.values), overrides: JSON.stringify(overrides) }).where('id', '=', id).execute();
   return { ...(await getReturn(trx, id)), hints: c.hints, warnings: c.warnings, carryLocked: c.carryLocked };
+}
+
+// Xóa nháp (tờ khai lập nhầm kỳ); đã chốt thì 409 TAX_RETURN_FINAL (trigger 0035 cũng chặn). Nhật ký kiểm toán do trigger trg_audit ghi.
+export async function deleteReturn(trx: Trx, tenantId: string, id: number) {
+  await draftOf(trx, tenantId, id);
+  await trx.deleteFrom('tax_return').where('id', '=', id).execute();
 }
 
 // Chốt khóa đúng số người dùng đã thấy: tính lại theo sổ hiện tại để kiểm; lệch số đã lưu thì 409 TAX_RETURN_STALE (không ghi gì), người dùng lưu lại nháp để tính lại

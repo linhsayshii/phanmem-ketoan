@@ -36,6 +36,7 @@ beforeEach(() => {
     if (url === '/api/tax/xml-formats') return [{ id: 'htkk-01gtgt', formCode: '01/GTGT', verified: false }];
     if (url.endsWith('/hints')) return PREVIEW;
     if (url.endsWith('/finalize')) { if (finalizeError) throw finalizeError; return ret({ status: 'final' }); }
+    if (init?.method === 'DELETE') return undefined;
     if (init?.method === 'PUT') return ret();
     if (url === '/api/tax/vat-offset') return { date: '2026-07-31', amount: '1000000', laterOffsetDates: ['2026-08-31'], warnings: ['Chạy lại khấu trừ thuế theo thứ tự các ngày 31/08/2026'], unchanged: false, voucherId: 'v1' };
     return ret();
@@ -165,5 +166,22 @@ describe('tờ khai bổ sung và kỳ phát hiện', () => {
     list = [ret({ id: 3, period: 7 }), first({ id: 1, period: 5, values: { '43': '4000000' } }), first({ id: 2, period: 5, revision: 1, values: { '43': '3000000' }, finalizedAt: '2026-08-12T02:00:00Z', ...disc(8) }), first({ id: 4, period: 8, finalizedAt: '2026-09-05T00:00:00Z' })];
     renderPage();
     expect(await screen.findByText(/Tờ khai kỳ đó đã chốt: nếu đã khai \[37\]\/\[38\] cho chênh lệch này thì không khai lại/)).toBeInTheDocument();
+  });
+
+  it('Xóa nháp: hiện với nháp khi có quyền xóa, hỏi xác nhận rồi gọi DELETE; ẩn khi đã chốt hoặc thiếu quyền', async () => {
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'Xóa nháp' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Xóa' }));
+    await waitFor(() => expect(calls().some(([u, i]) => u === '/api/tax/vat-returns/1' && i?.method === 'DELETE')).toBe(true));
+  });
+  it('Xóa nháp ẩn khi thiếu quyền tax_return.delete hoặc tờ khai đã chốt', async () => {
+    perms.denied = new Set(['tax_return.delete']);
+    const { unmount } = renderPage();
+    await screen.findByRole('button', { name: 'Chốt' });
+    expect(screen.queryByRole('button', { name: 'Xóa nháp' })).toBeNull();
+    unmount(); perms.denied = new Set(); list = [ret({ status: 'final', finalizedAt: '2026-08-10T03:00:00Z' })];
+    renderPage();
+    await screen.findByRole('button', { name: 'Lập bổ sung' });
+    expect(screen.queryByRole('button', { name: 'Xóa nháp' })).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
-import { Alert, Button, DatePicker, InputNumber, List, Modal, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
+import { Alert, Button, DatePicker, InputNumber, List, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { InfoCircleOutlined, LockOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColumnsType } from 'antd/es/table';
@@ -91,6 +91,7 @@ export default function VatReturnPage() {
   const finalize = useMutation({ mutationFn: async () => { if (dirty) await api(`/api/tax/vat-returns/${cur!.id}`, { method: 'PUT', json: payload() }); return api<TaxReturn>(`/api/tax/vat-returns/${cur!.id}/finalize`, { method: 'POST' }); },
     onError: (e) => { if (e instanceof ApiError && e.code === 'TAX_RETURN_STALE') { setStale((e.details as { changed: Changed[] }).changed); void refresh(); } else fail(e); },
     onSuccess: async () => { reset(); await refresh(); void message.success('Đã chốt tờ khai'); } });
+  const del = useMutation({ mutationFn: () => api(`/api/tax/vat-returns/${cur!.id}`, { method: 'DELETE' }), onError: fail, onSuccess: async () => { reset(); setSelId(null); await refresh(); void message.success('Đã xóa tờ khai nháp'); } });
   const offset = useMutation({ mutationFn: () => api<OffsetResult>('/api/tax/vat-offset', { method: 'POST', json: { date: offsetDate } }), onError: fail, onSuccess: (r) => { setOffsetRes(r); void qc.invalidateQueries({ queryKey: ['vat-hints'] }); } });
 
   const recalc = () => { if (cur && isDraft && !save.isPending && can('tax_return.update')) save.mutate(); };
@@ -172,6 +173,7 @@ export default function VatReturnPage() {
         <Space wrap>
           {!cur && can('tax_return.create') && <Button type="primary" loading={create.isPending} onClick={() => create.mutate(undefined)}>Tính tờ khai</Button>}
           {cur && isDraft && can('tax_return.update') && <Button type="primary" loading={save.isPending} onClick={recalc}>Tính lại (F9)</Button>}
+          {cur && isDraft && can('tax_return.delete') && <Popconfirm title="Xóa tờ khai nháp này?" okText="Xóa" cancelText="Không" onConfirm={() => del.mutate()}><Button danger loading={del.isPending}>Xóa nháp</Button></Popconfirm>}
           {cur && isDraft && can('tax_return.finalize') && <Button loading={finalize.isPending} onClick={confirmFinalize}>Chốt</Button>}
           {latest && latest.status === 'final' && can('tax_return.create') && <Button loading={create.isPending} onClick={() => create.mutate(latest.revision + 1)}>Lập bổ sung</Button>}
           {can('tax.offset') && <Button onClick={() => { setOffsetRes(null); setOffsetDate(periodEnd(kind, f.year, period)); setOffsetOpen(true); }}>Khấu trừ thuế cuối kỳ</Button>}

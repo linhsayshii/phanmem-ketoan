@@ -6,14 +6,14 @@ import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { companyInfo } from '../reporting/print/bookSet.js';
 import { invoiceRegister, reconcileDoc, reconcileTax, registerDoc } from './register.js';
 import { offsetInput, runVatOffset } from './vatOffset.js';
-import { createReturn, finalizeReturn, getReturn, listReturns, previewReturn, returnDoc, returnInput, returnUpdate, templateOfPeriod, updateReturn } from './vatReturn.js';
+import { createReturn, deleteReturn, finalizeReturn, getReturn, listReturns, previewReturn, returnDoc, returnInput, returnUpdate, templateOfPeriod, updateReturn } from './vatReturn.js';
 import { XML_FORMATS } from './xml/index.js';
 import { AppError } from '../../plugins/errors.js';
 
 const period = { year: z.coerce.number().int().min(2000).max(2100), period: z.coerce.number().int().min(1).max(12), periodKind: z.enum(['month', 'quarter']).default('month') };
 
 const numId = z.object({ id: z.coerce.number().int().positive() });
-// Lập, sửa, chốt tờ khai đọc nhiều truy vấn (bảng kê mua, bán, kỳ trước): một ảnh chụp, vẫn ghi được. Lập đồng thời cùng kỳ: bản sau gặp UNIQUE (409 DUPLICATE).
+// Lập, sửa, chốt tờ khai đọc nhiều truy vấn (bảng kê mua, bán, kỳ trước): một ảnh chụp, vẫn ghi được. Lập đồng thời cùng kỳ: bản sau gặp UNIQUE, createReturn đổi thành 409 TAX_RETURN_DRAFT_EXISTS.
 const SNAPSHOT_RW = { isolation: 'repeatable read' as const };
 
 const routes: FastifyPluginAsyncZod = async (app) => {
@@ -46,6 +46,10 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     reply.status(201).send(await app.withTenant(req, (trx) => createReturn(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.body), SNAPSHOT_RW)));
   app.put('/api/tax/vat-returns/:id', { preHandler: app.requirePermission('tax_return.update'), schema: { params: numId, body: returnUpdate } }, async (req) =>
     app.withTenant(req, (trx) => updateReturn(trx, req.auth!.tenantId!, req.params.id, req.body), SNAPSHOT_RW));
+  app.delete('/api/tax/vat-returns/:id', { preHandler: app.requirePermission('tax_return.delete'), schema: { params: numId } }, async (req, reply) => {
+    await app.withTenant(req, (trx) => deleteReturn(trx, req.auth!.tenantId!, req.params.id), SNAPSHOT_RW);
+    return reply.status(204).send();
+  });
   app.post('/api/tax/vat-returns/:id/finalize', { preHandler: app.requirePermission('tax_return.finalize'), schema: { params: numId } }, async (req) =>
     app.withTenant(req, (trx) => finalizeReturn(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.params.id), SNAPSHOT_RW));
 

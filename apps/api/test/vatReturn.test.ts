@@ -16,7 +16,7 @@ const M = (x: number) => String(x * 1_000_000);
 // Mỗi kiểm thử một công ty: năm 2026 theo TT133, khai thuế theo tháng (mặc định).
 async function tenant() {
   const { cookie, tenantId } = await setupLedgerTenant(ctx, `VR${Date.now()}${n++}`);
-  const call = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object, c = cookie): Promise<Res> => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload ? { payload } : {}) }) as unknown as Promise<Res>;
+  const call = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, payload?: object, c = cookie): Promise<Res> => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload ? { payload } : {}) }) as unknown as Promise<Res>;
   let no = 0;
   // items: [số tiền, mã thuế] mỗi dòng hàng; trả về phản hồi thô (kiểm lỗi).
   const post = (voucherType: 'HDB' | 'HDM', date: string, items: [string, string][], group: string) => {
@@ -241,5 +241,32 @@ describe('tờ khai 01/GTGT', () => {
     const r = await t.create(t.month(7, { overrides: { '25': '-5' } }));
     expect([r.values['25'], r.values['36']]).toEqual(['-5', '5']);
     expect(err(await t.call('POST', '/api/tax/vat-returns', t.month(8, { manual: { '37': '-5' } })))).toEqual([400, 'VALIDATION']); // nhập tay vẫn không âm
+  });
+
+  it('xóa tờ khai nháp: được và ghi audit; đã chốt 409 TAX_RETURN_FINAL; không có quyền 403; không thấy 404; sau khi xóa lập lại kỳ được', async () => {
+    const t = await tenant();
+    await t.invoice('HDM', '2026-07-05', M(100), 'V10', '01');
+    const d = await t.create(t.month(7));
+    const username = `xd_${Date.now()}`;
+    expect((await t.call('POST', '/api/users', { username, fullName: 'KT', password: 'Matkhau1!', roleCode: 'xem', sensitiveFlags: [] })).statusCode).toBe(201);
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+    const vien = `sid=${login.cookies.find((x) => x.name === 'sid')!.value}`;
+    // vai trò 'xem' không có tax_return.delete
+    expect(err(await t.call('DELETE', `/api/tax/vat-returns/${d.id}`, undefined, vien))).toEqual([403, 'FORBIDDEN']);
+    expect((await t.call('DELETE', `/api/tax/vat-returns/${d.id}`)).statusCode).toBe(204);
+    expect(err(await t.call('GET', `/api/tax/vat-returns/${d.id}`))).toEqual([404, 'TAX_RETURN_NOT_FOUND']);
+    expect(err(await t.call('DELETE', `/api/tax/vat-returns/${d.id}`))).toEqual([404, 'TAX_RETURN_NOT_FOUND']);
+    const audit = (await sql<{ n: number }>`SELECT count(*)::int AS n FROM audit_event WHERE tenant_id = ${t.tenantId}::uuid AND entity = 'tax_return' AND entity_id = ${String(d.id)} AND action = 'delete'`.execute(ctx.t.admin)).rows[0]!.n;
+    expect(audit).toBe(1);
+    const again = await t.create(t.month(7));
+    await t.finalize(again.id);
+    expect(err(await t.call('DELETE', `/api/tax/vat-returns/${again.id}`))).toEqual([409, 'TAX_RETURN_FINAL']);
+  });
+
+  it('hai yêu cầu lập tờ khai cùng kỳ đồng thời: một 201, bên kia 409 TAX_RETURN_DRAFT_EXISTS (không phải DUPLICATE chung)', async () => {
+    const t = await tenant();
+    const [a, b] = await Promise.all([t.call('POST', '/api/tax/vat-returns', t.month(9)), t.call('POST', '/api/tax/vat-returns', t.month(9))]);
+    expect([a.statusCode, b.statusCode].sort()).toEqual([201, 409]);
+    expect(err([a, b].find((r) => r.statusCode === 409)!)).toEqual([409, 'TAX_RETURN_DRAFT_EXISTS']);
   });
 });
