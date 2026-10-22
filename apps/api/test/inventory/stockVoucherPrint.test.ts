@@ -39,9 +39,11 @@ describe('in phiếu nhập kho 01-VT, phiếu xuất kho 02-VT', () => {
     const x = await make('PXK', 'sale', '2026-02-05'); await post(x.id);
     const r = await print(x.id); expect(r.statusCode, r.body).toBe(200);
     for (const t of ['PHIẾU XUẤT KHO', 'Mẫu số 02 - VT', 'Yêu cầu', 'Thực xuất', 'Người nhận hàng', 'Giám đốc', 'Lý do xuất kho']) expect(r.body, t).toContain(t);
+    // phiếu xuất: đơn giá là giá vốn bình quân (10 và 1.500), thành tiền 1.000 + 4.500
+    expect(r.body).toMatch(/<td class="num">10<\/td><td class="num">1\.000<\/td>/); expect(r.body).toMatch(/<td class="num">1\.500<\/td><td class="num">4\.500<\/td>/); expect(r.body).toContain('5.500');
     expect((await print(x.id, '?form=01-VT')).statusCode).toBe(400);
     const k = await make('CK', 'transfer', '2026-02-06', { destWarehouseCode: 'K2' });
-    const c = await print(k.id); expect(c.statusCode, c.body).toBe(200); expect(c.body).toContain('PHIẾU XUẤT KHO');
+    const c = await print(k.id); expect(c.statusCode, c.body).toBe(200); expect(c.body).toContain('PHIẾU XUẤT KHO'); expect(c.body).toMatch(/<td class="num">1\.500<\/td><td class="num">4\.500<\/td>/);
   });
 
   it('thiếu view_cost: in được nhưng bỏ đơn giá, thành tiền, bằng chữ; thiếu quyền xem phiếu kho thì 403', async () => {

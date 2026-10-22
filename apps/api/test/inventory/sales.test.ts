@@ -271,6 +271,19 @@ describe('bán hàng hóa: sửa sau rà soát (vòng 2)', () => {
   });
 });
 
+describe('bán hàng hóa: in phiếu kho', () => {
+  it('BH in 02-VT và TLB in 01-VT với giá vốn, không phải giá bán', async () => {
+    await pnk('R5', '2026-03-03', '10', '10');
+    const b = await create(sale([sl('R5', '3', '20')]));
+    const r = await call('GET', `/api/vouchers/${b.id}/print`); expect(r.statusCode, r.body).toBe(200);
+    expect(r.body).toContain('PHIẾU XUẤT KHO'); expect(r.body).toMatch(/<td class="num">10<\/td><td class="num">30<\/td>/);
+    expect(r.body).not.toMatch(/<td class="num">20<\/td>/); expect(r.body).not.toMatch(/<td class="num">60<\/td>/);
+    const t = await create(tlb(b, await lineId(b.id), 'R5', '1', '20'));
+    const r2 = await call('GET', `/api/vouchers/${t.id}/print`); expect(r2.statusCode, r2.body).toBe(200);
+    expect(r2.body).toContain('PHIẾU NHẬP KHO'); expect(r2.body).toMatch(/<td class="num">10<\/td><td class="num">10<\/td>/);
+  });
+});
+
 describe('bán hàng hóa: sửa sau rà soát (vòng 3)', () => {
   it('in chứng từ: TLB (in 01-VT) thiếu view_cost in được nhưng không có đơn giá, thiếu view_receivable bị 403; phiếu thu không dòng nhạy cảm vẫn in khi thiếu view_receivable', async () => {
     await pnk('R4', '2026-03-03', '10', '10');

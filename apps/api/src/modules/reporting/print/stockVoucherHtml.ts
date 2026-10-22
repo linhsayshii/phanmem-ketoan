@@ -10,11 +10,19 @@ export interface StockPrintLine { itemCode: string; itemName: string; uomCode: s
 export async function stockPrintLines(trx: Transaction<Database>, voucherId: string, form: string, voucherType: string): Promise<StockPrintLine[]> {
   let q = trx.selectFrom('voucher_item_line as l').innerJoin('item as i', 'i.id', 'l.item_id').leftJoin('uom as u', 'u.id', 'l.uom_id')
     .leftJoin('warehouse as w', 'w.id', 'l.warehouse_id').leftJoin('warehouse as dw', 'dw.id', 'l.dest_warehouse_id')
-    .select(['i.code as item_code', 'i.name as item_name', 'u.code as uom_code', 'l.quantity', 'l.unit_price', 'l.amount', 'l.discount_amount', 'w.name as wh', 'dw.name as dwh'])
+    .select(['i.code as item_code', 'i.name as item_name', 'u.code as uom_code', 'l.quantity', 'l.base_quantity', 'l.uom_factor', 'l.unit_price', 'l.unit_cost', 'l.amount', 'l.discount_amount', 'w.name as wh', 'dw.name as dwh'])
     .where('l.voucher_id', '=', voucherId).where('l.item_id', 'is not', null);
   if (voucherType === 'LR') q = q.where('l.direction', '=', form === '01-VT' ? 'in' : 'out');
-  return (await q.orderBy('l.line_no').execute()).map((r) => ({ itemCode: r.item_code, itemName: r.item_name, uomCode: r.uom_code ?? '', quantity: r.quantity ?? '0', unitPrice: r.unit_price ?? '0',
-    amount: D(r.amount).minus(r.discount_amount).toFixed(0), warehouse: r.wh, destWarehouse: r.dwh }));
+  // Giá trị là giá trị kho đã ghi sổ, không phải giá bán: BH (xuất) và TLB (nhập lại) lấy giá vốn dòng (số lượng cơ sở x unit_cost); phiếu kho xuất (PXK, CK, LR) đã lưu amount là giá vốn nên giữ; nhập mua (PNK, MH, TLM) giữ tiền hàng trừ chiết khấu.
+  // Đơn giá theo ĐVT in: unit_cost x hệ số ĐVT; dòng không có unit_price (phiếu xuất) cũng suy từ giá vốn.
+  const costBased = voucherType === 'BH' || voucherType === 'TLB';
+  return (await q.orderBy('l.line_no').execute()).map((r) => {
+    const cost = r.unit_cost === null ? null : D(r.unit_cost).times(r.uom_factor);
+    const q0 = D(r.quantity ?? 0);
+    const price = !costBased && r.unit_price !== null ? D(r.unit_price) : cost ?? (q0.isZero() ? D(0) : D(r.amount).div(q0));
+    const amount = costBased && r.unit_cost !== null ? D(r.base_quantity ?? r.quantity ?? 0).times(r.unit_cost).toDecimalPlaces(0) : D(r.amount).minus(r.discount_amount);
+    return { itemCode: r.item_code, itemName: r.item_name, uomCode: r.uom_code ?? '', quantity: r.quantity ?? '0', unitPrice: price.toDecimalPlaces(4).toFixed(), amount: amount.toFixed(0), warehouse: r.wh, destWarehouse: r.dwh };
+  });
 }
 
 const DOTS = '……………………………………';
@@ -52,7 +60,7 @@ export function renderStockVoucherHtml(v: VoucherDto, c: CompanyInfo, lines: Sto
     <tbody>${rows}<tr><td colspan="4"><b>Cộng</b></td><td class="num">x</td><td class="num">x</td>${cost ? `<td class="num">x</td><td class="num"><b>${formatVnNumber(total)}</b></td>` : ''}</tr></tbody></table>
     ${cost ? `<p>- Tổng số tiền (viết bằng chữ): <b>${esc(vndInWords(total))}</b></p>` : ''}
     <p>- Số chứng từ gốc kèm theo: ${v.attachmentsCount === null || v.attachmentsCount === undefined ? DOTS : `<b>${v.attachmentsCount}</b>`}</p>
-    <div style="text-align:right">Ngày... tháng... năm...</div>
+    <div style="text-align:right">${dateWords(v.postingDate).replace('Ngày', 'Ngày')}</div>
     <div class="sign">${sign('Người lập phiếu')}${sign(inbound ? 'Người giao hàng' : 'Người nhận hàng')}${sign('Thủ kho')}${sign('Kế toán trưởng', '(Hoặc bộ phận có nhu cầu nhập)<br>(Ký, họ tên)', c.chiefAccountant)}${inbound ? '' : sign('Giám đốc', '(Ký, họ tên)', c.legalRep)}</div>
   </div>`;
   return printShell(`${title} ${v.voucherNo ?? ''}`, body);
