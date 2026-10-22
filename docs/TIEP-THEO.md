@@ -72,6 +72,11 @@ Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/202
   - Chưa đo `EXPLAIN ANALYZE` trên 100.000 chứng từ; ước tính 1–3 giây cho một năm. Đo trước khi tag GĐ2 hoặc khi có dữ liệu thật.
   - Đánh dấu "Không trùng" chưa xem lại hay gỡ được (cần màn hình danh sách cặp đã bỏ qua).
   - Người thiếu cờ xem công nợ/giá vốn không thấy cặp có tài khoản đó (có cảnh báo), trong khi danh sách chứng từ chung không lọc theo cờ (quyết định GĐ1 #244).
+- Soát lỗi GĐ2 (Task 27):
+  - Quy tắc có cờ nhạy cảm bị bỏ cả quy tắc khi người dùng thiếu một cờ (`skipped`), không lọc từng dòng; `SO_DU_SAI_LOAI` nay cần `view_cost`.
+  - `THUE_LECH` sao lại logic đối chiếu thuế của `register.ts` bằng SQL (có kiểm thử so khớp), danh sách loại giảm giá/trả lại GGB/GGM viết cứng vì cờ `refund` chỉ có trong TypeScript.
+  - `TIEN_MAT_VUOT_NGUONG` coi hóa đơn kê khai trên chứng từ có dòng Có tài khoản tiền mặt là trả tiền mặt; chứng từ gộp nhiều nội dung có thể báo thừa.
+  - Chưa đo hiệu năng `CN_LECH_SO_CAI`, `HD_TRUNG` trên dữ liệu lớn (giới hạn 15 giây mỗi quy tắc).
 
 ## 4. Chờ người dùng
 
