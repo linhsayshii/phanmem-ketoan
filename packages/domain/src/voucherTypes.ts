@@ -9,7 +9,7 @@ export const HEADER_FIELD_LABELS: Record<HeaderField, string> = {
 };
 export interface VoucherTypeDef {
   code: string; name: string; module: 'general' | 'cash' | 'bank' | 'arap' | 'inventory'; manual: boolean; header: HeaderField[]; required: HeaderField[];
-  cashSide?: 'in' | 'out'; moneyKind?: 'cash' | 'bank'; hasItems?: boolean; invoiceDirection?: 'purchase' | 'sale'; refund?: boolean; printForms: string[];
+  cashSide?: 'in' | 'out'; moneyKind?: 'cash' | 'bank'; hasItems?: boolean; stockDirection?: 'in' | 'out' | 'transfer'; invoiceDirection?: 'purchase' | 'sale'; refund?: boolean; printForms: string[];
 }
 
 // Loại do hệ thống sinh, không lập tay qua route chung. PB không có ở đây: phân bổ lập tay vẫn được (như GĐ1), PB tự sinh mang source_doc_type riêng.
@@ -38,6 +38,9 @@ export const VOUCHER_TYPES: Record<string, VoucherTypeDef> = Object.fromEntries(
   def({ code: 'HDM', name: 'Hóa đơn mua dịch vụ', module: 'arap', hasItems: true, invoiceDirection: 'purchase', header: ['party', 'dueDate', 'currency'], required: ['party'] }),
   def({ code: 'GGB', name: 'Giảm giá, trả lại dịch vụ bán', module: 'arap', hasItems: true, invoiceDirection: 'sale', refund: true, header: ['party', 'dueDate', 'currency'], required: ['party'] }),
   def({ code: 'GGM', name: 'Giảm giá, trả lại dịch vụ mua', module: 'arap', hasItems: true, invoiceDirection: 'purchase', refund: true, header: ['party', 'dueDate', 'currency'], required: ['party'] }),
+  def({ code: 'PNK', name: 'Phiếu nhập kho', module: 'inventory', hasItems: true, stockDirection: 'in', header: ['party', 'personName', 'attachmentsCount'], printForms: ['01-VT'] }),
+  def({ code: 'PXK', name: 'Phiếu xuất kho', module: 'inventory', hasItems: true, stockDirection: 'out', header: ['party', 'personName', 'attachmentsCount'], printForms: ['02-VT'] }),
+  def({ code: 'CK', name: 'Phiếu chuyển kho', module: 'inventory', hasItems: true, stockDirection: 'transfer', header: ['personName', 'attachmentsCount'], printForms: ['02-VT'] }),
   def({ code: 'CL', name: 'Chênh lệch tỷ giá đối trừ', module: 'arap' }),
   def({ code: 'DG', name: 'Đánh giá lại ngoại tệ', module: 'general' }),
   def({ code: 'XQ', name: 'Điều chỉnh tỷ giá xuất quỹ', module: 'general' }),

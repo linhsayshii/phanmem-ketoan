@@ -23,6 +23,8 @@ export const lineInput = z.object({
   partyCode: z.string().nullable().optional(), departmentCode: z.string().nullable().optional(), projectCode: z.string().nullable().optional(),
   costItemCode: z.string().nullable().optional(), employeeCode: z.string().nullable().optional(), description: z.string().nullable().optional(),
   dueDate: dateIso.nullable().optional(), extraDims: z.record(z.string()).optional(), bankAccountNo: optText(50),
+  // Hàng và kho của dòng sổ cái (phiếu kho đặt; dòng tài khoản kho bắt buộc có hàng).
+  itemCode: z.string().nullable().optional(), warehouseCode: z.string().nullable().optional(),
   // Kế hoạch đối trừ (thu/chi từ hóa đơn, bù trừ công nợ): khoản công nợ của dòng đối trừ với các khoản này khi ghi sổ.
   settle: z.array(z.object({ openItemId: z.number().int().positive(), amount: settleAmount.optional(), amountCurrency: settleCurrency.optional() })).max(500).optional(),
 });
@@ -44,7 +46,7 @@ export type VoucherInput = z.infer<typeof voucherInput>;
 export type LineInput = z.infer<typeof lineInput>;
 export type MetaInput = z.infer<typeof metaInput>;
 // Chứng từ tự động (XQ, CL, DG...): dòng được mang loại tiền riêng, ví dụ dòng tiền ngoại tệ nguyên tệ 0 đi cùng dòng 515/635 bằng VND. Không có trong lược đồ API: chỉ mã nội bộ tạo được.
-export type SystemVoucherInput = Omit<VoucherInput, 'lines'> & { lines: (LineInput & { currencyCode?: string })[] };
+export type SystemVoucherInput = Omit<VoucherInput, 'lines'> & { lines: (LineInput & { currencyCode?: string })[]; stockKind?: string | undefined };
 
 export interface LineDto extends LineInput { lineNo: number; accountName: string; partyName: string | null }
 export interface VoucherDto {
@@ -63,12 +65,12 @@ export interface VoucherListRow {
 }
 
 type Trx = Transaction<Database>;
-const LABEL = { account: 'tài khoản', party: 'đối tượng', department: 'bộ phận', project: 'vụ việc', cost_item: 'khoản mục chi phí', employee: 'nhân viên' } as const;
+const LABEL = { account: 'tài khoản', party: 'đối tượng', department: 'bộ phận', project: 'vụ việc', cost_item: 'khoản mục chi phí', employee: 'nhân viên', item: 'vật tư hàng hóa', warehouse: 'kho' } as const;
 // `accounts` nhớ mã và loại sổ chi tiết của các tài khoản đã tra, để kiểm tra theo loại chứng từ không phải truy vấn lại.
 type Lookup = ((table: keyof typeof LABEL, code: string | null | undefined) => Promise<number | string | null>) & { accounts: Map<number, { code: string; kind: string | null }> };
 
 // Kỳ chứa ngày ghi sổ (chứng từ DK: kỳ 0 bắt đầu đúng ngày đó), giống fn_period_of; lấy chế độ kế toán để tra tài khoản và năm tài chính. Tra một lần cho cả chứng từ.
-async function periodOf(trx: Trx, postingDate: string, voucherType: string): Promise<{ regime: string; fiscal_year: number }> {
+export async function periodOf(trx: Trx, postingDate: string, voucherType: string): Promise<{ regime: string; fiscal_year: number }> {
   const q = trx.selectFrom('fiscal_period').select(['regime', 'fiscal_year']);
   const p = await (voucherType === 'DK' ? q.where('period_no', '=', 0).where('date_from', '=', postingDate)
     : q.where('period_no', '>=', 1).where('period_no', '<=', 15).where('date_from', '<=', postingDate).where('date_to', '>=', postingDate)).executeTakeFirst();
@@ -109,6 +111,7 @@ async function resolveLine(lookup: Lookup, l: LineInput, currency: string, heade
     project_id: (await lookup('project', l.projectCode)) as number | null,
     cost_item_id: (await lookup('cost_item', l.costItemCode)) as number | null,
     employee_id: (await lookup('employee', l.employeeCode)) as number | null,
+    item_id: (await lookup('item', l.itemCode)) as number | null, warehouse_id: (await lookup('warehouse', l.warehouseCode)) as number | null,
     extra_dims: JSON.stringify(l.extraDims ?? {}), description: l.description ?? null, due_date: l.dueDate ?? null, bank_account_id: null as number | null,
   };
 }
@@ -257,10 +260,11 @@ const SYSTEM_TYPE_MSG: Record<string, string> = {
   KC: 'Chứng từ kết chuyển do hệ thống sinh ở màn hình Kết chuyển, không lập tay',
 };
 // Loại do hệ thống sinh (SYSTEM_VOUCHER_TYPES) không lập tay; hóa đơn, giảm giá, trả lại lập ở /api/invoices.
-const assertNotSystemType = (voucherType: string, allowItems = false) => {
+const assertNotSystemType = (voucherType: string, allow?: 'items' | 'stock') => {
   const def = voucherTypeDef(voucherType);
   if (SYSTEM_VOUCHER_TYPES.includes(voucherType) || def?.manual === false) throw new AppError('VOUCHER_TYPE_SYSTEM', SYSTEM_TYPE_MSG[voucherType] ?? `${def?.name ?? voucherType} do hệ thống sinh, không lập tay`, 409);
-  if (def?.hasItems && !allowItems) throw new AppError('VOUCHER_TYPE_USE_INVOICE', `${def.name} lập ở màn hình Hóa đơn, không lập qua chứng từ chung`, 409);
+  if (def?.module === 'inventory') { if (allow !== 'stock') throw new AppError('VOUCHER_TYPE_USE_STOCK', `${def.name} lập ở màn hình Phiếu kho, không lập qua chứng từ chung`, 409); return; }
+  if (def?.hasItems && allow !== 'items') throw new AppError('VOUCHER_TYPE_USE_INVOICE', `${def.name} lập ở màn hình Hóa đơn, không lập qua chứng từ chung`, 409);
 };
 
 // Chứng từ đã sinh ra từ màn hình Kết chuyển/Số dư đầu kỳ chỉ đổi qua màn hình đó (chạy lại đảo cũ, ghi sổ số dư): không sửa dòng, bỏ ghi sổ, hủy hay xóa tay. Khớp danh sách source_doc_type trong unpost_voucher/discard_voucher (0025); thêm loại mới thì sửa cả hai nơi.
@@ -288,7 +292,12 @@ export async function createVoucher(trx: Trx, ctx: { tenantId: string; userId: s
 }
 // Hóa đơn dịch vụ, giảm giá, trả lại (HDB, HDM, GGB, GGM) chỉ lập qua dịch vụ hóa đơn (modules/invoices), nơi dựng bút toán từ dòng hàng và thuế; route chung vẫn chặn các loại này.
 export const createInvoiceVoucher = (trx: Trx, ctx: { tenantId: string; userId: string }, input: VoucherInput): Promise<VoucherDto> => {
-  assertNotSystemType(input.voucherType, true);
+  assertNotSystemType(input.voucherType, 'items');
+  return insertVoucher(trx, ctx, input);
+};
+// Phiếu kho (PNK, PXK, CK) chỉ lập qua modules/inventory/stockVouchers, nơi dựng dòng sổ cái từ dòng hàng.
+export const createStockVoucherHeader = (trx: Trx, ctx: { tenantId: string; userId: string }, input: SystemVoucherInput): Promise<VoucherDto> => {
+  assertNotSystemType(input.voucherType, 'stock');
   return insertVoucher(trx, ctx, input);
 };
 // Chứng từ do chức năng hệ thống sinh (loại trong SYSTEM_VOUCHER_TYPES được phép), ghi nguồn source_doc_type/source_doc_id ngay khi tạo; vẫn qua đủ tra cứu và quy tắc dòng như chứng từ lập tay.
@@ -314,7 +323,7 @@ async function insertVoucher(trx: Trx, ctx: { tenantId: string; userId: string; 
   const { header, lines } = await prepareVoucher(trx, lookupIn(trx, regime), input, regime);
   const v = await trx.insertInto('voucher').values({
     tenant_id: ctx.tenantId, voucher_type: input.voucherType, posting_date: input.postingDate, document_date: input.documentDate, description: input.description ?? null,
-    ...header, currency_code: input.currencyCode, fx_rate: input.fxRate ?? null, idempotency_key: input.idempotencyKey ?? null, created_by: ctx.userId,
+    ...header, currency_code: input.currencyCode, fx_rate: input.fxRate ?? null, idempotency_key: input.idempotencyKey ?? null, created_by: ctx.userId, stock_kind: input.stockKind ?? null,
     source_doc_type: source?.type ?? null, source_doc_id: source?.id ?? null,
   }).onConflict((oc) => oc.columns(['tenant_id', 'idempotency_key']).doNothing()).returning('id').executeTakeFirst();
   if (!v) { // thua cuộc đua idempotency: chờ giao dịch thắng commit rồi trả chứng từ của nó
@@ -338,14 +347,19 @@ export async function updateDraft(trx: Trx, id: string, version: number, input: 
   assertNotSystemType(input.voucherType);
   // Hóa đơn nháp chỉ sửa qua /api/invoices: đổi loại sang PKT... qua route chung sẽ để lại dòng hàng, dòng kê khai mồ côi (loại chứng từ có dòng hàng hay không là bất biến sau khi tạo: route chung không đổi sang loại hóa đơn, /api/invoices chỉ đổi giữa các loại hóa đơn; nên đọc không cần khóa).
   const cur = await trx.selectFrom('voucher').select('voucher_type').where('id', '=', id).executeTakeFirst();
+  if (cur && voucherTypeDef(cur.voucher_type)?.module === 'inventory') throw new AppError('VOUCHER_TYPE_USE_STOCK', `${voucherTypeDef(cur.voucher_type)!.name} sửa ở màn hình Phiếu kho, không sửa qua chứng từ chung`, 409);
   if (cur && voucherTypeDef(cur.voucher_type)?.hasItems) throw new AppError('VOUCHER_TYPE_USE_INVOICE', `${voucherTypeDef(cur.voucher_type)!.name} sửa ở màn hình Hóa đơn, không sửa qua chứng từ chung`, 409);
   return updateDraftCore(trx, id, version, input, auth);
 }
 export const updateInvoiceDraft = (trx: Trx, id: string, version: number, input: VoucherInput): Promise<VoucherDto> => {
-  assertNotSystemType(input.voucherType, true);
+  assertNotSystemType(input.voucherType, 'items');
   return updateDraftCore(trx, id, version, input);
 };
-async function updateDraftCore(trx: Trx, id: string, version: number, input: VoucherInput, auth?: PlanAuth): Promise<VoucherDto> {
+export const updateStockDraftHeader = (trx: Trx, id: string, version: number, input: VoucherInput & { stockKind?: string }): Promise<VoucherDto> => {
+  assertNotSystemType(input.voucherType, 'stock');
+  return updateDraftCore(trx, id, version, input);
+};
+async function updateDraftCore(trx: Trx, id: string, version: number, input: VoucherInput & { stockKind?: string | undefined }, auth?: PlanAuth): Promise<VoucherDto> {
   const v = await lockAndCheckVersion(trx, id, version);
   failIfSystem(v.source_doc_type);
   if (v.state !== 'draft') throw new AppError('VOUCHER_POSTED_EDIT', 'Chứng từ đã ghi sổ: chỉ sửa được diễn giải/chiều phân tích, hoặc Bỏ ghi sổ trước', 409);
@@ -357,7 +371,7 @@ async function updateDraftCore(trx: Trx, id: string, version: number, input: Vou
   await trx.deleteFrom('voucher_line').where('voucher_id', '=', id).execute();
   await trx.deleteFrom('settlement_plan').where('voucher_id', '=', id).execute();
   await trx.updateTable('voucher').set({ voucher_type: input.voucherType, posting_date: input.postingDate, document_date: input.documentDate, description: input.description ?? null,
-    ...header, currency_code: input.currencyCode, fx_rate: input.fxRate ?? null }).where('id', '=', id).execute();
+    ...header, currency_code: input.currencyCode, fx_rate: input.fxRate ?? null, ...(input.stockKind !== undefined && { stock_kind: input.stockKind }) }).where('id', '=', id).execute();
   await insertLines(trx, v.tenant_id, id, input.postingDate, lines);
   await insertPlans(trx, v.tenant_id, id, input, auth);
   await saveDeclared(trx, v.tenant_id, id, input, header.party_id, true);

@@ -16,3 +16,4 @@ export * from './invoiceLedger.js';
 export * from './vatFormula.js';
 export * from './unit.js';
 export * from './costing.js';
+export * from './stock.js';
