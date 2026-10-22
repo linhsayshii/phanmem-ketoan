@@ -105,4 +105,19 @@ describe('Bộ dữ liệu mẫu ABC năm 2026 (GĐ2)', () => {
       expect((await c.query(`SELECT count(*)::int AS n FROM tenant WHERE code = 'ABC_TEST_FAIL'`)).rows[0].n).toBe(0);
     } finally { await c.end(); }
   }, 300_000);
+
+  it('quý 3/2026 có hóa đơn bán 8% (V8): lập tờ khai bổ sung nháp cảnh báo thuế suất 8%; xóa nháp thì còn đúng 2 tờ khai', async () => {
+    const r = await ctx.app.inject({ method: 'POST', url: '/api/tax/vat-returns', headers: { cookie }, payload: { year: 2026, periodKind: 'quarter', period: 3 } });
+    expect(r.statusCode, r.body).toBe(201);
+    const ret = r.json() as { id: number; revision: number; status: string; warnings: string[] };
+    try {
+      expect([ret.revision, ret.status]).toEqual([1, 'draft']);
+      expect(ret.warnings.join('\n')).toMatch(/8%/);
+      expect(ret.warnings.join('\n')).toMatch(/\[32\]/);
+    } finally {
+      const d = await ctx.app.inject({ method: 'DELETE', url: `/api/tax/vat-returns/${ret.id}`, headers: { cookie } });
+      expect(d.statusCode, d.body).toBe(204);
+    }
+    expect((await counts(tenantId)).find((x) => x.k === 'tax_return')!.n).toBe(2);
+  });
 });
