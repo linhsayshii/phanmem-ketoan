@@ -26,12 +26,12 @@ interface Mv {
   adj_open: string | null; // phần điều chỉnh giá nhập chưa ghi nhận ở GV nào (voucher_id null)
   receipt: string | null; // giá trị lớp nhập đã lưu, cộng các lớp điều chỉnh giá nhập
   cur_amount: string | null; cur_unit_cost: string | null; cur_run: string | null; carry_date: string | null;
-  voucher_id: string; voucher_type: string; cost_ratio: string | null; // LR: nhóm giá trị là chứng từ
+  asset_code: string | null; voucher_id: string; voucher_type: string; cost_ratio: string | null; // LR: nhóm giá trị là chứng từ
   lr_rev_out: boolean; // chiều xuất đảo của chiều nhập LR: chênh giá đã ghi ở chiều nhập đảo của linh kiện, không ghi lần hai
 }
 const MOVE_SELECT = sql`m.id, m.item_id, m.warehouse_id, m.posting_date, m.direction, m.quantity, m.lot_no, m.transfer_id, m.reversal_of, v.stock_kind, pa.code AS party_code,
   l.unit_price, l.fixed_cost, l.unit_cost, da.code AS debit_code, ca.code AS credit_code, da.subledger_kind AS debit_kind, ca.subledger_kind AS credit_kind,
-  i.code AS item_code, w.code AS wh_code, dw.code AS dest_code, w.costing_method AS wh_method,
+  i.code AS item_code, w.code AS wh_code, dw.code AS dest_code, w.costing_method AS wh_method, ast.code AS asset_code,
   (CASE WHEN l.unit_cost IS NOT NULL THEN round(coalesce(l.base_quantity, l.quantity * l.uom_factor) * l.unit_cost) ELSE l.amount END)::text AS base,
   (SELECT sum(c.value) FROM stock_cost_layer c WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND c.kind IN ('receipt', 'adjustment'))::text AS receipt,
   (SELECT sum(c.value) FROM stock_cost_layer c WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND c.kind = 'adjustment' AND c.voucher_id IS NULL)::text AS adj_open,
@@ -40,7 +40,7 @@ const MOVE_SELECT = sql`m.id, m.item_id, m.warehouse_id, m.posting_date, m.direc
   (m.direction = 'out' AND m.reversal_of IS NOT NULL AND EXISTS (SELECT 1 FROM stock_move om JOIN voucher ov ON ov.id = om.voucher_id WHERE om.id = m.reversal_of AND om.direction = 'in' AND ov.voucher_type = 'LR')) AS lr_rev_out`;
 const MOVE_JOINS = sql`JOIN voucher v ON v.id = m.voucher_id JOIN voucher_item_line l ON l.tenant_id = m.tenant_id AND l.id = m.item_line_id
   LEFT JOIN account da ON da.id = l.debit_account_id LEFT JOIN account ca ON ca.id = l.credit_account_id LEFT JOIN party pa ON pa.id = v.party_id
-  JOIN item i ON i.id = m.item_id JOIN warehouse w ON w.id = m.warehouse_id LEFT JOIN warehouse dw ON dw.id = l.dest_warehouse_id
+  JOIN item i ON i.id = m.item_id JOIN warehouse w ON w.id = m.warehouse_id LEFT JOIN warehouse dw ON dw.id = l.dest_warehouse_id LEFT JOIN asset ast ON ast.id = l.asset_id
   LEFT JOIN stock_cost_assignment a ON a.tenant_id = m.tenant_id AND a.move_id = m.id AND a.is_current
   LEFT JOIN costing_run cr ON cr.id = a.run_id LEFT JOIN voucher gv ON gv.id = a.voucher_id`;
 // Thứ tự tính giá trong ngày: thứ tự trong ngày của chứng từ, chứng từ đảo sau chứng từ gốc, nhập trước xuất, số chứng từ, dòng.
@@ -281,7 +281,7 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
     WHERE a.run_id = ANY(${prevRuns}::uuid[]) AND NOT (m.id = ANY(${[...assignedIds]}::bigint[])) ${MOVE_ORDER}`.execute(trx)).rows.filter((m) => !D(m.cur_amount!).eq(m.base)) : [];
 
   // Dòng GV: mỗi phát sinh chênh = giá gán − giá tạm tính, Nợ TK nợ / Có TK có của dòng hàng (chênh âm thì ngược lại); cộng ròng theo (ngày, TK, hàng, kho, đối tượng công nợ).
-  const net = new Map<string, { date: string; account: string; item: string; wh: string; party: string | null; amount: Decimal }>();
+  const net = new Map<string, { date: string; account: string; item: string; wh: string; party: string | null; asset: string | null; amount: Decimal }>();
   const deltaMoves = new Map<string, number[]>();
   // LR: chênh giá của chiều xuất (hoặc nhập đảo của chiều xuất gốc) ghi bên TK kho của chính hàng đó; bên TK kho nhập ghi riêng theo từng hàng nhập của nhóm (flushLr), để số dư từng hàng khớp lớp giá.
   const lrAcc = new Map<string, { orig: string; date: string; sign: 1 | -1; d: Decimal }>();
@@ -300,8 +300,9 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
     const sides = [[m.debit_code, m.debit_kind, m.dest_code ?? m.wh_code, 1], [m.credit_code, m.credit_kind, m.wh_code, -1]] as const;
     for (const [account, kind, whCode, sign] of lr ? [sides[lr.sign === 1 ? 1 : 0]] : sides) {
       const party = kind === 'receivable' || kind === 'payable' ? m.party_code : null;
-      const k = [date, account, m.item_code, whCode, party ?? ''].join('|');
-      const g = net.get(k) ?? { date, account, item: m.item_code, wh: whCode, party, amount: ZERO };
+      const asset = sign === (m.reversal_of === null ? 1 : -1) ? m.asset_code : null; // thẻ tài sản ở dòng Nợ của phiếu gốc (phiếu đảo: dòng Có); chênh giá vốn ghi cùng thẻ
+      const k = [date, account, m.item_code, whCode, party ?? '', asset ?? ''].join('|');
+      const g = net.get(k) ?? { date, account, item: m.item_code, wh: whCode, party, asset, amount: ZERO };
       net.set(k, { ...g, amount: g.amount.plus(d.times(sign)) });
     }
   };
@@ -338,18 +339,18 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
     const exact = g ? lrValues(g).map((v, j) => v.minus(g.ins[j]!.base)) : ins.every((i) => i.diff !== null) ? ins.map((i) => D(i.diff!)) : null;
     const amounts = exact && exact.reduce((t, v) => t.plus(v), ZERO).eq(x.d) ? exact : splitByRatio(x.d, ins.map((i) => i.ratio ?? '0')).map((v) => D(v));
     ins.forEach((i, j) => {
-      const k = [x.date, i.account, i.item, i.wh, ''].join('|');
-      const cur = net.get(k) ?? { date: x.date, account: i.account, item: i.item, wh: i.wh, party: null, amount: ZERO };
+      const k = [x.date, i.account, i.item, i.wh, '', ''].join('|');
+      const cur = net.get(k) ?? { date: x.date, account: i.account, item: i.item, wh: i.wh, party: null, asset: null, amount: ZERO };
       net.set(k, { ...cur, amount: cur.amount.plus(amounts[j]!.times(x.sign)) });
     });
   }
   const lines = [...net.values()].filter((g) => !g.amount.isZero());
-  const keyOf = (x: { date: string; account: string; item: string; wh: string; party: string | null; debit: string; credit: string }) =>
-    [x.date, x.account, x.item, x.wh, x.party ?? '', x.debit, x.credit].join('|');
+  const keyOf = (x: { date: string; account: string; item: string; wh: string; party: string | null; asset: string | null; debit: string; credit: string }) =>
+    [x.date, x.account, x.item, x.wh, x.party ?? '', x.asset ?? '', x.debit, x.credit].join('|');
   const newKeys = lines.map((g) => keyOf({ ...g, debit: g.amount.gt(0) ? g.amount.toFixed(0) : '0', credit: g.amount.lt(0) ? g.amount.neg().toFixed(0) : '0' })).sort();
-  const oldKeys = prevGv.length ? (await sql<{ date: string; account: string; item: string; wh: string; party: string | null; debit: string; credit: string }>`
-    SELECT l.posting_date::text AS date, a.code AS account, i.code AS item, w.code AS wh, p.code AS party, l.debit::text AS debit, l.credit::text AS credit
-    FROM voucher_line l JOIN account a ON a.id = l.account_id LEFT JOIN item i ON i.id = l.item_id LEFT JOIN warehouse w ON w.id = l.warehouse_id LEFT JOIN party p ON p.id = l.party_id
+  const oldKeys = prevGv.length ? (await sql<{ date: string; account: string; item: string; wh: string; party: string | null; asset: string | null; debit: string; credit: string }>`
+    SELECT l.posting_date::text AS date, a.code AS account, i.code AS item, w.code AS wh, p.code AS party, ast.code AS asset, l.debit::text AS debit, l.credit::text AS credit
+    FROM voucher_line l JOIN account a ON a.id = l.account_id LEFT JOIN item i ON i.id = l.item_id LEFT JOIN warehouse w ON w.id = l.warehouse_id LEFT JOIN party p ON p.id = l.party_id LEFT JOIN asset ast ON ast.id = l.asset_id
     WHERE l.voucher_id = ANY(${prevGv.map((g) => g.id)}::uuid[])`.execute(trx)).rows.map(keyOf).sort() : [];
   const sameAssign = assigned.every((m) => m.cur_amount !== null && D(m.cur_amount).eq(target.get(m.id)!) && D(m.cur_unit_cost!).eq(unitCost.get(m.id)!));
   const unchanged = sameAssign && newKeys.join('\n') === oldKeys.join('\n');
@@ -375,7 +376,7 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
     for (const date of [...new Set(lines.map((g) => g.date))].sort()) {
       const v = await S.createSystemVoucher(trx, ctx, { voucherType: 'GV', postingDate: date, documentDate: date, currencyCode: 'VND',
         description: `Điều chỉnh giá vốn theo giá thực tế ${formatVnDate(from)} – ${formatVnDate(to)}`,
-        lines: lines.filter((g) => g.date === date).map((g) => ({ accountCode: g.account, itemCode: g.item, warehouseCode: g.wh, partyCode: g.party,
+        lines: lines.filter((g) => g.date === date).map((g) => ({ accountCode: g.account, itemCode: g.item, warehouseCode: g.wh, partyCode: g.party, ...(g.asset && { assetCode: g.asset }),
           debit: g.amount.gt(0) ? g.amount.toFixed(0) : '0', credit: g.amount.lt(0) ? g.amount.neg().toFixed(0) : '0', description: `Giá vốn ${g.item} – kho ${g.wh}` })) },
       { type: 'costing_run', id: run.id });
       await S.postVoucher(trx, v.id);

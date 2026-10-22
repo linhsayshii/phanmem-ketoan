@@ -29,6 +29,8 @@ export const lineInput = z.object({
   cashFlowCode: z.string().max(10).nullable().optional(),
   // Hàng và kho của dòng sổ cái (phiếu kho đặt; dòng tài khoản kho bắt buộc có hàng).
   itemCode: z.string().nullable().optional(), warehouseCode: z.string().nullable().optional(),
+  // Mã tài sản (thẻ TSCĐ, CCDC, chi phí trả trước) và mã khế ước/hợp đồng của dòng; dòng TK 211/214/242 của tài sản phải đúng TK của thẻ.
+  assetCode: z.string().nullable().optional(), contractCode: z.string().nullable().optional(),
   // Kế hoạch đối trừ (thu/chi từ hóa đơn, bù trừ công nợ): khoản công nợ của dòng đối trừ với các khoản này khi ghi sổ.
   settle: z.array(z.object({ openItemId: z.number().int().positive(), amount: settleAmount.optional(), amountCurrency: settleCurrency.optional() })).max(500).optional(),
 });
@@ -69,9 +71,10 @@ export interface VoucherListRow {
 }
 
 type Trx = Transaction<Database>;
-const LABEL = { account: 'tài khoản', party: 'đối tượng', department: 'bộ phận', project: 'vụ việc', cost_item: 'khoản mục chi phí', employee: 'nhân viên', item: 'vật tư hàng hóa', warehouse: 'kho' } as const;
+const LABEL = { account: 'tài khoản', party: 'đối tượng', department: 'bộ phận', project: 'vụ việc', cost_item: 'khoản mục chi phí', employee: 'nhân viên', item: 'vật tư hàng hóa', warehouse: 'kho', contract: 'khế ước, hợp đồng' } as const;
 // `accounts` nhớ mã và loại sổ chi tiết của các tài khoản đã tra, để kiểm tra theo loại chứng từ không phải truy vấn lại.
-type Lookup = ((table: keyof typeof LABEL, code: string | null | undefined) => Promise<number | string | null>) & { accounts: Map<number, { code: string; kind: string | null }> };
+type AssetRef = { id: number; kind: string; asset_account_code: string; depreciation_account_code: string | null };
+type Lookup = ((table: keyof typeof LABEL, code: string | null | undefined) => Promise<number | string | null>) & { accounts: Map<number, { code: string; kind: string | null }>; asset: (code: string) => Promise<AssetRef> };
 
 // Kỳ chứa ngày ghi sổ (chứng từ DK: kỳ 0 bắt đầu đúng ngày đó), giống fn_period_of; lấy chế độ kế toán để tra tài khoản và năm tài chính. Tra một lần cho cả chứng từ.
 export async function periodOf(trx: Trx, postingDate: string, voucherType: string): Promise<{ regime: string; fiscal_year: number }> {
@@ -85,6 +88,16 @@ export async function periodOf(trx: Trx, postingDate: string, voucherType: strin
 function lookupIn(trx: Trx, regime?: string): Lookup {
   const memo = new Map<string, number | string>();
   const accounts: Lookup['accounts'] = new Map();
+  const assets = new Map<string, AssetRef>();
+  const asset = async (code: string): Promise<AssetRef> => {
+    let a = assets.get(code);
+    if (!a) {
+      a = await trx.selectFrom('asset').select(['id', 'kind', 'asset_account_code', 'depreciation_account_code']).where('code', '=', code).executeTakeFirst();
+      if (!a) throw new AppError('ASSET_NOT_FOUND', `Không có tài sản mã "${code}"`, 404);
+      assets.set(code, a);
+    }
+    return a;
+  };
   return Object.assign(async (table: keyof typeof LABEL, code: string | null | undefined) => {
     if (!code) return null;
     const key = `${table}:${code}`;
@@ -100,14 +113,23 @@ function lookupIn(trx: Trx, regime?: string): Lookup {
       id = row.id; memo.set(key, id);
     }
     return id;
-  }, { accounts });
+  }, { accounts, asset });
 }
 async function resolveLine(lookup: Lookup, l: LineInput, currency: string, headerFxRate?: string) {
   const debit = D(l.debit); const credit = D(l.credit);
   if (debit.gt(0) && credit.gt(0)) throw new AppError('LINE_BOTH_SIDES', `Dòng ${l.accountCode}: chỉ được một bên Nợ hoặc Có`, 400);
   if (currency !== 'VND' && l.amountCurrency === undefined) throw new AppError('VALIDATION', `Dòng ${l.accountCode}: chứng từ ngoại tệ ${currency} phải có amountCurrency`, 400);
+  const account_id = (await lookup('account', l.accountCode)) as number;
+  let asset_id: number | null = null;
+  if (l.assetCode) {
+    const a = await lookup.asset(l.assetCode);
+    // Thẻ TSCĐ nhận TK tài sản hoặc TK hao mòn của nó; CCDC, chi phí trả trước chỉ nhận TK tài sản (242) của nó.
+    if (l.accountCode !== a.asset_account_code && !(a.kind === 'fixed' && l.accountCode === a.depreciation_account_code))
+      throw new AppError('ASSET_ACCOUNT_MISMATCH', `Dòng ${l.accountCode}: tài sản ${l.assetCode} chỉ ghi trên tài khoản ${a.asset_account_code}${a.kind === 'fixed' ? ` hoặc ${a.depreciation_account_code}` : ''}`, 400);
+    asset_id = a.id;
+  }
   return {
-    account_id: (await lookup('account', l.accountCode)) as number, currency_code: currency, fx_rate: l.fxRate ?? (currency === 'VND' ? null : headerFxRate ?? null),
+    account_id, asset_id, contract_id: (await lookup('contract', l.contractCode)) as number | null, currency_code: currency, fx_rate: l.fxRate ?? (currency === 'VND' ? null : headerFxRate ?? null),
     amount_currency: currency === 'VND' ? debit.minus(credit).toString() : l.amountCurrency!,
     debit: debit.toString(), credit: credit.toString(),
     party_id: (await lookup('party', l.partyCode)) as string | null,
@@ -132,7 +154,8 @@ export async function getVoucher(trx: Trx, id: string): Promise<VoucherDto> {
   const lines = await trx.selectFrom('voucher_line as l').innerJoin('account as a', 'a.id', 'l.account_id')
     .leftJoin('party as p', 'p.id', 'l.party_id').leftJoin('department as d', 'd.id', 'l.department_id').leftJoin('project as pr', 'pr.id', 'l.project_id')
     .leftJoin('cost_item as ci', 'ci.id', 'l.cost_item_id').leftJoin('employee as e', 'e.id', 'l.employee_id').leftJoin('bank_account as lb', 'lb.id', 'l.bank_account_id')
-    .select(['l.line_no', 'a.code as account_code', 'a.name as account_name', 'l.debit', 'l.credit', 'l.amount_currency', 'l.fx_rate', 'p.code as party_code', 'p.name as party_name',
+    .leftJoin('asset as ast', 'ast.id', 'l.asset_id').leftJoin('contract as ct', 'ct.id', 'l.contract_id')
+    .select(['ast.code as asset_code', 'ct.code as contract_code','l.line_no', 'a.code as account_code', 'a.name as account_name', 'l.debit', 'l.credit', 'l.amount_currency', 'l.fx_rate', 'p.code as party_code', 'p.name as party_name',
       'd.code as department_code', 'pr.code as project_code', 'ci.code as cost_item_code', 'e.code as employee_code', 'l.description', 'l.due_date', 'l.extra_dims', 'lb.account_no as bank_account_no', 'l.cash_flow_code'])
     .where('l.voucher_id', '=', id).where('l.posting_date', '=', v.posting_date).orderBy('l.line_no').execute(); // posting_date: chỉ quét partition của tháng chứng từ
   // Kế hoạch đối trừ của chứng từ nháp (ghi sổ thì đã áp và xóa)
@@ -148,7 +171,7 @@ export async function getVoucher(trx: Trx, id: string): Promise<VoucherDto> {
     totalDebit: sum(lines.map((l) => l.debit)).toString(), invoices: await listInvoiceRows(trx, id),
     lines: lines.map((l) => ({ lineNo: l.line_no, accountCode: l.account_code, accountName: l.account_name, debit: l.debit, credit: l.credit, amountCurrency: l.amount_currency, fxRate: l.fx_rate ?? undefined,
       partyCode: l.party_code, partyName: l.party_name, departmentCode: l.department_code, projectCode: l.project_code, costItemCode: l.cost_item_code, employeeCode: l.employee_code,
-      description: l.description, dueDate: l.due_date, extraDims: l.extra_dims as Record<string, string>, bankAccountNo: l.bank_account_no, cashFlowCode: l.cash_flow_code, ...(plans.has(l.line_no) && { settle: plans.get(l.line_no) }) })),
+      description: l.description, dueDate: l.due_date, extraDims: l.extra_dims as Record<string, string>, bankAccountNo: l.bank_account_no, cashFlowCode: l.cash_flow_code, assetCode: l.asset_code, contractCode: l.contract_code, ...(plans.has(l.line_no) && { settle: plans.get(l.line_no) }) })),
   };
 }
 
@@ -472,7 +495,7 @@ export async function duplicateVoucher(trx: Trx, ctx: { tenantId: string; userId
     fxRate: src.fxRate ?? undefined, personName: src.personName, personAddress: src.personAddress, attachmentsCount: src.attachmentsCount, bankAccountNo: src.bankAccountNo,
     counterBankAccountNo: src.counterBankAccountNo, partyBankAccountNo: src.partyBankAccountNo, dueDate: src.dueDate, purpose: src.purpose,
     lines: src.lines.map((l) => ({ accountCode: l.accountCode, debit: l.debit, credit: l.credit, amountCurrency: l.amountCurrency, fxRate: l.fxRate, partyCode: l.partyCode,
-      departmentCode: l.departmentCode, projectCode: l.projectCode, costItemCode: l.costItemCode, employeeCode: l.employeeCode, description: l.description, dueDate: l.dueDate, extraDims: l.extraDims, bankAccountNo: l.bankAccountNo, cashFlowCode: l.cashFlowCode })) });
+      departmentCode: l.departmentCode, projectCode: l.projectCode, costItemCode: l.costItemCode, employeeCode: l.employeeCode, description: l.description, dueDate: l.dueDate, extraDims: l.extraDims, bankAccountNo: l.bankAccountNo, cashFlowCode: l.cashFlowCode, assetCode: l.assetCode, contractCode: l.contractCode })) });
 }
 export async function deleteDraft(trx: Trx, id: string): Promise<void> {
   await assertNotSystemGenerated(trx, id);

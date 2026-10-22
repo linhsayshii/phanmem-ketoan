@@ -52,7 +52,7 @@ async function tenant() {
     const r = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
     return `sid=${r.cookies.find((x) => x.name === 'sid')!.value}`;
   };
-  return { tenantId, call, cat, wh, item, pnk, pxk, ck, run, runOk, bal, layers, drift, canon, gvs, login };
+  return { tenantId, call, cat, wh, item, stock, pnk, pxk, ck, run, runOk, bal, layers, drift, canon, gvs, login };
 }
 type T = Awaited<ReturnType<typeof tenant>>;
 
@@ -171,6 +171,22 @@ describe('tính giá vốn', () => {
     const kgIn = (await sql<{ value: string }>`SELECT c.value FROM stock_cost_layer c JOIN warehouse w ON w.id = c.warehouse_id WHERE c.tenant_id = ${t.tenantId}::uuid AND w.code = 'KG'`.execute(ctx.t.admin)).rows;
     expect(kgIn.map((x) => x.value)).toEqual(['1240']);
     expect((await t.runOk()).unchanged).toBe(true);
+  }, 60_000);
+
+  it('xuất kho CCDC Nợ 242 assetCode CC01: dòng GV chênh giá tạm tính trên 242 giữ asset_id', async () => {
+    const t = await tenant();
+    await t.wh('K1', 'avg_period', '153'); await t.item('H1');
+    const a = await t.call('POST', '/api/assets', { code: 'CC01', name: 'Công cụ 1', kind: 'tool', assetAccountCode: '242' });
+    expect(a.statusCode, a.body).toBe(201);
+    await t.pnk('2026-01-02', 'K1', [{ itemCode: 'H1', quantity: '100', unitPrice: '10' }]);
+    await t.stock({ voucherType: 'PXK', stockKind: 'sale', postingDate: '2026-01-10', warehouseCode: 'K1', items: [{ itemCode: 'H1', uomCode: 'CAI', quantity: '60', debitAccountCode: '242', assetCode: 'CC01' }] });
+    await t.pnk('2026-01-15', 'K1', [{ itemCode: 'H1', quantity: '50', unitPrice: '12' }]);
+    const r = await t.runOk();
+    expect(r.voucherIds.length).toBeGreaterThan(0);
+    const rows = (await sql<{ n: string; withAsset: string }>`SELECT count(*)::text AS n, count(l.asset_id)::text AS "withAsset" FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account ac ON ac.id = l.account_id
+      WHERE v.tenant_id = ${t.tenantId}::uuid AND v.voucher_type = 'GV' AND ac.code = '242'`.execute(ctx.t.admin)).rows[0]!;
+    expect(Number(rows.n)).toBeGreaterThan(0);
+    expect(rows.withAsset).toBe(rows.n);
   }, 60_000);
 
   it('cố định giá vốn: dòng xuất fixed_cost giữ đúng đơn giá', async () => {

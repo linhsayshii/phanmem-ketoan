@@ -19,6 +19,8 @@ export const stockItemInput = z.object({
   debitAccountCode: z.string().nullable().optional(), creditAccountCode: z.string().nullable().optional(), warehouseCode: z.string().nullable().optional(),
   // Cố định giá vốn: dòng xuất giữ đúng đơn giá này khi tính giá vốn.
   fixedUnitCost: z.string().regex(qtyRe, 'Đơn giá vốn không hợp lệ').nullable().optional(),
+  // Xuất dùng cho tài sản (TSCĐ, CCDC, chi phí trả trước): dòng Nợ TK tài sản mang thẻ này; giá vốn chạy sau ghi chênh trên cùng thẻ.
+  assetCode: z.string().min(1).nullable().optional(),
 });
 export const stockVoucherInput = z.object({
   voucherType: z.enum(['PNK', 'PXK', 'CK']), stockKind: z.string().min(1), postingDate: S.dateIso, documentDate: S.dateIso.optional(),
@@ -31,6 +33,7 @@ export type StockVoucherInput = z.infer<typeof stockVoucherInput>;
 export interface StockItemDto {
   lineNo: number; itemCode: string; itemName: string; uomCode: string; quantity: string; baseQuantity: string; uomFactor: string; unitPrice: string | null; unitCost: string | null; amount: string;
   lotNo: string | null; mfgDate: string | null; expiryDate: string | null; warehouseCode: string | null; destWarehouseCode: string | null; direction: string | null; debitAccountCode: string | null; creditAccountCode: string | null;
+  assetCode: string | null;
   costRatio: string | null; // LR: tỷ lệ giá trị của dòng nhập kho (tổng 100)
   linkLineId: number | null; // dòng hóa đơn mua hàng hóa (về trước) mà dòng nhập này nhận hàng
 }
@@ -148,16 +151,16 @@ async function build(trx: Trx, input: StockVoucherInput, auth?: Auth, selfId?: s
 
   // Nhóm dòng sổ cái theo (bên, tài khoản, hàng, kho); bỏ dòng 0 đồng (dòng sổ cái không được rỗng).
   const groups = new Map<string, S.LineInput>(); const sums = new Map<string, Decimal>();
-  const add = (side: 'debit' | 'credit', code: string, itemCode: string, wh: string, amount: string) => {
+  const add = (side: 'debit' | 'credit', code: string, itemCode: string, wh: string, amount: string, assetCode?: string | null) => {
     if (D(amount).isZero()) return;
-    const key = `${side}|${code}|${itemCode}|${wh}`;
+    const key = `${side}|${code}|${itemCode}|${wh}|${assetCode ?? ''}`;
     const kindOf = accs.get(code)!.subledger_kind;
-    if (!groups.has(key)) groups.set(key, { accountCode: code, debit: '0', credit: '0', itemCode, warehouseCode: wh, description: input.description ?? null,
+    if (!groups.has(key)) groups.set(key, { accountCode: code, debit: '0', credit: '0', itemCode, warehouseCode: wh, description: input.description ?? null, ...(assetCode && { assetCode }),
       ...(input.partyCode && (kindOf === 'receivable' || kindOf === 'payable') && { partyCode: input.partyCode }) });
     sums.set(key, (sums.get(key) ?? D(0)).plus(amount));
   };
   for (const l of lines) {
-    add('debit', l.debit, l.it.itemCode, transfer ? l.dst!.code : l.src.code, l.amount);
+    add('debit', l.debit, l.it.itemCode, transfer ? l.dst!.code : l.src.code, l.amount, l.it.assetCode);
     add('credit', l.credit, l.it.itemCode, l.src.code, l.amount);
   }
   const ledger: S.LineInput[] = [...groups].map(([k, g]) => ({ ...g, [k.startsWith('debit') ? 'debit' : 'credit']: sums.get(k)!.toFixed(0) }));
@@ -166,7 +169,11 @@ async function build(trx: Trx, input: StockVoucherInput, auth?: Auth, selfId?: s
 }
 
 async function insertItems(trx: Trx, tenantId: string, voucherId: string, b: Awaited<ReturnType<typeof build>>) {
+  const codes = [...new Set(b.lines.flatMap((l) => (l.it.assetCode ? [l.it.assetCode] : [])))];
+  const assetIds = new Map((codes.length ? await trx.selectFrom('asset').select(['id', 'code']).where('code', 'in', codes).execute() : []).map((r) => [r.code, r.id]));
+  for (const c of codes) if (!assetIds.has(c)) throw new AppError('ASSET_NOT_FOUND', `Không có thẻ tài sản mã "${c}"`, 404);
   const rows = b.lines.map((l) => ({
+    asset_id: l.it.assetCode ? assetIds.get(l.it.assetCode)! : null,
     tenant_id: tenantId, voucher_id: voucherId, line_no: l.n, item_id: l.item.id, uom_id: l.u.uom_id, quantity: l.it.quantity, unit_price: l.link ? D(l.amount).div(l.it.quantity).toFixed(4) : b.dir === 'in' && !b.transfer || l.service ? (l.it.unitPrice ?? '0') : null,
     amount_currency: l.amount, amount: l.amount, account_id: b.accs.get(b.dir === 'in' && !b.transfer ? l.debit : l.credit)!.id, warehouse_id: l.src.id, dest_warehouse_id: l.dst?.id ?? null,
     uom_factor: l.factor, base_quantity: l.base, lot_no: l.it.lotNo || null, mfg_date: l.it.mfgDate || null, expiry_date: l.it.expiryDate || null,
@@ -204,9 +211,9 @@ export async function getStockVoucher(trx: Trx, id: string, auth?: Auth): Promis
   const kind = (await trx.selectFrom('voucher').select('stock_kind').where('id', '=', id).executeTakeFirstOrThrow()).stock_kind;
   const items = (await trx.selectFrom('voucher_item_line as l').innerJoin('item as i', 'i.id', 'l.item_id').innerJoin('uom as u', 'u.id', 'l.uom_id')
     .leftJoin('warehouse as w', 'w.id', 'l.warehouse_id').leftJoin('warehouse as dw', 'dw.id', 'l.dest_warehouse_id')
-    .leftJoin('account as da', 'da.id', 'l.debit_account_id').leftJoin('account as ca', 'ca.id', 'l.credit_account_id')
+    .leftJoin('account as da', 'da.id', 'l.debit_account_id').leftJoin('account as ca', 'ca.id', 'l.credit_account_id').leftJoin('asset as ast', 'ast.id', 'l.asset_id')
     .select(['l.line_no', 'i.code as item_code', 'i.name as item_name', 'u.code as uom_code', 'l.quantity', 'l.base_quantity', 'l.uom_factor', 'l.unit_price', 'l.unit_cost', 'l.amount', 'l.lot_no', 'l.mfg_date', 'l.expiry_date',
-      'w.code as wh', 'dw.code as dwh', 'l.direction', 'da.code as dcode', 'ca.code as ccode', 'l.link_line_id', 'l.cost_ratio']).where('l.voucher_id', '=', id).orderBy('l.line_no').execute());
+      'w.code as wh', 'dw.code as dwh', 'l.direction', 'da.code as dcode', 'ca.code as ccode', 'l.link_line_id', 'l.cost_ratio', 'ast.code as asset_code']).where('l.voucher_id', '=', id).orderBy('l.line_no').execute());
   const ledger = await trx.selectFrom('voucher_line as l').innerJoin('account as a', 'a.id', 'l.account_id').leftJoin('item as i', 'i.id', 'l.item_id').leftJoin('warehouse as w', 'w.id', 'l.warehouse_id').leftJoin('party as p', 'p.id', 'l.party_id')
     .select(['l.line_no', 'a.code', 'a.name', 'a.subledger_kind', 'l.debit', 'l.credit', 'i.code as item_code', 'w.code as wh', 'p.code as party_code'])
     .where('l.voucher_id', '=', id).where('l.posting_date', '=', v.postingDate).orderBy('l.line_no').execute();
@@ -215,7 +222,7 @@ export async function getStockVoucher(trx: Trx, id: string, auth?: Auth): Promis
   return {
     ...v, stockKind: kind, warehouseCode: fresh?.wh ?? null, destWarehouseCode: fresh?.dwh ?? null,
     items: items.map((r) => ({ lineNo: r.line_no, itemCode: r.item_code, itemName: r.item_name, uomCode: r.uom_code, quantity: r.quantity ?? '0', baseQuantity: r.base_quantity ?? r.quantity ?? '0', uomFactor: r.uom_factor, unitPrice: r.unit_price, unitCost: r.unit_cost,
-      amount: r.amount, lotNo: r.lot_no, mfgDate: r.mfg_date, expiryDate: r.expiry_date, warehouseCode: r.wh, destWarehouseCode: r.dwh, direction: r.direction, debitAccountCode: r.dcode, creditAccountCode: r.ccode, costRatio: r.cost_ratio, linkLineId: r.link_line_id })),
+      amount: r.amount, lotNo: r.lot_no, mfgDate: r.mfg_date, expiryDate: r.expiry_date, warehouseCode: r.wh, destWarehouseCode: r.dwh, direction: r.direction, debitAccountCode: r.dcode, creditAccountCode: r.ccode, assetCode: r.asset_code, costRatio: r.cost_ratio, linkLineId: r.link_line_id })),
     assembly: v.voucherType !== 'LR' ? null : (() => { // chi phí nhập tay = giá trị nhập − giá trị xuất; tài khoản ghi có lấy ở dòng nhập
       const sum = (dir: string) => items.filter((r) => r.direction === dir).reduce((t, r) => t.plus(r.amount), D(0)); const extra = sum('in').minus(sum('out'));
       return { mode: kind ?? 'assembly', extraCost: extra.toFixed(0), extraCostAccountCode: extra.isZero() ? null : items.find((r) => r.direction === 'in')?.ccode ?? null };

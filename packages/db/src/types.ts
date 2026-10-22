@@ -161,6 +161,22 @@ export interface VoucherTable {
   bank_account_id: number | null; counter_bank_account_id: number | null; party_bank_account_id: string | null; due_date: DateOnly | null; purpose: string | null;
   day_order: Generated<number>; stock_kind: string | null; receipt_state: string | null;
 }
+export interface ContractTable { id: Generated<number>; tenant_id: string; code: string; name: string; party_id: string | null; kind: string }
+export interface AssetCategoryTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; kind: string; asset_account_code: string; depreciation_account_code: string | null;
+  default_life_units: number | null; is_active: Generated<boolean>;
+}
+export interface AssetTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; kind: string; category_id: number | null; asset_account_code: string; depreciation_account_code: string | null;
+  department_id: number | null; use_date: DateOnly | null; depreciation_start_date: DateOnly | null; life_units: number | null; is_depreciable: Generated<boolean>;
+  capital_source: string | null; card_no: string | null; country: string | null; year_made: number | null; spec: string | null; quantity: NumericDefault; uom: string | null;
+  status: Generated<string>; decrease_date: DateOnly | null; opening_year: number | null; opening_cost: Numeric | null; opening_accumulated: Numeric | null; opening_remaining_units: Numeric | null;
+  note: string | null; created_at: Generated<string>;
+}
+export interface AssetAllocationTable {
+  id: Generated<number>; tenant_id: string; asset_id: number; valid_from_year: number; valid_from_period: number; expense_account_code: string;
+  department_id: number | null; project_id: number | null; cost_item_id: number | null; ratio: Numeric;
+}
 export interface VoucherLineTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; line_no: number; account_id: number; posting_date: DateOnly;
   currency_code: Generated<string>; fx_rate: Numeric | null; amount_currency: NumericDefault;
@@ -214,6 +230,7 @@ export interface VoucherItemLineTable {
   discount_amount: NumericDefault; tax_codes: Generated<string[]>; tax_amount: NumericDefault; account_id: number; department_id: number | null; project_id: number | null; cost_item_id: number | null;
   warehouse_id: number | null; dest_warehouse_id: number | null; uom_factor: NumericDefault; base_quantity: Numeric | null; lot_no: string | null; mfg_date: DateOnly | null; expiry_date: DateOnly | null;
   direction: string | null; debit_account_id: number | null; credit_account_id: number | null; unit_cost: Numeric | null; source_line_id: number | null; fixed_cost: Generated<boolean>; receipt_voucher_id: string | null; link_line_id: number | null; stock_value: Numeric | null; cost_ratio: Numeric | null; landed_cost_out: NumericDefault;
+  asset_id: number | null;
   import_mode: Generated<boolean>; import_tax: Numeric | null; excise_tax: Numeric | null; import_vat: Numeric | null; import_vat_code: string | null; import_vat_base: Numeric | null;
 }
 // Bảng kê hóa đơn kê khai thuế: một dòng mỗi (hóa đơn, mã thuế).
@@ -336,6 +353,10 @@ export interface Database {
   voucher_type: VoucherTypeTable;
   voucher: VoucherTable;
   voucher_line: VoucherLineTable;
+  contract: ContractTable;
+  asset_category: AssetCategoryTable;
+  asset: AssetTable;
+  asset_allocation: AssetAllocationTable;
   voucher_counter: VoucherCounterTable;
   voucher_line_history: VoucherLineHistoryTable;
   voucher_attachment: VoucherAttachmentTable;

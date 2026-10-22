@@ -21,6 +21,7 @@ export const invoiceItemInput = z.object({
   departmentCode: optText(50), projectCode: optText(50), costItemCode: optText(50),
   quantity: foreignAmount.optional(), unitPrice: foreignAmount.optional(), uomCode: optText(50),
   discountRate: z.string().regex(/^\d{1,3}(\.\d{1,4})?$/).refine((s) => Number(s) <= 100, 'Tỷ lệ chiết khấu tối đa 100%').optional(),
+  assetCode: z.string().min(1).nullable().optional(), // dòng Nợ TK tài sản (211, 242...) mang thẻ tài sản này
   itemCode: z.string().min(1).nullable().optional(), warehouseCode: z.string().min(1).nullable().optional(), lotNo: optText(50), mfgDate: dateIso.nullable().optional(), expiryDate: dateIso.nullable().optional(),
   sourceLineId: z.number().int().positive().optional(),
   // Hàng nhập khẩu (chỉ dòng hàng của MH): thuế nhập khẩu, tiêu thụ đặc biệt, GTGT hàng nhập theo tờ khai hải quan (VND, nhập tay; không có biểu thuế), vatImportCode là mã thuế GTGT của số thuế đó.
@@ -47,7 +48,7 @@ export type InvoiceInput = z.infer<typeof invoiceInput>;
 export interface ItemLineDto {
   lineNo: number; description: string | null; quantity: string | null; unitPrice: string | null; uomCode: string | null; amountCurrency: string; amount: string; discountRate: string;
   discountAmountCurrency: string; discountAmount: string; taxCodes: string[]; taxAmount: string; accountCode: string; departmentCode: string | null; projectCode: string | null; costItemCode: string | null;
-  id: number; itemCode: string | null; warehouseCode: string | null; lotNo: string | null; mfgDate: string | null; expiryDate: string | null; receiptVoucherId: string | null; linkLineId: number | null;
+  id: number; assetCode: string | null; itemCode: string | null; warehouseCode: string | null; lotNo: string | null; mfgDate: string | null; expiryDate: string | null; receiptVoucherId: string | null; linkLineId: number | null;
   importMode: boolean; importTax: string | null; specialConsumptionTax: string | null; vatImport: string | null; vatImportCode: string | null; vatImportBase: string | null;
 }
 export type InvoiceDto = VoucherDto & { items: ItemLineDto[]; receiptState: string | null; warnings?: { code: string; message: string; lineNo?: number }[] };
@@ -58,14 +59,14 @@ const addDays = (iso: string, days: number): string => new Date(Date.UTC(Number(
 async function itemsOf(trx: Trx, voucherId: string): Promise<ItemLineDto[]> {
   const rows = await trx.selectFrom('voucher_item_line as l').innerJoin('account as a', 'a.id', 'l.account_id').leftJoin('uom as u', 'u.id', 'l.uom_id').leftJoin('department as d', 'd.id', 'l.department_id')
     .leftJoin('project as p', 'p.id', 'l.project_id').leftJoin('cost_item as c', 'c.id', 'l.cost_item_id')
-    .leftJoin('item as it', 'it.id', 'l.item_id').leftJoin('warehouse as w', 'w.id', 'l.warehouse_id')
-    .select(['l.id', 'l.line_no', 'l.description', 'l.quantity', 'l.unit_price', 'u.code as uom_code', 'l.amount_currency', 'l.amount', 'l.discount_rate', 'l.discount_amount_currency', 'l.discount_amount', 'l.tax_codes', 'l.tax_amount',
+    .leftJoin('item as it', 'it.id', 'l.item_id').leftJoin('warehouse as w', 'w.id', 'l.warehouse_id').leftJoin('asset as ast', 'ast.id', 'l.asset_id')
+    .select(['ast.code as asset_code', 'l.id', 'l.line_no', 'l.description', 'l.quantity', 'l.unit_price', 'u.code as uom_code', 'l.amount_currency', 'l.amount', 'l.discount_rate', 'l.discount_amount_currency', 'l.discount_amount', 'l.tax_codes', 'l.tax_amount',
       'a.code as account_code', 'd.code as department_code', 'p.code as project_code', 'c.code as cost_item_code', 'it.code as item_code', 'w.code as wh_code', 'l.lot_no', 'l.mfg_date', 'l.expiry_date',
       'l.receipt_voucher_id', 'l.link_line_id', 'l.import_mode', 'l.import_tax', 'l.excise_tax', 'l.import_vat', 'l.import_vat_code', 'l.import_vat_base'])
     .where('l.voucher_id', '=', voucherId).orderBy('l.line_no').execute();
   return rows.map((r) => ({ lineNo: r.line_no, description: r.description, quantity: r.quantity, unitPrice: r.unit_price, uomCode: r.uom_code, amountCurrency: r.amount_currency, amount: r.amount, discountRate: r.discount_rate,
     discountAmountCurrency: r.discount_amount_currency, discountAmount: r.discount_amount, taxCodes: r.tax_codes, taxAmount: r.tax_amount, accountCode: r.account_code, departmentCode: r.department_code,
-    projectCode: r.project_code, costItemCode: r.cost_item_code, id: r.id, itemCode: r.item_code, warehouseCode: r.wh_code, lotNo: r.lot_no, mfgDate: r.mfg_date, expiryDate: r.expiry_date,
+    projectCode: r.project_code, costItemCode: r.cost_item_code, id: r.id, assetCode: r.asset_code, itemCode: r.item_code, warehouseCode: r.wh_code, lotNo: r.lot_no, mfgDate: r.mfg_date, expiryDate: r.expiry_date,
     receiptVoucherId: r.receipt_voucher_id, linkLineId: r.link_line_id,
     importMode: r.import_mode, importTax: r.import_tax, specialConsumptionTax: r.excise_tax, vatImport: r.import_vat, vatImportCode: r.import_vat_code, vatImportBase: r.import_vat_base }));
 }
@@ -179,14 +180,14 @@ async function buildInvoice(trx: Trx, tenantId: string, input0: InvoiceInput, op
   const detail = buildInvoiceLedgerDetail({ scope, documentType, counterAccountCode, partyCode: input.partyCode, currency: input.currencyCode, fxRate: rate, dueDate, tax,
     ...(input.invoice.declaredTax && { declaredTaxVnd: input.invoice.declaredTax }),
     items: input.items.map((it, k) => ({ lineNo: k + 1, description: it.description ?? null, accountCode: acctOf(k), amountCurrency: it.amountCurrency, discountCurrency: it.discountCurrency, taxCodes: it.taxCodes,
-      departmentCode: it.departmentCode ?? null, projectCode: it.projectCode ?? null, costItemCode: it.costItemCode ?? null,
+      departmentCode: it.departmentCode ?? null, projectCode: it.projectCode ?? null, costItemCode: it.costItemCode ?? null, assetCode: it.assetCode ?? null,
       ...(purchase.lines[k] && { itemCode: purchase.lines[k]!.itemCode, warehouseCode: purchase.lines[k]!.warehouseCode, ...(purchase.lines[k]!.offsetVnd && { offsetVnd: purchase.lines[k]!.offsetVnd }) }) })) });
   if (!detail.lines.length) throw new AppError('INVOICE_EMPTY', 'Hóa đơn không có số tiền nào để hạch toán', 400);
 
   const lines: (LineInput & { currencyCode?: string })[] = detail.lines.map((l) => ({
     accountCode: l.accountCode, debit: l.debit, credit: l.credit, ...(!isVnd && { amountCurrency: l.amountCurrency, ...(l.fxRate && { fxRate: l.fxRate }) }),
     ...(l.partyCode && { partyCode: l.partyCode }), ...(l.description && { description: l.description }), ...(l.dueDate && { dueDate: l.dueDate }),
-    ...(l.departmentCode && { departmentCode: l.departmentCode }), ...(l.projectCode && { projectCode: l.projectCode }), ...(l.costItemCode && { costItemCode: l.costItemCode }),
+    ...(l.departmentCode && { departmentCode: l.departmentCode }), ...(l.projectCode && { projectCode: l.projectCode }), ...(l.costItemCode && { costItemCode: l.costItemCode }), ...(l.assetCode && { assetCode: l.assetCode }),
     ...(l.itemCode && { itemCode: l.itemCode }), ...(l.warehouseCode && { warehouseCode: l.warehouseCode }), ...(input.invoice.employeeCode && { employeeCode: input.invoice.employeeCode }) }));
   // Nhập khẩu: thuế NK Có 3333, TTĐB Có 3332 vào TK của dòng hàng (kho, hoặc 151 khi hóa đơn về trước hàng); GTGT hàng nhập Nợ 1331 / Có 33312. Dòng VND (cả khi hóa đơn ngoại tệ: thuế nộp theo tờ khai bằng đồng).
   const importedVnd = input.items.map(() => D(0));
@@ -229,6 +230,12 @@ async function buildInvoice(trx: Trx, tenantId: string, input0: InvoiceInput, op
       const top = taxOf.reduce((best, m) => ((m.get(code) ?? D(-1)).gt(best.get(code) ?? D(-1)) ? m : best));
       top.set(code, top.get(code)!.plus(diff));
     }
+    const assetId = async (code: string | null | undefined): Promise<number | null> => {
+      if (!code) return null;
+      const r = await trx.selectFrom('asset').select('id').where('code', '=', code).executeTakeFirst();
+      if (!r) throw new AppError('ASSET_NOT_FOUND', `Không có tài sản mã "${code}"`, 404);
+      return r.id;
+    };
     const itemRows = [];
     for (const [k, it] of input.items.entries()) {
       const pl: PurchaseLine | null = purchase.lines[k] ?? sale?.lines[k] ?? null;
@@ -237,7 +244,7 @@ async function buildInvoice(trx: Trx, tenantId: string, input0: InvoiceInput, op
         amount_currency: it.amountCurrency, amount: vndText(it.amountCurrency, rate), discount_rate: it.discountRate ?? '0', discount_amount_currency: it.discountCurrency, discount_amount: vndText(it.discountCurrency, rate),
         tax_codes: it.taxCodes, tax_amount: [...taxOf[k]!.values()].reduce((acc, v) => acc.plus(v), D(0)).toFixed(0),
         account_id: (await lookup('account', acctOf(k), 'tài khoản'))!, department_id: await lookup('department', it.departmentCode, 'bộ phận'), project_id: await lookup('project', it.projectCode, 'vụ việc'),
-        cost_item_id: await lookup('cost_item', it.costItemCode, 'khoản mục chi phí'),
+        cost_item_id: await lookup('cost_item', it.costItemCode, 'khoản mục chi phí'), asset_id: await assetId(it.assetCode),
         ...pl?.row, ...(pl && !sale && { stock_value: D(detail.baseVnd[k + 1] ?? '0').plus(importedVnd[k]!).toFixed(0) }),
         ...(isImp(k) && { import_mode: true, import_tax: it.importTax ?? null, excise_tax: it.specialConsumptionTax ?? null, import_vat: it.vatImport ?? null, import_vat_code: it.vatImportCode ?? null, import_vat_base: it.vatImportBase ?? null }), ...(pl?.debitCode && { debit_account_id: await lookup('account', pl.debitCode, 'tài khoản') }), ...(pl?.creditCode && { credit_account_id: await lookup('account', pl.creditCode, 'tài khoản') }),
       });
