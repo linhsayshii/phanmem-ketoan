@@ -79,3 +79,35 @@ Chọn "Cách nhận hàng" ở đầu tab Hàng tiền:
 "Trả lại, giảm giá hàng mua" (loại TLM) chọn hóa đơn gốc là một MH đã ghi sổ. Trả lại hàng: nhập "Mã dòng nhập gốc" và số lượng; hàng xuất theo đúng giá vốn lúc nhập, số tiền hàng phải bằng số lượng nhân giá nhập (ghi Nợ 331, Có kho, Có 1331). Chỉ giảm giá: để trống mã dòng, phần giảm giảm giá trị tồn kho.
 
 Không sửa, không bỏ ghi sổ được MH hoặc Phiếu nhập kho khi chứng từ khác đã dùng nó (lỗi "LINE_REFERENCED"); phiếu nhập kho theo hóa đơn về trước cần hóa đơn đã ghi sổ ("INVOICE_NOT_POSTED"). Đảo MH mà hàng đã xuất hết thì bị chặn "STOCK_NEGATIVE". Dùng thêm quyền `stock_voucher.*` khi chứng từ có dòng hàng; xem giá vốn cần cờ view_cost.
+
+## Chi phí mua hàng, nhập khẩu
+
+### Chi phí mua hàng
+
+Menu Mua hàng, "Chi phí mua hàng" (loại CPM) ghi chi phí vận chuyển, bốc xếp, bảo hiểm... của hàng đã nhập kho và phân bổ vào giá nhập.
+
+1. Nhập Ngày hạch toán, Ngày chứng từ, Đối tượng (nhà cung cấp dịch vụ) và chọn cách phân bổ: **Theo giá trị** hoặc **Theo số lượng**.
+2. Tab **Phiếu nhập**: chọn khoảng ngày rồi đánh dấu các chứng từ nhập đã ghi sổ cần phân bổ. Danh sách gồm Phiếu nhập kho mua hàng và Mua hàng hóa nhập kho cùng hóa đơn, có ngày không sau ngày hạch toán của CPM.
+3. Tab **Chi phí**: mỗi dòng một khoản chi phí, gồm TK thanh toán (F4, ví dụ 331, 1111, 1121), Đối tượng (để trống thì lấy đối tượng của chứng từ), Diễn giải, Số tiền và Thuế GTGT.
+4. Tab **Phân bổ**: xem trước chi phí chia cho từng dòng nhập và giá trị sau phân bổ. Theo giá trị, phần mềm dùng giá mua của dòng (gồm chênh giá hóa đơn, giảm giá hàng mua; không gồm chi phí mua đã phân bổ trước). Tổng phân bổ luôn bằng tổng chi phí; phần lẻ từng đồng chia cho dòng có phần lẻ lớn nhất.
+5. Tab **Hóa đơn**: nhập hóa đơn của dịch vụ (vận chuyển...) để lên bảng kê mua vào, như trên Phiếu chi.
+6. Ctrl+S lưu, F9 ghi sổ.
+
+Bút toán: Nợ TK kho của từng dòng nhập (156...), Nợ 1331 thuế GTGT / Có TK thanh toán. Hệ thống tài khoản TT99 và TT133 không có TK 1562, nên chi phí mua ghi thẳng vào TK kho của dòng nhập. Khi ghi sổ, mỗi dòng nhập nhận một lớp điều chỉnh giá vốn tại ngày nhập; giá vốn hàng đã xuất được tính lại ở lần tính giá vốn kế tiếp (phần mềm báo giá vốn chưa cập nhật từ ngày nhập).
+
+Các khóa an toàn:
+
+- Phiếu nhập đang được CPM nháp hoặc đã ghi sổ dùng thì không bỏ ghi sổ, không đảo được ("LANDED_COST_REFERENCED"): hủy hoặc đảo CPM trước.
+- Đã có lần tính giá vốn phủ ngày nhập thì không bỏ ghi sổ CPM ("STOCK_COST_ADJUSTED"), hãy đảo.
+- Phiếu nhập chưa ghi sổ ("RECEIPT_NOT_POSTED") hoặc có ngày sau ngày CPM ("LANDED_COST_DATE_INVALID") thì không phân bổ được.
+- Chứng từ CPM chỉ lập, sửa ở màn hình này, không qua màn hình chứng từ chung. Cần quyền `stock_voucher.*` và cờ view_cost.
+
+### Mua hàng nhập khẩu
+
+Trên "Mua hàng hóa", đánh dấu **Hàng nhập khẩu** ở đầu tab Hàng tiền. Lưới có thêm các cột theo tờ khai hải quan, nhập số tiền VND (phần mềm không có biểu thuế):
+
+- **Thuế NK:** ghi Nợ TK kho / Có 3333.
+- **Thuế TTĐB:** ghi Nợ TK kho / Có 3332.
+- **Thuế GTGT hàng NK** và **Mã thuế GTGT NK (F4):** ghi Nợ 1331 / Có 33312. Dòng hàng nhập khẩu không ghi mã thuế GTGT ở cột Mã thuế.
+
+Giá nhập kho = tiền hàng quy đổi VND + thuế NK + thuế TTĐB. Hóa đơn có thể bằng ngoại tệ; các dòng thuế luôn là VND. Ở tab Hóa đơn, ghi số tờ khai hải quan vào ô Số hóa đơn. Bảng kê mua vào có một dòng thuế GTGT hàng nhập (giá tính thuế = tiền hàng + thuế NK + thuế TTĐB) và các dòng thuế NK, TTĐB ở phần thuế khác. Chi phí vận chuyển, bảo hiểm hàng nhập ghi bằng Chi phí mua hàng như trên.
