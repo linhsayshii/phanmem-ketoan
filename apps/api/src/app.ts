@@ -22,6 +22,7 @@ import masterRoutes from './modules/master/routes.js';
 import itemRoutes from './modules/inventory/items.routes.js';
 import priceListRoutes from './modules/inventory/priceLists.routes.js';
 import stockVoucherRoutes from './modules/inventory/stockVouchers.js';
+import assemblyRoutes from './modules/inventory/assembly.js';
 import stockMoveRoutes from './modules/inventory/stockMoves.js';
 import costingRunRoutes from './modules/inventory/costingRun.js';
 import landedCostRoutes from './modules/inventory/landedCost.js';
@@ -69,6 +70,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(itemRoutes);
   await app.register(priceListRoutes);
   await app.register(stockVoucherRoutes);
+  await app.register(assemblyRoutes);
   await app.register(stockMoveRoutes);
   await app.register(costingRunRoutes);
   await app.register(landedCostRoutes);
