@@ -31,6 +31,14 @@ Tệp nhập có thêm cột "ĐVT quy đổi" viết dạng `THUNG=24;HOP=6`, m
 
 Menu Kho, Kho. Mỗi kho có Mã, Tên, Loại kho (Kho thường, Kho gửi bán dùng TK 157, Kho nhận bán hộ), TK kho, Phương pháp tính giá xuất (Bình quân cuối kỳ, Bình quân tức thời, Nhập trước xuất trước, Đích danh) và Chi nhánh.
 
+### Bảng giá
+
+Menu Kho, Bảng giá (Insert để thêm). Mỗi bảng giá có Mã, Tên, Loại (giá bán hoặc giá mua), Loại tiền, Nhóm đối tượng (để trống là áp dụng chung), Hiệu lực từ, Đến (để trống là không giới hạn) và Ưu tiên.
+
+Dòng giá nhập trên lưới: Mã hàng (F4), ĐVT (F4), Từ số lượng, Đơn giá, Chiết khấu (%). Cùng một hàng và ĐVT có thể có nhiều bậc theo "Từ số lượng": mua 10 lấy giá bậc từ 10. Ctrl+S để lưu. Có thể nhập dòng giá từ Excel (nút "Nhập Excel" khi sửa bảng giá, tải mẫu ở liên kết bên cạnh).
+
+Khi lập chứng từ, phần mềm chọn bảng giá còn hiệu lực ở ngày chứng từ, đúng loại tiền; bảng giá gắn nhóm của đối tượng được ưu tiên trước bảng giá chung, sau đó đến Ưu tiên cao hơn. Giá chỉ điền sẵn vào dòng chứng từ để gợi ý, vẫn sửa được và không ràng buộc sổ cái.
+
 ### Các khóa an toàn
 
 Phần mềm từ chối (lỗi 409) các thay đổi làm sai lệch số liệu đã có:
@@ -41,4 +49,4 @@ Phần mềm từ chối (lỗi 409) các thay đổi làm sai lệch số liệ
 
 ### Phân quyền
 
-Vật tư hàng hóa dùng nhóm quyền `item.*`, kho dùng `warehouse.*`. Quản trị viên cấp cho từng vai trò.
+Vật tư hàng hóa dùng nhóm quyền `item.*`, kho dùng `warehouse.*`, bảng giá dùng `price_list.*`. Quản trị viên cấp cho từng vai trò.
