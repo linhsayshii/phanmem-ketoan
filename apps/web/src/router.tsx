@@ -14,6 +14,7 @@ import CatalogPage from './pages/Catalog.js';
 import ItemsPage from './pages/Items.js';
 import PriceListsPage from './pages/PriceLists.js';
 import OrdersPage from './pages/Orders.js';
+import StocktakePage from './pages/Stocktake.js';
 import CostingRunPage from './pages/CostingRun.js';
 import AuditLogPage from './pages/AuditLog.js';
 import PeriodsPage from './pages/Periods.js';
@@ -77,6 +78,7 @@ export const MENU: MenuItem[] = [
     { key: 'pnk', label: 'Phiếu nhập kho', to: '/chung-tu/PNK', permission: 'stock_voucher.view' },
     { key: 'pxk', label: 'Phiếu xuất kho', to: '/chung-tu/PXK', permission: 'stock_voucher.view' },
     { key: 'ck', label: 'Phiếu chuyển kho', to: '/chung-tu/CK', permission: 'stock_voucher.view' },
+    { key: 'stocktake', label: 'Kiểm kê kho', to: '/kho/kiem-ke', permission: 'stocktake.view' },
     { key: 'costing', label: 'Tính giá vốn', to: '/kho/gia-von', permission: 'costing.view' },
     { key: 'uom', label: 'Đơn vị tính', to: '/danh-muc/uom', permission: 'catalog.view' },
   ] },
@@ -159,9 +161,10 @@ const itemsRoute = createRoute({ getParentRoute: () => appRoute, path: '/kho/vat
 const priceListsRoute = createRoute({ getParentRoute: () => appRoute, path: '/kho/bang-gia', component: PriceListsPage });
 const ordersRoute = createRoute({ getParentRoute: () => appRoute, path: '/don-hang/$slug', component: OrdersPage });
 const openingStockRoute = createRoute({ getParentRoute: () => appRoute, path: '/so-cai/ton-kho-dau-ky', component: OpeningStockPage });
+const stocktakeRoute = createRoute({ getParentRoute: () => appRoute, path: '/kho/kiem-ke', component: StocktakePage });
 const costingRoute = createRoute({ getParentRoute: () => appRoute, path: '/kho/gia-von', component: CostingRunPage });
 const catalogRoute = createRoute({ getParentRoute: () => appRoute, path: '/danh-muc/$name', component: CatalogPage });
 
-export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, closingRoute, amortizationRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, costingRoute, catalogRoute])]);
+export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, closingRoute, amortizationRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, stocktakeRoute, costingRoute, catalogRoute])]);
 export const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }
