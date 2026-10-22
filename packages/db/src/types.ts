@@ -134,6 +134,8 @@ export interface StockCostLayerTable {
   id: Generated<number>; tenant_id: string; move_id: number; item_id: number; warehouse_id: number; lot_no: string | null; kind: string; posting_date: DateOnly;
   qty: Numeric; unit_cost: Numeric; value: Numeric; remaining_qty: Numeric; remaining_value: Numeric; voucher_id: Generated<string | null>;
 }
+// Chi phí mua hàng (CPM) phân bổ cho dòng nhập (dòng PNK, dòng MH nhập kho cùng hóa đơn).
+export interface LandedCostAllocTable { id: Generated<number>; tenant_id: string; voucher_id: string; receipt_line_id: number; amount: Numeric; basis: string }
 export interface CostingRunTable {
   id: Generated<string>; tenant_id: string; period_from: DateOnly; period_to: DateOnly; method: string; warehouse_id: number | null; item_id: number | null; status: string;
   voucher_ids: ColumnType<string[], string[] | undefined, string[]>; created_by: string | null; created_at: Generated<string>; summary: ColumnType<unknown, string | null | undefined, string | null>;
@@ -211,6 +213,7 @@ export interface VoucherItemLineTable {
   discount_amount: NumericDefault; tax_codes: Generated<string[]>; tax_amount: NumericDefault; account_id: number; department_id: number | null; project_id: number | null; cost_item_id: number | null;
   warehouse_id: number | null; dest_warehouse_id: number | null; uom_factor: NumericDefault; base_quantity: Numeric | null; lot_no: string | null; mfg_date: DateOnly | null; expiry_date: DateOnly | null;
   direction: string | null; debit_account_id: number | null; credit_account_id: number | null; unit_cost: Numeric | null; source_line_id: number | null; fixed_cost: Generated<boolean>; receipt_voucher_id: string | null; link_line_id: number | null; stock_value: Numeric | null;
+  import_mode: Generated<boolean>; import_tax: Numeric | null; excise_tax: Numeric | null; import_vat: Numeric | null; import_vat_code: string | null;
 }
 // Bảng kê hóa đơn kê khai thuế: một dòng mỗi (hóa đơn, mã thuế).
 export interface VoucherInvoiceTable {
@@ -316,6 +319,7 @@ export interface Database {
   warehouse: WarehouseTable;
   stock_move: StockMoveTable;
   stock_cost_layer: StockCostLayerTable;
+  landed_cost_alloc: LandedCostAllocTable;
   costing_run: CostingRunTable;
   stock_cost_assignment: StockCostAssignmentTable;
   stock_cost_state: StockCostStateTable;

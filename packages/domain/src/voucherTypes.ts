@@ -40,6 +40,8 @@ export const VOUCHER_TYPES: Record<string, VoucherTypeDef> = Object.fromEntries(
   def({ code: 'GGM', name: 'Giảm giá, trả lại dịch vụ mua', module: 'arap', hasItems: true, invoiceDirection: 'purchase', refund: true, header: ['party', 'dueDate', 'currency'], required: ['party'] }),
   def({ code: 'MH', name: 'Mua hàng hóa', module: 'arap', hasItems: true, invoiceDirection: 'purchase', header: ['party', 'dueDate', 'currency'], required: ['party'], printForms: ['01-VT'] }),
   def({ code: 'TLM', name: 'Trả lại, giảm giá hàng mua', module: 'arap', hasItems: true, invoiceDirection: 'purchase', refund: true, header: ['party', 'dueDate', 'currency'], required: ['party'] }),
+  // Chi phí mua hàng (vận chuyển, bốc xếp...) phân bổ vào giá nhập của các phiếu nhập: lập ở màn hình riêng (/api/landed-costs), không có dòng hàng.
+  def({ code: 'CPM', name: 'Chi phí mua hàng', module: 'arap', header: ['party', 'attachmentsCount'] }),
   def({ code: 'PNK', name: 'Phiếu nhập kho', module: 'inventory', hasItems: true, stockDirection: 'in', header: ['party', 'personName', 'attachmentsCount'], printForms: ['01-VT'] }),
   def({ code: 'PXK', name: 'Phiếu xuất kho', module: 'inventory', hasItems: true, stockDirection: 'out', header: ['party', 'personName', 'attachmentsCount'], printForms: ['02-VT'] }),
   def({ code: 'CK', name: 'Phiếu chuyển kho', module: 'inventory', hasItems: true, stockDirection: 'transfer', header: ['personName', 'attachmentsCount'], printForms: ['02-VT'] }),

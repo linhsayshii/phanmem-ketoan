@@ -10,7 +10,7 @@ describe('VOUCHER_TYPES', () => {
   });
 
   it('đủ 15 loại GĐ2 và 4 loại có sẵn; khóa trùng mã', () => {
-    expect(Object.keys(VOUCHER_TYPES).sort()).toEqual([...GD2_TYPES, 'PKT', 'DK', 'KC', 'PB', 'PNK', 'PXK', 'CK', 'GV', 'MH', 'TLM'].sort());
+    expect(Object.keys(VOUCHER_TYPES).sort()).toEqual([...GD2_TYPES, 'PKT', 'DK', 'KC', 'PB', 'PNK', 'PXK', 'CK', 'GV', 'MH', 'TLM', 'CPM'].sort());
     for (const [k, d] of Object.entries(VOUCHER_TYPES)) expect(d.code).toBe(k);
   });
 
@@ -18,7 +18,7 @@ describe('VOUCHER_TYPES', () => {
     expect(SYSTEM_VOUCHER_TYPES).toEqual(['DK', 'KC', 'CL', 'DG', 'XQ', 'KTT', 'GV']);
     expect(Object.fromEntries(Object.values(VOUCHER_TYPES).map((d) => [d.code, d.module]))).toEqual({
       PKT: 'general', DK: 'general', KC: 'general', PB: 'general', PT: 'cash', PC: 'cash', BC: 'bank', BN: 'bank', CT: 'bank', QTU: 'general', BT: 'arap',
-      HDB: 'arap', HDM: 'arap', GGB: 'arap', GGM: 'arap', CL: 'arap', DG: 'general', XQ: 'general', KTT: 'general', PNK: 'inventory', PXK: 'inventory', CK: 'inventory', GV: 'inventory', MH: 'arap', TLM: 'arap' });
+      HDB: 'arap', HDM: 'arap', GGB: 'arap', GGM: 'arap', CL: 'arap', DG: 'general', XQ: 'general', KTT: 'general', PNK: 'inventory', PXK: 'inventory', CK: 'inventory', GV: 'inventory', MH: 'arap', TLM: 'arap', CPM: 'arap' });
     for (const d of Object.values(VOUCHER_TYPES)) expect(d.manual, d.code).toBe(!SYSTEM_VOUCHER_TYPES.includes(d.code));
   });
 
