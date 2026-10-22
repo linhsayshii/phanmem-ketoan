@@ -33,9 +33,9 @@ code,name,name_en,parent_code,is_group,normal_balance,track_currency,subledger_k
 2112,TSCĐ thuê tài chính,,211,0,N,0,fixed_asset
 2113,TSCĐ vô hình,,211,0,N,0,fixed_asset
 214,Hao mòn tài sản cố định,,,1,N,0,
-2141,Hao mòn TSCĐ hữu hình,,214,0,C,0,
-2142,Hao mòn TSCĐ thuê tài chính,,214,0,C,0,
-2143,Hao mòn TSCĐ vô hình,,214,0,C,0,
+2141,Hao mòn TSCĐ hữu hình,,214,0,C,0,fixed_asset
+2142,Hao mòn TSCĐ thuê tài chính,,214,0,C,0,fixed_asset
+2143,Hao mòn TSCĐ vô hình,,214,0,C,0,fixed_asset
 2147,Hao mòn bất động sản đầu tư,,214,0,L,0,
 217,Bất động sản đầu tư,,,0,L,0,
 228,Đầu tư góp vốn vào đơn vị khác,,,1,N,0,

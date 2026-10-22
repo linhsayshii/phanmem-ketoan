@@ -21,6 +21,8 @@ export const SETTINGS = z.object({
   vat_period: z.enum(['month', 'quarter']).default('month'),
   // Xuất kho làm tồn âm: forbid = chặn, warn = ghi sổ và cảnh báo, allow = cho phép.
   stock_negative: z.enum(['forbid', 'warn', 'allow']).default('forbid'),
+  // Cách tính khấu hao tháng đầu/tháng cuối: day = theo số ngày thực tế, month = tròn tháng.
+  fa_proration: z.enum(['day', 'month']).default('day'),
 });
 export type Settings = z.infer<typeof SETTINGS>;
 

@@ -9,7 +9,7 @@ describe('tùy chọn hệ thống', () => {
   it('mặc định đầy đủ, cập nhật từng phần, từ chối giá trị sai', async () => {
     const { cookie } = await bootstrapTenant(ctx, { code: `ST${Date.now()}` });
     const d = await ctx.app.inject({ method: 'GET', url: '/api/settings', headers: { cookie } });
-    expect(d.json()).toEqual({ book_form: 'NKC', costing_method: 'avg_period', base_currency: 'VND', hidden_modules: [], extra_dims: [], fx_rate_type: 'transfer_avg', cash_negative: 'warn', fx_outflow_method: 'moving_average', fx_reval_rate_asset: null, fx_reval_rate_liability: null, vat_period: 'month', stock_negative: 'forbid' });
+    expect(d.json()).toEqual({ book_form: 'NKC', costing_method: 'avg_period', base_currency: 'VND', hidden_modules: [], extra_dims: [], fx_rate_type: 'transfer_avg', cash_negative: 'warn', fx_outflow_method: 'moving_average', fx_reval_rate_asset: null, fx_reval_rate_liability: null, vat_period: 'month', stock_negative: 'forbid', fa_proration: 'day' });
     const u = await ctx.app.inject({ method: 'PUT', url: '/api/settings', headers: { cookie }, payload: { costing_method: 'fifo', extra_dims: [{ key: 'ma_thong_ke', label: 'Mã thống kê' }] } });
     expect(u.statusCode).toBe(200);
     const d2 = await ctx.app.inject({ method: 'GET', url: '/api/settings', headers: { cookie } });
@@ -22,5 +22,16 @@ describe('tùy chọn hệ thống', () => {
     expect((await ctx.app.inject({ method: 'PUT', url: '/api/settings', headers: { cookie }, payload: { stock_negative: 'x' } })).statusCode).toBe(400);
     expect((await ctx.app.inject({ method: 'PUT', url: '/api/settings', headers: { cookie }, payload: { stock_negative: 'warn' } })).statusCode).toBe(200);
     expect((await ctx.app.inject({ method: 'GET', url: '/api/settings', headers: { cookie } })).json()).toMatchObject({ stock_negative: 'warn' });
+    expect((await ctx.app.inject({ method: 'PUT', url: '/api/settings', headers: { cookie }, payload: { fa_proration: 'week' } })).statusCode).toBe(400);
+    expect((await ctx.app.inject({ method: 'PUT', url: '/api/settings', headers: { cookie }, payload: { fa_proration: 'month' } })).statusCode).toBe(200);
+  });
+  it('công ty mới: ketoan_vien có asset.create, loan.create; không có asset.run, loan.run; xem có asset.view', async () => {
+    const { cookie } = await bootstrapTenant(ctx, { code: `GD4${Date.now()}` });
+    const roles = (await ctx.app.inject({ method: 'GET', url: '/api/roles', headers: { cookie } })).json() as { code: string; permissions: string[] }[];
+    const perms = async (code: string) => roles.find((r) => r.code === code)!.permissions;
+    const kt = await perms('ketoan_vien'); const xem = await perms('xem');
+    expect(kt).toEqual(expect.arrayContaining(['asset.create', 'loan.create', 'period_close.view']));
+    expect(kt).not.toContain('asset.run'); expect(kt).not.toContain('loan.run');
+    expect(xem).toContain('asset.view'); expect(xem).not.toContain('asset.create');
   });
 });

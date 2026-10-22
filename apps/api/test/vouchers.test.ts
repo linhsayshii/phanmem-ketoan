@@ -58,6 +58,23 @@ describe('chứng từ', () => {
     expect((await create(pkt('2026-01-08', [L('6421', '10'), L('1111', '0', '10')], { voucherType: 'PB' }))).statusCode).toBe(201);
   });
 
+  it('GĐ4: lập tay chứng từ KH/TS/LV → 409 VOUCHER_TYPE_SYSTEM; dòng Có 2141 không có tài sản → LINE_ASSET_REQUIRED', async () => {
+    for (const t of ['KH', 'TS', 'LV']) {
+      const r = await create(pkt('2026-01-09', [L('6422', '10'), L('1111', '0', '10')], { voucherType: t }));
+      expect([t, r.statusCode, r.json().error.code]).toEqual([t, 409, 'VOUCHER_TYPE_SYSTEM']);
+    }
+    const r = await create(pkt('2026-01-09', [L('6422', '10'), L('2141', '0', '10')]));
+    expect(r.statusCode, r.body).toBe(409); expect(r.json().error.code).toBe('LINE_ASSET_REQUIRED');
+  });
+  it('GĐ4: bỏ ghi sổ chứng từ asset_run, asset_event, loan_interest → 409 VOUCHER_SYSTEM_GENERATED', async () => {
+    for (const src of ['asset_run', 'asset_event', 'loan_interest']) {
+      const v = (await create(pkt('2026-01-10', [L('6422', '3'), L('1111', '0', '3')]))).json();
+      await sql`UPDATE voucher SET source_doc_type = ${src} WHERE id = ${v.id}::uuid`.execute(ctx.t.admin);
+      expect((await post(v.id)).statusCode).toBe(200);
+      const r = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${v.id}/unpost`, headers: { cookie } });
+      expect([src, r.statusCode, r.json().error.code]).toEqual([src, 409, 'VOUCHER_SYSTEM_GENERATED']);
+    }
+  });
   it('tối đa 5.000 dòng mỗi chứng từ: 5.001 dòng bị 400 kèm thông điệp', async () => {
     const lines = Array.from({ length: 5001 }, (_, i) => L(i % 2 ? '1111' : '6422', i % 2 ? '0' : '1', i % 2 ? '1' : '0'));
     const r = await create(pkt('2026-01-09', lines));

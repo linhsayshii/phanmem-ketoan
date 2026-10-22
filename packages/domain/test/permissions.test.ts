@@ -52,3 +52,12 @@ describe('cờ dữ liệu nhạy cảm dùng chung', () => {
     expect([...flagsForAccounts([cost, pay, recv])].sort()).toEqual(['view_cost', 'view_payable', 'view_receivable']);
   });
 });
+
+describe('quyền GĐ4', () => {
+  it('có đủ mã tài sản, khế ước vay, quy trình cuối kỳ; không trùng', () => {
+    const group = (c: string) => PERMISSIONS.find((p) => p.code === c)?.group;
+    for (const c of ['asset.view', 'asset.create', 'asset.update', 'asset.delete', 'asset.run', 'loan.view', 'loan.create', 'loan.update', 'loan.delete', 'loan.run', 'period_close.view']) expect(PERMISSION_CODES, c).toContain(c);
+    expect([group('asset.run'), group('loan.run'), group('period_close.view')]).toEqual(['Tài sản', 'Khế ước vay', 'Cuối kỳ']);
+    expect(new Set(PERMISSION_CODES).size).toBe(PERMISSION_CODES.length);
+  });
+});

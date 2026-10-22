@@ -70,5 +70,9 @@ export const PERMISSIONS: readonly { code: string; name: string; group: string }
   { code: 'costing.view', name: 'Xem tính giá vốn', group: 'Kho' },
   ...crud('order', 'báo giá, đơn hàng, hợp đồng', 'Bán hàng'),
   ...crud('stocktake', 'kiểm kê kho', 'Kho'),
+  // GĐ4: tài sản, khế ước vay, quy trình cuối kỳ.
+  ...crud('asset', 'tài sản, công cụ dụng cụ, chi phí trả trước', 'Tài sản', [['run', 'Chạy khấu hao, phân bổ']]),
+  ...crud('loan', 'khế ước vay', 'Khế ước vay', [['run', 'Tính lãi vay']]),
+  { code: 'period_close.view', name: 'Xem quy trình cuối kỳ', group: 'Cuối kỳ' },
 ];
 export const PERMISSION_CODES: readonly string[] = PERMISSIONS.map((p) => p.code);

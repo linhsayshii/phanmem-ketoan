@@ -8,12 +8,12 @@ export const HEADER_FIELD_LABELS: Record<HeaderField, string> = {
   counterBankAccount: 'Tài khoản ngân hàng nhận', partyBankAccount: 'Tài khoản ngân hàng của đối tượng', dueDate: 'Hạn thanh toán', purpose: 'Mục đích', currency: 'Loại tiền',
 };
 export interface VoucherTypeDef {
-  code: string; name: string; module: 'general' | 'cash' | 'bank' | 'arap' | 'inventory'; manual: boolean; header: HeaderField[]; required: HeaderField[];
+  code: string; name: string; module: 'general' | 'cash' | 'bank' | 'arap' | 'inventory' | 'assets'; manual: boolean; header: HeaderField[]; required: HeaderField[];
   cashSide?: 'in' | 'out'; moneyKind?: 'cash' | 'bank'; hasItems?: boolean; stockDirection?: 'in' | 'out' | 'transfer' | 'assembly'; invoiceDirection?: 'purchase' | 'sale'; refund?: boolean; printForms: string[];
 }
 
 // Loại do hệ thống sinh, không lập tay qua route chung. PB không có ở đây: phân bổ lập tay vẫn được (như GĐ1), PB tự sinh mang source_doc_type riêng.
-export const SYSTEM_VOUCHER_TYPES: readonly string[] = ['DK', 'KC', 'CL', 'DG', 'XQ', 'KTT', 'GV'];
+export const SYSTEM_VOUCHER_TYPES: readonly string[] = ['DK', 'KC', 'CL', 'DG', 'XQ', 'KTT', 'GV', 'TS', 'KH', 'LV'];
 
 const def = (d: Omit<VoucherTypeDef, 'manual' | 'header' | 'required' | 'printForms'> & Partial<Pick<VoucherTypeDef, 'header' | 'required' | 'printForms'>>): [string, VoucherTypeDef] =>
   [d.code, { header: [], required: [], printForms: [], ...d, manual: !SYSTEM_VOUCHER_TYPES.includes(d.code) }];
@@ -54,6 +54,9 @@ export const VOUCHER_TYPES: Record<string, VoucherTypeDef> = Object.fromEntries(
   def({ code: 'KTT', name: 'Khấu trừ thuế GTGT', module: 'general' }),
   // Giá vốn: chênh giữa giá thật (tính giá vốn) và giá tạm tính đã ghi ở phiếu xuất; chỉ do lần chạy tính giá vốn sinh.
   def({ code: 'GV', name: 'Chứng từ giá vốn', module: 'inventory' }),
+  def({ code: 'TS', name: 'Chứng từ tài sản (ghi tăng, ghi giảm, đánh giá lại)', module: 'assets' }),
+  def({ code: 'KH', name: 'Chứng từ khấu hao TSCĐ', module: 'assets' }),
+  def({ code: 'LV', name: 'Chứng từ lãi vay', module: 'general' }),
 ]);
 
 // Tra theo mã người dùng nhập: Object.hasOwn để 'constructor', '__proto__'... không ra thành viên của Object.prototype.

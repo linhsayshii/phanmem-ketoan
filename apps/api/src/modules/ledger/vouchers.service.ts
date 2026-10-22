@@ -303,6 +303,9 @@ const SYSTEM_MSG: Record<string, string> = {
   amortization: 'Chứng từ phân bổ do hệ thống sinh; thao tác ở chức năng phân bổ',
   costing_run: 'Chứng từ giá vốn do hệ thống sinh; tính lại ở màn hình Tính giá vốn (đảo chứng từ cũ, sinh chứng từ mới)',
 };
+SYSTEM_MSG.asset_event = 'Chứng từ sinh từ nghiệp vụ tài sản; hủy nghiệp vụ ở màn hình Tài sản';
+SYSTEM_MSG.asset_run = 'Chứng từ khấu hao/phân bổ tự động; chạy lại ở Quy trình cuối kỳ';
+SYSTEM_MSG.loan_interest = 'Chứng từ lãi vay tự động; chạy lại ở Quy trình cuối kỳ';
 SYSTEM_MSG.stocktake = 'Chứng từ sinh từ biên bản kiểm kê; mở lại biên bản để hủy điều chỉnh';
 const failIfSystem = (sourceDocType: string | null) => {
   const msg = sourceDocType ? SYSTEM_MSG[sourceDocType] : undefined;
