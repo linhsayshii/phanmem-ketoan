@@ -41,11 +41,13 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
     let q = ZERO; let v = ZERO;
     for (const l of opening.lots) {
       const lq = D(l.qty); const lv = vndOf(l.value, `Tồn đầu lô ${l.lot}`);
-      if (lq.lt(0)) throw new Error(`Tồn đầu lô ${l.lot}: số lượng âm`);
+      if (openLayers.some((o) => o.moveId === `opening:${l.lot}`)) throw new Error(`Tồn đầu: lô ${l.lot} lặp lại`);
       openLayers.push({ moveId: `opening:${l.lot}`, key: method === 'specific' ? l.lot : '', qty: lq, value: lv });
       q = q.plus(lq); v = v.plus(lv);
     }
     if (!q.eq(openQ) || !v.eq(openV)) throw new Error('Tồn đầu theo lô không khớp tổng số lượng, giá trị tồn đầu');
+    // Lô tồn âm (lớp thiếu chuyển từ kỳ trước) phải là lớp duy nhất của nhóm: FIFO một nhóm, đích danh mỗi lô một nhóm.
+    for (const l of openLayers) if (l.qty.lt(0) && openLayers.some((o) => o !== l && o.key === l.key)) throw new Error(`Tồn đầu lô ${l.moveId.slice(8)}: lớp thiếu không đi cùng lớp khác cùng nhóm`);
   } else if (!openQ.isZero() || !openV.isZero()) openLayers.push({ moveId: 'opening', key: '', qty: openQ, value: openV });
 
   const errors: CostError[] = [];
@@ -99,7 +101,10 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
       for (let i = ins.length - 1; i >= 0 && rest.gt(0); i--) { const r = Decimal.min(Decimal.max(ins[i]!.qty, ZERO), rest); layers[i]!.qty = r; rest = rest.minus(r); }
       let restQ = Q; let restV = V;
       for (const l of layers) if (l.qty.gt(0)) { l.value = portionOf(restV, restQ, l.qty); restQ = restQ.minus(l.qty); restV = restV.minus(l.value); }
-    } else if (!Q.isZero() || !V.isZero()) layers.push({ moveId: deficitId, key: '', qty: Q, value: V });
+    } else if (!Q.isZero() || !V.isZero()) {
+      const d = layers.find((l) => l.moveId === deficitId); // lớp tồn đầu 'opening' đã có: ghi vào đó, không lặp mã
+      if (d) { d.qty = Q; d.value = V; } else layers.push({ moveId: deficitId, key: '', qty: Q, value: V });
+    }
   } else {
     // FIFO: một nhóm lớp theo seq; đích danh: nhóm theo lô. Tồn âm của nhóm là lớp thiếu (số lượng âm) mang mã phát sinh xuất gây âm; lần nhập sau của nhóm bù lớp thiếu trước.
     layers = [];
@@ -156,8 +161,14 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
       outs.push({ move: m, qty: q, amount });
     }
     layers.push(...deficitList);
-    const Q = layers.reduce((s, l) => s.plus(l.qty), ZERO); const V = layers.reduce((s, l) => s.plus(l.value), ZERO);
-    if (!absorbResidual(outs, Q, V).eq(V)) for (const l of layers) l.value = ZERO;
+    // Dồn theo từng nhóm (FIFO một nhóm, đích danh từng lô): nhóm về 0 thì lần xuất cuối của nhóm nhận phần lẻ; không chuyển giá trị giữa các lô.
+    for (const k of new Set(layers.map((l) => l.key))) {
+      const g = layers.filter((l) => l.key === k);
+      if (!g.every((l) => l.qty.isZero())) continue;
+      const gv = g.reduce((s, l) => s.plus(l.value), ZERO);
+      const gOuts = method === 'fifo' ? outs : outs.filter((o) => (o.move.lot ?? '') === k);
+      if (!absorbResidual(gOuts, ZERO, gv).eq(gv)) for (const l of g) l.value = ZERO;
+    }
     layers = layers.filter((l) => !deficitList.includes(l) || !l.qty.isZero() || !l.value.isZero());
   }
 

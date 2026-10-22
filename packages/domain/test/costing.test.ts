@@ -103,6 +103,47 @@ describe('động cơ giá vốn: tình huống chuẩn', () => {
     const sp = computeCosting('specific', opening, [mOut('x1', 1, '2026-01-10', '5', 'L2')], '2026-01-31');
     expect(amounts(sp)).toEqual(['58']); // 5 × 11,5
   });
+  it('đích danh tồn âm lô B, còn lô A: không chuyển giá trị lô A sang lô B', () => {
+    const r = computeCosting('specific', zero, [
+      mIn('n1', 1, '2026-01-02', '5', '60', 'A'), mIn('n2', 2, '2026-01-03', '1', '10', 'C'),
+      mOut('x1', 3, '2026-01-10', '1', 'C'), mOut('x2', 4, '2026-01-11', '5', 'B'),
+    ], '2026-01-31');
+    expect(r.errors.map((e) => [e.moveId, e.code])).toEqual([['x2', 'COSTING_NEGATIVE_STOCK']]);
+    expect(amounts(r)).toEqual(['10', '50']); // lô B chưa từng nhập: giá nhập gần nhất 10
+    expect(r.layers).toEqual([
+      { moveId: 'n1', remainingQty: '5', remainingValue: '60' },
+      { moveId: 'n2', remainingQty: '0', remainingValue: '0' },
+      { moveId: 'x2', remainingQty: '-5', remainingValue: '-50' },
+    ]);
+    expect([r.endQty, r.endValue]).toEqual(['0', '10']);
+    // lô B nhập bù về 0 với giá khác: phần lệch về lần xuất lô B, lô A giữ nguyên
+    const r2 = computeCosting('specific', zero, [
+      mIn('n1', 1, '2026-01-02', '5', '60', 'A'), mIn('n2', 2, '2026-01-03', '1', '10', 'C'),
+      mOut('x1', 3, '2026-01-10', '1', 'C'), mOut('x2', 4, '2026-01-11', '5', 'B'), mIn('n3', 5, '2026-01-12', '5', '70', 'B'),
+    ], '2026-01-31');
+    expect(amounts(r2)).toEqual(['10', '70']);
+    expect([r2.endQty, r2.endValue]).toEqual(['5', '60']);
+  });
+  it('bình quân: tồn đầu âm hoặc chỉ còn đồng lẻ không sinh hai lớp "opening"', () => {
+    const a = computeCosting('avg_moving', { qty: '-5', value: '-50' }, [mIn('n1', 1, '2026-01-02', '3', '30')], '2026-01-31');
+    expect(a.layers).toEqual([{ moveId: 'opening', remainingQty: '-2', remainingValue: '-20' }, { moveId: 'n1', remainingQty: '0', remainingValue: '0' }]);
+    const p = computeCosting('avg_period', { qty: '0', value: '5' }, [], '2026-01-31');
+    expect(p.layers).toEqual([{ moveId: 'opening', remainingQty: '0', remainingValue: '5' }]);
+  });
+  it('tồn đầu theo lô có lớp thiếu (số lượng âm) chuyển từ kỳ trước; lô lặp lại bị từ chối', () => {
+    const f = computeCosting('fifo', { qty: '-5', value: '-50', lots: [{ lot: 'x9', qty: '-5', value: '-50' }] }, [mIn('n1', 1, '2026-01-02', '8', '96')], '2026-01-31');
+    expect(f.layers).toEqual([{ moveId: 'n1', remainingQty: '3', remainingValue: '46' }]); // bù 5 (60), lệch 10 ở lại lớp n1
+    expect(f.errors).toEqual([]);
+    const sp = computeCosting('specific', { qty: '5', value: '70', lots: [{ lot: 'A', qty: '10', value: '100' }, { lot: 'B', qty: '-5', value: '-30' }] },
+      [mIn('n1', 1, '2026-01-02', '5', '60', 'B')], '2026-01-31');
+    expect([sp.endQty, sp.endValue]).toEqual(['10', '130']);
+    expect(sp.layers).toEqual([
+      { moveId: 'opening:A', remainingQty: '10', remainingValue: '100' },
+      { moveId: 'n1', remainingQty: '0', remainingValue: '30' },
+    ]);
+    expect(() => computeCosting('fifo', { qty: '5', value: '50', lots: [{ lot: 'A', qty: '10', value: '100' }, { lot: 'B', qty: '-5', value: '-50' }] }, [], '2026-01-31')).toThrow();
+    expect(() => computeCosting('fifo', { qty: '2', value: '20', lots: [{ lot: 'A', qty: '1', value: '10' }, { lot: 'A', qty: '1', value: '10' }] }, [], '2026-01-31')).toThrow();
+  });
   it('nhập chưa có giá (chuyển kho chưa điền) hoặc phát sinh sau cuối kỳ: lỗi lập trình', () => {
     expect(() => computeCosting('fifo', zero, [mIn('n1', 1, '2026-01-02', '1', null)], '2026-01-31')).toThrow();
     expect(() => computeCosting('fifo', zero, [mIn('n1', 1, '2026-02-02', '1', '1')], '2026-01-31')).toThrow();
@@ -120,16 +161,18 @@ const moveArb = fc.record({
 });
 const scenarioArb = fc.record({
   method: fc.constantFrom<CostMethod>('avg_period', 'avg_moving', 'fifo', 'specific'),
-  lots: fc.array(fc.record({ lot: fc.constantFrom('A', 'B', 'C'), qty: qtyArb, value: fc.bigInt({ min: 0n, max: 10n ** 10n }).map(String) }), { maxLength: 3 }),
+  lots: fc.uniqueArray(fc.record({ lot: fc.constantFrom('A', 'B', 'C'), qty: qtyArb, value: fc.bigInt({ min: 0n, max: 10n ** 10n }).map(String) }), { maxLength: 3, selector: (l) => l.lot }),
+  negOpen: fc.option(fc.record({ qty: qtyArb, value: fc.bigInt({ min: 0n, max: 10n ** 10n }).map(String) }), { freq: 4 }), // tồn đầu âm (gộp), khi không chia lô
   moves: fc.array(moveArb, { maxLength: 25 }),
   seqs: fc.uniqueArray(fc.integer({ min: 1, max: 10_000 }), { minLength: 25, maxLength: 25 }),
   close: fc.boolean(), // thêm phát sinh cuối đưa tồn về đúng 0 (xuất hết hoặc nhập bù tồn âm)
   closeLot: fc.constantFrom('A', 'B', 'C'),
   closeValue: fc.bigInt({ min: 0n, max: 10n ** 10n }).map(String),
 });
-interface Scenario { method: CostMethod; lots: { lot: string; qty: string; value: string }[]; moves: { dir: string; qty: string; value: string; lot: string; fixed: string | null }[]; seqs: number[]; close: boolean; closeLot: string; closeValue: string }
+interface Scenario { method: CostMethod; lots: { lot: string; qty: string; value: string }[]; moves: { dir: string; qty: string; value: string; lot: string; fixed: string | null }[]; seqs: number[]; negOpen: { qty: string; value: string } | null; close: boolean; closeLot: string; closeValue: string }
 function build(s: Scenario) {
-  const opening: CostOpening = { qty: sum(s.lots.map((l) => l.qty)).toString(), value: sum(s.lots.map((l) => l.value)).toFixed(0), ...(s.lots.length ? { lots: s.lots } : {}) };
+  const opening: CostOpening = s.negOpen && !s.lots.length ? { qty: D(s.negOpen.qty).neg().toString(), value: D(s.negOpen.value).neg().toFixed(0) }
+    : { qty: sum(s.lots.map((l) => l.qty)).toString(), value: sum(s.lots.map((l) => l.value)).toFixed(0), ...(s.lots.length ? { lots: s.lots } : {}) };
   const ms: CostMove[] = s.moves.map((m, i) => m.dir === 'in'
     ? mIn(`m${i}`, s.seqs[i]!, '2026-01-15', m.qty, m.value, m.lot)
     : mOut(`m${i}`, s.seqs[i]!, '2026-01-15', m.qty, m.lot, m.fixed ?? undefined));
@@ -154,9 +197,13 @@ describe('động cơ giá vốn: bất biến', () => {
       expect(D(r.endQty).eq(D(opening.qty).plus(sum(ins.map((m) => m.qty))).minus(sum(outs.map((m) => m.qty))))).toBe(true);
       expect(sum(r.layers.map((l) => l.remainingValue)).toFixed(0)).toBe(D(r.endValue).toFixed(0));
       expect(D(sum(r.layers.map((l) => l.remainingQty))).eq(r.endQty)).toBe(true);
-      if (D(r.endQty).isZero() && outs.some((m) => !m.fixedUnitCost)) expect(r.endValue).toBe('0');
+      const allZero = r.layers.every((l) => D(l.remainingQty).isZero());
+      if (s.method !== 'specific' && D(r.endQty).isZero()) expect(allZero).toBe(true);
+      // tồn về 0 ở mọi nhóm (đích danh: mọi lô) ⇒ không còn giá trị; đích danh âm lô này dương lô kia thì giữ giá trị từng lô
+      if (allZero && outs.some((m) => !m.fixedUnitCost)) expect(r.endValue).toBe('0');
+      expect(new Set(r.layers.map((l) => l.moveId)).size).toBe(r.layers.length);
       // không tồn âm, không giá cố định: mọi lớp còn lại không âm và đúng dấu
-      if (!r.errors.length && !outs.some((m) => m.fixedUnitCost)) for (const l of r.layers) expect(D(l.remainingQty).gte(0) && (s.method === 'avg_period' || D(l.remainingValue).gte(0))).toBe(true);
+      if (!r.errors.length && D(opening.qty).gte(0) && !outs.some((m) => m.fixedUnitCost)) for (const l of r.layers) expect(D(l.remainingQty).gte(0) && (s.method === 'avg_period' || D(l.remainingValue).gte(0))).toBe(true);
     }), { numRuns: 400 });
   });
   it('kết quả không phụ thuộc thứ tự mảng đầu vào (chỉ phụ thuộc seq)', () => {
