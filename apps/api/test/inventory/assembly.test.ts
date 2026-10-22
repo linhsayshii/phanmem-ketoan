@@ -10,7 +10,15 @@ const JAN = { periodFrom: '2026-01-01', periodTo: '2026-01-31' };
 // Một công ty: kho K1 (bình quân cuối kỳ, không gắn TK kho nên TK kho theo hàng), linh kiện A, B (TK 156), thành phẩm S (TK 155).
 async function tenant() {
   const { cookie, tenantId } = await bootstrapTenant(ctx, { code: `LR${Date.now()}${n++}` });
-  const call = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object) => ctx.app.inject({ method, url, headers: { cookie }, ...(payload ? { payload } : {}) });
+  const call = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object, as = cookie) => ctx.app.inject({ method, url, headers: { cookie: as }, ...(payload ? { payload } : {}) });
+  const login = async (perms: string[], flags: string[]) => {
+    const roles = (await call('GET', '/api/roles')).json() as { id: string; code: string }[];
+    expect((await call('PUT', `/api/roles/${roles.find((r) => r.code === 'xem')!.id}/permissions`, { permissions: perms })).statusCode).toBe(200);
+    const username = `lr_${n++}_${Date.now()}`;
+    expect((await call('POST', '/api/users', { username, fullName: 'X', password: 'Matkhau1!', roleCode: 'xem', sensitiveFlags: flags })).statusCode).toBe(201);
+    const r = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+    return `sid=${r.cookies.find((x) => x.name === 'sid')!.value}`;
+  };
   const cat = async (name: string, payload: object) => { const r = await call('POST', `/api/catalogs/${name}`, payload); expect(r.statusCode, r.body).toBe(201); };
   expect((await call('POST', '/api/fiscal-years', { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' })).statusCode).toBe(201);
   await cat('party', { code: 'NCC1', name: 'Nhà cung cấp một', is_vendor: true });
@@ -32,7 +40,13 @@ async function tenant() {
     JOIN item i ON i.id = m.item_id WHERE m.voucher_id = ${voucherId}::uuid ORDER BY i.code`.execute(ctx.t.admin)).rows;
   const gvLines = async (id: string) => (await sql<{ code: string; item: string; debit: string; credit: string }>`SELECT a.code, i.code AS item, l.debit::text, l.credit::text FROM voucher_line l JOIN account a ON a.id = l.account_id JOIN item i ON i.id = l.item_id
     WHERE l.voucher_id = ${id}::uuid ORDER BY l.line_no`.execute(ctx.t.admin)).rows;
-  return { call, pnk, pxk, lr, lrDraft, runOk, drift, layerOf, gvLines, post };
+  // Số dư sổ cái từng (TK kho, hàng) so với Σ giá trị còn lại của lớp giá từng hàng.
+  const perItem = async () => (await sql<{ item: string; layers: string; ledger: string }>`SELECT i.code AS item,
+      (SELECT coalesce(sum(c.remaining_value), 0) FROM stock_cost_layer c WHERE c.tenant_id = ${tenantId}::uuid AND c.item_id = i.id)::text AS layers,
+      (SELECT coalesce(sum(l.debit - l.credit), 0) FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
+        WHERE l.tenant_id = ${tenantId}::uuid AND l.item_id = i.id AND a.code IN ('155', '156') AND v.state IN ('posted','reversed'))::text AS ledger
+    FROM item i WHERE i.tenant_id = ${tenantId}::uuid AND i.code IN ('A', 'B', 'S') ORDER BY i.code`.execute(ctx.t.admin)).rows;
+  return { login, perItem, call, pnk, pxk, lr, lrDraft, runOk, drift, layerOf, gvLines, post };
 }
 
 const SET = { mode: 'assembly', postingDate: '2026-01-10', outputs: [{ itemCode: 'S', quantity: '1' }], components: [{ itemCode: 'A', quantity: '2' }, { itemCode: 'B', quantity: '1' }], extraCost: '5' };
@@ -50,7 +64,7 @@ describe('lắp ráp, tháo dỡ', () => {
     const r1 = await t.runOk();
     expect(r1.summary.errors).toEqual([]);
     expect(r1.voucherIds).toHaveLength(1);
-    expect(await t.gvLines(r1.voucherIds[0]!)).toEqual([{ code: '155', item: 'A', debit: '10', credit: '0' }, { code: '156', item: 'A', debit: '0', credit: '10' }]);
+    expect(await t.gvLines(r1.voucherIds[0]!)).toEqual([{ code: '156', item: 'A', debit: '0', credit: '10' }, { code: '155', item: 'S', debit: '10', credit: '0' }]); // 155 gắn bộ S, 156 gắn linh kiện A
     expect((await t.layerOf(posted.id)).filter((l) => l.dir === 'in')).toEqual([{ item: 'S', dir: 'in', v: '40' }]); // 30 + 5 + 5
     expect(await t.drift()).toSatisfy((rows: { layers: string; ledger: string }[]) => rows.every((r) => r.layers === r.ledger));
     const again = await t.runOk();
@@ -78,6 +92,8 @@ describe('lắp ráp, tháo dỡ', () => {
     const t = await tenant();
     await t.pnk('2026-01-02', 'S', '1', '90');
     await t.pnk('2026-01-02', 'A', '3', '10'); await t.pnk('2026-01-02', 'B', '1', '30');
+    const ex = await t.lrDraft({ mode: 'disassembly', postingDate: '2026-01-10', extraCost: '5', outputs: [{ itemCode: 'S', quantity: '1' }], components: [{ itemCode: 'A', quantity: '1', costRatio: '50' }, { itemCode: 'B', quantity: '1', costRatio: '50' }] });
+    expect(ex.json().error.code).toBe('EXTRA_COST_DISASSEMBLY');
     const bad = await t.lrDraft({ mode: 'disassembly', postingDate: '2026-01-10', outputs: [{ itemCode: 'S', quantity: '1' }], components: [{ itemCode: 'A', quantity: '3', costRatio: '60' }, { itemCode: 'B', quantity: '1', costRatio: '50' }] });
     expect(bad.statusCode).toBe(400); expect(bad.json().error.code).toBe('COST_RATIO_INVALID');
     const ok = await t.lr({ mode: 'disassembly', postingDate: '2026-01-10', outputs: [{ itemCode: 'S', quantity: '1' }], components: [{ itemCode: 'A', quantity: '3' }, { itemCode: 'B', quantity: '1' }] });
@@ -112,5 +128,34 @@ describe('lắp ráp, tháo dỡ', () => {
     expect(r.summary.errors).toEqual([]);
     expect(await t.drift()).toSatisfy((rows: { layers: string; ledger: string }[]) => rows.every((x) => x.layers === x.ledger));
     expect((await t.runOk()).unchanged).toBe(true);
+  });
+
+  it('GV gắn đúng hàng từng bên: số dư sổ cái từng hàng khớp lớp giá (lắp ráp, đảo, tháo dỡ)', async () => {
+    const t = await tenant();
+    const same = async () => { const rows = await t.perItem(); expect(rows.map((r) => [r.item, r.ledger]), JSON.stringify(rows)).toEqual(rows.map((r) => [r.item, r.layers])); };
+    await t.pnk('2026-01-02', 'A', '10', '10'); await t.pnk('2026-01-02', 'B', '5', '5');
+    await t.lr(SET);
+    await t.pnk('2026-01-15', 'A', '10', '20');
+    await t.runOk(); await same();
+    expect((await t.perItem()).find((r) => r.item === 'S')!.ledger).toBe('40');
+    const dis = await t.lr({ mode: 'disassembly', postingDate: '2026-01-20', outputs: [{ itemCode: 'S', quantity: '1' }], components: [{ itemCode: 'A', quantity: '2', costRatio: '50' }, { itemCode: 'B', quantity: '1', costRatio: '50' }] });
+    await t.runOk(); await same();
+    expect((await t.call('POST', `/api/vouchers/${dis.posted.id}/reverse`, { postingDate: '2026-01-25' })).statusCode).toBe(201);
+    await t.runOk(); await same();
+  });
+
+  it('thiếu view_cost: ghi sổ, bỏ ghi, đảo phiếu kho và LR không lộ dòng, tổng tiền', async () => {
+    const t = await tenant();
+    const draft = async (body: object, url = '/api/stock-vouchers') => { const r = await t.call('POST', url, { description: 'x', ...body }); expect(r.statusCode, r.body).toBe(201); return r.json().id as string; };
+    const pnkId = await draft({ voucherType: 'PNK', stockKind: 'purchase', postingDate: '2026-01-02', warehouseCode: 'K1', partyCode: 'NCC1', items: [{ itemCode: 'A', uomCode: 'CAI', quantity: '10', unitPrice: '10' }] });
+    await t.pnk('2026-01-02', 'B', '5', '5');
+    const lrId = (await t.lrDraft(SET)).json().id as string;
+    const u = await t.login(['voucher.post', 'voucher.unpost', 'voucher.edit_posted', 'voucher.view', 'stock_voucher.post', 'stock_voucher.view'], []);
+    const hidden = (r: { statusCode: number; body: string; json: () => { lines: unknown[]; totalDebit: string } }) => { expect(r.statusCode, r.body).toBeLessThan(300); expect(r.json().lines).toEqual([]); expect(r.json().totalDebit).toBe('0'); };
+    hidden(await t.call('POST', `/api/vouchers/${pnkId}/post`, {}, u));
+    hidden(await t.call('POST', `/api/vouchers/${pnkId}/unpost`, {}, u));
+    hidden(await t.call('POST', `/api/vouchers/${pnkId}/post`, {}, u));
+    hidden(await t.call('POST', `/api/vouchers/${lrId}/post`, {}, u));
+    hidden(await t.call('POST', `/api/vouchers/${lrId}/reverse`, { postingDate: '2026-01-10' }, u));
   });
 });

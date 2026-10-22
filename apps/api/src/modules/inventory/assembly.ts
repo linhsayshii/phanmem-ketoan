@@ -2,7 +2,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
-import { D, Decimal, splitByRatio, toBaseQty, voucherTypeDef } from '@kt/domain';
+import { D, Decimal, splitByRatio, toBaseQty } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import * as S from '../ledger/vouchers.service.js';
 import { assertSensitive } from '../reporting/ledgers.js';
@@ -85,6 +85,7 @@ async function build(trx: Trx, input: AssemblyInput, auth?: Auth) {
     ratios[ratios.length - 1] = D(100).minus(ratios.slice(0, -1).reduce((s, x) => s.plus(x), D(0))).toFixed(4);
   }
 
+  if (input.mode === 'disassembly' && input.extraCost && !D(input.extraCost).isZero()) throw new AppError('EXTRA_COST_DISASSEMBLY', 'Tháo dỡ không có chi phí phát sinh: tổng giá trị các linh kiện bằng giá trị hàng tháo', 400);
   const extra = D(input.extraCost ?? '0');
   const total = outs.reduce((s, l) => s.plus(l.amount), D(0)).plus(extra);
   const inAmounts = splitByRatio(total, ratios);
@@ -147,7 +148,7 @@ export async function createAssembly(trx: Trx, ctx: Ctx, input: AssemblyInput): 
 }
 export async function updateAssembly(trx: Trx, ctx: Ctx, id: string, version: number, input: AssemblyInput): Promise<StockVoucherDto> {
   const cur = await trx.selectFrom('voucher').select('voucher_type').where('id', '=', id).executeTakeFirst();
-  if (!cur || cur.voucher_type !== 'LR' || voucherTypeDef(cur.voucher_type)?.module !== 'inventory') throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy phiếu lắp ráp, tháo dỡ', 404);
+  if (!cur || cur.voucher_type !== 'LR') throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy phiếu lắp ráp, tháo dỡ', 404);
   const b = await build(trx, input, ctx.auth);
   const h = header(input, b.ledger);
   await S.updateStockDraftHeader(trx, id, version, { ...h, currencyCode: 'VND', lines: h.lines } as S.VoucherInput & { stockKind: string });

@@ -32,9 +32,14 @@ test('lập Phiếu lắp ráp bằng bàn phím, ghi sổ F9, thấy bút toán
 
   const cell = (grid: number, col: string) => page.locator('.ag-center-cols-container .ag-row[row-index="0"]').nth(grid).locator(`[col-id="${col}"]`);
   await cell(0, 'itemCode').dblclick(); await page.keyboard.type('TP-E2E'); await page.keyboard.press('Tab');
+  await page.keyboard.type('CAI'); await page.keyboard.press('Tab');
   await page.keyboard.type('1'); await page.keyboard.press('Enter');
-  await cell(1, 'itemCode').dblclick(); await page.keyboard.type('LK-E2E'); await page.keyboard.press('Tab');
-  await page.keyboard.type('2'); await page.keyboard.press('Enter');
+  // Linh kiện chọn bằng F4 (hộp chọn danh mục), ĐVT để trống: máy chủ lấy ĐVT cơ sở
+  await cell(1, 'itemCode').click(); await page.keyboard.press('F4');
+  await expect(page.getByRole('dialog').getByRole('combobox')).toBeFocused(); await page.keyboard.type('LK-E2E');
+  await page.locator('.ant-select-item-option', { hasText: /LK-E2E/ }).click();
+  await expect(cell(1, 'itemCode')).toHaveText('LK-E2E');
+  await cell(1, 'quantity').dblclick(); await page.keyboard.type('2'); await page.keyboard.press('Enter');
 
   await page.keyboard.press('Control+s');
   await expect(page.locator('.ant-message').getByText('Đã lưu')).toBeVisible();

@@ -4,33 +4,34 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
 import dayjs, { type Dayjs } from 'dayjs';
-import { canTransition, D, decideEdit, formatVnNumber, parseVnNumber, todayVn, type VoucherState, type VoucherTypeDef } from '@kt/domain';
+import { canTransition, D, decideEdit, formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, todayVn, type VoucherState, type VoucherTypeDef } from '@kt/domain';
 import { KeyboardGrid, LookupSelect, useUnsavedChanges } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { STATE_LABEL } from './VoucherList.js';
-import { iso, quickAdd, reportError, text } from './voucherCommon.js';
+import { PickDialog, iso, quickAdd, reportError, text } from './voucherCommon.js';
 import { QTY_RE } from './stockCalc.js';
 
 // Phiếu lắp ráp, tháo dỡ (LR): lập qua /api/assembly-vouchers; ghi sổ, bỏ ghi sổ, đảo, hủy qua /api/vouchers/:id/*.
 // Hai lưới: thành phẩm và linh kiện. Tỷ lệ giá trị chỉ ở chiều nhập kho (thành phẩm khi lắp ráp, linh kiện khi tháo dỡ).
 type Mode = 'assembly' | 'disassembly';
-interface Row { itemCode: string; quantity: string; costRatio: string }
-interface ItemDto { lineNo: number; itemCode: string; quantity: string; direction?: string; costRatio: string | null; amount: string }
+interface Row { itemCode: string; uomCode: string; quantity: string; costRatio: string; lotNo: string; expiryDate: string }
+interface ItemDto { lineNo: number; itemCode: string; uomCode: string; lotNo: string | null; expiryDate: string | null; quantity: string; direction?: string; costRatio: string | null; amount: string }
 interface LedgerDto { lineNo: number; accountCode: string; accountName: string; debit: string; credit: string; itemCode: string | null; warehouseCode: string | null }
 interface Doc { id: string; voucherNo: string | null; state: string; postingDate: string; documentDate: string; description: string | null; personName: string | null; version: number;
   periodStatus: 'open' | 'soft_locked' | 'hard_locked'; hashed: boolean; warehouseCode: string | null; items: (ItemDto & { direction: string })[]; ledgerLines: LedgerDto[];
   assembly: { mode: Mode; extraCost: string; extraCostAccountCode: string | null } | null }
 interface FormValues { postingDate: Dayjs; documentDate: Dayjs; warehouseCode?: string | null; personName?: string | null; description?: string | null; extraCost?: string; extraCostAccountCode?: string | null }
 
-const blank = (): Row => ({ itemCode: '', quantity: '', costRatio: '' });
+const blank = (): Row => ({ itemCode: '', uomCode: '', quantity: '', costRatio: '', lotNo: '', expiryDate: '' });
 const money = (v: string | null | undefined): string => (!v || D(v).isZero() ? '' : formatVnNumber(v, D(v).decimalPlaces()));
 const numCol = (field: keyof Row, headerName: string, re: RegExp, width = 120): ColDef<Row> => ({ field, headerName, width, cellClass: 'ag-right-aligned-cell',
   valueFormatter: (p) => { const s = p.value as string | undefined; return s ? formatVnNumber(s, D(s).decimalPlaces()) : ''; },
   valueParser: (p) => { const t = String(p.newValue ?? '').trim(); if (t === '') return ''; const n = parseVnNumber(t); return n !== null && re.test(n) ? n : p.oldValue; } });
 
-const cols = (ratio: boolean): ColDef<Row>[] => [{ field: 'itemCode', headerName: 'Mã hàng', width: 160 }, numCol('quantity', 'Số lượng', QTY_RE),
-  ...(ratio ? [numCol('costRatio', 'Tỷ lệ giá trị (%)', /^\d{1,3}(\.\d{1,4})?$/, 150)] : [])];
+const cols = (ratio: boolean): ColDef<Row>[] => [{ field: 'itemCode', headerName: 'Mã hàng (F4)', width: 130 }, { field: 'uomCode', headerName: 'ĐVT (F4)', width: 90 }, numCol('quantity', 'Số lượng', QTY_RE),
+  ...(ratio ? [numCol('costRatio', 'Tỷ lệ giá trị (%)', /^\d{1,3}(\.\d{1,4})?$/, 150)] : []),
+  { field: 'lotNo', headerName: 'Số lô', width: 90 }, { field: 'expiryDate', headerName: 'Hạn dùng', width: 100, headerTooltip: 'Ngày/tháng/năm' }];
 
 export default function AssemblyVoucher({ def, id }: { def: VoucherTypeDef; id: string }) {
   const isNew = id === 'moi';
@@ -59,7 +60,8 @@ export default function AssemblyVoucher({ def, id }: { def: VoucherTypeDef; id: 
     form.setFieldsValue({ postingDate: dayjs(d.postingDate), documentDate: dayjs(d.documentDate), warehouseCode: d.warehouseCode, personName: d.personName, description: d.description,
       extraCost: d.assembly?.extraCost && d.assembly.extraCost !== '0' ? d.assembly.extraCost : '', extraCostAccountCode: d.assembly?.extraCostAccountCode ?? null });
     // Lắp ráp: dòng nhập = thành phẩm; tháo dỡ: dòng nhập = linh kiện.
-    const rowsOf = (dir: string) => d.items.filter((i) => i.direction === dir).map((i): Row => ({ itemCode: i.itemCode, quantity: D(i.quantity).toFixed(), costRatio: i.costRatio ? D(i.costRatio).toFixed() : '' }));
+    const rowsOf = (dir: string) => d.items.filter((i) => i.direction === dir).map((i): Row => ({ itemCode: i.itemCode, uomCode: i.uomCode, quantity: D(i.quantity).toFixed(), costRatio: i.costRatio ? D(i.costRatio).toFixed() : '',
+      lotNo: i.lotNo ?? '', expiryDate: i.expiryDate ? formatVnDate(i.expiryDate) : '' }));
     const outs = m === 'assembly' ? rowsOf('in') : rowsOf('out'); const comps = m === 'assembly' ? rowsOf('out') : rowsOf('in');
     const pad = (r: Row[]) => (d.state === 'draft' ? [...r, blank()] : r);
     outRef.current = pad(outs); compRef.current = pad(comps); setOutputs(outRef.current); setComponents(compRef.current);
@@ -78,10 +80,13 @@ export default function AssemblyVoucher({ def, id }: { def: VoucherTypeDef; id: 
   };
   const flushEditing = async () => { (document.activeElement as HTMLElement | null)?.blur(); await new Promise((r) => setTimeout(r, 0)); };
   const lines = (rows: Row[], what: string, ratio: boolean) => rows.flatMap((r, k) => {
-    if (!r.itemCode.trim() && !r.quantity && !r.costRatio) return [];
+    if (Object.values(r).every((x) => !x.trim())) return [];
     if (!r.itemCode.trim()) throw new Error(`${what} dòng ${k + 1}: nhập mã hàng`);
     if (!QTY_RE.test(r.quantity) || D(r.quantity).lte(0)) throw new Error(`${what} dòng ${k + 1}: số lượng phải lớn hơn 0`);
-    return [{ itemCode: r.itemCode.trim(), quantity: r.quantity, ...(ratio && r.costRatio ? { costRatio: r.costRatio } : {}) }];
+    const expiry = r.expiryDate.trim() ? parseVnDate(r.expiryDate.trim()) : null;
+    if (r.expiryDate.trim() && !expiry) throw new Error(`${what} dòng ${k + 1}: hạn dùng phải có dạng ngày/tháng/năm`);
+    return [{ itemCode: r.itemCode.trim(), ...(r.uomCode.trim() ? { uomCode: r.uomCode.trim() } : {}), quantity: r.quantity, ...(ratio && r.costRatio ? { costRatio: r.costRatio } : {}),
+      ...(r.lotNo.trim() ? { lotNo: r.lotNo.trim() } : {}), ...(expiry ? { expiryDate: expiry } : {}) }];
   });
   const body = (f: FormValues) => {
     if (!f.warehouseCode) throw new Error('Chọn kho');
@@ -128,6 +133,14 @@ export default function AssemblyVoucher({ def, id }: { def: VoucherTypeDef; id: 
   const mayUnpost = canTransition(state, 'unpost') && decision === 'unpost_edit_post' && can('voucher.unpost');
   const mayReverse = canTransition(state, 'reverse') && decision !== 'adjust_in_open_period' && can('voucher.post');
 
+  // F4 trên ô Mã hàng hoặc ĐVT của một trong hai lưới mở hộp chọn danh mục
+  const [look, setLook] = useState<{ side: 'out' | 'comp'; row: number; col: string } | null>(null);
+  const onLookup = (side: 'out' | 'comp') => (col: string, row: number) => { if (editable && (col === 'itemCode' || col === 'uomCode')) setLook({ side, row, col }); };
+  const pickCode = (code: string) => {
+    if (!look) return;
+    const ref = look.side === 'out' ? outRef : compRef; const set = look.side === 'out' ? setOut : setComp;
+    set(ref.current.map((r, i) => (i === look.row ? (look.col === 'uomCode' ? { ...r, uomCode: code } : { ...r, itemCode: code, uomCode: '' }) : r)));
+  };
   const outCols = useMemo(() => cols(assembling), [assembling]);
   const compCols = useMemo(() => cols(!assembling), [assembling]);
 
@@ -157,13 +170,16 @@ export default function AssemblyVoucher({ def, id }: { def: VoucherTypeDef; id: 
       </Form>
       <Row gutter={12}>
         <Col span={12}><b>Thành phẩm {assembling ? '(nhập kho)' : '(xuất kho)'}</b>
-          <KeyboardGrid<Row> rows={outputs} columns={outCols} readOnly={!editable} onRowsChange={setOut} addRowTemplate={blank} height={220} /></Col>
+          <KeyboardGrid<Row> rows={outputs} columns={outCols} readOnly={!editable} onRowsChange={setOut} addRowTemplate={blank} height={220} onLookup={onLookup('out')} /></Col>
         <Col span={12}><b>Linh kiện {assembling ? '(xuất kho)' : '(nhập kho)'}</b>
-          <KeyboardGrid<Row> rows={components} columns={compCols} readOnly={!editable} onRowsChange={setComp} addRowTemplate={blank} height={220} /></Col>
+          <KeyboardGrid<Row> rows={components} columns={compCols} readOnly={!editable} onRowsChange={setComp} addRowTemplate={blank} height={220} onLookup={onLookup('comp')} /></Col>
       </Row>
       {(v.data?.ledgerLines.length ?? 0) > 0 && <Table size="small" style={{ marginTop: 12 }} pagination={false} rowKey="lineNo" dataSource={v.data!.ledgerLines} data-testid="ledger-lines" columns={[
         { title: 'Tài khoản', dataIndex: 'accountCode', width: 110 }, { title: 'Tên tài khoản', dataIndex: 'accountName' }, { title: 'Hàng', dataIndex: 'itemCode', width: 120, render: (s: string | null) => s ?? '' },
         { title: 'Nợ', dataIndex: 'debit', align: 'right', width: 140, render: money }, { title: 'Có', dataIndex: 'credit', align: 'right', width: 140, render: money }]} />}
+      <PickDialog open={look !== null} catalog={look?.col === 'uomCode' ? 'uom' : 'item'}
+        fetcher={look?.col === 'itemCode' ? async (q) => api<{ id: number; code: string; name: string }[]>(`/api/lookups/items?q=${encodeURIComponent(q)}`) : undefined as never}
+        onPick={pickCode} onClose={() => setLook(null)} />
       <Modal open={!!reverse} title="Lập chứng từ đảo" okText="Lập chứng từ đảo" cancelText="Không" destroyOnHidden onCancel={() => setReverse(null)}
         okButtonProps={{ loading: action.isPending, disabled: !reverse?.date }}
         onOk={() => { if (reverse) action.mutate({ act: 'reverse', body: { postingDate: iso(reverse.date), ...(reverse.description.trim() ? { description: reverse.description.trim() } : {}) } }); }}>

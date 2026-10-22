@@ -48,7 +48,7 @@ const MOVE_ORDER = sql`ORDER BY m.posting_date, v.day_order, (m.reversal_of IS N
 
 const isLrIn = (m: Mv) => m.direction === 'in' && m.voucher_type === 'LR' && m.reversal_of === null;
 const pairKey = (m: { item_id: number; warehouse_id: number }) => `${m.item_id}:${m.warehouse_id}`;
-type Edge = { si: number; sw: number; di: number; dw: number; both: boolean }; // phụ thuộc giá: cặp nguồn (si, sw) → cặp đích (di, dw)
+type Edge = { si: number; sw: number; di: number; dw: number }; // phụ thuộc giá: cặp nguồn (si, sw) → cặp đích (di, dw)
 const uc = (amount: Decimal, qty: string) => amount.div(qty).toDecimalPlaces(4, Decimal.ROUND_HALF_UP).toFixed(4);
 
 // Tính giá vốn của kỳ [periodFrom, periodTo] cho các cặp hàng–kho có phát sinh trong kỳ (lọc theo kho, hàng), cộng các kho nhận chuyển kho từ chúng.
@@ -94,20 +94,28 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
     const edges: Edge[] = (await sql<{ item_id: number; src: number; dst: number }>`SELECT DISTINCT o.item_id, o.warehouse_id AS src, i.warehouse_id AS dst
       FROM stock_move o JOIN stock_move i ON i.tenant_id = o.tenant_id AND i.transfer_id = o.transfer_id AND i.direction = 'in'
       WHERE o.direction = 'out' AND o.transfer_id IS NOT NULL AND o.posting_date BETWEEN ${from}::date AND ${to}::date`.execute(trx)).rows
-      .map((e) => ({ si: e.item_id, sw: e.src, di: e.item_id, dw: e.dst, both: false }));
-    // Lắp ráp, tháo dỡ (LR): giá chiều nhập phụ thuộc giá gán chiều xuất cùng chứng từ; chiều nhập chia theo cả nhóm, nên kéo mọi cặp của chứng từ vào phạm vi (mọi ngày) và theo hai chiều.
-    const lrSeen = new Set<string>();
+      .map((e) => ({ si: e.item_id, sw: e.src, di: e.item_id, dw: e.dst }));
+    // Lắp ráp, tháo dỡ (LR): giá chiều nhập phụ thuộc giá gán chiều xuất cùng chứng từ; chiều nhập chia theo cả nhóm, nên kéo mọi cặp của chứng từ vào phạm vi, theo hai chiều.
+    // Phạm vi LR: chứng từ LR có phát sinh của cặp trong phạm vi nằm trong [từ ngày, đến ngày], cộng chứng từ gốc của LR đảo trong kỳ. LR cũ hơn giữ giá nhập đã lưu, không kéo cả lịch sử.
+    const lrSeen = new Set<string>(); const lrV = new Set<string>();
     for (let grew = true; grew;) {
       grew = false;
       const ps = [...scope.values()];
-      const lr = ps.length ? (await sql<{ si: number; sw: number; di: number; dw: number }>`SELECT DISTINCT o.item_id AS si, o.warehouse_id AS sw, i.item_id AS di, i.warehouse_id AS dw
+      const lr = ps.length ? (await sql<{ si: number; sw: number; di: number; dw: number; vid: string }>`SELECT DISTINCT o.item_id AS si, o.warehouse_id AS sw, i.item_id AS di, i.warehouse_id AS dw, o.voucher_id AS vid
         FROM stock_move o JOIN voucher v ON v.id = o.voucher_id AND v.voucher_type = 'LR'
         JOIN stock_move i ON i.tenant_id = o.tenant_id AND i.voucher_id = o.voucher_id AND i.direction = 'in' AND i.reversal_of IS NULL
-        WHERE o.direction = 'out' AND o.reversal_of IS NULL AND o.voucher_id IN (SELECT m.voucher_id FROM stock_move m
-          JOIN unnest(${ps.map((p) => p.item_id)}::bigint[], ${ps.map((p) => p.warehouse_id)}::bigint[]) p(i, w) ON m.item_id = p.i AND m.warehouse_id = p.w WHERE m.reversal_of IS NULL)`.execute(trx)).rows : [];
+        WHERE o.direction = 'out' AND o.reversal_of IS NULL AND o.voucher_id IN (
+          SELECT m.voucher_id FROM stock_move m
+            JOIN unnest(${ps.map((p) => p.item_id)}::bigint[], ${ps.map((p) => p.warehouse_id)}::bigint[]) p(i, w) ON m.item_id = p.i AND m.warehouse_id = p.w
+            WHERE m.reversal_of IS NULL AND m.posting_date BETWEEN ${from}::date AND ${to}::date
+          UNION SELECT om.voucher_id FROM stock_move m
+            JOIN unnest(${ps.map((p) => p.item_id)}::bigint[], ${ps.map((p) => p.warehouse_id)}::bigint[]) p(i, w) ON m.item_id = p.i AND m.warehouse_id = p.w
+            JOIN stock_move om ON om.id = m.reversal_of
+            WHERE m.posting_date BETWEEN ${from}::date AND ${to}::date)`.execute(trx)).rows : [];
       for (const e of lr) {
+        lrV.add(e.vid);
         const k = `${e.si}:${e.sw}>${e.di}:${e.dw}`;
-        if (!lrSeen.has(k)) { lrSeen.add(k); edges.push({ ...e, both: true }); }
+        if (!lrSeen.has(k)) { lrSeen.add(k); edges.push({ si: e.si, sw: e.sw, di: e.di, dw: e.dw }); }
         for (const p of [{ item_id: e.si, warehouse_id: e.sw }, { item_id: e.di, warehouse_id: e.dw }]) if (!scope.has(pairKey(p))) { scope.set(pairKey(p), p); grew = true; }
       }
     }
@@ -118,7 +126,7 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
         if (scope.has(`${e.si}:${e.sw}`) && !scope.has(pairKey(dst))) { scope.set(pairKey(dst), dst); grew = true; }
       }
     }
-    return { scope, direct, edges };
+    return { scope, direct, edges, lrV };
   };
   // Khóa mọi cặp theo thứ tự băm tăng (như ghi sổ phiếu kho) để không bế tắc với ghi sổ đồng thời; đọc lại phạm vi sau khi khóa,
   // phạm vi lớn thêm (chuyển kho vừa ghi sổ) thì khóa thêm rồi đọc lại.
@@ -132,7 +140,7 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
       FROM unnest(${all.map((p) => p.item_id)}::bigint[], ${all.map((p) => p.warehouse_id)}::bigint[]) t(i, w)))`.execute(trx);
     for (const p of all) locked.add(pairKey(p));
   }
-  const { direct, edges } = c;
+  const { direct, edges, lrV } = c;
   const pairs = [...c.scope.values()];
   const itemIds = pairs.map((p) => p.item_id); const whIds = pairs.map((p) => p.warehouse_id);
 
@@ -158,11 +166,18 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
   const amountOut = (o: Mv) => (inScope(o) && target.get(o.id)) || booked(o);
   // Giá trị chiều nhập: chuyển kho = giá chiều xuất cùng chuyển; nhập đảo phiếu xuất = giá chiều xuất gốc (kỳ trước: số đã ghi); còn lại = lớp nhập đã lưu.
   // LR: giá trị chiều nhập = Σ giá chiều xuất + chi phí nhập tay (Σ tiền nhập − Σ tiền xuất lúc lập phiếu), chia theo tỷ lệ đã lưu, dòng cuối nhận phần dư.
+  // Chỉ nhóm LR trong phạm vi (lrV) tính lại; LR cũ hơn kỳ, hoặc sau kỳ, giữ giá trị nhập đã lưu.
+  const lrGroup = new Map<string, { outs: Mv[]; ins: Mv[] }>();
+  for (const m of rows) if (m.voucher_type === 'LR' && m.reversal_of === null && lrV.has(m.voucher_id)) {
+    const g = lrGroup.get(m.voucher_id) ?? { outs: [], ins: [] }; lrGroup.set(m.voucher_id, g); (m.direction === 'out' ? g.outs : g.ins).push(m);
+  }
+  const lrValues = (g: { outs: Mv[]; ins: Mv[] }): Decimal[] => {
+    const extra = g.ins.reduce((t, x) => t.plus(x.base), ZERO).minus(g.outs.reduce((t, x) => t.plus(x.base), ZERO));
+    return splitByRatio(g.outs.reduce((t, x) => t.plus(amountOut(x)), ZERO).plus(extra), g.ins.map((x) => x.cost_ratio ?? '0')).map((x) => D(x));
+  };
   const lrValue = (m: Mv): Decimal => {
-    const g = rows.filter((x) => x.voucher_id === m.voucher_id && x.reversal_of === null);
-    const outs = g.filter((x) => x.direction === 'out'); const ins = g.filter((x) => x.direction === 'in');
-    const extra = ins.reduce((t, x) => t.plus(x.base), ZERO).minus(outs.reduce((t, x) => t.plus(x.base), ZERO));
-    return D(splitByRatio(outs.reduce((t, x) => t.plus(amountOut(x)), ZERO).plus(extra), ins.map((x) => x.cost_ratio ?? '0'))[ins.indexOf(m)]!);
+    const g = lrGroup.get(m.voucher_id);
+    return g && inScope(m) ? lrValues(g)[g.ins.indexOf(m)]! : D(m.receipt ?? m.base);
   };
   const valueIn = (m: Mv): Decimal => {
     if (isLrIn(m)) return lrValue(m);
@@ -268,11 +283,22 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
   // Dòng GV: mỗi phát sinh chênh = giá gán − giá tạm tính, Nợ TK nợ / Có TK có của dòng hàng (chênh âm thì ngược lại); cộng ròng theo (ngày, TK, hàng, kho, đối tượng công nợ).
   const net = new Map<string, { date: string; account: string; item: string; wh: string; party: string | null; amount: Decimal }>();
   const deltaMoves = new Map<string, number[]>();
+  // LR: chênh giá của chiều xuất (hoặc nhập đảo của chiều xuất gốc) ghi bên TK kho của chính hàng đó; bên TK kho nhập ghi riêng theo từng hàng nhập của nhóm (flushLr), để số dư từng hàng khớp lớp giá.
+  const lrAcc = new Map<string, { orig: string; date: string; sign: 1 | -1; d: Decimal }>();
+  const lrLegOf = (m: Mv): { orig: string; sign: 1 | -1 } | null => {
+    if (m.voucher_type !== 'LR' || m.transfer_id) return null;
+    if (m.direction === 'out' && m.reversal_of === null) return { orig: m.voucher_id, sign: 1 };
+    const o = m.direction === 'in' && m.reversal_of !== null ? byId.get(m.reversal_of) : undefined;
+    return o ? { orig: o.voucher_id, sign: -1 } : null;
+  };
   const addDelta = (m: Mv, date: string, d: Decimal) => {
     if (d.isZero() || m.lr_rev_out) return;
     if (!m.debit_code || !m.credit_code) throw new AppError('COSTING_ACCOUNT_MISSING', `Hàng ${m.item_code} kho ${m.wh_code}: dòng phiếu chưa có tài khoản Nợ/Có`, 409);
     deltaMoves.set(date, [...(deltaMoves.get(date) ?? []), m.id]);
-    for (const [account, kind, whCode, sign] of [[m.debit_code, m.debit_kind, m.dest_code ?? m.wh_code, 1], [m.credit_code, m.credit_kind, m.wh_code, -1]] as const) {
+    const lr = lrLegOf(m);
+    if (lr) { const k = `${lr.orig}|${date}|${lr.sign}`; const g = lrAcc.get(k); lrAcc.set(k, { ...lr, date, d: (g?.d ?? ZERO).plus(d) }); }
+    const sides = [[m.debit_code, m.debit_kind, m.dest_code ?? m.wh_code, 1], [m.credit_code, m.credit_kind, m.wh_code, -1]] as const;
+    for (const [account, kind, whCode, sign] of lr ? [sides[lr.sign === 1 ? 1 : 0]] : sides) {
       const party = kind === 'receivable' || kind === 'payable' ? m.party_code : null;
       const k = [date, account, m.item_code, whCode, party ?? ''].join('|');
       const g = net.get(k) ?? { date, account, item: m.item_code, wh: whCode, party, amount: ZERO };
@@ -295,6 +321,24 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
     if (!D(a.layer_value).isZero() && !a.layer_gv) newlyBooked = newlyBooked.plus(a.layer_value);
     if (!D(a.layer_value).isZero()) deltaLayers.set(date, [...(deltaLayers.get(date) ?? []), a.layer_id]);
     addDelta(a, date, D(a.layer_value));
+  }
+  // Bên TK kho nhập của LR: mỗi hàng nhập nhận (giá trị mới − giá tạm tính) khi các chiều xuất của nhóm ghi đủ trong lần này (tổng khớp), nếu không thì chia chênh theo tỷ lệ.
+  const outsideLr = [...new Set([...lrAcc.values()].map((x) => x.orig).filter((id) => !lrGroup.has(id)))];
+  const loaded = new Map<string, { item: string; wh: string; account: string; ratio: string | null }[]>();
+  if (outsideLr.length) for (const r of (await sql<{ vid: string; item: string; wh: string; account: string; ratio: string | null }>`SELECT m.voucher_id AS vid, i.code AS item, w.code AS wh, da.code AS account, l.cost_ratio::text AS ratio
+    FROM stock_move m JOIN voucher_item_line l ON l.tenant_id = m.tenant_id AND l.id = m.item_line_id JOIN item i ON i.id = m.item_id JOIN warehouse w ON w.id = m.warehouse_id JOIN account da ON da.id = l.debit_account_id
+    WHERE m.voucher_id = ANY(${outsideLr}::uuid[]) AND m.direction = 'in' AND m.reversal_of IS NULL ORDER BY m.voucher_id, l.line_no`.execute(trx)).rows) loaded.set(r.vid, [...(loaded.get(r.vid) ?? []), r]);
+  for (const x of lrAcc.values()) {
+    const g = lrGroup.get(x.orig);
+    const ins = g ? g.ins.map((i) => ({ item: i.item_code, wh: i.wh_code, account: i.debit_code!, ratio: i.cost_ratio })) : (loaded.get(x.orig) ?? []);
+    if (!ins.length) continue;
+    const exact = g ? lrValues(g).map((v, j) => v.minus(g.ins[j]!.base)) : null;
+    const amounts = exact && exact.reduce((t, v) => t.plus(v), ZERO).eq(x.d) ? exact : splitByRatio(x.d, ins.map((i) => i.ratio ?? '0')).map((v) => D(v));
+    ins.forEach((i, j) => {
+      const k = [x.date, i.account, i.item, i.wh, ''].join('|');
+      const cur = net.get(k) ?? { date: x.date, account: i.account, item: i.item, wh: i.wh, party: null, amount: ZERO };
+      net.set(k, { ...cur, amount: cur.amount.plus(amounts[j]!.times(x.sign)) });
+    });
   }
   const lines = [...net.values()].filter((g) => !g.amount.isZero());
   const keyOf = (x: { date: string; account: string; item: string; wh: string; party: string | null; debit: string; credit: string }) =>

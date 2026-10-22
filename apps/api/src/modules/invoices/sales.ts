@@ -172,14 +172,15 @@ export async function resolveSale(trx: Trx, a: { input: InvoiceInput; counterAcc
   return { lines: out, costLines, warnings };
 }
 
-// Hóa đơn bán hàng hóa mang bút toán giá vốn: người thiếu view_cost vẫn lập, xem hóa đơn nhưng các dòng sổ cái trên tài khoản giá vốn, tồn kho (632, 15x...) và tổng tiền bị che.
+// Chứng từ mang giá trị giá vốn, tồn kho: người thiếu view_cost vẫn thao tác. Hóa đơn bán (BH, TLB): che các dòng trên tài khoản giá vốn, tồn kho (632, 15x...), còn lại hiện. Loại khác (PNK, PXK, CK, LR, GV...): GET chặn nên mọi dòng và tổng tiền bị che.
 export async function redactCost<T extends { id: string; voucherType: string; totalDebit: string; lines: { accountCode: string; debit: string }[] }>(trx: Trx, auth: { sensitive: Set<string> }, dto: T): Promise<T> {
-  if ((dto.voucherType !== 'BH' && dto.voucherType !== 'TLB') || auth.sensitive.has('view_cost') || !dto.lines.length) return dto;
+  if (auth.sensitive.has('view_cost') || !dto.lines.length) return dto;
   const { regime } = await trx.selectFrom('voucher as v').innerJoin('fiscal_period as p', 'p.fiscal_year', 'v.fiscal_year').select('p.regime').where('v.id', '=', dto.id).limit(1).executeTakeFirstOrThrow();
   const accs = await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', regime).where('code', 'in', [...new Set(dto.lines.map((l) => l.accountCode))]).execute();
   const other = { sensitive: new Set(['view_receivable', 'view_payable']) }; // chỉ che phần do thiếu view_cost
   const hidden = new Set(accs.filter((a) => sensitiveDenial(other, a) !== null).map((a) => a.code));
-  const lines = dto.lines.filter((l) => !hidden.has(l.accountCode));
+  const sale = dto.voucherType === 'BH' || dto.voucherType === 'TLB';
+  const lines = hidden.size && !sale ? [] : dto.lines.filter((l) => !hidden.has(l.accountCode));
   return { ...dto, lines, totalDebit: lines.reduce((s, l) => s.plus(l.debit), D(0)).toFixed(0) };
 }
 
