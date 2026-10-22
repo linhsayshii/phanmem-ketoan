@@ -165,6 +165,7 @@ export default function OpeningBalancePage() {
       <Button onClick={() => void check()} disabled={busy || !ready}>Kiểm tra</Button>
       {mayEdit && <Button onClick={() => void post()} disabled={busy || !ready}>Ghi sổ số dư đầu kỳ</Button>}
       {mayEdit && can('voucher.unpost') && (!canSeeDk || (dk.data?.total ?? 0) > 0) && <Button onClick={unpost} disabled={busy || !ready}>Bỏ ghi sổ số dư đầu kỳ</Button>}
+      <Button href="/so-cai/ton-kho-dau-ky">Tồn kho đầu kỳ</Button>
       <Button href="/api/opening-balance/template.xlsx">Tải mẫu Excel</Button>
       {mayEdit && <Button onClick={() => setImporting(true)} disabled={!ready}>Nhập Excel</Button>}
     </Space>}>

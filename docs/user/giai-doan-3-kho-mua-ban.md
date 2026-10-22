@@ -39,6 +39,14 @@ Dòng giá nhập trên lưới: Mã hàng (F4), ĐVT (F4), Từ số lượng, 
 
 Khi lập chứng từ, phần mềm chọn bảng giá còn hiệu lực ở ngày chứng từ, đúng loại tiền; bảng giá gắn nhóm của đối tượng được ưu tiên trước bảng giá chung, sau đó đến Ưu tiên cao hơn. Giá chỉ điền sẵn vào dòng chứng từ để gợi ý, vẫn sửa được và không ràng buộc sổ cái.
 
+### Tồn kho đầu kỳ
+
+Menu Sổ cái, Tồn kho đầu kỳ. Nhập tồn đầu năm theo Kho, Mã hàng (F4), Số lượng, Giá trị, Số lô và Hạn dùng (dd/mm/yyyy). Số lượng tính theo ĐVT cơ sở của hàng. Hàng theo dõi lô phải có Số lô; hàng theo dõi lô và hạn dùng phải có thêm Hạn dùng. Cùng kho, hàng, lô chỉ có một dòng. Ctrl+S hoặc nút Lưu để lưu; nút Tải mẫu Excel và Nhập Excel dùng được như ở Số dư đầu kỳ (dòng sai báo số dòng và tên cột, không nhập dòng nào).
+
+Số dư đầu kỳ của tài khoản kho (152, 153, 155, 156...) nhập ở màn hình Số dư đầu kỳ và phải bằng tổng Giá trị tồn đầu kỳ của các kho dùng tài khoản đó (kho chưa gắn tài khoản lấy theo hàng, rồi 156). Lệch thì Kiểm tra và Ghi sổ báo "OPENING_STOCK_MISMATCH" kèm tài khoản và chênh lệch. Tài khoản tài sản cố định (211...) vẫn chưa nhập được ở đây.
+
+Ghi sổ số dư đầu kỳ sinh phiếu nhập kho ở kỳ đầu kỳ (ngày liền trước ngày đầu năm), nên phiếu xuất sau đó dùng được tồn này và tính giá vốn đọc đúng giá trị. Bỏ ghi sổ số dư đầu kỳ khi đã có phiếu xuất dùng tồn này bị từ chối "STOCK_CONSUMED". Xem và sửa tồn đầu kỳ cần cờ "xem giá vốn" vì có giá trị. Chuyển tồn cuối năm sang đầu năm sau chưa có, sẽ làm ở giai đoạn 7.
+
 ### Các khóa an toàn
 
 Phần mềm từ chối (lỗi 409) các thay đổi làm sai lệch số liệu đã có:
