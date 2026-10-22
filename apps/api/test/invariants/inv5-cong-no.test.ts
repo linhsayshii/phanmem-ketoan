@@ -52,7 +52,7 @@ const NEVER = /(?!)/;
 const ACCEPT: Record<Op['kind'], RegExp> = {
   doc: NEVER, // chứng từ không kế hoạch đối trừ, kỳ luôn mở
   plan: NEVER, // ngày đã kẹp theo khoản và khoản con, phần đối trừ không quá dư hiện tại
-  post: /^SETTLEMENT_(EXCEEDS_RESIDUAL|DATE_BEFORE_POSTING)$/, // nháp ghi sổ sau: khoản được chọn đã bị đối trừ bớt hoặc đã có khoản con đánh giá lại muộn hơn ngày chứng từ (giới hạn T13-M10)
+  post: /^SETTLEMENT_(EXCEEDS_RESIDUAL|BEFORE_REVALUATION)$/, // nháp ghi sổ sau: khoản được chọn đã bị đối trừ bớt hoặc đã có khoản con đánh giá lại muộn hơn ngày chứng từ (giới hạn T13-M10)
   unpost: /^(OPEN_ITEM_(SETTLED|PLANNED|REVALUED)|STATE_INVALID)$/, // chứng từ đã đối trừ, được nháp chọn, đã đánh giá lại; chứng từ đảo không bỏ ghi sổ được
   reverse: /^OPEN_ITEM_(SETTLED|PLANNED)$/,
   settle: NEVER, // cặp chọn từ dư hiện tại, số tiền không quá dư, ngày đã kẹp theo khoản con

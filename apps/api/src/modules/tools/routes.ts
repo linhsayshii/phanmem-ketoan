@@ -51,7 +51,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.post('/api/data-check/run', { preHandler: app.requirePermission('data_check.run'), schema: { body: z.object({ from: dateIso, to: dateIso, codes: z.array(z.string()).optional() }) } },
-    async (req) => app.withTenant(req, (trx) => runDataChecks(trx, req.body, req.auth!.sensitive)));
+    async (req) => app.withTenant(req, (trx) => runDataChecks(trx, req.body, req.auth!.sensitive), READ_SNAPSHOT));
 
   // Khử trùng chứng từ: đọc trong ảnh chụp nhất quán; xử lý trùng dùng hành động chứng từ sẵn có (discard, reverse) từ màn hình.
   const range = z.object({ from: dateIso, to: dateIso }).refine((b) => b.from <= b.to, { message: 'Từ ngày phải trước hoặc bằng đến ngày' });

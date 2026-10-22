@@ -152,7 +152,7 @@ Menu Thuế > "Bảng kê hóa đơn" (cần quyền xem thuế). Bảng kê n�
 
 ## Tờ khai 01/GTGT
 
-Menu Thuế > "Tờ khai thuế GTGT" (cần quyền xem tờ khai). Kỳ khai tháng hoặc quý lấy theo tùy chọn kỳ kê khai của công ty, mặc định tháng.
+Menu Thuế > "Tờ khai thuế GTGT" (cần quyền xem tờ khai). Kỳ khai tháng hoặc quý lấy theo ô "Kỳ khai thuế GTGT" (Theo tháng / Theo quý) ở tab "Tùy chọn hệ thống" của màn hình Thông tin công ty, mặc định theo tháng. Hóa đơn đã nhập trước khi đổi sang quý vẫn được gộp vào tờ khai quý.
 
 **Điều cần biết trước khi nộp**
 
@@ -220,7 +220,6 @@ Các việc dưới đây chưa làm hoặc làm có điều kiện. Ghi chú tr
 - Chưa có phương pháp nhập trước xuất trước cho tỷ giá xuất quỹ; chỉ có bình quân di động và đích danh.
 - Chưa có tờ khai 04/GTGT (phương pháp trực tiếp), 03/TNDN, 05/KK-TNCN; chưa tính thuế theo thời điểm thanh toán.
 - Chưa đối chiếu sao kê ngân hàng, webhook ngân hàng, VietQR, dự báo dòng tiền, gửi thư nhắc nợ qua email.
-- Tùy chọn kỳ kê khai (tháng hoặc quý) chưa có ô đổi trên màn hình Thông tin công ty; mặc định là tháng.
 
 **Chờ văn bản hoặc tài khoản thử**
 
