@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { computeCosting, D, sum, type CostMethod, type CostMove, type CostOpening } from '../src/index.js';
+import { computeCosting, D, isFixed, sum, type CostMethod, type CostMove, type CostOpening } from '../src/index.js';
 
 const zero: CostOpening = { qty: '0', value: '0' };
 const mIn = (id: string, seq: number, date: string, qty: string, value: string | null, lot?: string): CostMove => ({ id, seq, date, direction: 'in', qty, value, ...(lot ? { lot } : {}) });
@@ -168,6 +168,8 @@ const moveArb = fc.record({
   value: fc.bigInt({ min: 0n, max: 10n ** 10n }).map(String),
   lot: fc.constantFrom('A', 'B', 'C'),
   fixed: fc.option(fc.bigInt({ min: 0n, max: 10n ** 6n }).map((x) => D(x.toString()).div(100).toString()), { freq: 5 }),
+  fixedAmount: fc.option(fc.bigInt({ min: 0n, max: 10n ** 8n }).map(String), { freq: 5 }),
+  rev: fc.option(fc.nat(), { freq: 4 }), // chiều in là đảo một chiều out đứng trước (valueFrom)
 });
 const scenarioArb = fc.record({
   method: fc.constantFrom<CostMethod>('avg_period', 'avg_moving', 'fifo', 'specific'),
@@ -179,13 +181,21 @@ const scenarioArb = fc.record({
   closeLot: fc.constantFrom('A', 'B', 'C'),
   closeValue: fc.bigInt({ min: 0n, max: 10n ** 10n }).map(String),
 });
-interface Scenario { method: CostMethod; lots: { lot: string; qty: string; value: string }[]; moves: { dir: string; qty: string; value: string; lot: string; fixed: string | null }[]; seqs: number[]; negOpen: { qty: string; value: string } | null; close: boolean; closeLot: string; closeValue: string }
+interface Scenario { method: CostMethod; lots: { lot: string; qty: string; value: string }[]; moves: { dir: string; qty: string; value: string; lot: string; fixed: string | null; fixedAmount: string | null; rev: number | null }[]; seqs: number[]; negOpen: { qty: string; value: string } | null; close: boolean; closeLot: string; closeValue: string }
 function build(s: Scenario) {
   const opening: CostOpening = s.negOpen && !s.lots.length ? { qty: D(s.negOpen.qty).neg().toString(), value: D(s.negOpen.value).neg().toFixed(0) }
     : { qty: sum(s.lots.map((l) => l.qty)).toString(), value: sum(s.lots.map((l) => l.value)).toFixed(0), ...(s.lots.length ? { lots: s.lots } : {}) };
   const ms: CostMove[] = s.moves.map((m, i) => m.dir === 'in'
     ? mIn(`m${i}`, s.seqs[i]!, '2026-01-15', m.qty, m.value, m.lot)
-    : mOut(`m${i}`, s.seqs[i]!, '2026-01-15', m.qty, m.lot, m.fixed ?? undefined));
+    : { ...mOut(`m${i}`, s.seqs[i]!, '2026-01-15', m.qty, m.lot, m.fixed ?? undefined), ...(m.fixedAmount !== null && { fixedAmount: m.fixedAmount }) });
+  // đảo phiếu xuất: chiều in lấy đúng lượng, lô của một chiều out đứng trước, giá trị theo giá gán của nó
+  const used = new Set<string>();
+  s.moves.forEach((m, i) => {
+    const cands = ms.filter((o) => o.direction === 'out' && o.seq < s.seqs[i]! && !used.has(o.id));
+    if (m.dir !== 'in' || m.rev === null || !cands.length) return;
+    const o = cands[m.rev % cands.length]!; used.add(o.id);
+    ms[i] = { ...ms[i]!, qty: o.qty, value: null, valueFrom: o.id, ...(o.lot !== undefined && { lot: o.lot }) };
+  });
   if (s.close) {
     const signed = (m: CostMove) => (m.direction === 'in' ? D(m.qty) : D(m.qty).neg());
     const end = D(opening.qty).plus(sum(ms.map(signed)));
@@ -203,17 +213,19 @@ describe('động cơ giá vốn: bất biến', () => {
       const ins = ms.filter((m) => m.direction === 'in'); const outs = ms.filter((m) => m.direction === 'out');
       expect(r.assignments.length).toBe(outs.length);
       for (const a of r.assignments) expect(a.amount).toMatch(/^-?\d+$/);
-      expect(sum(r.assignments.map((a) => a.amount)).plus(r.endValue).toFixed(0)).toBe(D(opening.value).plus(sum(ins.map((m) => m.value!))).toFixed(0));
+      const amountOf = new Map(r.assignments.map((a) => [a.moveId, a.amount]));
+      const pinned = new Set(ins.flatMap((m) => (m.valueFrom ? [m.valueFrom] : [])));
+      expect(sum(r.assignments.map((a) => a.amount)).plus(r.endValue).toFixed(0)).toBe(D(opening.value).plus(sum(ins.map((m) => (m.valueFrom ? amountOf.get(m.valueFrom)! : m.value!)))).toFixed(0));
       expect(D(r.endQty).eq(D(opening.qty).plus(sum(ins.map((m) => m.qty))).minus(sum(outs.map((m) => m.qty))))).toBe(true);
       expect(sum(r.layers.map((l) => l.remainingValue)).toFixed(0)).toBe(D(r.endValue).toFixed(0));
       expect(D(sum(r.layers.map((l) => l.remainingQty))).eq(r.endQty)).toBe(true);
       const allZero = r.layers.every((l) => D(l.remainingQty).isZero());
       if (s.method !== 'specific' && D(r.endQty).isZero()) expect(allZero).toBe(true);
       // tồn về 0 ở mọi nhóm (đích danh: mọi lô) ⇒ không còn giá trị; đích danh âm lô này dương lô kia thì giữ giá trị từng lô
-      if (allZero && outs.some((m) => !m.fixedUnitCost)) expect(r.endValue).toBe('0');
+      if (allZero && outs.some((m) => !isFixed(m) && !pinned.has(m.id))) expect(r.endValue).toBe('0');
       expect(new Set(r.layers.map((l) => l.moveId)).size).toBe(r.layers.length);
       // không tồn âm, không giá cố định: mọi lớp còn lại không âm và đúng dấu
-      if (!r.errors.length && D(opening.qty).gte(0) && !outs.some((m) => m.fixedUnitCost)) for (const l of r.layers) expect(D(l.remainingQty).gte(0) && (s.method === 'avg_period' || D(l.remainingValue).gte(0))).toBe(true);
+      if (!r.errors.length && D(opening.qty).gte(0) && !outs.some(isFixed) && !pinned.size) for (const l of r.layers) expect(D(l.remainingQty).gte(0) && (s.method === 'avg_period' || D(l.remainingValue).gte(0))).toBe(true);
     }), { numRuns: 400 });
   });
   it('kết quả không phụ thuộc thứ tự mảng đầu vào (chỉ phụ thuộc seq)', () => {
@@ -224,5 +236,24 @@ describe('động cơ giá vốn: bất biến', () => {
       for (let i = shuffled.length - 1; i > 0; i--) { x = (Math.imul(x, 1103515245) + 12345) >>> 0; const j = x % (i + 1); [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!]; }
       expect(computeCosting(s.method, opening, shuffled, '2026-01-31')).toEqual(computeCosting(s.method, opening, ms, '2026-01-31'));
     }), { numRuns: 200 });
+  });
+});
+
+describe('động cơ giá vốn: đảo phiếu xuất trong kỳ (valueFrom)', () => {
+  // nhập 100@10.000, nhập 100@1.000.000, xuất 100, đảo phiếu xuất: xuất và chiều đảo triệt tiêu, không vòng lặp giá
+  const ms = (): CostMove[] => [mIn('n1', 1, '2026-01-02', '100', '1000000'), mIn('n2', 2, '2026-01-03', '100', '100000000'),
+    mOut('x1', 3, '2026-01-05', '100'), { ...mIn('r1', 4, '2026-01-10', '100', null), valueFrom: 'x1' }];
+  it('bình quân cuối kỳ: giá bình quân không gồm cặp xuất – đảo; chiều đảo trả đúng giá xuất', () => {
+    const r = computeCosting('avg_period', { qty: '0', value: '0' }, ms(), '2026-01-31');
+    expect(r.assignments).toEqual([{ moveId: 'x1', unitCost: '505000.0000', amount: '50500000' }]);
+    expect([r.endQty, r.endValue]).toEqual(['200', '101000000']);
+  });
+  it.each(['avg_moving', 'fifo'] as const)('%s: chiều đảo lấy giá gán của chiều xuất đứng trước', (method) => {
+    const r = computeCosting(method, { qty: '0', value: '0' }, ms(), '2026-01-31');
+    const x = r.assignments[0]!.amount;
+    expect(D(x).plus(r.endValue).toFixed(0)).toBe(D(101000000).plus(x).toFixed(0));
+  });
+  it('chiều xuất không đứng trước: lỗi lập trình', () => {
+    expect(() => computeCosting('fifo', { qty: '0', value: '0' }, [{ ...mIn('r1', 1, '2026-01-02', '1', null), valueFrom: 'x9' }], '2026-01-31')).toThrow(/không đứng trước/);
   });
 });

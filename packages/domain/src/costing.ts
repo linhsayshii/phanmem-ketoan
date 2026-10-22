@@ -5,7 +5,8 @@ export type CostMethod = 'avg_period' | 'avg_moving' | 'fifo' | 'specific';
 export interface CostMove { id: string; seq: number; date: string; direction: 'in' | 'out'; qty: string; lot?: string;
   /** chiều in: giá trị đã biết (mua, nhập thành phẩm...) hoặc null khi lấy theo giá gán của chiều out (chuyển kho) */ value: string | null;
   /** chiều out đã gán giá cố định (cố định giá vốn) */ fixedUnitCost?: string;
-  /** chiều out giữ đúng số tiền này (đồng nguyên): phát sinh kỳ trước đã ghi sổ, xuất đảo phiếu nhập */ fixedAmount?: string }
+  /** chiều out giữ đúng số tiền này (đồng nguyên): phát sinh kỳ trước đã ghi sổ, xuất đảo phiếu nhập */ fixedAmount?: string;
+  /** chiều in (đảo phiếu xuất cùng cặp, cùng kỳ): giá trị = giá gán của chiều out này, đứng trước theo seq; bình quân cuối kỳ loại cả hai khỏi giá bình quân */ valueFrom?: string }
 export interface CostOpening { qty: string; value: string; lots?: { lot: string; qty: string; value: string }[] }
 export interface CostResult { assignments: { moveId: string; unitCost: string; amount: string; lot?: string }[];
   layers: { moveId: string; remainingQty: string; remainingValue: string }[];   // lớp nhập còn lại sau tính
@@ -15,7 +16,7 @@ type CostError = CostResult['errors'][number];
 interface Layer { moveId: string; key: string; qty: Decimal; value: Decimal }
 interface Out { move: CostMove; qty: Decimal; amount: Decimal; avg?: Decimal }
 
-const isFixed = (m: CostMove) => m.fixedUnitCost !== undefined || m.fixedAmount !== undefined;
+export const isFixed = (m: CostMove) => m.fixedUnitCost !== undefined || m.fixedAmount !== undefined;
 const round = (d: Decimal): Decimal => d.toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
 const vndStr = (d: Decimal): string => (d.isZero() ? '0' : d.toFixed(0));
 const qtyStr = (d: Decimal): string => (d.isZero() ? '0' : d.toString());
@@ -31,6 +32,7 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
     if (m.date > periodEnd) throw new Error(`Phát sinh ${m.id} ngày ${m.date} sau ngày cuối kỳ ${periodEnd}`);
     if (!D(m.qty).gt(0)) throw new Error(`Phát sinh ${m.id}: số lượng phải dương`);
     if (m.direction === 'in') {
+      if (m.valueFrom !== undefined) continue;
       if (m.value === null) throw new Error(`Phát sinh nhập ${m.id} chưa có giá trị: điền giá gán của chiều xuất tương ứng trước khi tính`);
       vndOf(m.value, `Phát sinh nhập ${m.id}`);
     }
@@ -56,6 +58,14 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
   const errors: CostError[] = [];
   const outs: Out[] = [];
   const fixedAmount = (m: CostMove, q: Decimal) => (m.fixedAmount !== undefined ? D(m.fixedAmount) : round(q.times(D(m.fixedUnitCost!))));
+  // Chiều out được chiều in đảo lấy giá: giữ giá, không nhận phần lẻ cuối kỳ.
+  const pinned = new Set(sorted.flatMap((m) => (m.direction === 'in' && m.valueFrom !== undefined ? [m.valueFrom] : [])));
+  const inValue = (m: CostMove): Decimal => {
+    if (m.valueFrom === undefined) return D(m.value!);
+    const o = outs.find((x) => x.move.id === m.valueFrom);
+    if (!o) throw new Error(`Phát sinh nhập ${m.id}: chiều xuất ${m.valueFrom} không đứng trước trong kỳ`);
+    return o.amount;
+  };
   let layers: Layer[];
 
   if (method === 'avg_period' || method === 'avg_moving') {
@@ -63,7 +73,7 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
     let deficitId = 'opening';
     let Q = openQ; let V = openV;
     if (method === 'avg_period') {
-      for (const m of sorted) if (m.direction === 'in') { const q = D(m.qty); const v = D(m.value!); Q = Q.plus(q); V = V.plus(v); lastIn = v.div(q); }
+      for (const m of sorted) if (m.direction === 'in' && m.valueFrom === undefined) { const q = D(m.qty); const v = D(m.value!); Q = Q.plus(q); V = V.plus(v); lastIn = v.div(q); }
       const avg = Q.gt(0) ? V.div(Q) : lastIn ?? (openQ.isZero() ? ZERO : openV.div(openQ));
       let running = openQ;
       for (const m of sorted) {
@@ -74,12 +84,14 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
         const amount = isFixed(m) ? fixedAmount(m, q) : round(q.times(avg));
         outs.push({ move: m, qty: q, amount, avg }); Q = Q.minus(q); V = V.minus(amount);
       }
+      // xuất và chiều đảo của nó triệt tiêu: chiều đảo trả lại đúng giá đã xuất, không vào giá bình quân
+      for (const m of sorted) if (m.direction === 'in' && m.valueFrom !== undefined) { Q = Q.plus(m.qty); V = V.plus(inValue(m)); }
     } else {
       let lastAvg: Decimal | null = openQ.gt(0) ? openV.div(openQ) : null;
       for (const m of sorted) {
         const q = D(m.qty);
         if (m.direction === 'in') {
-          const v = D(m.value!); Q = Q.plus(q); V = V.plus(v); lastIn = v.div(q);
+          const v = inValue(m); Q = Q.plus(q); V = V.plus(v); lastIn = v.div(q);
           lastAvg = Q.gt(0) ? V.div(Q) : lastIn;
           continue;
         }
@@ -95,7 +107,7 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
         outs.push({ move: m, qty: q, amount, avg }); Q = Q.minus(q); V = V.minus(amount);
       }
     }
-    V = absorbResidual(outs, Q, V);
+    V = absorbResidual(outs, Q, V, pinned);
     // Lớp còn lại cho bình quân: lượng tồn cuối thuộc các lần nhập gần nhất, giá trị chia theo lượng, lớp cuối nhận phần lẻ.
     const ins: Layer[] = [...openLayers, ...sorted.filter((m) => m.direction === 'in').map((m) => ({ moveId: m.id, key: '', qty: D(m.qty), value: ZERO }))];
     layers = ins.map((l) => ({ ...l, qty: ZERO, value: ZERO }));
@@ -133,7 +145,7 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
         errors.push({ moveId: m.id, code: 'COSTING_LOT_MISSING', detail: `${m.direction === 'in' ? 'Nhập' : 'Xuất'} ${m.qty} ngày ${m.date} chưa chọn lô (giá đích danh)` });
         if (m.direction === 'in') key = '';
       }
-      if (m.direction === 'in') { addIn({ moveId: m.id, key: key!, qty: q, value: D(m.value!) }); continue; }
+      if (m.direction === 'in') { addIn({ moveId: m.id, key: key!, qty: q, value: inValue(m) }); continue; }
       // Xuất thiếu lô: lấy theo thứ tự nhập trên mọi lô để vẫn bảo toàn giá trị.
       const cands = layers.filter((l) => key === undefined || l.key === key);
       const availQ = cands.reduce((s, l) => s.plus(l.qty), ZERO); const availV = cands.reduce((s, l) => s.plus(l.value), ZERO);
@@ -170,7 +182,7 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
       if (!g.every((l) => l.qty.isZero())) continue;
       const gv = g.reduce((s, l) => s.plus(l.value), ZERO);
       const gOuts = method === 'fifo' ? outs : outs.filter((o) => (o.move.lot ?? '') === k);
-      if (!absorbResidual(gOuts, ZERO, gv).eq(gv)) for (const l of g) l.value = ZERO;
+      if (!absorbResidual(gOuts, ZERO, gv, pinned).eq(gv)) for (const l of g) l.value = ZERO;
     }
     layers = layers.filter((l) => !deficitList.includes(l) || !l.qty.isZero() || !l.value.isZero());
   }
@@ -189,9 +201,9 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
 }
 
 // Tồn cuối 0 mà còn giá trị (làm tròn, tồn âm rồi nhập bù, giá cố định): lần xuất không cố định giá cuối cùng nhận phần còn lại. Trả giá trị tồn cuối sau khi dồn.
-function absorbResidual(outs: Out[], endQ: Decimal, endV: Decimal): Decimal {
+function absorbResidual(outs: Out[], endQ: Decimal, endV: Decimal, pinned: Set<string>): Decimal {
   if (!endQ.isZero() || endV.isZero()) return endV;
-  const last = [...outs].reverse().find((o) => !isFixed(o.move));
+  const last = [...outs].reverse().find((o) => !isFixed(o.move) && !pinned.has(o.move.id));
   if (!last) return endV;
   last.amount = last.amount.plus(endV);
   return ZERO;

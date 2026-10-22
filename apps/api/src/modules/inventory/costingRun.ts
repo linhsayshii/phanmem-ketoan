@@ -76,30 +76,44 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
   const wh = input.warehouseCode ? await trx.selectFrom('warehouse').select('id').where('code', '=', input.warehouseCode).executeTakeFirst() : undefined;
   if (input.warehouseCode && !wh) throw new AppError('WAREHOUSE_NOT_FOUND', `Không có kho mã "${input.warehouseCode}"`, 404);
 
-  // Phạm vi: cặp có phát sinh trong kỳ theo bộ lọc, cộng (lặp) cặp kho nhận của chuyển kho trong kỳ: giá nhập kho nhận là giá gán của kho đi.
-  let q = trx.selectFrom('stock_move').select(['item_id', 'warehouse_id']).distinct().where('posting_date', '>=', from).where('posting_date', '<=', to);
-  if (item) q = q.where('item_id', '=', item.id);
-  if (wh) q = q.where('warehouse_id', '=', wh.id);
-  const scope = new Map((await q.execute()).map((p) => [pairKey(p), p]));
-  const edges = (await sql<{ item_id: number; src: number; dst: number }>`SELECT DISTINCT o.item_id, o.warehouse_id AS src, i.warehouse_id AS dst
-    FROM stock_move o JOIN stock_move i ON i.tenant_id = o.tenant_id AND i.transfer_id = o.transfer_id AND i.direction = 'in'
-    WHERE o.direction = 'out' AND o.transfer_id IS NOT NULL AND o.posting_date BETWEEN ${from}::date AND ${to}::date`.execute(trx)).rows;
-  for (let grew = true; grew;) {
-    grew = false;
-    for (const e of edges) {
-      const dst = { item_id: e.item_id, warehouse_id: e.dst };
-      if (scope.has(`${e.item_id}:${e.src}`) && !scope.has(pairKey(dst))) { scope.set(pairKey(dst), dst); grew = true; }
+  // Phạm vi: cặp có phát sinh trong kỳ theo bộ lọc (direct), cộng (lặp) cặp kho nhận của chuyển kho trong kỳ: giá nhập kho nhận là giá gán của kho đi.
+  const closure = async () => {
+    let q = trx.selectFrom('stock_move').select(['item_id', 'warehouse_id']).distinct().where('posting_date', '>=', from).where('posting_date', '<=', to);
+    if (item) q = q.where('item_id', '=', item.id);
+    if (wh) q = q.where('warehouse_id', '=', wh.id);
+    const scope = new Map((await q.execute()).map((p) => [pairKey(p), p]));
+    const direct = new Set(scope.keys());
+    const edges = (await sql<{ item_id: number; src: number; dst: number }>`SELECT DISTINCT o.item_id, o.warehouse_id AS src, i.warehouse_id AS dst
+      FROM stock_move o JOIN stock_move i ON i.tenant_id = o.tenant_id AND i.transfer_id = o.transfer_id AND i.direction = 'in'
+      WHERE o.direction = 'out' AND o.transfer_id IS NOT NULL AND o.posting_date BETWEEN ${from}::date AND ${to}::date`.execute(trx)).rows;
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const e of edges) {
+        const dst = { item_id: e.item_id, warehouse_id: e.dst };
+        if (scope.has(`${e.item_id}:${e.src}`) && !scope.has(pairKey(dst))) { scope.set(pairKey(dst), dst); grew = true; }
+      }
     }
+    return { scope, direct, edges };
+  };
+  // Khóa mọi cặp theo thứ tự băm tăng (như ghi sổ phiếu kho) để không bế tắc với ghi sổ đồng thời; đọc lại phạm vi sau khi khóa,
+  // phạm vi lớn thêm (chuyển kho vừa ghi sổ) thì khóa thêm rồi đọc lại.
+  const locked = new Set<string>();
+  let c: Awaited<ReturnType<typeof closure>>;
+  for (;;) {
+    c = await closure();
+    const all = [...c.scope.values()];
+    if (all.every((p) => locked.has(pairKey(p)))) break;
+    await sql`SELECT fn_stock_lock_keys(${ctx.tenantId}::uuid, (SELECT array_agg(ARRAY[i, w] ORDER BY hashtextextended(${ctx.tenantId}::text || ':' || i || ':' || w, 0))
+      FROM unnest(${all.map((p) => p.item_id)}::bigint[], ${all.map((p) => p.warehouse_id)}::bigint[]) t(i, w)))`.execute(trx);
+    for (const p of all) locked.add(pairKey(p));
   }
-  const pairs = [...scope.values()];
+  const { direct, edges } = c;
+  const pairs = [...c.scope.values()];
   const itemIds = pairs.map((p) => p.item_id); const whIds = pairs.map((p) => p.warehouse_id);
-  // Khóa mọi cặp một lần theo thứ tự băm tăng (như ghi sổ phiếu kho) để không bế tắc với ghi sổ đồng thời.
-  if (pairs.length) await sql`SELECT fn_stock_lock_keys(${ctx.tenantId}::uuid, (SELECT array_agg(ARRAY[i, w] ORDER BY hashtextextended(${ctx.tenantId}::text || ':' || i || ':' || w, 0))
-    FROM unnest(${itemIds}::bigint[], ${whIds}::bigint[]) t(i, w)))`.execute(trx);
 
-  // Phát sinh đến hết kỳ của các cặp trong phạm vi, cộng chiều xuất (ngoài phạm vi) của chuyển kho đến các cặp đó.
+  // Mọi phát sinh của các cặp trong phạm vi (sau kỳ: chỉ để ghi lớp còn lại, giữ số đã ghi), cộng chiều xuất (ngoài phạm vi) của chuyển kho đến các cặp đó.
   const rows = pairs.length ? (await sql<Mv>`WITH p AS (SELECT * FROM unnest(${itemIds}::bigint[], ${whIds}::bigint[]) AS p(item_id, warehouse_id)),
-    mv AS (SELECT m.* FROM stock_move m JOIN p USING (item_id, warehouse_id) WHERE m.posting_date <= ${to}::date),
+    mv AS (SELECT m.* FROM stock_move m JOIN p USING (item_id, warehouse_id)),
     ext AS (SELECT DISTINCT o.* FROM stock_move o JOIN mv i ON i.transfer_id = o.transfer_id AND i.direction = 'in' AND o.direction = 'out'
       WHERE NOT EXISTS (SELECT 1 FROM p WHERE p.item_id = o.item_id AND p.warehouse_id = o.warehouse_id))
     SELECT ${MOVE_SELECT} FROM (SELECT * FROM mv UNION ALL SELECT * FROM ext) m ${MOVE_JOINS} ${MOVE_ORDER}`.execute(trx)).rows : [];
@@ -107,10 +121,11 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
   const xferOut = new Map(rows.filter((m) => m.transfer_id && m.direction === 'out').map((m) => [m.transfer_id!, m]));
   const byPair = new Map<string, Mv[]>(pairs.map((p) => [pairKey(p), []]));
   for (const m of rows) byPair.get(pairKey(m))?.push(m);
-  const inScope = (m: Mv) => byPair.has(pairKey(m)) && m.posting_date >= from;
+  const inScope = (m: Mv) => byPair.has(pairKey(m)) && m.posting_date >= from && m.posting_date <= to;
 
   const settings = await getSettings(trx, ctx.tenantId);
-  const methodOf = (m: Mv): CostMethod => input.method ?? (m.wh_method as CostMethod | null) ?? settings.costing_method;
+  // Phương pháp chọn khi chạy chỉ áp cho cặp theo bộ lọc; kho nhận chuyển kho kéo vào giữ phương pháp của kho.
+  const methodOf = (m: Mv): CostMethod => (direct.has(pairKey(m)) && input.method) || (m.wh_method as CostMethod | null) || settings.costing_method;
 
   // Giá đích: chiều xuất trong phạm vi lấy từ động cơ; ngoài phạm vi là số đã ghi sổ cái (giá gán hiện hành, không có thì giá tạm tính).
   const target = new Map<number, Decimal>(); const unitCost = new Map<number, string>();
@@ -124,6 +139,9 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
   };
   const toEngine = (list: Mv[], fixAll: boolean): CostMove[] => list.map((m, i) => {
     const base = { id: String(m.id), seq: i, date: m.posting_date, qty: D(m.quantity).toString(), ...(m.lot_no !== null && { lot: m.lot_no }) };
+    // nhập đảo phiếu xuất cùng cặp, cùng kỳ: động cơ lấy đúng giá gán của chiều xuất (bình quân cuối kỳ loại cả hai khỏi giá bình quân), không tính lặp
+    const o = m.direction === 'in' && !fixAll && m.reversal_of !== null && !m.transfer_id && inScope(m) ? byId.get(m.reversal_of) : undefined;
+    if (o && pairKey(o) === pairKey(m) && inScope(o) && list.indexOf(o) >= 0 && list.indexOf(o) < i) return { ...base, direction: 'in', value: null, valueFrom: String(o.id) };
     if (m.direction === 'in') return { ...base, direction: 'in', value: valueIn(m).toFixed(0) };
     // xuất đảo phiếu nhập: lấy đúng giá trị đã nhập
     if (fixAll || !inScope(m) || m.reversal_of !== null) return { ...base, direction: 'out', value: null, fixedAmount: (m.reversal_of !== null && inScope(m) ? valueIn(byId.get(m.reversal_of)!) : amountOut(m)).toFixed(0) };
@@ -146,7 +164,7 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
     return { qty: r.endQty, value: r.endValue, lots: [...lots.values()].map((l) => ({ lot: l.lot, qty: l.qty.toString(), value: l.value.toFixed(0) })) };
   };
 
-  // Thứ tự cặp: kho đi trước kho đến (chuyển kho trong kỳ); vòng thì tính lặp đến khi giá không đổi, quá 10 lượt thì báo lỗi.
+  // Thứ tự cặp: kho đi trước kho đến (chuyển kho trong kỳ); vòng thì tính lặp đến khi không số tiền nào đổi, quá 200 lượt thì báo lỗi.
   const order: string[] = []; const indeg = new Map([...byPair.keys()].map((k) => [k, 0]));
   const out = new Map<string, string[]>();
   for (const e of edges) {
@@ -163,7 +181,7 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
   for (let pass = 1; ; pass++) {
     let changed = false; results = new Map();
     for (const k of order) {
-      const list = byPair.get(k)!; if (!list.length) continue;
+      const list = byPair.get(k)!.filter((m) => m.posting_date <= to); if (!list.length) continue;
       const method = methodOf(list[0]!);
       const hist = list.filter((m) => m.posting_date < from); const cur = list.filter((m) => m.posting_date >= from);
       if (!openings.has(k)) openings.set(k, openingOf(method, hist));
@@ -176,7 +194,7 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
       }
     }
     if (!changed) break;
-    if (pass >= 10) throw new AppError('COSTING_TRANSFER_CYCLE', 'Chuyển kho qua lại giữa các kho trong kỳ: giá vốn không hội tụ sau 10 lượt tính', 409);
+    if (pass >= 200) throw new AppError('COSTING_TRANSFER_CYCLE', 'Chuyển kho qua lại giữa các kho trong kỳ: giá vốn không hội tụ sau 200 lượt tính', 409);
   }
 
   // Lỗi của động cơ (tồn âm, thiếu lô) và nhập thành phẩm chưa có giá. Thiếu lô (giá đích danh) hủy cả lần chạy.
@@ -264,20 +282,21 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
     }
     if (voucherIds.length) await trx.updateTable('costing_run').set({ voucher_ids: voucherIds }).where('id', '=', run.id).execute();
   }
-  await writeLayers(trx, byPair, toEngine, methodOf, to);
+  await writeLayers(trx, byPair, toEngine, methodOf);
   await settleState(trx, itemIds, whIds, from, to, unchanged);
   return { runId: run.id, voucherIds, summary: { items: summary.items, moves: summary.moves, delta: summary.delta, errors }, unchanged };
 }
 
-// Lớp giá còn lại đến hết kỳ: động cơ chạy lại mọi phát sinh của cặp với giá cuối cùng (xuất cố định), lớp nhập nhận lượng, giá trị còn lại;
-// chiều nhập chuyển kho, nhập đảo nhận giá trị mới; lớp thiếu (tồn âm) ghi lại. Σ giá trị còn lại = số dư TK kho của kho trên sổ cái.
-async function writeLayers(trx: Trx, byPair: Map<string, Mv[]>, toEngine: (l: Mv[], fixAll: boolean) => CostMove[], methodOf: (m: Mv) => CostMethod, to: string) {
+// Lớp giá còn lại hiện tại: động cơ chạy lại mọi phát sinh của cặp (cả sau kỳ) với số đã ghi sổ cái (xuất cố định: giá gán của lần chạy, sau kỳ giữ giá gán
+// hiện hành hoặc giá tạm tính), lớp nhập nhận lượng, giá trị còn lại; chiều nhập chuyển kho, nhập đảo nhận giá trị mới; lớp thiếu (tồn âm) ghi lại.
+// Σ giá trị còn lại = số dư TK kho của kho trên sổ cái hiện tại.
+async function writeLayers(trx: Trx, byPair: Map<string, Mv[]>, toEngine: (l: Mv[], fixAll: boolean) => CostMove[], methodOf: (m: Mv) => CostMethod) {
   const ids: number[] = []; const qs: string[] = []; const vs: string[] = []; const vals: (string | null)[] = []; const ucs: (string | null)[] = [];
   const def: { move: number; item: number; wh: number; date: string; lot: string | null; q: string; v: string }[] = [];
   for (const list of byPair.values()) {
     if (!list.length) continue;
     const moves = toEngine(list, true);
-    const r = computeCosting(methodOf(list[0]!), { qty: '0', value: '0' }, moves, to);
+    const r = computeCosting(methodOf(list[0]!), { qty: '0', value: '0' }, moves, list[list.length - 1]!.posting_date);
     const layer = new Map(r.layers.map((l) => [Number(l.moveId), l]));
     list.forEach((m, i) => {
       const l = layer.get(m.id);
@@ -292,7 +311,7 @@ async function writeLayers(trx: Trx, byPair: Map<string, Mv[]>, toEngine: (l: Mv
     WHERE c.move_id = u.id AND c.kind = 'receipt'`.execute(trx);
   const pairsItems = [...byPair.keys()].map((k) => Number(k.split(':')[0])); const pairsWh = [...byPair.keys()].map((k) => Number(k.split(':')[1]));
   await sql`DELETE FROM stock_cost_layer c USING unnest(${pairsItems}::bigint[], ${pairsWh}::bigint[]) p(i, w)
-    WHERE c.kind = 'deficit' AND c.item_id = p.i AND c.warehouse_id = p.w AND c.posting_date <= ${to}::date`.execute(trx);
+    WHERE c.kind = 'deficit' AND c.item_id = p.i AND c.warehouse_id = p.w`.execute(trx);
   if (def.length) await trx.insertInto('stock_cost_layer').values(def.map((d) => ({ tenant_id: sql<string>`app_tenant()`, move_id: d.move, item_id: d.item, warehouse_id: d.wh, lot_no: d.lot,
     kind: 'deficit', posting_date: d.date, qty: d.q, unit_cost: D(d.q).isZero() ? '0' : uc(D(d.v), d.q), value: d.v, remaining_qty: d.q, remaining_value: d.v }))).execute();
 }

@@ -35,6 +35,12 @@ async function tenant() {
     WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND a.code = ${code} AND w.code = ${whCode} AND l.posting_date <= ${asOf}::date`.execute(ctx.t.admin)).rows[0]!.n;
   const layers = async (whCode: string, asOf = '2026-01-31') => (await sql<{ q: string; v: string }>`SELECT coalesce(sum(remaining_qty), 0)::text AS q, coalesce(sum(remaining_value), 0)::text AS v
     FROM stock_cost_layer c JOIN warehouse w ON w.id = c.warehouse_id WHERE c.tenant_id = ${tenantId}::uuid AND w.code = ${whCode} AND c.posting_date <= ${asOf}::date`.execute(ctx.t.admin)).rows[0]!;
+  // Bất biến mọi lúc: Σ giá trị còn lại của mọi lớp (mọi ngày) = số dư hiện tại TK kho của kho trên sổ cái; trả các kho lệch.
+  const drift = async () => (await sql<{ wh: string; layers: string; ledger: string }>`SELECT w.code AS wh,
+      (SELECT coalesce(sum(c.remaining_value), 0) FROM stock_cost_layer c WHERE c.tenant_id = w.tenant_id AND c.warehouse_id = w.id)::text AS layers,
+      (SELECT coalesce(sum(l.debit - l.credit), 0) FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id
+        WHERE l.tenant_id = w.tenant_id AND l.warehouse_id = w.id AND l.account_id = w.inventory_account_id AND v.state IN ('posted','reversed'))::text AS ledger
+    FROM warehouse w WHERE w.tenant_id = ${tenantId}::uuid ORDER BY w.code`.execute(ctx.t.admin)).rows.filter((r) => r.layers !== r.ledger);
   const canon = async () => (await sql<{ id: string; c: string }>`SELECT id, fn_voucher_canonical(id) AS c FROM voucher WHERE tenant_id = ${tenantId}::uuid AND voucher_type <> 'GV' ORDER BY id`.execute(ctx.t.admin)).rows;
   const gvs = async () => (await sql<{ id: string; state: string; reversal_of_id: string | null; posting_date: string }>`SELECT id, state, reversal_of_id, posting_date FROM voucher
     WHERE tenant_id = ${tenantId}::uuid AND voucher_type = 'GV' ORDER BY created_at, id`.execute(ctx.t.admin)).rows;
@@ -46,7 +52,7 @@ async function tenant() {
     const r = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
     return `sid=${r.cookies.find((x) => x.name === 'sid')!.value}`;
   };
-  return { tenantId, call, cat, wh, item, pnk, pxk, ck, run, runOk, bal, layers, canon, gvs, login };
+  return { tenantId, call, cat, wh, item, pnk, pxk, ck, run, runOk, bal, layers, drift, canon, gvs, login };
 }
 type T = Awaited<ReturnType<typeof tenant>>;
 
@@ -63,6 +69,7 @@ async function scenario(t: T, wh: string, item: string, method: string) {
 async function assertLayers(t: T, wh: string, account = '156') {
   const l = await t.layers(wh);
   expect(l.v).toBe(await t.bal(account, wh));
+  expect(await t.drift()).toEqual([]);
   return l;
 }
 
@@ -236,11 +243,13 @@ describe('tính giá vốn nhiều kỳ, đảo, phạm vi hẹp, tồn âm', ()
     // ghi lùi nhập H1 vào tháng 1, tính lại tháng 1: giá vốn tháng 2 của H1 thành chưa cập nhật từ 01/02, tính tháng 2 thì hết
     await t.pnk('2026-01-01', 'K1', [{ itemCode: 'H1', quantity: '1', unitPrice: '100' }]);
     expect((await t.runOk()).unchanged).toBe(false);
-    expect(await t.layers('K1', '2026-01-31')).toEqual({ q: '37.0000', v: await t.bal('156', 'K1', '2026-01-31') });
+    // lớp còn lại là trạng thái hiện tại (gồm phần xuất tháng 2 giữ số đã ghi): Σ lớp = sổ cái hiện tại
+    expect(await t.drift()).toEqual([]);
     expect(await state(t)).toEqual([expect.objectContaining({ itemCode: 'H1', staleFrom: '2026-02-01' })]);
     await t.runOk(FEB);
     expect(await state(t)).toEqual([]);
     expect(await t.layers('K1', '2026-02-28')).toEqual({ q: '102.0000', v: await t.bal('156', 'K1', '2026-02-28') });
+    expect(await t.drift()).toEqual([]);
   }, 120_000);
 
   it('chuyển kho qua lại trong kỳ (bình quân cuối kỳ hai kho) hội tụ; đảo phiếu chuyển kho trả đúng giá đã chuyển; Σ lớp còn lại khớp sổ cái từng kho', async () => {
@@ -284,5 +293,67 @@ describe('tính giá vốn nhiều kỳ, đảo, phạm vi hẹp, tồn âm', ()
     const bad = await t.run({ warehouseCode: 'KD' });
     expect(bad.statusCode).toBe(409); expect(bad.json().error.code).toBe('COSTING_LOT_MISSING');
     expect((await t.gvs()).length).toBe(1);
+  }, 60_000);
+
+  it('bình quân cuối kỳ, đảo phiếu xuất trong kỳ, số tiền lớn: xuất và chiều đảo triệt tiêu, không báo vòng chuyển kho', async () => {
+    const t = await tenant();
+    await t.wh('K1', 'avg_period'); await t.item('H1');
+    await t.pnk('2026-01-02', 'K1', [{ itemCode: 'H1', quantity: '100', unitPrice: '10000' }]);
+    const px = await t.pxk('2026-01-05', 'K1', [{ itemCode: 'H1', quantity: '100' }]);
+    await t.pnk('2026-01-03', 'K1', [{ itemCode: 'H1', quantity: '100', unitPrice: '1000000' }]); // ghi lùi trước phiếu xuất
+    const rv = await t.call('POST', `/api/vouchers/${px.id}/reverse`, { postingDate: '2026-01-10' });
+    expect(rv.statusCode, rv.body).toBe(201);
+    const r = await t.runOk();
+    expect(r.summary.errors).toEqual([]);
+    // bình quân (1.000.000 + 100.000.000) / 200 = 505.000: xuất 50.500.000, đảo trả lại đúng số đó
+    const detail = (await t.call('GET', `/api/inventory/costing-runs/${r.runId}`)).json() as { assignments: { direction: string; amount: string }[] };
+    expect(detail.assignments.map((a) => [a.direction, a.amount]).sort()).toEqual([['in', '50500000'], ['out', '50500000']]);
+    expect(await t.bal('632', 'K1')).toBe('0');
+    expect(await t.bal('156', 'K1')).toBe('101000000');
+    expect(await t.drift()).toEqual([]);
+    expect((await t.runOk()).unchanged).toBe(true);
+  }, 60_000);
+
+  it('chuyển kho A → B → A giữa hai kho bình quân cuối kỳ, số tiền lớn: hội tụ đến điểm bất động; chạy lại không đổi', async () => {
+    const t = await tenant();
+    await t.wh('K1', 'avg_period'); await t.wh('K2', 'avg_period', '157'); await t.item('H1');
+    await t.pnk('2026-01-02', 'K1', [{ itemCode: 'H1', quantity: '100', unitPrice: '1000000' }]);
+    await t.pnk('2026-01-03', 'K2', [{ itemCode: 'H1', quantity: '50', unitPrice: '3000000' }]);
+    await t.ck('2026-01-05', 'K1', 'K2', [{ itemCode: 'H1', quantity: '40' }]);
+    await t.ck('2026-01-08', 'K2', 'K1', [{ itemCode: 'H1', quantity: '30' }]);
+    await t.pxk('2026-01-20', 'K1', [{ itemCode: 'H1', quantity: '50' }]);
+    await t.pxk('2026-01-21', 'K2', [{ itemCode: 'H1', quantity: '30' }]);
+    const r = await t.run();
+    expect(r.statusCode, r.body).toBe(200);
+    expect(await t.drift()).toEqual([]);
+    for (const [w, a] of [['K1', '156'], ['K2', '157']] as const) await assertLayers(t, w, a);
+    expect((await t.runOk()).unchanged).toBe(true);
+  }, 60_000);
+
+  it('tính lại kỳ trước sau khi đã tính kỳ sau: lớp còn lại giữ phần xuất của kỳ sau, Σ lớp = sổ cái hiện tại', async () => {
+    const t = await tenant();
+    await scenario(t, 'K1', 'H1', 'fifo');
+    await t.pxk('2026-02-05', 'K1', [{ itemCode: 'H1', quantity: '10' }]);
+    await t.pnk('2026-02-10', 'K1', [{ itemCode: 'H1', quantity: '10', unitPrice: '15' }]);
+    await t.runOk(); expect(await t.drift()).toEqual([]);
+    await t.runOk({ periodFrom: '2026-02-01', periodTo: '2026-02-28' }); expect(await t.drift()).toEqual([]);
+    expect((await t.runOk()).unchanged).toBe(true);
+    expect(await t.drift()).toEqual([]);
+    expect(await t.layers('K1', '2026-12-31')).toEqual({ q: '20.0000', v: '270' }); // 10 × 12 + 10 × 15
+  }, 60_000);
+
+  it('phương pháp chọn khi chạy chỉ áp cho kho theo bộ lọc; kho nhận chuyển kho kéo vào giữ phương pháp của kho', async () => {
+    const t = await tenant();
+    await t.wh('K1', 'fifo'); await t.wh('K2', 'avg_moving'); await t.item('H1');
+    await t.pnk('2026-01-01', 'K1', [{ itemCode: 'H1', quantity: '10', unitPrice: '20' }]);
+    await t.pnk('2026-01-02', 'K2', [{ itemCode: 'H1', quantity: '10', unitPrice: '10' }]);
+    await t.pxk('2026-01-03', 'K2', [{ itemCode: 'H1', quantity: '10' }]);
+    await t.ck('2026-01-05', 'K1', 'K2', [{ itemCode: 'H1', quantity: '10' }]);
+    await t.pxk('2026-01-10', 'K2', [{ itemCode: 'H1', quantity: '5' }]);
+    const r = await t.runOk({ warehouseCode: 'K1', method: 'avg_period' });
+    expect(r.summary.items).toBe(2);
+    // K2 bình quân tức thời: 100 + 5 × 20 = 200 (bình quân cuối kỳ sẽ là 150 + 75 = 225)
+    expect(await t.bal('632', 'K2')).toBe('200');
+    expect(await t.drift()).toEqual([]);
   }, 60_000);
 });
