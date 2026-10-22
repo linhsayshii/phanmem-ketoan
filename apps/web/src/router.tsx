@@ -11,6 +11,7 @@ import AccountsPage from './pages/Accounts.js';
 import ImportExcelPage from './pages/ImportExcel.js';
 import ImportVouchersPage from './pages/ImportVouchers.js';
 import CatalogPage from './pages/Catalog.js';
+import ItemsPage from './pages/Items.js';
 import AuditLogPage from './pages/AuditLog.js';
 import PeriodsPage from './pages/Periods.js';
 import VoucherListPage, { typeLabel } from './pages/VoucherList.js';
@@ -63,6 +64,12 @@ export const MENU: MenuItem[] = [
     { key: 'cat-project', label: 'Vụ việc / công trình', to: '/danh-muc/project', permission: 'catalog.view' },
     { key: 'cat-uom', label: 'Đơn vị tính', to: '/danh-muc/uom', permission: 'catalog.view' },
     { key: 'import', label: 'Nhập Excel', to: '/danh-muc/nhap-excel', permission: 'catalog.import' },
+  ] },
+  { key: 'kho', label: 'Kho', to: '/kho/vat-tu', children: [
+    { key: 'items', label: 'Vật tư hàng hóa', to: '/kho/vat-tu', permission: 'item.view' },
+    { key: 'item_group', label: 'Nhóm vật tư hàng hóa', to: '/danh-muc/item_group', permission: 'item.view' },
+    { key: 'warehouse', label: 'Kho', to: '/danh-muc/warehouse', permission: 'warehouse.view' },
+    { key: 'uom', label: 'Đơn vị tính', to: '/danh-muc/uom', permission: 'catalog.view' },
   ] },
   { key: 'chungtu', label: 'Chứng từ', to: '/chung-tu', children: [
     ...VOUCHER_MENU_TYPES.map((code) => ({ key: code.toLowerCase(), label: typeLabel(VOUCHER_TYPES[code]!), to: `/chung-tu/${code}`, permission: 'voucher.view' })),
@@ -138,8 +145,9 @@ const voucherRoute = createRoute({ getParentRoute: () => appRoute, path: '/chung
 // Địa chỉ cũ của Phiếu kế toán (đã gửi cho người dùng, lưu trong dấu trang) chuyển sang địa chỉ theo loại.
 const oldPktListRoute = createRoute({ getParentRoute: () => appRoute, path: '/chung-tu/phieu-ke-toan', beforeLoad: () => { throw redirect({ to: '/chung-tu/$type', params: { type: 'PKT' } }); } });
 const oldPktRoute = createRoute({ getParentRoute: () => appRoute, path: '/chung-tu/phieu-ke-toan/$id', beforeLoad: ({ params }) => { throw redirect({ to: '/chung-tu/$type/$id', params: { type: 'PKT', id: params.id } }); } });
+const itemsRoute = createRoute({ getParentRoute: () => appRoute, path: '/kho/vat-tu', component: ItemsPage });
 const catalogRoute = createRoute({ getParentRoute: () => appRoute, path: '/danh-muc/$name', component: CatalogPage });
 
-export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, closingRoute, amortizationRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, catalogRoute])]);
+export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, closingRoute, amortizationRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, catalogRoute])]);
 export const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }
