@@ -23,7 +23,7 @@ export interface TradeResult { groupBy: string; rows: TradeRow[]; totals: Record
 
 const GROUP = {
   party: { key: sql`coalesce(p.code, '')`, name: sql`coalesce(p.name, '(Không có đối tượng)')`, join: sql`LEFT JOIN party p ON p.id = ln.party_id` },
-  item: { key: sql`coalesce(i.code, '')`, name: sql`coalesce(i.name, '(Không có mã hàng)')`, join: sql`LEFT JOIN item i ON i.id = ln.item_id` },
+  item: { key: sql`coalesce(i.code, '')`, name: sql`coalesce(i.code || ' - ' || i.name, '(Không có mã hàng)')`, join: sql`LEFT JOIN item i ON i.id = ln.item_id` },
   item_group: { key: sql`coalesce(g.code, '')`, name: sql`coalesce(g.name, '(Không có nhóm hàng)')`, join: sql`LEFT JOIN item i ON i.id = ln.item_id LEFT JOIN item_group g ON g.id = i.group_id` },
   salesperson: { key: sql`coalesce(e.code, '')`, name: sql`coalesce(e.name, '(Không có nhân viên)')`, join: sql`LEFT JOIN employee e ON e.id = ln.employee_id` },
   month: { key: sql`to_char(ln.posting_date, 'YYYY-MM')`, name: sql`to_char(ln.posting_date, 'MM/YYYY')`, join: sql`` },

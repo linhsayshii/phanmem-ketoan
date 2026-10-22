@@ -16,6 +16,7 @@ import PriceListsPage from './pages/PriceLists.js';
 import OrdersPage from './pages/Orders.js';
 import StocktakePage from './pages/Stocktake.js';
 import StockReportsPage from './pages/StockReports.js';
+import { PurchaseReportsPage, SalesReportsPage } from './pages/SalesPurchaseReports.js';
 import CostingRunPage from './pages/CostingRun.js';
 import AuditLogPage from './pages/AuditLog.js';
 import PeriodsPage from './pages/Periods.js';
@@ -88,8 +89,8 @@ export const MENU: MenuItem[] = [
     ...VOUCHER_MENU_TYPES.map((code) => ({ key: code.toLowerCase(), label: typeLabel(VOUCHER_TYPES[code]!), to: `/chung-tu/${code}`, permission: 'voucher.view' })),
     { key: 'import-vouchers', label: 'Nhập chứng từ từ Excel', to: '/chung-tu/nhap-excel', permission: 'voucher.import' },
   ] },
-  { key: 'muahang', label: 'Mua hàng', to: '/chung-tu/MH', children: [{ key: 'don-mua', label: 'Đơn đặt hàng mua', to: '/don-hang/don-mua', permission: 'order.view' }, voucherItem('MH', 'Mua hàng hóa'), voucherItem('TLM', 'Trả lại, giảm giá hàng mua'), voucherItem('CPM', 'Chi phí mua hàng'), voucherItem('HDM', 'Hóa đơn mua dịch vụ'), voucherItem('GGM', 'Giảm giá mua')] },
-  { key: 'banhang', label: 'Bán hàng', to: '/chung-tu/HDB', children: [{ key: 'bao-gia', label: 'Báo giá', to: '/don-hang/bao-gia', permission: 'order.view' }, { key: 'don-ban', label: 'Đơn đặt hàng bán', to: '/don-hang/don-ban', permission: 'order.view' }, voucherItem('BH', 'Bán hàng hóa'), voucherItem('TLB', 'Hàng bán bị trả lại'), voucherItem('HDB', 'Hóa đơn bán dịch vụ'), voucherItem('GGB', 'Giảm giá bán')] },
+  { key: 'muahang', label: 'Mua hàng', to: '/chung-tu/MH', children: [{ key: 'don-mua', label: 'Đơn đặt hàng mua', to: '/don-hang/don-mua', permission: 'order.view' }, voucherItem('MH', 'Mua hàng hóa'), voucherItem('TLM', 'Trả lại, giảm giá hàng mua'), voucherItem('CPM', 'Chi phí mua hàng'), voucherItem('HDM', 'Hóa đơn mua dịch vụ'), voucherItem('GGM', 'Giảm giá mua'), { key: 'bao-cao-mua', label: 'Báo cáo mua hàng', to: '/mua-hang/bao-cao', permission: 'report.view' }] },
+  { key: 'banhang', label: 'Bán hàng', to: '/chung-tu/HDB', children: [{ key: 'bao-gia', label: 'Báo giá', to: '/don-hang/bao-gia', permission: 'order.view' }, { key: 'don-ban', label: 'Đơn đặt hàng bán', to: '/don-hang/don-ban', permission: 'order.view' }, voucherItem('BH', 'Bán hàng hóa'), voucherItem('TLB', 'Hàng bán bị trả lại'), voucherItem('HDB', 'Hóa đơn bán dịch vụ'), voucherItem('GGB', 'Giảm giá bán'), { key: 'bao-cao-ban', label: 'Báo cáo bán hàng', to: '/ban-hang/bao-cao', permission: 'report.view' }] },
   { key: 'quy', label: 'Quỹ', to: '/quy', children: [
     { key: 'cashcount', label: 'Kiểm kê quỹ', to: '/quy/kiem-ke', permission: 'cash_count.view' },
   ] },
@@ -164,10 +165,12 @@ const priceListsRoute = createRoute({ getParentRoute: () => appRoute, path: '/kh
 const ordersRoute = createRoute({ getParentRoute: () => appRoute, path: '/don-hang/$slug', component: OrdersPage });
 const openingStockRoute = createRoute({ getParentRoute: () => appRoute, path: '/so-cai/ton-kho-dau-ky', component: OpeningStockPage });
 const stockReportsRoute = createRoute({ getParentRoute: () => appRoute, path: '/kho/bao-cao', component: StockReportsPage });
+const salesReportsRoute = createRoute({ getParentRoute: () => appRoute, path: '/ban-hang/bao-cao', component: SalesReportsPage });
+const purchaseReportsRoute = createRoute({ getParentRoute: () => appRoute, path: '/mua-hang/bao-cao', component: PurchaseReportsPage });
 const stocktakeRoute = createRoute({ getParentRoute: () => appRoute, path: '/kho/kiem-ke', component: StocktakePage });
 const costingRoute = createRoute({ getParentRoute: () => appRoute, path: '/kho/gia-von', component: CostingRunPage });
 const catalogRoute = createRoute({ getParentRoute: () => appRoute, path: '/danh-muc/$name', component: CatalogPage });
 
-export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, closingRoute, amortizationRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, stocktakeRoute, stockReportsRoute, costingRoute, catalogRoute])]);
+export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, closingRoute, amortizationRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, stocktakeRoute, stockReportsRoute, salesReportsRoute, purchaseReportsRoute, costingRoute, catalogRoute])]);
 export const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }

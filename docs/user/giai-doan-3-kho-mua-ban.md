@@ -183,3 +183,20 @@ Lưu ý về độ chính xác của báo cáo kho:
 - Đối chiếu "tính đến ngày" trong quá khứ chính xác theo giá gán xuất hiện hành. Nếu có ghi sổ lùi chưa tính lại giá vốn thì báo cáo hiện chênh lệch và biểu ngữ cảnh báo; hãy chạy Tính giá vốn rồi đối chiếu lại.
 - Cờ "tạm tính" của Nhập - Xuất - Tồn xét trên toàn bộ phát sinh đến hết kỳ báo cáo, không chỉ trong kỳ.
 - Thẻ kho và sổ chi tiết chưa in một số cột phụ của mẫu (ghi chú, thông tin đầu trang).
+
+## Báo cáo bán hàng, mua hàng
+
+Menu **Bán hàng, Báo cáo bán hàng** và **Mua hàng, Báo cáo mua hàng** (cần quyền xem báo cáo; in PDF, xuất Excel cần thêm quyền in báo cáo). Chọn khoảng ngày, cách nhóm và (tùy chọn) mã hàng bằng F4.
+
+### Báo cáo bán hàng
+- Nhóm theo khách hàng, mặt hàng, nhân viên bán hàng, nhóm hàng hoặc tháng.
+- Các cột: số lượng bán, số lượng trả lại, doanh số, chiết khấu, hàng bán bị trả lại, doanh thu thuần, giá vốn, lãi gộp. Doanh thu thuần = doanh số trừ chiết khấu trừ hàng bán bị trả lại. Lãi gộp = doanh thu thuần trừ giá vốn; hàng bán bị trả lại cũng trừ giá vốn nhập lại.
+- Chỉ lấy hóa đơn bán hàng hóa và hàng bán bị trả lại đã ghi sổ. Chứng từ đã đảo và chứng từ đảo của nó không được tính. Hóa đơn ngoại tệ báo cáo theo tiền đồng.
+- Giá vốn là giá đã tính ở chức năng Tính giá vốn. Kỳ chưa chạy Tính giá vốn thì báo cáo dùng giá vốn tạm tính và hiện cảnh báo vàng; hãy chạy Tính giá vốn rồi xem lại.
+- Nhân viên bán hàng lấy theo nhân viên ghi trên các dòng định khoản của chứng từ; chứng từ không ghi nhân viên nằm ở nhóm "(Không có nhân viên)".
+- Người không có quyền xem giá vốn (cờ view_cost) vẫn xem được doanh số, nhưng không thấy hai cột giá vốn, lãi gộp, kể cả khi in PDF hoặc xuất Excel.
+
+### Báo cáo mua hàng
+- Nhóm theo nhà cung cấp, mặt hàng hoặc tháng.
+- Các cột: số lượng mua, số lượng trả lại, giá trị mua, chiết khấu, trả lại và giảm giá, giá trị thuần, thuế GTGT, thuế nhập khẩu, thuế tiêu thụ đặc biệt, GTGT hàng nhập khẩu, chi phí mua.
+- Chi phí mua là chi phí vận chuyển, bốc xếp... đã phân bổ bằng chứng từ Chi phí mua hàng, tính theo ngày ghi sổ của chứng từ đó; cột này chỉ hiện với người có quyền xem giá vốn.
