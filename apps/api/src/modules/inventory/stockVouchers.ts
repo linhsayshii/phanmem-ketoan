@@ -62,7 +62,7 @@ async function invoiceLinks(trx: Trx, input: StockVoucherInput, selfId?: string)
     if (itemId === undefined || factor === undefined) return null; // build báo lỗi hàng, đơn vị tính
     const base = D(toBaseQty(it.quantity, D(factor).toString()));
     const m = mh.find((x) => x.item_id === itemId && left.get(x.id)!.qty.gte(base));
-    if (!m) throw new AppError('INVOICE_LINE_NOT_FOUND', `Dòng ${i + 1}: không có dòng hóa đơn mua cùng hàng ${it.itemCode} còn đủ số lượng chưa nhập kho`, 409);
+    if (!m) throw new AppError('INVOICE_LINE_UNMATCHED', `Dòng ${i + 1}: không có dòng hóa đơn mua cùng hàng ${it.itemCode} còn đủ số lượng chưa nhập kho`, 409);
     const l = left.get(m.id)!;
     const amount = base.eq(l.qty) ? l.amt : l.amt.times(base).div(l.qty).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
     left.set(m.id, { qty: l.qty.minus(base), amt: l.amt.minus(amount) });

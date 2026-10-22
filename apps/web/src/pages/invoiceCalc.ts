@@ -8,11 +8,14 @@ export interface TaxDefRow { code: string; name: string; scope: 'sale' | 'purcha
 export interface GroupRow { scope: string; code: string; name: string; rate: string | null }
 // Mọi ô là chuỗi: số tiền là chuỗi thập phân, mã thuế là chữ cách nhau bằng dấu phẩy. taxAmount do máy tính điền, không nhập.
 export interface InvRow { description: string; accountCode: string; quantity: string; unitPrice: string; amount: string; discountRate: string; discount: string; taxCodes: string; taxAmount: string;
-  departmentCode: string; projectCode: string; costItemCode: string }
-export const emptyInvRow = (): InvRow => ({ description: '', accountCode: '', quantity: '', unitPrice: '', amount: '', discountRate: '', discount: '', taxCodes: '', taxAmount: '', departmentCode: '', projectCode: '', costItemCode: '' });
+  departmentCode: string; projectCode: string; costItemCode: string;
+  // Mua hàng hóa (MH, TLM): dòng hàng nhập kho; sourceLineId là mã dòng nhập gốc khi trả lại hàng mua
+  itemCode: string; uomCode: string; warehouseCode: string; lotNo: string; expiryDate: string; sourceLineId: string }
+export const emptyInvRow = (): InvRow => ({ description: '', accountCode: '', quantity: '', unitPrice: '', amount: '', discountRate: '', discount: '', taxCodes: '', taxAmount: '', departmentCode: '', projectCode: '', costItemCode: '',
+  itemCode: '', uomCode: '', warehouseCode: '', lotNo: '', expiryDate: '', sourceLineId: '' });
 
 export const codesOf = (r: Pick<InvRow, 'taxCodes'>): string[] => r.taxCodes.split(/[\s,;]+/).filter(Boolean);
-const INPUT_KEYS = ['description', 'accountCode', 'quantity', 'unitPrice', 'amount', 'discountRate', 'discount', 'taxCodes', 'departmentCode', 'projectCode', 'costItemCode'] as const;
+const INPUT_KEYS = ['description', 'accountCode', 'quantity', 'unitPrice', 'amount', 'discountRate', 'discount', 'taxCodes', 'departmentCode', 'projectCode', 'costItemCode', 'itemCode', 'uomCode', 'warehouseCode', 'lotNo', 'expiryDate', 'sourceLineId'] as const;
 export const isBlankRow = (r: InvRow): boolean => INPUT_KEYS.every((k) => (r[k] ?? '').trim() === '');
 
 export const NUM_RE = /^\d{1,16}(\.\d{1,4})?$/;
@@ -45,7 +48,8 @@ export function defaultGroup(scope: 'sale' | 'purchase', codes: string[], defs: 
 export interface CodeSummary { code: string; name: string; lines: number; computed: string; declared: string; diff: string; allowed: number; ok: boolean }
 export interface Preview { lineTax: string[]; ledger: LedgerLine[]; byCode: CodeSummary[]; error: { code: string; message: string } | null }
 export interface PreviewInput { scope: 'sale' | 'purchase'; documentType: 'invoice' | 'refund'; defs: TaxDefRow[]; rows: InvRow[]; currency: string; fxRate: string | null; minorUnit?: number | undefined;
-  partyCode: string; counterAccountCode: string; declared: Record<string, string> }
+  partyCode: string; counterAccountCode: string; declared: Record<string, string>;
+  stockAccount?: string } // MH, TLM: tài khoản tạm cho dòng hàng chưa có tài khoản (kho 156 hoặc hàng đang đi đường 151); máy chủ tính tài khoản thật khi lưu
 export const NO_PREVIEW: Preview = { lineTax: [], ledger: [], byCode: [], error: null };
 
 // Xem trước thuế từng dòng, bảng thuế theo mã và bút toán. Dòng chưa có tài khoản bỏ qua (chưa đủ để hạch toán; lúc lưu mới báo thiếu).
@@ -53,7 +57,8 @@ export const NO_PREVIEW: Preview = { lineTax: [], ledger: [], byCode: [], error:
 // Dung sai thuế ghi trên hóa đơn: VND lệch Σ thuế dòng tối đa bằng số dòng mang mã; ngoại tệ thêm ±1 đồng mỗi dòng thuế hạch toán so với số quy đổi từ nguyên tệ.
 export function previewInvoice(i: PreviewInput): Preview {
   const lineTax = i.rows.map(() => '');
-  const items = i.rows.flatMap((r, k) => (r.accountCode.trim() ? [{ r, lineNo: k + 1, codes: codesOf(r) }] : []));
+  const acct = (r: InvRow) => r.accountCode.trim() || (r.itemCode.trim() ? i.stockAccount ?? '' : '');
+  const items = i.rows.flatMap((r, k) => (acct(r) ? [{ r, lineNo: k + 1, codes: codesOf(r) }] : []));
   if (!items.length) return { ...NO_PREVIEW, lineTax };
   const defs = Object.fromEntries(i.defs.map((d) => [d.code, d.def]));
   const isVnd = i.currency === 'VND';
@@ -94,7 +99,7 @@ export function previewInvoice(i: PreviewInput): Preview {
     const tax = Object.keys(declared).length ? computeTaxes(taxLines, defs, { ...opts, declaredTaxVnd: declared }) : base;
     const detail = buildInvoiceLedgerDetail({ scope: i.scope, documentType: i.documentType, counterAccountCode: i.counterAccountCode, partyCode: i.partyCode, currency: i.currency, fxRate: isVnd ? null : i.fxRate,
       dueDate: null, tax, ...(Object.keys(declared).length && { declaredTaxVnd: declared }),
-      items: items.map(({ r, lineNo, codes }) => ({ lineNo, description: r.description.trim() || null, accountCode: r.accountCode.trim(), amountCurrency: r.amount || '0', discountCurrency: r.discount || '0', taxCodes: codes,
+      items: items.map(({ r, lineNo, codes }) => ({ lineNo, description: r.description.trim() || null, accountCode: acct(r), amountCurrency: r.amount || '0', discountCurrency: r.discount || '0', taxCodes: codes,
         departmentCode: r.departmentCode.trim() || null, projectCode: r.projectCode.trim() || null, costItemCode: r.costItemCode.trim() || null })) });
     return { lineTax, ledger: detail.lines, byCode, error: null };
   } catch (e) { return fail(e, { byCode }); }

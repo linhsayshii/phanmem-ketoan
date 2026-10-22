@@ -64,3 +64,17 @@ Phần mềm từ chối (lỗi 409) các thay đổi làm sai lệch số liệ
 ### Phân quyền
 
 Vật tư hàng hóa dùng nhóm quyền `item.*`, kho dùng `warehouse.*`, bảng giá dùng `price_list.*`. Quản trị viên cấp cho từng vai trò.
+
+## Mua hàng hóa
+
+Menu Mua hàng, "Mua hàng hóa" (loại MH) lập hóa đơn mua có dòng hàng nhập kho. Mỗi dòng chọn Mã hàng (F4), ĐVT, Kho, số lượng, đơn giá, mã thuế; có thể nhập số lô và hạn dùng. Chiết khấu thương mại nhập ở cột % chiết khấu hoặc tiền chiết khấu. Nếu đơn giá cao hơn bảng giá mua từ mức cảnh báo (mặc định 20%, đặt ở thiết lập `purchase_price_warn_pct`), phần mềm hiện cảnh báo nhưng vẫn lưu.
+
+Chọn "Cách nhận hàng" ở đầu tab Hàng tiền:
+
+- **Nhập kho cùng hóa đơn:** ghi sổ Nợ TK kho, Nợ 1331, Có 331 (hoặc 111, 112) và sinh phát sinh nhập kho ngay.
+- **Hàng về trước, hóa đơn về sau:** lập và ghi sổ Phiếu nhập kho mua hàng trước (giá tạm tính). Khi hóa đơn về, lập MH và chọn các phiếu nhập kho đã nhận. Phần mềm không nhập kho lần nữa: ghi Nợ 1331, chênh giá giữa hóa đơn và giá tạm tính vào TK kho, Có 331 phần chênh. Chênh giá được giữ thành lớp điều chỉnh giá vốn, cần tính lại giá vốn từ ngày nhập.
+- **Hóa đơn về trước, hàng về sau:** ghi sổ Nợ 151 (hàng đang đi đường), Nợ 1331, Có 331, chưa nhập kho. Khi hàng về, lập Phiếu nhập kho mua hàng, điền hóa đơn nguồn (`sourceInvoiceIds`): phiếu ghi Nợ 156, Có 151 theo số tiền trên hóa đơn. Hóa đơn phải đã ghi sổ.
+
+"Trả lại, giảm giá hàng mua" (loại TLM) chọn hóa đơn gốc là một MH đã ghi sổ. Trả lại hàng: nhập "Mã dòng nhập gốc" và số lượng; hàng xuất theo đúng giá vốn lúc nhập, số tiền hàng phải bằng số lượng nhân giá nhập (ghi Nợ 331, Có kho, Có 1331). Chỉ giảm giá: để trống mã dòng, phần giảm giảm giá trị tồn kho.
+
+Không sửa, không bỏ ghi sổ được MH hoặc Phiếu nhập kho khi chứng từ khác đã dùng nó (lỗi "LINE_REFERENCED"); phiếu nhập kho theo hóa đơn về trước cần hóa đơn đã ghi sổ ("INVOICE_NOT_POSTED"). Đảo MH mà hàng đã xuất hết thì bị chặn "STOCK_NEGATIVE". Dùng thêm quyền `stock_voucher.*` khi chứng từ có dòng hàng; xem giá vốn cần cờ view_cost.
