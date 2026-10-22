@@ -132,7 +132,7 @@ export interface StockMoveTable {
 }
 export interface StockCostLayerTable {
   id: Generated<number>; tenant_id: string; move_id: number; item_id: number; warehouse_id: number; lot_no: string | null; kind: string; posting_date: DateOnly;
-  qty: Numeric; unit_cost: Numeric; value: Numeric; remaining_qty: Numeric; remaining_value: Numeric;
+  qty: Numeric; unit_cost: Numeric; value: Numeric; remaining_qty: Numeric; remaining_value: Numeric; voucher_id: Generated<string | null>;
 }
 export interface CostingRunTable {
   id: Generated<string>; tenant_id: string; period_from: DateOnly; period_to: DateOnly; method: string; warehouse_id: number | null; item_id: number | null; status: string;

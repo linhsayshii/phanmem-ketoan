@@ -47,6 +47,12 @@ Số dư đầu kỳ của tài khoản kho (152, 153, 155, 156...) nhập ở m
 
 Ghi sổ số dư đầu kỳ sinh phiếu nhập kho ở kỳ đầu kỳ (ngày liền trước ngày đầu năm), nên phiếu xuất sau đó dùng được tồn này và tính giá vốn đọc đúng giá trị. Bỏ ghi sổ số dư đầu kỳ khi đã có phiếu xuất dùng tồn này bị từ chối "STOCK_CONSUMED". Xem và sửa tồn đầu kỳ cần cờ "xem giá vốn" vì có giá trị. Chuyển tồn cuối năm sang đầu năm sau chưa có, sẽ làm ở giai đoạn 7.
 
+### Giá vốn chưa cập nhật và sửa giá nhập thành phẩm
+
+Khi ghi sổ, bỏ ghi sổ hoặc đảo một phiếu kho vào kỳ đã tính giá vốn, phần mềm hiện biểu ngữ "Giá vốn của hàng X kho Y chưa cập nhật từ ngày ..." ở màn hình Tính giá vốn và ở phiếu kho liên quan. Chạy lại Tính giá vốn cho kỳ đó: chứng từ giá vốn cũ được đảo, chứng từ mới được sinh; chứng từ gốc không bị sửa.
+
+Phiếu nhập thành phẩm đã ghi sổ có giá nhập sai không sửa trực tiếp được. Người có quyền Tính giá vốn và cờ xem giá vốn sửa giá nhập bằng chức năng điều chỉnh giá nhập (hiện qua API `PUT /api/stock-vouchers/{id}/receipt-price`, chưa có ô trên màn hình): phần mềm ghi một lớp điều chỉnh, đánh dấu giá vốn chưa cập nhật từ ngày phiếu, và lần Tính giá vốn sau ghi phần chênh bằng chứng từ giá vốn (Nợ tài khoản kho, Có tài khoản đối ứng của dòng nhập, thường 154) cùng chênh lệch giá vốn của các lần đã xuất.
+
 ### Các khóa an toàn
 
 Phần mềm từ chối (lỗi 409) các thay đổi làm sai lệch số liệu đã có:

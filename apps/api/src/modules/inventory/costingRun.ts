@@ -23,14 +23,14 @@ interface Mv {
   transfer_id: string | null; reversal_of: number | null; stock_kind: string | null; party_code: string | null; unit_price: string | null; fixed_cost: boolean; unit_cost: string | null;
   debit_code: string | null; credit_code: string | null; debit_kind: string | null; credit_kind: string | null; item_code: string; wh_code: string; dest_code: string | null; wh_method: string | null;
   base: string; // số dòng hàng đã ghi sổ cái lúc ghi phiếu (giá tạm tính của dòng xuất, tiền dòng nhập)
-  receipt: string | null; // giá trị lớp nhập đã lưu
+  receipt: string | null; // giá trị lớp nhập đã lưu, cộng các lớp điều chỉnh giá nhập
   cur_amount: string | null; cur_unit_cost: string | null; cur_run: string | null; carry_date: string | null;
 }
 const MOVE_SELECT = sql`m.id, m.item_id, m.warehouse_id, m.posting_date, m.direction, m.quantity, m.lot_no, m.transfer_id, m.reversal_of, v.stock_kind, pa.code AS party_code,
   l.unit_price, l.fixed_cost, l.unit_cost, da.code AS debit_code, ca.code AS credit_code, da.subledger_kind AS debit_kind, ca.subledger_kind AS credit_kind,
   i.code AS item_code, w.code AS wh_code, dw.code AS dest_code, w.costing_method AS wh_method,
   (CASE WHEN l.unit_cost IS NOT NULL THEN round(coalesce(l.base_quantity, l.quantity * l.uom_factor) * l.unit_cost) ELSE l.amount END)::text AS base,
-  (SELECT sum(c.value) FROM stock_cost_layer c WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND c.kind = 'receipt')::text AS receipt,
+  (SELECT sum(c.value) FROM stock_cost_layer c WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND c.kind IN ('receipt', 'adjustment'))::text AS receipt,
   a.amount AS cur_amount, a.unit_cost AS cur_unit_cost, a.run_id AS cur_run, coalesce(gv.posting_date, cr.period_to)::text AS carry_date`;
 const MOVE_JOINS = sql`JOIN voucher v ON v.id = m.voucher_id JOIN voucher_item_line l ON l.tenant_id = m.tenant_id AND l.id = m.item_line_id
   LEFT JOIN account da ON da.id = l.debit_account_id LEFT JOIN account ca ON ca.id = l.credit_account_id LEFT JOIN party pa ON pa.id = v.party_id
@@ -203,7 +203,7 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
     const m = byId.get(Number(e.moveId)) ?? byPair.get(k)![0]!;
     errors.push({ moveId: e.moveId, code: e.code, detail: `Hàng ${m.item_code} kho ${m.wh_code}: ${e.detail}` });
   }
-  for (const m of rows) if (inScope(m) && m.direction === 'in' && m.stock_kind === 'finished' && !m.transfer_id && m.reversal_of === null && D(m.unit_price ?? 0).isZero())
+  for (const m of rows) if (inScope(m) && m.direction === 'in' && m.stock_kind === 'finished' && !m.transfer_id && m.reversal_of === null && D(m.unit_price ?? 0).isZero() && D(m.receipt ?? 0).isZero())
     errors.push({ moveId: String(m.id), code: 'COSTING_RECEIPT_PRICE_MISSING', detail: `Hàng ${m.item_code} kho ${m.wh_code}: nhập thành phẩm ngày ${formatVnDate(m.posting_date)} chưa có giá nhập` });
   const lotMissing = errors.filter((e) => e.code === 'COSTING_LOT_MISSING');
   if (lotMissing.length) throw new AppError('COSTING_LOT_MISSING', `Giá đích danh cần số lô: ${lotMissing.slice(0, 5).map((e) => e.detail).join('; ')}`, 409, { errors: lotMissing });
@@ -241,6 +241,19 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
   const runDate = gvDate(to);
   for (const m of assigned) addDelta(m, runDate, target.get(m.id)!.minus(m.base));
   for (const m of carried) addDelta(m, gvDate(m.carry_date!), D(m.cur_amount!).minus(m.base));
+  // Lớp điều chỉnh giá nhập (chênh giá nhập thành phẩm, chênh giá mua, chi phí mua hàng) trên chiều nhập: chưa ghi nhận của cặp trong phạm vi, ngày ≤ cuối kỳ → ngày GV của lần chạy;
+  // đã ghi nhận ở GV bị đảo → ghi lại cùng ngày GV đó. Nợ TK kho / Có TK đối ứng của dòng nhập. Giá trị lớp đã nằm trong giá trị nhập (receipt) nên động cơ tính xuất theo giá mới.
+  const gvOldDate = new Map(prevGv.map((g) => [g.id, g.posting_date]));
+  const adjLayers = (await sql<Mv & { layer_id: number; layer_value: string; layer_gv: string | null }>`SELECT ${MOVE_SELECT}, c.id AS layer_id, c.value::text AS layer_value, c.voucher_id AS layer_gv
+    FROM stock_cost_layer c JOIN stock_move m ON m.tenant_id = c.tenant_id AND m.id = c.move_id ${MOVE_JOINS}
+    WHERE c.kind = 'adjustment' AND (c.voucher_id = ANY(${prevGv.map((g) => g.id)}::uuid[])
+      OR (c.voucher_id IS NULL AND c.posting_date <= ${to}::date AND (c.item_id || ':' || c.warehouse_id) = ANY(${keys}::text[])))`.execute(trx)).rows;
+  const deltaLayers = new Map<string, number[]>();
+  for (const a of adjLayers) {
+    const date = a.layer_gv ? gvDate(gvOldDate.get(a.layer_gv)!) : runDate;
+    if (!D(a.layer_value).isZero()) deltaLayers.set(date, [...(deltaLayers.get(date) ?? []), a.layer_id]);
+    addDelta(a, date, D(a.layer_value));
+  }
   const lines = [...net.values()].filter((g) => !g.amount.isZero());
   const keyOf = (x: { date: string; account: string; item: string; wh: string; party: string | null; debit: string; credit: string }) =>
     [x.date, x.account, x.item, x.wh, x.party ?? '', x.debit, x.credit].join('|');
@@ -252,7 +265,7 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
   const sameAssign = assigned.every((m) => m.cur_amount !== null && D(m.cur_amount).eq(target.get(m.id)!) && D(m.cur_unit_cost!).eq(unitCost.get(m.id)!));
   const unchanged = sameAssign && newKeys.join('\n') === oldKeys.join('\n');
 
-  const delta = assigned.reduce((s, m) => s.plus(target.get(m.id)!.minus(booked(m))), ZERO);
+  const delta = assigned.reduce((s, m) => s.plus(target.get(m.id)!.minus(booked(m))), ZERO).plus(adjLayers.reduce((s, a) => s.plus(a.layer_value), ZERO));
   // Tồn 0 mà còn giá trị (mọi lần xuất cố định giá...): ghi lại để soát lỗi kho đối chiếu.
   const residual = [...results].filter(([, r]) => D(r.endQty).isZero() && !D(r.endValue).isZero())
     .map(([k, r]) => ({ itemCode: byPair.get(k)![0]!.item_code, warehouseCode: byPair.get(k)![0]!.wh_code, value: r.endValue }));
@@ -278,6 +291,7 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
       { type: 'costing_run', id: run.id });
       await S.postVoucher(trx, v.id);
       voucherIds.push(v.id);
+      if (deltaLayers.get(date)?.length) await trx.updateTable('stock_cost_layer').set({ voucher_id: v.id }).where('id', 'in', deltaLayers.get(date)!).execute();
       await trx.updateTable('stock_cost_assignment').set({ voucher_id: v.id }).where('run_id', '=', run.id).where('move_id', 'in', deltaMoves.get(date)!).execute();
     }
     if (voucherIds.length) await trx.updateTable('costing_run').set({ voucher_ids: voucherIds }).where('id', '=', run.id).execute();
@@ -329,12 +343,51 @@ async function settleState(trx: Trx, itemIds: number[], whIds: number[], from: s
     ON CONFLICT (tenant_id, item_id, warehouse_id) DO UPDATE SET stale_from = least(stock_cost_state.stale_from, excluded.stale_from)`.execute(trx);
 }
 
+// Sửa giá nhập thành phẩm của phiếu nhập kho đã ghi sổ: không sửa dòng đã ghi sổ; chèn lớp `adjustment` (giá trị chênh) và đánh dấu giá vốn chưa cập nhật từ ngày phiếu.
+// Sổ cái được điều chỉnh bằng chứng từ GV ở lần tính giá vốn sau (Nợ TK kho / Có TK đối ứng của dòng nhập).
+export async function adjustReceiptPrice(trx: Trx, ctx: Ctx, voucherId: string, input: { lines: { lineNo: number; unitCost: string }[] }) {
+  await sql`SELECT pg_advisory_xact_lock(hashtext('costing'), hashtext(${ctx.tenantId}::text))`.execute(trx);
+  const v = await trx.selectFrom('voucher').select(['voucher_type', 'state', 'stock_kind']).where('id', '=', voucherId).executeTakeFirst();
+  if (!v || v.voucher_type !== 'PNK') throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy phiếu nhập kho', 404);
+  if (v.state !== 'posted') throw new AppError('STATE_INVALID', 'Chỉ sửa giá nhập của phiếu nhập kho đã ghi sổ; phiếu nháp sửa trực tiếp trên phiếu', 409);
+  if (v.stock_kind !== 'finished') throw new AppError('RECEIPT_PRICE_NOT_FINISHED', 'Chỉ sửa giá nhập thành phẩm; hàng mua dùng chênh lệch giá mua và chi phí mua hàng', 409);
+  const nos = input.lines.map((l) => l.lineNo);
+  if (new Set(nos).size !== nos.length) throw new AppError('VALIDATION', 'Dòng hàng bị lặp', 400);
+  const cur = (await sql<{ line_no: number; move_id: number; item_id: number; warehouse_id: number; posting_date: string; lot_no: string | null; q: string; cur: string }>`
+    SELECT l.line_no, m.id AS move_id, m.item_id, m.warehouse_id, m.posting_date::text AS posting_date, m.lot_no, m.quantity::text AS q,
+      (SELECT coalesce(sum(c.value), 0) FROM stock_cost_layer c WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND c.kind IN ('receipt', 'adjustment'))::text AS cur
+    FROM voucher_item_line l JOIN stock_move m ON m.tenant_id = l.tenant_id AND m.item_line_id = l.id AND m.direction = 'in'
+    WHERE l.voucher_id = ${voucherId}::uuid AND l.line_no = ANY(${nos}::int[])`.execute(trx)).rows;
+  const done: { lineNo: number; before: string; after: string; delta: string }[] = [];
+  for (const l of input.lines) {
+    const c = cur.find((x) => x.line_no === l.lineNo);
+    if (!c) throw new AppError('VALIDATION', `Phiếu không có dòng hàng ${l.lineNo}`, 400);
+    const after = D(c.q).times(l.unitCost).toDecimalPlaces(0, Decimal.ROUND_HALF_UP); const delta = after.minus(c.cur);
+    if (delta.isZero()) continue;
+    await trx.insertInto('stock_cost_layer').values({ tenant_id: ctx.tenantId, move_id: c.move_id, item_id: c.item_id, warehouse_id: c.warehouse_id, lot_no: c.lot_no, kind: 'adjustment',
+      posting_date: c.posting_date, qty: '0', unit_cost: l.unitCost, value: delta.toFixed(0), remaining_qty: '0', remaining_value: '0' }).execute();
+    await sql`INSERT INTO stock_cost_state(tenant_id, item_id, warehouse_id, stale_from) VALUES (${ctx.tenantId}::uuid, ${c.item_id}, ${c.warehouse_id}, ${c.posting_date}::date)
+      ON CONFLICT (tenant_id, item_id, warehouse_id) DO UPDATE SET stale_from = least(stock_cost_state.stale_from, excluded.stale_from)`.execute(trx);
+    done.push({ lineNo: l.lineNo, before: c.cur, after: after.toFixed(0), delta: delta.toFixed(0) });
+  }
+  if (done.length) await sql`INSERT INTO audit_event(tenant_id, user_id, action, entity, entity_id, before, after)
+    VALUES (${ctx.tenantId}::uuid, ${ctx.userId}::uuid, 'receipt_price_adjust', 'voucher', ${voucherId}, ${JSON.stringify(done.map((d) => ({ lineNo: d.lineNo, value: d.before })))}::jsonb,
+      ${JSON.stringify(done.map((d) => ({ lineNo: d.lineNo, value: d.after })))}::jsonb)`.execute(trx);
+  return { lines: done };
+}
+
 const routes: FastifyPluginAsyncZod = async (app) => {
   const hideCost = (auth: { sensitive: Set<string> }) => !auth.sensitive.has('view_cost');
   app.post('/api/inventory/costing-runs', { preHandler: app.requirePermission('costing.run'), schema: { body: costingInput } }, async (req) => {
     const auth = req.auth!;
     const r = await app.withOverride(req, (trx) => runCosting(trx, { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') }, req.body));
     return hideCost(auth) ? { ...r, summary: { ...r.summary, delta: null } } : r; // giá vốn: cần view_cost
+  });
+  app.put('/api/stock-vouchers/:id/receipt-price', { preHandler: app.requirePermission('costing.run'), schema: { params: z.object({ id: z.string().uuid() }),
+    body: z.object({ lines: z.array(z.object({ lineNo: z.number().int().positive(), unitCost: z.string().regex(/^\d{1,16}(\.\d{1,4})?$/, 'Đơn giá không hợp lệ') })).min(1).max(500) }) } }, async (req) => {
+    const auth = req.auth!;
+    if (hideCost(auth)) throw new AppError('FORBIDDEN', 'Không có quyền xem giá vốn', 403);
+    return app.withOverride(req, (trx) => adjustReceiptPrice(trx, { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') }, req.params.id, req.body));
   });
   app.get('/api/inventory/costing-runs', { preHandler: app.requirePermission('costing.view') }, async (req) => app.withTenant(req, async (trx) => {
     const rows = await sql<{ id: string; periodFrom: string; periodTo: string; method: string; warehouseCode: string | null; itemCode: string | null; status: string; createdAt: string;

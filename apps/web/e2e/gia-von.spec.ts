@@ -47,4 +47,13 @@ test('tính giá vốn tháng 3 cho một kho bằng F9: sinh chứng từ GV, b
   await expect(page.getByText(/^Giá vốn không đổi/)).toBeVisible();
   await expect(page.locator('.ant-tag', { hasText: 'Không đổi' }).first()).toBeVisible();
   await expect(page.locator('.ant-table-row', { hasText: 'HGV-E2E' }).first()).toBeVisible(); // không đổi: vẫn hiện gán giá hiện hành
+
+  // ghi lùi phiếu nhập vào tháng đã tính: biểu ngữ chưa cập nhật, tính lại thì mất
+  await stock(request, 'PNK', '2026-03-05', '10', '20');
+  await page.reload();
+  await expect(page.getByText(/Giá vốn của hàng HGV-E2E kho KGV-E2E chưa cập nhật từ ngày 05\/03\/2026/)).toBeVisible();
+  expect((await request.post('/api/inventory/costing-runs', { data: { periodFrom: '2026-03-01', periodTo: '2026-03-31', warehouseCode: 'KGV-E2E' } })).ok()).toBeTruthy();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Tính giá vốn' })).toBeVisible();
+  await expect(page.getByText(/Giá vốn của hàng HGV-E2E kho KGV-E2E chưa cập nhật/)).toHaveCount(0);
 });

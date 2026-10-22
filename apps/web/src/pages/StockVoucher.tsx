@@ -8,6 +8,7 @@ import { canTransition, D, decideEdit, formatVnDate, formatVnNumber, parseVnNumb
 import { KeyboardGrid, LookupSelect, useUnsavedChanges } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
+import { staleText } from './CostingRun.js';
 import { STATE_LABEL } from './VoucherList.js';
 import { PickDialog, iso, quickAdd, reportError, text } from './voucherCommon.js';
 import { dateCell, emptyStockRow, itemsBody, kindLabel, kindsOf, QTY_RE, rowAmount, type StockRow } from './stockCalc.js';
@@ -50,6 +51,8 @@ export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: str
   const [idempotencyKey] = useState(() => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
 
   const v = useQuery({ queryKey: ['stock-voucher', id], queryFn: () => api<StockDoc>(`/api/stock-vouchers/${id}`), enabled: !isNew });
+  const staleQ = useQuery({ queryKey: ['costing-status'], queryFn: () => api<{ itemCode: string; warehouseCode: string; staleFrom: string }[]>('/api/inventory/costing-status'), enabled: !isNew && can('costing.view') });
+  const stale = (staleQ.data ?? []).filter((s) => (v.data?.items ?? []).some((i) => i.itemCode === s.itemCode) && [v.data?.warehouseCode, v.data?.destWarehouseCode].includes(s.warehouseCode));
   const state = (v.data?.state ?? 'draft') as VoucherState;
   const editable = state === 'draft'; const posted = state === 'posted';
   const decision = posted ? decideEdit({ periodStatus: v.data?.periodStatus ?? 'open', hashed: v.data?.hashed ?? false, change: 'amount', canEditPosted: can('voucher.edit_posted'), canBackdateLocked: can('voucher.backdate_locked') }) : null;
@@ -186,6 +189,7 @@ export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: str
         {!isNew && editable && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy phiếu?', content: 'Số phiếu (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
       </Space>}>
       {v.error && <Alert type="error" showIcon message={(v.error as Error).message} style={{ marginBottom: 12 }} />}
+      {posted && stale.length > 0 && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={stale.map((x) => staleText(x)).join('; ')} />}
       {posted && !withPrice && <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Phiếu ghi sổ theo giá tạm tính; giá vốn thật được xác định khi tính giá vốn cuối kỳ." />}
       <Form form={form} layout="vertical" disabled={!editable} onValuesChange={() => setDirty(true)}
         initialValues={{ postingDate: dayjs(todayVn()), documentDate: dayjs(todayVn()), stockKind: kinds.some((k) => k.code === wanted) ? wanted : kinds[0]!.code }}>

@@ -17,6 +17,7 @@ interface Assignment { moveId: number; postingDate: string; voucherId: string; v
 interface StaleRow { itemCode: string; itemName: string; warehouseCode: string; warehouseName: string; staleFrom: string }
 
 export const METHOD_LABEL: Record<string, string> = { warehouse: 'Theo kho', avg_period: 'Bình quân cuối kỳ', avg_moving: 'Bình quân tức thời', fifo: 'Nhập trước, xuất trước', specific: 'Đích danh' };
+export const staleText = (s: { itemCode: string; warehouseCode: string; staleFrom: string }) => `Giá vốn của hàng ${s.itemCode} kho ${s.warehouseCode} chưa cập nhật từ ngày ${formatVnDate(s.staleFrom)}`;
 const money = (s: string | null) => (s === null ? '' : formatVnNumber(s, 0));
 const ERROR_LABEL: Record<string, string> = { COSTING_NEGATIVE_STOCK: 'Xuất quá tồn', COSTING_RECEIPT_PRICE_MISSING: 'Nhập thành phẩm chưa có giá' };
 
@@ -68,8 +69,8 @@ export default function CostingRunPage() {
       <h2 style={{ margin: 0 }}>Tính giá vốn</h2>
       <span>Tính giá xuất kho thực tế theo phương pháp của từng kho (bình quân cuối kỳ, bình quân tức thời, nhập trước xuất trước, đích danh). Phần chênh so với giá tạm tính đã ghi ở phiếu xuất được ghi bằng một Chứng từ giá vốn (GV) ngày cuối kỳ; tính lại thì đảo chứng từ cũ và sinh chứng từ mới.</span>
       {staleFrom && (
-        <Alert type="warning" showIcon message={`Giá vốn chưa cập nhật từ ngày ${formatVnDate(staleFrom)}`}
-          description={<span>{stale.data!.slice(0, 8).map((s) => `${s.itemCode} – kho ${s.warehouseCode} (từ ${formatVnDate(s.staleFrom)})`).join('; ')}{stale.data!.length > 8 ? `; và ${stale.data!.length - 8} cặp hàng – kho khác` : ''}. Hãy tính lại giá vốn từ kỳ đó.</span>} />
+        <Alert type="warning" showIcon message={stale.data!.length === 1 ? staleText(stale.data![0]!) : `${stale.data!.length} cặp hàng – kho có giá vốn chưa cập nhật`}
+          description={<span>{stale.data!.length > 1 && <>{stale.data!.slice(0, 8).map((s) => staleText(s)).join('; ')}{stale.data!.length > 8 ? `; và ${stale.data!.length - 8} cặp khác` : ''}. </>}Hãy tính lại giá vốn từ kỳ đó.</span>} />
       )}
       {can('costing.run') && (
         <Space wrap align="end">

@@ -108,9 +108,6 @@ describe('tính giá vốn', () => {
     await scenario(t, 'K1', 'H1', 'avg_period');
     const first = await t.runOk();
     await t.pnk('2026-01-05', 'K1', [{ itemCode: 'H1', quantity: '10', unitPrice: '20' }]);
-    // đánh dấu "chưa cập nhật" khi ghi lùi là Task 10; ở đây ghi trạng thái như Task 10 sẽ ghi để kiểm đọc và xóa sau lần chạy
-    await sql`INSERT INTO stock_cost_state(tenant_id, item_id, warehouse_id, stale_from) SELECT ${t.tenantId}::uuid, i.id, w.id, '2026-01-05'
-      FROM item i, warehouse w WHERE i.tenant_id = ${t.tenantId}::uuid AND w.tenant_id = i.tenant_id AND i.code = 'H1' AND w.code = 'K1'`.execute(ctx.t.admin);
     const st = await t.call('GET', '/api/inventory/costing-status');
     expect(st.statusCode, st.body).toBe(200);
     expect(st.json()).toEqual([expect.objectContaining({ itemCode: 'H1', warehouseCode: 'K1', staleFrom: '2026-01-05' })]);
