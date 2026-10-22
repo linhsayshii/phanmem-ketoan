@@ -43,7 +43,7 @@ beforeAll(async () => {
   await call('POST', '/api/catalogs/uom', { code: 'CAI', name: 'Cái' });
   await call('POST', '/api/catalogs/uom', { code: 'CHAI', name: 'Chai' });
   await call('POST', '/api/catalogs/uom', { code: 'THUNG', name: 'Thùng' });
-  for (const c of ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6']) await cat('item', { code: c, name: `Hàng ${c}`, base_uom_code: 'CAI', kind: 'goods', revenue_account_code: '5111' });
+  for (const c of ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7']) await cat('item', { code: c, name: `Hàng ${c}`, base_uom_code: 'CAI', kind: 'goods', revenue_account_code: '5111' });
   await cat('item', { code: 'SV1', name: 'Dịch vụ', base_uom_code: 'CAI', kind: 'service', revenue_account_code: '5113' });
   await cat('item', { code: 'CH1', name: 'Nước', base_uom_code: 'CHAI', kind: 'goods', revenue_account_code: '5111' });
   await cat('item_uom', { item_code: 'CH1', uom_code: 'THUNG', factor: '24' });
@@ -237,5 +237,36 @@ describe('bán hàng hóa: sửa sau rà soát (vòng 1)', () => {
       const t = await create(tlb(b, await lineId(b.id), 'R6', '1', '20'));
       expect(shape(t)).toContain(`${debit}:20:0`);
     } finally { cookie = saved; }
+  });
+});
+
+describe('bán hàng hóa: sửa sau rà soát (vòng 2)', () => {
+  it('không có view_cost: PUT siêu dữ liệu, nhân bản, hủy chứng từ BH không lộ dòng giá vốn', async () => {
+    await pnk('R5', '2026-03-02', '10', '10');
+    const b = await create(sale([sl('R5', '2', '20')]));
+    const c = await login(['voucher.view', 'voucher.create', 'voucher.update', 'voucher.delete', 'voucher.edit_posted', 'stock_voucher.view', 'stock_voucher.create', 'stock_voucher.update', 'stock_voucher.delete'], ['view_receivable']);
+    const re = /"(632|156|157)"/;
+    const meta = await call('PUT', `/api/vouchers/${b.id}`, { description: 'sửa mô tả', version: b.version }, c);
+    expect(meta.statusCode, meta.body).toBe(200); expect(meta.body).not.toMatch(re);
+    const dup = await call('POST', `/api/vouchers/${b.id}/duplicate`, { postingDate: '2026-03-06' }, c);
+    expect(dup.statusCode, dup.body).toBe(409); expect(dup.body).not.toMatch(re);
+  });
+
+  it('hai TLB cùng ngày: TLB đứng cuối theo thứ tự trong ngày nhận phần còn lại, tổng giá vốn trả = 10', async () => {
+    await pnk('R7', '2026-03-01', '3', '3.3333', 'K2');
+    const b = await create(sale([sl('R7', '3', '20', { warehouseCode: 'K2' })]));
+    const src = await lineId(b.id);
+    const mk = async (qty: string, dayOrder: number) => {
+      const v = await create(tlb(b, src, 'R7', qty, '20', { autoPost: false }, 'K2'));
+      expect((await call('PUT', `/api/vouchers/${v.id}/day-order`, { dayOrder })).statusCode).toBe(200);
+      return v;
+    };
+    const a = await mk('1', 5); const c = await mk('2', 1); // c đứng trước a trong ngày dù lập sau
+    for (const v of [a, c]) expect((await call('POST', `/api/vouchers/${v.id}/post`, {})).statusCode).toBe(200);
+    const run = await call('POST', '/api/inventory/costing-runs', { periodFrom: '2026-03-01', periodTo: '2026-03-31', warehouseCode: 'K2', itemCode: 'R7' });
+    expect(run.statusCode, run.body).toBe(200);
+    const net = (await sql<{ n: string }>`SELECT coalesce(sum(l.debit - l.credit),0)::text n FROM voucher_line l JOIN voucher v ON v.id=l.voucher_id JOIN account a ON a.id=l.account_id JOIN item i ON i.id=l.item_id
+      WHERE i.code='R7' AND a.code='632' AND v.state IN ('posted','reversed')`.execute(ctx.t.admin)).rows[0]!.n;
+    expect(net).toBe('0'); expect(await drift('K2')).toEqual([]);
   });
 });

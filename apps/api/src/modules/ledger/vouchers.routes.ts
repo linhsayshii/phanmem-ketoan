@@ -108,7 +108,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     // Chứng từ đã ghi sổ rồi bỏ ghi sổ có version >= 3 nên không bị ghi sổ lại bởi một yêu cầu gửi lại.
     const dto = await app.withOverride(req, async (trx) => {
       const v = await S.createVoucher(trx, ctx(req), input);
-      return autoPost && v.state === 'draft' && v.version === 1 ? postWithCashCheck(trx, req.auth!.tenantId!, v.id) : v;
+      return redactCost(trx, req.auth!, autoPost && v.state === 'draft' && v.version === 1 ? await postWithCashCheck(trx, req.auth!.tenantId!, v.id) : v);
     });
     if (dto.state === 'posted') notifyRecompute(app, req.auth!.tenantId!);
     return reply.status(201).send(dto);
@@ -116,7 +116,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
 
   app.put('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.update'), schema: { params: idParam, body: z.union([S.voucherInput.extend({ version: z.number().int() }), metaBody]) } }, async (req) => {
     const { version, ...input } = req.body;
-    return app.withOverride(req, (trx) => 'voucherType' in input ? S.updateDraft(trx, req.params.id, version, input, req.auth!) : S.updatePostedMeta(trx, req.params.id, version, input));
+    return app.withOverride(req, async (trx) => redactCost(trx, req.auth!, 'voucherType' in input ? await S.updateDraft(trx, req.params.id, version, input, req.auth!) : await S.updatePostedMeta(trx, req.params.id, version, input)));
   });
 
   app.post('/api/vouchers/:id/post', { preHandler: app.requirePermission('voucher.post'), schema: { params: idParam } }, async (req) => {
@@ -137,9 +137,9 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     // Chứng từ hệ thống sinh (XQ, KC, DK...) chỉ đảo qua chức năng đã sinh ra nó (chạy lại); các bộ sinh gọi S.reverseVoucher trực tiếp nên không bị chặn.
     const dto = await app.withOverride(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.post'); await S.assertNotSystemGenerated(trx, req.params.id); const d = await reverseWithCashCheck(trx, req.auth!.tenantId!, req.params.id, req.body); return redactCost(trx, req.auth!, await withStockWarnings(trx, req.auth!.tenantId!, d, d.id)); });
     notifyRecompute(app, req.auth!.tenantId!); return reply.status(201).send(dto); });
-  app.post('/api/vouchers/:id/discard', { preHandler: app.requirePermission('voucher.delete'), schema: { params: idParam } }, async (req) => app.withTenant(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.delete'); return S.discardVoucher(trx, req.params.id); }));
+  app.post('/api/vouchers/:id/discard', { preHandler: app.requirePermission('voucher.delete'), schema: { params: idParam } }, async (req) => app.withTenant(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.delete'); return redactCost(trx, req.auth!, await S.discardVoucher(trx, req.params.id)); }));
   app.post('/api/vouchers/:id/duplicate', { preHandler: app.requirePermission('voucher.create'), schema: { params: idParam, body: z.object({ postingDate: S.dateIso }) } }, async (req, reply) =>
-    reply.status(201).send(await app.withOverride(req, (trx) => S.duplicateVoucher(trx, ctx(req), req.params.id, req.body.postingDate))));
+    reply.status(201).send(await app.withOverride(req, async (trx) => redactCost(trx, req.auth!, await S.duplicateVoucher(trx, ctx(req), req.params.id, req.body.postingDate)))));
   app.delete('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.delete'), schema: { params: idParam } }, async (req, reply) => { await app.withTenant(req, (trx) => S.deleteDraft(trx, req.params.id)); return reply.status(204).send(); });
 };
 export default routes;
