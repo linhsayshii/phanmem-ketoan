@@ -6,6 +6,7 @@ import { AppError } from '../../plugins/errors.js';
 import { createInvoiceVoucher, dateIso, fxRate, getVoucher, updateInvoiceDraft, type LineInput, type VoucherDto, type VoucherInput } from '../ledger/vouchers.service.js';
 import { deleteInvoiceRows, insertInvoiceRows, partyOverride, type InvoiceRow } from './declaration.js';
 import { resolvePurchase, type PurchaseLine } from './purchase.js';
+import { applyExportMode, resolveSale } from './sales.js';
 
 type Trx = Transaction<Database>;
 
@@ -34,10 +35,11 @@ export const invoiceHeaderInput = z.object({
   declaredTax: z.record(z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG)).optional(), // thuế GTGT ghi trên hóa đơn theo mã thuế (VND), lệch số tính theo dòng thì dồn vào dòng thuế lớn nhất
 });
 export const invoiceInput = z.object({
-  voucherType: z.enum(['HDB', 'HDM', 'GGB', 'GGM', 'MH', 'TLM']), postingDate: dateIso, documentDate: dateIso, partyCode: z.string().min(1), counterAccountCode: z.string().min(1).optional(),
+  voucherType: z.enum(['HDB', 'HDM', 'GGB', 'GGM', 'MH', 'TLM', 'BH', 'TLB']), postingDate: dateIso, documentDate: dateIso, partyCode: z.string().min(1), counterAccountCode: z.string().min(1).optional(),
   currencyCode: z.string().length(3).default('VND'), fxRate: fxRate.optional(), dueDate: dateIso.nullable().optional(), description: z.string().nullable().optional(),
   items: z.array(invoiceItemInput).min(1).max(500, 'Tối đa 500 dòng mỗi hóa đơn'), invoice: invoiceHeaderInput, idempotencyKey: z.string().max(100).optional(),
   stockMode: z.enum(['through_stock', 'goods_first', 'invoice_first']).optional(), receiptVoucherIds: z.array(z.string().uuid()).max(100).optional(), // chỉ MH: cách nhận hàng
+  exportMode: z.boolean().optional(), // chỉ BH, TLB: hóa đơn xuất khẩu, thuế GTGT 0%
 });
 export type InvoiceInput = z.infer<typeof invoiceInput>;
 
@@ -104,14 +106,16 @@ export async function listTaxDefs(trx: Trx): Promise<TaxDefRow[]> {
 const groupOf = (codes: string[], defs: Record<string, TaxDef>): string | null =>
   codes.find((c) => defs[c]?.kind === 'vat') ?? codes.find((c) => defs[c] && defs[c]!.kind !== 'pit') ?? null;
 
-const voucherTypeIsGoods = (t: string): boolean => t === 'MH' || t === 'TLM';
+const voucherTypeIsPurchase = (t: string): boolean => t === 'MH' || t === 'TLM';
+const voucherTypeIsSale = (t: string): boolean => t === 'BH' || t === 'TLB';
 const vndText = (cur: string, rate: string | null): string => (rate === null ? cur : toVnd(cur, rate));
 
 type Auth = { sensitive: Set<string>; permissions: Set<string> };
 interface Built { voucher: VoucherInput & { receiptState?: string }; regime: string; postItems: (voucherId: string) => Promise<void>; warnings: NonNullable<InvoiceDto['warnings']> }
 
 // Dựng toàn bộ hóa đơn từ đầu vào: tính thuế, bút toán, dòng hàng và dòng kê khai. Chưa ghi gì; postItems ghi dòng hàng và dòng kê khai sau khi chứng từ đã có id.
-async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput, opt: { auth?: Auth; selfId?: string; perm: string }): Promise<Built> {
+async function buildInvoice(trx: Trx, tenantId: string, input0: InvoiceInput, opt: { auth?: Auth; selfId?: string; perm: string }): Promise<Built> {
+  const input = await applyExportMode(trx, input0);
   const def = voucherTypeDef(input.voucherType)!;
   const scope = def.invoiceDirection!; const documentType = def.refund ? 'refund' : 'invoice';
   const isVnd = input.currencyCode === 'VND';
@@ -139,14 +143,17 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput, opt
   const rate = isVnd ? null : input.fxRate ?? null;
   const regime = (await trx.selectFrom('fiscal_period').select('regime').where('period_no', '>=', 1).where('period_no', '<=', 15).where('date_from', '<=', input.postingDate).where('date_to', '>=', input.postingDate).executeTakeFirst())?.regime;
   if (!regime) throw new AppError('PERIOD_NOT_FOUND', `Ngày ${input.postingDate} không thuộc kỳ kế toán nào đã mở`, 404);
-  if (!voucherTypeIsGoods(input.voucherType)) {
-    if (input.stockMode || input.receiptVoucherIds?.length || input.items.some((i) => i.itemCode || i.warehouseCode || i.sourceLineId)) throw new AppError('VALIDATION', `${def.name} không có dòng hàng nhập kho (chỉ dùng cho mua hàng hóa, trả lại hàng mua)`, 400);
+  if (input.exportMode && !voucherTypeIsSale(input.voucherType)) throw new AppError('VALIDATION', 'Xuất khẩu (exportMode) chỉ dùng cho bán hàng hóa và hàng bán bị trả lại', 400);
+  if (!voucherTypeIsPurchase(input.voucherType) && !voucherTypeIsSale(input.voucherType)) {
+    if (input.stockMode || input.receiptVoucherIds?.length || input.items.some((i) => i.itemCode || i.warehouseCode || i.sourceLineId)) throw new AppError('VALIDATION', `${def.name} không có dòng hàng nhập kho (chỉ dùng cho mua, bán hàng hóa và trả lại)`, 400);
     for (const [k, it] of input.items.entries()) if (!it.accountCode) throw new AppError('VALIDATION', `Dòng ${k + 1}: phải chọn tài khoản`, 400);
   }
-  const purchase: Awaited<ReturnType<typeof resolvePurchase>> = voucherTypeIsGoods(input.voucherType)
+  const purchase: Awaited<ReturnType<typeof resolvePurchase>> = voucherTypeIsPurchase(input.voucherType)
     ? await resolvePurchase(trx, { input, regime, counterAccountCode, partyId: party.id, ...(opt.selfId && { selfId: opt.selfId }), ...(opt.auth && { auth: opt.auth }), perm: opt.perm })
     : { lines: input.items.map(() => null), receiptState: null, warnings: [] };
-  const acctOf = (k: number): string => purchase.lines[k]?.accountCode ?? input.items[k]!.accountCode!;
+  const sale = voucherTypeIsSale(input.voucherType)
+    ? await resolveSale(trx, { input, counterAccountCode, partyId: party.id, rate, ...(opt.selfId && { selfId: opt.selfId }), ...(opt.auth && { auth: opt.auth }), perm: opt.perm }) : null;
+  const acctOf = (k: number): string => purchase.lines[k]?.accountCode ?? sale?.lines[k]?.accountCode ?? input.items[k]!.accountCode!;
   const isImp = (k: number): boolean => !!input.items[k]!.importMode;
 
   const { defs, ids, scopes } = await loadTaxDefs(trx, [...new Set(input.items.flatMap((i) => [...i.taxCodes, ...(i.vatImportCode ? [i.vatImportCode] : [])]))]);
@@ -194,6 +201,7 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput, opt
     if (it.vatImport && D(it.vatImport).gt(0))
       lines.push({ accountCode: '1331', debit: it.vatImport, credit: '0', ...vndLine, description: `Thuế GTGT hàng nhập khẩu dòng ${k + 1}` }, { accountCode: '33312', debit: '0', credit: it.vatImport, ...vndLine, description: `Thuế GTGT hàng nhập khẩu dòng ${k + 1}` });
   }
+  if (sale) for (const k of input.items.keys()) lines.push(...sale.costLines[k]!); // giá vốn tạm tính của dòng bán, nhập lại của dòng trả
   const voucher: VoucherInput = { voucherType: input.voucherType, postingDate: input.postingDate, documentDate: input.documentDate, description: input.description ?? null, partyCode: input.partyCode,
     currencyCode: input.currencyCode, ...(rate && { fxRate: rate }), ...(dueDate && { dueDate }), ...(input.idempotencyKey && { idempotencyKey: input.idempotencyKey }), lines,
     ...(purchase.receiptState && { receiptState: purchase.receiptState }) };
@@ -217,14 +225,14 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput, opt
     }
     const itemRows = [];
     for (const [k, it] of input.items.entries()) {
-      const pl: PurchaseLine | null = purchase.lines[k] ?? null;
+      const pl: PurchaseLine | null = purchase.lines[k] ?? sale?.lines[k] ?? null;
       itemRows.push({
         tenant_id: tenantId, voucher_id: voucherId, line_no: k + 1, description: it.description ?? null, uom_id: await lookup('uom', it.uomCode, 'đơn vị tính'), quantity: it.quantity ?? null, unit_price: it.unitPrice ?? null,
         amount_currency: it.amountCurrency, amount: vndText(it.amountCurrency, rate), discount_rate: it.discountRate ?? '0', discount_amount_currency: it.discountCurrency, discount_amount: vndText(it.discountCurrency, rate),
         tax_codes: it.taxCodes, tax_amount: [...taxOf[k]!.values()].reduce((acc, v) => acc.plus(v), D(0)).toFixed(0),
         account_id: (await lookup('account', acctOf(k), 'tài khoản'))!, department_id: await lookup('department', it.departmentCode, 'bộ phận'), project_id: await lookup('project', it.projectCode, 'vụ việc'),
         cost_item_id: await lookup('cost_item', it.costItemCode, 'khoản mục chi phí'),
-        ...pl?.row, ...(pl && { stock_value: D(detail.baseVnd[k + 1] ?? '0').plus(importedVnd[k]!).toFixed(0) }),
+        ...pl?.row, ...(pl && !sale && { stock_value: D(detail.baseVnd[k + 1] ?? '0').plus(importedVnd[k]!).toFixed(0) }),
         ...(isImp(k) && { import_mode: true, import_tax: it.importTax ?? null, excise_tax: it.specialConsumptionTax ?? null, import_vat: it.vatImport ?? null, import_vat_code: it.vatImportCode ?? null, import_vat_base: it.vatImportBase ?? null }), ...(pl?.debitCode && { debit_account_id: await lookup('account', pl.debitCode, 'tài khoản') }), ...(pl?.creditCode && { credit_account_id: await lookup('account', pl.creditCode, 'tài khoản') }),
       });
     }
@@ -287,7 +295,7 @@ async function buildInvoice(trx: Trx, tenantId: string, input: InvoiceInput, opt
       partyTaxCode: input.invoice.partyTaxCode, partyName: input.invoice.partyName, partyAddress: input.invoice.partyAddress });
     await insertInvoiceRows(trx, tenantId, voucherId, rows);
   };
-  return { voucher, regime, postItems, warnings: purchase.warnings };
+  return { voucher, regime, postItems, warnings: [...purchase.warnings, ...(sale?.warnings ?? [])] };
 }
 
 const childrenExist = async (trx: Trx, id: string): Promise<boolean> => !!(await trx.selectFrom('voucher_item_line').select('id').where('voucher_id', '=', id).limit(1).executeTakeFirst());

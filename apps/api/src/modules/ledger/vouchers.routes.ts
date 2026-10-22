@@ -32,13 +32,13 @@ async function bankInfos(trx: Transaction<Database>, voucherId: string): Promise
 
 type Trx = Transaction<Database>;
 // Loại chứng từ phát sinh kho hoặc đổi giá trị kho: phiếu kho (module inventory), hóa đơn mua hàng hóa, trả lại hàng mua mang dòng hàng nhập, xuất kho; chi phí mua hàng phân bổ vào giá nhập.
-const createsStockMoves = (type: string) => voucherTypeDef(type)?.module === 'inventory' || type === 'MH' || type === 'TLM' || type === 'CPM';
+const createsStockMoves = (type: string) => voucherTypeDef(type)?.module === 'inventory' || type === 'MH' || type === 'TLM' || type === 'BH' || type === 'TLB' || type === 'CPM';
 type Auth = NonNullable<FastifyRequest['auth']>;
 // Chứng từ loại kho (module inventory) cần thêm quyền stock_voucher.*: quyền voucher.* chung chỉ mở chứng từ ngoài kho.
 export async function requireStockPerm(trx: Trx, auth: Auth, id: string, perm: string) {
   const r = await trx.selectFrom('voucher').select('voucher_type').where('id', '=', id).executeTakeFirst();
   const stock = r && (voucherTypeDef(r.voucher_type)?.module === 'inventory' || r.voucher_type === 'CPM' // MH, TLM mang dòng hàng nhập, xuất kho khi có hàng hóa; CPM đổi giá nhập kho
-    || ((r.voucher_type === 'MH' || r.voucher_type === 'TLM') && !!(await trx.selectFrom('voucher_item_line').select('id').where('voucher_id', '=', id).where('item_id', 'is not', null).limit(1).executeTakeFirst())));
+    || ((r.voucher_type === 'MH' || r.voucher_type === 'TLM' || r.voucher_type === 'BH' || r.voucher_type === 'TLB') && !!(await trx.selectFrom('voucher_item_line').select('id').where('voucher_id', '=', id).where('item_id', 'is not', null).limit(1).executeTakeFirst())));
   if (stock && !auth.permissions.has(perm)) throw new AppError('FORBIDDEN', `Thiếu quyền ${perm}`, 403);
 }
 export async function withStockWarnings<T extends { warnings?: unknown[] }>(trx: Trx, tenantId: string, dto: T, voucherId: string): Promise<T> {

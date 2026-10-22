@@ -136,7 +136,11 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
   // Giá trị chiều nhập: chuyển kho = giá chiều xuất cùng chuyển; nhập đảo phiếu xuất = giá chiều xuất gốc (kỳ trước: số đã ghi); còn lại = lớp nhập đã lưu.
   const valueIn = (m: Mv): Decimal => {
     if (m.transfer_id) { const o = xferOut.get(m.transfer_id); if (!o) throw new Error(`Chuyển kho ${m.transfer_id} thiếu chiều xuất`); return amountOut(o); }
-    if (m.reversal_of !== null) return inScope(m) ? amountOut(byId.get(m.reversal_of)!) : booked(m);
+    if (m.reversal_of !== null) { // nhập đảo chiều xuất: giá chiều xuất gốc theo tỷ lệ số lượng nhập (trả lại một phần hàng bán)
+      if (!inScope(m)) return booked(m);
+      const o = byId.get(m.reversal_of)!; const v = amountOut(o);
+      return D(m.quantity).eq(o.quantity) ? v : v.times(m.quantity).div(o.quantity).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+    }
     // điều chỉnh chưa ghi nhận chỉ vào giá trị của phát sinh đến cuối kỳ (sẽ ghi ở GV lần tính này); sau kỳ chưa ghi sổ cái nên chưa tính
     return D(m.receipt ?? m.base).minus(m.posting_date > to ? (m.adj_open ?? 0) : 0);
   };

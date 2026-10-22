@@ -6,6 +6,7 @@ import { postWithCashCheck } from '../cash/books.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { assertVoucherSensitive, requireStockPerm, withStockWarnings } from '../ledger/vouchers.routes.js';
 import { createSchedule, deleteSchedule, getSchedule, listSchedules, runAmortization, runInput, scheduleInput, scheduleUpdate, updateSchedule } from './amortization.js';
+import { redactCost } from './sales.js';
 import { createInvoice, getInvoice, invoiceInput, listTaxDefs, updateInvoice } from './service.js';
 
 const idParam = z.object({ id: z.string().uuid() });
@@ -22,7 +23,8 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     // Như POST /api/vouchers: gửi lại cùng idempotencyKey trả hóa đơn cũ, chỉ ghi sổ hóa đơn vừa tạo (nháp, version 1).
     const dto = await app.withOverride(req, async (trx) => {
       const inv = await createInvoice(trx, { tenantId, userId: req.auth!.userId, auth: req.auth! }, input);
-      return autoPost && inv.state === 'draft' && inv.version === 1 ? withStockWarnings(trx, tenantId, { ...inv, ...(await postStocked(trx, tenantId, inv.id, req.auth!)) }, inv.id) : inv;
+      const out = autoPost && inv.state === 'draft' && inv.version === 1 ? await withStockWarnings(trx, tenantId, { ...inv, ...(await postStocked(trx, tenantId, inv.id, req.auth!)) }, inv.id) : inv;
+      return redactCost(trx, req.auth!, out);
     });
     if (dto.state === 'posted') notifyRecompute(app, tenantId);
     return reply.status(201).send(dto);
@@ -36,6 +38,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.get('/api/invoices/:id', { preHandler: app.requirePermission('voucher.view'), schema: { params: idParam } }, async (req) => app.withTenant(req, async (trx) => {
     const inv = await getInvoice(trx, req.params.id);
     if (inv.voucherType === 'MH' || inv.voucherType === 'TLM') await assertVoucherSensitive(trx, req.auth!, inv); // hóa đơn mua hàng hóa mang giá trị tồn kho: cần view_cost
+    if (inv.voucherType === 'BH' || inv.voucherType === 'TLB') { const r = await redactCost(trx, req.auth!, inv); await assertVoucherSensitive(trx, req.auth!, r); return r; } // bán hàng: che dòng giá vốn, còn lại công nợ cần view_receivable
     return inv;
   }));
 

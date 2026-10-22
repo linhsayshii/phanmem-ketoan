@@ -64,7 +64,7 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
     if (m.valueFrom === undefined) return D(m.value!);
     const o = outs.find((x) => x.move.id === m.valueFrom);
     if (!o) throw new Error(`Phát sinh nhập ${m.id}: chiều xuất ${m.valueFrom} không đứng trước trong kỳ`);
-    return o.amount;
+    return portionOf(o.amount, o.qty, D(m.qty)); // trả một phần: theo tỷ lệ số lượng
   };
   let layers: Layer[];
 
