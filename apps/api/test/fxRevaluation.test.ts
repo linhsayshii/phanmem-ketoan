@@ -554,13 +554,13 @@ describe('B02 TT99: số thuần chênh lệch đánh giá lại', () => {
     const r = await b02(t);
     expect([r['22'], r['23']]).toEqual(['650000', '30000']);
     expect(D(r['22']!).minus(r['23']!).toString()).toBe(gross[0]!.minus(gross[1]!).toString()); // chênh 22 - 23 (nên cả mã 30) bằng cách trình bày gộp cũ
-    expect(r['30']).toBe(D(r['20']!).plus(r['21']!).plus(r['22']!).minus(D(r['23']!).plus(r['25']!).plus(r['26']!)).toString());
+    expect(r['30']).toBe('23060000'); // số cố định, bằng kết quả cách trình bày gộp cũ: 24.600.000 − 2.160.000 + (1.050.000 − 430.000)
     for (const [code, total] of [['22', '650000'], ['23', '30000']] as const) {
       const d = await t.call('GET', `/api/reports/financial/B02/lines/${code}?from=2026-01-01&to=2026-12-31`); expect(d.statusCode, d.body).toBe(200);
-      const rows = d.json().accounts as { accountCode: string; accountName: string; amount: string }[];
-      expect(rows.map((x) => x.accountCode)).toEqual(code === '22' ? ['515', '515'] : ['635']);
+      const rows = d.json().accounts as { kind?: string; accountCode: string; accountName: string; amount: string }[];
+      // dòng số thuần có kind riêng, không lẫn với dòng tài khoản 515/635 thật (giao diện không mở sổ Cái cho dòng này)
+      expect(rows.map((x) => [x.kind ?? null, x.accountCode, x.amount])).toEqual(code === '22' ? [[null, '515', '50000'], ['reval_net', '515', '600000']] : [[null, '635', '30000']]);
       expect(rows.reduce((s, x) => s.plus(x.amount), D(0)).toString()).toBe(total);
-      if (code === '22') expect(rows.map((x) => x.amount).sort()).toEqual(['50000', '600000']);
     }
   });
 
@@ -569,8 +569,8 @@ describe('B02 TT99: số thuần chênh lệch đánh giá lại', () => {
     await t.usdInvoice('2026-01-10', '1000', '25500'); await t.usdPurchase('2026-01-12', '500', '25000'); // lãi 100.000, lỗ 300.000
     await t.revalOk();
     const r = await b02(t); expect([r['22'], r['23']]).toEqual(['0', '200000']);
-    const d = (await t.call('GET', '/api/reports/financial/B02/lines/23?from=2026-01-01&to=2026-12-31')).json().accounts as { accountCode: string; amount: string }[];
-    expect(d.map((x) => [x.accountCode, x.amount])).toEqual([['635', '200000']]);
+    const d = (await t.call('GET', '/api/reports/financial/B02/lines/23?from=2026-01-01&to=2026-12-31')).json().accounts as { kind?: string; accountCode: string; amount: string }[];
+    expect(d.map((x) => [x.kind, x.accountCode, x.amount])).toEqual([['reval_net', '635', '200000']]);
     expect((await t.call('GET', '/api/reports/financial/B02/lines/22?from=2026-01-01&to=2026-12-31')).json().accounts).toEqual([]);
   });
 
@@ -593,6 +593,20 @@ describe('B02 TT99: số thuần chênh lệch đánh giá lại', () => {
     expect(await t.lines(cl!)).toEqual([['635', null, null, '600000', '0', '600000.0000', null], ['131', 'KH001', null, '0', '600000', '0.0000', null]]);
     expect([await t.net('515'), await t.net('635')]).toEqual(['-600000', '600000']); // gộp cũ: 22 = 600.000 và 23 = 600.000
     const r = await b02(t); expect([r['22'], r['23']]).toEqual(['0', '0']);
+  });
+
+  it('đảo khoản gốc sau ngày DG rồi chạy lại đánh giá lại: DG lãi, CL lỗ, đảo DG và CL lãi bù nhau, mã 22 chỉ còn lãi của lần chạy mới', async () => {
+    const t = await tenant('TT99');
+    const inv = await t.usdInvoice('2026-01-10', '1000', '25000');
+    const first = await t.revalOk(); // @25.600: lãi 600.000 (DG1)
+    await t.lock('soft');
+    expect((await t.call('POST', `/api/vouchers/${inv.id}/reverse`, { postingDate: '2026-02-10' })).statusCode).toBe(201); // CL1: lỗ 600.000
+    await t.usdInvoice('2026-01-20', '200', '25000', 'KH002');
+    const again = await t.revalOk({ rates: { USD: '25700' } }); // đảo DG1, DG2 lãi 140.000 (KH002), thêm CL đóng phần dư khoản con đã đảo
+    expect(again.reversedVoucherIds).toEqual(first.voucherIds);
+    expect(await t.cls()).toHaveLength(2);
+    expect([await t.net('515'), await t.net('635')]).toEqual(['-840000', '700000']); // gộp (cùng số với kịch bản ở trên): chênh ròng 140.000 = lãi KH002; các khoản của KH001 tự bù
+    const r = await b02(t); expect([r['22'], r['23']]).toEqual(['140000', '0']);
   });
 
   it('chênh lệch thực hiện CL của đối trừ thông thường vẫn trình bày gộp ở 22/23 (đánh giá lại 600.000 lãi, thu nốt lỗ 100.000)', async () => {

@@ -10,7 +10,7 @@ import { useAuth } from '../auth.js';
 interface FiscalYear { fiscalYear: number; regime: string; dateFrom: string; dateTo: string }
 interface Row { lineCode: string; label: string; parentLineCode: string | null; isBold: boolean; negate: boolean; noteRef: string | null; source: string; formula: string | null; current: string; previous: string | null }
 interface Report { reportCode: string; name: string; formNo: string; issuedBy: string; regime: string; period: { from: string; to: string }; previousNote?: 'REGIME_CHANGED'; rows: Row[] }
-interface DrillRow { accountCode: string; accountName: string; counterAccountCode?: string; partyCode: string | null; amount: string }
+interface DrillRow { kind?: 'reval_net'; accountCode: string; accountName: string; counterAccountCode?: string; partyCode: string | null; amount: string }
 interface LedgerRow { postingDate: string; voucherId: string; voucherNo: string; description: string | null; counterAccountCode: string; debit: string; credit: string }
 interface EditLine { key: number; lineCode: string; label: string; parentLineCode: string | null; source: string; side: string; formula: string | null; isBold: boolean; negate: boolean; noteRef: string | null }
 
@@ -48,9 +48,9 @@ function DrillDrawer({ reportCode, row, range, onClose }: { reportCode: string; 
   return (
     <Drawer open={!!row} onClose={onClose} width={640} title={row ? `Chỉ tiêu ${row.lineCode} - ${row.label}` : ''}>
       {q.error && <Alert type="error" showIcon message={(q.error as Error).message} />}
-      <Table<DrillRow> size="small" rowKey={(r) => `${r.accountCode}|${r.partyCode}|${r.counterAccountCode}`} loading={q.isFetching} pagination={false} dataSource={q.data?.accounts ?? []}
+      <Table<DrillRow> size="small" rowKey={(r) => `${r.kind ?? ''}|${r.accountCode}|${r.partyCode}|${r.counterAccountCode}`} loading={q.isFetching} pagination={false} dataSource={q.data?.accounts ?? []}
         locale={{ emptyText: 'Không có tài khoản trực tiếp (chỉ tiêu cộng từ các dòng khác hoặc số liệu bằng 0)' }} columns={[
-          { title: 'Tài khoản', key: 'a', width: 110, render: (_, r) => <Button type="link" size="small" style={LINK} onClick={() => setLedger({ accountCode: r.accountCode, partyCode: r.partyCode })}>{r.accountCode}</Button> },
+          { title: 'Tài khoản', key: 'a', width: 110, render: (_, r) => r.kind === 'reval_net' ? r.accountCode : <Button type="link" size="small" style={LINK} onClick={() => setLedger({ accountCode: r.accountCode, partyCode: r.partyCode })}>{r.accountCode}</Button> },
           { title: 'Tên tài khoản', dataIndex: 'accountName' }, { title: 'Đối tượng', dataIndex: 'partyCode', width: 100 }, { title: 'TK đối ứng', dataIndex: 'counterAccountCode', width: 90 },
           { title: 'Số tiền', dataIndex: 'amount', align: 'right', width: 130, render: (v: string) => show(v) }]} />
       <LedgerDrawer target={ledger} range={range} onClose={() => setLedger(null)} />
@@ -71,7 +71,7 @@ function FormulaEditor({ reportCode, regime, onClose, onSaved }: { reportCode: s
   return (
     <Modal open onCancel={onClose} width={1280} title={`Sửa công thức ${reportCode} (${regime})`} okText="Lưu" cancelText="Đóng" confirmLoading={save.isPending} onOk={() => save.mutate()}>
       {load.error && <Alert type="error" showIcon message={(load.error as Error).message} />}
-      <p>Công thức: cộng/trừ các hạng tử. <code>111+112</code> tiền tố tài khoản, <code>131(1312)</code> trừ tiền tố con, <code>[100]</code> dòng khác, <code>N911/C632</code> đối ứng Nợ/Có, <code>0</code> số.</p>
+      <p>Công thức: cộng/trừ các hạng tử. <code>111+112</code> tiền tố tài khoản, <code>131(1312)</code> trừ tiền tố con, <code>[100]</code> dòng khác, <code>N911/C632</code> đối ứng Nợ/Có, <code>0</code> số. Chỉ với nguồn Phát sinh: <code>515!REVAL</code> bỏ phần chênh lệch đánh giá lại ngoại tệ khỏi tài khoản; <code>REVAL_GAIN</code> / <code>REVAL_LOSS</code> là lãi / lỗ thuần đánh giá lại.</p>
       <p>Cột &quot;Âm&quot; chỉ đổi cách hiển thị (số trong ngoặc), không đổi giá trị: dòng tổng phải trừ rõ ràng bằng dấu <code>-</code> trong công thức.</p>
       <Table<EditLine> size="small" rowKey="key" pagination={false} scroll={{ y: 420 }} loading={load.isFetching} dataSource={lines} columns={[
         { title: 'Mã dòng', key: 'lineCode', width: 80, render: text('lineCode') }, { title: 'Chỉ tiêu', key: 'label', render: text('label') }, { title: 'Dòng cha', key: 'parent', width: 80, render: text('parentLineCode') },

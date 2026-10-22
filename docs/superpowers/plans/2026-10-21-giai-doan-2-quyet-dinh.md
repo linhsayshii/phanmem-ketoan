@@ -231,4 +231,6 @@ Chi tiết từng hạn chế nằm ở `docs/TIEP-THEO.md`, mục "Hạn chế 
 174. `THUE_LECH` lọc theo ngày ghi sổ như mọi quy tắc soát lỗi (khác bảng đối chiếu theo kỳ kê khai nhưng cùng phép so từng chứng từ), giới hạn chứng từ trong khoảng ngày cộng chứng từ gốc của bút toán đảo (Task 27, 072da9c).
 175. `TIEN_MAT_VUOT_NGUONG` bắt cả hóa đơn kê khai trên phiếu chi trả ngay (dòng Có tài khoản tiền mặt), không chỉ đường đối trừ công nợ; `HD_TRUNG` bắt cả hóa đơn nhập hai lần trong một chứng từ như `assertNotDuplicate`; `SO_DU_SAI_LOAI` (GĐ1) gắn cờ `view_cost` (Task 27, 072da9c).
 
+176. Task 27b (migration `0039_b02_so_thuan`): migration giữ trigger kiểm toán bật khi cập nhật dòng 22/23, khác tiền lệ tắt trigger ở các migration dữ liệu trước, để `audit_event` ghi trước/sau (user_id NULL vì chạy trong migration); chấp nhận số dòng kiểm toán thêm theo số công ty TT99. Dòng số thuần khi truy ngược mang `kind: 'reval_net'`, không có liên kết sang sổ Cái và khác dòng tài khoản 515/635 thật (giao diện khóa dòng theo kind). Tiền tố `515`/`635` của nhóm đánh giá lại hiện viết cứng trong `financial.ts`, chưa lấy từ `fx_rule` theo chế độ: hoãn vì chỉ TT99 dùng `REVAL_*`. Bộ phân tích chấp nhận `515 !REVAL` có dấu cách (vô hại).
+
 (ghi tiếp sau mỗi tác vụ)

@@ -27,6 +27,7 @@ describe('Màn hình báo cáo tài chính', () => {
     apiMock.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path === '/api/fiscal-years') return [{ fiscalYear: 2025, regime: 'TT133', dateFrom: '2025-01-01', dateTo: '2025-12-31' }, { fiscalYear: 2026, regime: 'TT133', dateFrom: '2026-01-01', dateTo: '2026-12-31' }];
       if (path.startsWith('/api/reports/financial/B01/lines/111')) return { accounts: [{ accountCode: '1111', accountName: 'Tiền mặt', partyCode: null, amount: '1234567' }] };
+      if (path.startsWith('/api/reports/financial/B01/lines/312')) return { accounts: [{ accountCode: '515', accountName: 'Doanh thu hoạt động tài chính', partyCode: null, amount: '600000' }, { kind: 'reval_net', accountCode: '515', accountName: 'Chênh lệch đánh giá lại ngoại tệ cuối kỳ (lãi thuần)', partyCode: null, amount: '50000' }] };
       if (path.startsWith('/api/reports/ledgers/account')) return { rows: [{ postingDate: '2026-02-01', voucherId: 'v1', voucherNo: 'PKT00001', description: 'Thu tiền', counterAccountCode: '131', debit: '100', credit: '0' }] };
       if (path.startsWith('/api/reports/financial/B01')) return REPORT;
       if (path.startsWith('/api/report-defs/B01/reload')) return { lines: 0 };
@@ -49,6 +50,14 @@ describe('Màn hình báo cáo tài chính', () => {
     expect(screen.getByText('(250)')).toBeInTheDocument(); // số âm
     expect(screen.getByRole('button', { name: '1.234.567' })).toBeInTheDocument(); // số của dòng có công thức là nút truy ngược
     expect(screen.queryByRole('button', { name: '0' })).not.toBeInTheDocument(); // dòng không công thức (số 0) không truy ngược được
+  });
+
+  it('truy ngược: dòng số thuần đánh giá lại khác dòng tài khoản 515 thật, không có liên kết sang sổ Cái', async () => {
+    renderPage();
+    await userEvent.click(await screen.findByText('(500)'));
+    expect(await screen.findByText('Chênh lệch đánh giá lại ngoại tệ cuối kỳ (lãi thuần)')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '515' })).toHaveLength(1); // chỉ dòng tài khoản thật là liên kết; dòng số thuần là chữ thường
+    expect(screen.getAllByText('515')).toHaveLength(2);
   });
 
   it('nhấn số truy ngược ra tài khoản, nhấn tài khoản mở sổ Cái', async () => {

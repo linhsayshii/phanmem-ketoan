@@ -71,7 +71,7 @@ const matches = (code: string, ref: { prefix: string; exclude: string[] }) => co
 const pick = (side: Side, u: { d: Decimal; c: Decimal }): Decimal => side === 'debit' ? u.d : side === 'credit' ? u.c : side === 'net_debit' ? u.d.minus(u.c) : u.c.minus(u.d);
 const pairMatches = (r: PairUnit, debit: string[], credit: string[]) => underAny(r.dcode, debit) && underAny(r.ccode, credit);
 
-// Đơn vị phát sinh sau khi trừ nhóm đánh giá lại (hậu tố !REVAL); đơn vị chỉ gồm nhóm đó về 0 thì bỏ.
+// Đơn vị phát sinh sau khi trừ nhóm đánh giá lại (hậu tố !REVAL); đơn vị chỉ gồm nhóm đó còn Nợ = Có = 0, giữ lại vì cộng 0 không đổi số.
 async function movementWithoutReval(data: ReportData): Promise<Unit[]> {
   const rv = new Map((await data.reval()).map((u) => [u.code, u]));
   return (await data.movement()).map((u) => { const r = rv.get(u.code); return r ? { ...u, d: u.d.minus(r.d), c: u.c.minus(r.c) } : u; });
@@ -144,7 +144,7 @@ function signedTerms(e: Expr, sign = 1): { sign: number; term: Expr }[] {
 
 // Truy ngược cấp 1: các đơn vị (tài khoản, đối tượng; hoặc cặp Nợ/Có với nguồn đối ứng) tạo nên chỉ tiêu, dùng đúng dữ liệu, tiền tố, loại trừ và dấu của công thức nên cộng lại bằng giá trị chỉ tiêu.
 // Dòng tổng hợp chỉ gồm [x] không có tài khoản trực tiếp: trả rỗng, người dùng truy ngược từng dòng thành phần.
-interface DrillRow { accountCode: string; accountName: string; counterAccountCode?: string; partyCode: string | null; amount: Decimal; checks: { code: string; kind: string | null }[] }
+interface DrillRow { kind?: 'reval_net'; accountCode: string; accountName: string; counterAccountCode?: string; partyCode: string | null; amount: Decimal; checks: { code: string; kind: string | null }[] }
 export async function drillLine(trx: Trx, tenantId: string, q: { reportCode: string; lineCode: string; from: string; to: string }, auth: { sensitive: Set<string> }) {
   const regime = await regimeOf(trx, q);
   const { lines } = await loadDef(trx, q.reportCode, regime);
@@ -159,9 +159,9 @@ export async function drillLine(trx: Trx, tenantId: string, q: { reportCode: str
       for (const u of term.excludeReval ? await movementWithoutReval(data) : await data[l.source === 'movement' ? 'movement' : 'balance']()) if (matches(u.code, term))
         add(`${u.code}|${u.partyCode ?? ''}`, { accountCode: u.code, accountName: u.name, partyCode: u.partyCode, checks: [{ code: u.code, kind: u.kind }] }, pick(side, u).times(sign));
     } else if (term.kind === 'reval') {
-      // Số thuần đánh giá lại là một con số của cả nhóm, không tách theo tài khoản: một dòng mang mã 515 (lãi) hoặc 635 (lỗ).
+      // Số thuần đánh giá lại là một con số của cả nhóm, không tách theo tài khoản: một dòng kind 'reval_net' mang mã 515 (lãi) hoặc 635 (lỗ), khác dòng tài khoản 515/635 thật.
       const net = await netReval(data); const gain = term.side === 'gain';
-      add(`REVAL|${term.side}`, { accountCode: gain ? REVAL_GAIN_PREFIX : REVAL_LOSS_PREFIX, accountName: `Chênh lệch đánh giá lại ngoại tệ cuối kỳ (${gain ? 'lãi' : 'lỗ'} thuần)`, partyCode: null, checks: [] }, (gain ? net.gain : net.loss).times(sign));
+      add(`REVAL|${term.side}`, { kind: 'reval_net', accountCode: gain ? REVAL_GAIN_PREFIX : REVAL_LOSS_PREFIX, accountName: `Chênh lệch đánh giá lại ngoại tệ cuối kỳ (${gain ? 'lãi' : 'lỗ'} thuần)`, partyCode: null, checks: [] }, (gain ? net.gain : net.loss).times(sign));
     } else if (term.kind === 'pair') {
       for (const r of await data.pair()) if (pairMatches(r, term.debit, term.credit))
         add(`${r.dcode}|${r.ccode}`, { accountCode: r.dcode, accountName: r.dname, counterAccountCode: r.ccode, partyCode: null, checks: [{ code: r.dcode, kind: r.dkind }, { code: r.ccode, kind: r.ckind }] }, r.amount.times(sign));
@@ -171,7 +171,7 @@ export async function drillLine(trx: Trx, tenantId: string, q: { reportCode: str
     .sort((a, b) => a.accountCode.localeCompare(b.accountCode) || (a.partyCode ?? '').localeCompare(b.partyCode ?? '') || (a.counterAccountCode ?? '').localeCompare(b.counterAccountCode ?? ''));
   // Danh sách theo đối tượng/tài khoản tiết lộ công nợ và giá vốn từng bên: cùng cờ nhạy cảm với sổ sách.
   for (const r of out) for (const c of r.checks) assertSensitive(auth, { subledger_kind: c.kind, code: c.code });
-  return { accounts: out.map((r) => ({ accountCode: r.accountCode, accountName: r.accountName, ...(r.counterAccountCode !== undefined && { counterAccountCode: r.counterAccountCode }), partyCode: r.partyCode, amount: r.amount.toString() })) };
+  return { accounts: out.map((r) => ({ ...(r.kind && { kind: r.kind }), accountCode: r.accountCode, accountName: r.accountName, ...(r.counterAccountCode !== undefined && { counterAccountCode: r.counterAccountCode }), partyCode: r.partyCode, amount: r.amount.toString() })) };
 }
 
 export interface ReportLineInput { lineCode: string; label: string; parentLineCode: string | null; source: Source; side: Side; formula: string | null; isBold: boolean; negate: boolean; noteRef: string | null }
