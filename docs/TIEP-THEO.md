@@ -1,6 +1,6 @@
 # Việc tiếp theo
 
-Cập nhật: 2026-10-21, sau khi xong GĐ1.5 (tag `gd0-hoan-tat`, `gd1-hoan-tat`, `gd1-5-hoan-tat`). Việc đang làm: GĐ2 theo `docs/superpowers/plans/2026-10-21-giai-doan-2-chi-tiet.md`. Agent cập nhật file này cuối mỗi giai đoạn và mỗi khi có việc chờ người dùng.
+Cập nhật: 2026-10-22, sau khi xong GĐ2 (tag `gd0-hoan-tat`, `gd1-hoan-tat`, `gd1-5-hoan-tat`, `gd2-hoan-tat`). Việc tiếp theo: GĐ3 (kho, mua bán hàng hóa), bắt đầu bằng kế hoạch chi tiết theo mục 3 "Bàn giao GĐ3". Agent cập nhật file này cuối mỗi giai đoạn và mỗi khi có việc chờ người dùng.
 
 Thứ tự làm: mục 2 (phần còn lại) song song mục 3 (GĐ2 → GĐ7). Mục 4 là việc chờ người dùng, không chặn các mục khác.
 
@@ -8,7 +8,7 @@ Thứ tự làm: mục 2 (phần còn lại) song song mục 3 (GĐ2 → GĐ7). 
 
 Kế hoạch `docs/superpowers/plans/2026-10-20-giai-doan-1-5-chi-tiet.md`, sổ quyết định `2026-10-20-giai-doan-1-5-quyet-dinh.md` (gồm mục "Để lại"). Nhóm A (A1–A12) xong: DB kiểm thử tạm mỗi lần chạy, typecheck cả kiểm thử, `TRUST_PROXY` và cấu hình production, khóa đăng nhập sai theo tên/IP, băm mã phiên, chặn tự nâng quyền, RLS `tenant_user`, thu hẹp `ketoan_vien`, `*_NOT_FOUND` = 404, khóa ngoại tổng hợp `(tenant_id, id)`, kiểm cân bằng theo câu lệnh (khóa ghi trực tiếp partition), script đo 100.000 dòng (BCĐPS năm 175 ms). Migration 0016–0023.
 
-**Nhóm B** đã gộp vào kế hoạch GĐ2 (`2026-10-21-giai-doan-2-chi-tiet.md`, bảng "Đối chiếu nhóm B").
+**Nhóm B** đã gộp vào kế hoạch GĐ2 (`2026-10-21-giai-doan-2-chi-tiet.md`, bảng "Đối chiếu nhóm B") và xong cùng GĐ2 (riêng Danh mục còn thiếu Playwright và tài liệu người dùng, chuyển GĐ3).
 
 **Nhóm C, để sau**: chuyển số dư khi đổi chế độ (đặc tả 7.2), xuất XML cơ quan thẩm quyền (mục 13), bất biến 7 đầy đủ; mời người dùng đã có vào công ty khác; phạm vi khóa tạo partition; việc chuẩn bị production (Docker, sao lưu, seed); giới hạn số đăng nhập đồng thời dưới kích thước pool kết nối (lũ đăng nhập từ nhiều IP chiếm pool khoảng 0,5 giây); `role.update` gỡ được quyền của vai trò cao hơn (từ chối dịch vụ). Nhóm D (không làm) có lý do trong `2026-10-20-gd1-5-de-xuat.md`.
 
@@ -30,12 +30,20 @@ Văn bản gốc tải về `~/legal-docs/` trên VPS (ngoài repo): TT 99/2025 
 
 Chi tiết công việc và tiêu chí nghiệm thu: `docs/superpowers/plans/2026-10-19-lo-trinh-thuc-hien.md`. Danh sách nghiệp vụ và mức ưu tiên: đặc tả mục 9. Tham số pháp lý: đặc tả mục 10.
 
-- [ ] **GĐ2 — Tiền, công nợ, thuế GTGT** (5–6 tuần): Phiếu thu/chi, Giấy báo nợ/có, UNC, chuyển tiền nội bộ, tạm ứng; sổ quỹ, sổ tiền gửi, tỷ giá xuất quỹ; `open_item`/`settlement`, đối trừ, bù trừ, chênh lệch tỷ giá, đánh giá lại ngoại tệ, tuổi nợ, biên bản đối chiếu; hóa đơn mua/bán dịch vụ và `voucher_invoice`; động cơ thuế `tax`/`tax_distribution`; bảng kê và tờ khai 01/GTGT, XML HTKK (TT 80/2021 cho kỳ trước 01/07/2026, TT 89/2026 sau đó); nhập chứng từ Excel; khử trùng chứng từ.
+- [x] **GĐ2 — Tiền, công nợ, thuế GTGT**: xong 2026-10-22, tag `gd2-hoan-tat`. Kế hoạch `2026-10-21-giai-doan-2-chi-tiet.md`, sổ quyết định `2026-10-21-giai-doan-2-quyet-dinh.md` (191 mục), tài liệu `docs/user/giai-doan-2-tien-cong-no-thue.md`, migration 0024–0042. Chưa đạt: tiêu chí nghiệm thu 2 (HTKK mở được XML) chờ tệp mẫu HTKK; mẫu 01/GTGT TT80 chờ văn bản gốc (mục 4). Phạm vi gồm: Phiếu thu/chi, Giấy báo nợ/có, UNC, chuyển tiền nội bộ, tạm ứng; sổ quỹ, sổ tiền gửi, tỷ giá xuất quỹ; `open_item`/`settlement`, đối trừ, bù trừ, chênh lệch tỷ giá, đánh giá lại ngoại tệ, tuổi nợ, biên bản đối chiếu; hóa đơn mua/bán dịch vụ và `voucher_invoice`; động cơ thuế `tax`/`tax_distribution`; bảng kê và tờ khai 01/GTGT, XML HTKK (TT 80/2021 cho kỳ trước 01/07/2026, TT 89/2026 sau đó); nhập chứng từ Excel; khử trùng chứng từ.
 - [ ] **GĐ3 — Kho và mua bán hàng hóa** (6–8 tuần): VTHH đầy đủ, kho, số dư tồn đầu kỳ (mở khóa tài khoản 15x), `stock_move`/`stock_cost_layer`/`stock_cost_assignment`/`costing_run`, chứng từ nhập/xuất/chuyển/lắp ráp/kiểm kê, mua/bán hàng hóa, giá vốn 4 phương pháp, báo cáo kho và bán hàng.
 - [ ] **GĐ4 — Tài sản và khế ước** (4 tuần): TSCĐ, CCDC, chi phí trả trước, khế ước vay, chứng từ tự động, quy trình cuối kỳ có thứ tự.
 - [ ] **GĐ5 — Hóa đơn điện tử và tích hợp** (5–6 tuần): `EInvoiceProvider` + adapter Viettel SInvoice, vòng đời hóa đơn theo NĐ 254/2026 + TT 91/2026, ký số (USB token qua tiện ích cục bộ, ký từ xa), hóa đơn đầu vào XML theo QĐ 1450/QĐ-TCT, ngân hàng (webhook SePay/Casso, sao kê, VietQR), tờ khai TNDN/TNCN, API cho phần mềm bán hàng.
 - [ ] **GĐ6 — Lương, giá thành, hợp đồng** (5–6 tuần).
 - [ ] **GĐ7 — Mở rộng**: hộ kinh doanh TT 152/2025, siêu nhỏ TT 58/2026, hình thức sổ khác, đa chi nhánh/hợp nhất, ngân sách, song ngữ, mobile, trợ lý AI.
+
+### Bàn giao GĐ3 (cho phiên làm GĐ3)
+
+- Bắt đầu: đọc lộ trình mục "Giai đoạn 3", đặc tả mục 6 (Kho), 7.3, 9 (VTHH, Kho, Mua hàng, Bán hàng), 14 bất biến 5; viết `docs/superpowers/plans/<ngày>-giai-doan-3-chi-tiet.md` theo khuôn GĐ2. Migration bắt đầu ở **0043**.
+- Bản đồ mã đã khảo sát (chỉ có trên VPS, thư mục bị gitignore): `.superpowers/sdd/gd3-code-map.md`. Điểm chính: chưa có bảng VTHH, kho, `stock_*`; `voucher_line` đã có cột `item_id`, `warehouse_id` (chưa khóa ngoại) và `fn_line_before` bắt `LINE_ITEM_REQUIRED` cho tài khoản kho; `voucher_item_line` (0032) đã có số lượng, đơn giá, ĐVT nhưng chưa có mã hàng, kho; `resolveLine` trong `vouchers.service.ts` chưa ánh xạ hàng/kho; `VoucherTypeDef.module` thiếu `'inventory'`; khóa số dư đầu kỳ 15x ở `openingBalance.ts` `issuesOf`; `costing_method` trong tùy chọn chưa nơi nào dùng; loại nguồn chứng từ tự động mới (giá vốn) cần định nghĩa lại danh sách chặn trong `unpost_voucher`/`discard_voucher` (lấy thân cuối) và `SYSTEM_MSG`; `runOutflowAdjust` (`cash/fx.ts`) là khuôn cho lệnh tính giá vốn (khóa, kiểm kỳ, đảo cũ sinh mới, so `keyOf`).
+- Văn bản gốc có mẫu 01-VT, 02-VT, S10, S12 trong `~/legal-docs/tt99-2025/tt99-full.txt` và `~/legal-docs/tt133-2016/tt133-full.txt` (đối chiếu trước khi in "Mẫu số").
+- Việc GĐ2 để lại cho GĐ3: thuộc tính kỳ hạn (ngắn/dài hạn) cho dòng dài hạn B01 TT99 và mã luồng tiền B03 (quyết định GĐ2 #100); Playwright và tài liệu người dùng cho Danh mục; `SENSITIVE_BY_SUBLEDGER` chưa có `inventory` (cân nhắc gắn `view_cost`).
+- Đo hiệu năng: `pnpm -F @kt/api perf:100k` (`docs/dev/hieu-nang.md`); tiêu chí GĐ3: tính lại giá vốn một năm 50.000 dòng kho dưới 30 giây.
 
 ### Hạn chế đã biết của GĐ2
 

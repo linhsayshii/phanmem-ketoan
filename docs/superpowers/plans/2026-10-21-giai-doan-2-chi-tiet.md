@@ -1072,12 +1072,12 @@ it('seed chạy lần hai không tạo thêm; lỗi giữa chừng hoàn tác h�
 
 ### Kết thúc GĐ2
 
-- [ ] Rà soát toàn nhánh (opus) từ tag `gd1-5-hoan-tat` tới HEAD, đối chiếu từng gạch lộ trình GĐ2 và từng mục nhóm B; một đợt sửa.
-- [ ] `pnpm lint && pnpm typecheck && pnpm test`; `INVARIANTS=1 pnpm -F @kt/api test -- test/invariants test/sample-xyz.test.ts test/sample-abc.test.ts`; `pnpm -F @kt/web e2e` (tuần tự, không chạy cùng lúc với bất biến) xanh.
-- [ ] Đo lại `pnpm -F @kt/api perf:100k` (GĐ1.5) sau khi thêm `open_item`; ghi vào `docs/dev/hieu-nang.md` nếu ghi sổ chậm đi quá 20%.
-- [ ] `docs/user/giai-doan-2-tien-cong-no-thue.md`: Quỹ và ngân hàng, In chứng từ, Sổ quỹ/tiền gửi, Kiểm kê quỹ, Tỷ giá xuất quỹ và đánh giá lại, Công nợ và đối trừ, Báo cáo công nợ, Hóa đơn mua/bán dịch vụ, Doanh thu nhận trước, Bảng kê và tờ khai 01/GTGT (ghi rõ XML chưa kiểm chứng với HTKK, mẫu TT80 nếu chưa có, cách kê khai 8% chờ xác nhận), Nhập chứng từ Excel, Khử trùng, Soát lỗi; giới hạn: phân quyền theo loại chứng từ chưa có, séc chưa in, FIFO tỷ giá xuất quỹ chưa có, tờ khai trực tiếp 04/GTGT chưa có.
-- [ ] `docs/TIEP-THEO.md`: đánh dấu GĐ2 và nhóm B; "Chờ người dùng" thêm: văn bản TT 80/2021 (nếu chưa tải được), cách kê khai 8% và Phụ lục giảm thuế NĐ 174/2025, thuế suất khấu trừ TNCN theo Luật 109/2025, mẫu UNC riêng từng ngân hàng, kế toán trưởng rà `fx-rules.json` và ánh xạ nhóm kê khai; bộ XML HTKK vẫn ở đó (tiêu chí nghiệm thu "HTKK/iTaxViewer mở được" chưa đạt được cho tới khi có tệp mẫu). `docs/NHAT-KY-TIEN-DO.md`.
-- [ ] Tag `gd2-hoan-tat`, push `main` và tag.
+- [x] Rà soát toàn nhánh (opus) từ tag `gd1-5-hoan-tat` tới HEAD, đối chiếu từng gạch lộ trình GĐ2 và từng mục nhóm B; một đợt sửa.
+- [x] `pnpm lint && pnpm typecheck && pnpm test`; `INVARIANTS=1 pnpm -F @kt/api test -- test/invariants test/sample-xyz.test.ts test/sample-abc.test.ts`; `pnpm -F @kt/web e2e` (tuần tự, không chạy cùng lúc với bất biến) xanh.
+- [x] Đo lại `pnpm -F @kt/api perf:100k` (GĐ1.5) sau khi thêm `open_item`; ghi vào `docs/dev/hieu-nang.md` nếu ghi sổ chậm đi quá 20%.
+- [x] `docs/user/giai-doan-2-tien-cong-no-thue.md`: Quỹ và ngân hàng, In chứng từ, Sổ quỹ/tiền gửi, Kiểm kê quỹ, Tỷ giá xuất quỹ và đánh giá lại, Công nợ và đối trừ, Báo cáo công nợ, Hóa đơn mua/bán dịch vụ, Doanh thu nhận trước, Bảng kê và tờ khai 01/GTGT (ghi rõ XML chưa kiểm chứng với HTKK, mẫu TT80 nếu chưa có, cách kê khai 8% chờ xác nhận), Nhập chứng từ Excel, Khử trùng, Soát lỗi; giới hạn: phân quyền theo loại chứng từ chưa có, séc chưa in, FIFO tỷ giá xuất quỹ chưa có, tờ khai trực tiếp 04/GTGT chưa có.
+- [x] `docs/TIEP-THEO.md`: đánh dấu GĐ2 và nhóm B; "Chờ người dùng" thêm: văn bản TT 80/2021 (nếu chưa tải được), cách kê khai 8% và Phụ lục giảm thuế NĐ 174/2025, thuế suất khấu trừ TNCN theo Luật 109/2025, mẫu UNC riêng từng ngân hàng, kế toán trưởng rà `fx-rules.json` và ánh xạ nhóm kê khai; bộ XML HTKK vẫn ở đó (tiêu chí nghiệm thu "HTKK/iTaxViewer mở được" chưa đạt được cho tới khi có tệp mẫu). `docs/NHAT-KY-TIEN-DO.md`.
+- [x] Tag `gd2-hoan-tat`, push `main` và tag.
 
 ## Phạm vi không làm trong GĐ2 (ghi vào sổ quyết định)
 
