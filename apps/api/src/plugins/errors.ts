@@ -1,6 +1,6 @@
 import fp from 'fastify-plugin';
 import { ZodError } from 'zod';
-import { FormulaError, TaxError, type TaxErrorCode } from '@kt/domain';
+import { D, FormulaError, TaxError, type TaxErrorCode } from '@kt/domain';
 
 export class AppError extends Error {
   constructor(public code: string, message: string, public status = 400, public details?: unknown) { super(message); }
@@ -29,6 +29,12 @@ export default fp(async (app) => {
     if (e.validation) return reply.status(400).send({ error: { code: 'VALIDATION', message: e.message } });
     if (e.code === 'P0001' && e.message.includes(':')) {
       const [code, ...rest] = e.message.split(':');
+      // Tồn âm: tách mã hàng, kho, ngày, số thiếu (ĐVT cơ sở) từ thông báo của hàm SQL để giao diện dùng được.
+      const neg = code!.trim() === 'STOCK_NEGATIVE' ? /^\s*hàng (.+) kho (.+) ngày (\d\d)\/(\d\d)\/(\d{4}) thiếu (\S+)\s*$/.exec(rest.join(':')) : null;
+      if (neg) {
+        const [, itemCode, warehouseCode, dd, mm, yyyy, q] = neg; const shortBy = D(q!).toFixed();
+        return reply.status(409).send({ error: { code: 'STOCK_NEGATIVE', message: `Hàng ${itemCode} ở kho ${warehouseCode} thiếu ${shortBy} tại ngày ${dd}/${mm}/${yyyy}`, details: { itemCode, warehouseCode, date: `${yyyy}-${mm}-${dd}`, shortBy } } });
+      }
       // Quy ước: mã *_NOT_FOUND là đối tượng không tồn tại/không thấy được (404); trạng thái không cho thao tác là 409.
       return reply.status(code!.trim().endsWith('_NOT_FOUND') ? 404 : 409).send({ error: { code: code!.trim(), message: rest.join(':').trim() } });
     }

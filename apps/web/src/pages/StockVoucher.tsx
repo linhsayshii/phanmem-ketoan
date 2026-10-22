@@ -122,7 +122,7 @@ export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: str
       : await api<StockDoc>(`/api/stock-vouchers/${id}`, { method: 'PUT', json: { ...payload, version: v.data!.version } });
     if (!postAfter) return saved;
     // đã lưu mà ghi sổ lỗi (thiếu tồn, kỳ khóa...): nạp lại để version khớp bản vừa lưu
-    return api<StockDoc>(`/api/vouchers/${saved.id}/post`, { method: 'POST', json: {} }).then(() => saved).catch((e: unknown) => { void navigate({ to: '/chung-tu/$type/$id', params: { type, id: saved.id }, replace: true }); void invalidate(saved.id); throw e; });
+    return api<StockDoc>(`/api/vouchers/${saved.id}/post`, { method: 'POST', json: {} }).then((p) => ({ ...saved, warnings: [...(saved.warnings ?? []), ...(p.warnings ?? [])] })).catch((e: unknown) => { void navigate({ to: '/chung-tu/$type/$id', params: { type, id: saved.id }, replace: true }); void invalidate(saved.id); throw e; });
   };
   const save = useMutation({ mutationFn: (postAfter: boolean) => persist(postAfter), onError: onErr,
     onSuccess: async (r, postAfter) => {
@@ -132,8 +132,9 @@ export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: str
       if (isNew) void navigate({ to: '/chung-tu/$type/$id', params: { type, id: r.id } });
       await invalidate(r.id);
     } });
-  const action = useMutation({ mutationFn: (p: { act: string; body?: object }) => api<{ id: string; voucherNo: string | null }>(`/api/vouchers/${id}/${p.act}`, { method: 'POST', json: p.body ?? {} }), onError: onErr,
+  const action = useMutation({ mutationFn: (p: { act: string; body?: object }) => api<{ id: string; voucherNo: string | null; warnings?: { message: string }[] }>(`/api/vouchers/${id}/${p.act}`, { method: 'POST', json: p.body ?? {} }), onError: onErr,
     onSuccess: async (r, p) => { void message.success({ unpost: 'Đã bỏ ghi sổ', reverse: `Đã tạo chứng từ đảo ${r.voucherNo}`, discard: 'Đã hủy' }[p.act] ?? 'Xong');
+      for (const w of r.warnings ?? []) void message.warning({ content: w.message, duration: 10 });
       if (p.act === 'reverse') { setReverse(null); void navigate({ to: '/chung-tu/$type/$id', params: { type, id: r.id } }); } else await invalidate(); } });
 
   const ready = isNew || !!v.data;

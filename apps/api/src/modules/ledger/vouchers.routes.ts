@@ -7,6 +7,7 @@ import { voucherTypeDef } from '@kt/domain';
 import * as S from './vouchers.service.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { AppError } from '../../plugins/errors.js';
+import { stockNegativeWarnings } from '../inventory/stockMoves.js';
 import { postWithCashCheck, reverseWithCashCheck, unpostWithCashCheck } from '../cash/books.js';
 import { formNoFor, voucherFormFor } from '../reporting/print/forms.js';
 import { renderCashVoucherHtml, type BankInfo } from '../reporting/print/cashVoucherHtml.js';
@@ -35,6 +36,10 @@ type Auth = NonNullable<FastifyRequest['auth']>;
 async function requireStockPerm(trx: Trx, auth: Auth, id: string, perm: string) {
   const r = await trx.selectFrom('voucher').select('voucher_type').where('id', '=', id).executeTakeFirst();
   if (r && voucherTypeDef(r.voucher_type)?.module === 'inventory' && !auth.permissions.has(perm)) throw new AppError('FORBIDDEN', `Thiếu quyền ${perm}`, 403);
+}
+async function withStockWarnings<T extends { warnings?: unknown[] }>(trx: Trx, tenantId: string, dto: T, voucherId: string): Promise<T> {
+  const w = await stockNegativeWarnings(trx, tenantId, voucherId);
+  return w.length ? { ...dto, warnings: [...(dto.warnings ?? []), ...w] } : dto;
 }
 // Số liệu theo dòng chỉ trả khi cờ nhạy cảm (công nợ, giá vốn) che từng tài khoản cho phép.
 async function assertVoucherSensitive(trx: Trx, auth: Auth, v: { id: string; lines: { accountCode: string }[] }) {
@@ -109,13 +114,22 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.post('/api/vouchers/:id/post', { preHandler: app.requirePermission('voucher.post'), schema: { params: idParam } }, async (req) => {
-    const dto = await app.withOverride(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.post'); return postWithCashCheck(trx, req.auth!.tenantId!, req.params.id); }); notifyRecompute(app, req.auth!.tenantId!); return dto; });
+    const dto = await app.withOverride(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.post'); const d = await postWithCashCheck(trx, req.auth!.tenantId!, req.params.id); return withStockWarnings(trx, req.auth!.tenantId!, d, d.id); }); notifyRecompute(app, req.auth!.tenantId!); return dto; });
+  // Thứ tự chứng từ kho trong ngày (chỉ nháp): động cơ giá vốn sắp theo (ngày, day_order, số thứ tự).
+  app.put('/api/vouchers/:id/day-order', { preHandler: app.requirePermission('stock_voucher.update'), schema: { params: idParam, body: z.object({ dayOrder: z.number().int().min(0).max(1000000) }) } }, async (req) =>
+    app.withTenant(req, async (trx) => {
+      const v = await trx.selectFrom('voucher').select(['voucher_type', 'state']).where('id', '=', req.params.id).executeTakeFirst();
+      if (!v) throw new AppError('VOUCHER_NOT_FOUND', 'Không có chứng từ', 404);
+      if (voucherTypeDef(v.voucher_type)?.module !== 'inventory' || v.state !== 'draft') throw new AppError('DAY_ORDER_NOT_ALLOWED', 'Chỉ đặt thứ tự trong ngày cho phiếu kho nháp', 409);
+      await trx.updateTable('voucher').set({ day_order: req.body.dayOrder }).where('id', '=', req.params.id).execute();
+      return { id: req.params.id, dayOrder: req.body.dayOrder };
+    }));
   app.post('/api/vouchers/:id/unpost', { preHandler: app.requirePermission('voucher.unpost'), schema: { params: idParam } }, async (req) => {
     if (!req.auth!.permissions.has('voucher.edit_posted')) throw new AppError('FORBIDDEN', 'Thiếu quyền sửa sau ghi sổ', 403);
     const dto = await app.withTenant(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.post'); return unpostWithCashCheck(trx, req.auth!.tenantId!, req.params.id); }); notifyRecompute(app, req.auth!.tenantId!); return dto; });
   app.post('/api/vouchers/:id/reverse', { preHandler: app.requirePermission('voucher.post'), schema: { params: idParam, body: z.object({ postingDate: S.dateIso, description: z.string().optional() }) } }, async (req, reply) => {
     // Chứng từ hệ thống sinh (XQ, KC, DK...) chỉ đảo qua chức năng đã sinh ra nó (chạy lại); các bộ sinh gọi S.reverseVoucher trực tiếp nên không bị chặn.
-    const dto = await app.withOverride(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.post'); await S.assertNotSystemGenerated(trx, req.params.id); return reverseWithCashCheck(trx, req.auth!.tenantId!, req.params.id, req.body); });
+    const dto = await app.withOverride(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.post'); await S.assertNotSystemGenerated(trx, req.params.id); const d = await reverseWithCashCheck(trx, req.auth!.tenantId!, req.params.id, req.body); return withStockWarnings(trx, req.auth!.tenantId!, d, d.id); });
     notifyRecompute(app, req.auth!.tenantId!); return reply.status(201).send(dto); });
   app.post('/api/vouchers/:id/discard', { preHandler: app.requirePermission('voucher.delete'), schema: { params: idParam } }, async (req) => app.withTenant(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.delete'); return S.discardVoucher(trx, req.params.id); }));
   app.post('/api/vouchers/:id/duplicate', { preHandler: app.requirePermission('voucher.create'), schema: { params: idParam, body: z.object({ postingDate: S.dateIso }) } }, async (req, reply) =>
