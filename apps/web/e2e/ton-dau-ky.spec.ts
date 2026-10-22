@@ -43,6 +43,12 @@ test('Tồn kho đầu kỳ: nhập kho, hàng, số lượng, giá trị bằng
     expect(saved.map((r) => [r.warehouseCode, r.itemCode, r.quantity, r.value, r.lotNo])).toEqual([['KTDK', 'TDK1', '100.0000', '1000000', '']]);
     await expect(page.getByRole('gridcell', { name: 'Kho tồn đầu kỳ E2E' })).toHaveCount(1); // tên kho do máy chủ trả sau khi lưu
 
+    // Ctrl+S lưu như nút Lưu
+    await expect(page.locator('.ag-center-cols-container .ag-row')).toHaveCount(2);
+    await cell(0, 'quantity').click(); await type('200'); await page.keyboard.press('Enter'); await page.keyboard.press('Escape');
+    await page.keyboard.press('Control+s');
+    await expect.poll(async () => ((await (await request.get('/api/opening-stock/2026')).json()) as Saved[])[0]?.quantity).toBe('200.0000');
+
     // Số dư 156 lớn hơn tồn kho: Kiểm tra ở màn hình Số dư đầu kỳ báo lệch
     expect((await request.put('/api/opening-balance/2026', { data: { rows: [
       { accountCode: '156', partyCode: null, currencyCode: 'VND', debit: '1600000', credit: '0', debitCurrency: '0', creditCurrency: '0' },

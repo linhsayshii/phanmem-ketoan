@@ -3,7 +3,7 @@ import { Alert, Button, Card, Modal, Select, Space, Table, Upload, message } fro
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import { formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, sum } from '@kt/domain';
-import { KeyboardGrid, LookupSelect } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, useHotkeys } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { parseAmount } from './VoucherForm.js';
@@ -59,6 +59,8 @@ export default function OpeningStockPage() {
     } catch (e) { void message.error(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
   };
 
+  useHotkeys({ 'Ctrl+s': () => { if (mayEdit && ready && !busy) void save(); } });
+
   const columns = useMemo<ColDef<Row>[]>(() => [
     codeCol('warehouseCode', 'Kho (F4)', 110), { field: 'warehouseName', headerName: 'Tên kho', width: 150, editable: false },
     codeCol('itemCode', 'Mã hàng (F4)', 130, (d) => { d.uomCode = null; }), { field: 'itemName', headerName: 'Tên hàng', flex: 1, editable: false },
@@ -80,7 +82,7 @@ export default function OpeningStockPage() {
   return (
     <Card title="Tồn kho đầu kỳ" extra={<Space wrap>
       <Select style={{ width: 200 }} value={year} onChange={setPicked} loading={years.isLoading} placeholder="Chọn năm" options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
-      {mayEdit && <Button type="primary" onClick={() => void save()} loading={busy} disabled={!ready}>Lưu</Button>}
+      {mayEdit && <Button type="primary" onClick={() => void save()} loading={busy} disabled={!ready} title="Ctrl+S">Lưu</Button>}
       <Button href="/api/opening-stock/template.xlsx">Tải mẫu Excel</Button>
       {mayEdit && <Button onClick={() => setImporting(true)} disabled={!ready}>Nhập Excel</Button>}
     </Space>}>
