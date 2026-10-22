@@ -57,6 +57,8 @@ const firstProblem = (p: Problem) => new AppError('OPENING_STOCK_INVALID', `Dòn
 // Thay toàn bộ tồn đầu kỳ của năm; trả số dòng đã ghi.
 export async function replaceOpeningStock(trx: Trx, tenantId: string, year: number, rows: StockRow[]): Promise<number> {
   await openingPeriod(trx, year);
+  if (await trx.selectFrom('fiscal_period').select('id').where('fiscal_year', '<', year).executeTakeFirst())
+    throw new AppError('OPENING_PRIOR_YEAR_EXISTS', `Đã có năm tài chính trước năm ${year}: tồn kho đầu kỳ chỉ nhập cho năm đầu tiên, các năm sau tự kết chuyển`, 409);
   const { rows: values, problems } = await resolve(trx, rows);
   if (problems.length) throw firstProblem(problems[0]!);
   await trx.deleteFrom('opening_stock').where('fiscal_year', '=', year).execute();

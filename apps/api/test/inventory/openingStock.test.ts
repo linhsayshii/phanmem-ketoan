@@ -134,7 +134,64 @@ describe('tồn kho đầu kỳ', () => {
     expect((await call('PUT', '/api/opening-stock/2026', { rows: [S('K1', 'SP1', '1', '1000')] }, none)).statusCode).toBe(403);
     expect((await call('GET', '/api/opening-balance/2026', undefined, none)).statusCode).toBe(403);
     const g = await call('GET', '/api/opening-stock/2026', undefined, none);
+    expect((await call('GET', '/api/opening-balance/2026', undefined, none)).json().error.message).toContain('view_cost');
     expect(g.statusCode).toBe(200); expect((g.json() as { value: string | null }[])[0]!.value).toBeNull();
     expect((await call('GET', '/api/opening-stock/2026', undefined, cost)).json()[0].value).toBe('1000');
+  });
+});
+
+describe('tồn kho đầu kỳ: tài khoản kho và lô (sửa vòng 1)', () => {
+  let c2: string; let t2: string;
+  const call2 = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object) => call(method, url, payload, c2);
+  const cat2 = async (name: string, payload: object) => { const r = await call2('POST', `/api/catalogs/${name}`, payload); expect(r.statusCode, r.body).toBe(201); };
+  const issues2 = async () => ((await call2('GET', '/api/opening-balance/2026/check')).json() as { code: string; accountCode?: string }[]);
+  beforeAll(async () => {
+    ({ cookie: c2, tenantId: t2 } = await bootstrapTenant(ctx, { code: `OT${Date.now()}` }));
+    expect((await call2('POST', '/api/fiscal-years', { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' })).statusCode).toBe(201);
+    await call2('POST', '/api/catalogs/uom', { code: 'CAI', name: 'Cái' });
+    await cat2('item', { code: 'IT1', name: 'Hàng 1', base_uom_code: 'CAI', kind: 'goods', inventory_account_code: '155' });
+    await cat2('item', { code: 'LOT', name: 'Hàng lô', base_uom_code: 'CAI', kind: 'goods', tracking: 'lot' });
+    await cat2('item', { code: 'LEX', name: 'Hàng lô hạn', base_uom_code: 'CAI', kind: 'goods', tracking: 'lot_expiry' });
+    await cat2('warehouse', { code: 'W1', name: 'Kho 1', inventory_account_code: '156', costing_method: 'avg_period' });
+    await cat2('warehouse', { code: 'W2', name: 'Kho 2', inventory_account_code: '152', costing_method: 'avg_period' });
+    await cat2('warehouse', { code: 'W3', name: 'Kho 3', costing_method: 'avg_period' });
+    await cat2('warehouse', { code: 'W4', name: 'Kho 4', inventory_account_code: '152', costing_method: 'avg_period' });
+  }, 60_000);
+
+  it('tài khoản kho: kho thắng hàng, kho không gắn thì lấy tài khoản hàng', async () => {
+    expect((await call2('PUT', '/api/opening-stock/2026', { rows: [S('W2', 'IT1', '1', '100'), S('W3', 'IT1', '1', '200')] })).statusCode).toBe(200);
+    await call2('PUT', '/api/opening-balance/2026', { rows: [R('152', '100'), R('155', '200'), R('4111', '0', '300')] });
+    expect((await issues2()).filter((i) => i.code === 'OPENING_STOCK_MISMATCH')).toEqual([]);
+    const p = await call2('POST', '/api/opening-balance/2026/post'); expect(p.statusCode, p.body).toBe(200);
+    const l = (await sql<{ code: string; wh: string }>`SELECT a.code, w.code AS wh FROM voucher_line l JOIN account a ON a.id = l.account_id JOIN warehouse w ON w.id = l.warehouse_id WHERE l.voucher_id = ${p.json().id}::uuid ORDER BY w.code`.execute(ctx.t.admin)).rows;
+    expect(l).toEqual([{ code: '152', wh: 'W2' }, { code: '155', wh: 'W3' }]);
+    expect((await call2('POST', '/api/opening-balance/2026/unpost')).statusCode).toBe(200);
+  });
+
+  it('tài khoản kho không có trong chế độ của năm: kiểm tra báo ACCOUNT_NOT_FOUND, ghi sổ 409 chứ không 404', async () => {
+    await sql`INSERT INTO account (tenant_id, regime, code, name, root_type, normal_balance, subledger_kind) VALUES (${t2}::uuid, 'TT200', '1561', 'Kho khác chế độ', 'asset', 'debit', 'inventory')`.execute(ctx.t.admin);
+    await sql`UPDATE warehouse SET inventory_account_id = (SELECT id FROM account WHERE tenant_id = ${t2}::uuid AND regime = 'TT200' AND code = '1561') WHERE tenant_id = ${t2}::uuid AND code = 'W4'`.execute(ctx.t.admin);
+    expect((await call2('PUT', '/api/opening-stock/2026', { rows: [S('W4', 'IT1', '1', '100')] })).statusCode).toBe(200);
+    await call2('PUT', '/api/opening-balance/2026', { rows: [R('4111', '0', '100')] });
+    expect(await issues2()).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'ACCOUNT_NOT_FOUND', accountCode: '1561' })]));
+    const p = await call2('POST', '/api/opening-balance/2026/post'); expect(p.statusCode).toBe(409); expect(p.json().error.code).toBe('OPENING_INVALID');
+  });
+
+  it('ghi sổ DK với hai lô và hàng theo hạn dùng: stock_move và lớp giá mang lô, hạn dùng; sổ cái gộp theo tài khoản–hàng–kho', async () => {
+    await call2('PUT', '/api/opening-stock/2026', { rows: [S('W1', 'LOT', '10', '1000', { lotNo: 'A' }), S('W1', 'LOT', '5', '700', { lotNo: 'B' }), S('W1', 'LEX', '2', '300', { lotNo: 'X', expiryDate: '2027-03-31' })] });
+    await call2('PUT', '/api/opening-balance/2026', { rows: [R('156', '2000'), R('4111', '0', '2000')] });
+    const p = await call2('POST', '/api/opening-balance/2026/post'); expect(p.statusCode, p.body).toBe(200);
+    const id = p.json().id as string;
+    const lay = (await sql<{ item: string; lot: string; exp: string | null; q: string; v: string }>`
+      SELECT i.code AS item, l.lot_no AS lot, m.expiry_date::text AS exp, m.quantity::text AS q, l.value::text AS v FROM stock_move m JOIN item i ON i.id = m.item_id JOIN stock_cost_layer l ON l.move_id = m.id WHERE m.voucher_id = ${id}::uuid ORDER BY i.code, l.lot_no`.execute(ctx.t.admin)).rows;
+    expect(lay).toEqual([{ item: 'LEX', lot: 'X', exp: '2027-03-31', q: '2.0000', v: '300' }, { item: 'LOT', lot: 'A', exp: null, q: '10.0000', v: '1000' }, { item: 'LOT', lot: 'B', exp: null, q: '5.0000', v: '700' }]);
+    const led = (await sql<{ item: string; debit: string }>`SELECT i.code AS item, l.debit::text FROM voucher_line l JOIN item i ON i.id = l.item_id WHERE l.voucher_id = ${id}::uuid AND l.item_id IS NOT NULL ORDER BY i.code`.execute(ctx.t.admin)).rows;
+    expect(led).toEqual([{ item: 'LEX', debit: '300' }, { item: 'LOT', debit: '1700' }]);
+  });
+
+  it('lưu tồn đầu kỳ khi đã có năm tài chính trước: 409 OPENING_PRIOR_YEAR_EXISTS', async () => {
+    expect((await call2('POST', '/api/fiscal-years', { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT133' })).statusCode).toBe(201);
+    const r = await call2('PUT', '/api/opening-stock/2027', { rows: [S('W1', 'IT1', '1', '1')] });
+    expect(r.statusCode, r.body).toBe(409); expect(r.json().error.code).toBe('OPENING_PRIOR_YEAR_EXISTS');
   });
 });

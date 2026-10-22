@@ -36,7 +36,7 @@ export const openingRow = z.object({
 });
 export type OpeningRow = z.infer<typeof openingRow>;
 export interface OpeningIssue {
-  code: 'UNBALANCED' | 'ACCOUNT_GROUP' | 'WRONG_SIDE' | 'PARTY_REQUIRED' | 'PARTY_NOT_ALLOWED' | 'CURRENCY_NOT_TRACKED' | 'ACCOUNT_PNL' | 'ACCOUNT_INACTIVE' | 'SUBLEDGER_MODULE_REQUIRED' | 'BANK_ACCOUNT_MISSING' | 'OPENING_STOCK_MISMATCH';
+  code: 'UNBALANCED' | 'ACCOUNT_GROUP' | 'WRONG_SIDE' | 'PARTY_REQUIRED' | 'PARTY_NOT_ALLOWED' | 'CURRENCY_NOT_TRACKED' | 'ACCOUNT_PNL' | 'ACCOUNT_INACTIVE' | 'SUBLEDGER_MODULE_REQUIRED' | 'BANK_ACCOUNT_MISSING' | 'OPENING_STOCK_MISMATCH' | 'ACCOUNT_NOT_FOUND';
   message: string; accountCode?: string; partyCode?: string | null;
   warning?: true; // cảnh báo: hiện khi kiểm tra nhưng không chặn ghi sổ
 }
@@ -135,10 +135,20 @@ function issuesOf(rows: DbRow[]): OpeningIssue[] {
   return issues;
 }
 
+// Tài khoản kho của dòng tồn (theo kho, hàng, hoặc 156) tra theo mã trong chế độ của năm: phải có, còn dùng và không phải tài khoản tổng hợp.
+async function stockAccountIssues(trx: Trx, regime: string, groups: StockGroup[]): Promise<OpeningIssue[]> {
+  const codes = [...new Set(groups.map((g) => g.accountCode))].sort(); if (!codes.length) return [];
+  const found = new Map((await trx.selectFrom('account').select(['code', 'is_active', 'is_group']).where('regime', '=', regime).where('code', 'in', codes).execute()).map((a) => [a.code, a]));
+  return codes.flatMap((code): OpeningIssue[] => { const a = found.get(code);
+    if (!a) return [{ code: 'ACCOUNT_NOT_FOUND', accountCode: code, message: `Tài khoản kho ${code} không có trong hệ thống tài khoản ${regime} của năm này` }];
+    return [...(a.is_group ? [{ code: 'ACCOUNT_GROUP' as const, accountCode: code, message: `Tài khoản ${code} là tài khoản tổng hợp` }] : []), ...(a.is_active ? [] : [{ code: 'ACCOUNT_INACTIVE' as const, accountCode: code, message: `Tài khoản ${code} đã ngừng sử dụng` }])]; });
+}
+
 export async function checkOpening(trx: Trx, year: number): Promise<OpeningIssue[]> {
   const { regime } = await openingPeriod(trx, year);
   const rows = await openingRows(trx, year, regime);
-  return [...issuesOf(rows), ...stockIssues(rows.map((r) => ({ ...r, accountCode: r.accountCode, subledger_kind: r.subledger_kind })), await stockGroups(trx, year))];
+  const groups = await stockGroups(trx, year);
+  return [...issuesOf(rows), ...stockIssues(rows, groups), ...await stockAccountIssues(trx, regime, groups)];
 }
 
 // Chỉ ghi sổ số dư mới bỏ ghi sổ được chứng từ DK của chính nó: cờ app.opening_repost (xem unpost_voucher, 0015) chỉ bật quanh đúng lệnh này rồi đặt lại.
@@ -159,7 +169,7 @@ export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: str
   const rows = await openingRows(trx, year, p0.regime);
   if (!rows.length) throw new AppError('OPENING_EMPTY', 'Chưa nhập số dư đầu kỳ nào', 409);
   const groups = await stockGroups(trx, year);
-  const issues = [...issuesOf(rows), ...stockIssues(rows, groups)].filter((i) => !i.warning);
+  const issues = [...issuesOf(rows), ...stockIssues(rows, groups), ...await stockAccountIssues(trx, p0.regime, groups)].filter((i) => !i.warning);
   if (issues.length) throw new AppError('OPENING_INVALID', 'Số dư đầu kỳ chưa hợp lệ', 409, issues);
   // DK lập tay cùng năm không bị chiếm (bỏ ghi sổ + xóa dòng) và cũng không có DK thứ hai (số dư cộng đôi); chứng từ đã đảo hoặc hủy thì không tính.
   const dks = await trx.selectFrom('voucher').select(['id', 'state', 'source_doc_type']).where('voucher_type', '=', 'DK').where('fiscal_year', '=', year).where('reversal_of_id', 'is', null)
@@ -308,7 +318,7 @@ async function guardInventory(trx: Trx, auth: { sensitive: Set<string> }, year: 
   const book = await trx.selectFrom('opening_balance as o').innerJoin('account as a', 'a.id', 'o.account_id').select('o.id').where('o.fiscal_year', '=', year).where('a.subledger_kind', '=', 'inventory').limit(1).executeTakeFirst();
   const stock = book ?? await trx.selectFrom('opening_stock').select('id').where('fiscal_year', '=', year).limit(1).executeTakeFirst();
   const incoming = stock || !codes.length ? stock : await trx.selectFrom('account').select('id').where('regime', '=', regime).where('subledger_kind', '=', 'inventory').where('code', 'in', codes).limit(1).executeTakeFirst();
-  if (incoming) throw new AppError('FORBIDDEN', 'Không có quyền xem giá vốn', 403);
+  if (incoming) throw new AppError('FORBIDDEN', 'Cần cờ xem giá vốn (view_cost) để xem hoặc sửa số dư tài khoản kho và tồn kho đầu kỳ', 403);
 }
 
 const routes: FastifyPluginAsyncZod = async (app) => {
