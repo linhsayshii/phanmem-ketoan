@@ -8,6 +8,13 @@ import { assertBalanceSheet, onlyPartyAccounts, openItemsByParty, sumFromLines }
 
 // Kỳ vọng tính tay (trường calc ghi phép tính), không sinh từ mã đang kiểm.
 const expected = JSON.parse(readFileSync(new URL('../../../packages/db/src/seed/expected-gd2-abc.json', import.meta.url), 'utf8'));
+// Phần kho (GĐ3) cộng vào GĐ2: chênh lệch số dư, khấu trừ thuế quý 1 ghi đè, thêm chứng từ (GV chỉ kiểm ở test/inventory/sample-abc-kho.test.ts).
+const kho = JSON.parse(readFileSync(new URL('../../../packages/db/src/seed/expected-gd3-abc.json', import.meta.url), 'utf8'));
+for (const [code, d] of Object.entries(kho.chenhLechSoDuCuoiNam as Record<string, string>)) expected.soDuCuoiNam[code] = (BigInt(expected.soDuCuoiNam[code] ?? '0') + BigInt(d)).toString();
+for (const asOf of ['2026-06-30', '2026-12-31']) { const more = { ...kho.congNoThem }; delete more.calc; Object.assign(expected.congNo[asOf], more); } // KH021, NCC011... chưa thu, chưa trả cả năm
+expected.chungTuTuDong.KTT.find((v: { date: string }) => v.date === kho.ktt31Thang3.date).lines = kho.ktt31Thang3.lines;
+for (const [t, n] of Object.entries(kho.soChungTuThem.counts as Record<string, number>)) expected.soChungTu.counts[t] = (expected.soChungTu.counts[t] ?? 0) + n;
+const totalVouchers = (Object.values(expected.soChungTu.counts) as number[]).reduce((a, b) => a + b, 0) + kho.soChungTuThem.gv.total;
 type AutoVoucher = { date: string; lines: [string, string, string, string][] };
 
 let ctx: TestApp; let cookie: string; let tenantId: string;
@@ -79,15 +86,15 @@ describe('Bộ dữ liệu mẫu ABC năm 2026 (GĐ2)', () => {
       expect(got, type).toEqual((expected.chungTuTuDong[type] as AutoVoucher[]).map((v) => ({ date: v.date, lines: [...v.lines].sort() })));
     }
     const byType = await sql<{ t: string; s: string; n: number }>`SELECT voucher_type AS t, state AS s, count(*)::int AS n FROM voucher WHERE tenant_id = ${tenantId}::uuid GROUP BY 1, 2 ORDER BY 1`.execute(ctx.t.admin);
-    expect(byType.rows.every((x) => x.s === 'posted')).toBe(true);
-    expect(Object.fromEntries(byType.rows.map((x) => [x.t, x.n]))).toEqual(expected.soChungTu.counts);
+    expect(byType.rows.every((x) => x.s === 'posted' || (x.t === 'GV' && x.s === 'reversed'))).toBe(true); // GV tháng 3 bị đảo khi chạy lại giá vốn
+    expect(Object.fromEntries(byType.rows.filter((x) => x.t !== 'GV').map((x) => [x.t, x.n]))).toEqual(expected.soChungTu.counts);
   });
 
   it('Bất biến 4 vẫn đúng mọi cuối tháng; bảng cân đối số phát sinh cân', async () => {
     for (let m = 1; m <= 12; m++) await assertBalanceSheet(ctx, cookie, new Date(Date.UTC(2026, m, 0)).toISOString().slice(0, 10));
     const { totals } = await get('/api/reports/ledgers/trial-balance?from=2026-01-01&to=2026-12-31') as { totals: Record<'opening' | 'period' | 'closing', { debit: string; credit: string }> };
     for (const k of ['opening', 'period', 'closing'] as const) expect(totals[k].debit, k).toBe(totals[k].credit);
-    expect(totals.opening.debit).toBe('1515000000');
+    expect(totals.opening.debit).toBe('1523500000'); // 1.515.000.000 của GĐ2 + tồn kho đầu năm 8.500.000
   });
 
   it('seed chạy lần hai không tạo thêm; lỗi giữa chừng hoàn tác hết', async () => {
@@ -101,7 +108,7 @@ describe('Bộ dữ liệu mẫu ABC năm 2026 (GĐ2)', () => {
         inside = (await c.query(`SELECT count(*)::int AS n FROM voucher v JOIN tenant t ON t.id = v.tenant_id WHERE t.code = 'ABC_TEST_FAIL'`)).rows[0].n;
         throw new Error('lỗi giả lập');
       } })).rejects.toThrow('lỗi giả lập');
-      expect(inside).toBe(105); // cả năm nghiệp vụ đã ghi trong giao dịch trước khi lỗi
+      expect(inside).toBe(totalVouchers); // cả năm nghiệp vụ đã ghi trong giao dịch trước khi lỗi
       expect((await c.query(`SELECT count(*)::int AS n FROM tenant WHERE code = 'ABC_TEST_FAIL'`)).rows[0].n).toBe(0);
     } finally { await c.end(); }
   }, 300_000);

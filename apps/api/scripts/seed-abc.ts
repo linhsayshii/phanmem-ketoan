@@ -2,6 +2,7 @@
 // thu chi có kế hoạch đối trừ, chênh lệch tỷ giá, tỷ giá xuất quỹ, đánh giá lại, phân bổ doanh thu nhận trước, khấu trừ thuế, tờ khai 01/GTGT quý 3, quý 4 đã chốt).
 // Seed nằm ở apps/api vì packages/db không import được dịch vụ của API; dựng lại bút toán bằng SQL sẽ chép logic nghiệp vụ. Dùng: pnpm db:seed:abc
 // Số kỳ vọng tính tay của năm này: packages/db/src/seed/expected-gd2-abc.json (kiểm ở test/sample-abc.test.ts).
+// Phần kho (GĐ3): hàng HANG-A..D ở bốn kho theo bốn phương pháp giá vốn, tính tay ở expected-gd3-abc.json (kiểm ở test/inventory/sample-abc-kho.test.ts).
 import '../src/env.js';
 import pg from 'pg';
 import { sql, type Transaction } from 'kysely';
@@ -13,6 +14,11 @@ import { adjustInput, runOutflowAdjust } from '../src/modules/cash/fx.js';
 import { revaluationInput, runRevaluation } from '../src/modules/cash/revaluation.js';
 import { autoInput, autoSettle, settle, settleInput } from '../src/modules/arap/settlement.js';
 import { createInvoice, invoiceInput } from '../src/modules/invoices/service.js';
+import { costingInput, runCosting } from '../src/modules/inventory/costingRun.js';
+import { createLandedCost, landedCostInput } from '../src/modules/inventory/landedCost.js';
+import { replaceOpeningStock, stockRow } from '../src/modules/inventory/openingStock.js';
+import { createStockVoucher, stockVoucherInput } from '../src/modules/inventory/stockVouchers.js';
+import { adjustStocktake, createStocktake, updateStocktake } from '../src/modules/inventory/stocktake.js';
 import { createSchedule, runAmortization, runInput, scheduleInput } from '../src/modules/invoices/amortization.js';
 import { openingRow, postOpening, replaceOpening } from '../src/modules/ledger/openingBalance.js';
 import { createVoucher, voucherInput } from '../src/modules/ledger/vouchers.service.js';
@@ -33,7 +39,7 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
   // Kysely trên chính kết nối đang mở giao dịch (không mở giao dịch mới): dịch vụ của API nhận nó như giao dịch của withTenant.
   const conn = { query: (...a: unknown[]) => (c.query as (...x: unknown[]) => unknown)(...a), release: () => {} };
   const trx = createDb({ connect: async () => conn, end: async () => {} } as unknown as pg.Pool) as unknown as Transaction<Database>;
-  const auth = { permissions: new Set(['settlement.create']), sensitive: new Set<string>(SENSITIVE_FLAGS) };
+  const auth = { permissions: new Set(['settlement.create', 'stock_voucher.create', 'stock_voucher.post', 'stock_voucher.view']), sensitive: new Set<string>(SENSITIVE_FLAGS) };
   const ctx = { tenantId, userId, auth, canBackdate: false, sensitive: auth.sensitive };
 
   // ---- Danh mục bổ sung, cài đặt, tỷ giá ----
@@ -45,6 +51,19 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
   // Khách hàng nước ngoài trả bằng USD: bật theo dõi ngoại tệ trên 131 (mẫu TT133 không bật) để nhập được số dư đầu kỳ nguyên tệ.
   await c.query(`UPDATE account SET track_currency = true WHERE tenant_id = $1 AND code = '131'`, [tenantId]);
   await c.query(`UPDATE party SET is_vendor = true WHERE tenant_id = $1 AND code = 'KH002'`, [tenantId]); // vừa là khách hàng vừa là nhà cung cấp: bù trừ công nợ
+  // Kho (GĐ3): hàng, kho, đối tượng. TK 155/156/157, 5111 có sẵn trong mẫu TT133.
+  const acc = (code: string) => `(SELECT id FROM account WHERE tenant_id = $1 AND code = '${code}')`;
+  await c.query(`INSERT INTO uom(tenant_id, code, name) VALUES ($1, 'THUNG', 'Thùng')`, [tenantId]);
+  const uomId = (code: string) => `(SELECT id FROM uom WHERE tenant_id = $1 AND code = '${code}')`;
+  for (const [code, name, kind, tracking, invAcc] of [['HANG-A', 'Hàng A (đa ĐVT: thùng = 12 cái)', 'goods', 'none', null], ['HANG-B', 'Hàng B (theo lô, hạn dùng)', 'goods', 'lot_expiry', null],
+    ['HANG-C', 'Hàng C (đích danh theo lô)', 'goods', 'lot', null], ['HANG-D', 'Hàng D (thành phẩm)', 'finished', 'none', '155']] as const)
+    await c.query(`INSERT INTO item(tenant_id, code, name, kind, base_uom_id, tracking, inventory_account_id, revenue_account_id) VALUES ($1, $2, $3, $4, ${uomId('CAI')}, $5, ${invAcc ? acc(invAcc) : 'NULL'}, ${acc('5111')})`, [tenantId, code, name, kind, tracking]);
+  await c.query(`INSERT INTO item_uom(tenant_id, item_id, uom_id, factor, is_purchase, is_sale) VALUES ($1, (SELECT id FROM item WHERE tenant_id = $1 AND code = 'HANG-A'), ${uomId('THUNG')}, 12, true, true)`, [tenantId]);
+  for (const [code, name, method, invAcc, kind] of [['KHO1', 'Kho 1 (bình quân cuối kỳ)', 'avg_period', '156', 'normal'], ['KHO2', 'Kho 2 (FIFO, TK kho theo hàng)', 'fifo', null, 'normal'], ['KHO3', 'Kho 3 (bình quân tức thời)', 'avg_moving', '156', 'normal'],
+    ['KHO4', 'Kho 4 (đích danh)', 'specific', '156', 'normal'], ['KHOGB', 'Kho hàng gửi bán', 'avg_moving', '157', 'consignment_out']] as const)
+    await c.query(`INSERT INTO warehouse(tenant_id, code, name, costing_method, inventory_account_id, kind) VALUES ($1, $2, $3, $4, ${invAcc ? acc(invAcc) : 'NULL'}, $5)`, [tenantId, code, name, method, kind]);
+  for (const [code, name, cust] of [['NCC011', 'Công ty TNHH Thương mại Hàng hóa Sáu', false], ['NCCNN02', 'Asia Trading Co., Ltd (nhập khẩu)', false], ['VC001', 'Công ty Cổ phần Vận tải Một', false], ['KH021', 'Công ty TNHH Bán lẻ Sáu', true]] as const)
+    await c.query(`INSERT INTO party(tenant_id, code, name, is_customer, is_vendor, default_account_code) VALUES ($1, $2, $3, $4, $5, $6)`, [tenantId, code, name, cust, !cust, cust ? '131' : '331']);
   const vcb = (await c.query(`SELECT id FROM bank WHERE tenant_id = $1 AND code = 'VCB'`, [tenantId])).rows[0].id;
   const bidv = (await c.query(`INSERT INTO bank(tenant_id, code, name, short_name) VALUES ($1, 'BIDV', 'Ngân hàng TMCP Đầu tư và Phát triển Việt Nam', 'BIDV') RETURNING id`, [tenantId])).rows[0].id;
   await c.query(`INSERT INTO bank_account(tenant_id, bank_id, account_no, account_name, branch, currency_code, gl_account_code) VALUES ($1,$2,$3,'CONG TY TNHH THUONG MAI ABC','Sở giao dịch','USD','1122'),
@@ -62,9 +81,16 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
     { accountCode: '131', partyCode: 'KHNN01', currencyCode: 'USD', debit: M(200), debitCurrency: '8000', docNo: 'INV-2025-12', docDate: '2025-12-15', dueDate: '2026-02-13' },
     { accountCode: '331', partyCode: 'NCC001', credit: M(66), docNo: '0000501', docDate: '2025-12-05', dueDate: '2025-12-20' },
     { accountCode: '331', partyCode: 'NCC002', credit: M(33), docNo: '0000777', docDate: '2025-12-28', dueDate: '2026-01-12' },
-    { accountCode: '4111', credit: M(1000) },
+    { accountCode: '156', debit: '5500000' }, { accountCode: '155', debit: '3000000' }, // tồn kho đầu năm (khớp bảng tồn bên dưới), nguồn vốn cộng vào 4111
+    { accountCode: '4111', credit: '1008500000' },
     { accountCode: '4211', credit: M(416) },
   ].map((r) => openingRow.parse(r)));
+  await replaceOpeningStock(trx, tenantId, FY, [
+    { warehouseCode: 'KHO1', itemCode: 'HANG-A', quantity: '20', value: '2000000' },
+    { warehouseCode: 'KHO3', itemCode: 'HANG-B', quantity: '10', value: '1000000', lotNo: 'B-LOT0', expiryDate: '2027-06-30' },
+    { warehouseCode: 'KHO4', itemCode: 'HANG-C', quantity: '5', value: '2500000', lotNo: 'C-L1' },
+    { warehouseCode: 'KHO2', itemCode: 'HANG-D', quantity: '10', value: '3000000' },
+  ].map((r) => stockRow.parse(r)));
   const dk = await postOpening(trx, ctx, FY);
 
   // ---- Công cụ ghi chứng từ qua dịch vụ ----
@@ -186,9 +212,80 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
   at(day(12, 8), async () => { ref['HDM-NCC005'] = await purchase('NCC005', day(12, 8), 'Dịch vụ bảo dưỡng thiết bị văn phòng', 'C26TBD', '0001212', '6422', M(30), ['V10']); });
   at(day(12, 10), async () => receipt('PT', 'KH002', day(12, 10), M(10.6), await item(ref['HDB-KH002-V8b']!), 'Thu nốt tiền dịch vụ tổ chức sự kiện'));
 
+  // ---- Kho (GĐ3): chứng từ hàng hóa qua dịch vụ kho; hóa đơn bán dùng quyển C26TBH, mua dùng C26TMH (không đổi số hóa đơn bán GĐ2) ----
+  const stockCtx = { tenantId, userId, auth };
+  let bhNo = 0; let mhNo = 0;
+  const gl = (itemCode: string, warehouseCode: string, quantity: string, unitPrice: string, amountCurrency: string, o: Record<string, unknown> = {}) =>
+    ({ itemCode, uomCode: 'CAI', warehouseCode, quantity, unitPrice, amountCurrency, taxCodes: ['V10'], ...o });
+  const goodsSale = async (type: 'BH' | 'TLB', party: string, date: string, desc: string, items: object[], o: Record<string, unknown> = {}) => {
+    const v = await createInvoice(trx, ctx, invoiceInput.parse({ voucherType: type, postingDate: date, documentDate: date, partyCode: party, description: desc, items,
+      invoice: { formNo: '1', serial: 'C26TBH', invoiceNo: String(++bhNo).padStart(7, '0'), invoiceDate: date, invoiceGroupCode: '10', ...o } }));
+    await post(v.id); return v.id;
+  };
+  const goodsBuy = async (party: string, date: string, desc: string, items: object[], o: Record<string, unknown> = {}) => {
+    const { stockMode = 'through_stock', receiptVoucherIds, ...inv } = o;
+    const v = await createInvoice(trx, ctx, invoiceInput.parse({ voucherType: 'MH', stockMode, postingDate: date, documentDate: date, partyCode: party, description: desc, items, ...(receiptVoucherIds ? { receiptVoucherIds } : {}),
+      invoice: { formNo: '1', serial: 'C26TMH', invoiceNo: String(++mhNo).padStart(7, '0'), invoiceDate: date, invoiceGroupCode: '01', ...inv } }));
+    await post(v.id); return v.id;
+  };
+  const stockDoc = async (b: Record<string, unknown>) => { const v = await createStockVoucher(trx, stockCtx, stockVoucherInput.parse(b)); await post(v.id); return v.id; };
+  const lineOf = async (voucherId: string) => Number((await sql<{ id: string }>`SELECT id::text FROM voucher_item_line WHERE voucher_id = ${voucherId}::uuid ORDER BY id LIMIT 1`.execute(trx)).rows[0]!.id);
+  const costing = (from: string, to: string) => runCosting(trx, { tenantId, userId, canBackdate: false }, costingInput.parse({ periodFrom: from, periodTo: to }));
+
+  // Tháng 1-3 (quý 1 có toàn bộ thuế GTGT của kho): mua, hàng về trước, nhập khẩu và chi phí mua, bán, trả lại, chuyển kho gửi bán; tháng 4 ghi lùi một phiếu nhập tháng 3; tháng 6 kiểm kê.
+  at(day(1, 5), async () => { ref['MH-A'] = await goodsBuy('NCC011', day(1, 5), 'Mua HANG-A 2 thùng nhập KHO1', [gl('HANG-A', 'KHO1', '2', '1260000', '2520000', { uomCode: 'THUNG' })]); });
+  at(day(1, 8), async () => { ref['PNK-D'] = await stockDoc({ voucherType: 'PNK', stockKind: 'purchase', postingDate: day(1, 8), warehouseCode: 'KHO2', partyCode: 'NCC011', description: 'Nhập HANG-D, hóa đơn về sau',
+    items: [{ itemCode: 'HANG-D', uomCode: 'CAI', quantity: '10', unitPrice: '320000' }] }); });
+  at(day(1, 10), async () => { await goodsBuy('NCC011', day(1, 10), 'Mua HANG-B lô B-LOT1 nhập KHO3', [gl('HANG-B', 'KHO3', '20', '131000', '2620000', { lotNo: 'B-LOT1', expiryDate: '2027-12-31' })]); });
+  at(day(1, 12), async () => { await goodsBuy('NCC011', day(1, 12), 'Mua HANG-C lô C-L2 nhập KHO4', [gl('HANG-C', 'KHO4', '3', '523333.3333', '1570000', { lotNo: 'C-L2' })]); });
+  at(day(1, 15), async () => { ref['BH-A'] = await goodsSale('BH', 'KH021', day(1, 15), 'Bán HANG-A', [gl('HANG-A', 'KHO1', '30', '150000', '4500000')]); });
+  at(day(1, 20), async () => { await goodsBuy('NCC011', day(1, 20), 'Hóa đơn HANG-D về sau phiếu nhập 08/01', [gl('HANG-D', 'KHO2', '10', '333333.3', '3333333')],
+    { stockMode: 'goods_first', receiptVoucherIds: [ref['PNK-D']!] }); });
+  at(day(1, 25), async () => { await goodsSale('BH', 'KH021', day(1, 25), 'Bán HANG-B lô B-LOT0', [gl('HANG-B', 'KHO3', '8', '200000', '1600000', { lotNo: 'B-LOT0' })]); });
+  at(day(2, 5), async () => { await goodsSale('BH', 'KH021', day(2, 5), 'Bán HANG-D', [gl('HANG-D', 'KHO2', '12', '450000', '5400000')]); });
+  at(day(2, 10), async () => { // khách trả lại 5 cái HANG-A (giá vốn trả lại = giá vốn của lần xuất gốc, tỷ lệ)
+    await goodsSale('TLB', 'KH021', day(2, 10), 'Khách trả lại 5 cái HANG-A', [gl('HANG-A', 'KHO1', '5', '150000', '750000', { sourceLineId: await lineOf(ref['BH-A']!) })], { adjustsInvoiceId: await invoiceRow(ref['BH-A']!) });
+  });
+  at(day(2, 10), async () => { // nhập khẩu một lô: thuế nhập khẩu vào giá, thuế GTGT hàng nhập được khấu trừ
+    ref['MH-B-NK'] = await goodsBuy('NCCNN02', day(2, 10), 'Nhập khẩu HANG-B lô B-LOT2 nhập KHO3', [gl('HANG-B', 'KHO3', '10', '100000', '1000000',
+      { taxCodes: [], lotNo: 'B-LOT2', expiryDate: '2028-02-28', importMode: true, importTax: '100000', vatImport: '110000', vatImportCode: 'V10' })], { serial: '', invoiceNo: `TK-${FY}-001` });
+  });
+  at(day(2, 12), async () => { // chi phí vận chuyển phân bổ theo giá trị vào lô nhập khẩu
+    const lc = await createLandedCost(trx, stockCtx, landedCostInput.parse({ postingDate: day(2, 12), partyCode: 'VC001', basis: 'value', receiptVoucherIds: [ref['MH-B-NK']!], description: 'Cước vận chuyển lô nhập khẩu HANG-B',
+      costLines: [{ accountCode: '331', amount: '200000', vatAmount: '20000', partyCode: 'VC001' }],
+      invoices: [{ serial: 'C26TVC', invoiceNo: '0000412', invoiceDate: day(2, 12), invoiceGroupCode: '01', taxCode: 'V10', baseAmount: '200000', taxAmount: '20000' }] }));
+    await post(lc.id);
+  });
+  at(day(2, 15), async () => { await goodsSale('BH', 'KH021', day(2, 15), 'Bán HANG-C lô C-L1', [gl('HANG-C', 'KHO4', '4', '700000', '2800000', { lotNo: 'C-L1' })]); });
+  at(day(2, 20), async () => { await goodsSale('BH', 'KH021', day(2, 20), 'Bán HANG-B lô B-LOT1', [gl('HANG-B', 'KHO3', '12', '200000', '2400000', { lotNo: 'B-LOT1' })]); });
+  at(day(3, 5), async () => { await goodsSale('BH', 'KH021', day(3, 5), 'Bán HANG-D', [gl('HANG-D', 'KHO2', '3', '450000', '1350000')]); });
+  at(day(3, 10), async () => { await goodsSale('BH', 'KH021', day(3, 10), 'Bán HANG-C lô C-L2', [gl('HANG-C', 'KHO4', '2', '700000', '1400000', { lotNo: 'C-L2' })]); });
+  at(day(3, 15), () => stockDoc({ voucherType: 'CK', stockKind: 'transfer', postingDate: day(3, 15), warehouseCode: 'KHO1', destWarehouseCode: 'KHOGB', description: 'Chuyển 4 cái HANG-A sang kho hàng gửi bán',
+    items: [{ itemCode: 'HANG-A', uomCode: 'CAI', quantity: '4' }] }));
+  at(day(3, 20), async () => { await goodsSale('BH', 'KH021', day(3, 20), 'Bán HANG-A từ KHO1', [gl('HANG-A', 'KHO1', '10', '150000', '1500000')]); });
+  at(day(3, 25), async () => { await goodsSale('BH', 'KH021', day(3, 25), 'Bán HANG-A từ kho hàng gửi bán', [gl('HANG-A', 'KHOGB', '2', '150000', '300000')]); });
+  // Nộp phần thuế còn lại của quý 1 do hàng hóa (đầu ra trừ đầu vào), thuế nhập khẩu và thuế GTGT hàng nhập khẩu.
+  at(day(4, 21), async () => {
+    await taxPayment(day(4, 21), '33311', '915667', 'Nộp thuế GTGT quý 1/2026 (phần hàng hóa)');
+    await taxPayment(day(4, 21), '3333', '100000', 'Nộp thuế nhập khẩu lô HANG-B');
+    await taxPayment(day(4, 21), '33312', '110000', 'Nộp thuế GTGT hàng nhập khẩu lô HANG-B');
+  });
+  // Ghi lùi phiếu nhập tháng 3 sau khi đã chạy giá vốn tháng 3: chạy lại, giá vốn GV tháng 3 được đảo và lập lại.
+  at(day(4, 3), async () => {
+    await stockDoc({ voucherType: 'PNK', stockKind: 'purchase', postingDate: day(3, 10), warehouseCode: 'KHO1', partyCode: 'NCC011', description: 'Nhập bổ sung HANG-A ghi lùi ngày 10/03 (chưa có hóa đơn)',
+      items: [{ itemCode: 'HANG-A', uomCode: 'CAI', quantity: '6', unitPrice: '110000' }] });
+    await costing(day(3, 1), lastDay(3));
+  });
+  at(day(6, 30), async () => { // kiểm kê KHO1: sổ 11, đếm 10, thiếu 1 trong định mức vào giá vốn
+    const k = await createStocktake(trx, { tenantId, userId }, { docDate: day(6, 30), warehouseCode: 'KHO1', note: 'Kiểm kê giữa năm' });
+    await updateStocktake(trx, { tenantId }, k.id, { lines: [{ itemCode: 'HANG-A', countedQty: '10', reason: 'cogs' }] });
+    await adjustStocktake(trx, { tenantId, userId, auth: { sensitive: auth.sensitive } }, k.id);
+  });
+
   // Cuối tháng: phân bổ doanh thu nhận trước, tính lại tỷ giá xuất quỹ, (tháng 12) đối trừ tự động và đánh giá lại, cuối quý khấu trừ thuế và (quý 3, 4) lập, chốt tờ khai.
   for (let m = 1; m <= 12; m++) {
     events.push({ key: `${lastDay(m)}~`, run: async () => {
+      await costing(day(m, 1), lastDay(m)); // giá vốn kho từng tháng (GV chỉ lập khi giá tính khác giá ghi tạm)
       if (m >= 7) await runAmortization(trx, ctx, runInput.parse({ fiscalYear: FY, periodNo: m }));
       if (m === 12) await autoSettle(trx, auth, autoInput.parse({ accountCode: '131', partyCode: 'KH001', date: lastDay(m) }));
       await runOutflowAdjust(trx, ctx, adjustInput.parse({ fiscalYear: FY, periodNo: m }));

@@ -1,0 +1,67 @@
+{
+  "nguon": "Tính tay từ kịch bản kho của apps/api/scripts/seed-abc.ts (không sinh từ mã đang kiểm). Đơn vị VND; số dư ròng = Nợ − Có (dương: dư Nợ, âm: dư Có). Quy tắc làm tròn: bình quân = giá trị / số lượng giữ nguyên phân số, mỗi dòng xuất làm tròn đồng một lần (0,5 lên); FIFO/đích danh lấy phần giá trị của lớp theo round(số lượng lấy × giá trị lớp / số lượng lớp), lấy hết lớp thì lấy đúng giá trị còn lại.",
+  "phuongPhapTheoKho": {
+    "KHO1": "avg_period (bình quân cuối kỳ), TK 156, hàng HANG-A (đa ĐVT: CAI, THUNG = 12 CAI)",
+    "KHO2": "fifo, TK kho theo hàng (HANG-D: 155 thành phẩm), hàng HANG-D",
+    "KHO3": "avg_moving (bình quân tức thời), TK 156, hàng HANG-B (theo lô, hạn dùng)",
+    "KHO4": "specific (đích danh), TK 156, hàng HANG-C (theo lô)",
+    "KHOGB": "avg_moving, TK 157 (kho hàng gửi bán), kind consignment_out"
+  },
+  "asOf": "2026-12-31",
+  "hamGopGd2": "Số dư cuối năm của ABC = số dư expected-gd2-abc.json + chenhLechSoDuCuoiNam bên dưới. Toàn bộ nghiệp vụ có thuế GTGT của kho nằm trong quý 1 (thuế đầu ra lớn hơn thuế đầu vào); phần chênh lệch thuế đầu ra − đầu vào được nộp ngày 21/04 cùng thuế nhập khẩu, thuế GTGT hàng nhập khẩu nên 1331, 33311, 3333, 33312 cuối năm không đổi so với GĐ2 và hai tờ khai quý 3, quý 4 giữ nguyên.",
+  "chenhLechSoDuCuoiNam": {
+    "155": "1666666", "156": "4539727", "157": "208945", "632": "14087995", "5111": "-20500000",
+    "131": "22550000", "331": "-12927666", "1121": "-1125667", "4111": "-8500000",
+    "1331": "0", "33311": "0", "3333": "0", "33312": "0"
+  },
+  "chenhLechCalc": {
+    "155": "HANG-D KHO2 còn 5 cái = 1.666.666 (xem nxt)",
+    "156": "KHO1 1.044.727 + KHO3 2.471.667 + KHO4 1.023.333 = 4.539.727",
+    "157": "KHOGB còn 2 cái HANG-A = 208.945",
+    "632": "Giá vốn bán: HANG-A 3.081.818 + 1.044.727 + 208.946 = 4.335.491; kiểm kê thiếu 104.473; trừ hàng bán bị trả lại 513.636 → 3.926.328. HANG-B 965.333 + 1.483.000 = 2.448.333. HANG-C 2.000.000 + 1.046.667 = 3.046.667. HANG-D 3.666.667 + 1.000.000 = 4.666.667. Cộng 3.926.328 + 2.448.333 + 3.046.667 + 4.666.667 = 14.087.995",
+    "5111": "Bán: HANG-A 4.500.000 + 1.500.000 + 300.000 = 6.300.000, trả lại −750.000; HANG-B 1.600.000 + 2.400.000 = 4.000.000; HANG-C 2.800.000 + 1.400.000 = 4.200.000; HANG-D 5.400.000 + 1.350.000 = 6.750.000. Cộng 20.500.000",
+    "131": "Doanh thu 20.500.000 + thuế GTGT đầu ra 2.050.000 (555.000 + 400.000 + 420.000 + 675.000), chưa thu = 22.550.000",
+    "331": "Mua hàng chưa trả tiền: HANG-A 2.772.000 + 660.000 (phiếu nhập ghi lùi, chưa có hóa đơn); HANG-D 3.200.000 + 466.666 = 3.666.666; HANG-B 2.882.000 + nhập khẩu 1.000.000 + chi phí mua 220.000 = 4.102.000; HANG-C 1.727.000. Cộng 12.927.666",
+    "1121": "Nộp 21/04: GTGT còn phải nộp 2.050.000 − 1.134.333 = 915.667, thuế nhập khẩu 100.000, GTGT hàng nhập khẩu 110.000. Cộng 1.125.667",
+    "4111": "Tồn kho đầu năm 5.500.000 (156) + 3.000.000 (155) = 8.500.000 ghi Có thêm vào 4111 để số dư đầu kỳ cân",
+    "1331": "Đầu vào: 252.000 + 333.333 + 262.000 + 110.000 + 20.000 + 157.000 = 1.134.333; khấu trừ hết ở KTT 31/03",
+    "33311": "Đầu ra 2.050.000 (xem 131) − khấu trừ 1.134.333 − nộp 915.667 = 0",
+    "3333": "Thuế nhập khẩu 100.000 phải nộp, nộp ngày 21/04 → 0",
+    "33312": "Thuế GTGT hàng nhập khẩu 110.000 phải nộp, nộp ngày 21/04 → 0"
+  },
+  "bangCanDoiKho": {
+    "B01_141": "6415338",
+    "calc": "Hàng tồn kho (B01 dòng 141) = 151 + 152 + 153 + 154 + 155 + 156 + 157 = 0 + 0 + 0 + 0 + 1.666.666 + 4.539.727 + 208.945 = 6.415.338"
+  },
+  "thueGtgtQuy1": {
+    "dauRa": "2050000", "dauVao": "1134333", "nopThem": "915667",
+    "calc": "Đầu ra: HANG-A 450.000 − 75.000 (trả lại) + 150.000 + 30.000 = 555.000; HANG-B 160.000 + 240.000 = 400.000; HANG-C 280.000 + 140.000 = 420.000; HANG-D 540.000 + 135.000 = 675.000. Cộng 2.050.000. Đầu vào: MH HANG-A 252.000; MH HANG-D hàng về trước 333.333 (3.333.333 × 10% = 333.333,3); MH HANG-B 262.000; GTGT hàng nhập khẩu 110.000; chi phí mua 20.000; MH HANG-C 157.000. Cộng 1.134.333"
+  },
+  "ktt31Thang3": {
+    "date": "2026-03-31",
+    "lines": [["33311", "", "7134333", "0"], ["1331", "", "0", "7134333"]],
+    "calc": "GĐ2: 6.000.000 (3 × 2tr thuê văn phòng). Thêm đầu vào của kho 1.134.333, 33311 dư Có 32tr + 2.050.000 lớn hơn 1331 dư Nợ 7.134.333 → khấu trừ 7.134.333"
+  },
+  "nxt": [
+    { "item": "HANG-A", "warehouse": "KHO1", "method": "avg_period", "openingQty": "20", "openingValue": "2000000", "inQty": "35", "inValue": "3693636", "outQty": "45", "outValue": "4648909", "closingQty": "10", "closingValue": "1044727",
+      "calc": "Tồn đầu 20 = 2.000.000. Nhập: mua 05/01 2 thùng = 24 cái = 2.520.000; hàng bán bị trả lại 5 cái theo giá vốn lúc bán = round(5 × 3.081.818 / 30) = 513.636; phiếu nhập ghi lùi 10/03 6 cái × 110.000 = 660.000 → 35 cái, 3.693.636. Tháng 1: Q = 20 + 24 = 44, V = 4.520.000, xuất 30 = round(30 × 4.520.000 / 44) = 3.081.818, còn 14 cái = 1.438.182. Tháng 2 nhập 5 cái 513.636 → 19 cái 1.951.818. Tháng 3 (sau khi ghi lùi): Q = 19 + 6 = 25, V = 2.611.818; chuyển kho 4 cái = round(4 × 2.611.818 / 25) = 417.891; bán 10 cái = round(10 × 2.611.818 / 25) = 1.044.727; còn 11 cái = 1.149.200. Kiểm kê tháng 6 thiếu 1 cái = round(1.149.200 / 11) = 104.473, còn 10 cái = 1.044.727. Xuất 30 + 4 + 10 + 1 = 45 cái, 3.081.818 + 417.891 + 1.044.727 + 104.473 = 4.648.909. Kiểm: 2.000.000 + 3.693.636 − 4.648.909 = 1.044.727" },
+    { "item": "HANG-A", "warehouse": "KHOGB", "method": "avg_moving", "openingQty": "0", "openingValue": "0", "inQty": "4", "inValue": "417891", "outQty": "2", "outValue": "208946", "closingQty": "2", "closingValue": "208945",
+      "calc": "Nhận chuyển kho 4 cái theo giá xuất của KHO1 = 417.891. Bán 25/03 2 cái = round(2 × 417.891 / 4) = round(208.945,5) = 208.946 (0,5 làm tròn lên). Còn 2 cái = 417.891 − 208.946 = 208.945" },
+    { "item": "HANG-B", "warehouse": "KHO3", "method": "avg_moving", "openingQty": "10", "openingValue": "1000000", "inQty": "30", "inValue": "3920000", "outQty": "20", "outValue": "2448333", "closingQty": "20", "closingValue": "2471667",
+      "calc": "Tồn đầu 10 = 1.000.000. Mua 10/01 20 cái × 131.000 = 2.620.000: Q = 30, V = 3.620.000. Bán 25/01 8 cái = round(8 × 3.620.000 / 30) = 965.333, còn Q = 22, V = 2.654.667. Nhập khẩu 10/02 10 cái: hàng 1.000.000 + thuế nhập khẩu 100.000 (thuế GTGT hàng nhập 110.000 được khấu trừ, không vào giá) + chi phí mua 200.000 = 1.300.000: Q = 32, V = 3.954.667. Bán 20/02 12 cái = round(12 × 3.954.667 / 32) = round(1.483.000,125) = 1.483.000, còn 20 cái = 2.471.667. Nhập 2.620.000 + 1.300.000 = 3.920.000; xuất 965.333 + 1.483.000 = 2.448.333. Kiểm: 1.000.000 + 3.920.000 − 2.448.333 = 2.471.667" },
+    { "item": "HANG-C", "warehouse": "KHO4", "method": "specific", "openingQty": "5", "openingValue": "2500000", "inQty": "3", "inValue": "1570000", "outQty": "6", "outValue": "3046667", "closingQty": "2", "closingValue": "1023333",
+      "calc": "Lô C-L1 tồn đầu 5 cái = 2.500.000 (500.000/cái); lô C-L2 mua 12/01 3 cái = 1.570.000. Bán 15/02 4 cái lô C-L1 = round(4 × 2.500.000 / 5) = 2.000.000, còn 1 cái 500.000. Bán 10/03 2 cái lô C-L2 = round(2 × 1.570.000 / 3) = round(1.046.666,67) = 1.046.667, còn 1 cái 523.333. Xuất 2.000.000 + 1.046.667 = 3.046.667; còn 500.000 + 523.333 = 1.023.333. Kiểm: 2.500.000 + 1.570.000 − 3.046.667 = 1.023.333" },
+    { "item": "HANG-D", "warehouse": "KHO2", "method": "fifo", "openingQty": "10", "openingValue": "3000000", "inQty": "10", "inValue": "3333333", "outQty": "15", "outValue": "4666667", "closingQty": "5", "closingValue": "1666666",
+      "calc": "Lớp 1: tồn đầu 10 cái = 3.000.000. Lớp 2: phiếu nhập 08/01 tạm tính 3.200.000, hóa đơn về sau 20/01 giá thật 3.333.333 (điều chỉnh +133.333). Bán 05/02 12 cái: hết lớp 1 = 3.000.000 và 2 cái lớp 2 = round(2 × 3.333.333 / 10) = round(666.666,6) = 666.667, tổng 3.666.667, lớp 2 còn 8 cái = 2.666.666. Bán 05/03 3 cái = round(3 × 2.666.666 / 8) = round(999.999,75) = 1.000.000, còn 5 cái = 1.666.666. Xuất 3.666.667 + 1.000.000 = 4.666.667. Kiểm: 3.000.000 + 3.333.333 − 4.666.667 = 1.666.666" }
+  ],
+  "congNoThem": {
+    "131|KH021": "22550000", "331|NCC011": "-11707666", "331|NCCNN02": "-1000000", "331|VC001": "-220000",
+    "calc": "KH021 phải thu 20.500.000 + thuế đầu ra 2.050.000 = 22.550.000, chưa thu trong năm. NCC011 phải trả: HANG-A 2.772.000 + phiếu nhập ghi lùi 660.000, HANG-D 3.200.000 (phiếu nhập) + 466.666 (hóa đơn về sau: chênh giá 133.333 + thuế 333.333), HANG-B 2.882.000, HANG-C 1.727.000: cộng 11.707.666. NCCNN02 nợ tiền hàng nhập khẩu 1.000.000 (thuế nhập khẩu, GTGT hàng nhập ghi 3333, 33312). VC001 cước vận chuyển 200.000 + thuế 20.000 = 220.000. Tổng 331 = 11.707.666 + 1.000.000 + 220.000 = 12.927.666"
+  },
+  "soChungTuThem": {
+    "counts": { "BH": 9, "BN": 3, "CK": 1, "CPM": 1, "MH": 5, "PNK": 2, "PXK": 1, "TLB": 1 },
+    "gv": { "reversed": 1, "reversalOfReversed": 1, "total": 4 },
+    "calc": "BH: HANG-A 15/01, 15/03(10 cái), 25/03 (kho gửi bán), HANG-B 25/01, 20/02, HANG-C 15/02, 10/03, HANG-D 05/02, 05/03 = 9. MH: HANG-A, HANG-B, HANG-C, HANG-D (hàng về trước), HANG-B nhập khẩu = 5. PNK: HANG-D 08/01 (hàng về trước hóa đơn) và HANG-A ghi lùi 10/03 = 2. PXK: kiểm kê thiếu 1. CK: 1. CPM: 1. TLB: 1. BN: 3 khoản nộp thuế 21/04 (GTGT, nhập khẩu, GTGT hàng nhập khẩu). GV (giá vốn): chỉ tháng có chênh lệch giữa giá tạm tính và giá tính: tháng 2 (HANG-D −133.333, HANG-C −35.000), tháng 3 (HANG-C +11.667) và lần chạy lại tháng 3 sau phiếu nhập ghi lùi: bản đảo của GV tháng 3 + GV mới = 4 chứng từ GV, 1 chứng từ bị đảo"
+  },
+  "dongBoCongNo": "Chứng từ mua và bán của kho phát sinh 331 (NCC011, NCCNN02, VC001) và 131 (KH021): tổng dư khoản công nợ mở khớp sổ cái từng ngày (kiểm cùng bất biến GĐ2)"
+}
