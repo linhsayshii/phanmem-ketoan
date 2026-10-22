@@ -59,3 +59,18 @@ Số đo trước sửa gần như y hệt (Bảng cân đối số phát sinh 1
 3. **Chi phí thật của GĐ2 (nhỏ):** `fn_open_items_create` (khoản công nợ) khoảng 0,7 ms và `fn_line_before` (kiểm tra ngoại tệ) khoảng 0,2 ms mỗi chứng từ, chưa tối ưu thêm.
 
 A/B 5.000 chứng từ, script có `ANALYZE` mỗi lô: GĐ1.5 36,5 giây, GĐ2 trước 0042 42,8 giây, GĐ2 sau 0042 19,3 giây.
+
+## Giá vốn 50.000 dòng kho (GĐ3, `pnpm -F @kt/api perf:costing`)
+
+Dữ liệu: DB tạm, 100 hàng × 5 kho, cả năm 2026, 540 phiếu kho ghi sổ thật qua API (mỗi tháng và kho: 4 phiếu nhập, 4 phiếu xuất, 1 phiếu chuyển kho; mỗi phiếu 100 dòng): 54.000 dòng hàng, 60.000 phát sinh kho (sinh và ghi sổ khoảng 144 giây). Mỗi phương pháp đo trong một giao dịch rồi hủy, nên cả bốn chạy trên cùng dữ liệu; `runCosting` cả năm (01/01 đến 31/12), tiêu chí dưới 30 giây.
+
+| Phương pháp | Lần đầu (giây) | Chạy lại, không đổi (giây) |
+|---|---|---|
+| Bình quân cuối kỳ (`avg_period`) | 19,0 | 17,3 |
+| Bình quân tức thời (`avg_moving`) | 18,8 | 17,3 |
+| Nhập trước xuất trước (`fifo`) | 20,3 | 18,1 |
+| Đích danh (`specific`) | 17,8 | 16,8 |
+
+Đạt tiêu chí nên không tối ưu mã giá vốn (`costingRun.ts` giữ nguyên). Theo dõi từng giai đoạn của lần đầu (khoảng 19 giây): tải phát sinh và dựng phạm vi khoảng 2 giây, tính giá bằng `computeCosting` cùng truy vấn lớp giá điều chỉnh khoảng 9 giây, ghi gán giá và lập chứng từ GV khoảng 3 giây, ghi lớp giá khoảng 1,5 giây, cập nhật trạng thái tính lại khoảng 2,5 giây.
+
+Bẫy khi đo: nếu hủy giao dịch của phương pháp trước rồi không dọn, lần chạy lại của phương pháp sau mất khoảng 210 giây (kế hoạch truy vấn lệch do dòng chết và thống kê cũ; lần đầu vẫn nhanh). Script chạy `ANALYZE` trước lần chạy lại và `VACUUM ANALYZE` sau mỗi phương pháp, như autovacuum trên hệ thống thật. Số liệu trên ở trạng thái đã dọn.

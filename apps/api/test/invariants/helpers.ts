@@ -121,3 +121,25 @@ export const arbBalancedLines = balancedLines(arbAmount);
 export const arbWideBalancedLines = balancedLines(arbWideAmount);
 export const arbUnbalancedLines = unbalancedOf(arbBalancedLines);
 export const arbWideUnbalancedLines = unbalancedOf(arbWideBalancedLines);
+
+// Bất biến 7 (kho): thao tác ngẫu nhiên trên hai kho K1, K2, hàng H1, H2 và bộ S (lắp ráp H1 + H2). `lot` chỉ dùng khi phương pháp là đích danh.
+export const STOCK_METHODS = ['avg_period', 'avg_moving', 'fifo', 'specific'] as const;
+export type StockMethod = (typeof STOCK_METHODS)[number];
+export type StockOp =
+  | { kind: 'in'; wh: 'K1' | 'K2'; item: 'H1' | 'H2'; qty: number; price: string; date: string; lot: string; back: boolean }
+  | { kind: 'out'; wh: 'K1' | 'K2'; item: 'H1' | 'H2'; qty: number; date: string; lot: string }
+  | { kind: 'ck'; wh: 'K1' | 'K2'; item: 'H1' | 'H2'; qty: number; date: string; lot: string }
+  | { kind: 'lr'; mode: 'assembly' | 'disassembly'; a: number; b: number; s: number; extra: number; date: string; lot: string }
+  | { kind: 'reverse'; pick: number }
+  | { kind: 'run'; to: string };
+const arbWh = fc.constantFrom('K1' as const, 'K2' as const); const arbHang = fc.constantFrom('H1' as const, 'H2' as const); const arbLot = fc.constantFrom('L1', 'L2');
+const arbMonthEnd = fc.integer({ min: 1, max: 12 }).map((m) => `2026-${String(m).padStart(2, '0')}-${new Date(Date.UTC(2026, m, 0)).getUTCDate()}`);
+export const arbStockOps: fc.Arbitrary<StockOp> = fc.oneof(
+  { weight: 6, arbitrary: fc.record({ kind: fc.constant('in' as const), wh: arbWh, item: arbHang, qty: fc.integer({ min: 1, max: 20 }), price: fc.constantFrom('10', '12.5', '7', '33.3333', '100'), date: arbDate2026, lot: arbLot, back: fc.constant(false) }) },
+  // ghi lùi: nhập ngày đầu năm, sau khi các lần chạy trước đã tính
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant('in' as const), wh: arbWh, item: arbHang, qty: fc.integer({ min: 1, max: 20 }), price: fc.constantFrom('9', '21', '13.7'), date: fc.constant('2026-01-02'), lot: arbLot, back: fc.constant(true) }) },
+  { weight: 4, arbitrary: fc.record({ kind: fc.constant('out' as const), wh: arbWh, item: arbHang, qty: fc.integer({ min: 1, max: 15 }), date: arbDate2026, lot: arbLot }) },
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant('ck' as const), wh: arbWh, item: arbHang, qty: fc.integer({ min: 1, max: 10 }), date: arbDate2026, lot: arbLot }) },
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant('lr' as const), mode: fc.constantFrom('assembly' as const, 'disassembly' as const), a: fc.integer({ min: 1, max: 5 }), b: fc.integer({ min: 1, max: 5 }), s: fc.integer({ min: 1, max: 3 }), extra: fc.integer({ min: 0, max: 20 }), date: arbDate2026, lot: arbLot }) },
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant('reverse' as const), pick: fc.nat() }) },
+  { weight: 4, arbitrary: fc.record({ kind: fc.constant('run' as const), to: arbMonthEnd }) });

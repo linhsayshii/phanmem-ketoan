@@ -10,6 +10,7 @@
     "test": "vitest run --pool=forks --poolOptions.forks.singleFork=true",
     "cli": "tsx src/cli.ts",
     "perf:100k": "tsx scripts/perf-100k.ts",
+    "perf:costing": "tsx scripts/perf-costing.ts",
     "seed:abc": "tsx scripts/seed-abc.ts"
   },
   "dependencies": {
