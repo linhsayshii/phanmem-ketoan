@@ -219,3 +219,18 @@ Vào Công cụ, Soát lỗi dữ liệu, chọn khoảng ngày; sáu quy tắc 
 - Tồn kho âm: tồn cuối ngày nhỏ hơn 0 (phiếu nhập cùng ngày được tính trước phiếu xuất); mỗi hàng - kho báo ngày âm đầu tiên trong khoảng.
 - Dòng tài khoản kho thiếu kho: dòng định khoản vào tài khoản kho chưa ghi kho nên không lên Thẻ kho và đối chiếu.
 - Tồn kho bằng 0 nhưng còn giá trị (giá, cảnh báo): bình thường khi xuất cố định giá hoặc theo lô; chỉ cần xem lại nếu không chủ ý.
+
+## Kỳ hạn ngắn hạn, dài hạn và mã luồng tiền (B01, B03)
+Lưới định khoản của chứng từ (Phiếu kế toán, Phiếu thu, Phiếu chi, Giấy báo Nợ, Giấy báo Có...) có thêm hai cột cuối:
+- **Hạn thanh toán/đáo hạn** (gõ dd/mm/yyyy, để trống là không có hạn). Dòng công nợ (131, 331...) là hạn thanh toán của khoản; dòng vay (341), tiền gửi có kỳ hạn (1281), ký quỹ (244)... là ngày đáo hạn. Số dư đầu kỳ nhập hạn ở cột "Hạn thanh toán" như trước.
+- **Mã luồng tiền (F4)**: chỉ ở dòng tiền mặt, tiền gửi; F4 mở danh mục là các chỉ tiêu luồng tiền của Báo cáo lưu chuyển tiền tệ theo chế độ của năm (TT99: 01-07, 21-27, 31-36). Ghi mã ở dòng tài khoản khác hoặc mã không có trong danh mục bị từ chối.
+
+Hai cột sửa được cả khi chứng từ đã ghi sổ (như diễn giải, bộ phận), Ctrl+S để lưu; mỗi lần sửa ghi nhật ký. Chứng từ đảo chép hạn và mã của chứng từ gốc.
+
+**Báo cáo tình hình tài chính (B01) TT99**: phần số dư có hạn sau ngày lập báo cáo quá 12 tháng vào dòng dài hạn, phần còn lại vào dòng ngắn hạn: phải thu khách hàng (131/211), trả trước người bán (132/212), phải thu nội bộ (133/214), phải thu khác (135/215), đầu tư nắm giữ đến ngày đáo hạn (123/265), phải trả người bán (311/331), người mua trả tiền trước (312/332), thuế phải nộp (314/333), chi phí phải trả (316/334), phải trả nội bộ (317/336), phải trả khác (320/338), vay và nợ thuê tài chính (321/339), dự phòng phải trả (322/343). Công nợ tính theo hạn của từng khoản còn dư tại ngày lập báo cáo; tài khoản khác tính theo hạn ghi ở dòng, dòng trả nợ không ghi hạn trừ vào phần ngắn hạn trước (nên ghi cùng ngày đáo hạn với khoản vay khi trả trước hạn khoản dài hạn). Khoản dài hạn tự chuyển sang ngắn hạn khi còn dưới 12 tháng. Chưa xét chu kỳ kinh doanh dài hơn 12 tháng; các dòng 112, 124-126, 165, 216, 236-238, 251, 266, 271, 273, 337, 341 vẫn để 0.
+
+**Báo cáo lưu chuyển tiền tệ (B03, trực tiếp)**: dòng tiền có mã vào đúng chỉ tiêu đó (thu cộng, chi trừ; ví dụ người bán hoàn tiền gắn mã 02 làm giảm "Tiền chi trả cho người cung cấp"); dòng tiền không mã vẫn xếp theo cặp tài khoản đối ứng như trước. Không gắn mã cho chuyển tiền giữa hai tài khoản tiền (Chuyển tiền nội bộ, nộp tiền mặt vào ngân hàng): lưu chuyển thuần sẽ lệch và hiện ở dòng 50 + 60 + 61 khác 70. Tài khoản 113 (tiền đang chuyển) không gắn được mã.
+
+**Soát lỗi**: quy tắc "Dòng tiền chưa có mã luồng tiền" (cảnh báo) liệt kê dòng tiền của chứng từ đã ghi sổ chưa gắn mã; chỉ chạy khi trong khoảng soát đã có dòng gắn mã, nên công ty không dùng mã không bị báo.
+
+Công thức báo cáo (Báo cáo tài chính, Sửa công thức) có thêm: `LT(131)` phần dài hạn của số dư (chỉ dòng nguồn Số dư; `131-LT(131)` là phần ngắn hạn), `CF(01)` luồng tiền gắn mã 01, hậu tố `!CF` sau đối ứng (`N111/C511!CF`) bỏ các cặp đã gắn mã. Công ty đã sửa tay công thức các dòng này giữ nguyên công thức của mình; "Nạp lại mẫu" để lấy công thức mới.
