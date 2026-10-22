@@ -7,7 +7,7 @@ import { D, ZERO, type Decimal } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { dayBefore, regimeOf } from '../reporting/ledgers.js';
 import { assertPrint, isoDate, ordered, orderedMsg, respondReport } from '../reporting/routes.js';
-import { MAX_PRINT_ROWS } from '../reporting/print/html.js';
+import { MAX_PRINT_ROWS, type ReportDoc } from '../reporting/print/html.js';
 import { cardDocs, expiryDoc, ledgerDocs, reconcileDoc, registerDoc, summaryDoc } from '../reporting/print/stockForms.js';
 
 type Trx = Transaction<Database>;
@@ -246,7 +246,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   const tooLarge = (truncated: boolean, f: string) => { if (truncated && f !== 'json') throw new AppError('PRINT_TOO_LARGE', 'Báo cáo quá lớn để in một lần; hãy xuất Excel hoặc thu hẹp bộ lọc', 413); };
   // Dựng dữ liệu và tài liệu in trong cùng một giao dịch đọc; PDF/Excel dựng ngoài giao dịch.
   const serve = async <T>(req: FastifyRequest, reply: FastifyReply, f: 'json' | 'html' | 'pdf' | 'xlsx', name: string, regimeRange: { from: string; to: string },
-    fetch: (trx: Transaction<Database>) => Promise<T>, docs: (trx: Transaction<Database>, regime: string, data: T) => Promise<import('../reporting/print/html.js').ReportDoc[]>) => {
+    fetch: (trx: Transaction<Database>) => Promise<T>, docs: (trx: Transaction<Database>, regime: string, data: T) => Promise<ReportDoc[]>) => {
     if (f !== 'json') assertPrint(req.auth!);
     const out = await app.withTenant(req, async (trx) => { const data = await fetch(trx); return { data, docs: f === 'json' ? [] : await docs(trx, await regimeOf(trx, regimeRange), data) }; }, READ_SNAPSHOT);
     if (f === 'json') return out.data;

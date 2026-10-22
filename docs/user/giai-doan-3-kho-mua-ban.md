@@ -164,3 +164,16 @@ Vào **Kho > Kiểm kê kho** (`/kho/kiem-ke`).
 6. **Mở lại** biên bản đã điều chỉnh nếu cần đếm lại: phiếu điều chỉnh được bỏ ghi sổ và hủy (kỳ đã khóa sổ thì đảo, ngày đảo là hôm nay, phải thuộc kỳ đang mở). Không thao tác trực tiếp trên phiếu điều chỉnh ở màn hình Chứng từ.
 
 Quyền: xem, lập, sửa, xóa biên bản theo nhóm quyền kiểm kê kho; điều chỉnh cần thêm quyền lập và ghi sổ phiếu kho, và cờ xem giá vốn.
+
+## Báo cáo kho
+
+Vào **Kho → Báo cáo kho**. Chọn khoảng ngày (hoặc "tính đến ngày" với Hạn dùng và Đối chiếu), mã hàng và kho bằng F4; bộ lọc được nhớ cho lần sau. Nút **In PDF** và **Xuất Excel** cần quyền in báo cáo.
+
+- **Nhập - Xuất - Tồn:** đầu kỳ, nhập, xuất, cuối kỳ, số lượng và giá trị theo từng hàng và kho.
+- **Thẻ kho:** ngày, số chứng từ nhập hoặc xuất, nhập, xuất, tồn (chỉ số lượng). Cần chọn mã hàng; mỗi kho một thẻ. In theo mẫu S12-DN (TT 99) hoặc S08-DNN (TT 133).
+- **Sổ chi tiết:** thêm đơn giá, thành tiền và tài khoản đối ứng. In theo mẫu S10-DN (TT 99) hoặc S06-DNN (TT 133).
+- **Bảng kê nhập / xuất:** từng dòng phát sinh kèm đối tượng, số lượng, đơn giá, thành tiền.
+- **Hạn dùng:** hàng còn tồn theo lô có hạn dùng trong số ngày tới (số ngày âm là đã quá hạn).
+- **Đối chiếu kế toán - kho:** so số lượng thẻ kho với sổ chi tiết giá vốn, và giá trị sổ chi tiết giá vốn với số dư tài khoản kho trên sổ cái. Chỉ hiện các dòng lệch. Trước khi chạy Tính giá vốn thường có chênh lệch; sau khi chạy phải bằng 0. Hàng tồn 0 nhưng còn giá trị (do xuất theo giá cố định) khớp sổ cái thì chỉ là ghi chú, không phải sai lệch.
+
+Giá trị xuất chưa chạy Tính giá vốn là số tạm tính theo phiếu, ghi chú "(tạm tính)" và có biểu ngữ cảnh báo; giá vốn chưa cập nhật do ghi sổ lùi cũng báo ở đầu báo cáo. Báo cáo có giá trị (Nhập - Xuất - Tồn, Sổ chi tiết, Bảng kê, Đối chiếu) cần quyền xem giá vốn; Thẻ kho và Hạn dùng thì không. Báo cáo quá 40.000 dòng chỉ xuất được Excel.
