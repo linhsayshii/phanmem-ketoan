@@ -52,8 +52,16 @@ const mvCte = (s: Scope, to: string, withValue = true) => sql`mv AS (
     (m.direction = 'out' AND a.id IS NULL) AS provisional
   FROM stock_move m JOIN voucher v ON v.id = m.voucher_id JOIN voucher_item_line l ON l.tenant_id = m.tenant_id AND l.id = m.item_line_id JOIN item i ON i.id = m.item_id
   LEFT JOIN stock_cost_assignment a ON a.tenant_id = m.tenant_id AND a.move_id = m.id AND a.is_current
-  ${withValue ? sql`LEFT JOIN LATERAL (SELECT sum(c.value) AS val FROM stock_cost_layer c WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND c.kind IN ('receipt', 'adjustment')) ly ON true` : sql``}
-  WHERE m.posting_date <= ${to}::date AND ${scopeWhere(s)})`;
+  ${withValue ? sql`LEFT JOIN LATERAL (SELECT sum(c.value) AS val FROM stock_cost_layer c WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND c.kind = 'receipt') ly ON true` : sql``}
+  WHERE m.posting_date <= ${to}::date AND ${scopeWhere(s)}
+  ${withValue ? sql`UNION ALL
+  -- Lớp điều chỉnh (hóa đơn mua, chi phí mua...) là dòng chỉ có giá trị, tính theo ngày ghi sổ của chứng từ nguồn của lớp (hợp đồng lớp adjustment); chưa có chứng từ thì theo ngày nhập.
+  SELECT m.id, m.item_id, m.warehouse_id, coalesce(av.posting_date, m.posting_date), 'in', 0, m.lot_no, m.expiry_date, coalesce(c.voucher_id, m.voucher_id), m.reversal_of,
+    coalesce(av.voucher_no, v.voucher_no), coalesce(av.voucher_type, v.voucher_type), coalesce(av.description, v.description), coalesce(av.day_order, v.day_order), coalesce(av.seq_no, v.seq_no), coalesce(av.party_id, v.party_id), l.line_no, NULL, NULL,
+    c.value, false
+  FROM stock_cost_layer c JOIN stock_move m ON m.tenant_id = c.tenant_id AND m.id = c.move_id JOIN voucher v ON v.id = m.voucher_id JOIN voucher_item_line l ON l.tenant_id = m.tenant_id AND l.id = m.item_line_id JOIN item i ON i.id = m.item_id
+  LEFT JOIN voucher av ON av.id = c.voucher_id
+  WHERE c.kind = 'adjustment' AND coalesce(av.posting_date, m.posting_date) <= ${to}::date AND ${scopeWhere(s)}` : sql``})`;
 // Thứ tự trong ngày như tính giá vốn: ngày, thứ tự trong ngày của chứng từ, chứng từ đảo sau chứng từ gốc, nhập trước xuất, số chứng từ, dòng.
 const MV_ORDER = sql`mv.posting_date, mv.day_order, (mv.reversal_of IS NOT NULL), mv.direction = 'out', mv.seq_no, mv.line_no, mv.id`;
 const SQ = sql`(CASE WHEN direction = 'in' THEN quantity ELSE -quantity END)`;
@@ -78,8 +86,8 @@ export async function banners(trx: Trx, s: Scope, to: string, provisional: boole
 interface Bal { qty: Decimal; val: Decimal }
 const pairKey = (item: number, wh: number) => `${item}:${wh}`;
 // Tồn (lượng, giá trị) từng cặp hàng – kho đến hết ngày `asOf`.
-async function balances(trx: Trx, s: Scope, asOf: string): Promise<Map<string, Bal>> {
-  const r = await sql<{ item_id: number; warehouse_id: number; q: string; v: string }>`WITH ${mvCte(s, asOf)}
+async function balances(trx: Trx, s: Scope, asOf: string, withValue = true): Promise<Map<string, Bal>> {
+  const r = await sql<{ item_id: number; warehouse_id: number; q: string; v: string }>`WITH ${mvCte(s, asOf, withValue)}
     SELECT item_id, warehouse_id, sum(${SQ})::text AS q, sum(${SV})::text AS v FROM mv GROUP BY 1, 2`.execute(trx);
   return new Map(r.rows.map((x) => [pairKey(x.item_id, x.warehouse_id), { qty: D(x.q), val: D(x.v) }]));
 }
@@ -119,7 +127,7 @@ export interface CardLine { postingDate: string; inVoucherNo: string | null; out
 export interface Card { itemCode: string; itemName: string; uomCode: string; warehouseCode: string; warehouseName: string; openingQty: string; lines: CardLine[]; totalInQty: string; totalOutQty: string; closingQty: string }
 export async function stockCards(trx: Trx, q: { from: string; to: string; item: string; warehouse?: string | undefined; limit?: number | undefined }): Promise<{ cards: Card[]; truncated: boolean }> {
   const s = await resolveScope(trx, { item: q.item, warehouse: q.warehouse });
-  const open = await balances(trx, s, dayBefore(q.from));
+  const open = await balances(trx, s, dayBefore(q.from), false);
   // Mỗi chứng từ một dòng theo từng chiều (một phiếu nhiều dòng cùng hàng gộp lại).
   const rows = (await sql<{ item_id: number; warehouse_id: number; d: string; vno: string | null; vtype: string; descr: string | null; direction: 'in' | 'out'; qty: string }>`WITH ${mvCte(s, q.to, false)}
     SELECT item_id, warehouse_id, posting_date::text AS d, min(voucher_no) AS vno, min(voucher_type) AS vtype, min(description) AS descr, direction, sum(quantity)::text AS qty
@@ -199,12 +207,14 @@ export async function stockExpiry(trx: Trx, q: { asOf: string; days: number } & 
 }
 
 // ---- Đối chiếu kế toán - thủ kho ----
-// Lượng: thẻ kho (Σ phát sinh) so với lượng còn lại của lớp giá (sổ chi tiết giá vốn). Giá trị: Σ giá trị còn lại của lớp giá so với số dư sổ cái trên tài khoản kho theo (hàng, kho).
-// Lớp giá phản ánh trạng thái sau lần tính giá vốn gần nhất (không có lịch sử theo ngày): đối chiếu theo `asOf` chỉ đúng khi `asOf` không trước phát sinh nào chưa tính vào lớp.
+// Lượng: thẻ kho (Σ phát sinh) so với lượng lớp giá. Giá trị: giá trị lớp giá so với số dư sổ cái trên tài khoản kho theo (hàng, kho).
+// Lớp giá tại `asOf` = nhập (lớp nhận và lớp điều chỉnh theo ngày chứng từ nguồn) trừ xuất đã gán giá; xuất chưa tính giá vốn chưa trừ khỏi lớp nên lệch cho tới khi chạy Tính giá vốn. Chính xác với mọi ngày `asOf` nếu giá gán hiện hành đã cập nhật.
 export interface ReconcileRow { itemCode: string | null; warehouseCode: string | null; accountCodes: string | null; cardQty: string; layerQty: string; qtyDiff: string; layerValue: string; ledgerValue: string; valueDiff: string }
 export async function stockReconcile(trx: Trx, q: { asOf: string }) {
-  const r = (await sql<ReconcileRow>`WITH card AS (SELECT item_id, warehouse_id, sum(CASE WHEN direction = 'in' THEN quantity ELSE -quantity END) AS qty FROM stock_move WHERE posting_date <= ${q.asOf}::date GROUP BY 1, 2),
-    lay AS (SELECT item_id, warehouse_id, sum(remaining_qty) AS qty, sum(remaining_value) AS val FROM stock_cost_layer WHERE posting_date <= ${q.asOf}::date GROUP BY 1, 2),
+  const r = (await sql<ReconcileRow>`WITH ${mvCte({}, q.asOf)},
+    card AS (SELECT item_id, warehouse_id, sum(${SQ}) AS qty FROM mv GROUP BY 1, 2),
+    lay AS (SELECT item_id, warehouse_id, sum(CASE WHEN direction = 'in' THEN quantity WHEN NOT provisional THEN -quantity ELSE 0 END) AS qty,
+      sum(CASE WHEN direction = 'in' THEN val WHEN NOT provisional THEN -val ELSE 0 END) AS val FROM mv GROUP BY 1, 2),
     kho AS (SELECT inventory_account_id AS id FROM warehouse WHERE inventory_account_id IS NOT NULL UNION SELECT inventory_account_id FROM item WHERE inventory_account_id IS NOT NULL),
     led AS (SELECT l.item_id, l.warehouse_id, string_agg(DISTINCT a.code, ', ' ORDER BY a.code) AS acc, sum(l.debit - l.credit) AS val
       FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id

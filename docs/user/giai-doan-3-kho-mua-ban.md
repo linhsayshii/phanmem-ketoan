@@ -177,3 +177,9 @@ Vào **Kho → Báo cáo kho**. Chọn khoảng ngày (hoặc "tính đến ngà
 - **Đối chiếu kế toán - kho:** so số lượng thẻ kho với sổ chi tiết giá vốn, và giá trị sổ chi tiết giá vốn với số dư tài khoản kho trên sổ cái. Chỉ hiện các dòng lệch. Trước khi chạy Tính giá vốn thường có chênh lệch; sau khi chạy phải bằng 0. Hàng tồn 0 nhưng còn giá trị (do xuất theo giá cố định) khớp sổ cái thì chỉ là ghi chú, không phải sai lệch.
 
 Giá trị xuất chưa chạy Tính giá vốn là số tạm tính theo phiếu, ghi chú "(tạm tính)" và có biểu ngữ cảnh báo; giá vốn chưa cập nhật do ghi sổ lùi cũng báo ở đầu báo cáo. Báo cáo có giá trị (Nhập - Xuất - Tồn, Sổ chi tiết, Bảng kê, Đối chiếu) cần quyền xem giá vốn; Thẻ kho và Hạn dùng thì không. Báo cáo quá 40.000 dòng chỉ xuất được Excel.
+
+Lưu ý về độ chính xác của báo cáo kho:
+- Chênh giá do hóa đơn mua về sau (lớp điều chỉnh) được tính vào kỳ của ngày ghi sổ hóa đơn (hoặc chứng từ chi phí, giảm giá), không phải ngày nhập kho. Nhờ đó giá trị tồn cuối kỳ khớp tài khoản kho trên sổ cái; sổ chi tiết hiện dòng chỉ có giá trị với số lượng 0.
+- Đối chiếu "tính đến ngày" trong quá khứ chính xác theo giá gán xuất hiện hành. Nếu có ghi sổ lùi chưa tính lại giá vốn thì báo cáo hiện chênh lệch và biểu ngữ cảnh báo; hãy chạy Tính giá vốn rồi đối chiếu lại.
+- Cờ "tạm tính" của Nhập - Xuất - Tồn xét trên toàn bộ phát sinh đến hết kỳ báo cáo, không chỉ trong kỳ.
+- Thẻ kho và sổ chi tiết chưa in một số cột phụ của mẫu (ghi chú, thông tin đầu trang).

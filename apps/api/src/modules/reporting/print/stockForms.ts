@@ -7,7 +7,8 @@ import { companyInfo } from './bookSet.js';
 import { periodSubtitle, type ReportColumn, type ReportDoc } from './html.js';
 
 type Trx = Transaction<Database>;
-const SIGNERS = [{ title: 'Người lập biểu' }, { title: 'Kế toán trưởng' }, { title: 'Người đại diện theo pháp luật', note: '(Ký, họ tên, đóng dấu)' }];
+// Chữ ký in trên mẫu S06-DNN, S08-DNN của TT 133 (văn bản gốc). TT 99 không nêu chữ ký cho S10-DN, S12-DN: dùng chữ ký mặc định như các sổ khác.
+const SIGNERS_TT133 = [{ title: 'Người lập biểu' }, { title: 'Kế toán trưởng' }, { title: 'Người đại diện theo pháp luật', note: '(Ký, họ tên, đóng dấu)' }];
 // Số lẻ của cột số lượng: đủ để in đúng số lượng lớn nhất trong sổ (tối đa 4), số nguyên in không có phần thập phân.
 const qtyScale = (...vals: string[]) => Math.min(4, Math.max(0, ...vals.map((v) => D(v).decimalPlaces())));
 const num = (key: string, label: string, scale = 0, width?: string): ReportColumn => ({ key, label, type: 'number', scale, ...(width ? { width } : {}) });
@@ -16,7 +17,7 @@ const note = (b: Banners) => b.messages;
 // formKey null hoặc chế độ chưa có văn bản gốc: không in "Mẫu số".
 async function head(trx: Trx, tenantId: string, regime: string, formKey: string | null) {
   const c = await companyInfo(trx, tenantId, regime, null); const f = formKey ? bookFormFor(regime, formKey) : null;
-  return { company: { ...c, formNo: f?.formNo ?? '', issuedBy: f?.issuedBy ?? '' }, formNo: f?.formNo ?? '', issuedBy: f?.issuedBy ?? '', signers: SIGNERS };
+  return { company: { ...c, formNo: f?.formNo ?? '', issuedBy: f?.issuedBy ?? '' }, formNo: f?.formNo ?? '', issuedBy: f?.issuedBy ?? '', ...(f && regime === 'TT133' ? { signers: SIGNERS_TT133 } : {}) };
 }
 
 export async function summaryDoc(trx: Trx, tenantId: string, regime: string, p: { from: string; to: string }, r: { rows: SummaryRow[]; totals: Record<string, string>; banners: Banners }, lot: boolean): Promise<ReportDoc> {
@@ -40,7 +41,7 @@ export async function cardDocs(trx: Trx, tenantId: string, regime: string, p: { 
 export async function ledgerDocs(trx: Trx, tenantId: string, regime: string, p: { from: string; to: string }, ledgers: Ledger[], banners: Banners): Promise<ReportDoc[]> {
   const h = await head(trx, tenantId, regime, 'stock-ledger');
   return ledgers.map((l) => { const qs = qtyScale(l.openingQty, ...l.lines.flatMap((x) => [x.inQty, x.outQty, x.balanceQty]));
-    return { ...h, title: 'Sổ chi tiết vật liệu, dụng cụ, sản phẩm, hàng hóa', subtitle: periodSubtitle(p.from, p.to), sheetName: `Sổ ${l.warehouseCode} ${l.itemCode}`.slice(0, 31), landscape: true,
+    return { ...h, title: regime === 'TT133' ? 'Sổ chi tiết vật liệu, dụng cụ (sản phẩm, hàng hóa)' : 'Sổ chi tiết vật liệu, dụng cụ, sản phẩm, hàng hóa', subtitle: periodSubtitle(p.from, p.to), sheetName: `Sổ ${l.warehouseCode} ${l.itemCode}`.slice(0, 31), landscape: true,
       intro: [`Tài khoản: ${l.accountCode ?? ''}    Tên kho: ${l.warehouseName} (${l.warehouseCode})`, `Tên, quy cách vật tư, dụng cụ, sản phẩm, hàng hóa: ${l.itemName} (${l.itemCode})    Đơn vị tính: ${l.uomCode}`, ...note(banners)],
       columns: [{ key: 'voucherNo', label: 'Số hiệu chứng từ' }, { key: 'postingDate', label: 'Ngày, tháng', type: 'date' }, { key: 'description', label: 'Diễn giải' }, { key: 'counterAccountCode', label: 'TK đối ứng' }, num('unitPrice', 'Đơn giá', 4),
         num('inQty', 'Nhập SL', qs), num('inValue', 'Nhập thành tiền'), num('outQty', 'Xuất SL', qs), num('outValue', 'Xuất thành tiền'), num('balanceQty', 'Tồn SL', qs), num('balanceValue', 'Tồn thành tiền')],
