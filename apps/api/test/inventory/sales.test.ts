@@ -249,7 +249,7 @@ describe('bán hàng hóa: sửa sau rà soát (vòng 2)', () => {
     const meta = await call('PUT', `/api/vouchers/${b.id}`, { description: 'sửa mô tả', version: b.version }, c);
     expect(meta.statusCode, meta.body).toBe(200); expect(meta.body).not.toMatch(re);
     const dup = await call('POST', `/api/vouchers/${b.id}/duplicate`, { postingDate: '2026-03-06' }, c);
-    expect(dup.statusCode, dup.body).toBe(409); expect(dup.body).not.toMatch(re);
+    expect(dup.statusCode, dup.body).toBe(409); expect(code(dup)).toBe('VOUCHER_TYPE_USE_INVOICE'); expect(dup.body).not.toMatch(re);
   });
 
   it('hai TLB cùng ngày: TLB đứng cuối theo thứ tự trong ngày nhận phần còn lại, tổng giá vốn trả = 10', async () => {
@@ -268,5 +268,26 @@ describe('bán hàng hóa: sửa sau rà soát (vòng 2)', () => {
     const net = (await sql<{ n: string }>`SELECT coalesce(sum(l.debit - l.credit),0)::text n FROM voucher_line l JOIN voucher v ON v.id=l.voucher_id JOIN account a ON a.id=l.account_id JOIN item i ON i.id=l.item_id
       WHERE i.code='R7' AND a.code='632' AND v.state IN ('posted','reversed')`.execute(ctx.t.admin)).rows[0]!.n;
     expect(net).toBe('0'); expect(await drift('K2')).toEqual([]);
+  });
+});
+
+describe('bán hàng hóa: sửa sau rà soát (vòng 3)', () => {
+  it('in chứng từ: TLB thiếu view_cost bị 403, có view_cost in được; phiếu thu không dòng nhạy cảm vẫn in khi thiếu view_receivable', async () => {
+    await pnk('R4', '2026-03-03', '10', '10');
+    const b = await create(sale([sl('R4', '3', '20')]));
+    const t = await create(tlb(b, await lineId(b.id), 'R4', '1', '20'));
+    const perms = ['voucher.view', 'voucher.print', 'stock_voucher.view'];
+    const noCost = await login(perms, ['view_receivable']);
+    const r1 = await call('GET', `/api/vouchers/${t.id}/print`, undefined, noCost);
+    expect(r1.statusCode, r1.body).toBe(403);
+    const withCost = await login(perms, ['view_receivable', 'view_cost']);
+    const r2 = await call('GET', `/api/vouchers/${t.id}/print`, undefined, withCost);
+    expect(r2.statusCode, r2.body.slice(0, 200)).toBe(200);
+    const pt = await call('POST', '/api/vouchers', { voucherType: 'PT', postingDate: '2026-03-05', documentDate: '2026-03-05', autoPost: true,
+      lines: [{ accountCode: '1111', debit: '100', credit: '0' }, { accountCode: '5113', debit: '0', credit: '100' }] });
+    expect(pt.statusCode, pt.body).toBe(201);
+    const noRec = await login(perms, ['view_cost']);
+    const r3 = await call('GET', `/api/vouchers/${pt.json().id}/print`, undefined, noRec);
+    expect(r3.statusCode, r3.body.slice(0, 200)).toBe(200);
   });
 });

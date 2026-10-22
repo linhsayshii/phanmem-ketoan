@@ -78,6 +78,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.get('/api/vouchers/:id/print', { preHandler: app.requirePermission('voucher.print'), schema: { params: idParam, querystring: z.object({ format: z.enum(['html', 'pdf']).default('html'), form: z.string().default('default') }) } }, async (req, reply) => {
     const { html, v, form } = await app.withTenant(req, async (trx) => {
       const v = await S.getVoucher(trx, req.params.id);
+      await assertVoucherSensitive(trx, req.auth!, v); // in không được lộ dòng công nợ, giá vốn mà GET chứng từ chặn
       // Mẫu in hợp lệ lấy từ cấu hình loại chứng từ; 'default' là mẫu đầu của loại, loại không có mẫu riêng (Phiếu kế toán) in phiếu kế toán.
       if (voucherTypeDef(v.voucherType)?.module === 'inventory') throw new AppError('PRINT_FORM_NOT_READY', 'Mẫu in phiếu kho chưa có', 409); // mẫu 01-VT, 02-VT làm ở Task 19
       const allowed = voucherTypeDef(v.voucherType)?.printForms ?? [];
