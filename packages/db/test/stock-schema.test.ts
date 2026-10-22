@@ -22,7 +22,7 @@ const accOf = async (tenant: string, c: string) => (await sql<{ id: number }>`SE
 const newItem = () => runA((trx) => trx.insertInto('item').values({ tenant_id: tenantA, code: `SP${++seq}`, name: 'SP', base_uom_id: uomA }).returning('id').executeTakeFirstOrThrow()).then((r) => r.id);
 const newWh = (code: string) => runA((trx) => trx.insertInto('warehouse').values({ tenant_id: tenantA, code: `${code}${Date.now()}${++seq}`, name: code }).returning('id').executeTakeFirstOrThrow()).then((r) => r.id);
 
-type L = { item: number; wh: number; dir?: 'in' | 'out'; qty: string; amount?: string; dest?: number; factor?: string; srcLine?: number };
+type L = { item: number; wh: number; dir?: 'in' | 'out'; qty: string; amount?: string; dest?: number; factor?: string; discount?: string; unitCost?: string };
 // Chứng từ nháp (2 dòng cân) kèm các dòng hàng; trả về id chứng từ.
 async function draft(date: string, lines: L[]) {
   return runA(async (trx) => {
@@ -34,7 +34,7 @@ async function draft(date: string, lines: L[]) {
     for (const l of lines) {
       await trx.insertInto('voucher_item_line').values({
         tenant_id: tenantA, voucher_id: v.id, line_no: ++no, item_id: l.item, warehouse_id: l.wh, dest_warehouse_id: l.dest ?? null, direction: l.dir ?? null,
-        quantity: l.qty, uom_factor: l.factor ?? '1', amount_currency: l.amount ?? '0', amount: l.amount ?? '0', account_id: a1111,
+        quantity: l.qty, uom_factor: l.factor ?? '1', amount_currency: l.amount ?? '0', amount: l.amount ?? '0', discount_amount: l.discount ?? '0', unit_cost: l.unitCost ?? null, account_id: a1111,
       }).execute();
     }
     return v.id;
@@ -178,5 +178,76 @@ describe('sổ kho', () => {
     await expect(runA((trx) => trx.updateTable('item_uom').set({ factor: '6' }).where('id', '=', row.id).execute())).rejects.toThrow(/ITEM_UOM_LOCKED/);
     await expect(runA((trx) => trx.deleteFrom('item_uom').where('id', '=', row.id).execute())).rejects.toThrow(/ITEM_UOM_LOCKED/);
     await runA((trx) => trx.updateTable('item_uom').set({ is_sale: true }).where('id', '=', row.id).execute()); // cờ khác vẫn sửa được
+  });
+});
+
+describe('sổ kho: sửa vòng 1', () => {
+  it('unpost phiếu nhập đã bị xuất: warn thành công kèm cảnh báo, allow thành công, forbid nêu chứng từ xuất', async () => {
+    for (const mode of ['warn', 'allow'] as const) {
+      const it1 = await newItem();
+      const inV = await receive(it1, whA, '2026-03-01', '100', '1000');
+      await post(await draft('2026-03-02', [{ item: it1, wh: whA, dir: 'out', qty: '60' }]));
+      await setNegative(mode);
+      try { await unpost(inV); } finally { await setNegative(null); }
+      expect(await moves(it1)).toHaveLength(1);
+    }
+    const it2 = await newItem();
+    const inV = await receive(it2, whA, '2026-03-01', '100', '1000');
+    await post(await draft('2026-03-02', [{ item: it2, wh: whA, dir: 'out', qty: '60' }]));
+    await setNegative('rác'); // giá trị lạ coi như forbid
+    try { await expect(unpost(inV)).rejects.toThrow(/STOCK_CONSUMED/); } finally { await setNegative(null); }
+  });
+
+  it('đảo phiếu xuất ghi theo giá tạm tính: lớp giá nhập đảo bằng giá vốn đã xuất, không phải số tiền dòng', async () => {
+    const it1 = await newItem();
+    await receive(it1, whA, '2026-03-01', '100', '1000');
+    const outV = await draft('2026-03-02', [{ item: it1, wh: whA, dir: 'out', qty: '40', amount: '9999' }]); // amount kiểu doanh thu
+    await post(outV);
+    await runA((trx) => sql`SELECT reverse_voucher(${outV}::uuid, '2026-03-03'::date, NULL)`.execute(trx));
+    const last = (await moves(it1)).at(-1)!;
+    const lay = await runA((trx) => trx.selectFrom('stock_cost_layer').select('value').where('move_id', '=', last.id).execute());
+    expect(lay).toEqual([{ value: '400' }]);
+    // có đơn giá trên dòng thì dùng đơn giá
+    const out2 = await draft('2026-03-04', [{ item: it1, wh: whA, dir: 'out', qty: '10', amount: '5000', unitCost: '12' }]);
+    await post(out2);
+    await runA((trx) => sql`SELECT reverse_voucher(${out2}::uuid, '2026-03-05'::date, NULL)`.execute(trx));
+    const last2 = (await moves(it1)).at(-1)!;
+    expect((await runA((trx) => trx.selectFrom('stock_cost_layer').select('value').where('move_id', '=', last2.id).execute()))).toEqual([{ value: '120' }]);
+  });
+
+  it('đảo phiếu xuất đã có giá gán hiện hành: lấy tổng giá gán', async () => {
+    const it1 = await newItem();
+    await receive(it1, whA, '2026-03-01', '100', '1000');
+    const outV = await draft('2026-03-02', [{ item: it1, wh: whA, dir: 'out', qty: '40' }]);
+    await post(outV);
+    const mv = (await moves(it1)).at(-1)!;
+    await admin.query(`INSERT INTO costing_run(id, tenant_id, period_from, period_to, method, status) VALUES ('00000000-0000-0000-0000-0000000000a1', $1, '2026-03-01', '2026-03-31', 'avg_period', 'done') ON CONFLICT DO NOTHING`, [tenantA]);
+    await admin.query(`INSERT INTO stock_cost_assignment(tenant_id, run_id, move_id, unit_cost, amount) VALUES ($1, '00000000-0000-0000-0000-0000000000a1', $2, 11, 440)`, [tenantA, mv.id]);
+    await runA((trx) => sql`SELECT reverse_voucher(${outV}::uuid, '2026-03-03'::date, NULL)`.execute(trx));
+    const last = (await moves(it1)).at(-1)!;
+    expect(await runA((trx) => trx.selectFrom('stock_cost_layer').select('value').where('move_id', '=', last.id).execute())).toEqual([{ value: '440' }]);
+  });
+
+  it('giá trị lớp nhập trừ chiết khấu dòng', async () => {
+    const it1 = await newItem();
+    await post(await draft('2026-03-01', [{ item: it1, wh: whA, dir: 'in', qty: '10', amount: '1000', discount: '100' }]));
+    expect(await runA((trx) => trx.selectFrom('stock_cost_layer').select('value').where('item_id', '=', it1).execute())).toEqual([{ value: '900' }]);
+  });
+
+  it('không chèn trực tiếp stock_move; chuyển kho cùng kho bị từ chối; unpost phiếu chuyển kho xóa cả hai move', async () => {
+    const it1 = await newItem();
+    await receive(it1, whA, '2026-03-01', '100', '1000');
+    const same = await draft('2026-03-02', [{ item: it1, wh: whA, dest: whA, qty: '5' }]);
+    await expect(post(same)).rejects.toThrow(/STOCK_TRANSFER_SAME_WAREHOUSE/);
+    const ck = await draft('2026-03-02', [{ item: it1, wh: whA, dest: whA2, qty: '30' }]);
+    const line = await runA((trx) => trx.selectFrom('voucher_item_line').select('id').where('voucher_id', '=', ck).executeTakeFirstOrThrow());
+    await expect(runA((trx) => trx.insertInto('stock_move').values({ tenant_id: tenantA, voucher_id: ck, item_line_id: line.id, item_id: it1, warehouse_id: whA, posting_date: '2026-03-02', direction: 'in', quantity: '1' }).execute())).rejects.toThrow(/STOCK_MOVE_IMMUTABLE/);
+    await post(ck);
+    expect(await moves(it1)).toHaveLength(3);
+    await unpost(ck);
+    expect(await moves(it1)).toHaveLength(1);
+    await post(ck);
+    await post(await draft('2026-03-03', [{ item: it1, wh: whA2, dir: 'out', qty: '20' }]));
+    await expect(unpost(ck)).rejects.toThrow(/STOCK_CONSUMED/);
   });
 });
