@@ -67,7 +67,7 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
     const p = periodAt(d);
     if (p && writable(p)) return d;
     const next = periods.find((x) => x.date_from > d && writable(x));
-    if (!next) throw new AppError('PERIOD_NOT_FOUND', `Không có kỳ mở sau ngày ${formatVnDate(d)} để ghi chứng từ giá vốn`, 409);
+    if (!next) throw new AppError('PERIOD_NOT_FOUND', `Không có kỳ mở sau ngày ${formatVnDate(d)} để ghi chứng từ giá vốn`, 404);
     return next.date_from;
   };
 
