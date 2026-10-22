@@ -31,7 +31,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
   app.put('/api/invoices/:id', { preHandler: app.requirePermission('voucher.update'), schema: { params: idParam, body: invoiceInput.extend({ version: z.number().int() }) } }, async (req) => {
     const { version, ...input } = req.body;
-    return app.withOverride(req, (trx) => updateInvoice(trx, { tenantId: req.auth!.tenantId!, auth: req.auth! }, req.params.id, version, input));
+    return app.withOverride(req, async (trx) => redactCost(trx, req.auth!, await updateInvoice(trx, { tenantId: req.auth!.tenantId!, auth: req.auth! }, req.params.id, version, input)));
   });
   // Danh mục mã thuế và phân bổ để trình duyệt xem trước thuế, bút toán bằng động cơ thuế; đứng trước :id (tuyến tĩnh thắng tuyến tham số).
   app.get('/api/invoices/tax-defs', { preHandler: app.requirePermission('voucher.view') }, async (req) => app.withTenant(req, (trx) => listTaxDefs(trx), READ_SNAPSHOT));

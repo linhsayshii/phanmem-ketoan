@@ -43,7 +43,7 @@ beforeAll(async () => {
   await call('POST', '/api/catalogs/uom', { code: 'CAI', name: 'Cái' });
   await call('POST', '/api/catalogs/uom', { code: 'CHAI', name: 'Chai' });
   await call('POST', '/api/catalogs/uom', { code: 'THUNG', name: 'Thùng' });
-  for (const c of ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8']) await cat('item', { code: c, name: `Hàng ${c}`, base_uom_code: 'CAI', kind: 'goods', revenue_account_code: '5111' });
+  for (const c of ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6']) await cat('item', { code: c, name: `Hàng ${c}`, base_uom_code: 'CAI', kind: 'goods', revenue_account_code: '5111' });
   await cat('item', { code: 'SV1', name: 'Dịch vụ', base_uom_code: 'CAI', kind: 'service', revenue_account_code: '5113' });
   await cat('item', { code: 'CH1', name: 'Nước', base_uom_code: 'CHAI', kind: 'goods', revenue_account_code: '5111' });
   await cat('item_uom', { item_code: 'CH1', uom_code: 'THUNG', factor: '24' });
@@ -80,7 +80,7 @@ describe('bán hàng hóa (BH, TLB)', () => {
     expect(full.statusCode, full.body).toBe(201);
     const w = full.json().warnings.find((x: { code: string }) => x.code === 'SALE_BELOW_COST');
     expect(w).toBeTruthy(); expect(JSON.stringify(w)).toMatch(/\d/);
-    const c = await login(['voucher.view', 'voucher.create', 'voucher.post', 'stock_voucher.view', 'stock_voucher.create', 'stock_voucher.post'], ['view_receivable']);
+    const c = await login(['voucher.view', 'voucher.create', 'voucher.post', 'stock_voucher.view', 'stock_voucher.create', 'stock_voucher.update', 'stock_voucher.post'], ['view_receivable']);
     const r = await call('POST', '/api/invoices', sale([sl('S2', '10', '5')]), c);
     expect(r.statusCode, r.body).toBe(201);
     const w2 = r.json().warnings.find((x: { code: string }) => x.code === 'SALE_BELOW_COST');
@@ -153,5 +153,89 @@ describe('bán hàng hóa (BH, TLB)', () => {
     expect((await call('POST', '/api/invoices', sale([sl('S8', '1', '20')]), c)).statusCode).toBe(403);
     const r = await call('POST', '/api/invoices', tlb(null, '', 'S8', '1', '20'));
     expect(r.statusCode).toBe(400);
+  });
+});
+
+describe('bán hàng hóa: sửa sau rà soát (vòng 1)', () => {
+  const costWords = /"(632|156|157)"/;
+  it('không có view_cost: PUT hóa đơn nháp, ghi sổ, bỏ ghi sổ, đảo đều không lộ dòng giá vốn', async () => {
+    await pnk('R1', '2026-03-01', '50', '10');
+    const c = await login(['voucher.view', 'voucher.create', 'voucher.update', 'voucher.post', 'voucher.unpost', 'voucher.edit_posted', 'stock_voucher.view', 'stock_voucher.create', 'stock_voucher.update', 'stock_voucher.post'], ['view_receivable']);
+    const body = sale([sl('R1', '5', '20')], { autoPost: false });
+    const cr = await call('POST', '/api/invoices', body, c); expect(cr.statusCode, cr.body).toBe(201);
+    const id = cr.json().id;
+    const up = await call('PUT', `/api/invoices/${id}`, { ...sale([sl('R1', '6', '20')], { autoPost: false }), version: cr.json().version }, c);
+    expect(up.statusCode, up.body).toBe(200); expect(up.body).not.toMatch(costWords);
+    const steps: [string, string][] = [['post', '200'], ['unpost', '200'], ['post', '200'], ['reverse', '200']];
+    for (const [st] of steps) {
+      const r = await call('POST', `/api/vouchers/${id}/${st}`, st === 'reverse' ? { postingDate: '2026-03-06' } : {}, c);
+      expect(r.statusCode, `${st} ${r.body}`).toBe(st === 'reverse' ? 201 : 200); expect(r.body).not.toMatch(costWords);
+    }
+  });
+
+  it('trả 20.001 của 30.000 bán (gán 100.000, kho bình quân kỳ): giá vốn 66.669 khớp lớp giá, chạy lại không đổi', async () => {
+    await pnk('R2', '2026-03-01', '30000', '3', 'K2');
+    const b = await create(sale([sl('R2', '30000', '5', { warehouseCode: 'K2' })]));
+    await pnk('R2', '2026-03-20', '60000', '3.5', 'K2');
+    const runBody = { periodFrom: '2026-03-01', periodTo: '2026-03-31', warehouseCode: 'K2', itemCode: 'R2' };
+    expect((await call('POST', '/api/inventory/costing-runs', runBody)).statusCode).toBe(200);
+    const t = await create(tlb(b, await lineId(b.id), 'R2', '20001', '5', { postingDate: '2026-03-25' }, 'K2'));
+    expect(shape(t)).toContain('632:0:66669');
+    const r2 = await call('POST', '/api/inventory/costing-runs', runBody); expect(r2.statusCode, r2.body).toBe(200);
+    expect(await drift('K2')).toEqual([]);
+    const gv = async () => Number((await sql<{ n: string }>`SELECT count(*)::text n FROM voucher WHERE voucher_type = 'GV' AND state = 'posted'`.execute(ctx.t.admin)).rows[0]!.n);
+    const before = await gv();
+    expect((await call('POST', '/api/inventory/costing-runs', runBody)).statusCode).toBe(200);
+    expect(await drift('K2')).toEqual([]); expect(await gv()).toBe(before);
+  });
+
+  it('trả từng phần 1 + 1 + 1: lần cuối nhận phần còn lại, tổng giá vốn trả = giá vốn bán (10)', async () => {
+    await pnk('R3', '2026-03-01', '3', '3.3333');
+    const b = await create(sale([sl('R3', '3', '20')]));
+    const src = await lineId(b.id);
+    let sum = 0;
+    for (let i = 0; i < 3; i++) {
+      const t = await create(tlb(b, src, 'R3', '1', '20'));
+      sum += Number(shape(t).find((x) => x.startsWith('632:'))!.split(':')[2]);
+    }
+    expect(sum).toBe(10);
+  });
+
+  it('bán 1 THUNG (24 CHAI), trả 5 CHAI: giá vốn trả = 5/24 giá vốn bán', async () => {
+    await pnk('CH1', '2026-03-02', '240', '10', 'K1', 'CHAI');
+    const b = await create(sale([sl('CH1', '1', '240', { uomCode: 'THUNG' })]));
+    const src = await lineId(b.id);
+    const body = tlb(b, src, 'CH1', '5', '10'); body.items[0]!.uomCode = 'CHAI';
+    const t = await create(body);
+    expect(shape(t)).toContain('632:0:50');
+  });
+
+  it('adjustsInvoiceId của hóa đơn BH khác: 409 SALE_RETURN_INVOICE_MISMATCH', async () => {
+    await pnk('R4', '2026-03-01', '10', '10');
+    const b1 = await create(sale([sl('R4', '2', '20')])); const b2 = await create(sale([sl('R4', '2', '20')]));
+    const r = await call('POST', '/api/invoices', tlb(b2, await lineId(b1.id), 'R4', '1', '20'));
+    expect(r.statusCode, r.body).toBe(409); expect(code(r)).toBe('SALE_RETURN_INVOICE_MISMATCH');
+  });
+
+  it('exportMode: mã thuế không thuế suất (KCT) được chấp nhận', async () => {
+    await pnk('R5', '2026-03-01', '10', '10');
+    const r = await call('POST', '/api/invoices', sale([{ ...sl('R5', '1', '20'), taxCodes: ['KCT'] }], { exportMode: true }));
+    expect(r.statusCode, r.body).toBe(201);
+  });
+
+  it.each([['TT133', '5111', '5111'], ['TT200', '5111', '5213'], ['TT99', '511', '521']] as const)('%s: hàng bán bị trả lại ghi Nợ %s', async (regime, rev, debit) => {
+    const saved = cookie;
+    try {
+      if (regime !== 'TT133') {
+        ({ cookie } = await setupLedgerTenant(ctx, `RT${regime}${Date.now()}`, regime));
+        await call('POST', '/api/catalogs/uom', { code: 'CAI', name: 'Cái' });
+        await cat('item', { code: 'R6', name: 'Hàng', base_uom_code: 'CAI', kind: 'goods', revenue_account_code: rev });
+        await cat('warehouse', { code: 'K1', name: 'Kho', inventory_account_code: regime === 'TT200' ? '1561' : '156', costing_method: 'avg_moving' });
+      }
+      await pnk('R6', '2026-03-01', '10', '10');
+      const b = await create(sale([sl('R6', '4', '20')]));
+      const t = await create(tlb(b, await lineId(b.id), 'R6', '1', '20'));
+      expect(shape(t)).toContain(`${debit}:20:0`);
+    } finally { cookie = saved; }
   });
 });

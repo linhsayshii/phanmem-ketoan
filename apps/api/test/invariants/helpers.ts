@@ -21,7 +21,7 @@ export const PARTY_ACCOUNTS = ['131', '331'];
 export const ACCOUNTS = ['1111', '1121', '5113', '6421', '6422', '242', '33311', '4111', ...PARTY_ACCOUNTS];
 export const PARTIES = ['KH001', 'KH002', 'NCC001'];
 
-export async function setupLedgerTenant(ctx: TestApp, code: string, regime: 'TT133' | 'TT99' = 'TT133') {
+export async function setupLedgerTenant(ctx: TestApp, code: string, regime: 'TT133' | 'TT99' | 'TT200' = 'TT133') {
   const b = await bootstrapTenant(ctx, { code });
   const fy = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: b.cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime } });
   if (fy.statusCode !== 201) throw new Error(`tạo năm tài chính thất bại: ${fy.body}`);

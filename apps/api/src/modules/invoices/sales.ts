@@ -3,6 +3,7 @@ import type { Database } from '@kt/db';
 import { D, Decimal, sensitiveDenial, toBaseQty, toVnd } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { resolvePrice } from '../inventory/priceLists.js';
+import { resolveRegime } from '../ledger/closing.js';
 import type { LineInput } from '../ledger/vouchers.service.js';
 import type { InvoiceInput } from './service.js';
 import type { PurchaseLine } from './purchase.js';
@@ -27,7 +28,7 @@ export async function applyExportMode(trx: Trx, input: InvoiceInput): Promise<In
   if (!zero) throw bad('EXPORT_TAX_CODE_MISSING', 'Danh mục chưa có mã thuế GTGT 0% dùng cho bán ra để lập hóa đơn xuất khẩu', 409);
   const rateOf = new Map(vats.map((r) => [r.code, r.rate]));
   const items = input.items.map((it, k) => {
-    const other = it.taxCodes.find((c) => rateOf.has(c) && !(rateOf.get(c) !== null && D(rateOf.get(c)!).isZero()));
+    const other = it.taxCodes.find((c) => rateOf.get(c) != null && !D(rateOf.get(c)!).isZero()); // thuế suất null (KCT, KKK) không phải thuế suất khác 0%
     if (other) throw bad('EXPORT_VAT_NOT_ZERO', `Dòng ${k + 1}: hóa đơn xuất khẩu thuế GTGT 0%, không dùng mã ${other}`);
     return it.taxCodes.some((c) => rateOf.has(c)) ? it : { ...it, taxCodes: [...it.taxCodes, zero.code] };
   });
@@ -56,6 +57,8 @@ export async function resolveSale(trx: Trx, a: { input: InvoiceInput; counterAcc
   const whs = new Map((whCodes.length ? await trx.selectFrom('warehouse as w').leftJoin('account as wa', 'wa.id', 'w.inventory_account_id').select(['w.id', 'w.code', 'w.kind', 'w.is_active', 'wa.code as inv_code']).where('w.code', 'in', whCodes).execute() : []).map((r) => [r.code, r]));
   const whById = async (id: number | string) => trx.selectFrom('warehouse as w').leftJoin('account as wa', 'wa.id', 'w.inventory_account_id').select(['w.id', 'w.code', 'wa.code as inv_code']).where('w.id', '=', Number(id)).executeTakeFirstOrThrow();
 
+  const returnAcct = isBH ? null : await returnDeductionAccount(trx, input.postingDate);
+  const retCost = new Map<number, Decimal>(); // giá vốn đã nhập lại cộng dồn theo dòng bán trong cùng hóa đơn
   const returning = new Map<number, Decimal>(); // số lượng trả cộng dồn theo dòng bán trong cùng hóa đơn
   const costOf: (Decimal | null)[] = input.items.map(() => null);
   const estimates = new Map<string, string>();
@@ -104,13 +107,17 @@ export async function resolveSale(trx: Trx, a: { input: InvoiceInput; counterAcc
 
     // TLB: nhập lại kho theo giá vốn của dòng bán gốc
     if (!it.sourceLineId) throw bad('SALE_RETURN_SOURCE_INVALID', `Dòng ${n}: phải chỉ rõ dòng hóa đơn bán hàng hóa gốc (sourceLineId)`);
+    await sql`SELECT 1 FROM voucher_item_line WHERE id = ${it.sourceLineId} FOR UPDATE`.execute(trx); // tuần tự hóa các hàng trả cùng dòng bán trước khi kiểm số lượng
     const src = await trx.selectFrom('voucher_item_line as s').innerJoin('voucher as sv', 'sv.id', 's.voucher_id').innerJoin('account as ra', 'ra.id', 's.account_id')
       .leftJoin('account as da', 'da.id', 's.debit_account_id').leftJoin('account as ca', 'ca.id', 's.credit_account_id')
-      .select(['s.id', 's.item_id', 's.unit_cost', 'sv.state', 'sv.voucher_type', 'sv.party_id', 'ra.code as rev_code', 'da.code as cogs_code', 'ca.code as inv_code'])
+      .select(['s.id', 's.voucher_id', 's.item_id', 's.unit_cost', 'sv.state', 'sv.voucher_type', 'sv.party_id', 'ra.code as rev_code', 'da.code as cogs_code', 'ca.code as inv_code'])
       .where('s.id', '=', it.sourceLineId).executeTakeFirst();
     if (!src || src.state !== 'posted' || src.voucher_type !== 'BH' || src.item_id !== item.id)
       throw bad('SALE_RETURN_SOURCE_INVALID', `Dòng ${n}: dòng gốc phải là dòng hàng ${it.itemCode} đã ghi sổ của hóa đơn bán hàng hóa`, 409);
     if (src.party_id !== a.partyId) throw bad('SALE_RETURN_PARTY_MISMATCH', `Dòng ${n}: hóa đơn bán gốc của khách hàng khác với hàng bán bị trả lại`, 409);
+    const adj = input.invoice?.adjustsInvoiceId;
+    if (adj !== undefined && !(await trx.selectFrom('voucher_invoice').select('id').where('id', '=', adj).where('voucher_id', '=', src.voucher_id).executeTakeFirst()))
+      throw bad('SALE_RETURN_INVOICE_MISMATCH', `Dòng ${n}: hóa đơn gốc (adjustsInvoiceId) không thuộc chứng từ bán hàng của dòng bán gốc`, 409);
     const mv = (await sql<{ id: string; wh_id: string; qty: string; lot: string | null; assigned: string | null }>`
       SELECT m.id::text, m.warehouse_id::text AS wh_id, m.quantity::text AS qty, m.lot_no AS lot,
         (SELECT sum(a.amount)::text FROM stock_cost_assignment a WHERE a.tenant_id = m.tenant_id AND a.is_current AND a.move_id = m.id) AS assigned
@@ -120,20 +127,25 @@ export async function resolveSale(trx: Trx, a: { input: InvoiceInput; counterAcc
     if (it.warehouseCode && it.warehouseCode !== wh.code) throw bad('SALE_RETURN_SOURCE_INVALID', `Dòng ${n}: hàng đã xuất từ kho ${wh.code}, không nhập lại vào kho ${it.warehouseCode}`);
     if (D(it.discountCurrency).gt(0)) throw bad('VALIDATION', `Dòng ${n}: dòng hàng bán bị trả lại không có chiết khấu thương mại`);
     // Tổng số lượng trả (nháp và đã ghi sổ, gồm các dòng khác của chính hóa đơn này) không vượt số lượng bán.
-    const prior = await trx.selectFrom('voucher_item_line as l').innerJoin('voucher as v', 'v.id', 'l.voucher_id').select('l.base_quantity').where('l.link_line_id', '=', src.id).where('l.direction', '=', 'in')
+    const prior = await trx.selectFrom('voucher_item_line as l').innerJoin('voucher as v', 'v.id', 'l.voucher_id').select(['l.base_quantity', 'l.unit_cost']).where('l.link_line_id', '=', src.id).where('l.direction', '=', 'in')
       .where('v.voucher_type', '=', 'TLB').where('v.state', 'in', ['draft', 'posted']).$if(!!a.selfId, (q) => q.where('l.voucher_id', '<>', a.selfId!)).execute();
     const returned = prior.reduce((s, r) => s.plus(r.base_quantity ?? 0), D(0)).plus(returning.get(src.id) ?? 0).plus(base);
     if (returned.gt(mv.qty)) throw bad('RETURN_EXCEEDS_SALE', `Dòng ${n}: tổng số lượng trả ${returned.toString()} vượt số lượng đã bán ${D(mv.qty).toString()}`, 409);
     returning.set(src.id, D(returning.get(src.id) ?? 0).plus(base));
-    // Giá vốn nhập lại: giá vốn đã gán của dòng bán theo tỷ lệ số lượng trả; chưa chạy giá vốn thì giá tạm tính trên dòng bán.
-    const cost = mv.assigned !== null ? round0(D(mv.assigned).times(base).div(mv.qty)) : round0(base.times(D(src.unit_cost ?? 0)));
-    const unitCost = base.isZero() ? D(0) : cost.div(base).toDecimalPlaces(4, Decimal.ROUND_HALF_UP);
+    // Giá vốn nhập lại: giá vốn đã gán của dòng bán theo tỷ lệ số lượng trả (chưa chạy giá vốn thì giá tạm tính trên dòng bán); lần trả cuối nhận phần còn lại.
+    // Giá đơn vị 4 số lẻ chốt trước, dòng sổ giá vốn = round(số lượng x giá đơn vị) như BH để lần tính giá vốn đọc ra đúng số đã ghi.
+    const total = mv.assigned !== null ? D(mv.assigned) : round0(D(mv.qty).times(D(src.unit_cost ?? 0)));
+    const priorCost = prior.reduce((s2, r) => s2.plus(round0(D(r.base_quantity ?? 0).times(D(r.unit_cost ?? 0)))), D(0)).plus(retCost.get(src.id) ?? 0);
+    const want = returned.eq(mv.qty) ? total.minus(priorCost) : mv.assigned !== null ? round0(total.times(base).div(mv.qty)) : round0(base.times(D(src.unit_cost ?? 0)));
+    const unitCost = base.isZero() ? D(0) : want.div(base).toDecimalPlaces(4, Decimal.ROUND_HALF_UP);
+    const cost = round0(base.times(unitCost));
+    retCost.set(src.id, D(retCost.get(src.id) ?? 0).plus(cost));
     const invCode = src.inv_code ?? wh.inv_code ?? item.inv_code ?? '156'; const cogsCode = src.cogs_code ?? item.cogs_code ?? '632';
     if (tracked && !(it.lotNo || mv.lot)) throw bad('LOT_REQUIRED', `Dòng ${n}: hàng ${it.itemCode} theo dõi theo lô, phải nhập số lô`);
     if (!cost.isZero()) costLines[k] = [
       { accountCode: invCode, debit: cost.toFixed(0), credit: '0', itemCode: item.code, warehouseCode: wh.code, ...vndLine, description: `Giá vốn hàng trả lại dòng ${n}` },
       { accountCode: cogsCode, debit: '0', credit: cost.toFixed(0), itemCode: item.code, warehouseCode: wh.code, ...vndLine, description: `Giá vốn hàng trả lại dòng ${n}` }];
-    out[k] = { accountCode: it.accountCode ?? src.rev_code, itemCode: item.code, warehouseCode: wh.code, debitCode: invCode, creditCode: cogsCode,
+    out[k] = { accountCode: it.accountCode ?? returnAcct ?? src.rev_code, itemCode: item.code, warehouseCode: wh.code, debitCode: invCode, creditCode: cogsCode,
       row: { item_id: item.id, ...unit, warehouse_id: wh.id, direction: 'in', lot_no: it.lotNo || mv.lot, unit_cost: unitCost.toFixed(4), link_line_id: src.id } };
   }
 
@@ -169,4 +181,11 @@ export async function redactCost<T extends { id: string; voucherType: string; to
   const hidden = new Set(accs.filter((a) => sensitiveDenial(other, a) !== null).map((a) => a.code));
   const lines = dto.lines.filter((l) => !hidden.has(l.accountCode));
   return { ...dto, lines, totalDebit: lines.reduce((s, l) => s.plus(l.debit), D(0)).toFixed(0) };
+}
+
+// TK ghi giảm doanh thu của hàng bán bị trả lại theo hệ thống tài khoản của chế độ kế toán: có TK con "hàng bán bị trả lại" (5213 của TT200) thì dùng, không thì TK 521 cấp cuối (TT99); chế độ không có TK 521 (TT133) ghi thẳng giảm TK doanh thu của dòng bán gốc.
+async function returnDeductionAccount(trx: Trx, date: string): Promise<string | null> {
+  const regime = await resolveRegime(trx, undefined, date);
+  const rows = await trx.selectFrom('account').select('code').where('regime', '=', regime).where('code', 'in', ['5213', '521']).where('is_group', '=', false).execute();
+  return ['5213', '521'].find((c) => rows.some((r) => r.code === c)) ?? null;
 }

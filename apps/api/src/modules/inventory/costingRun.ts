@@ -139,6 +139,9 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
     if (m.reversal_of !== null) { // nhập đảo chiều xuất: giá chiều xuất gốc theo tỷ lệ số lượng nhập (trả lại một phần hàng bán)
       if (!inScope(m)) return booked(m);
       const o = byId.get(m.reversal_of)!; const v = amountOut(o);
+      // lần trả cuối (cộng dồn đủ số lượng xuất) nhận phần còn lại để tổng các lần trả bằng đúng giá trị xuất
+      const sibs = rows.filter((x) => x.reversal_of === o.id && x.direction === 'in'); const before = sibs.slice(0, sibs.indexOf(m));
+      if (before.reduce((t, x) => t.plus(x.quantity), D(0)).plus(m.quantity).eq(o.quantity)) return v.minus(before.reduce((t, x) => t.plus(valueIn(x)), D(0)));
       return D(m.quantity).eq(o.quantity) ? v : v.times(m.quantity).div(o.quantity).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
     }
     // điều chỉnh chưa ghi nhận chỉ vào giá trị của phát sinh đến cuối kỳ (sẽ ghi ở GV lần tính này); sau kỳ chưa ghi sổ cái nên chưa tính

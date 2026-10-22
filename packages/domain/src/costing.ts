@@ -60,11 +60,17 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
   const fixedAmount = (m: CostMove, q: Decimal) => (m.fixedAmount !== undefined ? D(m.fixedAmount) : round(q.times(D(m.fixedUnitCost!))));
   // Chiều out được chiều in đảo lấy giá: giữ giá, không nhận phần lẻ cuối kỳ.
   const pinned = new Set(sorted.flatMap((m) => (m.direction === 'in' && m.valueFrom !== undefined ? [m.valueFrom] : [])));
+  const inCache = new Map<string, Decimal>();
   const inValue = (m: CostMove): Decimal => {
     if (m.valueFrom === undefined) return D(m.value!);
+    const hit = inCache.get(m.id); if (hit) return hit;
     const o = outs.find((x) => x.move.id === m.valueFrom);
     if (!o) throw new Error(`Phát sinh nhập ${m.id}: chiều xuất ${m.valueFrom} không đứng trước trong kỳ`);
-    return portionOf(o.amount, o.qty, D(m.qty)); // trả một phần: theo tỷ lệ số lượng
+    // trả một phần: theo tỷ lệ số lượng; lần trả cuối (cộng dồn đủ số lượng xuất) nhận phần còn lại để tổng các lần trả bằng đúng giá trị xuất
+    const sibs = sorted.filter((x) => x.direction === 'in' && x.valueFrom === m.valueFrom); const at = sibs.indexOf(m);
+    const before = sibs.slice(0, at); const prevQ = before.reduce((t, x) => t.plus(x.qty), D(0));
+    const v = prevQ.plus(m.qty).eq(o.qty) ? o.amount.minus(before.reduce((t, x) => t.plus(inValue(x)), D(0))) : portionOf(o.amount, o.qty, D(m.qty));
+    inCache.set(m.id, v); return v;
   };
   let layers: Layer[];
 

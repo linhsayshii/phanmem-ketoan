@@ -257,3 +257,22 @@ describe('động cơ giá vốn: đảo phiếu xuất trong kỳ (valueFrom)',
     expect(() => computeCosting('fifo', { qty: '0', value: '0' }, [{ ...mIn('r1', 1, '2026-01-02', '1', null), valueFrom: 'x9' }], '2026-01-31')).toThrow(/không đứng trước/);
   });
 });
+
+describe('động cơ giá vốn: nhiều lần đảo từng phần một phiếu xuất', () => {
+  // tổng chiều đảo = số lượng xuất: chiều đảo cộng lại đúng bằng giá trị xuất, không lệch 1đ do làm tròn từng phần
+  it.each(['avg_period', 'avg_moving', 'fifo'] as const)('%s: tồn cuối bằng giá trị nhập', (method) => {
+    fc.assert(fc.property(
+      fc.integer({ min: 3, max: 50000 }), fc.integer({ min: 1, max: 99999999 }), fc.array(fc.integer({ min: 1, max: 1000 }), { minLength: 2, maxLength: 5 }),
+      (outQty, inValue, cuts) => {
+        const parts: number[] = [];
+        let left = outQty;
+        for (const c of cuts) { const q = Math.min(c, left - 1); if (q < 1) break; parts.push(q); left -= q; }
+        parts.push(left);
+        const ms: CostMove[] = [mIn('n1', 1, '2026-01-02', String(outQty * 2), String(inValue)), mOut('x1', 2, '2026-01-05', String(outQty)),
+          ...parts.map((q, i) => ({ ...mIn(`r${i}`, 3 + i, '2026-01-10', String(q), null), valueFrom: 'x1' }))];
+        const r = computeCosting(method, zero, ms, '2026-01-31');
+        expect(r.errors).toEqual([]);
+        expect(r.endValue).toBe(String(inValue));
+      }), { numRuns: 200 });
+  });
+});

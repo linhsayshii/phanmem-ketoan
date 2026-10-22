@@ -90,7 +90,7 @@ Menu Bán hàng, "Bán hàng hóa" (loại BH) lập hóa đơn bán kiêm phi�
 - **Hàng xuất khẩu:** đánh dấu "Hàng xuất khẩu (thuế GTGT 0%)" để dòng chưa có mã thuế tự nhận mã thuế suất 0%.
 - **Cảnh báo:** "bán thấp hơn giá vốn" (số liệu giá vốn chỉ hiện cho người có quyền xem giá vốn) và "giá lệch bảng giá".
 
-"Hàng bán bị trả lại" (loại TLB) chọn hóa đơn gốc là một BH đã ghi sổ, nhập "Mã dòng bán gốc" và số lượng trả. Hàng nhập lại kho theo giá vốn của dòng bán gốc (giá vốn thực tế nếu đã tính); ghi Nợ TK kho / Có 632 và Nợ TK doanh thu (hoặc 5212 nếu đổi tài khoản) / Có 131. Trả vượt số đã bán báo "RETURN_EXCEEDS_SALE". BH đã có hàng trả lại thì không bỏ ghi sổ, không đảo được. Chỉ giảm giá về tiền thì dùng "Giảm giá bán".
+"Hàng bán bị trả lại" (loại TLB) chọn hóa đơn gốc là một BH đã ghi sổ, nhập "Mã dòng bán gốc" và số lượng trả. Hàng nhập lại kho theo giá vốn của dòng bán gốc (giá vốn thực tế nếu đã tính); ghi Nợ TK kho / Có 632 và Nợ TK giảm trừ doanh thu / Có 131 (TT200: 5213 Hàng bán bị trả lại; TT99: 521; TT133 không có TK 521 nên ghi giảm thẳng TK doanh thu của dòng bán gốc; có thể đổi bằng cột tài khoản). Trả vượt số đã bán báo "RETURN_EXCEEDS_SALE". BH đã có hàng trả lại thì không bỏ ghi sổ, không đảo được. Chỉ giảm giá về tiền thì dùng "Giảm giá bán".
 
 ## Chi phí mua hàng, nhập khẩu
 
