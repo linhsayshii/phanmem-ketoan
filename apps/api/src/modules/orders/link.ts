@@ -7,6 +7,7 @@ type Trx = Transaction<Database>;
 // Chứng từ bị hủy, đã đảo hoặc bị xóa trả số lượng về đơn. Bỏ ghi sổ đưa chứng từ về nháp nên vẫn giữ chỗ.
 export async function syncOrders(trx: Trx, orderIds: string[]): Promise<void> {
   for (const id of orderIds) {
+    await sql`SELECT 1 FROM doc_order WHERE id = ${id}::uuid FOR UPDATE`.execute(trx); // khóa đơn trước, cùng thứ tự với convertOrder, để thấy liên kết vừa thêm
     await sql`UPDATE doc_order_line l SET delivered_qty = coalesce((SELECT sum(k.quantity) FROM doc_order_link k JOIN voucher v ON v.tenant_id = k.tenant_id AND v.id = k.voucher_id
       WHERE k.tenant_id = l.tenant_id AND k.order_line_id = l.id AND v.state IN ('draft','posted')), 0) WHERE l.order_id = ${id}::uuid`.execute(trx);
     await sql`UPDATE doc_order o SET status = CASE
@@ -27,6 +28,7 @@ export async function syncOrdersOfVoucher(trx: Trx, voucherId: string): Promise<
 export async function releaseOrderLinks(trx: Trx, voucherId: string): Promise<void> {
   const orders = await ordersOf(trx, voucherId);
   if (!orders.length) return;
+  for (const id of orders) await sql`SELECT 1 FROM doc_order WHERE id = ${id}::uuid FOR UPDATE`.execute(trx);
   await sql`DELETE FROM doc_order_link WHERE voucher_id = ${voucherId}::uuid`.execute(trx);
   await syncOrders(trx, orders);
 }

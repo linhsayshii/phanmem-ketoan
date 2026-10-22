@@ -22,6 +22,14 @@ beforeAll(async () => {
   expect((await call('POST', `/api/vouchers/${r.json().id}/post`, {})).statusCode).toBe(200);
 });
 afterAll(async () => { await ctx.close(); });
+const login = async (perms: string[], flags: string[]) => {
+  const roles = (await call('GET', '/api/roles')).json() as { id: string; code: string }[];
+  await call('PUT', `/api/roles/${roles.find((r) => r.code === 'xem')!.id}/permissions`, { permissions: perms });
+  const username = `dh_${Date.now()}`;
+  expect((await call('POST', '/api/users', { username, fullName: 'X', password: 'Matkhau1!', roleCode: 'xem', sensitiveFlags: flags })).statusCode).toBe(201);
+  const l = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+  return `sid=${l.cookies.find((x) => x.name === 'sid')!.value}`;
+};
 
 describe('báo giá, đơn hàng, hợp đồng', () => {
   it('đánh số riêng theo loại; báo giá thành đơn bán; chuyển BH một phần 40/100 rồi phần còn lại', async () => {
@@ -86,5 +94,18 @@ describe('báo giá, đơn hàng, hợp đồng', () => {
     expect(code(await call('PUT', `/api/orders/${o.id}`, order({ kind: 'purchase_order', partyCode: 'NCC001' })))).toBe('ORDER_LOCKED');
     const n = (await sql<{ n: string }>`SELECT count(*) AS n FROM audit_event WHERE entity = 'doc_order'`.execute(ctx.t.admin)).rows[0]!.n;
     expect(Number(n)).toBeGreaterThan(0);
+  });
+
+  it('dòng trùng lineNo bị từ chối; người không có view_cost chuyển BH không thấy dòng giá vốn', async () => {
+    const o = await mk(order({ kind: 'sale_order' }));
+    const dup = await call('POST', `/api/orders/${o.id}/convert`, { to: 'BH', lines: [{ lineNo: 1, quantity: '60' }, { lineNo: 1, quantity: '60' }] });
+    expect(dup.statusCode).toBe(400);
+    expect(await delivered(o.id)).toBe('0.0000');
+    const lim = await login(['order.view', 'order.update', 'voucher.create', 'voucher.view', 'stock_voucher.create', 'stock_voucher.view'], []);
+    const r = await call('POST', `/api/orders/${o.id}/convert`, { to: 'BH', lines: [{ lineNo: 1, quantity: '10' }] }, lim);
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().voucher.lines.some((l: { accountCode: string }) => l.accountCode.startsWith('632'))).toBe(false);
+    const full = await call('POST', `/api/orders/${o.id}/convert`, { to: 'BH', lines: [{ lineNo: 1, quantity: '10' }] });
+    expect(full.json().voucher.lines.some((l: { accountCode: string }) => l.accountCode.startsWith('632'))).toBe(true);
   });
 });

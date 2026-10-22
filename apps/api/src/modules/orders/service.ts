@@ -5,6 +5,7 @@ import { D, VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { resolveByCodes } from '../inventory/priceLists.js';
 import { dateIso } from '../ledger/vouchers.service.js';
+import { redactCost } from '../invoices/sales.js';
 import { createInvoice, invoiceInput, type InvoiceDto } from '../invoices/service.js';
 import { syncOrders } from './link.js';
 
@@ -28,7 +29,7 @@ export const orderInput = z.object({
 export type OrderInput = z.infer<typeof orderInput>;
 export const convertInput = z.object({
   to: z.enum(['SO', 'BH', 'MH']), date: dateIso.optional(), warehouseCode: z.string().min(1).optional(),
-  lines: z.array(z.object({ lineNo: z.number().int().positive(), quantity: QTY })).optional(),
+  lines: z.array(z.object({ lineNo: z.number().int().positive(), quantity: QTY })).refine((a) => new Set(a.map((x) => x.lineNo)).size === a.length, 'Mỗi dòng chỉ được chuyển một lần').optional(),
 });
 export const contractInput = z.object({
   code: z.string().trim().min(1).max(50), name: z.string().trim().min(1).max(255), partyCode: z.string().min(1).nullable().optional(), kind: z.enum(['sale', 'purchase']),
@@ -180,12 +181,12 @@ export async function convertOrder(trx: Trx, ctx: CreateCtx, id: string, b: z.in
   const input = invoiceInput.parse({ voucherType: b.to, postingDate: date, documentDate: date, partyCode: o.partyCode, currencyCode: o.currencyCode, description: `Theo ${o.docNo}`, items: items.map((x) => x.item),
     invoice: { invoiceNo: o.docNo, invoiceDate: date, invoiceGroupCode: sale ? '10' : '01' } });
   const fx = (await sql<{ fx: string | null }>`SELECT fx_rate::text AS fx FROM doc_order WHERE id = ${id}::uuid`.execute(trx)).rows[0]!.fx;
-  const voucher = await createInvoice(trx, ctx, fx ? { ...input, fxRate: fx } : input);
+  const created = await createInvoice(trx, ctx, fx ? { ...input, fxRate: fx } : input);
   for (const x of items)
-    await sql`INSERT INTO doc_order_link(tenant_id, order_line_id, voucher_id, quantity) VALUES (${ctx.tenantId}::uuid, ${x.l.id}::bigint, ${voucher.id}::uuid, ${x.p.quantity}::numeric)`.execute(trx);
+    await sql`INSERT INTO doc_order_link(tenant_id, order_line_id, voucher_id, quantity) VALUES (${ctx.tenantId}::uuid, ${x.l.id}::bigint, ${created.id}::uuid, ${x.p.quantity}::numeric)`.execute(trx);
   await sql`UPDATE doc_order SET status = 'confirmed' WHERE id = ${id}::uuid AND status = 'draft'`.execute(trx);
   await syncOrders(trx, [id]);
-  return { order: await getOrder(trx, id), voucher };
+  return { order: await getOrder(trx, id), voucher: ctx.auth ? await redactCost(trx, ctx.auth, created) : created }; // như POST /api/invoices: che dòng giá vốn
 }
 
 // ---- Hợp đồng ----
