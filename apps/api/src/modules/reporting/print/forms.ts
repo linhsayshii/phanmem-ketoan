@@ -26,6 +26,9 @@ const FORMS: Record<string, Record<string, string>> = {
   '08b-TT': { TT99: '08b - TT', TT133: '08b - TT' },
   // Biên bản kiểm kê vật tư, công cụ, sản phẩm, hàng hóa (TT99: "Biên bản tổng hợp kiểm kê..."): "Mẫu số 05 - VT" có trong văn bản gốc của cả TT 133/2016 (Phụ lục 3) và TT 99/2025.
   '05-VT': { TT99: '05 - VT', TT133: '05 - VT' }, // TT200: chưa có văn bản gốc đối chiếu nên không in số mẫu
+  // Sổ chi tiết vật liệu, dụng cụ, sản phẩm, hàng hóa: TT99 S10-DN, TT133 S06-DNN. Thẻ kho (Sổ kho): TT99 S12-DN, TT133 S08-DNN (đối chiếu ~/legal-docs; S10-DNN và S12-DNN của TT133 là sổ khác). TT200 chưa có văn bản gốc nên không in số mẫu.
+  'stock-ledger': { TT99: 'S10-DN', TT133: 'S06-DNN' },
+  'stock-card': { TT99: 'S12-DN', TT133: 'S08-DNN' },
 };
 // Chú thích dưới "Mẫu số" của chứng từ, đúng chữ trên mẫu (khác chú thích của sổ: TT99 ghi "Kèm theo", TT133 ghi "Ban hành theo").
 const VOUCHER_LEGEND: Record<string, string> = {
