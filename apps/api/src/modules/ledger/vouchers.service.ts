@@ -1,4 +1,5 @@
 import { sql, type Transaction } from 'kysely';
+import { releaseOrderLinks, syncOrdersOfVoucher } from '../orders/link.js';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
 import { CASH_PURPOSES, D, HEADER_FIELD_LABELS, sum, SYSTEM_VOUCHER_TYPES, VND_AMOUNT_MSG, VND_AMOUNT_RE, voucherTypeDef, type CashPurpose, type HeaderField, type VoucherTypeDef } from '@kt/domain';
@@ -420,10 +421,11 @@ export async function updatePostedMeta(trx: Trx, id: string, version: number, in
 }
 
 export const postVoucher = async (trx: Trx, id: string) => { await sql`SELECT post_voucher(${id}::uuid)`.execute(trx); return getVoucher(trx, id); };
-export const unpostVoucher = async (trx: Trx, id: string) => { await assertNotSystemGenerated(trx, id); await sql`SELECT unpost_voucher(${id}::uuid)`.execute(trx); return getVoucher(trx, id); };
-export const discardVoucher = async (trx: Trx, id: string) => { await assertNotSystemGenerated(trx, id); await sql`SELECT discard_voucher(${id}::uuid)`.execute(trx); return getVoucher(trx, id); };
+export const unpostVoucher = async (trx: Trx, id: string) => { await assertNotSystemGenerated(trx, id); await sql`SELECT unpost_voucher(${id}::uuid)`.execute(trx); await syncOrdersOfVoucher(trx, id); return getVoucher(trx, id); };
+export const discardVoucher = async (trx: Trx, id: string) => { await assertNotSystemGenerated(trx, id); await sql`SELECT discard_voucher(${id}::uuid)`.execute(trx); await syncOrdersOfVoucher(trx, id); return getVoucher(trx, id); };
 export async function reverseVoucher(trx: Trx, id: string, input: { postingDate: string; description?: string | undefined }): Promise<VoucherDto> {
   const r = await sql<{ id: string }>`SELECT reverse_voucher(${id}::uuid, ${input.postingDate}::date, ${input.description ?? null}) AS id`.execute(trx);
+  await syncOrdersOfVoucher(trx, id);
   return getVoucher(trx, r.rows[0]!.id);
 }
 export async function duplicateVoucher(trx: Trx, ctx: { tenantId: string; userId: string }, id: string, postingDate: string): Promise<VoucherDto> {
@@ -436,6 +438,7 @@ export async function duplicateVoucher(trx: Trx, ctx: { tenantId: string; userId
 }
 export async function deleteDraft(trx: Trx, id: string): Promise<void> {
   await assertNotSystemGenerated(trx, id);
+  await releaseOrderLinks(trx, id);
   await trx.deleteFrom('voucher_line').where('voucher_id', '=', id).execute(); // chứng từ đã ghi sổ: trigger dòng chặn (LINE_IMMUTABLE); nháp đã có số: trigger chứng từ chặn
   if (!(await trx.deleteFrom('voucher').where('id', '=', id).returning('id').executeTakeFirst())) throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy chứng từ', 404);
 }
