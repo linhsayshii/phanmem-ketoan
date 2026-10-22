@@ -13,7 +13,7 @@ export interface VoucherTypeDef {
 }
 
 // Loại do hệ thống sinh, không lập tay qua route chung. PB không có ở đây: phân bổ lập tay vẫn được (như GĐ1), PB tự sinh mang source_doc_type riêng.
-export const SYSTEM_VOUCHER_TYPES: readonly string[] = ['DK', 'KC', 'CL', 'DG', 'XQ', 'KTT'];
+export const SYSTEM_VOUCHER_TYPES: readonly string[] = ['DK', 'KC', 'CL', 'DG', 'XQ', 'KTT', 'GV'];
 
 const def = (d: Omit<VoucherTypeDef, 'manual' | 'header' | 'required' | 'printForms'> & Partial<Pick<VoucherTypeDef, 'header' | 'required' | 'printForms'>>): [string, VoucherTypeDef] =>
   [d.code, { header: [], required: [], printForms: [], ...d, manual: !SYSTEM_VOUCHER_TYPES.includes(d.code) }];
@@ -45,6 +45,8 @@ export const VOUCHER_TYPES: Record<string, VoucherTypeDef> = Object.fromEntries(
   def({ code: 'DG', name: 'Đánh giá lại ngoại tệ', module: 'general' }),
   def({ code: 'XQ', name: 'Điều chỉnh tỷ giá xuất quỹ', module: 'general' }),
   def({ code: 'KTT', name: 'Khấu trừ thuế GTGT', module: 'general' }),
+  // Giá vốn: chênh giữa giá thật (tính giá vốn) và giá tạm tính đã ghi ở phiếu xuất; chỉ do lần chạy tính giá vốn sinh.
+  def({ code: 'GV', name: 'Chứng từ giá vốn', module: 'inventory' }),
 ]);
 
 // Tra theo mã người dùng nhập: Object.hasOwn để 'constructor', '__proto__'... không ra thành viên của Object.prototype.

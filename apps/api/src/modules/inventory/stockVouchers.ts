@@ -17,6 +17,8 @@ export const stockItemInput = z.object({
   itemCode: z.string().min(1), uomCode: z.string().min(1), quantity: z.string().regex(qtyRe, 'Số lượng không hợp lệ').refine(positive, 'Số lượng phải lớn hơn 0'),
   unitPrice: z.string().regex(qtyRe, 'Đơn giá không hợp lệ').optional(), lotNo: optText(50), mfgDate: S.dateIso.nullable().optional(), expiryDate: S.dateIso.nullable().optional(),
   debitAccountCode: z.string().nullable().optional(), creditAccountCode: z.string().nullable().optional(), warehouseCode: z.string().nullable().optional(),
+  // Cố định giá vốn: dòng xuất giữ đúng đơn giá này khi tính giá vốn.
+  fixedUnitCost: z.string().regex(qtyRe, 'Đơn giá vốn không hợp lệ').nullable().optional(),
 });
 export const stockVoucherInput = z.object({
   voucherType: z.enum(['PNK', 'PXK', 'CK']), stockKind: z.string().min(1), postingDate: S.dateIso, documentDate: S.dateIso.optional(),
@@ -39,6 +41,7 @@ async function build(trx: Trx, input: StockVoucherInput, auth?: Auth) {
   const kind = stockKindDef(input.voucherType, input.stockKind);
   if (!kind) throw new AppError('STOCK_KIND_INVALID', `Loại nghiệp vụ "${input.stockKind}" không dùng cho ${voucherTypeDef(input.voucherType)!.name}`, 400);
   const transfer = input.voucherType === 'CK'; const dir = input.voucherType === 'PNK' ? 'in' : 'out';
+  if (dir === 'in' && input.items.some((i) => i.fixedUnitCost)) throw new AppError('VALIDATION', 'Cố định giá vốn chỉ dùng cho dòng xuất kho', 400);
   if (transfer && !input.destWarehouseCode) throw new AppError('VALIDATION', 'Phiếu chuyển kho phải có kho nhận', 400);
   if (!transfer && input.destWarehouseCode) throw new AppError('VALIDATION', 'Kho nhận chỉ dùng cho phiếu chuyển kho', 400);
   const { regime } = await S.periodOf(trx, input.postingDate, input.voucherType);
@@ -77,9 +80,9 @@ async function build(trx: Trx, input: StockVoucherInput, auth?: Auth) {
       amount = round0(D(r.it.quantity).times(r.it.unitPrice ?? '0'));
     } else {
       const key = `${r.item.id}:${r.src.id}`;
-      if (!est.has(key)) est.set(key, (await sql<{ c: string }>`SELECT fn_stock_estimate_cost(${r.item.id}::bigint, ${r.src.id}::bigint, ${input.postingDate}::date)::text AS c`.execute(trx)).rows[0]!.c);
-      unitCost = D(est.get(key)!).toFixed(4); amount = round0(D(r.base).times(unitCost));
-      if (D(unitCost).isZero()) warnings.push({ code: 'COST_UNKNOWN', message: `Dòng ${r.n}: hàng ${r.it.itemCode} chưa có giá vốn, ghi giá 0 cho đến khi tính giá vốn`, lineNo: r.n });
+      if (!r.it.fixedUnitCost && !est.has(key)) est.set(key, (await sql<{ c: string }>`SELECT fn_stock_estimate_cost(${r.item.id}::bigint, ${r.src.id}::bigint, ${input.postingDate}::date)::text AS c`.execute(trx)).rows[0]!.c);
+      unitCost = D(r.it.fixedUnitCost || est.get(key)!).toFixed(4); amount = round0(D(r.base).times(unitCost));
+      if (!r.it.fixedUnitCost && D(unitCost).isZero()) warnings.push({ code: 'COST_UNKNOWN', message: `Dòng ${r.n}: hàng ${r.it.itemCode} chưa có giá vốn, ghi giá 0 cho đến khi tính giá vốn`, lineNo: r.n });
     }
     if (amount.length > 16) throw new AppError('AMOUNT_TOO_LARGE', `Dòng ${r.n}: thành tiền vượt quá 16 chữ số`, 400);
     return { ...r, unitCost, amount };
@@ -124,7 +127,7 @@ async function insertItems(trx: Trx, tenantId: string, voucherId: string, b: Awa
     tenant_id: tenantId, voucher_id: voucherId, line_no: l.n, item_id: l.item.id, uom_id: l.u.uom_id, quantity: l.it.quantity, unit_price: b.dir === 'in' && !b.transfer || l.service ? (l.it.unitPrice ?? '0') : null,
     amount_currency: l.amount, amount: l.amount, account_id: b.accs.get(b.dir === 'in' && !b.transfer ? l.debit : l.credit)!.id, warehouse_id: l.src.id, dest_warehouse_id: l.dst?.id ?? null,
     uom_factor: l.factor, base_quantity: l.base, lot_no: l.it.lotNo || null, mfg_date: l.it.mfgDate || null, expiry_date: l.it.expiryDate || null,
-    direction: b.transfer ? null : b.dir, debit_account_id: b.accs.get(l.debit)!.id, credit_account_id: b.accs.get(l.credit)!.id, unit_cost: l.unitCost,
+    direction: b.transfer ? null : b.dir, debit_account_id: b.accs.get(l.debit)!.id, credit_account_id: b.accs.get(l.credit)!.id, unit_cost: l.unitCost, fixed_cost: !!l.it.fixedUnitCost,
   }));
   await trx.insertInto('voucher_item_line').values(rows).execute();
 }

@@ -139,8 +139,9 @@ export interface CostingRunTable {
   voucher_ids: ColumnType<string[], string[] | undefined, string[]>; created_by: string | null; created_at: Generated<string>; summary: ColumnType<unknown, string | null | undefined, string | null>;
 }
 export interface StockCostAssignmentTable {
-  id: Generated<number>; tenant_id: string; run_id: string; move_id: number; unit_cost: Numeric; amount: Numeric; lot_no: string | null; is_current: Generated<boolean>;
+  id: Generated<number>; tenant_id: string; run_id: string; move_id: number; unit_cost: Numeric; amount: Numeric; lot_no: string | null; is_current: Generated<boolean>; voucher_id: ColumnType<string | null, string | null | undefined, string | null>;
 }
+export interface StockCostStateTable { tenant_id: string; item_id: number; warehouse_id: number; stale_from: DateOnly }
 export interface UomTable { id: Generated<number>; tenant_id: string; code: string; name: string; is_active: Generated<boolean> }
 
 export interface VoucherTypeTable {
@@ -314,6 +315,7 @@ export interface Database {
   stock_cost_layer: StockCostLayerTable;
   costing_run: CostingRunTable;
   stock_cost_assignment: StockCostAssignmentTable;
+  stock_cost_state: StockCostStateTable;
   voucher_type: VoucherTypeTable;
   voucher: VoucherTable;
   voucher_line: VoucherLineTable;

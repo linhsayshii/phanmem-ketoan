@@ -276,6 +276,7 @@ const SYSTEM_MSG: Record<string, string> = {
   fx_outflow: 'Chứng từ điều chỉnh tỷ giá xuất quỹ do hệ thống sinh; thao tác ở chức năng đã sinh ra chứng từ',
   vat_offset: 'Chứng từ khấu trừ thuế GTGT do hệ thống sinh; thao tác ở chức năng khấu trừ thuế GTGT',
   amortization: 'Chứng từ phân bổ do hệ thống sinh; thao tác ở chức năng phân bổ',
+  costing_run: 'Chứng từ giá vốn do hệ thống sinh; tính lại ở màn hình Tính giá vốn (đảo chứng từ cũ, sinh chứng từ mới)',
 };
 const failIfSystem = (sourceDocType: string | null) => {
   const msg = sourceDocType ? SYSTEM_MSG[sourceDocType] : undefined;
