@@ -191,6 +191,18 @@ describe('kiểm tra trùng hóa đơn đầu vào', () => {
     expect(ok.json().invoices[0]).toMatchObject({ direction: 'purchase', invoiceNo: '0000124', declareYear: 2026, declarePeriod: 3, taxCode: 'V10' });
   });
 
+  it('hai yêu cầu đồng thời nhập cùng một hóa đơn (một HDM, một PC): đúng một thành công, bên kia 409 INVOICE_DUPLICATE', async () => {
+    const t = await withTaxCode();
+    const [a, b] = await Promise.all([
+      t.call('POST', '/api/invoices', t.invoice('HDM', {}, { serial: 'AB/26E', invoiceNo: '0000300', invoiceDate: '2026-03-05' })),
+      t.pc([t.decl('AB/26E', '0000300')]),
+    ]);
+    expect([a.statusCode, b.statusCode].sort()).toEqual([201, 409]);
+    expect(err([a, b].find((r) => r.statusCode === 409)!)).toEqual([409, 'INVOICE_DUPLICATE']);
+    const n = (await t.admin(sql`SELECT count(*)::int AS n FROM voucher_invoice WHERE tenant_id = ${t.tenantId}::uuid AND invoice_no = '0000300'`)).rows as { n: number }[];
+    expect(n[0]!.n).toBe(1);
+  });
+
   it('chứng từ nháp vẫn chặn, chứng từ đã hủy thì không chặn', async () => {
     const t = await withTaxCode();
     const draft = await t.create(t.invoice('HDM', { autoPost: false }, { serial: 'AB/26E', invoiceNo: '0000200', invoiceDate: '2026-03-05' }));
