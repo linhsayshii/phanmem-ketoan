@@ -60,6 +60,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
   const [declared, setDeclared] = useState<Record<string, string>>({});
   const [party, setParty] = useState<PartyInfo | null>(null);
   const [stockMode, setStockMode] = useState<StockMode>('through_stock'); const [receiptIds, setReceiptIds] = useState<string[]>([]); // MH: cách nhận hàng; hàng về trước thì các phiếu nhập kho đã nhận
+  const [exportMode, setExportMode] = useState(false); // BH, TLB: hàng xuất khẩu, thuế GTGT 0%
   const [importMode, setImportMode] = useState(false); // MH: hàng nhập khẩu, dòng hàng có thuế NK, TTĐB, GTGT hàng nhập theo tờ khai
   const [adjusts, setAdjusts] = useState<number | null>(null); // giảm giá, trả lại: id dòng hóa đơn gốc (voucher_invoice)
   const [origVoucher, setOrigVoucher] = useState<string | null>(null); const [origInvoices, setOrigInvoices] = useState<InvoiceRef[]>([]);
@@ -76,7 +77,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
   const mismatch = !!realType && realType !== def.code && !!voucherTypeDef(realType);
   useEffect(() => { if (mismatch) void navigate({ to: '/chung-tu/$type/$id', params: { type: realType!, id }, replace: true }); }, [mismatch, realType, id, navigate]);
   const scope = eff.invoiceDirection ?? 'sale'; const refund = !!eff.refund;
-  const isMH = eff.code === 'MH'; const goodsDoc = isMH || eff.code === 'TLM'; // chứng từ có dòng hàng nhập, xuất kho
+  const isMH = eff.code === 'MH'; const isSaleGoods = eff.code === 'BH' || eff.code === 'TLB'; const goodsDoc = isMH || eff.code === 'TLM' || isSaleGoods; // chứng từ có dòng hàng nhập, xuất kho
   const state = (v.data?.state ?? 'draft') as VoucherState;
   const editable = state === 'draft';
   const posted = state === 'posted';
@@ -193,12 +194,13 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
     const items = itemsBody();
     if (!items.length) throw new Error('Nhập ít nhất một dòng hàng tiền');
     if (isMH && stockMode === 'goods_first' && !receiptIds.length) throw new Error('Chọn phiếu nhập kho của hàng đã về');
+    if (eff.code === 'TLB' && rowsRef.current.some((r) => !isBlankRow(r) && !r.sourceLineId.trim())) throw new Error('Hàng bán bị trả lại: nhập mã dòng bán gốc ở mọi dòng');
     if (refund && live.current.adjusts == null) throw new Error('Chọn hóa đơn gốc ở tab Hóa đơn');
     const present = new Set(rowsRef.current.flatMap(codesOf));
     const declaredTax = Object.fromEntries(Object.entries(live.current.declared).filter(([c, s]) => s !== '' && present.has(c)));
     for (const [c, s] of Object.entries(declaredTax)) if (!VND_AMOUNT_RE.test(s)) throw new Error(`Thuế ghi trên hóa đơn ${c}: nhập số tiền nguyên đồng`);
     return { voucherType: eff.code, postingDate: iso(f.postingDate), documentDate: iso(f.documentDate), partyCode: f.partyCode ?? '', currencyCode: f.currencyCode ?? 'VND',
-      ...(isMH ? { stockMode, ...(stockMode === 'goods_first' ? { receiptVoucherIds: receiptIds } : {}) } : {}),
+      ...(isSaleGoods && exportMode ? { exportMode: true } : {}), ...(isMH ? { stockMode, ...(stockMode === 'goods_first' ? { receiptVoucherIds: receiptIds } : {}) } : {}),
       ...((f.currencyCode ?? 'VND') !== 'VND' && f.fxRate ? { fxRate: f.fxRate } : {}), ...(f.dueDate ? { dueDate: iso(f.dueDate) } : {}), description: text(f.description), items,
       invoice: { ...(live.current.party ? { partyTaxCode: live.current.party.taxCode.trim(), partyName: live.current.party.name.trim(), partyAddress: live.current.party.address.trim() } : {}), formNo: text(f.formNo), serial: text(f.serial), invoiceNo: (f.invoiceNo ?? '').trim(), invoiceDate: iso(f.invoiceDate), invoiceGroupCode: f.invoiceGroupCode ?? '',
         ...(refund ? { adjustsInvoiceId: live.current.adjusts } : {}), ...(Object.keys(declaredTax).length ? { declaredTax } : {}) } };
@@ -253,7 +255,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
       p.data[f] = p.newValue as string; deriveRow(p.data, snaps.current.get(p.data) ?? BLANK_SNAP, dp); snaps.current.set(p.data, snapOf(p.data)); return true; } };
     const goodsCols: ColDef<InvRow>[] = !goodsDoc ? [] : [{ field: 'itemCode', headerName: 'Mã hàng (F4)', width: 120 }, { field: 'uomCode', headerName: 'ĐVT (F4)', width: 90 },
       ...(!isMH || stockMode === 'through_stock' ? [{ field: 'warehouseCode', headerName: 'Kho (F4)', width: 100 }, { field: 'lotNo', headerName: 'Số lô', width: 100 }, { field: 'expiryDate', headerName: 'Hạn dùng (YYYY-MM-DD)', width: 150 }] satisfies ColDef<InvRow>[] : []),
-      ...(!isMH ? [{ field: 'sourceLineId', headerName: 'Mã dòng nhập gốc', width: 130, headerTooltip: 'Trả lại hàng: mã dòng phiếu nhập gốc (xem ở chi tiết phiếu nhập); để trống nếu chỉ giảm giá' }] satisfies ColDef<InvRow>[] : [])];
+      ...(!isMH && eff.code !== 'BH' ? [{ field: 'sourceLineId', headerName: isSaleGoods ? 'Mã dòng bán gốc' : 'Mã dòng nhập gốc', width: 130, headerTooltip: isSaleGoods ? 'Hàng bán bị trả lại: mã dòng hóa đơn bán gốc (bắt buộc, xem ở chi tiết hóa đơn bán)' : 'Trả lại hàng: mã dòng phiếu nhập gốc (xem ở chi tiết phiếu nhập); để trống nếu chỉ giảm giá' }] satisfies ColDef<InvRow>[] : [])];
     return ([
       { field: 'description', headerName: 'Diễn giải', flex: 1, minWidth: 160 },
       ...goodsCols,
@@ -269,7 +271,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
         numCol('vatImportBase', 'Giá tính thuế GTGT NK (đồng)', (n) => VND_AMOUNT_RE.test(n), { width: 190, headerTooltip: 'Theo tờ khai hải quan; để trống: tiền hàng quy đổi + thuế NK + thuế TTĐB' })] satisfies ColDef<InvRow>[] : []),
       { field: 'departmentCode', headerName: 'Bộ phận', width: 100 }, { field: 'projectCode', headerName: 'Vụ việc', width: 100 }, { field: 'costItemCode', headerName: 'Khoản mục', width: 110 },
     ] satisfies ColDef<InvRow>[]).map(live);
-  }, [scope, isVnd, dp, goodsDoc, isMH, stockMode, importMode]);
+  }, [scope, isVnd, dp, goodsDoc, isMH, isSaleGoods, stockMode, importMode]);
   const onLookup = useCallback((col: string, row: number) => { if (col in LOOKUP_CATALOG && editable) setLookup({ col, row }); }, [editable]);
   const pick = (code: string) => { // đổi đối tượng dòng (không ghi tại chỗ): ô đang sửa phía sau hộp thoại bị hủy, không ghi đè giá trị vừa chọn
     if (!lookup) return;
@@ -284,7 +286,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
     setAdjusts(null); setOrigVoucher(null); setOrigInvoices([]);
   };
   // Hóa đơn gốc của giảm giá, trả lại: chỉ hóa đơn đã ghi sổ của cùng đối tượng, cùng chiều (GGB -> HDB, GGM -> HDM).
-  const origType = eff.code === 'GGB' ? 'HDB' : eff.code === 'TLM' ? 'MH' : 'HDM';
+  const origType = eff.code === 'GGB' ? 'HDB' : eff.code === 'TLB' ? 'BH' : eff.code === 'TLM' ? 'MH' : 'HDM';
   const origList = useQuery({ queryKey: ['orig-invoices', origType, party?.code], enabled: refund && editable && !!party?.code,
     queryFn: async () => (await api<{ rows: ListRow[] }>(`/api/vouchers?type=${origType}&state=posted&partyCode=${encodeURIComponent(party!.code)}&size=200`)).rows });
   const pickOrig = async (vid: string) => {
@@ -310,6 +312,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
   const receiptList = useQuery({ queryKey: ['receipts', party?.code], enabled: isMH && stockMode === 'goods_first' && editable && !!party?.code,
     queryFn: async () => (await api<{ rows: ListRow[] }>(`/api/vouchers?type=PNK&state=posted&partyCode=${encodeURIComponent(party!.code)}&size=200`)).rows });
   const goodsTab = (<>
+    {isSaleGoods && <Space style={{ marginBottom: 8 }}><Checkbox disabled={!editable} checked={exportMode} onChange={(e) => { setExportMode(e.target.checked); setDirty(true); }}>Hàng xuất khẩu (thuế GTGT 0%)</Checkbox></Space>}
     {isMH && <Space style={{ marginBottom: 8 }} wrap>
       <Select aria-label="Cách nhận hàng" style={{ width: 280 }} disabled={!editable} value={stockMode} onChange={(m) => { setStockMode(m); setDirty(true); }} options={(Object.keys(STOCK_MODE_LABEL) as StockMode[]).map((m) => ({ value: m, label: STOCK_MODE_LABEL[m] }))} />
       <Checkbox disabled={!editable} checked={importMode} onChange={(e) => { setImportMode(e.target.checked); setDirty(true); }}>Hàng nhập khẩu</Checkbox>

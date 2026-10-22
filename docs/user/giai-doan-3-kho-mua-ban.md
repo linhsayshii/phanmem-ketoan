@@ -80,6 +80,18 @@ Chọn "Cách nhận hàng" ở đầu tab Hàng tiền:
 
 Không sửa, không bỏ ghi sổ được MH hoặc Phiếu nhập kho khi chứng từ khác đã dùng nó (lỗi "LINE_REFERENCED"); phiếu nhập kho theo hóa đơn về trước cần hóa đơn đã ghi sổ ("INVOICE_NOT_POSTED"). Đảo MH mà hàng đã xuất hết thì bị chặn "STOCK_NEGATIVE". Dùng thêm quyền `stock_voucher.*` khi chứng từ có dòng hàng; xem giá vốn cần cờ view_cost.
 
+## Bán hàng hóa
+
+Menu Bán hàng, "Bán hàng hóa" (loại BH) lập hóa đơn bán kiêm phiếu xuất kho. Mỗi dòng chọn Mã hàng (F4), ĐVT, Kho, số lượng, đơn giá, mã thuế; hàng dịch vụ chỉ ghi doanh thu, không xuất kho.
+
+- **Bút toán:** Nợ 131 (hoặc 111, 112), Có TK doanh thu (5111...), Có 33311; đồng thời Nợ 632 (hoặc TK giá vốn của hàng) / Có TK kho theo giá vốn tạm tính của hàng tại ngày bán, và sinh phát sinh xuất kho. Bán nhiều ĐVT (ví dụ thùng) được quy ra ĐVT gốc.
+- **Giá vốn thực tế:** khi chạy "Tính giá vốn", chênh lệch so với giá tạm tính được ghi bằng chứng từ GV (Nợ 632 / Có TK kho).
+- **Kho gửi bán:** chuyển hàng sang kho loại "Kho gửi bán" (TK 157) bằng Phiếu chuyển kho; khi bán từ kho này ghi Nợ 632 / Có 157. Kho "nhận bán hộ" chỉ theo dõi số lượng, chưa bán được từ kho này.
+- **Hàng xuất khẩu:** đánh dấu "Hàng xuất khẩu (thuế GTGT 0%)" để dòng chưa có mã thuế tự nhận mã thuế suất 0%.
+- **Cảnh báo:** "bán thấp hơn giá vốn" (số liệu giá vốn chỉ hiện cho người có quyền xem giá vốn) và "giá lệch bảng giá".
+
+"Hàng bán bị trả lại" (loại TLB) chọn hóa đơn gốc là một BH đã ghi sổ, nhập "Mã dòng bán gốc" và số lượng trả. Hàng nhập lại kho theo giá vốn của dòng bán gốc (giá vốn thực tế nếu đã tính); ghi Nợ TK kho / Có 632 và Nợ TK doanh thu (hoặc 5212 nếu đổi tài khoản) / Có 131. Trả vượt số đã bán báo "RETURN_EXCEEDS_SALE". BH đã có hàng trả lại thì không bỏ ghi sổ, không đảo được. Chỉ giảm giá về tiền thì dùng "Giảm giá bán".
+
 ## Chi phí mua hàng, nhập khẩu
 
 ### Chi phí mua hàng

@@ -84,7 +84,7 @@ export const MENU: MenuItem[] = [
     { key: 'import-vouchers', label: 'Nhập chứng từ từ Excel', to: '/chung-tu/nhap-excel', permission: 'voucher.import' },
   ] },
   { key: 'muahang', label: 'Mua hàng', to: '/chung-tu/MH', children: [voucherItem('MH', 'Mua hàng hóa'), voucherItem('TLM', 'Trả lại, giảm giá hàng mua'), voucherItem('CPM', 'Chi phí mua hàng'), voucherItem('HDM', 'Hóa đơn mua dịch vụ'), voucherItem('GGM', 'Giảm giá mua')] },
-  { key: 'banhang', label: 'Bán hàng', to: '/chung-tu/HDB', children: [voucherItem('HDB', 'Hóa đơn bán dịch vụ'), voucherItem('GGB', 'Giảm giá bán')] },
+  { key: 'banhang', label: 'Bán hàng', to: '/chung-tu/HDB', children: [voucherItem('BH', 'Bán hàng hóa'), voucherItem('TLB', 'Hàng bán bị trả lại'), voucherItem('HDB', 'Hóa đơn bán dịch vụ'), voucherItem('GGB', 'Giảm giá bán')] },
   { key: 'quy', label: 'Quỹ', to: '/quy', children: [
     { key: 'cashcount', label: 'Kiểm kê quỹ', to: '/quy/kiem-ke', permission: 'cash_count.view' },
   ] },
