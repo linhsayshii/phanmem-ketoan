@@ -229,6 +229,15 @@ export interface CashCountTable {
   counted_total: Numeric; difference: Numeric; members: JSONColumnType<{ name: string; role?: string }[]>; note: string | null;
   voucher_id: string | null; created_by: string | null; created_at: Generated<string>;
 }
+export interface StocktakeTable {
+  id: Generated<string>; tenant_id: string; seq: Generated<string>; doc_date: DateOnly; warehouse_id: number | string; status: Generated<string>; note: string | null;
+  created_by: string | null; created_at: Generated<string>; adjusted_at: string | null;
+}
+export interface StocktakeLineTable {
+  id: Generated<number>; tenant_id: string; stocktake_id: string; item_id: number | string; lot_no: string | null; book_qty: Numeric; counted_qty: Numeric | null;
+  diff_qty: ColumnType<string | null, never, never>; reason: string | null;
+}
+export interface StocktakeVoucherTable { id: Generated<number>; tenant_id: string; stocktake_id: string; voucher_id: string }
 // Nhật ký chạy tỷ giá cuối kỳ: kind 'outflow' (tỷ giá xuất quỹ, chứng từ XQ) hoặc 'revaluation' (đánh giá lại, chứng từ DG).
 export interface FxRunTable {
   id: Generated<number>; tenant_id: string; kind: string; fiscal_year: number; period_no: number; run_date: DateOnly;
@@ -341,6 +350,9 @@ export interface Database {
   voucher_invoice: VoucherInvoiceTable;
   fx_rule: FxRuleTable;
   cash_count: CashCountTable;
+  stocktake: StocktakeTable;
+  stocktake_line: StocktakeLineTable;
+  stocktake_voucher: StocktakeVoucherTable;
   fx_run: FxRunTable;
   amortization_schedule: AmortizationScheduleTable;
   amortization_line: AmortizationLineTable;

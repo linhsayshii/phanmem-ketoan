@@ -116,11 +116,11 @@ export async function settleCount(trx: Trx, ctx: { tenantId: string; userId: str
 }
 
 // ---- Bảng kiểm kê quỹ: mẫu 08a - TT (VND) và 08b - TT (ngoại tệ), chép từ TT 133/2016 và TT 99/2025; chế độ không có văn bản gốc thì in không có dòng "Mẫu số" (c.formNo rỗng). ----
-const DOTS = '……………………………';
-const sign = (cols: string[]) => `<div class="sign">${cols.map((s) => `<div><b>${s}</b><i>(Ký, họ tên)</i><div class="gap"></div></div>`).join('')}</div>`;
-const header = (c: CompanyInfo) => `<div class="head"><div>Đơn vị: <b>${esc(c.name)}</b><br>Địa chỉ: ${esc(c.address ?? '')}</div>`
+export const DOTS = '……………………………';
+export const sign = (cols: string[]) => `<div class="sign">${cols.map((s) => `<div><b>${s}</b><i>(Ký, họ tên)</i><div class="gap"></div></div>`).join('')}</div>`;
+export const header = (c: CompanyInfo) => `<div class="head"><div>Đơn vị: <b>${esc(c.name)}</b><br>Địa chỉ: ${esc(c.address ?? '')}</div>`
   + `${c.formNo ? `<div style="text-align:right"><b>Mẫu số ${esc(c.formNo)}</b><br>${esc(c.issuedBy)}</div>` : ''}</div>`;
-const cell = (s: string | number, cls = '') => `<td${cls ? ` class="${cls}"` : ''}>${s}</td>`;
+export const cell = (s: string | number, cls = '') => `<td${cls ? ` class="${cls}"` : ''}>${s}</td>`;
 
 export function renderCashCountHtml(k: CashCountDto, c: CompanyInfo): string {
   const vnd = isVnd(k.currency); const scale = vnd ? 0 : 4;
