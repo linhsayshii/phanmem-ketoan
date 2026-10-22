@@ -9,7 +9,7 @@ Enter/Tab sang ô kế tiếp trong lưới; F4 tra cứu danh mục ở ô Mã 
 | Màn hình | Phím |
 |---|---|
 | Danh mục, Vật tư hàng hóa, Bảng giá, Đơn hàng | Insert thêm; Ctrl+S lưu khi đang mở biểu mẫu (Bảng giá, Đơn hàng); F4 ở các ô tra cứu |
-| Tồn kho đầu kỳ | F4 ở ô Kho, Mã hàng, ĐVT; lưu bằng nút Lưu (chưa có Ctrl+S) |
+| Tồn kho đầu kỳ | F4 ở ô Kho, Mã hàng, ĐVT; Ctrl+S lưu (hoặc nút Lưu) |
 | Danh sách phiếu kho (PNK, PXK, CK) | Insert thêm (lấy loại nghiệp vụ đầu tiên; chọn loại khác ở nút Thêm) |
 | Phiếu nhập, xuất, chuyển kho; Lắp ráp, tháo dỡ; Mua hàng hóa; Bán hàng hóa; Chi phí mua hàng | F4, Ctrl+S, F9 |
 | Kiểm kê kho | F4 ở ô Kho và Mã hàng; Ctrl+S lưu |
@@ -59,7 +59,7 @@ Khi lập chứng từ, phần mềm chọn bảng giá còn hiệu lực ở ng
 
 ## 2. Tồn kho đầu kỳ
 
-Menu Sổ cái, Tồn kho đầu kỳ. Nhập tồn đầu năm theo Kho (F4), Mã hàng (F4), Số lượng, Giá trị, Số lô và Hạn dùng (dd/mm/yyyy). Số lượng tính theo ĐVT cơ sở của hàng (cột ĐVT chỉ để quy đổi lúc ghi). Hàng theo dõi lô phải có Số lô; hàng theo dõi lô và hạn dùng phải có thêm Hạn dùng. Cùng kho, hàng, lô chỉ có một dòng. Bấm nút Lưu để lưu; nút Tải mẫu Excel và Nhập Excel dùng được như ở Số dư đầu kỳ (dòng sai báo số dòng và tên cột, không nhập dòng nào).
+Menu Sổ cái, Tồn kho đầu kỳ. Nhập tồn đầu năm theo Kho (F4), Mã hàng (F4), Số lượng, Giá trị, Số lô và Hạn dùng (dd/mm/yyyy). Số lượng tính theo ĐVT cơ sở của hàng (cột ĐVT chỉ để quy đổi lúc ghi). Hàng theo dõi lô phải có Số lô; hàng theo dõi lô và hạn dùng phải có thêm Hạn dùng. Cùng kho, hàng, lô chỉ có một dòng. Bấm Ctrl+S hoặc nút Lưu để lưu (Ctrl+S dùng khi con trỏ không nằm trong ô đang gõ; bấm Enter hoặc Esc kết thúc ô trước); nút Tải mẫu Excel và Nhập Excel dùng được như ở Số dư đầu kỳ (dòng sai báo số dòng và tên cột, không nhập dòng nào).
 
 Số dư đầu kỳ của tài khoản kho (152, 153, 155, 156...) nhập ở màn hình Số dư đầu kỳ và phải bằng tổng Giá trị tồn đầu kỳ của các kho dùng tài khoản đó (kho chưa gắn tài khoản lấy theo hàng, rồi 156). Lệch hai chiều (có số dư mà không có tồn, hoặc ngược lại) thì Kiểm tra và Ghi sổ báo "OPENING_STOCK_MISMATCH" kèm tài khoản và chênh lệch. Tài khoản tài sản cố định (211...) vẫn chưa nhập được ở đây.
 
@@ -111,7 +111,7 @@ Chọn "Cách nhận hàng" ở đầu tab Hàng tiền:
 - **Hóa đơn về trước, hàng về sau:** ghi sổ Nợ 151 (hàng đang đi đường), Nợ 1331, Có 331, chưa nhập kho. Khi hàng về, lập Phiếu nhập kho mua hàng, điền hóa đơn nguồn (`sourceInvoiceIds`): phiếu ghi Nợ 156, Có 151 theo số tiền trên hóa đơn (tài khoản Có cố định 151). Hóa đơn phải đã ghi sổ.
 - **Công nợ phải trả:** số tiền tạm tính trên Phiếu nhập kho (hàng về trước hóa đơn) và phần chênh khi hóa đơn về là hai khoản mở riêng trên TK 331, đối trừ khi thanh toán. Hóa đơn và phiếu nhập phải cùng nhà cung cấp ("RECEIPT_PARTY_MISMATCH") và phiếu nhập phải đã ghi sổ ("RECEIPT_NOT_POSTED" / "INVOICE_NOT_POSTED"). Hóa đơn đã có lần tính giá vốn phủ ngày nhập thì không bỏ ghi sổ, hãy đảo ("STOCK_COST_ADJUSTED").
 
-**Trả lại, giảm giá hàng mua** (loại TLM) chọn hóa đơn gốc là một MH đã ghi sổ. Trả lại hàng: nhập "Mã dòng nhập gốc" và số lượng; hàng xuất theo đúng giá vốn lúc nhập, số tiền hàng phải bằng số lượng nhân giá nhập (sai báo "PURCHASE_RETURN_AMOUNT_MISMATCH"; ghi Nợ 331, Có kho, Có 1331). Tổng số lượng đã trả (kể cả phiếu nháp) không vượt số lượng nhập ("RETURN_EXCEEDS_RECEIPT"). Chỉ giảm giá: để trống mã dòng, phần giảm giảm giá trị tồn kho. Giảm giá về tiền không qua kho dùng "Giảm giá mua" (GGM).
+**Trả lại, giảm giá hàng mua** (loại TLM) chọn hóa đơn gốc là một MH đã ghi sổ. Trả lại hàng: nhập "Mã dòng nhập gốc" và số lượng; hàng xuất theo đúng giá vốn lúc nhập, số tiền hàng phải bằng số lượng nhân giá nhập (sai báo "PURCHASE_RETURN_AMOUNT_MISMATCH"; ghi Nợ 331, Có kho, Có 1331). Tổng số lượng đã trả (kể cả phiếu nháp) không vượt số lượng nhập ("RETURN_EXCEEDS_RECEIPT"). Nếu hàng đã có chi phí mua phân bổ (Chi phí mua hàng) thì số tiền hàng vẫn nhập và ghi theo giá hóa đơn; phần chi phí mua tương ứng số lượng trả (theo tỷ lệ, lần trả cuối lấy phần còn lại) ghi thêm Nợ 632, Có kho cùng phiếu trả lại, nên tồn và giá trị tồn của hàng về 0 khi trả hết. Chỉ giảm giá: để trống mã dòng, phần giảm giảm giá trị tồn kho. Giảm giá về tiền không qua kho dùng "Giảm giá mua" (GGM).
 
 Không sửa, không bỏ ghi sổ được MH hoặc Phiếu nhập kho khi chứng từ khác (kể cả nháp) đã dùng nó ("LINE_REFERENCED"). Đảo MH mà hàng đã xuất hết thì bị chặn "STOCK_NEGATIVE" (khi cấu hình forbid).
 
