@@ -112,7 +112,7 @@ export default function AmortizationPage() {
         : <Alert type="success" showIcon message={`Đã phân bổ kỳ ${runOut.r.periodNo}/${runOut.r.fiscalYear}: ${runOut.r.created.length} chứng từ${runOut.r.reversedVoucherIds.length ? `, đảo ${runOut.r.reversedVoucherIds.length} chứng từ cũ` : ''}`}
           description={runOut.r.created.map((c, i) => <span key={c.voucherId}>{i > 0 && ', '}<a href={`/chung-tu/PB/${c.voucherId}`} target="_blank" rel="noopener noreferrer">{runOut.nos[i] ?? c.voucherId}</a></span>)} />)}
       {!!runOut?.r.skipped?.length && <Alert type="warning" showIcon message={`Bỏ qua ${runOut.r.skipped.length} lịch vì chứng từ gốc không còn ghi sổ`}
-        description={<ul style={{ margin: 0, paddingLeft: 18 }}>{runOut.r.skipped.map((k) => <li key={k.scheduleId}>Lịch {k.scheduleId}: {k.reason}</li>)}</ul>} />}
+        description={<ul style={{ margin: 0, paddingLeft: 18 }}>{runOut.r.skipped.map((k) => <li key={k.scheduleId}>{k.reason}</li>)}</ul>} />}
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <b>Lịch phân bổ</b>
         {can('amortization.create') && <Button onClick={() => open('new')}>Thêm lịch</Button>}

@@ -141,7 +141,7 @@ export async function runAmortization(trx: Trx, ctx: { tenantId: string; userId:
   for (const r of rows) {
     // Chứng từ gốc còn nhưng không ở trạng thái posted: không phân bổ tiếp (lịch có source_voucher_id NULL là lịch tự do, chạy như thường).
     if (r.src_state && r.src_state !== 'posted') {
-      skipped.push({ scheduleId: r.schedule_id, reason: `Chứng từ gốc ${r.src_no ?? '(nháp)'} ${STATE_WORD[r.src_state] ?? r.src_state}: ngừng lịch hoặc sửa lịch` });
+      skipped.push({ scheduleId: r.schedule_id, reason: `Lịch "${r.description}": chứng từ gốc ${r.src_no ?? '(chưa có số)'} ${STATE_WORD[r.src_state] ?? r.src_state}, ngừng lịch hoặc sửa lịch` });
       continue;
     }
     if (r.voucher_id && r.state === 'posted') {

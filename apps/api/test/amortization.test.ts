@@ -186,13 +186,13 @@ describe('lịch phân bổ', () => {
     expect(rev.statusCode, rev.body).toBe(201);
     const out = await t.runOk(2);
     expect(out.created).toEqual([]);
-    expect(out.skipped).toEqual([{ scheduleId: s.id, reason: `Chứng từ gốc ${posted.voucherNo} đã đảo: ngừng lịch hoặc sửa lịch` }]);
+    expect(out.skipped).toEqual([{ scheduleId: s.id, reason: `Lịch "Thu trước 12 tháng": chứng từ gốc ${posted.voucherNo} đã đảo, ngừng lịch hoặc sửa lịch` }]);
     expect((await t.sched(s.id)).lines[1]!.voucherId).toBeNull();
     // nháp: bỏ qua; tạo lịch rồi mới có nháp nên lập lịch gốc nháp trực tiếp
     const draft = await hdb(false);
     const d = await t.create({ total: '1200000', sourceVoucherId: draft.id });
     const out2 = await t.runOk(3);
     expect(out2.created.map((c) => c.scheduleId)).toEqual([]); // lịch s (gốc đã đảo) cũng bỏ qua
-    expect(out2.skipped.find((x) => x.scheduleId === d.id)!.reason).toBe('Chứng từ gốc (nháp) chưa ghi sổ: ngừng lịch hoặc sửa lịch');
+    expect(out2.skipped.find((x) => x.scheduleId === d.id)!.reason).toBe(`Lịch "Thu trước 12 tháng": chứng từ gốc (chưa có số) chưa ghi sổ, ngừng lịch hoặc sửa lịch`);
   }, 90_000);
 });
