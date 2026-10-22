@@ -12,7 +12,7 @@ type Auth = { sensitive: Set<string>; permissions: Set<string> };
 
 // Dòng hàng của hóa đơn mua hàng hóa (MH) và trả lại, giảm giá hàng mua (TLM) sau khi đối chiếu kho: tài khoản của dòng cơ sở, hàng, kho, giá tạm tính đã ghi ở phiếu nhập
 // (offsetVnd, chỉ MH hàng về trước) và các cột kho/liên kết của dòng hàng (voucher_item_line). Tài khoản định danh bằng mã, postItems tra id theo chế độ của năm.
-export interface PurchaseLine { accountCode: string; itemCode: string; warehouseCode: string | null; offsetVnd?: string; landedOut?: string; debitCode?: string; creditCode?: string; row: Row }
+export interface PurchaseLine { accountCode: string; itemCode: string; warehouseCode: string | null; offsetVnd?: string; landedOut?: string; cogsCode?: string; debitCode?: string; creditCode?: string; row: Row }
 export interface PurchaseResult { lines: (PurchaseLine | null)[]; receiptState: string | null; warnings: { code: string; message: string; lineNo?: number }[] }
 
 const round0 = (d: Decimal) => d.toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
@@ -29,7 +29,7 @@ export async function resolvePurchase(trx: Trx, a: { input: InvoiceInput; regime
   if (isMH && mode !== 'goods_first' && input.receiptVoucherIds?.length) throw bad('VALIDATION', 'Phiếu nhập liên kết (receiptVoucherIds) chỉ dùng cho hóa đơn hàng về trước');
   if (!isMH && input.receiptVoucherIds?.length) throw bad('VALIDATION', 'Phiếu nhập liên kết chỉ dùng cho hóa đơn mua hàng hóa');
 
-  const itemRows = await trx.selectFrom('item as i').leftJoin('account as ia', 'ia.id', 'i.inventory_account_id').select(['i.id', 'i.code', 'i.kind', 'i.tracking', 'i.is_active', 'ia.code as inv_code'])
+  const itemRows = await trx.selectFrom('item as i').leftJoin('account as ia', 'ia.id', 'i.inventory_account_id').leftJoin('account as ca', 'ca.id', 'i.cogs_account_id').select(['i.id', 'i.code', 'i.kind', 'i.tracking', 'i.is_active', 'ia.code as inv_code', 'ca.code as cogs_code'])
     .where('i.code', 'in', [...new Set(idx.map((k) => input.items[k]!.itemCode!))]).execute();
   const items = new Map(itemRows.map((r) => [r.code, r]));
   const uoms = itemRows.length ? await trx.selectFrom('item_uom as iu').innerJoin('uom as u', 'u.id', 'iu.uom_id').select(['iu.item_id', 'u.code', 'iu.factor', 'iu.uom_id']).where('iu.item_id', 'in', itemRows.map((r) => r.id)).execute() : [];
@@ -119,7 +119,7 @@ export async function resolvePurchase(trx: Trx, a: { input: InvoiceInput; regime
       const expected = round0(D(base!).times(unitCost));
       if (!net.eq(expected)) throw bad('PURCHASE_RETURN_AMOUNT_MISMATCH', `Dòng ${n}: tiền trả lại hàng phải bằng giá nhập gốc ${unitCost.toFixed(4)} × ${base} = ${expected.toFixed(0)} đồng (đang nhập ${net.toFixed(0)}); chênh lệch giá ghi giảm giá riêng`);
       out[k] = { accountCode: invCode, itemCode: item.code, warehouseCode: wh.code, debitCode: a.counterAccountCode, creditCode: invCode,
-        ...(landedOut.gt(0) && { landedOut: landedOut.toFixed(0) }),
+        ...(landedOut.gt(0) && { landedOut: landedOut.toFixed(0), cogsCode: item.cogs_code ?? '632' }),
         row: { item_id: item.id, ...unit, warehouse_id: wh.id, direction: 'out', lot_no: it.lotNo || mv.lot, unit_cost: unitCost.toFixed(4), fixed_cost: true, link_line_id: lineId, landed_cost_out: landedOut.gt(0) ? landedOut.toFixed(0) : '0' } };
       continue;
     }
@@ -177,4 +177,49 @@ export async function resolvePurchase(trx: Trx, a: { input: InvoiceInput; regime
     }
   }
   return { lines: out, receiptState: isMH ? (mode === 'through_stock' ? 'with_invoice' : mode) : null, warnings };
+}
+
+// Ghi sổ TLM nháp: tính lại chi phí mua của số trả từ các lớp chi phí mua hiện có của dòng nhập và số đã trả ở các TLM đã ghi sổ (lần trả hết nhận phần dư).
+// Chi phí mua có thể đã đổi từ lúc lập nháp (CPM ghi sổ hoặc bỏ ghi sổ sau đó); lệch thì cập nhật cột landed_cost_out và thay cặp dòng Nợ giá vốn / Có TK kho của nháp.
+export async function refreshReturnLanded(trx: Trx, tenantId: string, voucherId: string): Promise<void> {
+  const v = await trx.selectFrom('voucher').select(['voucher_type', 'state', 'posting_date']).where('id', '=', voucherId).forUpdate().executeTakeFirst();
+  if (v?.voucher_type !== 'TLM' || v.state !== 'draft') return;
+  const lines = await trx.selectFrom('voucher_item_line as l').innerJoin('item as i', 'i.id', 'l.item_id').leftJoin('account as ca', 'ca.id', 'i.cogs_account_id')
+    .select(['l.id', 'l.link_line_id', 'l.base_quantity', 'l.landed_cost_out', 'l.item_id', 'l.warehouse_id', 'l.credit_account_id', 'ca.id as cogs_id'])
+    .where('l.voucher_id', '=', voucherId).where('l.direction', '=', 'out').where('l.link_line_id', 'is not', null).orderBy('l.line_no').execute();
+  if (!lines.length) return;
+  const taken = new Map<number, { qty: Decimal; landed: Decimal }>(); let changed = false;
+  const fresh: { l: (typeof lines)[number]; out: Decimal }[] = [];
+  for (const l of lines) {
+    const lineId = l.link_line_id!;
+    const mv = (await sql<{ qty: string; landed: string; done: string }>`
+      SELECT m.quantity::text AS qty,
+        (SELECT coalesce(sum(c.value), 0)::text FROM stock_cost_layer c LEFT JOIN voucher cv ON cv.id = c.voucher_id
+          WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND c.kind = 'adjustment' AND (c.landed OR cv.voucher_type = 'CPM')) AS landed,
+        (SELECT coalesce(sum(o.base_quantity), 0)::text FROM voucher_item_line o JOIN voucher ov ON ov.id = o.voucher_id
+          WHERE o.link_line_id = m.item_line_id AND o.direction = 'out' AND ov.voucher_type = 'TLM' AND ov.state = 'posted' AND ov.id <> ${voucherId}::uuid) AS done
+      FROM stock_move m WHERE m.item_line_id = ${lineId} AND m.direction = 'in' AND m.reversal_of IS NULL AND m.transfer_id IS NULL`.execute(trx)).rows[0];
+    if (!mv) continue;
+    const t = taken.get(lineId) ?? { qty: D(0), landed: D(0) };
+    const before = D(mv.done).plus(t.qty); const base = D(l.base_quantity ?? 0);
+    const left = D(mv.landed).minus(t.landed);
+    const out = before.plus(base).gte(mv.qty) ? left : round0(left.times(base).div(D(mv.qty).minus(before)));
+    taken.set(lineId, { qty: t.qty.plus(base), landed: t.landed.plus(out) });
+    if (!out.eq(l.landed_cost_out)) changed = true;
+    fresh.push({ l, out });
+  }
+  if (!changed) return;
+  for (const { l, out } of fresh) await trx.updateTable('voucher_item_line').set({ landed_cost_out: out.toFixed(0) }).where('id', '=', l.id).execute();
+  const LABEL = 'Chi phí mua hàng của hàng trả lại';
+  await trx.deleteFrom('voucher_line').where('voucher_id', '=', voucherId).where('posting_date', '=', v.posting_date).where('description', '=', LABEL).execute();
+  let no = (await trx.selectFrom('voucher_line').select(sql<number>`coalesce(max(line_no), 0)`.as('n')).where('voucher_id', '=', voucherId).where('posting_date', '=', v.posting_date).executeTakeFirstOrThrow()).n;
+  for (const { l, out } of fresh) {
+    if (!out.gt(0)) continue;
+    const cogs = l.cogs_id ?? (await sql<{ id: number }>`SELECT a.id FROM account a WHERE a.code = '632' AND a.regime = (SELECT regime FROM account WHERE id = ${l.credit_account_id})`.execute(trx)).rows[0]!.id;
+    const base = { tenant_id: tenantId, voucher_id: voucherId, posting_date: v.posting_date, currency_code: 'VND', extra_dims: '{}', description: LABEL };
+    await trx.insertInto('voucher_line').values([
+      { ...base, line_no: ++no, account_id: cogs, debit: out.toFixed(0), credit: '0', amount_currency: out.toFixed(0) },
+      { ...base, line_no: ++no, account_id: l.credit_account_id!, debit: '0', credit: out.toFixed(0), amount_currency: out.negated().toFixed(0), item_id: l.item_id, warehouse_id: l.warehouse_id },
+    ]).execute();
+  }
 }

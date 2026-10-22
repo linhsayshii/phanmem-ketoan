@@ -8,6 +8,7 @@ import * as S from './vouchers.service.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { AppError } from '../../plugins/errors.js';
 import { stockNegativeWarnings } from '../inventory/stockMoves.js';
+import { refreshReturnLanded } from '../invoices/purchase.js';
 import { postWithCashCheck, reverseWithCashCheck, unpostWithCashCheck } from '../cash/books.js';
 import { redactCost } from '../invoices/sales.js';
 import { formNoFor, voucherFormFor } from '../reporting/print/forms.js';
@@ -134,7 +135,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.post('/api/vouchers/:id/post', { preHandler: app.requirePermission('voucher.post'), schema: { params: idParam } }, async (req) => {
-    const dto = await app.withOverride(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.post'); const d = await postWithCashCheck(trx, req.auth!.tenantId!, req.params.id); return redactCost(trx, req.auth!, await withStockWarnings(trx, req.auth!.tenantId!, d, d.id)); }); notifyRecompute(app, req.auth!.tenantId!); return dto; });
+    const dto = await app.withOverride(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.post'); await refreshReturnLanded(trx, req.auth!.tenantId!, req.params.id); const d = await postWithCashCheck(trx, req.auth!.tenantId!, req.params.id); return redactCost(trx, req.auth!, await withStockWarnings(trx, req.auth!.tenantId!, d, d.id)); }); notifyRecompute(app, req.auth!.tenantId!); return dto; });
   // Thứ tự chứng từ kho trong ngày (chỉ nháp): động cơ giá vốn sắp theo (ngày, day_order, số thứ tự).
   app.put('/api/vouchers/:id/day-order', { preHandler: app.requirePermission('stock_voucher.update'), schema: { params: idParam, body: z.object({ dayOrder: z.number().int().min(0).max(1000000) }) } }, async (req) =>
     app.withTenant(req, async (trx) => {

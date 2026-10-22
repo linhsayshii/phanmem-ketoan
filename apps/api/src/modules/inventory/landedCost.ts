@@ -39,15 +39,19 @@ export interface LandedCostDto extends S.VoucherDto {
 }
 
 // Dòng nhập thường (chiều nhập, không chuyển kho, không đảo) của các chứng từ nhập; giá trị là giá mua: lớp nhập cộng điều chỉnh của hóa đơn mua, giảm giá hàng mua (không gồm chi phí mua đã phân bổ).
+// Số lượng và giá trị tính theo số còn lại sau khi trừ hàng đã trả lại (TLM đã ghi sổ); dòng đã trả hết không còn để phân bổ.
 async function receiptLines(trx: Trx, where: ReturnType<typeof sql>): Promise<ReceiptLineDto[]> {
+  const ret = sql`(SELECT coalesce(sum(o.base_quantity), 0) FROM voucher_item_line o JOIN voucher ov ON ov.id = o.voucher_id
+    WHERE o.tenant_id = m.tenant_id AND o.link_line_id = m.item_line_id AND o.direction = 'out' AND ov.voucher_type = 'TLM' AND ov.state = 'posted')`;
   return (await sql<ReceiptLineDto>`
     SELECT l.id::int AS id, v.id AS "voucherId", v.voucher_no AS "voucherNo", v.posting_date::text AS "postingDate", l.line_no AS "lineNo", i.code AS "itemCode", i.name AS "itemName", w.code AS "warehouseCode",
-      trim_scale(m.quantity)::text AS quantity, a.code AS "accountCode",
-      (SELECT coalesce(sum(c.value), 0) FROM stock_cost_layer c LEFT JOIN voucher cv ON cv.id = c.voucher_id
-        WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND (c.kind = 'receipt' OR (c.kind = 'adjustment' AND cv.voucher_type IN ('MH', 'TLM') AND NOT c.landed)))::text AS value
+      trim_scale(m.quantity - ${ret})::text AS quantity, a.code AS "accountCode",
+      ((SELECT coalesce(sum(c.value), 0) FROM stock_cost_layer c LEFT JOIN voucher cv ON cv.id = c.voucher_id
+        WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND (c.kind = 'receipt' OR (c.kind = 'adjustment' AND cv.voucher_type IN ('MH', 'TLM') AND NOT c.landed)))
+        * (m.quantity - ${ret}) / m.quantity)::text AS value
     FROM stock_move m JOIN voucher v ON v.id = m.voucher_id JOIN voucher_item_line l ON l.tenant_id = m.tenant_id AND l.id = m.item_line_id
       JOIN item i ON i.id = m.item_id JOIN warehouse w ON w.id = m.warehouse_id JOIN account a ON a.id = coalesce(l.debit_account_id, l.account_id)
-    WHERE m.direction = 'in' AND m.transfer_id IS NULL AND m.reversal_of IS NULL AND ${where}
+    WHERE m.direction = 'in' AND m.transfer_id IS NULL AND m.reversal_of IS NULL AND m.quantity > ${ret} AND ${where}
     ORDER BY v.posting_date, v.seq_no, v.id, l.line_no`.execute(trx)).rows;
 }
 
@@ -64,7 +68,7 @@ async function build(trx: Trx, input: LandedCostInput, auth?: Auth) {
     if (v.posting_date > input.postingDate) throw new AppError('LANDED_COST_DATE_INVALID', `Ngày chi phí mua hàng trước ngày nhập kho của ${v.voucher_no}: ghi chi phí từ ngày nhập trở đi`, 409);
   }
   const lines = await receiptLines(trx, sql`v.id = ANY(${ids}::uuid[])`);
-  if (!lines.length) throw new AppError('LANDED_COST_NO_RECEIPT_LINES', 'Các chứng từ đã chọn không có dòng nhập kho', 409);
+  if (!lines.length) throw new AppError('LANDED_COST_NO_RECEIPT_LINES', 'Các chứng từ đã chọn không có dòng nhập kho còn hàng để phân bổ chi phí mua (hàng đã trả lại hết hoặc chưa nhập kho)', 409);
   let alloc: Record<string, string>;
   try { alloc = allocateLandedCost(input.costLines.map((c) => c.amount), lines.map((l) => ({ id: String(l.id), qty: l.quantity, value: l.value })), input.basis); }
   catch (e) { if (e instanceof LandedCostError) throw new AppError(e.code, e.message, 409); throw e; }

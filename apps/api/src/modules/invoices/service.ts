@@ -204,7 +204,7 @@ async function buildInvoice(trx: Trx, tenantId: string, input0: InvoiceInput, op
   }
   for (const pl of purchase.lines) { // TLM: chi phí mua phân bổ cho số lượng trả rời kho cùng phiếu trả (Nợ 632 / Có TK kho)
     if (!pl?.landedOut) continue;
-    lines.push({ accountCode: '632', debit: pl.landedOut, credit: '0', description: 'Chi phí mua hàng của hàng trả lại' },
+    lines.push({ accountCode: pl.cogsCode ?? '632', debit: pl.landedOut, credit: '0', description: 'Chi phí mua hàng của hàng trả lại' },
       { accountCode: pl.accountCode, debit: '0', credit: pl.landedOut, itemCode: pl.itemCode, warehouseCode: pl.warehouseCode!, description: 'Chi phí mua hàng của hàng trả lại' });
   }
   if (sale) for (const k of input.items.keys()) lines.push(...sale.costLines[k]!); // giá vốn tạm tính của dòng bán, nhập lại của dòng trả

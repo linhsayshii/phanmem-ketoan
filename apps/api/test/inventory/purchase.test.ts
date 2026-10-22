@@ -252,4 +252,42 @@ describe('mua hàng hóa (MH, TLM)', () => {
         (SELECT coalesce(sum(c.remaining_value), 0) FROM stock_cost_layer c JOIN item i ON i.id = c.item_id WHERE i.code = 'L2')::text AS c`.execute(ctx.t.admin)).rows[0]!;
     expect(b).toEqual({ q: '0.0000', l: '0', c: '0' });
   });
+
+  const cpm = (orig: { id: string }, amount = '200') => call('POST', '/api/landed-costs', { postingDate: '2026-03-02', partyCode: 'VC9', basis: 'value', receiptVoucherIds: [orig.id], autoPost: true, costLines: [{ accountCode: '331', amount }] });
+  const stock = async (item: string) => { const cr = await call('POST', '/api/inventory/costing-runs', { periodFrom: '2026-03-01', periodTo: '2026-03-31' }); expect(cr.statusCode, cr.body).toBe(200); return (await sql<{ q: string; l: string; c: string }>`SELECT
+      (SELECT coalesce(sum(CASE m.direction WHEN 'in' THEN m.quantity ELSE -m.quantity END), 0) FROM stock_move m JOIN item i ON i.id = m.item_id WHERE i.code = ${item})::text AS q,
+      (SELECT coalesce(sum(l.debit - l.credit), 0) FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id JOIN item i ON i.id = l.item_id WHERE v.state IN ('posted','reversed') AND a.code = '156' AND i.code = ${item})::text AS l,
+      (SELECT coalesce(sum(c.remaining_value), 0) FROM stock_cost_layer c JOIN item i ON i.id = c.item_id WHERE i.code = ${item})::text AS c`.execute(ctx.t.admin)).rows[0]!; };
+
+  it('TLM nháp trả hết lập trước CPM: ghi sổ tính lại chi phí mua, có Nợ 632 200 / Có 156 200, tồn và giá trị về 0', async () => {
+    await cat('item', { code: 'L3', name: 'Hàng L3', base_uom_code: 'CAI', kind: 'goods' });
+    const orig = await create(mh([line('L3', '10', '100')]));
+    const d = await call('POST', '/api/invoices', tlm('L3', orig.items[0].id, orig.invoices[0].id, '10', '1000'));
+    expect(d.statusCode, d.body).toBe(201);
+    expect(shape(d.json())).toEqual(['1331:0:100', '156:0:1000', '331:1100:0']);
+    expect((await cpm(orig)).statusCode).toBe(201);
+    const p = await post(d.json().id);
+    expect(shape(p)).toEqual(['1331:0:100', '156:0:1000', '156:0:200', '331:1100:0', '632:200:0']);
+    expect(await stock('L3')).toEqual({ q: '0.0000', l: '0', c: '0' });
+  });
+
+  it('TLM nháp mang 100 chi phí mua, CPM bị đảo trước khi ghi sổ TLM: không còn dòng 632', async () => {
+    await cat('item', { code: 'L4', name: 'Hàng L4', base_uom_code: 'CAI', kind: 'goods' });
+    const orig = await create(mh([line('L4', '10', '100')]));
+    const c = await cpm(orig); expect(c.statusCode, c.body).toBe(201);
+    const d = await call('POST', '/api/invoices', tlm('L4', orig.items[0].id, orig.invoices[0].id, '5', '500'));
+    expect(d.statusCode, d.body).toBe(201);
+    expect(shape(d.json())).toContain('632:100:0');
+    const u = await call('POST', `/api/vouchers/${c.json().id}/reverse`, { postingDate: '2026-03-12' }); expect(u.statusCode, u.body).toBe(201); // kỳ đã tính giá vốn: đảo thay vì bỏ ghi sổ
+    const p = await post(d.json().id);
+    expect(shape(p)).toEqual(['1331:0:50', '156:0:500', '331:550:0']);
+    expect(await stock('L4')).toEqual({ q: '5.0000', l: '500', c: '500' });
+  });
+
+  it('CPM không phân bổ vào dòng nhập đã trả hết: 409', async () => {
+    await cat('item', { code: 'L5', name: 'Hàng L5', base_uom_code: 'CAI', kind: 'goods' });
+    const orig = await create(mh([line('L5', '10', '100')]));
+    const r = await call('POST', '/api/invoices', tlm('L5', orig.items[0].id, orig.invoices[0].id, '10', '1000', { autoPost: true })); expect(r.statusCode, r.body).toBe(201);
+    const c = await cpm(orig); expect(c.statusCode, c.body).toBe(409); expect(c.json().error.code).toBe('LANDED_COST_NO_RECEIPT_LINES');
+  });
 });
