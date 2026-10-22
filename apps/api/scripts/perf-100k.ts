@@ -64,6 +64,7 @@ try {
           [tenantId, userId, lo, hi, acc.map((a) => a.id), acc.map((a) => a.subledger_kind === 'receivable' || a.subledger_kind === 'payable'), parties]);
         await c.query(`SELECT post_voucher(id) FROM voucher WHERE tenant_id = $1 AND state = 'draft' AND idempotency_key LIKE 'perf-%'`, [tenantId]);
         await c.query('COMMIT');
+        await adminPool.query('ANALYZE'); // thống kê cho kế hoạch truy vấn như autovacuum ở môi trường thật; DB tạm mới sinh chưa có thống kê nên kế hoạch tra chứng từ theo id đoán sai và chậm dần theo lô
         if ((hi / CHUNK) % 5 === 0) console.error(`  ${hi}/${VOUCHERS} chứng từ (${((performance.now() - t0) / 1000).toFixed(0)}s)`);
       }
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }

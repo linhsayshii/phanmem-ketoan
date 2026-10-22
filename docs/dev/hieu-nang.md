@@ -25,3 +25,37 @@ Ngày 2026-10-20. Máy: Oracle VPS Ubuntu 24.04 aarch64, 2 CPU, 11 GiB RAM; Post
 | Số dư tài khoản `/api/balances` | 38 | 38 |
 
 Đạt ngưỡng: Bảng cân đối số phát sinh năm 175 ms (không cần thêm chỉ mục). Số đo GĐ1 trước đó (~121 ms ở ~100.000 dòng) dùng dữ liệu khác nên chỉ để tham khảo.
+
+## GĐ2 (2026-10-22)
+
+Cùng máy và cùng script (thêm ba ca: tuổi nợ, khử trùng, soát lỗi công nợ). Ghi sổ 25.000 chứng từ PKT × 4 dòng:
+
+| Mốc | Sinh + ghi sổ | Tính lại số dư |
+|---|---|---|
+| GĐ1.5 (2026-10-20) | 47 giây | 5,4 giây |
+| GĐ2 trước sửa (2026-10-22) | 229 giây | 0,3 giây |
+| GĐ2 sau sửa (migration 0042, script có `ANALYZE` mỗi lô) | 100 giây | 0,2 giây |
+
+`POST /api/balances/recompute` vẫn chạy đồng bộ (`SELECT recompute_balances`) nên các số tính lại so sánh được; mức giảm 5,4 giây xuống 0,3 giây không do đổi mã (hàm và route không đổi) mà do kế hoạch truy vấn trên bảng chưa có thống kê (script chỉ `VACUUM ANALYZE` sau bước này), không phải tối ưu có chủ đích.
+
+Kết quả báo cáo sau sửa (trung vị / lớn nhất, ms):
+
+| Báo cáo | Trung vị (ms) | Lớn nhất (ms) |
+|---|---|---|
+| Bảng cân đối số phát sinh năm | 180 | 182 |
+| Nhật ký chung năm (cắt 50.000 dòng) | 910 | 920 |
+| Sổ Cái TK 1121 năm | 151 | 158 |
+| Số dư tài khoản `/api/balances` | 39 | 39 |
+| Tuổi nợ 131 ngày 31/12 (cả công ty) | 49 | 57 |
+| Khử trùng chứng từ năm | 364 | 366 |
+| Soát lỗi CN_LECH_SO_CAI năm | 51 | 53 |
+
+Số đo trước sửa gần như y hệt (Bảng cân đối số phát sinh 180 ms, Nhật ký chung 891 ms, Sổ Cái 150 ms, `/api/balances` 39 ms, Tuổi nợ 50 ms, Khử trùng 365 ms, Soát lỗi 52 ms): thời gian báo cáo không đổi, chỉ ghi sổ chậm đi. Vẫn đạt ngưỡng < 2 giây.
+
+### Nguyên nhân ghi sổ chậm (đo bằng `track_functions = 'pl'` và `auto_explain`)
+
+1. **Kế hoạch đoán sai trong DB tạm chưa có thống kê.** Mỗi lô 1.000 chứng từ nằm trong một giao dịch và bảng `voucher` chưa được phân tích, nên truy vấn `SELECT * FROM voucher WHERE id = $1` (có thêm điều kiện `tenant_id` của RLS) chọn chỉ mục `voucher_tenant_id_voucher_type_voucher_no_idx` thay cho khóa chính và lọc từng dòng (`Rows Removed by Filter: 999`). Chi phí mỗi tra cứu tăng gần 20 lần dần theo số chứng từ trong lô (0,01 ms lên 0,15-0,25 ms), tổng bậc hai theo cỡ lô. Dòng `voucher` GĐ2 rộng hơn (471 lên 607 byte) nên ở GĐ1.5 cùng cảnh vô tình chọn đúng khóa chính. Sản xuất không dính vì autovacuum phân tích bảng và mỗi chứng từ ghi sổ một giao dịch; script đo giờ chạy `ANALYZE` sau mỗi lô cho giống.
+2. **Quét mọi phân vùng tháng.** `fn_build_pairs`, `fn_check_voucher_balance` và đếm dòng của `post_voucher` tra `voucher_line` chỉ theo `voucher_id` nên mở chỉ mục của cả 13 phân vùng mỗi truy vấn (khoảng 30 lần quét chỉ mục cho một chứng từ). Migration `0042_ghi_so_cat_phan_vung.sql` thêm `posting_date = v.posting_date` (dòng luôn mang ngày của chứng từ: `fn_line_before` gán, `fn_voucher_date_sync` dời) để cắt còn một phân vùng. Hai CTE của nhánh n-n phải khai báo `MATERIALIZED`: sau khi cắt phân vùng, bộ lập kế hoạch đoán mỗi CTE một dòng và chọn vòng lặp lồng tính lại hàm cửa sổ cho từng dòng (chứng từ 5.000 dòng từ 3,7 lên 17,8 giây; kiểm thử `vouchers.test.ts` bắt được).
+3. **Chi phí thật của GĐ2 (nhỏ):** `fn_open_items_create` (khoản công nợ) khoảng 0,7 ms và `fn_line_before` (kiểm tra ngoại tệ) khoảng 0,2 ms mỗi chứng từ, chưa tối ưu thêm.
+
+A/B 5.000 chứng từ, script có `ANALYZE` mỗi lô: GĐ1.5 36,5 giây, GĐ2 trước 0042 42,8 giây, GĐ2 sau 0042 19,3 giây.
