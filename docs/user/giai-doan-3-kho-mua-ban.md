@@ -222,7 +222,7 @@ Vào Công cụ, Soát lỗi dữ liệu, chọn khoảng ngày; sáu quy tắc 
 
 ## Kỳ hạn ngắn hạn, dài hạn và mã luồng tiền (B01, B03)
 Lưới định khoản của chứng từ (Phiếu kế toán, Phiếu thu, Phiếu chi, Giấy báo Nợ, Giấy báo Có...) có thêm hai cột cuối:
-- **Hạn thanh toán/đáo hạn** (gõ dd/mm/yyyy, để trống là không có hạn). Dòng công nợ (131, 331...) là hạn thanh toán của khoản; dòng vay (341), tiền gửi có kỳ hạn (1281), ký quỹ (244)... là ngày đáo hạn. Số dư đầu kỳ nhập hạn ở cột "Hạn thanh toán" như trước.
+- **Hạn thanh toán/đáo hạn** (gõ dd/mm/yyyy, để trống là không có hạn). Dòng công nợ (131, 331...) là hạn thanh toán của khoản; dòng vay (341), tiền gửi có kỳ hạn (1281), ký quỹ (244)... là ngày đáo hạn. Số dư đầu kỳ công nợ nhập hạn ở cột "Hạn thanh toán" như trước; Số dư đầu kỳ chưa nhận hạn cho tài khoản khác, nên khoản vay dài hạn có từ đầu kỳ ghi hạn bằng một Phiếu kế toán Nợ 3411 / Có 3411 cùng số tiền, dòng Có ghi ngày đáo hạn (không đổi số dư, chỉ đánh dấu phần dài hạn).
 - **Mã luồng tiền (F4)**: chỉ ở dòng tiền mặt, tiền gửi; F4 mở danh mục là các chỉ tiêu luồng tiền của Báo cáo lưu chuyển tiền tệ theo chế độ của năm (TT99: 01-07, 21-27, 31-36). Ghi mã ở dòng tài khoản khác hoặc mã không có trong danh mục bị từ chối.
 
 Hai cột sửa được cả khi chứng từ đã ghi sổ (như diễn giải, bộ phận), Ctrl+S để lưu; mỗi lần sửa ghi nhật ký. Chứng từ đảo chép hạn và mã của chứng từ gốc.
