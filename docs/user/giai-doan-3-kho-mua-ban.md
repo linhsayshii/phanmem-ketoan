@@ -92,6 +92,17 @@ Menu Bán hàng, "Bán hàng hóa" (loại BH) lập hóa đơn bán kiêm phi�
 
 "Hàng bán bị trả lại" (loại TLB) chọn hóa đơn gốc là một BH đã ghi sổ, nhập "Mã dòng bán gốc" và số lượng trả. Hàng nhập lại kho theo giá vốn của dòng bán gốc (giá vốn thực tế nếu đã tính); ghi Nợ TK kho / Có 632 và Nợ TK giảm trừ doanh thu / Có 131 (TT200: 5213 Hàng bán bị trả lại; TT99: 521; TT133 không có TK 521 nên ghi giảm thẳng TK doanh thu của dòng bán gốc; có thể đổi bằng cột tài khoản). Trả vượt số đã bán báo "RETURN_EXCEEDS_SALE". BH đã có hàng trả lại thì không bỏ ghi sổ, không đảo được. Chỉ giảm giá về tiền thì dùng "Giảm giá bán".
 
+## Báo giá, đơn hàng, hợp đồng
+
+Menu Bán hàng: "Báo giá", "Đơn đặt hàng bán"; menu Mua hàng: "Đơn đặt hàng mua". Các chứng từ này chưa ghi sổ cái và chưa làm thay đổi tồn kho. Mỗi loại đánh số riêng theo năm (BG-2026-0001, DH-..., DM-...).
+
+- **Lập đơn:** Insert, chọn khách hàng (nhà cung cấp), nhập dòng hàng bằng bàn phím (Mã hàng, ĐVT, Kho, Số lượng, Đơn giá, Mã thuế), Ctrl+S. Bỏ trống đơn giá thì lấy từ bảng giá còn hiệu lực; không có trong bảng giá thì báo lỗi, hãy nhập tay. Có thể ghi Mã hợp đồng (hợp đồng tạo qua danh mục hợp đồng của hệ thống).
+- **Duyệt, hủy, xóa:** đơn nháp duyệt thành "Đã duyệt". Chỉ sửa, hủy được đơn chưa chuyển thành chứng từ; chỉ xóa đơn nháp.
+- **Báo giá thành đơn bán:** nút "Thành đơn bán" đổi loại và cấp số đơn bán mới.
+- **Lập BH nháp / MH nháp:** chuyển toàn bộ hoặc một phần số lượng còn lại (nhập số lượng từng dòng); phần mềm tạo chứng từ Bán hàng hóa (từ báo giá, đơn bán) hoặc Mua hàng hóa (từ đơn mua) ở trạng thái nháp, rồi mở chứng từ đó để bạn bổ sung số hóa đơn và ghi sổ. Đơn chuyển một phần có trạng thái "Chuyển một phần", chuyển hết là "Hoàn thành". Chuyển vượt số còn lại bị từ chối. Dòng chưa có kho cần chọn kho khi chuyển.
+- **Trả số lượng:** xóa chứng từ nháp, hủy chứng từ (nháp), hoặc đảo chứng từ đã ghi sổ thì số lượng đã chuyển trở lại đơn. Chứng từ chỉ bỏ ghi sổ (về nháp) vẫn giữ số lượng của đơn.
+- **Quyền:** cần các quyền "order" (xem, thêm, sửa, xóa) và thêm quyền lập chứng từ khi chuyển thành BH/MH.
+
 ## Chi phí mua hàng, nhập khẩu
 
 ### Chi phí mua hàng
