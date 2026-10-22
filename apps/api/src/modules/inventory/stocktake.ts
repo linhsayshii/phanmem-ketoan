@@ -51,11 +51,12 @@ export async function listStocktakes(trx: Trx) { // shortcut: 200 biên bản g�
 }
 
 // Tồn sổ (ĐVT cơ sở) theo (hàng, lô) đến hết ngày kiểm kê, chỉ chứng từ đã ghi sổ (stock_move). Bỏ mọi hàng tồn 0.
-async function bookOnHand(trx: Trx, warehouseId: number, date: string, itemId?: number) {
+// Tồn sổ theo sổ kho tại ngày kiểm kê. own: biên bản đang tính lại, bỏ phiếu điều chỉnh của chính nó và chứng từ đảo của các phiếu ấy (điều chỉnh cũ không được tính vào tồn sổ khi điều chỉnh lại); phiếu và chứng từ đảo của biên bản khác tính bình thường.
+async function bookOnHand(trx: Trx, warehouseId: number, date: string, itemId?: number, own?: string) {
   const r = await sql<{ item_id: string; lot_no: string | null; q: string }>`SELECT item_id::text, lot_no, sum(CASE WHEN direction = 'in' THEN quantity ELSE -quantity END)::text AS q
-    FROM stock_move WHERE warehouse_id = ${warehouseId}::bigint AND posting_date <= ${date}::date
-      AND NOT EXISTS (SELECT 1 FROM voucher v WHERE v.id = stock_move.voucher_id AND v.source_doc_type = 'stocktake' AND v.state = 'reversed') -- phiếu điều chỉnh đã bị đảo (mở lại ở kỳ khóa): chứng từ đảo mang ngày sau ngày kiểm kê nên bỏ cả phiếu gốc
-      ${itemId === undefined ? sql`` : sql`AND item_id = ${itemId}::bigint`}
+    FROM stock_move WHERE warehouse_id = ${warehouseId}::bigint AND posting_date <= ${date}::date ${itemId === undefined ? sql`` : sql`AND item_id = ${itemId}::bigint`}
+      ${own === undefined ? sql`` : sql`AND NOT EXISTS (SELECT 1 FROM voucher v WHERE v.id = stock_move.voucher_id AND ((v.source_doc_type = 'stocktake' AND v.source_doc_id = ${own}::uuid)
+        OR v.reversal_of_id IN (SELECT o.id FROM voucher o WHERE o.source_doc_type = 'stocktake' AND o.source_doc_id = ${own}::uuid)))`}
     GROUP BY item_id, lot_no HAVING sum(CASE WHEN direction = 'in' THEN quantity ELSE -quantity END) <> 0`.execute(trx);
   return new Map(r.rows.map((x) => [`${x.item_id}|${x.lot_no ?? ''}`, x.q]));
 }
@@ -91,7 +92,7 @@ export async function updateStocktake(trx: Trx, ctx: { tenantId: string }, id: s
     const set = { counted_qty: l.countedQty === null ? null : D(l.countedQty).toFixed(4), ...(l.reason !== undefined && { reason: l.reason }) };
     if (cur) await trx.updateTable('stocktake_line').set(set).where('id', '=', cur.id).execute();
     else { // hàng ngoài danh sách tồn sổ (thừa hàng không có tồn): tồn sổ lấy lại theo ngày kiểm kê
-      const book = (await bookOnHand(trx, s.warehouseId, s.docDate, Number(it.id))).get(`${it.id}|${lot ?? ''}`) ?? '0';
+      const book = (await bookOnHand(trx, s.warehouseId, s.docDate, Number(it.id), id)).get(`${it.id}|${lot ?? ''}`) ?? '0';
       await trx.insertInto('stocktake_line').values({ tenant_id: ctx.tenantId, stocktake_id: id, item_id: it.id, lot_no: lot, book_qty: D(book).toFixed(4), ...set }).execute();
     }
   }
@@ -112,7 +113,7 @@ export async function adjustStocktake(trx: Trx, ctx: Ctx, id: string): Promise<S
   if (s.status !== 'draft') throw new AppError('STOCKTAKE_ADJUSTED', 'Kiểm kê đã hủy', 409);
   const rows = await trx.selectFrom('stocktake_line as l').innerJoin('item as i', 'i.id', 'l.item_id').innerJoin('uom as u', 'u.id', 'i.base_uom_id')
     .select(['l.id', 'l.item_id', 'i.code', 'i.tracking', 'u.code as uom', 'l.lot_no', 'l.counted_qty', 'l.reason']).where('l.stocktake_id', '=', id).where('l.counted_qty', 'is not', null).execute();
-  const book = await bookOnHand(trx, s.warehouseId, s.docDate);
+  const book = await bookOnHand(trx, s.warehouseId, s.docDate, undefined, id);
   const diffs: ((typeof rows)[number] & { diff: ReturnType<typeof D> })[] = [];
   for (const r of rows) {
     const b = D(book.get(`${r.item_id}|${r.lot_no ?? ''}`) ?? '0'); const d = D(r.counted_qty!).minus(b);

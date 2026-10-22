@@ -137,6 +137,17 @@ describe('Kiểm kê kho (T16)', () => {
     expect(Number(await onHand())).toBe(98);
   });
 
+  it('tồn sổ của biên bản khác tính cả phiếu điều chỉnh đã đảo và chứng từ đảo: trước ngày đảo 97, sau ngày đảo 100', async () => {
+    const t = await tenant(); const s = await t.make();
+    await t.count(s.id, [{ itemCode: 'A', countedQty: '97' }]);
+    await t.call('POST', `/api/stocktakes/${s.id}/adjust`, {});
+    await sql`UPDATE fiscal_period SET status = 'soft_locked' WHERE tenant_id = ${t.tenantId}::uuid AND fiscal_year = 2026 AND period_no = 5`.execute(ctx.t.admin);
+    expect((await t.call('POST', `/api/stocktakes/${s.id}/reopen`, { postingDate: '2026-06-10' })).statusCode).toBe(200);
+    const bookA = async (docDate: string) => (await t.make({ docDate })).lines.find((l) => l.itemCode === 'A')!.bookQty;
+    expect(Number(await bookA('2026-06-05'))).toBe(97); // điều chỉnh vẫn còn hiệu lực, chưa bị đảo
+    expect(Number(await bookA('2026-12-31'))).toBe(100);
+  });
+
   it('người không có view_cost không điều chỉnh được (403), vẫn xem được kiểm kê', async () => {
     const t = await tenant();
     const roles = (await t.call('GET', '/api/roles')).json() as { id: string; code: string }[];
