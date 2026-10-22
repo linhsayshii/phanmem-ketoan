@@ -41,3 +41,10 @@ Kế hoạch: `2026-10-22-giai-doan-3-chi-tiet.md`. Đánh số tiếp GĐ2 (k�
 211. Giá trị lớp nhập = `amount − discount_amount` của dòng vật tư — dòng hóa đơn mua giữ tiền hàng trước chiết khấu — không. (T5, ca47e06)
 212. `stock_move.seq` là cột identity theo thứ tự chèn; thứ tự tính giá dùng `(posting_date, day_order, seq_no, line_no)`, không dùng `seq` — ghi lùi không giữ được thứ tự lưu trữ — T8 sắp sai nếu dùng `seq`. (T5, 29fee79)
 213. Chặn chèn `stock_move` trực tiếp bằng trigger kiểm cờ phiên `app.stock_post` và chứng từ đã ghi sổ cùng ngày — chặn nhầm lẫn như `open_item`, không chặn `app_user` cố ý — như các bảng phụ đã có. (T5, ca47e06)
+
+## Chứng từ kho
+
+214. Phiếu kho không ra dòng sổ cái nào (mọi dòng giá trị 0: hàng tặng, giá vốn chưa biết) bị từ chối 409 `STOCK_VALUE_ZERO`, không đổi lược đồ; phiếu lẫn dòng có và không có giá vẫn ghi sổ, sinh `stock_move` cho mọi dòng và cảnh báo `COST_UNKNOWN` — dòng sổ cái cần số tiền khác 0 — chưa nhập được phiếu kho toàn giá trị 0. (T6, ba58dba)
+215. Route chung `GET /api/vouchers/:id` kiểm cờ nhạy cảm theo tài khoản của dòng cho mọi loại chứng từ (403 nêu cờ) và đòi `stock_voucher.view` với loại kho; danh sách trả `totalDebit` null cho loại kho khi thiếu `view_cost`; ghi sổ/bỏ ghi sổ/đảo loại kho đòi thêm `stock_voucher.post`, hủy đòi `stock_voucher.delete` — cờ nhạy cảm chặn ở API, khớp sổ quỹ và công nợ — người có `voucher.view` nhưng thiếu `view_receivable` không mở được phiếu thu có dòng 131. (T6, ba58dba)
+216. Tài khoản đối ứng mặc định theo loại nhập/xuất (`STOCK_KINDS`) cố định theo chế độ (xuất sản xuất TT133: 154; sử dụng, biếu tặng: 6418/6421), người dùng sửa ở dòng; chưa có cấu hình riêng — kế hoạch không yêu cầu — phải sửa tay từng phiếu nếu công ty hạch toán khác. (T6, 17cb977)
+217. In phiếu kho trả 409 `PRINT_FORM_NOT_READY` đến T19; thành tiền quá 16 chữ số trả 400 `AMOUNT_TOO_LARGE` — tránh lỗi 500 — không. (T6, ba58dba)
