@@ -36,7 +36,7 @@ Cùng máy và cùng script (thêm ba ca: tuổi nợ, khử trùng, soát lỗi
 | GĐ2 trước sửa (2026-10-22) | 229 giây | 0,3 giây |
 | GĐ2 sau sửa (migration 0042, script có `ANALYZE` mỗi lô) | 100 giây | 0,2 giây |
 
-`POST /api/balances/recompute` vẫn chạy đồng bộ (`SELECT recompute_balances`) nên các số tính lại so sánh được; mức giảm 5,4 giây xuống 0,3 giây không do đổi mã (hàm và route không đổi) mà do kế hoạch truy vấn trên bảng chưa có thống kê (script chỉ `VACUUM ANALYZE` sau bước này), không phải tối ưu có chủ đích.
+`POST /api/balances/recompute` vẫn chạy đồng bộ (`SELECT recompute_balances`) nên các số tính lại so sánh được; mức giảm 5,4 giây xuống 0,3 giây không do đổi mã (hàm và route không đổi); nhiều khả năng do kế hoạch truy vấn trên bảng chưa có thống kê (script chỉ `VACUUM ANALYZE` sau bước này), chưa điều tra thêm.
 
 Kết quả báo cáo sau sửa (trung vị / lớn nhất, ms):
 
