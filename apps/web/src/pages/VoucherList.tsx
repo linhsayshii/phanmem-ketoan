@@ -28,7 +28,7 @@ function VoucherList({ def }: { def: VoucherTypeDef }) {
   const [f, setF] = useRememberedFilter(`vouchers:${def.code}`, { from: dayjs().startOf('month').format('YYYY-MM-DD'), to: dayjs().endOf('month').format('YYYY-MM-DD'), state: '' as string, q: '' }, `${me?.tenantId}:${me?.userId}`);
   const qs = new URLSearchParams({ type: def.code, from: f.from, to: f.to, size: '500', ...(f.state ? { state: f.state } : {}), ...(f.q ? { q: f.q } : {}) }).toString();
   const data = useQuery({ queryKey: ['vouchers', qs], queryFn: () => api<{ rows: Row[]; total: number }>(`/api/vouchers?${qs}`) });
-  const stockKinds = def.stockDirection ? kindsOf(def.code as 'PNK' | 'PXK' | 'CK') : [];
+  const stockKinds = def.stockDirection ? kindsOf(def.code as 'PNK' | 'PXK' | 'CK' | 'LR') : [];
   // Phiếu kho: chọn loại nghiệp vụ (nhập mua, xuất bán...) khi thêm; Insert lấy loại đầu tiên.
   const openKind = useCallback((kind: string) => void navigate({ to: '/chung-tu/$type/$id', params: { type: def.code, id: 'moi' }, search: { kind } as never }), [navigate, def.code]);
   useHotkeys({ Insert: () => (stockKinds.length ? openKind(stockKinds[0]!.code) : open('moi')) });

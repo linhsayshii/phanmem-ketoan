@@ -15,6 +15,7 @@ import { SettleDialog, type SettleEntry, type SettleTarget } from './settleCommo
 import { Attachments, iso, quickAdd, reportError, text } from './voucherCommon.js';
 import InvoiceEditor from './InvoiceForm.js';
 import StockVoucher from './StockVoucher.js';
+import AssemblyVoucher from './AssemblyVoucher.js';
 import LandedCost from './LandedCost.js';
 import { DECLARING_TYPES, DeclaredInvoices, clearPartySnapshot, declaredBody, declRowsOf, emptyDeclRow, type DeclRow } from './DeclaredInvoices.js';
 
@@ -101,6 +102,7 @@ export default function VoucherPage() {
   const { type, id } = useParams({ strict: false }) as { type: string; id: string };
   const def = voucherTypeDef(type);
   if (!def) return <Alert type="error" showIcon message={`Không có loại chứng từ "${type}"`} />;
+  if (def.code === 'LR') return <AssemblyVoucher key={`${def.code}/${id}`} def={def} id={id} />; // lắp ráp, tháo dỡ: gọi /api/assembly-vouchers
   if (def.stockDirection) return <StockVoucher key={`${def.code}/${id}`} def={def} id={id} />; // phiếu nhập, xuất, chuyển kho: màn hình kho, gọi /api/stock-vouchers
   if (def.code === 'CPM') return <LandedCost key={`${def.code}/${id}`} def={def} id={id} />; // chi phí mua hàng: chọn phiếu nhập, phân bổ, gọi /api/landed-costs
   if (def.hasItems) return <InvoiceEditor key={`${def.code}/${id}`} def={def} id={id} />; // hóa đơn mua/bán, giảm giá: màn hình riêng có thuế và bút toán xem trước

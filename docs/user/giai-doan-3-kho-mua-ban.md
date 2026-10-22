@@ -135,3 +135,15 @@ Trên "Mua hàng hóa", đánh dấu **Hàng nhập khẩu** ở đầu tab Hàn
 - **Giá tính thuế GTGT NK:** giá tính thuế GTGT ghi trên tờ khai (trị giá tính thuế theo tỷ giá hải quan cộng thuế NK, TTĐB). Để trống thì phần mềm lấy tiền hàng quy đổi theo tỷ giá hóa đơn + thuế NK + thuế TTĐB; nên nhập theo tờ khai vì tỷ giá hải quan và trị giá CIF thường khác.
 
 Giá nhập kho = tiền hàng quy đổi VND + thuế NK + thuế TTĐB. Hóa đơn có thể bằng ngoại tệ; các dòng thuế luôn là VND. Mỗi tờ khai hải quan lập một chứng từ Mua hàng hóa: ở tab Hóa đơn, ghi số tờ khai vào ô Số hóa đơn; tờ khai nhiều mặt hàng thì nhập nhiều dòng hàng trên cùng chứng từ. Bảng kê mua vào có một dòng thuế GTGT hàng nhập (giá tính thuế theo cột Giá tính thuế GTGT NK), lên chỉ tiêu [23], [23a] của tờ khai 01/GTGT, và các dòng thuế NK, TTĐB ở phần thuế khác. Chi phí vận chuyển, bảo hiểm hàng nhập ghi bằng Chi phí mua hàng như trên.
+
+## Lắp ráp, tháo dỡ
+
+Vào Chứng từ, Phiếu lắp ráp, tháo dỡ, bấm Thêm (Insert), chọn Lắp ráp hoặc Tháo dỡ (chọn được khi lập mới).
+
+- Lắp ráp: nhập thành phẩm, xuất linh kiện cùng một kho. Giá trị thành phẩm nhập kho bằng giá trị linh kiện xuất (giá tạm tính) cộng Chi phí phát sinh. Chi phí ghi Có TK 154 (hoặc tài khoản bạn chọn ở ô TK ghi Có chi phí; bắt buộc chọn nếu hệ thống tài khoản không có TK 154 chi tiết).
+- Tháo dỡ: xuất thành phẩm, nhập linh kiện. Tổng giá trị linh kiện nhập đúng bằng giá trị thành phẩm xuất. Nhập Tỷ lệ giá trị (%) ở lưới linh kiện (tổng phải bằng 100), hoặc bỏ trống toàn bộ để chia theo số lượng nhân giá tạm tính.
+- Tỷ lệ giá trị chỉ nhập ở bên nhập kho (thành phẩm khi lắp ráp, linh kiện khi tháo dỡ). Mọi hàng nhập kho của một phiếu phải cùng tài khoản kho.
+- Thiếu tồn linh kiện (hoặc thành phẩm khi tháo dỡ) thì ghi sổ báo lỗi thiếu tồn kho.
+- Phiếu ghi sổ theo giá tạm tính. Khi chạy Tính giá vốn, giá trị hàng nhập đổi theo giá gán của hàng xuất và hệ thống lập Phiếu giá vốn ghi phần chênh lệch (Nợ TK kho nhập, Có TK kho xuất). Chạy lại không đổi thì không lập thêm phiếu.
+- Bỏ ghi sổ không được nếu hàng nhập đã bị xuất tiếp; khi đó dùng Đảo.
+
