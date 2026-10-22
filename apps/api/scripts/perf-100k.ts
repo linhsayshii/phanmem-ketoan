@@ -75,17 +75,22 @@ try {
     await adminPool.query('VACUUM ANALYZE');
     const lines = Number((await adminPool.query('SELECT count(*) AS n FROM voucher_line')).rows[0].n);
 
-    const cases: [string, string][] = [
-      ['Bảng cân đối số phát sinh năm', '/api/reports/ledgers/trial-balance?from=2026-01-01&to=2026-12-31&format=json'],
-      ['Nhật ký chung năm (cắt 50.000 dòng)', '/api/reports/ledgers/general-journal?from=2026-01-01&to=2026-12-31&format=json'],
-      ['Sổ Cái TK 1121 năm', '/api/reports/ledgers/account?from=2026-01-01&to=2026-12-31&accountCode=1121&format=json'],
-      ['Số dư tài khoản /api/balances', '/api/balances?asOf=2026-12-31'],
+    const year = { from: '2026-01-01', to: '2026-12-31' };
+    const cases: [string, 'GET' | 'POST', string, object?][] = [
+      ['Bảng cân đối số phát sinh năm', 'GET', '/api/reports/ledgers/trial-balance?from=2026-01-01&to=2026-12-31&format=json'],
+      ['Nhật ký chung năm (cắt 50.000 dòng)', 'GET', '/api/reports/ledgers/general-journal?from=2026-01-01&to=2026-12-31&format=json'],
+      ['Sổ Cái TK 1121 năm', 'GET', '/api/reports/ledgers/account?from=2026-01-01&to=2026-12-31&accountCode=1121&format=json'],
+      ['Số dư tài khoản /api/balances', 'GET', '/api/balances?asOf=2026-12-31'],
+      // GĐ2: mọi dòng 131/331 của dữ liệu sinh ra đều có khoản công nợ (open_item).
+      ['Tuổi nợ 131 ngày 31/12 (cả công ty)', 'GET', '/api/reports/arap/aging?accountCode=131&asOf=2026-12-31&format=json'],
+      ['Khử trùng chứng từ năm', 'GET', '/api/tools/duplicates?from=2026-01-01&to=2026-12-31'],
+      ['Soát lỗi CN_LECH_SO_CAI năm', 'POST', '/api/data-check/run', { ...year, codes: ['CN_LECH_SO_CAI'] }],
     ];
     const rows: [string, number, number][] = [];
-    for (const [name, url] of cases) {
-      await call('GET', url); // chạy khởi động, không tính
+    for (const [name, method, url, payload] of cases) {
+      await call(method, url, payload); // chạy khởi động, không tính
       const ms: number[] = [];
-      for (let i = 0; i < 3; i++) { const s = performance.now(); await call('GET', url); ms.push(performance.now() - s); }
+      for (let i = 0; i < 3; i++) { const s = performance.now(); await call(method, url, payload); ms.push(performance.now() - s); }
       rows.push([name, Math.round(median(ms)), Math.round(Math.max(...ms))]);
     }
     console.log(`\nDòng sổ cái: ${lines}; chứng từ: ${VOUCHERS}; sinh + ghi sổ: ${genSec.toFixed(0)} s; tính lại số dư: ${recomputeSec.toFixed(1)} s`);
