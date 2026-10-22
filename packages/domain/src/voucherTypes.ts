@@ -8,7 +8,7 @@ export const HEADER_FIELD_LABELS: Record<HeaderField, string> = {
   counterBankAccount: 'Tài khoản ngân hàng nhận', partyBankAccount: 'Tài khoản ngân hàng của đối tượng', dueDate: 'Hạn thanh toán', purpose: 'Mục đích', currency: 'Loại tiền',
 };
 export interface VoucherTypeDef {
-  code: string; name: string; module: 'general' | 'cash' | 'bank' | 'arap'; manual: boolean; header: HeaderField[]; required: HeaderField[];
+  code: string; name: string; module: 'general' | 'cash' | 'bank' | 'arap' | 'inventory'; manual: boolean; header: HeaderField[]; required: HeaderField[];
   cashSide?: 'in' | 'out'; moneyKind?: 'cash' | 'bank'; hasItems?: boolean; invoiceDirection?: 'purchase' | 'sale'; refund?: boolean; printForms: string[];
 }
 

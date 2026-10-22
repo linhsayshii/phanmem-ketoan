@@ -4,15 +4,15 @@ export type SensitiveFlag = (typeof SENSITIVE_FLAGS)[number];
 export const SENSITIVE_FLAGS_ALL = ['view_receivable', 'view_payable', 'view_cost'] as const;
 
 // Cờ cần để xem tài khoản theo loại sổ chi tiết; tài khoản giá vốn (632*) cần view_cost. Dùng chung cho sổ sách, số dư và các màn công nợ ở API.
-export const SENSITIVE_BY_SUBLEDGER = { receivable: 'view_receivable', payable: 'view_payable' } as const;
+export const SENSITIVE_BY_SUBLEDGER = { receivable: 'view_receivable', payable: 'view_payable', inventory: 'view_cost' } as const;
 type SensitiveAccount = { subledger_kind: string | null; code: string };
 const DENIAL: Record<'view_receivable' | 'view_payable' | 'view_cost', string> = {
   view_receivable: 'Không có quyền xem công nợ phải thu', view_payable: 'Không có quyền xem công nợ phải trả', view_cost: 'Không có quyền xem giá vốn',
 };
 const flagsOf = (acc: SensitiveAccount): (keyof typeof DENIAL)[] => [
-  ...(acc.subledger_kind === 'receivable' || acc.subledger_kind === 'payable' ? [SENSITIVE_BY_SUBLEDGER[acc.subledger_kind]] : []),
+  ...(acc.subledger_kind && acc.subledger_kind in SENSITIVE_BY_SUBLEDGER ? [SENSITIVE_BY_SUBLEDGER[acc.subledger_kind as keyof typeof SENSITIVE_BY_SUBLEDGER]] : []),
   ...(acc.code.startsWith('632') ? ['view_cost' as const] : []),
-];
+].filter((f, i, a) => a.indexOf(f) === i);
 // Lý do cờ nhạy cảm che tài khoản này với người dùng; null là được xem.
 export function sensitiveDenial(auth: { sensitive: Set<string> }, acc: SensitiveAccount): string | null {
   const missing = flagsOf(acc).find((f) => !auth.sensitive.has(f));
@@ -61,5 +61,14 @@ export const PERMISSIONS: readonly { code: string; name: string; group: string }
   { code: 'voucher.import', name: 'Nhập chứng từ từ Excel', group: 'Chứng từ' },
   { code: 'dedupe.run', name: 'Khử trùng chứng từ', group: 'Tiện ích' },
   ...crud('amortization', 'lịch phân bổ', 'Cuối kỳ', [['run', 'Chạy']]),
+  // GĐ3: kho và mua bán hàng hóa.
+  ...crud('item', 'vật tư hàng hóa', 'Kho'),
+  ...crud('warehouse', 'kho', 'Kho'),
+  ...crud('price_list', 'bảng giá', 'Kho'),
+  ...crud('stock_voucher', 'phiếu kho', 'Kho', [['post', 'Ghi sổ']]),
+  { code: 'costing.run', name: 'Chạy tính giá vốn', group: 'Kho' },
+  { code: 'costing.view', name: 'Xem tính giá vốn', group: 'Kho' },
+  ...crud('order', 'báo giá, đơn hàng, hợp đồng', 'Bán hàng'),
+  ...crud('stocktake', 'kiểm kê kho', 'Kho'),
 ];
 export const PERMISSION_CODES: readonly string[] = PERMISSIONS.map((p) => p.code);

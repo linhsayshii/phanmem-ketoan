@@ -22,16 +22,26 @@ describe('quyền GĐ2', () => {
   });
 });
 
+describe('quyền GĐ3', () => {
+  it('có đủ mã mới, nhóm Kho / Bán hàng', () => {
+    const group = (c: string) => PERMISSIONS.find((p) => p.code === c)?.group;
+    for (const c of ['item.view', 'warehouse.create', 'price_list.update', 'stock_voucher.post', 'stock_voucher.delete', 'costing.run', 'costing.view', 'order.view', 'order.delete', 'stocktake.create']) expect(PERMISSION_CODES, c).toContain(c);
+    expect([group('item.view'), group('stock_voucher.post'), group('costing.run'), group('order.view'), group('stocktake.view')]).toEqual(['Kho', 'Kho', 'Kho', 'Bán hàng', 'Kho']);
+    expect(new Set(PERMISSION_CODES).size).toBe(PERMISSION_CODES.length);
+  });
+});
+
 describe('cờ dữ liệu nhạy cảm dùng chung', () => {
-  const recv = { subledger_kind: 'receivable', code: '131' }, pay = { subledger_kind: 'payable', code: '331' }, cost = { subledger_kind: null, code: '6321' }, cash = { subledger_kind: null, code: '1111' };
+  const recv = { subledger_kind: 'receivable', code: '131' }, pay = { subledger_kind: 'payable', code: '331' }, cost = { subledger_kind: null, code: '6321' }, cash = { subledger_kind: null, code: '1111' }, inv = { subledger_kind: 'inventory', code: '156' };
   it('SENSITIVE_BY_SUBLEDGER ánh xạ loại sổ chi tiết sang cờ', () => {
-    expect(SENSITIVE_BY_SUBLEDGER).toEqual({ receivable: 'view_receivable', payable: 'view_payable' });
+    expect(SENSITIVE_BY_SUBLEDGER).toEqual({ receivable: 'view_receivable', payable: 'view_payable', inventory: 'view_cost' });
   });
   it('sensitiveDenial: thiếu cờ thì có lý do, đủ cờ hoặc tài khoản thường thì null', () => {
     const none = { sensitive: new Set<string>() };
     expect(sensitiveDenial(none, recv)).toBe('Không có quyền xem công nợ phải thu');
     expect(sensitiveDenial(none, pay)).toBe('Không có quyền xem công nợ phải trả');
     expect(sensitiveDenial(none, cost)).toBe('Không có quyền xem giá vốn');
+    expect(sensitiveDenial(none, inv)).toBe('Không có quyền xem giá vốn');
     expect(sensitiveDenial(none, cash)).toBeNull();
     expect(sensitiveDenial({ sensitive: new Set(['view_receivable']) }, recv)).toBeNull();
     expect(sensitiveDenial({ sensitive: new Set(['view_receivable']) }, pay)).not.toBeNull();

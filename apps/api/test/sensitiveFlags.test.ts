@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { sql } from 'kysely';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 });
-let ctx: TestApp; let owner: string; let none: string; let costOnly: string;
+let ctx: TestApp; let tenantId: string; let owner: string; let none: string; let costOnly: string;
 const get = (url: string, c = owner) => ctx.app.inject({ method: 'GET', url, headers: { cookie: c } });
 const post = (url: string, payload: object, c = owner) => ctx.app.inject({ method: 'POST', url, headers: { cookie: c }, payload });
 const pkt = async (date: string, lines: object[]) => { const r = await post('/api/vouchers', { voucherType: 'PKT', postingDate: date, documentDate: date, description: `CT ${date}`, autoPost: true, lines }); expect(r.statusCode, r.body).toBe(201); };
@@ -17,7 +18,7 @@ const codes = async (qs: string, c: string) => { const r = await get(`/api/balan
 const MSG = 'Cần quyền xem công nợ phải thu, phải trả và giá vốn để xem sổ tổng hợp';
 
 beforeAll(async () => {
-  ctx = await createTestApp(); ({ cookie: owner } = await bootstrapTenant(ctx, { code: `SF${Date.now()}` }));
+  ctx = await createTestApp(); ({ cookie: owner, tenantId } = await bootstrapTenant(ctx, { code: `SF${Date.now()}` }));
   await post('/api/fiscal-years', { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' });
   await post('/api/catalogs/party', { code: 'KH001', name: 'Khách 1', is_customer: true });
   await post('/api/catalogs/party', { code: 'NCC01', name: 'Nhà cung cấp 1', is_vendor: true });
@@ -29,6 +30,25 @@ beforeAll(async () => {
   costOnly = await userWith('ketoan_vien', ['view_cost']);
 }, 60_000);
 afterAll(async () => { await ctx.close(); });
+
+describe('quyền GĐ3 của công ty mới và cờ view_cost cho tài khoản kho', () => {
+  it('công ty mới: ketoan_vien có stock_voucher.create, không có costing.run; xem có item.view', async () => {
+    const r = await sql<{ role: string; p: string }>`SELECT r.code AS role, rp.permission_code AS p FROM role_permission rp JOIN role r ON r.id = rp.role_id WHERE r.tenant_id = ${tenantId}::uuid`.execute(ctx.t.admin);
+    const has = (role: string, p: string) => r.rows.some((x) => x.role === role && x.p === p);
+    expect(has('ketoan_vien', 'stock_voucher.create')).toBe(true);
+    expect(has('ketoan_vien', 'costing.run')).toBe(false);
+    expect(has('ketoan_vien', 'costing.view')).toBe(true);
+    expect(has('ketoan_truong', 'costing.run')).toBe(true);
+    expect(has('xem', 'item.view')).toBe(true);
+    expect(has('xem', 'item.create')).toBe(false);
+  });
+  it('người dùng không có view_cost: sổ chi tiết tài khoản 156 trả 403 FORBIDDEN nêu cờ view_cost', async () => {
+    const r = await get('/api/balances?asOf=2026-01-31&accountCode=156', none);
+    expect(r.statusCode, r.body).toBe(403);
+    expect(r.json().message ?? r.body).toContain('giá vốn');
+    expect((await get('/api/balances?asOf=2026-01-31&accountCode=156', costOnly)).statusCode).toBe(200);
+  });
+});
 
 describe('cờ nhạy cảm bao phủ sổ tổng hợp và số dư', () => {
   const range = 'from=2026-01-01&to=2026-01-31';

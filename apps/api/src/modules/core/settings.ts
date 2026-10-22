@@ -19,6 +19,8 @@ export const SETTINGS = z.object({
   fx_reval_rate_liability: z.enum(['transfer_avg', 'buy', 'sell']).nullable().default(null),
   // Kỳ kê khai thuế GTGT: hóa đơn ghi declare_period theo tháng (1-12) hoặc quý (1-4).
   vat_period: z.enum(['month', 'quarter']).default('month'),
+  // Xuất kho làm tồn âm: forbid = chặn, warn = ghi sổ và cảnh báo, allow = cho phép.
+  stock_negative: z.enum(['forbid', 'warn', 'allow']).default('forbid'),
 });
 export type Settings = z.infer<typeof SETTINGS>;
 

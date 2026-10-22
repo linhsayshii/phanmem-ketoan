@@ -30,7 +30,7 @@ export async function findDuplicates(trx: Trx, tenantId: string, auth: { sensiti
       SELECT l.voucher_id, sum(l.debit) AS total,
         coalesce(array_agg(DISTINCT (CASE WHEN l.debit > 0 THEN 'D:' ELSE 'C:' END) || a.code ORDER BY (CASE WHEN l.debit > 0 THEN 'D:' ELSE 'C:' END) || a.code) FILTER (WHERE a.subledger_kind IN ('receivable', 'payable')), '{}') AS arap,
         coalesce(array_agg(DISTINCT (CASE WHEN l.debit > 0 THEN 'D:' ELSE 'C:' END) || a.code ORDER BY (CASE WHEN l.debit > 0 THEN 'D:' ELSE 'C:' END) || a.code) FILTER (WHERE a.subledger_kind IS NULL OR a.subledger_kind NOT IN ('cash', 'bank', 'receivable', 'payable')), '{}') AS other,
-        bool_or((${hideAr} AND a.subledger_kind = 'receivable') OR (${hideAp} AND a.subledger_kind = 'payable') OR (${hideCost} AND a.code LIKE '632%')) AS hidden
+        bool_or((${hideAr} AND a.subledger_kind = 'receivable') OR (${hideAp} AND a.subledger_kind = 'payable') OR (${hideCost} AND (a.code LIKE '632%' OR a.subledger_kind = 'inventory'))) AS hidden
       FROM voucher_line l JOIN cand c ON c.id = l.voucher_id AND c.posting_date = l.posting_date JOIN account a ON a.id = l.account_id
       WHERE l.tenant_id = ${tenantId}::uuid AND l.posting_date BETWEEN ${f.from}::date - ${w}::int AND ${f.to}::date + ${w}::int
       GROUP BY l.voucher_id HAVING sum(l.debit) > 0),
