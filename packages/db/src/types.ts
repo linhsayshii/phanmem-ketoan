@@ -187,6 +187,9 @@ export interface OpeningBalanceTable {
   debit: NumericDefault; credit: NumericDefault; debit_currency: NumericDefault; credit_currency: NumericDefault;
   doc_no: string | null; doc_date: DateOnly | null; due_date: DateOnly | null; // số dư công nợ theo từng hóa đơn
 }
+export interface OpeningStockTable {
+  id: Generated<number>; tenant_id: string; fiscal_year: number; item_id: number; warehouse_id: number; lot_no: Generated<string>; expiry_date: DateOnly | null; quantity: Numeric; value: NumericDefault;
+}
 // Khoản công nợ theo chứng từ: sinh khi ghi sổ dòng tài khoản công nợ (account.reconcile) có đối tượng; amount có dấu (Nợ dương, Có âm).
 export interface OpenItemTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; voucher_line_id: number; line_posting_date: DateOnly; line_no: number; account_id: number; party_id: string;
@@ -326,6 +329,7 @@ export interface Database {
   balance_stale: BalanceStaleTable;
   account_period_balance: AccountPeriodBalanceTable;
   opening_balance: OpeningBalanceTable;
+  opening_stock: OpeningStockTable;
   open_item: OpenItemTable;
   settlement: SettlementTable;
   settlement_plan: SettlementPlanTable;

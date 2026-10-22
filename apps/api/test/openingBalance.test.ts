@@ -144,13 +144,13 @@ describe('số dư đầu kỳ', () => {
     expect(dk.rows).toEqual([{ state: 'posted', n: 5 }]); // không động tới chứng từ cũ
   }, 30_000);
 
-  it('kiểm tra báo tài khoản đã ngừng dùng và tài khoản theo dõi vật tư/tài sản; ghi sổ không rơi xuống lỗi trigger', async () => {
+  it('kiểm tra báo tài khoản đã ngừng dùng, tài khoản kho lệch tồn đầu kỳ và tài sản cố định bị khóa; ghi sổ không rơi xuống lỗi trigger', async () => {
     const setActive = (active: boolean) => ctx.t.admin.updateTable('account').set({ is_active: active }).where('tenant_id', '=', tenantId).where('regime', '=', 'TT133').where('code', '=', '1121').execute();
     await setActive(false);
     try {
-      await put([R('1121', '5'), R('156', '10'), R('4111', '0', '15')]);
+      await put([R('1121', '5'), R('156', '10'), R('2111', '10'), R('4111', '0', '25')]);
       expect((await check()).json()).toEqual(expect.arrayContaining([
-        expect.objectContaining({ code: 'ACCOUNT_INACTIVE', accountCode: '1121' }), expect.objectContaining({ code: 'SUBLEDGER_MODULE_REQUIRED', accountCode: '156' })]));
+        expect.objectContaining({ code: 'ACCOUNT_INACTIVE', accountCode: '1121' }), expect.objectContaining({ code: 'OPENING_STOCK_MISMATCH', accountCode: '156' }), expect.objectContaining({ code: 'SUBLEDGER_MODULE_REQUIRED', accountCode: '2111' })]));
       const p = await post(); expect(p.statusCode).toBe(409); expect(p.json().error.code).toBe('OPENING_INVALID');
     } finally { await setActive(true); }
   }, 30_000);
