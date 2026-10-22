@@ -75,6 +75,10 @@ describe('bảng giá', () => {
     const bad = await imp(await book([['SP1', 'CAI', 0, 10, 0], ['KHONGCO', 'CAI', 0, 10, 0]]), 'validate');
     expect(bad.json().errors).toEqual([expect.objectContaining({ row: 5, column: 'itemCode' })]);
     expect((await imp(await book([['SP1', 'CAI', 0, 10, 0], ['KHONGCO', 'CAI', 0, 10, 0]]), 'commit')).statusCode).toBe(400);
+    // mọi dòng đều lỗi định dạng: không còn mã để tra danh mục, vẫn trả lỗi dòng chứ không 500
+    const allBad = await book([['SP1', 'CAI', 0, 'abc', 0], ['SP2', 'CAI', 0, -5, 0]]);
+    const v0 = await imp(allBad, 'validate'); expect(v0.statusCode, v0.body).toBe(200); expect(v0.json().errorCount).toBeGreaterThan(0);
+    const c0 = await imp(allBad, 'commit'); expect(c0.statusCode, c0.body).toBe(400);
     const good = await book([['SP1', 'CAI', 0, 12, 0], ['SP1', 'CAI', 10, 11, 1.5], ['SP2', 'CAI', 0, 7, 0]]);
     expect((await imp(good, 'validate')).json()).toMatchObject({ inserted: 0, errorCount: 0 });
     expect((await ctx.app.inject({ method: 'GET', url: `/api/price-lists/${id}`, headers: { cookie } })).json().lines).toHaveLength(0);

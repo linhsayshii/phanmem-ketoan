@@ -61,7 +61,7 @@
   "soChungTuThem": {
     "counts": { "BH": 9, "BN": 3, "CK": 1, "CPM": 1, "MH": 5, "PNK": 2, "PXK": 1, "TLB": 1 },
     "gv": { "reversed": 1, "reversalOfReversed": 1, "total": 4 },
-    "calc": "BH: HANG-A 15/01, 15/03(10 cái), 25/03 (kho gửi bán), HANG-B 25/01, 20/02, HANG-C 15/02, 10/03, HANG-D 05/02, 05/03 = 9. MH: HANG-A, HANG-B, HANG-C, HANG-D (hàng về trước), HANG-B nhập khẩu = 5. PNK: HANG-D 08/01 (hàng về trước hóa đơn) và HANG-A ghi lùi 10/03 = 2. PXK: kiểm kê thiếu 1. CK: 1. CPM: 1. TLB: 1. BN: 3 khoản nộp thuế 21/04 (GTGT, nhập khẩu, GTGT hàng nhập khẩu). GV (giá vốn): chỉ tháng có chênh lệch giữa giá tạm tính và giá tính: tháng 2 (HANG-D −133.333, HANG-C −35.000), tháng 3 (HANG-C +11.667) và lần chạy lại tháng 3 sau phiếu nhập ghi lùi: bản đảo của GV tháng 3 + GV mới = 4 chứng từ GV, 1 chứng từ bị đảo"
+    "calc": "BH: HANG-A 15/01, 20/03(10 cái), 25/03 (kho gửi bán), HANG-B 25/01, 20/02, HANG-C 15/02, 10/03, HANG-D 05/02, 05/03 = 9. MH: HANG-A, HANG-B, HANG-C, HANG-D (hàng về trước), HANG-B nhập khẩu = 5. PNK: HANG-D 08/01 (hàng về trước hóa đơn) và HANG-A ghi lùi 10/03 = 2. PXK: kiểm kê thiếu 1. CK: 1. CPM: 1. TLB: 1. BN: 3 khoản nộp thuế 21/04 (GTGT, nhập khẩu, GTGT hàng nhập khẩu). GV (giá vốn): chỉ tháng có chênh lệch giữa giá tạm tính và giá tính: tháng 2 (HANG-D −133.333, HANG-C −35.000), tháng 3 (HANG-C +11.667) và lần chạy lại tháng 3 sau phiếu nhập ghi lùi: bản đảo của GV tháng 3 + GV mới = 4 chứng từ GV, 1 chứng từ bị đảo"
   },
   "dongBoCongNo": "Chứng từ mua và bán của kho phát sinh 331 (NCC011, NCCNN02, VC001) và 131 (KH021): tổng dư khoản công nợ mở khớp sổ cái từng ngày (kiểm cùng bất biến GĐ2)"
 }

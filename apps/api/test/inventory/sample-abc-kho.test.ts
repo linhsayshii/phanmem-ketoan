@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { sql } from 'kysely';
+import { D } from '@kt/domain';
 import { seedAbcFull } from '../../scripts/seed-abc.js';
 import { createTestApp, type TestApp } from '../helpers.js';
 import { assertBalanceSheet } from '../invariants/helpers.js';
@@ -34,8 +35,8 @@ describe('Bộ dữ liệu mẫu ABC có kho (GĐ3): bốn phương pháp giá v
     const keys = ['openingQty', 'openingValue', 'inQty', 'inValue', 'outQty', 'outValue', 'closingQty', 'closingValue'] as const;
     for (const n of gd3.nxt as Record<string, string>[]) {
       const mine = rows.filter((r) => r['itemCode'] === n['item'] && r['warehouseCode'] === n['warehouse']);
-      const sum = (k: string) => mine.reduce((s, r) => s + Number(r[k]), 0);
-      expect(Object.fromEntries(keys.map((k) => [k, String(sum(k))])), `${n['item']}/${n['warehouse']}`).toEqual(Object.fromEntries(keys.map((k) => [k, n[k]])));
+      const sum = (k: string) => mine.reduce((s, r) => s.plus(r[k]!), D(0));
+      expect(Object.fromEntries(keys.map((k) => [k, sum(k).toString()])), `${n['item']}/${n['warehouse']}`).toEqual(Object.fromEntries(keys.map((k) => [k, n[k]])));
     }
   });
 

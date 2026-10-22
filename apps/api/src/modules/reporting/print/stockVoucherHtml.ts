@@ -60,7 +60,7 @@ export function renderStockVoucherHtml(v: VoucherDto, c: CompanyInfo, lines: Sto
     <tbody>${rows}<tr><td colspan="4"><b>Cộng</b></td><td class="num">x</td><td class="num">x</td>${cost ? `<td class="num">x</td><td class="num"><b>${formatVnNumber(total)}</b></td>` : ''}</tr></tbody></table>
     ${cost ? `<p>- Tổng số tiền (viết bằng chữ): <b>${esc(vndInWords(total))}</b></p>` : ''}
     <p>- Số chứng từ gốc kèm theo: ${v.attachmentsCount === null || v.attachmentsCount === undefined ? DOTS : `<b>${v.attachmentsCount}</b>`}</p>
-    <div style="text-align:right">${dateWords(v.postingDate).replace('Ngày', 'Ngày')}</div>
+    <div style="text-align:right">${dateWords(v.postingDate)}</div>
     <div class="sign">${sign('Người lập phiếu')}${sign(inbound ? 'Người giao hàng' : 'Người nhận hàng')}${sign('Thủ kho')}${sign('Kế toán trưởng', '(Hoặc bộ phận có nhu cầu nhập)<br>(Ký, họ tên)', c.chiefAccountant)}${inbound ? '' : sign('Giám đốc', '(Ký, họ tên)', c.legalRep)}</div>
   </div>`;
   return printShell(`${title} ${v.voucherNo ?? ''}`, body);

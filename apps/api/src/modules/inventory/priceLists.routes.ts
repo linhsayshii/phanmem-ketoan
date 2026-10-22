@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { sql } from 'kysely';
 import { z } from 'zod';
+import { D } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import type { ColumnDef } from '../master/catalogs.js';
 import { buildSheetTemplate, readSheet, zodIssueVi, type ImportError } from '../master/excelSheet.js';
@@ -50,11 +51,12 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       const inserted = await app.withTenant(req, async (trx) => {
         for (const [table, col, key] of [['item', 'itemCode', 'Mã hàng'], ['uom', 'uomCode', 'ĐVT']] as const) {
           const codes = [...new Set(rows.map((r) => r.line[col]))];
+          if (!codes.length) continue; // mọi dòng đều lỗi: không có mã để tra (IN () là lỗi cú pháp)
           const found = new Set((await sql<{ code: string }>`SELECT code FROM ${sql.table(table)} WHERE code IN (${sql.join(codes)})`.execute(trx)).rows.map((r) => r.code));
           for (const r of rows) if (!found.has(r.line[col])) errors.push({ row: r.row, column: col, message: `${key} ${r.line[col]} không có trong danh mục` });
         }
         const seen = new Map<string, number>();
-        for (const r of rows) { const k = [r.line.itemCode, r.line.uomCode, Number(r.line.minQty)].join('|'); if (seen.has(k)) errors.push({ row: r.row, column: 'itemCode', message: `Trùng với dòng ${seen.get(k)}` }); else seen.set(k, r.row); }
+        for (const r of rows) { const k = [r.line.itemCode, r.line.uomCode, D(r.line.minQty).toString()].join('|'); if (seen.has(k)) errors.push({ row: r.row, column: 'itemCode', message: `Trùng với dòng ${seen.get(k)}` }); else seen.set(k, r.row); }
         if (errors.length) { if (dry) throw new DryRun(); throw new AppError('IMPORT_ERRORS', `Tệp có ${errors.length} lỗi, chưa nhập dòng nào`, 400, errors.slice(0, MAX_ERRORS)); }
         await addLines(trx, req.auth!.tenantId!, req.params.id, rows.map((r) => r.line));
         if (dry) throw new DryRun();
