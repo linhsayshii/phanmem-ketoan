@@ -22,7 +22,7 @@ const GROUPS: Record<Kind, { value: string; label: string }[]> = {
   purchases: [{ value: 'party', label: 'Nhà cung cấp' }, { value: 'item', label: 'Mặt hàng' }, { value: 'month', label: 'Tháng' }],
 };
 const COLUMNS: Record<Kind, ColDef<Row>[]> = {
-  sales: [num('SL bán', 'soldQty', qty, 100), num('SL trả lại', 'returnQty', qty, 100), num('Doanh số', 'grossSales'), num('Chiết khấu', 'discount'), num('Hàng bán bị trả lại', 'returns', undefined, 150), num('Doanh thu thuần', 'netRevenue'),
+  sales: [num('SL bán', 'soldQty', qty, 100), num('SL trả lại', 'returnQty', qty, 100), num('Doanh số', 'grossSales'), num('Chiết khấu', 'discount'), num('Giảm giá, trả lại', 'returns', undefined, 150), num('Doanh thu thuần', 'netRevenue'),
     num('Giá vốn', 'cogs'), num('Lãi gộp', 'grossProfit')],
   purchases: [num('SL mua', 'qty', qty, 100), num('SL trả lại', 'returnQty', qty, 100), num('Giá trị mua', 'purchaseValue'), num('Chiết khấu', 'discount'), num('Trả lại, giảm giá', 'returns', undefined, 140), num('Giá trị thuần', 'netPurchase'),
     num('Thuế GTGT', 'vat'), num('Thuế nhập khẩu', 'importTax'), num('Thuế TTĐB', 'exciseTax'), num('GTGT hàng nhập khẩu', 'importVat', undefined, 160), num('Chi phí mua', 'landedCost')],

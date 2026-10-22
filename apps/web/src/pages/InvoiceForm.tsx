@@ -22,8 +22,8 @@ interface ItemDto { lineNo: number; description: string | null; quantity: string
 interface InvoiceRef { id: number; formNo: string | null; serial: string | null; invoiceNo: string; invoiceDate: string; partyName: string | null; partyTaxCode: string | null; partyAddress: string | null;
   invoiceGroupCode: string | null; headerGroupCode?: string | null; taxCode: string | null; taxAmount: string; adjustsInvoiceId: number | null }
 interface InvoiceDoc { id: string; voucherType: string; voucherNo: string | null; state: string; postingDate: string; documentDate: string; description: string | null; partyCode: string | null; partyName: string | null;
-  dueDate: string | null; currencyCode: string; fxRate: string | null; version: number; periodStatus: 'open' | 'soft_locked' | 'hard_locked'; hashed: boolean; receiptState?: StockMode | null; invoices: InvoiceRef[]; items: ItemDto[]; warnings?: { code: string; message: string }[] }
-interface FormValues { postingDate: Dayjs; documentDate: Dayjs; partyCode?: string | null; currencyCode?: string; fxRate?: string | null; dueDate?: Dayjs | null; description?: string | null;
+  dueDate: string | null; currencyCode: string; fxRate: string | null; version: number; periodStatus: 'open' | 'soft_locked' | 'hard_locked'; hashed: boolean; receiptState?: StockMode | null; invoices: InvoiceRef[]; items: ItemDto[]; lines?: { employeeCode?: string | null }[]; warnings?: { code: string; message: string }[] }
+interface FormValues { employeeCode?: string | null; postingDate: Dayjs; documentDate: Dayjs; partyCode?: string | null; currencyCode?: string; fxRate?: string | null; dueDate?: Dayjs | null; description?: string | null;
   formNo?: string | null; serial?: string | null; invoiceNo?: string; invoiceDate: Dayjs; invoiceGroupCode?: string }
 // Đối tượng đã chọn: tên, mã số thuế, địa chỉ lấy từ danh mục (máy chủ cũng chụp ba trường này lúc lưu). defaultAccount: undefined là chưa biết (chứng từ vừa tải), null là đối tượng không đặt tài khoản công nợ.
 type StockMode = 'through_stock' | 'goods_first' | 'invoice_first';
@@ -104,7 +104,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
     const d = v.data; if (!d) return;
     const inv = d.invoices[0]; const headerGroup = inv?.headerGroupCode ?? inv?.invoiceGroupCode; // nhóm đầu hóa đơn đã lưu; hóa đơn cũ không có thì nhóm dòng đầu
     form.setFieldsValue({ postingDate: dayjs(d.postingDate), documentDate: dayjs(d.documentDate), partyCode: d.partyCode, currencyCode: d.currencyCode, fxRate: d.fxRate, dueDate: d.dueDate ? dayjs(d.dueDate) : null, description: d.description,
-      formNo: inv?.formNo ?? '', serial: inv?.serial ?? '', invoiceNo: inv?.invoiceNo ?? '', invoiceDate: dayjs(inv?.invoiceDate ?? d.documentDate), ...(headerGroup ? { invoiceGroupCode: headerGroup } : {}) });
+      formNo: inv?.formNo ?? '', serial: inv?.serial ?? '', invoiceNo: inv?.invoiceNo ?? '', invoiceDate: dayjs(inv?.invoiceDate ?? d.documentDate), ...(headerGroup ? { invoiceGroupCode: headerGroup } : {}), employeeCode: d.lines?.find((l) => l.employeeCode)?.employeeCode ?? null });
     const loaded = d.items.map(rowOf); for (const r of loaded) snaps.current.set(r, snapOf(r));
     setAll(d.state === 'draft' ? [...loaded, emptyInvRow()] : loaded);
     setParty(d.partyCode ? { code: d.partyCode, name: inv?.partyName ?? d.partyName ?? '', taxCode: inv?.partyTaxCode ?? '', address: inv?.partyAddress ?? '', defaultAccount: undefined } : null);
@@ -202,7 +202,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
     return { voucherType: eff.code, postingDate: iso(f.postingDate), documentDate: iso(f.documentDate), partyCode: f.partyCode ?? '', currencyCode: f.currencyCode ?? 'VND',
       ...(isSaleGoods && exportMode ? { exportMode: true } : {}), ...(isMH ? { stockMode, ...(stockMode === 'goods_first' ? { receiptVoucherIds: receiptIds } : {}) } : {}),
       ...((f.currencyCode ?? 'VND') !== 'VND' && f.fxRate ? { fxRate: f.fxRate } : {}), ...(f.dueDate ? { dueDate: iso(f.dueDate) } : {}), description: text(f.description), items,
-      invoice: { ...(live.current.party ? { partyTaxCode: live.current.party.taxCode.trim(), partyName: live.current.party.name.trim(), partyAddress: live.current.party.address.trim() } : {}), formNo: text(f.formNo), serial: text(f.serial), invoiceNo: (f.invoiceNo ?? '').trim(), invoiceDate: iso(f.invoiceDate), invoiceGroupCode: f.invoiceGroupCode ?? '',
+      invoice: { ...(live.current.party ? { partyTaxCode: live.current.party.taxCode.trim(), partyName: live.current.party.name.trim(), partyAddress: live.current.party.address.trim() } : {}), formNo: text(f.formNo), serial: text(f.serial), invoiceNo: (f.invoiceNo ?? '').trim(), invoiceDate: iso(f.invoiceDate), invoiceGroupCode: f.invoiceGroupCode ?? '', ...(f.employeeCode ? { employeeCode: f.employeeCode } : {}),
         ...(refund ? { adjustsInvoiceId: live.current.adjusts } : {}), ...(Object.keys(declaredTax).length ? { declaredTax } : {}) } };
   };
   // Lưu bản đang nhập; ghi sổ (F9) lưu trước rồi mới ghi để không ghi sổ bản cũ trên máy chủ.
@@ -344,6 +344,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
       <Col span={5}><Form.Item label="Số hóa đơn" name="invoiceNo" rules={[{ required: true, whitespace: true, message: 'Nhập số hóa đơn' }]}><Input maxLength={30} /></Form.Item></Col>
       <Col span={5}><Form.Item label="Ngày hóa đơn" name="invoiceDate" rules={[{ required: true, message: 'Nhập ngày hóa đơn' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
       <Col span={6}><Form.Item label="Nhóm kê khai (F4)" name="invoiceGroupCode" rules={[{ required: true, message: 'Chọn nhóm kê khai' }]}><LookupSelect catalog="invoice_group" fetcher={groupsOf} /></Form.Item></Col>
+      <Col span={6}><Form.Item label="Nhân viên bán hàng (F4)" name="employeeCode"><LookupSelect catalog="employee" allowClear /></Form.Item></Col>
       <Col span={6}><Form.Item label="Mã số thuế" htmlFor="party-tax-code"><Input id="party-tax-code" disabled={!editable || !party} value={party?.taxCode ?? ''} onChange={(e) => { if (party) { setParty({ ...party, taxCode: e.target.value }); setDirty(true); } }} /></Form.Item></Col>
       <Col span={8}><Form.Item label="Tên đơn vị" htmlFor="party-name"><Input id="party-name" disabled={!editable || !party} value={party?.name ?? ''} onChange={(e) => { if (party) { setParty({ ...party, name: e.target.value }); setDirty(true); } }} /></Form.Item></Col>
       <Col span={10}><Form.Item label="Địa chỉ" htmlFor="party-address"><Input id="party-address" disabled={!editable || !party} value={party?.address ?? ''} onChange={(e) => { if (party) { setParty({ ...party, address: e.target.value }); setDirty(true); } }} /></Form.Item></Col>

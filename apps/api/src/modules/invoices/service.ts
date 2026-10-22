@@ -30,6 +30,7 @@ export const invoiceItemInput = z.object({
 });
 export const invoiceHeaderInput = z.object({
   formNo: optText(20), serial: optText(20), invoiceNo: z.string().trim().min(1).max(30), invoiceDate: dateIso, invoiceGroupCode: z.string().min(1), isImport: z.boolean().optional(),
+  employeeCode: z.string().min(1).optional(), // nhân viên bán hàng: ghi lên mọi dòng sổ cái của chứng từ, báo cáo bán hàng nhóm theo nhân viên lấy dòng đầu có nhân viên
   ...partyOverride, // ghi đè thông tin đối tượng trên hóa đơn (bỏ trống: lấy từ danh mục)
   adjustsInvoiceId: z.number().int().positive().optional(), // bắt buộc với giảm giá, trả lại (GGB, GGM): dòng của hóa đơn gốc
   declaredTax: z.record(z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG)).optional(), // thuế GTGT ghi trên hóa đơn theo mã thuế (VND), lệch số tính theo dòng thì dồn vào dòng thuế lớn nhất
@@ -186,7 +187,7 @@ async function buildInvoice(trx: Trx, tenantId: string, input0: InvoiceInput, op
     accountCode: l.accountCode, debit: l.debit, credit: l.credit, ...(!isVnd && { amountCurrency: l.amountCurrency, ...(l.fxRate && { fxRate: l.fxRate }) }),
     ...(l.partyCode && { partyCode: l.partyCode }), ...(l.description && { description: l.description }), ...(l.dueDate && { dueDate: l.dueDate }),
     ...(l.departmentCode && { departmentCode: l.departmentCode }), ...(l.projectCode && { projectCode: l.projectCode }), ...(l.costItemCode && { costItemCode: l.costItemCode }),
-    ...(l.itemCode && { itemCode: l.itemCode }), ...(l.warehouseCode && { warehouseCode: l.warehouseCode }) }));
+    ...(l.itemCode && { itemCode: l.itemCode }), ...(l.warehouseCode && { warehouseCode: l.warehouseCode }), ...(input.invoice.employeeCode && { employeeCode: input.invoice.employeeCode }) }));
   // Nhập khẩu: thuế NK Có 3333, TTĐB Có 3332 vào TK của dòng hàng (kho, hoặc 151 khi hóa đơn về trước hàng); GTGT hàng nhập Nợ 1331 / Có 33312. Dòng VND (cả khi hóa đơn ngoại tệ: thuế nộp theo tờ khai bằng đồng).
   const importedVnd = input.items.map(() => D(0));
   for (const [k, it] of input.items.entries()) {

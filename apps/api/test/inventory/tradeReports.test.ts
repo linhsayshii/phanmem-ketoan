@@ -1,3 +1,4 @@
+import ExcelJS from 'exceljs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createTestApp, type TestApp } from '../helpers.js';
 import { setupLedgerTenant } from '../invariants/helpers.js';
@@ -72,6 +73,35 @@ describe('báo cáo bán hàng, mua hàng', () => {
     const c = await login(['report.view'], []);
     const h = (await call('GET', `/api/reports/purchases?${Q}&groupBy=item`, undefined, c)).json();
     expect(h.costHidden).toBe(true); expect(h.rows[0]).not.toHaveProperty('landedCost');
-    for (const g of ['party', 'month']) expect((await call('GET', `/api/reports/purchases?${Q}&groupBy=${g}&format=xlsx`)).statusCode, g).toBe(g === 'x' ? 0 : 200);
+    for (const g of ['party', 'month']) expect((await call('GET', `/api/reports/purchases?${Q}&groupBy=${g}&format=xlsx`)).statusCode, g).toBe(200);
+  });
+
+  it('nhân viên bán hàng, chứng từ đảo khác kỳ, giảm giá bán, xlsx ẩn giá vốn', async () => {
+    for (const c of ['NV1', 'NV2']) await cat('employee', { code: c, name: `Nhân viên ${c}` });
+    await create(mh([sl('S1', '50', '10')], '2026-04-01'));
+    const withEmp = (e: string, body: ReturnType<typeof sale>) => ({ ...body, invoice: { ...body.invoice, employeeCode: e } });
+    const a = await create(withEmp('NV1', sale([sl('S1', '10', '20')], '2026-04-03')));
+    await create(withEmp('NV2', sale([sl('S1', '5', '20')], '2026-04-04')));
+    const sp = (await call('GET', '/api/reports/sales?from=2026-04-01&to=2026-04-30&groupBy=salesperson')).json();
+    expect(sp.rows.map((r: { key: string; netRevenue: string }) => [r.key, r.netRevenue])).toEqual([['NV1', '200'], ['NV2', '100']]);
+    // đảo sang kỳ sau: kỳ gốc vẫn thấy, kỳ đảo thấy số âm, cộng hai kỳ bằng 0
+    expect((await call('POST', `/api/vouchers/${a.id}/reverse`, { postingDate: '2026-05-02' })).statusCode).toBe(201);
+    const apr = (await call('GET', '/api/reports/sales?from=2026-04-01&to=2026-04-30&groupBy=month')).json();
+    const may = (await call('GET', '/api/reports/sales?from=2026-05-01&to=2026-05-31&groupBy=month')).json();
+    expect(apr.rows[0]).toMatchObject({ netRevenue: '300', soldQty: '15' });
+    expect(may.rows[0]).toMatchObject({ netRevenue: '-200', soldQty: '-10' });
+    // giảm giá bán (GGB) là khoản giảm trừ
+    const orig = await create({ ...sale([sl('S1', '1', '1000')], '2026-04-10') });
+    await create({ voucherType: 'GGB', postingDate: '2026-04-12', documentDate: '2026-04-12', partyCode: 'KH001', autoPost: true,
+      items: [{ description: 'Giảm giá', accountCode: '5113', amountCurrency: '100', taxCodes: ['V10'] }],
+      invoice: { serial: 'C26TBB', invoiceNo: `G${seq++}`, invoiceDate: '2026-04-12', invoiceGroupCode: '10', adjustsInvoiceId: orig.invoices[0].id } });
+    const gg = (await call('GET', '/api/reports/sales?from=2026-04-10&to=2026-04-12&groupBy=month')).json();
+    expect(gg.rows[0]).toMatchObject({ grossSales: '1000', returns: '100', netRevenue: '900' });
+    const c = await login(['report.view', 'report.print'], []);
+    const x = await ctx.app.inject({ method: 'GET', url: '/api/reports/sales?from=2026-04-01&to=2026-04-30&format=xlsx', headers: { cookie: c } });
+    expect(x.statusCode).toBe(200);
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(x.rawPayload as unknown as ArrayBuffer);
+    const text: string[] = []; wb.worksheets[0]!.eachRow((r) => r.eachCell((cell) => text.push(String(cell.value))));
+    expect(text).toContain('Doanh thu thuần'); expect(text).not.toContain('Lãi gộp'); expect(text).not.toContain('Giá vốn');
   });
 });
