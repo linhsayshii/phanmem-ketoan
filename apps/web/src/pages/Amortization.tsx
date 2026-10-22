@@ -12,7 +12,7 @@ interface FiscalYear { fiscalYear: number; dateFrom: string; dateTo: string; per
 interface Line { seq: number; fiscalYear: number; periodNo: number; amount: string; voucherId: string | null; voucherNo: string | null; voucherState: string | null }
 interface Schedule { id: number; sourceVoucherId: string | null; fromAccountCode: string; toAccountCode: string; total: string; periods: number; startYear: number; startPeriod: number; description: string | null;
   isActive: boolean; started: boolean; postedAmount: string; lines: Line[] }
-interface RunResult { fiscalYear: number; periodNo: number; created: { scheduleId: number; voucherId: string }[]; reversedVoucherIds: string[]; unchanged: number }
+interface RunResult { fiscalYear: number; periodNo: number; created: { scheduleId: number; voucherId: string }[]; reversedVoucherIds: string[]; unchanged: number; skipped?: { scheduleId: number; reason: string }[] }
 interface FormValues { fromAccountCode: string | null; toAccountCode: string | null; total: string | null; periods: number | null; startYear: number | null; startPeriod: number | null; description: string }
 
 const money = (s: string) => formatVnNumber(s, 0);
@@ -111,6 +111,8 @@ export default function AmortizationPage() {
         ? <Alert type="info" showIcon message={`Không có khoản phân bổ mới ở kỳ ${runOut.r.periodNo}/${runOut.r.fiscalYear}${runOut.r.unchanged ? ` (${runOut.r.unchanged} chứng từ đã ghi sổ, không đổi)` : ''}`} />
         : <Alert type="success" showIcon message={`Đã phân bổ kỳ ${runOut.r.periodNo}/${runOut.r.fiscalYear}: ${runOut.r.created.length} chứng từ${runOut.r.reversedVoucherIds.length ? `, đảo ${runOut.r.reversedVoucherIds.length} chứng từ cũ` : ''}`}
           description={runOut.r.created.map((c, i) => <span key={c.voucherId}>{i > 0 && ', '}<a href={`/chung-tu/PB/${c.voucherId}`} target="_blank" rel="noopener noreferrer">{runOut.nos[i] ?? c.voucherId}</a></span>)} />)}
+      {!!runOut?.r.skipped?.length && <Alert type="warning" showIcon message={`Bỏ qua ${runOut.r.skipped.length} lịch vì chứng từ gốc không còn ghi sổ`}
+        description={<ul style={{ margin: 0, paddingLeft: 18 }}>{runOut.r.skipped.map((k) => <li key={k.scheduleId}>Lịch {k.scheduleId}: {k.reason}</li>)}</ul>} />}
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <b>Lịch phân bổ</b>
         {can('amortization.create') && <Button onClick={() => open('new')}>Thêm lịch</Button>}

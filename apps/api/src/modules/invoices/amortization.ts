@@ -132,11 +132,18 @@ export async function runAmortization(trx: Trx, ctx: { tenantId: string; userId:
   if (orphan) throw new AppError('AMORTIZATION_PERIOD_LAYOUT', `Có lịch phân bổ trỏ vào kỳ ${orphan.period_no}/${fy} không tồn tại trong năm tài chính ${fy} (năm được tạo sau với số kỳ khác 12). Lịch chưa phân bổ kỳ nào: sửa lịch để xếp lại kỳ. Lịch đã phân bổ: ngừng lịch rồi lập lịch mới cho phần còn lại`, 409);
 
   const rows = await trx.selectFrom('amortization_line as l').innerJoin('amortization_schedule as s', 's.id', 'l.schedule_id').innerJoin('account as f', 'f.id', 's.from_account_id').innerJoin('account as t', 't.id', 's.to_account_id')
-    .leftJoin('voucher as v', 'v.id', 'l.voucher_id')
-    .select(['l.id', 'l.schedule_id', 'l.seq', 'l.amount', 'l.voucher_id', 'v.state', 's.description', 's.periods', 'f.code as from_code', 't.code as to_code'])
+    .leftJoin('voucher as v', 'v.id', 'l.voucher_id').leftJoin('voucher as src', 'src.id', 's.source_voucher_id')
+    .select(['l.id', 'l.schedule_id', 'l.seq', 'l.amount', 'l.voucher_id', 'v.state', 'src.state as src_state', 'src.voucher_no as src_no', 's.description', 's.periods', 'f.code as from_code', 't.code as to_code'])
     .where('l.fiscal_year', '=', fy).where('l.period_no', '=', pn).where('s.is_active', '=', true).orderBy('l.schedule_id').execute();
   const created: { scheduleId: number; voucherId: string }[] = []; const reversed: string[] = []; let unchanged = 0;
+  const skipped: { scheduleId: number; reason: string }[] = [];
+  const STATE_WORD: Record<string, string> = { draft: 'chưa ghi sổ', reversed: 'đã đảo', cancelled: 'đã hủy' };
   for (const r of rows) {
+    // Chứng từ gốc còn nhưng không ở trạng thái posted: không phân bổ tiếp (lịch có source_voucher_id NULL là lịch tự do, chạy như thường).
+    if (r.src_state && r.src_state !== 'posted') {
+      skipped.push({ scheduleId: r.schedule_id, reason: `Chứng từ gốc ${r.src_no ?? '(nháp)'} ${STATE_WORD[r.src_state] ?? r.src_state}: ngừng lịch hoặc sửa lịch` });
+      continue;
+    }
     if (r.voucher_id && r.state === 'posted') {
       const cur = await trx.selectFrom('voucher_line as l').innerJoin('account as a', 'a.id', 'l.account_id').select(['a.code', 'l.debit', 'l.credit']).where('l.voucher_id', '=', r.voucher_id).orderBy('l.line_no').execute();
       const key = (x: { code: string; debit: string; credit: string }[]) => x.map((l) => `${l.code}|${l.debit}|${l.credit}`).join(';');
@@ -153,5 +160,5 @@ export async function runAmortization(trx: Trx, ctx: { tenantId: string; userId:
     if (Number(upd.numUpdatedRows) !== 1) throw new AppError('AMORTIZATION_CONFLICT', 'Lịch phân bổ vừa bị sửa hoặc xóa trong lúc chạy kỳ, hãy chạy lại', 409);
     created.push({ scheduleId: r.schedule_id, voucherId: v.id });
   }
-  return { fiscalYear: fy, periodNo: pn, created, reversedVoucherIds: reversed, unchanged };
+  return { fiscalYear: fy, periodNo: pn, created, reversedVoucherIds: reversed, unchanged, skipped };
 }

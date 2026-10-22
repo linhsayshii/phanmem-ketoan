@@ -17,7 +17,7 @@ async function tenant() {
   const body = (o: object = {}) => ({ fromAccountCode: '3387', toAccountCode: '5113', total: '12000001', periods: 12, startYear: 2026, startPeriod: 1, description: 'Thu trước 12 tháng', ...o });
   const create = async (o: object = {}) => { const r = await call('POST', '/api/amortizations', body(o)); expect(r.statusCode, r.body).toBe(201); return r.json() as Sched; };
   const run = (periodNo: number, fiscalYear = 2026) => call('POST', '/api/amortizations/run', { fiscalYear, periodNo });
-  type RunOut = { created: { scheduleId: number; voucherId: string }[]; reversedVoucherIds: string[]; unchanged: number };
+  type RunOut = { created: { scheduleId: number; voucherId: string }[]; reversedVoucherIds: string[]; unchanged: number; skipped: { scheduleId: number; reason: string }[] };
   const runOk = async (periodNo: number) => { const r = await run(periodNo); expect(r.statusCode, r.body).toBe(200); return r.json() as RunOut; };
   const voucher = async (id: string) => (await call('GET', `/api/vouchers/${id}`)).json();
   const sched = async (id: number) => (await call('GET', `/api/amortizations/${id}`)).json() as Sched;
@@ -173,4 +173,26 @@ describe('lịch phân bổ', () => {
     expect(old.state).toBe('reversed'); expect((await t.voucher(old.reversedById)).postingDate).toBe('2026-01-31');
     expect((await t.voucher(out.created[0]!.voucherId)).lines[0].debit).toBe('900000');
   }, 60_000);
+
+  it('chứng từ gốc đã đảo hoặc còn nháp: chạy kỳ bỏ qua lịch (0 PB, skipped nêu số chứng từ); chứng từ gốc ghi sổ thì chạy', async () => {
+    const t = await tenant();
+    const hdb = (autoPost: boolean) => t.call('POST', '/api/invoices', { voucherType: 'HDB', postingDate: '2026-01-10', documentDate: '2026-01-10', partyCode: 'KH001', autoPost,
+      items: [{ description: 'Thu trước', accountCode: '3387', amountCurrency: '1200000', taxCodes: ['V0'] }], invoice: { serial: 'C26TAA', invoiceNo: `${Date.now()}`.slice(-7), invoiceDate: '2026-01-10', invoiceGroupCode: '10' } })
+      .then((r) => { expect(r.statusCode, r.body).toBe(201); return r.json() as { id: string; voucherNo: string | null }; });
+    const posted = await hdb(true);
+    const s = await t.create({ total: '1200000', sourceVoucherId: posted.id });
+    expect(await t.runOk(1)).toMatchObject({ skipped: [] }); // gốc đã ghi sổ: chạy bình thường
+    const rev = await t.call('POST', `/api/vouchers/${posted.id}/reverse`, { postingDate: '2026-02-10' });
+    expect(rev.statusCode, rev.body).toBe(201);
+    const out = await t.runOk(2);
+    expect(out.created).toEqual([]);
+    expect(out.skipped).toEqual([{ scheduleId: s.id, reason: `Chứng từ gốc ${posted.voucherNo} đã đảo: ngừng lịch hoặc sửa lịch` }]);
+    expect((await t.sched(s.id)).lines[1]!.voucherId).toBeNull();
+    // nháp: bỏ qua; tạo lịch rồi mới có nháp nên lập lịch gốc nháp trực tiếp
+    const draft = await hdb(false);
+    const d = await t.create({ total: '1200000', sourceVoucherId: draft.id });
+    const out2 = await t.runOk(3);
+    expect(out2.created.map((c) => c.scheduleId)).toEqual([]); // lịch s (gốc đã đảo) cũng bỏ qua
+    expect(out2.skipped.find((x) => x.scheduleId === d.id)!.reason).toBe('Chứng từ gốc (nháp) chưa ghi sổ: ngừng lịch hoặc sửa lịch');
+  }, 90_000);
 });
