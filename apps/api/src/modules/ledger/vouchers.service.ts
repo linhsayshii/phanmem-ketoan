@@ -421,6 +421,9 @@ export async function updatePostedMeta(trx: Trx, id: string, version: number, in
     const { regime } = await trx.selectFrom('fiscal_period').select('regime').where('fiscal_year', '=', v.fiscal_year).where('period_no', '=', v.period_no).executeTakeFirstOrThrow();
     await assertCashFlowCodes(trx, regime, coded.map((l) => ({ lineNo: l.lineNo, code: l.cashFlowCode, kind: kinds.get(l.lineNo) ?? null })));
   }
+  // Hạn cũ của các dòng gửi hạn: giao diện gửi lại hạn của mọi dòng khi lưu, chỉ dòng đổi hạn mới tính lại hạn khoản công nợ.
+  const dueSent = (input.lines ?? []).filter((l) => l.dueDate !== undefined);
+  const oldDue = new Map(dueSent.length ? (await trx.selectFrom('voucher_line').select(['line_no', 'due_date']).where('voucher_id', '=', id).where('line_no', 'in', dueSent.map((l) => l.lineNo)).execute()).map((r) => [r.line_no, r.due_date]) : []);
   for (const l of input.lines ?? []) {
     const set: Record<string, unknown> = {};
     if (l.description !== undefined) set['description'] = l.description;
@@ -436,7 +439,7 @@ export async function updatePostedMeta(trx: Trx, id: string, version: number, in
   }
   // Hạn thanh toán của khoản công nợ đi theo hạn của dòng (cùng thứ tự ưu tiên như fn_open_items_create), chỉ dòng có đổi hạn:
   // khoản khác giữ hạn đã tính lúc ghi sổ dù số ngày được nợ của đối tượng đã đổi.
-  const dueLines = (input.lines ?? []).filter((l) => l.dueDate !== undefined).map((l) => l.lineNo);
+  const dueLines = dueSent.filter((l) => (oldDue.get(l.lineNo) ?? null) !== (l.dueDate ?? null)).map((l) => l.lineNo);
   if (dueLines.length)
     await sql`UPDATE open_item o SET due_date = coalesce(l.due_date, v.due_date, o.doc_date + p.payment_term_days) FROM voucher_line l, voucher v, party p
       WHERE o.voucher_id = ${id}::uuid AND o.line_no = ANY(${dueLines}::int[]) AND l.id = o.voucher_line_id AND l.posting_date = o.line_posting_date AND v.id = o.voucher_id AND p.id = o.party_id`.execute(trx);
