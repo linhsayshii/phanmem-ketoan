@@ -210,3 +210,12 @@ Menu **Bán hàng, Báo cáo bán hàng** và **Mua hàng, Báo cáo mua hàng**
 - Nhóm theo nhà cung cấp, mặt hàng hoặc tháng.
 - Gồm hóa đơn mua hàng, trả lại hàng mua và giảm giá hàng mua, đảo tính như báo cáo bán hàng. Các cột: số lượng mua, số lượng trả lại, giá trị mua, chiết khấu, trả lại và giảm giá, giá trị thuần, thuế GTGT, thuế nhập khẩu, thuế tiêu thụ đặc biệt, GTGT hàng nhập khẩu, chi phí mua.
 - Chi phí mua là chi phí vận chuyển, bốc xếp... đã phân bổ bằng chứng từ Chi phí mua hàng, tính theo ngày ghi sổ của chứng từ đó; cột này chỉ hiện với người có quyền xem giá vốn.
+
+## Soát lỗi kho
+Vào Công cụ, Soát lỗi dữ liệu, chọn khoảng ngày; sáu quy tắc kho chạy cùng các quy tắc khác. Quy tắc có đánh dấu (giá) chỉ chạy với người có quyền xem giá vốn; người thiếu quyền thấy quy tắc ở danh sách "bỏ qua".
+- Phiếu xuất kho có giá vốn chưa cập nhật (giá): phiếu xuất của hàng - kho đã bị ghi sổ lùi sau lần Tính giá vốn. Chạy lại Tính giá vốn.
+- Giá trị lớp giá kho lệch số dư sổ cái (giá, mức lỗi): so với số dư tài khoản kho theo từng kho tại ngày cuối khoảng, giống Đối chiếu kế toán - thủ kho. Phiếu xuất chưa tính giá vốn chưa được trừ nên cũng làm lệch cho tới khi chạy Tính giá vốn.
+- Dòng hàng sai đơn vị tính hoặc quy đổi (mức lỗi): ĐVT không thuộc hàng, hoặc số lượng cơ sở khác số lượng nhân hệ số.
+- Tồn kho âm: tồn cuối ngày nhỏ hơn 0 (phiếu nhập cùng ngày được tính trước phiếu xuất); mỗi hàng - kho báo ngày âm đầu tiên trong khoảng.
+- Dòng tài khoản kho thiếu kho: dòng định khoản vào tài khoản kho chưa ghi kho nên không lên Thẻ kho và đối chiếu.
+- Tồn kho bằng 0 nhưng còn giá trị (giá, cảnh báo): bình thường khi xuất cố định giá hoặc theo lô; chỉ cần xem lại nếu không chủ ý.

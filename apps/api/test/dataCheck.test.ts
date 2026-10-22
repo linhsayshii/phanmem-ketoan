@@ -35,21 +35,21 @@ describe('soát lỗi', () => {
     expect(r.statusCode, r.body).toBe(200);
     const codes = (r.json().results as Res[]).map((x) => x.ruleCode);
     expect(codes).toEqual(expect.arrayContaining(['CT_KHONG_CO_DONG', 'CHUA_GHI_SO_TRONG_KY_KHOA', 'SO_DU_SAI_LOAI']));
-    // Cả 14 câu SQL hệ thống biên dịch và chạy được trên lược đồ thật (một câu hỏng sẽ hiện thành "Quy tắc lỗi"). CT_KHONG_CAN không có dữ liệu để báo vì DB đã chặn chứng từ lệch.
+    // Cả 20 câu SQL hệ thống biên dịch và chạy được trên lược đồ thật (một câu hỏng sẽ hiện thành "Quy tắc lỗi"). CT_KHONG_CAN không có dữ liệu để báo vì DB đã chặn chứng từ lệch.
     expect((r.json().results as Res[]).filter((x) => /Quy tắc lỗi/.test(x.message))).toEqual([]);
     // 4111 (dư Có) bị dư Nợ, 1111 và 1121 (dư Nợ) bị dư Có vì chưa có số dư đầu; 331 lưỡng tính thì không bị báo.
     const wrongSide = (r.json().results as Res[]).filter((x) => x.ruleCode === 'SO_DU_SAI_LOAI');
     expect(wrongSide.map((x) => x.ref).sort()).toEqual(['1111', '1121', '4111']);
-    expect(r.json().ran).toBe(14);
+    expect(r.json().ran).toBe(20);
     expect(r.json().skipped).toEqual([]); // chủ sở hữu có đủ cờ nhạy cảm
   }, 30_000);
 
-  it('mọi công ty có đủ 14 quy tắc hệ thống bật sẵn; app_user không gọi được hàm seed', async () => {
+  it('mọi công ty có đủ 20 quy tắc hệ thống bật sẵn; app_user không gọi được hàm seed', async () => {
     const rows = (await ctx.app.inject({ method: 'GET', url: '/api/catalogs/data_check_rule', headers: { cookie } })).json().rows as { code: string; is_system: boolean; is_enabled: boolean }[];
-    expect(rows.map((x) => x.code)).toEqual(['CHUA_GHI_SO_TRONG_KY_KHOA', 'CN_LECH_SO_CAI', 'CN_QUA_HAN', 'CN_THIEU_DOI_TUONG', 'CT_KHONG_CAN', 'CT_KHONG_CO_DONG', 'HD_THIEU_MST', 'HD_TRUNG', 'SO_DU_SAI_LOAI', 'THUE_8_HET_HIEU_LUC', 'THUE_LECH', 'TIEN_MAT_VUOT_NGUONG', 'TK_NH_THIEU', 'TK_TONG_HOP_TREN_DONG']);
+    expect(rows.map((x) => x.code)).toEqual(['CHUA_GHI_SO_TRONG_KY_KHOA', 'CN_LECH_SO_CAI', 'CN_QUA_HAN', 'CN_THIEU_DOI_TUONG', 'CT_KHONG_CAN', 'CT_KHONG_CO_DONG', 'HD_THIEU_MST', 'HD_TRUNG', 'KHO_HANG_THIEU_KHO', 'KHO_LECH_SO_CAI', 'KHO_SAI_DVT', 'KHO_TON_0_CON_GIA_TRI', 'KHO_TON_AM', 'KHO_XUAT_CHUA_GIA_VON', 'SO_DU_SAI_LOAI', 'THUE_8_HET_HIEU_LUC', 'THUE_LECH', 'TIEN_MAT_VUOT_NGUONG', 'TK_NH_THIEU', 'TK_TONG_HOP_TREN_DONG']);
     expect(rows.every((x) => x.is_system && x.is_enabled)).toBe(true);
     // Công ty tạo trước migration cũng được bổ sung (backfill): không công ty nào thiếu quy tắc hệ thống.
-    const thin = await sql<{ n: number }>`SELECT count(*)::int AS n FROM tenant t WHERE (SELECT count(*) FROM data_check_rule r WHERE r.tenant_id = t.id AND r.is_system) < 14`.execute(ctx.t.admin);
+    const thin = await sql<{ n: number }>`SELECT count(*)::int AS n FROM tenant t WHERE (SELECT count(*) FROM data_check_rule r WHERE r.tenant_id = t.id AND r.is_system) < 20`.execute(ctx.t.admin);
     expect(thin.rows[0]!.n).toBe(0);
     await expect(withTenant(ctx.t.db, { tenantId }, (trx) => sql`SELECT seed_data_check_rules(${tenantId}::uuid)`.execute(trx)))
       .rejects.toMatchObject({ code: '42501', message: expect.stringMatching(/permission denied for function seed_data_check_rules/) });

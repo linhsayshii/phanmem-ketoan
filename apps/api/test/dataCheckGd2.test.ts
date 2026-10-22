@@ -197,15 +197,16 @@ describe('soát lỗi GĐ2: cờ nhạy cảm trên quy tắc', () => {
     expect(owner.skipped).toEqual([]);
     expect(owner.results.map((x) => x.ruleCode)).toContain('CN_QUA_HAN');
     const reason = 'Bỏ qua do thiếu quyền xem công nợ';
-    const cost = { code: 'SO_DU_SAI_LOAI', reason: 'Bỏ qua do thiếu quyền xem giá vốn' }; // quy tắc GĐ1 này in số dư nên có thể lộ giá vốn
+    const why = 'Bỏ qua do thiếu quyền xem giá vốn';
+    const cost = ['SO_DU_SAI_LOAI', 'KHO_LECH_SO_CAI', 'KHO_TON_0_CON_GIA_TRI', 'KHO_XUAT_CHUA_GIA_VON'].map((code) => ({ code, reason: why })); // SO_DU_SAI_LOAI in số dư nên có thể lộ giá vốn; ba quy tắc kho (GĐ3) in giá trị tồn
     for (const flags of [[], ['view_receivable'], ['view_receivable', 'view_cost']]) {
       const r = await t.run([], { from: '2026-01-01', to: '2026-12-31' }, await login(t, flags));
-      expect(r.skipped, flags.join()).toEqual([{ code: 'CN_LECH_SO_CAI', reason }, { code: 'CN_QUA_HAN', reason }, ...(flags.includes('view_cost') ? [] : [cost])].sort((a, b) => a.code.localeCompare(b.code)));
+      expect(r.skipped, flags.join()).toEqual([{ code: 'CN_LECH_SO_CAI', reason }, { code: 'CN_QUA_HAN', reason }, ...(flags.includes('view_cost') ? [] : cost)].sort((a, b) => a.code.localeCompare(b.code)));
       expect(r.ran).toBe(owner.ran - r.skipped.length);
       expect(r.results.filter((x) => r.skipped.some((k) => k.code === x.ruleCode))).toEqual([]);
     }
     const noCost = await t.run([], { from: '2026-01-01', to: '2026-12-31' }, await login(t, ['view_receivable', 'view_payable']));
-    expect(noCost.skipped).toEqual([cost]);
+    expect(noCost.skipped).toEqual([...cost].sort((a, b) => a.code.localeCompare(b.code)));
     const all = await t.run([], { from: '2026-01-01', to: '2026-12-31' }, await login(t, ['view_receivable', 'view_payable', 'view_cost']));
     expect(all.skipped).toEqual([]); expect(all.ran).toBe(owner.ran);
   });
