@@ -508,6 +508,17 @@ describe('đánh giá lại số dư ngoại tệ cuối kỳ', () => {
     expect([(await t.residual(inv))?.cur, (await t.residual(rcv))?.cur]).toEqual(['10', '-10']); // cả hai khoản vẫn còn nguyên
   });
 
+  it('chạy lại đánh giá lại về đúng tỷ giá gốc (chênh 0, khoản con cũ đã đóng): đối trừ phiếu thu ngày 20/01 vẫn được, không báo SETTLEMENT_BEFORE_REVALUATION', async () => {
+    const t = await tenant();
+    const inv = await t.itemOf((await t.usdInvoice('2026-01-10', '10', '25000')).id);
+    const first = await t.revalOk(); // khoản con ghi sổ 31/01
+    expect(await t.revalOk({ rates: { USD: '25000' } })).toMatchObject({ voucherIds: [], reversedVoucherIds: first.voucherIds }); // đảo DG cũ, không sinh khoản con mới
+    const rcv = await t.itemOf((await t.usdReceipt('2026-01-20', '10', '25000')).id);
+    const s = await t.settle({ debitItemId: inv, creditItemId: rcv, amountCurrency: '10' });
+    expect(s.fxVoucherId).toBeNull();
+    expect([(await t.residual(inv))?.cur, (await t.residual(rcv))?.cur]).toEqual(['0', '0']);
+  });
+
   it('đảo một chứng từ có hai khoản đã đánh giá lại: cả hai khoản con đóng, Σ dư open_item = số dư 131 theo từng đối tượng', async () => {
     const t = await tenant();
     const [v1, v2] = [toVnd('1000', '25000'), toVnd('500', '25000')];
