@@ -128,13 +128,13 @@ async function insertItems(trx: Trx, tenantId: string, voucherId: string, b: Awa
 }
 
 type Ctx = { tenantId: string; userId: string; auth?: Auth };
-const header = (input: StockVoucherInput, ledger: S.LineInput[], b: { regime: string }): S.SystemVoucherInput => ({
+const header = (input: StockVoucherInput, ledger: S.LineInput[]): S.SystemVoucherInput => ({
   voucherType: input.voucherType, postingDate: input.postingDate, documentDate: input.documentDate ?? input.postingDate, description: input.description ?? null, partyCode: input.partyCode ?? null,
   currencyCode: 'VND', personName: input.personName ?? null, attachmentsCount: input.attachmentsCount ?? null, stockKind: input.stockKind, lines: ledger });
 
 export async function createStockVoucher(trx: Trx, ctx: Ctx, input: StockVoucherInput): Promise<StockVoucherDto> {
   const b = await build(trx, input, ctx.auth);
-  const v = await S.createStockVoucherHeader(trx, ctx, header(input, b.ledger, b));
+  const v = await S.createStockVoucherHeader(trx, ctx, header(input, b.ledger));
   await insertItems(trx, ctx.tenantId, v.id, b);
   return getStockVoucher(trx, v.id);
 }
@@ -142,7 +142,7 @@ export async function updateStockVoucher(trx: Trx, ctx: Ctx, id: string, version
   const cur = await trx.selectFrom('voucher').select('voucher_type').where('id', '=', id).executeTakeFirst();
   if (!cur || voucherTypeDef(cur.voucher_type)?.module !== 'inventory') throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy phiếu kho', 404);
   const b = await build(trx, input, ctx.auth);
-  const h = header(input, b.ledger, b);
+  const h = header(input, b.ledger);
   await S.updateStockDraftHeader(trx, id, version, { ...h, currencyCode: 'VND', lines: h.lines } as S.VoucherInput & { stockKind: string });
   await trx.deleteFrom('voucher_item_line').where('voucher_id', '=', id).execute();
   await insertItems(trx, ctx.tenantId, id, b);
@@ -150,6 +150,7 @@ export async function updateStockVoucher(trx: Trx, ctx: Ctx, id: string, version
 }
 
 export async function getStockVoucher(trx: Trx, id: string, auth?: Auth): Promise<StockVoucherDto> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { lines: _lines, ...v } = await S.getVoucher(trx, id);
   if (voucherTypeDef(v.voucherType)?.module !== 'inventory') throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy phiếu kho', 404);
   const kind = (await trx.selectFrom('voucher').select('stock_kind').where('id', '=', id).executeTakeFirstOrThrow()).stock_kind;

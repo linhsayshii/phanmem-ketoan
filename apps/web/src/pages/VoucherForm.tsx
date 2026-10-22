@@ -14,6 +14,7 @@ import { STATE_LABEL, typeLabel } from './VoucherList.js';
 import { SettleDialog, type SettleEntry, type SettleTarget } from './settleCommon.js';
 import { Attachments, iso, quickAdd, reportError, text } from './voucherCommon.js';
 import InvoiceEditor from './InvoiceForm.js';
+import StockVoucher from './StockVoucher.js';
 import { DECLARING_TYPES, DeclaredInvoices, clearPartySnapshot, declaredBody, declRowsOf, emptyDeclRow, type DeclRow } from './DeclaredInvoices.js';
 
 // Các trường *Name chỉ để hiển thị; còn lại (employeeCode, dueDate, extraDims...) được giữ nguyên khi lưu lại để không mất dữ liệu chứng từ lập từ nơi khác.
@@ -99,6 +100,7 @@ export default function VoucherPage() {
   const { type, id } = useParams({ strict: false }) as { type: string; id: string };
   const def = voucherTypeDef(type);
   if (!def) return <Alert type="error" showIcon message={`Không có loại chứng từ "${type}"`} />;
+  if (def.stockDirection) return <StockVoucher key={`${def.code}/${id}`} def={def} id={id} />; // phiếu nhập, xuất, chuyển kho: màn hình kho, gọi /api/stock-vouchers
   if (def.hasItems) return <InvoiceEditor key={`${def.code}/${id}`} def={def} id={id} />; // hóa đơn mua/bán, giảm giá: màn hình riêng có thuế và bút toán xem trước
   return <VoucherEditor key={`${def.code}/${id}`} def={def} id={id} />; // đổi chứng từ (kể cả moi -> id sau khi lưu) thì dựng lại toàn bộ trạng thái nhập
 }

@@ -71,6 +71,9 @@ export const MENU: MenuItem[] = [
     { key: 'item_group', label: 'Nhóm vật tư hàng hóa', to: '/danh-muc/item_group', permission: 'item.view' },
     { key: 'price_list', label: 'Bảng giá', to: '/kho/bang-gia', permission: 'price_list.view' },
     { key: 'warehouse', label: 'Kho', to: '/danh-muc/warehouse', permission: 'warehouse.view' },
+    { key: 'pnk', label: 'Phiếu nhập kho', to: '/chung-tu/PNK', permission: 'stock_voucher.view' },
+    { key: 'pxk', label: 'Phiếu xuất kho', to: '/chung-tu/PXK', permission: 'stock_voucher.view' },
+    { key: 'ck', label: 'Phiếu chuyển kho', to: '/chung-tu/CK', permission: 'stock_voucher.view' },
     { key: 'uom', label: 'Đơn vị tính', to: '/danh-muc/uom', permission: 'catalog.view' },
   ] },
   { key: 'chungtu', label: 'Chứng từ', to: '/chung-tu', children: [
