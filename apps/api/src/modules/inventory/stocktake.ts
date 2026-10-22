@@ -53,7 +53,9 @@ export async function listStocktakes(trx: Trx) { // shortcut: 200 biên bản g�
 // Tồn sổ (ĐVT cơ sở) theo (hàng, lô) đến hết ngày kiểm kê, chỉ chứng từ đã ghi sổ (stock_move). Bỏ mọi hàng tồn 0.
 async function bookOnHand(trx: Trx, warehouseId: number, date: string, itemId?: number) {
   const r = await sql<{ item_id: string; lot_no: string | null; q: string }>`SELECT item_id::text, lot_no, sum(CASE WHEN direction = 'in' THEN quantity ELSE -quantity END)::text AS q
-    FROM stock_move WHERE warehouse_id = ${warehouseId}::bigint AND posting_date <= ${date}::date ${itemId === undefined ? sql`` : sql`AND item_id = ${itemId}::bigint`}
+    FROM stock_move WHERE warehouse_id = ${warehouseId}::bigint AND posting_date <= ${date}::date
+      AND NOT EXISTS (SELECT 1 FROM voucher v WHERE v.id = stock_move.voucher_id AND v.source_doc_type = 'stocktake' AND v.state = 'reversed') -- phiếu điều chỉnh đã bị đảo (mở lại ở kỳ khóa): chứng từ đảo mang ngày sau ngày kiểm kê nên bỏ cả phiếu gốc
+      ${itemId === undefined ? sql`` : sql`AND item_id = ${itemId}::bigint`}
     GROUP BY item_id, lot_no HAVING sum(CASE WHEN direction = 'in' THEN quantity ELSE -quantity END) <> 0`.execute(trx);
   return new Map(r.rows.map((x) => [`${x.item_id}|${x.lot_no ?? ''}`, x.q]));
 }
@@ -82,6 +84,7 @@ export async function updateStocktake(trx: Trx, ctx: { tenantId: string }, id: s
     const it = items.get(l.itemCode);
     if (!it) throw new AppError('LOOKUP_NOT_FOUND', `Không có vật tư hàng hóa mã "${l.itemCode}"`, 404);
     if (it.kind === 'service') throw new AppError('VALIDATION', `"${l.itemCode}" là dịch vụ, không kiểm kê kho`, 400);
+    if (it.tracking === 'none' && l.lotNo) throw new AppError('LOT_NOT_TRACKED', `Hàng ${l.itemCode} không theo dõi theo lô, bỏ trống số lô`, 400);
     if (it.tracking !== 'none' && !l.lotNo) throw new AppError('LOT_REQUIRED', `Hàng ${l.itemCode} theo dõi theo lô, phải nhập số lô`, 400);
     const lot = l.lotNo || null;
     const cur = await trx.selectFrom('stocktake_line').select('id').where('stocktake_id', '=', id).where('item_id', '=', it.id).where(sql`coalesce(lot_no, '')`, '=', lot ?? '').executeTakeFirst();
@@ -153,22 +156,41 @@ export async function adjustStocktake(trx: Trx, ctx: Ctx, id: string): Promise<S
 }
 
 // ---- Biên bản kiểm kê: mẫu 05-VT chép số mẫu từ văn bản gốc (TT 133/2016, TT 99/2025); chế độ không có văn bản gốc thì không in dòng "Mẫu số". Không in đơn giá, thành tiền (giá vốn là dữ liệu nhạy cảm). ----
-export function renderStocktakeHtml(k: StocktakeDto, c: CompanyInfo): string {
+export function renderStocktakeHtml(k: StocktakeDto, c: CompanyInfo, regime = 'TT133'): string {
   const [y, m, d] = k.docDate.split('-'); const f = (v: string) => formatVnNumber(v, 4).replace(/,?0+$/, '').replace(/[.,]$/, '');
   const body = k.lines.map((l, i) => {
     const diff = l.diffQty === null ? null : D(l.diffQty);
     return `<tr>${cell(i + 1)}${cell(`${esc(l.itemCode)} - ${esc(l.itemName)}`)}${cell(esc(l.uomCode))}${cell(esc(l.lotNo ?? ''))}${cell(f(l.bookQty), 'num')}${cell(l.countedQty === null ? '' : f(l.countedQty), 'num')}`
       + `${cell(diff && diff.gt(0) ? f(diff.toFixed(4)) : '', 'num')}${cell(diff && diff.lt(0) ? f(diff.abs().toFixed(4)) : '', 'num')}${cell('')}</tr>`;
   }).join('');
-  const title = 'BIÊN BẢN KIỂM KÊ VẬT TƯ, CÔNG CỤ, SẢN PHẨM, HÀNG HÓA';
+  // Tiêu đề và người ký chép từ văn bản gốc: TT99 là biên bản tổng hợp, có Hội đồng kiểm kê; TT133 (và TT200, chưa có văn bản gốc nên không in số mẫu) dùng bản 133.
+  const t99 = regime === 'TT99';
+  const title = t99 ? 'BIÊN BẢN TỔNG HỢP KIỂM KÊ VẬT TƯ, CÔNG CỤ, SẢN PHẨM, HÀNG HÓA' : 'BIÊN BẢN KIỂM KÊ VẬT TƯ, CÔNG CỤ, SẢN PHẨM, HÀNG HÓA';
   const html = `<div class="cv">${header(c)}<h1>${title}</h1>
     <p>Số: <b>${k.no}</b> &nbsp; Thời điểm kiểm kê: ngày <b>${d}</b> tháng <b>${m}</b> năm <b>${y}</b></p>
     <p>Kho: <b>${esc(k.warehouseCode)} - ${esc(k.warehouseName)}</b></p>
-    <p>Ban kiểm kê gồm: ${DOTS}${DOTS}</p>
+    <p>${t99 ? 'Ban kiểm kê/Hội đồng kiểm kê gồm' : 'Ban kiểm kê gồm'}: ${DOTS}${DOTS}</p>
     <table class="grid"><thead><tr><th rowspan="2">STT</th><th rowspan="2">Mã, tên vật tư, hàng hóa</th><th rowspan="2">Đơn vị tính</th><th rowspan="2">Số lô</th><th rowspan="2">Số lượng theo sổ</th><th rowspan="2">Số lượng kiểm kê</th><th colspan="2">Chênh lệch</th><th rowspan="2">Ghi chú</th></tr><tr><th>Thừa</th><th>Thiếu</th></tr></thead><tbody>${body}</tbody></table>
     <p>- Ý kiến giải quyết số chênh lệch: ${k.note ? esc(k.note) : DOTS}</p>
-    ${sign(['Thủ kho', 'Kế toán', 'Trưởng ban kiểm kê'])}</div>`;
+    ${sign(['Giám đốc', 'Kế toán trưởng', 'Thủ kho', t99 ? 'Trưởng ban/Chủ tịch Hội đồng kiểm kê' : 'Trưởng ban kiểm kê'])}</div>`;
   return printShell(`${title} ${formatVnDate(k.docDate)}`, html);
+}
+
+// Mở lại biên bản đã điều chỉnh: kỳ mở thì bỏ ghi sổ rồi hủy phiếu điều chỉnh; kỳ đã khóa thì đảo (chứng từ đảo ghi sổ ở postingDate, kỳ đang mở). Phiếu cũ vẫn mang source_doc_id của biên bản và nằm trong audit_event.
+export async function reopenStocktake(trx: Trx, id: string, postingDate: string): Promise<StocktakeDto> {
+  const s = await load(trx, id, true);
+  if (s.status !== 'adjusted') throw new AppError('STOCKTAKE_NOT_ADJUSTED', 'Chỉ mở lại được biên bản đã điều chỉnh', 409);
+  const vs = await trx.selectFrom('stocktake_voucher as sv').innerJoin('voucher as v', 'v.id', 'sv.voucher_id').select(['v.id', 'v.state', 'v.posting_date']).where('sv.stocktake_id', '=', id).orderBy('v.id').execute();
+  for (const v of vs) {
+    if (v.state === 'posted') {
+      const p = await trx.selectFrom('fiscal_period').select('status').where('period_no', '>=', 1).where('period_no', '<=', 15).where('date_from', '<=', v.posting_date).where('date_to', '>=', v.posting_date).executeTakeFirst();
+      if (p?.status === 'open') { await sql`SELECT unpost_voucher(${v.id}::uuid)`.execute(trx); await sql`SELECT discard_voucher(${v.id}::uuid)`.execute(trx); }
+      else await S.reverseVoucher(trx, v.id, { postingDate, description: `Đảo điều chỉnh kiểm kê kho ngày ${formatVnDate(s.docDate)} (mở lại biên bản)` });
+    } else if (v.state === 'draft') await sql`SELECT discard_voucher(${v.id}::uuid)`.execute(trx);
+  }
+  await trx.deleteFrom('stocktake_voucher').where('stocktake_id', '=', id).execute();
+  await trx.updateTable('stocktake').set({ status: 'draft', adjusted_at: null }).where('id', '=', id).execute();
+  return load(trx, id);
 }
 
 const routes: FastifyPluginAsyncZod = async (app) => {
@@ -189,12 +211,18 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     notifyRecompute(app, req.auth!.tenantId!);
     return dto;
   });
+  app.post('/api/stocktakes/:id/reopen', { preHandler: app.requirePermission('stocktake.update'), schema: { params: idParam, body: z.object({ postingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).default({}) } }, async (req) => {
+    for (const p of ['stock_voucher.create', 'stock_voucher.post']) if (!req.auth!.permissions.has(p)) throw new AppError('FORBIDDEN', `Thiếu quyền ${p}`, 403);
+    const dto = await app.withOverride(req, (trx) => reopenStocktake(trx, req.params.id, req.body.postingDate ?? new Date().toISOString().slice(0, 10)));
+    notifyRecompute(app, req.auth!.tenantId!);
+    return dto;
+  });
   app.get('/api/stocktakes/:id/print', { preHandler: app.requirePermission('stocktake.view'), schema: { params: idParam, querystring: z.object({ format: z.enum(['html', 'pdf']).default('html') }) } }, async (req, reply) => {
     const { html, no } = await app.withTenant(req, async (trx) => {
       const k = await load(trx, req.params.id);
       const regime = await regimeOf(trx, { from: k.docDate, to: k.docDate });
       const f = voucherFormFor(regime, '05-VT');
-      return { no: k.no, html: renderStocktakeHtml(k, { ...(await companyInfo(trx, req.auth!.tenantId!, regime, '05-VT')), formNo: f?.formNo ?? '', issuedBy: f?.issuedBy ?? '' }) };
+      return { no: k.no, html: renderStocktakeHtml(k, { ...(await companyInfo(trx, req.auth!.tenantId!, regime, '05-VT')), formNo: f?.formNo ?? '', issuedBy: f?.issuedBy ?? '' }, regime) };
     }, READ_SNAPSHOT);
     if (req.query.format === 'html') return reply.type('text/html; charset=utf-8').send(html);
     return reply.type('application/pdf').header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(`kiem-ke-kho-${no}.pdf`)}`).send(await renderPdf(html));

@@ -53,6 +53,10 @@ export default function StocktakePage() {
     mutationFn: async () => { await save.mutateAsync(); return api<Doc>(`/api/stocktakes/${current!.id}/adjust`, { method: 'POST', json: {} }); },
     onSuccess: (d) => { open(d); void refresh(); void message.success('Đã lập và ghi sổ phiếu điều chỉnh'); }, onError: fail,
   });
+  const reopen = useMutation({
+    mutationFn: () => api<Doc>(`/api/stocktakes/${current!.id}/reopen`, { method: 'POST', json: {} }),
+    onSuccess: (d) => { open(d); void refresh(); void message.success('Đã mở lại biên bản, phiếu điều chỉnh đã được hủy hoặc đảo'); }, onError: fail,
+  });
   const remove = useMutation({
     mutationFn: (id: string) => api<void>(`/api/stocktakes/${id}`, { method: 'DELETE' }),
     onSuccess: () => { setCurrent(null); setRows([]); void refresh(); void message.success('Đã xóa biên bản'); }, onError: fail,
@@ -110,6 +114,9 @@ export default function StocktakePage() {
             {editable && can('stock_voucher.create') && can('stock_voucher.post') && (
               <Popconfirm title="Lập và ghi sổ phiếu nhập/xuất điều chỉnh?" description="Chỉ một lần; phiếu ghi sổ theo giá tạm tính." okText="Điều chỉnh" cancelText="Không" onConfirm={() => adjust.mutate()}>
                 <Button loading={adjust.isPending} disabled={!diffs.length}>Điều chỉnh chênh lệch</Button></Popconfirm>)}
+            {current.status === 'adjusted' && can('stocktake.update') && can('stock_voucher.create') && can('stock_voucher.post') && (
+              <Popconfirm title="Mở lại biên bản?" description="Phiếu điều chỉnh được bỏ ghi sổ và hủy (kỳ đã khóa thì đảo)." okText="Mở lại" cancelText="Không" onConfirm={() => reopen.mutate()}>
+                <Button loading={reopen.isPending}>Mở lại</Button></Popconfirm>)}
             {can('stocktake.view') && <Button onClick={() => window.open(`/api/stocktakes/${current.id}/print?format=pdf`, '_blank')}>In biên bản</Button>}
             {editable && can('stocktake.delete') && <Popconfirm title="Xóa biên bản kiểm kê này?" okText="Xóa" cancelText="Không" onConfirm={() => remove.mutate(current.id)}><Button danger>Xóa</Button></Popconfirm>}
           </Space>

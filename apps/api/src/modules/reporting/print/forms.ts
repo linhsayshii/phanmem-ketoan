@@ -24,8 +24,8 @@ const FORMS: Record<string, Record<string, string>> = {
   // Bảng kiểm kê quỹ: 08a - TT (VND) và 08b - TT (ngoại tệ), có trong văn bản gốc của cả TT 133/2016 và TT 99/2025.
   '08a-TT': { TT99: '08a - TT', TT133: '08a - TT' },
   '08b-TT': { TT99: '08b - TT', TT133: '08b - TT' },
-  // Biên bản kiểm kê vật tư, công cụ, sản phẩm, hàng hóa: 05-VT có trong văn bản gốc của cả TT 133/2016 (Phụ lục 3) và TT 99/2025.
-  '05-VT': { TT99: '05-VT', TT133: '05-VT' },
+  // Biên bản kiểm kê vật tư, công cụ, sản phẩm, hàng hóa (TT99: "Biên bản tổng hợp kiểm kê..."): "Mẫu số 05 - VT" có trong văn bản gốc của cả TT 133/2016 (Phụ lục 3) và TT 99/2025.
+  '05-VT': { TT99: '05 - VT', TT133: '05 - VT' }, // TT200: chưa có văn bản gốc đối chiếu nên không in số mẫu
 };
 // Chú thích dưới "Mẫu số" của chứng từ, đúng chữ trên mẫu (khác chú thích của sổ: TT99 ghi "Kèm theo", TT133 ghi "Ban hành theo").
 const VOUCHER_LEGEND: Record<string, string> = {

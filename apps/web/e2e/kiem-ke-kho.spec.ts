@@ -41,4 +41,7 @@ test('Kiểm kê kho: lập biên bản, nhập số đếm, lưu, điều chỉ
   await expect(page.getByText('Đã điều chỉnh bằng')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Điều chỉnh chênh lệch' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'In biên bản' })).toBeVisible();
+  await page.getByRole('button', { name: 'Mở lại', exact: true }).click();
+  await page.getByRole('button', { name: 'Mở lại', exact: true }).last().click();
+  await expect(page.getByRole('button', { name: 'Điều chỉnh chênh lệch' })).toBeVisible();
 });

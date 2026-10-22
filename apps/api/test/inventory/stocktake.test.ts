@@ -7,15 +7,15 @@ beforeAll(async () => { ctx = await createTestApp(); }, 60_000);
 afterAll(async () => { await ctx.close(); });
 
 // Kho K1, hàng A (không lô), hàng L (theo lô); nhập A 100 giá 1.000, L lô X1 10 giá 500 và lô X2 5 giá 500.
-async function tenant() {
+async function tenant(regime = 'TT133') {
   const { cookie, tenantId } = await bootstrapTenant(ctx, { code: `KK${Date.now()}${n++}` });
   const call = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, payload?: object, as = cookie) => ctx.app.inject({ method, url, headers: { cookie: as }, ...(payload ? { payload } : {}) });
   const cat = async (name: string, payload: object) => { const r = await call('POST', `/api/catalogs/${name}`, payload); expect(r.statusCode, r.body).toBe(201); };
-  expect((await call('POST', '/api/fiscal-years', { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' })).statusCode).toBe(201);
+  expect((await call('POST', '/api/fiscal-years', { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime })).statusCode).toBe(201);
   await cat('party', { code: 'NCC1', name: 'Nhà cung cấp một', is_vendor: true });
   await cat('warehouse', { code: 'K1', name: 'Kho một', costing_method: 'avg_period' });
-  await cat('item', { code: 'A', name: 'Hàng A', base_uom_code: 'CAI', kind: 'goods', tracking: 'none', inventory_account_code: '156' });
-  await cat('item', { code: 'L', name: 'Hàng L', base_uom_code: 'CAI', kind: 'goods', tracking: 'lot', inventory_account_code: '156' });
+  await cat('item', { code: 'A', name: 'Hàng A', base_uom_code: 'CAI', kind: 'goods', tracking: 'none', inventory_account_code: regime === 'TT200' ? '1561' : '156' });
+  await cat('item', { code: 'L', name: 'Hàng L', base_uom_code: 'CAI', kind: 'goods', tracking: 'lot', inventory_account_code: regime === 'TT200' ? '1561' : '156' });
   const pnk = async (itemCode: string, quantity: string, unitPrice: string, lotNo?: string) => {
     const r = await call('POST', '/api/stock-vouchers', { voucherType: 'PNK', stockKind: 'purchase', postingDate: '2026-05-02', warehouseCode: 'K1', partyCode: 'NCC1', items: [{ itemCode, uomCode: 'CAI', quantity, unitPrice, ...(lotNo ? { lotNo } : {}) }] });
     expect(r.statusCode, r.body).toBe(201); expect((await call('POST', `/api/vouchers/${r.json().id}/post`, {})).statusCode).toBe(200);
@@ -79,7 +79,62 @@ describe('Kiểm kê kho (T16)', () => {
     await t.count(s.id, [{ itemCode: 'A', countedQty: '97' }]);
     const p = await t.call('GET', `/api/stocktakes/${s.id}/print`);
     expect(p.statusCode).toBe(200);
-    expect(p.body).toContain('Mẫu số 05-VT'); expect(p.body).toContain('BIÊN BẢN KIỂM KÊ'); expect(p.body).not.toContain('100.000');
+    expect(p.body).toContain('Mẫu số 05 - VT'); expect(p.body).toContain('BIÊN BẢN KIỂM KÊ VẬT TƯ'); expect(p.body).not.toContain('TỔNG HỢP'); expect(p.body).toContain('Trưởng ban kiểm kê'); expect(p.body).not.toContain('100.000');
+  });
+
+  it('in biên bản theo chế độ: TT99 là biên bản tổng hợp có Hội đồng kiểm kê; TT200 chưa có văn bản gốc nên không in số mẫu', async () => {
+    const t99 = await tenant('TT99'); const s99 = await t99.make();
+    const p99 = (await t99.call('GET', `/api/stocktakes/${s99.id}/print`)).body;
+    expect(p99).toContain('Mẫu số 05 - VT'); expect(p99).toContain('BIÊN BẢN TỔNG HỢP KIỂM KÊ VẬT TƯ, CÔNG CỤ, SẢN PHẨM, HÀNG HÓA'); expect(p99).toContain('Trưởng ban/Chủ tịch Hội đồng kiểm kê'); expect(p99).toContain('Giám đốc');
+    const t200 = await tenant('TT200'); const s200 = await t200.make();
+    expect((await t200.call('GET', `/api/stocktakes/${s200.id}/print`)).body).not.toContain('Mẫu số');
+  });
+
+  it('hàng không theo lô mà nhập số lô: 400', async () => {
+    const t = await tenant(); const s = await t.make();
+    const r = await t.count(s.id, [{ itemCode: 'A', lotNo: 'Z', countedQty: '1' }]);
+    expect(r.statusCode).toBe(400); expect(r.json().error.code).toBe('LOT_NOT_TRACKED');
+  });
+
+  it('phiếu điều chỉnh không bỏ ghi, đảo, hủy, xóa được qua route chung', async () => {
+    const t = await tenant(); const s = await t.make();
+    await t.count(s.id, [{ itemCode: 'A', countedQty: '97' }]);
+    const [id] = (await t.call('POST', `/api/stocktakes/${s.id}/adjust`, {})).json().adjustVoucherIds as string[];
+    for (const [m, u, b] of [['POST', 'unpost', {}], ['POST', 'reverse', { postingDate: '2026-06-10' }], ['POST', 'discard', {}], ['DELETE', '', undefined]] as const) {
+      const r = await t.call(m, `/api/vouchers/${id}${u ? `/${u}` : ''}`, b);
+      expect(r.statusCode, u).toBe(409); expect(r.json().error.code).toBe('VOUCHER_SYSTEM_GENERATED'); expect(r.json().error.message).toContain('mở lại biên bản');
+    }
+  });
+
+  it('mở lại trong kỳ mở: phiếu bị hủy, tồn về như cũ, điều chỉnh lại được', async () => {
+    const t = await tenant(); const s = await t.make();
+    await t.count(s.id, [{ itemCode: 'A', countedQty: '97' }]);
+    const first = (await t.call('POST', `/api/stocktakes/${s.id}/adjust`, {})).json().adjustVoucherIds as string[];
+    const onHand = async () => (await t.call('GET', '/api/inventory/on-hand?itemCode=A&warehouseCode=K1&date=2026-12-31')).json().quantity as string;
+    expect(Number(await onHand())).toBe(97);
+    const r = await t.call('POST', `/api/stocktakes/${s.id}/reopen`, {});
+    expect(r.statusCode, r.body).toBe(200); expect(r.json().status).toBe('draft'); expect(r.json().adjustVoucherIds).toEqual([]);
+    expect((await t.vouchers(first)).map((v) => v.state)).toEqual(['cancelled']);
+    expect(Number(await onHand())).toBe(100);
+    expect((await t.call('POST', `/api/stocktakes/${s.id}/reopen`, {})).statusCode).toBe(409);
+    await t.count(s.id, [{ itemCode: 'A', countedQty: '95' }]);
+    expect((await t.call('POST', `/api/stocktakes/${s.id}/adjust`, {})).statusCode).toBe(200);
+    expect(Number(await onHand())).toBe(95);
+  });
+
+  it('mở lại khi kỳ đã khóa: phiếu được đảo, tồn về như cũ, điều chỉnh lại được', async () => {
+    const t = await tenant(); const s = await t.make();
+    await t.count(s.id, [{ itemCode: 'A', countedQty: '97' }]);
+    const first = (await t.call('POST', `/api/stocktakes/${s.id}/adjust`, {})).json().adjustVoucherIds as string[];
+    await sql`UPDATE fiscal_period SET status = 'soft_locked' WHERE tenant_id = ${t.tenantId}::uuid AND fiscal_year = 2026 AND period_no = 5`.execute(ctx.t.admin);
+    const onHand = async () => (await t.call('GET', '/api/inventory/on-hand?itemCode=A&warehouseCode=K1&date=2026-12-31')).json().quantity as string;
+    const r = await t.call('POST', `/api/stocktakes/${s.id}/reopen`, { postingDate: '2026-06-10' });
+    expect(r.statusCode, r.body).toBe(200); expect(r.json().status).toBe('draft');
+    expect((await t.vouchers(first)).map((v) => v.state)).toEqual(['reversed']);
+    expect(Number(await onHand())).toBe(100);
+    await t.count(s.id, [{ itemCode: 'A', countedQty: '98' }]);
+    expect((await t.call('POST', `/api/stocktakes/${s.id}/adjust`, {})).statusCode).toBe(200); // kỳ khóa mềm: người có quyền vẫn ghi sổ
+    expect(Number(await onHand())).toBe(98);
   });
 
   it('người không có view_cost không điều chỉnh được (403), vẫn xem được kiểm kê', async () => {

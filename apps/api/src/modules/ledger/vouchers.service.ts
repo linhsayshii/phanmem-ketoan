@@ -280,6 +280,7 @@ const SYSTEM_MSG: Record<string, string> = {
   amortization: 'Chứng từ phân bổ do hệ thống sinh; thao tác ở chức năng phân bổ',
   costing_run: 'Chứng từ giá vốn do hệ thống sinh; tính lại ở màn hình Tính giá vốn (đảo chứng từ cũ, sinh chứng từ mới)',
 };
+SYSTEM_MSG.stocktake = 'Chứng từ sinh từ biên bản kiểm kê; mở lại biên bản để hủy điều chỉnh';
 const failIfSystem = (sourceDocType: string | null) => {
   const msg = sourceDocType ? SYSTEM_MSG[sourceDocType] : undefined;
   if (msg) throw new AppError('VOUCHER_SYSTEM_GENERATED', msg, 409);

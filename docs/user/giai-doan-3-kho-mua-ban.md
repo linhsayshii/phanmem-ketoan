@@ -160,6 +160,7 @@ Vào **Kho > Kiểm kê kho** (`/kho/kiem-ke`).
    - Hàng thừa: "Chưa rõ nguyên nhân" ghi Có TK 3381; "Thừa ghi thu nhập khác" ghi Có TK 711.
    - Hàng thiếu: "Chưa rõ nguyên nhân" ghi Nợ TK 1381; "Trong định mức" ghi Nợ TK 632; "Mất mát" ghi Nợ TK 811.
 4. Bấm **Điều chỉnh chênh lệch**. Hệ thống lập và ghi sổ ngay một Phiếu nhập kho (hàng thừa) và một Phiếu xuất kho (hàng thiếu), giá trị theo giá tạm tính của hàng. Chỉ điều chỉnh được một lần; biên bản chuyển sang "Đã điều chỉnh" và không sửa được nữa. Nếu kỳ đã khóa sổ hoặc tồn kho sẽ âm, việc điều chỉnh bị từ chối và biên bản vẫn ở trạng thái nháp.
-5. **In biên bản** theo Mẫu số 05-VT (Biên bản kiểm kê vật tư, công cụ, sản phẩm, hàng hóa). Biên bản không in giá trị.
+5. **In biên bản** theo Mẫu số 05 - VT của chế độ đang dùng (TT133: Biên bản kiểm kê vật tư, công cụ, sản phẩm, hàng hóa; TT99: Biên bản tổng hợp kiểm kê...). Chế độ TT200 in không có số mẫu. Biên bản không in giá trị.
+6. **Mở lại** biên bản đã điều chỉnh nếu cần đếm lại: phiếu điều chỉnh được bỏ ghi sổ và hủy (kỳ đã khóa sổ thì đảo, ngày đảo là hôm nay, phải thuộc kỳ đang mở). Không thao tác trực tiếp trên phiếu điều chỉnh ở màn hình Chứng từ.
 
 Quyền: xem, lập, sửa, xóa biên bản theo nhóm quyền kiểm kê kho; điều chỉnh cần thêm quyền lập và ghi sổ phiếu kho, và cờ xem giá vốn.
