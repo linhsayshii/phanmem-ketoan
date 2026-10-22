@@ -105,5 +105,5 @@ Kế hoạch: `2026-10-22-giai-doan-3-chi-tiet.md`. Đánh số tiếp GĐ2 (k�
 269. Sửa hợp đồng điều chỉnh giá: bỏ ghi sổ MH/TLM đã tạo lớp điều chỉnh (tổng khác 0) mà có lần tính giá vốn `done` phủ ngày nhập (cùng quy tắc `fn_stock_mark_stale_at`) thì báo `STOCK_COST_ADJUSTED`, phải đảo. Trường hợp tổng lớp bằng 0 (chạy dây chuyền) giữ nguyên.
 270. Route chung dùng hàm "chứng từ phát sinh kho" (module inventory hoặc MH, TLM) để che tổng tiền danh sách khi thiếu `view_cost`, chặn in mẫu 01-VT/02-VT (`PRINT_FORM_NOT_READY` đến Task 19) và đặt thứ tự trong ngày. `POST /api/invoices` với `autoPost` kiểm `stock_voucher.post` và trả cảnh báo tồn âm như route ghi sổ.
 271. PNK có `sourceInvoiceIds`: tài khoản Có cố định 151, đổi sang tài khoản khác báo 400.
-272. Hoãn: hàng về trước đúng giá tạm tính và thuế 0% làm hóa đơn không có dòng sổ nào (`INVOICE_EMPTY`); chưa kiểm đối tượng giữa PNK và MH hóa đơn về trước.
+272. Hoãn: hàng về trước đúng giá tạm tính và thuế 0% làm hóa đơn không có dòng sổ nào (`INVOICE_EMPTY`). (Kiểm đối tượng giữa PNK và MH hóa đơn về trước đã làm ở vòng sửa 2, f5998d8.)
 273. Hoãn, giới hạn ghép: hàng về trước ghép đúng số lượng, mỗi dòng PNK ghép một dòng MH; TLM có thể khác lô với dòng gốc.
