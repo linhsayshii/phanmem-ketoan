@@ -211,4 +211,45 @@ describe('mua hàng hóa (MH, TLM)', () => {
     const made = await create(mh([line('A1', '1', '10')]));
     const pr = await call('GET', `/api/vouchers/${made.id}/print`); expect(pr.statusCode, pr.body).toBe(200); expect(pr.body).toContain('PHIẾU NHẬP KHO');
   });
+
+  it('MH -> CPM -> TLM: trả theo giá hóa đơn (331/156/1331), chi phí mua của số trả rời kho Nợ 632 / Có 156; lớp = sổ cái', async () => {
+    await cat('item', { code: 'L1', name: 'Hàng L1', base_uom_code: 'CAI', kind: 'goods' });
+    await cat('party', { code: 'VC9', name: 'Vận chuyển 9', is_vendor: true });
+    const bal = async (item: string) => { const cr = await call('POST', '/api/inventory/costing-runs', { periodFrom: '2026-03-01', periodTo: '2026-03-31' }); expect(cr.statusCode, cr.body).toBe(200); return (await sql<{ ledger: string; layers: string; qty: string }>`SELECT
+        (SELECT coalesce(sum(l.debit - l.credit), 0) FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id JOIN item i ON i.id = l.item_id WHERE v.state IN ('posted','reversed') AND a.code = '156' AND i.code = ${item})::text AS ledger,
+        (SELECT coalesce(sum(c.remaining_value), 0) FROM stock_cost_layer c JOIN item i ON i.id = c.item_id WHERE i.code = ${item})::text AS layers,
+        (SELECT coalesce(sum(CASE m.direction WHEN 'in' THEN m.quantity ELSE -m.quantity END), 0) FROM stock_move m JOIN item i ON i.id = m.item_id WHERE i.code = ${item})::text AS qty`.execute(ctx.t.admin)).rows[0]!; };
+    const orig = await create(mh([line('L1', '10', '100')]));
+    const c = await call('POST', '/api/landed-costs', { postingDate: '2026-03-02', partyCode: 'VC9', basis: 'value', receiptVoucherIds: [orig.id], autoPost: true, costLines: [{ accountCode: '331', amount: '200' }] });
+    expect(c.statusCode, c.body).toBe(201);
+    // trả 50%: 5 cái ở giá hóa đơn 100; chi phí mua chuyển ra 100
+    const half = await call('POST', '/api/invoices', tlm('L1', orig.items[0].id, orig.invoices[0].id, '5', '500', { autoPost: true }));
+    expect(half.statusCode, half.body).toBe(201);
+    expect(shape(half.json())).toEqual(['1331:0:50', '156:0:100', '156:0:500', '331:550:0', '632:100:0']);
+    expect(await bal('L1')).toEqual({ ledger: '600', layers: '600', qty: '5.0000' });
+    // trả nốt 5 cái: nhận phần chi phí mua còn lại (100), giá hóa đơn vẫn đúng 500
+    const rest = await call('POST', '/api/invoices', tlm('L1', orig.items[0].id, orig.invoices[0].id, '5', '500', { autoPost: true }));
+    expect(rest.statusCode, rest.body).toBe(201);
+    expect(shape(rest.json())).toEqual(['1331:0:50', '156:0:100', '156:0:500', '331:550:0', '632:100:0']);
+    expect(await bal('L1')).toEqual({ ledger: '0', layers: '0', qty: '0.0000' });
+    // đảo phiếu trả cuối: lớp và sổ cái cùng quay về 600
+    const rv = await call('POST', `/api/vouchers/${rest.json().id}/reverse`, { postingDate: '2026-03-12' }); expect(rv.statusCode, rv.body).toBe(201);
+    expect(await bal('L1')).toEqual({ ledger: '600', layers: '600', qty: '5.0000' });
+  });
+
+  it('MH 1.000 + VAT 100, CPM 200, TLM trả hết ở giá 1.000: Nợ 331 1.100 / Có 156 1.000 / Có 1331 100 và Nợ 632 200 / Có 156 200', async () => {
+    await cat('item', { code: 'L2', name: 'Hàng L2', base_uom_code: 'CAI', kind: 'goods' });
+    const orig = await create(mh([line('L2', '10', '100')]));
+    const c = await call('POST', '/api/landed-costs', { postingDate: '2026-03-02', partyCode: 'VC9', basis: 'value', receiptVoucherIds: [orig.id], autoPost: true, costLines: [{ accountCode: '331', amount: '200' }] });
+    expect(c.statusCode, c.body).toBe(201);
+    const r = await call('POST', '/api/invoices', tlm('L2', orig.items[0].id, orig.invoices[0].id, '10', '1000', { autoPost: true }));
+    expect(r.statusCode, r.body).toBe(201);
+    expect(shape(r.json())).toEqual(['1331:0:100', '156:0:1000', '156:0:200', '331:1100:0', '632:200:0']);
+    const cr = await call('POST', '/api/inventory/costing-runs', { periodFrom: '2026-03-01', periodTo: '2026-03-31' }); expect(cr.statusCode, cr.body).toBe(200);
+    const b = (await sql<{ q: string; l: string; c: string }>`SELECT
+        (SELECT coalesce(sum(CASE m.direction WHEN 'in' THEN m.quantity ELSE -m.quantity END), 0) FROM stock_move m JOIN item i ON i.id = m.item_id WHERE i.code = 'L2')::text AS q,
+        (SELECT coalesce(sum(l.debit - l.credit), 0) FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id JOIN item i ON i.id = l.item_id WHERE v.state = 'posted' AND a.code = '156' AND i.code = 'L2')::text AS l,
+        (SELECT coalesce(sum(c.remaining_value), 0) FROM stock_cost_layer c JOIN item i ON i.id = c.item_id WHERE i.code = 'L2')::text AS c`.execute(ctx.t.admin)).rows[0]!;
+    expect(b).toEqual({ q: '0.0000', l: '0', c: '0' });
+  });
 });

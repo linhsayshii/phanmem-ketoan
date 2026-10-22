@@ -202,6 +202,11 @@ async function buildInvoice(trx: Trx, tenantId: string, input0: InvoiceInput, op
     if (it.vatImport && D(it.vatImport).gt(0))
       lines.push({ accountCode: '1331', debit: it.vatImport, credit: '0', ...vndLine, description: `Thuế GTGT hàng nhập khẩu dòng ${k + 1}` }, { accountCode: '33312', debit: '0', credit: it.vatImport, ...vndLine, description: `Thuế GTGT hàng nhập khẩu dòng ${k + 1}` });
   }
+  for (const pl of purchase.lines) { // TLM: chi phí mua phân bổ cho số lượng trả rời kho cùng phiếu trả (Nợ 632 / Có TK kho)
+    if (!pl?.landedOut) continue;
+    lines.push({ accountCode: '632', debit: pl.landedOut, credit: '0', description: 'Chi phí mua hàng của hàng trả lại' },
+      { accountCode: pl.accountCode, debit: '0', credit: pl.landedOut, itemCode: pl.itemCode, warehouseCode: pl.warehouseCode!, description: 'Chi phí mua hàng của hàng trả lại' });
+  }
   if (sale) for (const k of input.items.keys()) lines.push(...sale.costLines[k]!); // giá vốn tạm tính của dòng bán, nhập lại của dòng trả
   const voucher: VoucherInput = { voucherType: input.voucherType, postingDate: input.postingDate, documentDate: input.documentDate, description: input.description ?? null, partyCode: input.partyCode,
     currencyCode: input.currencyCode, ...(rate && { fxRate: rate }), ...(dueDate && { dueDate }), ...(input.idempotencyKey && { idempotencyKey: input.idempotencyKey }), lines,

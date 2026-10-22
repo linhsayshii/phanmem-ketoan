@@ -44,7 +44,7 @@ async function receiptLines(trx: Trx, where: ReturnType<typeof sql>): Promise<Re
     SELECT l.id::int AS id, v.id AS "voucherId", v.voucher_no AS "voucherNo", v.posting_date::text AS "postingDate", l.line_no AS "lineNo", i.code AS "itemCode", i.name AS "itemName", w.code AS "warehouseCode",
       trim_scale(m.quantity)::text AS quantity, a.code AS "accountCode",
       (SELECT coalesce(sum(c.value), 0) FROM stock_cost_layer c LEFT JOIN voucher cv ON cv.id = c.voucher_id
-        WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND (c.kind = 'receipt' OR (c.kind = 'adjustment' AND cv.voucher_type IN ('MH', 'TLM'))))::text AS value
+        WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND (c.kind = 'receipt' OR (c.kind = 'adjustment' AND cv.voucher_type IN ('MH', 'TLM') AND NOT c.landed)))::text AS value
     FROM stock_move m JOIN voucher v ON v.id = m.voucher_id JOIN voucher_item_line l ON l.tenant_id = m.tenant_id AND l.id = m.item_line_id
       JOIN item i ON i.id = m.item_id JOIN warehouse w ON w.id = m.warehouse_id JOIN account a ON a.id = coalesce(l.debit_account_id, l.account_id)
     WHERE m.direction = 'in' AND m.transfer_id IS NULL AND m.reversal_of IS NULL AND ${where}

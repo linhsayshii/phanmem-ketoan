@@ -12,7 +12,7 @@ type Auth = { sensitive: Set<string>; permissions: Set<string> };
 
 // Dòng hàng của hóa đơn mua hàng hóa (MH) và trả lại, giảm giá hàng mua (TLM) sau khi đối chiếu kho: tài khoản của dòng cơ sở, hàng, kho, giá tạm tính đã ghi ở phiếu nhập
 // (offsetVnd, chỉ MH hàng về trước) và các cột kho/liên kết của dòng hàng (voucher_item_line). Tài khoản định danh bằng mã, postItems tra id theo chế độ của năm.
-export interface PurchaseLine { accountCode: string; itemCode: string; warehouseCode: string | null; offsetVnd?: string; debitCode?: string; creditCode?: string; row: Row }
+export interface PurchaseLine { accountCode: string; itemCode: string; warehouseCode: string | null; offsetVnd?: string; landedOut?: string; debitCode?: string; creditCode?: string; row: Row }
 export interface PurchaseResult { lines: (PurchaseLine | null)[]; receiptState: string | null; warnings: { code: string; message: string; lineNo?: number }[] }
 
 const round0 = (d: Decimal) => d.toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
@@ -62,6 +62,7 @@ export async function resolvePurchase(trx: Trx, a: { input: InvoiceInput; regime
   }
   // Phiếu nhập kho theo hóa đơn: dòng MH hàng về sau được phiếu khác tham chiếu; kiểm ở sourceInvoiceIds của phiếu kho, không ở đây.
 
+  const landedTaken = new Map<number, Decimal>(); // chi phí mua đã chuyển ra ở các dòng trước của cùng hóa đơn
   const returning = new Map<number, Decimal>(); // số lượng trả cộng dồn theo dòng nhập trong cùng hóa đơn
   const lineNo = (k: number) => k + 1;
   for (const k of idx) {
@@ -84,9 +85,12 @@ export async function resolvePurchase(trx: Trx, a: { input: InvoiceInput; regime
         throw bad('PURCHASE_RETURN_SOURCE_INVALID', `Dòng ${n}: dòng gốc phải là dòng hàng ${it.itemCode} đã ghi sổ của hóa đơn mua hàng hóa hoặc phiếu nhập kho`, 409);
       if (src.party_id !== a.partyId) throw bad('PURCHASE_RETURN_PARTY_MISMATCH', `Dòng ${n}: chứng từ gốc của nhà cung cấp khác với hóa đơn trả lại, giảm giá`, 409);
       const lineId = src.voucher_type === 'MH' && src.receipt_state === 'goods_first' ? src.link_line_id : src.id; // hàng về trước: lô nhập nằm ở dòng phiếu nhập
-      const mv = lineId === null ? undefined : (await sql<{ wh_id: string; qty: string; lot: string | null; value: string }>`
+      const mv = lineId === null ? undefined : (await sql<{ wh_id: string; qty: string; lot: string | null; value: string; landed: string }>`
         SELECT m.warehouse_id::text AS wh_id, m.quantity::text AS qty, m.lot_no AS lot,
-          (SELECT coalesce(sum(c.value), 0)::text FROM stock_cost_layer c WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND c.kind IN ('receipt', 'adjustment')) AS value
+          (SELECT coalesce(sum(c.value), 0)::text FROM stock_cost_layer c LEFT JOIN voucher cv ON cv.id = c.voucher_id
+            WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND (c.kind = 'receipt' OR (c.kind = 'adjustment' AND cv.voucher_type IN ('MH', 'TLM') AND NOT c.landed))) AS value,
+          (SELECT coalesce(sum(c.value), 0)::text FROM stock_cost_layer c LEFT JOIN voucher cv ON cv.id = c.voucher_id
+            WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND c.kind = 'adjustment' AND (c.landed OR cv.voucher_type = 'CPM')) AS landed
         FROM stock_move m WHERE m.item_line_id = ${lineId} AND m.direction = 'in' AND m.reversal_of IS NULL AND m.transfer_id IS NULL`.execute(trx)).rows[0];
       if (!mv || lineId === null) throw bad('PURCHASE_RETURN_SOURCE_INVALID', `Dòng ${n}: dòng gốc chưa nhập kho (hóa đơn về trước hàng); hãy lập phiếu nhập kho theo hóa đơn trước`, 409);
       const wh = await whById(mv.wh_id); const invCode = wh.inv_code ?? item.inv_code ?? '156';
@@ -101,16 +105,22 @@ export async function resolvePurchase(trx: Trx, a: { input: InvoiceInput; regime
       }
       needQty();
       // Tổng số lượng trả (nháp và đã ghi sổ, gồm các dòng khác của chính hóa đơn này) không vượt số lượng nhập của lô.
-      const prior = await trx.selectFrom('voucher_item_line as l').innerJoin('voucher as v', 'v.id', 'l.voucher_id').select('l.base_quantity').where('l.link_line_id', '=', lineId).where('l.direction', '=', 'out')
+      const prior = await trx.selectFrom('voucher_item_line as l').innerJoin('voucher as v', 'v.id', 'l.voucher_id').select(['l.base_quantity', 'l.landed_cost_out', 'v.state']).where('l.link_line_id', '=', lineId).where('l.direction', '=', 'out')
         .where('v.voucher_type', '=', 'TLM').where('v.state', 'in', ['draft', 'posted']).$if(!!a.selfId, (q) => q.where('l.voucher_id', '<>', a.selfId!)).execute();
-      const returned = prior.reduce((s, r) => s.plus(r.base_quantity ?? 0), D(0)).plus(returning.get(lineId) ?? 0).plus(base!);
+      const before = prior.reduce((s, r) => s.plus(r.base_quantity ?? 0), D(0)).plus(returning.get(lineId) ?? 0);
+      const returned = before.plus(base!);
       if (returned.gt(mv.qty)) throw bad('RETURN_EXCEEDS_RECEIPT', `Dòng ${n}: tổng số lượng trả ${returned.toString()} vượt số lượng đã nhập ${D(mv.qty).toString()}`, 409);
       returning.set(lineId, D(returning.get(lineId) ?? 0).plus(base!));
+      // Phần chi phí mua còn lại trong lô (lớp CPM và lớp chuyển ra của lần trả đã ghi sổ, trừ lần trả nháp/cùng hóa đơn chưa vào lớp), chia theo số lượng còn lại; lần trả hết nhận phần dư.
+      const landedLeft = D(mv.landed).minus(prior.filter((r) => r.state === 'draft').reduce((s, r) => s.plus(r.landed_cost_out), D(0))).minus(landedTaken.get(lineId) ?? 0);
+      const landedOut = returned.eq(mv.qty) ? landedLeft : round0(landedLeft.times(base!).div(D(mv.qty).minus(before)));
+      landedTaken.set(lineId, D(landedTaken.get(lineId) ?? 0).plus(landedOut));
       const unitCost = D(mv.value).div(mv.qty).toDecimalPlaces(4, Decimal.ROUND_HALF_UP);
       const expected = round0(D(base!).times(unitCost));
       if (!net.eq(expected)) throw bad('PURCHASE_RETURN_AMOUNT_MISMATCH', `Dòng ${n}: tiền trả lại hàng phải bằng giá nhập gốc ${unitCost.toFixed(4)} × ${base} = ${expected.toFixed(0)} đồng (đang nhập ${net.toFixed(0)}); chênh lệch giá ghi giảm giá riêng`);
       out[k] = { accountCode: invCode, itemCode: item.code, warehouseCode: wh.code, debitCode: a.counterAccountCode, creditCode: invCode,
-        row: { item_id: item.id, ...unit, warehouse_id: wh.id, direction: 'out', lot_no: it.lotNo || mv.lot, unit_cost: unitCost.toFixed(4), fixed_cost: true, link_line_id: lineId } };
+        ...(landedOut.gt(0) && { landedOut: landedOut.toFixed(0) }),
+        row: { item_id: item.id, ...unit, warehouse_id: wh.id, direction: 'out', lot_no: it.lotNo || mv.lot, unit_cost: unitCost.toFixed(4), fixed_cost: true, link_line_id: lineId, landed_cost_out: landedOut.gt(0) ? landedOut.toFixed(0) : '0' } };
       continue;
     }
 
