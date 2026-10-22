@@ -89,6 +89,16 @@ describe('động cơ giá vốn: tình huống chuẩn', () => {
       expect(D(sum(amounts(r))).plus(r.endValue).toFixed(0), m).toBe('1600');
     }
   });
+  it('xuất giữ đúng số tiền (fixedAmount): không làm tròn qua đơn giá, không nhận phần lẻ', () => {
+    for (const m of ['avg_period', 'avg_moving', 'fifo'] as CostMethod[]) {
+      const x1: CostMove = { id: 'x1', seq: 2, date: '2026-01-10', direction: 'out', qty: '60', value: null, fixedAmount: '601' };
+      const r = computeCosting(m, zero, [moves[0]!, x1, moves[2]!, moves[3]!], '2026-01-31');
+      expect(r.assignments[0], m).toMatchObject({ unitCost: '10.0167', amount: '601' });
+      expect(D(sum(amounts(r))).plus(r.endValue).toFixed(0), m).toBe('1600');
+    }
+    const all = computeCosting('fifo', zero, [mIn('n1', 1, '2026-01-02', '3', '100'), { id: 'x1', seq: 2, date: '2026-01-10', direction: 'out', qty: '3', value: null, fixedAmount: '90' }], '2026-01-31');
+    expect([all.assignments[0]!.amount, all.endQty, all.endValue]).toEqual(['90', '0', '10']); // mọi xuất cố định: phần lẻ ở lại kho
+  });
   it('tồn đầu theo lô là lớp FIFO trước mọi phát sinh trong kỳ; bình quân gộp tồn đầu', () => {
     const opening: CostOpening = { qty: '30', value: '330', lots: [{ lot: 'L1', qty: '10', value: '100' }, { lot: 'L2', qty: '20', value: '230' }] };
     const ms = [mIn('n1', 1, '2026-01-02', '10', '150'), mOut('x1', 2, '2026-01-10', '15')];

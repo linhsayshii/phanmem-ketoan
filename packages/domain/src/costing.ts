@@ -4,7 +4,8 @@ import { D, Decimal, ZERO } from './money.js';
 export type CostMethod = 'avg_period' | 'avg_moving' | 'fifo' | 'specific';
 export interface CostMove { id: string; seq: number; date: string; direction: 'in' | 'out'; qty: string; lot?: string;
   /** chiều in: giá trị đã biết (mua, nhập thành phẩm...) hoặc null khi lấy theo giá gán của chiều out (chuyển kho) */ value: string | null;
-  /** chiều out đã gán giá cố định (cố định giá vốn) */ fixedUnitCost?: string }
+  /** chiều out đã gán giá cố định (cố định giá vốn) */ fixedUnitCost?: string;
+  /** chiều out giữ đúng số tiền này (đồng nguyên): phát sinh kỳ trước đã ghi sổ, xuất đảo phiếu nhập */ fixedAmount?: string }
 export interface CostOpening { qty: string; value: string; lots?: { lot: string; qty: string; value: string }[] }
 export interface CostResult { assignments: { moveId: string; unitCost: string; amount: string; lot?: string }[];
   layers: { moveId: string; remainingQty: string; remainingValue: string }[];   // lớp nhập còn lại sau tính
@@ -14,6 +15,7 @@ type CostError = CostResult['errors'][number];
 interface Layer { moveId: string; key: string; qty: Decimal; value: Decimal }
 interface Out { move: CostMove; qty: Decimal; amount: Decimal; avg?: Decimal }
 
+const isFixed = (m: CostMove) => m.fixedUnitCost !== undefined || m.fixedAmount !== undefined;
 const round = (d: Decimal): Decimal => d.toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
 const vndStr = (d: Decimal): string => (d.isZero() ? '0' : d.toFixed(0));
 const qtyStr = (d: Decimal): string => (d.isZero() ? '0' : d.toString());
@@ -33,6 +35,7 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
       vndOf(m.value, `Phát sinh nhập ${m.id}`);
     }
     if (m.fixedUnitCost !== undefined) D(m.fixedUnitCost);
+    if (m.fixedAmount !== undefined) vndOf(m.fixedAmount, `Phát sinh xuất ${m.id}`);
   }
   const openQ = D(opening.qty); const openV = vndOf(opening.value, 'Tồn đầu');
   // Lớp tồn đầu: theo lô (FIFO/đích danh: lớp trước mọi phát sinh kỳ) hoặc một lớp gộp.
@@ -52,7 +55,7 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
 
   const errors: CostError[] = [];
   const outs: Out[] = [];
-  const fixedAmount = (m: CostMove, q: Decimal) => round(q.times(D(m.fixedUnitCost!)));
+  const fixedAmount = (m: CostMove, q: Decimal) => (m.fixedAmount !== undefined ? D(m.fixedAmount) : round(q.times(D(m.fixedUnitCost!))));
   let layers: Layer[];
 
   if (method === 'avg_period' || method === 'avg_moving') {
@@ -68,7 +71,7 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
         if (m.direction === 'in') { running = running.plus(q); continue; }
         if (running.minus(q).lt(0)) { errors.push({ moveId: m.id, code: 'COSTING_NEGATIVE_STOCK', detail: negDetail(m, running) }); deficitId = m.id; }
         running = running.minus(q);
-        const amount = m.fixedUnitCost !== undefined ? fixedAmount(m, q) : round(q.times(avg));
+        const amount = isFixed(m) ? fixedAmount(m, q) : round(q.times(avg));
         outs.push({ move: m, qty: q, amount, avg }); Q = Q.minus(q); V = V.minus(amount);
       }
     } else {
@@ -88,7 +91,7 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
           errors.push({ moveId: m.id, code: 'COSTING_NEGATIVE_STOCK', detail: negDetail(m, Q) }); deficitId = m.id;
           amount = Q.gt(0) ? V.plus(round(q.minus(Q).times(avg))) : round(q.times(avg));
         }
-        if (m.fixedUnitCost !== undefined) amount = fixedAmount(m, q);
+        if (isFixed(m)) amount = fixedAmount(m, q);
         outs.push({ move: m, qty: q, amount, avg }); Q = Q.minus(q); V = V.minus(amount);
       }
     }
@@ -153,7 +156,7 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
         deficit.qty = deficit.qty.minus(need); deficit.value = deficit.value.minus(sv); taken = taken.plus(sv);
       }
       let amount = taken;
-      if (m.fixedUnitCost !== undefined) {
+      if (isFixed(m)) {
         amount = fixedAmount(m, q);
         const target = deficit ?? touched!; // chênh giữa giá lớp và giá cố định ở lại trong kho
         target.value = target.value.plus(taken.minus(amount));
@@ -176,7 +179,7 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
   return {
     assignments: outs.map((o) => ({
       moveId: o.move.id,
-      unitCost: ucStr(o.move.fixedUnitCost !== undefined ? D(o.move.fixedUnitCost) : o.avg ?? o.amount.div(o.qty)),
+      unitCost: ucStr(o.move.fixedUnitCost !== undefined && o.move.fixedAmount === undefined ? D(o.move.fixedUnitCost) : isFixed(o.move) ? o.amount.div(o.qty) : o.avg ?? o.amount.div(o.qty)),
       amount: vndStr(o.amount),
       ...(o.move.lot !== undefined ? { lot: o.move.lot } : {}),
     })),
@@ -188,7 +191,7 @@ export function computeCosting(method: CostMethod, opening: CostOpening, moves: 
 // Tồn cuối 0 mà còn giá trị (làm tròn, tồn âm rồi nhập bù, giá cố định): lần xuất không cố định giá cuối cùng nhận phần còn lại. Trả giá trị tồn cuối sau khi dồn.
 function absorbResidual(outs: Out[], endQ: Decimal, endV: Decimal): Decimal {
   if (!endQ.isZero() || endV.isZero()) return endV;
-  const last = [...outs].reverse().find((o) => o.move.fixedUnitCost === undefined);
+  const last = [...outs].reverse().find((o) => !isFixed(o.move));
   if (!last) return endV;
   last.amount = last.amount.plus(endV);
   return ZERO;
