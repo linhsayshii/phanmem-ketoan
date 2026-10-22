@@ -16,14 +16,17 @@ async function withClient<T>(fn: (c: pg.Client) => Promise<T>): Promise<T> {
 describe('dữ liệu mẫu ABC', () => {
   it('chạy hai lần chỉ tạo một công ty với 30 đối tượng và hệ thống tài khoản', async () => {
     const url = process.env.DATABASE_ADMIN_URL!;
-    const a = await seedAbc(url); const b = await seedAbc(url);
-    expect(b.tenantId).toBe(a.tenantId); expect(b.created).toBe(false);
     const c = new pg.Client({ connectionString: url }); await c.connect();
-    const n = await c.query('SELECT count(*)::int AS n FROM party WHERE tenant_id = $1', [a.tenantId]);
+    const parties = async (id: string) => (await c.query('SELECT count(*)::int AS n FROM party WHERE tenant_id = $1', [id])).rows[0].n as number;
+    const a = await seedAbc(url); const before = await parties(a.tenantId); const b = await seedAbc(url);
+    expect(b.tenantId).toBe(a.tenantId); expect(b.created).toBe(false);
+    // DB kiểm thử dùng chung với sample-abc của API: seed đầy đủ (seedAbcFull) có thể đã thêm đối tượng của năm nghiệp vụ, nên chỉ chặn dưới 30 và kiểm lần hai không thêm gì.
+    const after = await parties(a.tenantId);
+    expect(after).toBe(before);
     const acc = await c.query('SELECT count(*)::int AS n FROM account WHERE tenant_id = $1', [a.tenantId]);
     const fp = await c.query('SELECT count(*)::int AS n FROM fiscal_period WHERE tenant_id = $1', [a.tenantId]);
     await c.end();
-    expect(n.rows[0].n).toBe(30); expect(acc.rows[0].n).toBeGreaterThan(100); expect(fp.rows[0].n).toBe(13);
+    expect(after).toBeGreaterThanOrEqual(30); expect(acc.rows[0].n).toBeGreaterThan(100); expect(fp.rows[0].n).toBe(13);
   });
 
   it('tài khoản mặc định của mọi khoản mục chi phí có trong hệ thống tài khoản của công ty', async () => {
