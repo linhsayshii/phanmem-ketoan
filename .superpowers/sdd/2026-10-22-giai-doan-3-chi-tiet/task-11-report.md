@@ -18,3 +18,10 @@ Kiểm thử mới (`apps/api/test/inventory/purchase.test.ts`, 7 test): đối 
 Lệnh và kết quả (tuần tự): `pnpm db:migrate` (0055 áp dụng); `pnpm -F @kt/db test` 104 xanh; `pnpm -F @kt/api test` 723 xanh (55 file); `INVARIANTS=1 ... test/invariants test/sample-xyz.test.ts` 19 xanh; `pnpm lint` sạch; `pnpm typecheck` sạch.
 
 Chưa làm: kiểm đối tượng giữa PNK và MH hóa đơn về trước (`sourceInvoiceIds`); e2e web không chạy lại (hợp đồng API giữ nguyên).
+
+## Fix round 2
+
+- PNK theo `sourceInvoiceIds` phải cùng đối tượng với hóa đơn MH: 409 `RECEIPT_PARTY_MISMATCH` (`inventory/stockVouchers.ts`).
+- Migration `0056_mua_hang_sua2.sql`: định nghĩa lại `fn_stock_adjust_links` từ thân 0055, bỏ kiểm `INVOICE_LINK_LOST` (PNK nhập tay Có 151 từ số dư đầu kỳ hợp lệ); giữ `RECEIPT_LINK_LOST` cho MH. Quyết định 266 đã cập nhật.
+- Kiểm thử: bỏ khẳng định PNK Có 151 thất bại; thêm PNK tay Có 151 ghi sổ được và PNK khác nhà cung cấp bị 409. Kiểm thử đúng: purchase + stockVouchers 25 xanh; db 104; api 723; lint, typecheck sạch.
+- Không còn kiểm liên kết ở SQL cho PNK từ `sourceInvoiceIds` (API luôn dựng liên kết; chỉ mất khi sửa dữ liệu ngoài API).

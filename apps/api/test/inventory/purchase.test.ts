@@ -145,18 +145,18 @@ describe('mua hàng hóa (MH, TLM)', () => {
     const rv = await call('POST', `/api/vouchers/${p.id}/reverse`, { postingDate: '2026-03-02' }); expect(rv.statusCode).toBe(409); expect(code(rv)).toBe('LINE_REFERENCED');
   });
 
-  it('mất liên kết khi ghi sổ: MH hàng về trước thiếu dòng phiếu nhập, PNK Có 151 thiếu dòng hóa đơn đều bị chặn', async () => {
+  it('mất liên kết khi ghi sổ: MH hàng về trước thiếu dòng phiếu nhập, PNK nhập tay Có 151 vẫn ghi sổ được', async () => {
     const p = await post((await pnk('A10', '2026-03-01', '10', '10')).id);
     const d = (await call('POST', '/api/invoices', mh([line('A10', '10', '10.5', { amountCurrency: '105' })], { stockMode: 'goods_first', autoPost: false, receiptVoucherIds: [p.id] }))).json();
     await sql`UPDATE voucher_item_line SET link_line_id = NULL WHERE voucher_id = ${d.id}::uuid`.execute(ctx.t.admin);
     const r = await call('POST', `/api/vouchers/${d.id}/post`, {}); expect(r.statusCode).toBe(409); expect(code(r)).toBe('RECEIPT_LINK_LOST');
     const inv = await create(mh([line('A10', '10', '10')], { stockMode: 'invoice_first' }));
-    const q = await pnk('A10', '2026-03-10', '10', '', { sourceInvoiceIds: [inv.id] });
-    await sql`UPDATE voucher_item_line SET link_line_id = NULL WHERE voucher_id = ${q.id}::uuid`.execute(ctx.t.admin);
-    const r2 = await call('POST', `/api/vouchers/${q.id}/post`, {}); expect(r2.statusCode).toBe(409); expect(code(r2)).toBe('INVOICE_LINK_LOST');
-    // PNK nhập tay ghi Có 151 mà không gắn hóa đơn
+    // PNK nhập tay ghi Có 151 (hàng đang đi đường từ số dư đầu kỳ, không có sourceInvoiceIds) ghi sổ được
     const m = await pnk('A10', '2026-03-10', '1', '10', { items: [{ itemCode: 'A10', uomCode: 'CAI', quantity: '1', unitPrice: '10', creditAccountCode: '151' }] });
-    const r3 = await call('POST', `/api/vouchers/${m.id}/post`, {}); expect(r3.statusCode).toBe(409); expect(code(r3)).toBe('INVOICE_LINK_LOST');
+    await post(m.id);
+    // PNK theo hóa đơn của nhà cung cấp khác bị chặn
+    const other = await call('POST', '/api/stock-vouchers', { voucherType: 'PNK', stockKind: 'purchase', postingDate: '2026-03-10', warehouseCode: 'K1', partyCode: 'KH001', sourceInvoiceIds: [inv.id], items: [{ itemCode: 'A10', uomCode: 'CAI', quantity: '10' }] });
+    expect(other.statusCode).toBe(409); expect(code(other)).toBe('RECEIPT_PARTY_MISMATCH');
     // phiếu nhập theo hóa đơn không đổi tài khoản Có
     const bad = await call('POST', '/api/stock-vouchers', { voucherType: 'PNK', stockKind: 'purchase', postingDate: '2026-03-10', warehouseCode: 'K1', partyCode: 'NCC001', sourceInvoiceIds: [inv.id],
       items: [{ itemCode: 'A10', uomCode: 'CAI', quantity: '10', creditAccountCode: '331' }] });

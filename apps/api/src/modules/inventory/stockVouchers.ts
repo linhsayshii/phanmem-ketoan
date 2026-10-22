@@ -45,10 +45,12 @@ async function invoiceLinks(trx: Trx, input: StockVoucherInput, selfId?: string)
   if (!ids?.length) return null;
   if (input.voucherType !== 'PNK' || input.stockKind !== 'purchase') throw new AppError('VALIDATION', 'Hóa đơn nguồn (sourceInvoiceIds) chỉ dùng cho phiếu nhập kho mua hàng', 400);
   if (input.items.some((i) => i.creditAccountCode && i.creditAccountCode !== '151')) throw new AppError('VALIDATION', 'Phiếu nhập theo hóa đơn về trước luôn ghi Có 151, không đổi tài khoản Có', 400);
-  const vs = await trx.selectFrom('voucher').select(['id', 'voucher_type', 'state', 'receipt_state']).where('id', 'in', ids).execute();
+  const vs = await trx.selectFrom('voucher').select(['id', 'voucher_type', 'state', 'receipt_state', 'party_id']).where('id', 'in', ids).execute();
+  const pid = input.partyCode ? (await trx.selectFrom('party').select('id').where('code', '=', input.partyCode).executeTakeFirst())?.id : undefined;
   for (const id of ids) {
     const v = vs.find((x) => x.id === id);
     if (!v || v.voucher_type !== 'MH' || v.receipt_state !== 'invoice_first') throw new AppError('INVOICE_NOT_FOUND', 'Không tìm thấy hóa đơn mua hàng hóa về trước đã chọn', 404);
+    if (v.party_id !== (pid ?? null)) throw new AppError('RECEIPT_PARTY_MISMATCH', 'Hóa đơn mua hàng hóa của nhà cung cấp khác với phiếu nhập kho', 409);
     if (v.state !== 'posted') throw new AppError('INVOICE_NOT_POSTED', 'Hóa đơn mua hàng hóa chưa ghi sổ, không lập phiếu nhập theo hóa đơn được', 409);
   }
   const mh = await trx.selectFrom('voucher_item_line as l').select(['l.id', 'l.item_id', 'l.base_quantity', 'l.amount', 'l.discount_amount', 'l.stock_value']).where('l.voucher_id', 'in', ids).where('l.item_id', 'is not', null).orderBy('l.voucher_id').orderBy('l.line_no').execute();
