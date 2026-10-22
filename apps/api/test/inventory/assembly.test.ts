@@ -46,7 +46,7 @@ async function tenant() {
       (SELECT coalesce(sum(l.debit - l.credit), 0) FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
         WHERE l.tenant_id = ${tenantId}::uuid AND l.item_id = i.id AND a.code IN ('155', '156') AND v.state IN ('posted','reversed'))::text AS ledger
     FROM item i WHERE i.tenant_id = ${tenantId}::uuid AND i.code IN ('A', 'B', 'S') ORDER BY i.code`.execute(ctx.t.admin)).rows;
-  return { login, perItem, call, pnk, pxk, lr, lrDraft, runOk, drift, layerOf, gvLines, post };
+  return { tenantId, login, perItem, call, pnk, pxk, lr, lrDraft, runOk, drift, layerOf, gvLines, post };
 }
 
 const SET = { mode: 'assembly', postingDate: '2026-01-10', outputs: [{ itemCode: 'S', quantity: '1' }], components: [{ itemCode: 'A', quantity: '2' }, { itemCode: 'B', quantity: '1' }], extraCost: '5' };
@@ -157,5 +157,24 @@ describe('lắp ráp, tháo dỡ', () => {
     hidden(await t.call('POST', `/api/vouchers/${pnkId}/post`, {}, u));
     hidden(await t.call('POST', `/api/vouchers/${lrId}/post`, {}, u));
     hidden(await t.call('POST', `/api/vouchers/${lrId}/reverse`, { postingDate: '2026-01-10' }, u));
+  });
+
+  it('lần chạy sau chỉ phủ một phần kỳ: GV chân nhập của LR cũ theo giá trị lớp giá từng hàng, số dư từng hàng khớp', async () => {
+    const t = await tenant();
+    expect((await t.call('POST', '/api/catalogs/item', { code: 'C', name: 'Hàng C', base_uom_code: 'CAI', kind: 'goods', tracking: 'none', inventory_account_code: '156' })).statusCode).toBe(201);
+    await t.pnk('2026-01-02', 'S', '1', '70');
+    await t.lr({ mode: 'disassembly', postingDate: '2026-01-10', outputs: [{ itemCode: 'S', quantity: '1' }],
+      components: [{ itemCode: 'A', quantity: '1', costRatio: '33.3333' }, { itemCode: 'B', quantity: '1', costRatio: '33.3333' }, { itemCode: 'C', quantity: '1', costRatio: '33.3334' }] });
+    await t.pnk('2026-01-05', 'S', '1', '114'); // nhập lùi ngày: bình quân kỳ của S = 92, giá tạm của bộ 70
+    await t.pxk('2026-01-20', 'A', '1');
+    await t.runOk();
+    const r = await t.call('POST', '/api/inventory/costing-runs', { periodFrom: '2026-01-11', periodTo: '2026-01-31' });
+    expect(r.statusCode, r.body).toBe(200);
+    const rows = (await sql<{ item: string; layers: string; ledger: string }>`SELECT i.code AS item,
+        (SELECT coalesce(sum(c.remaining_value), 0) FROM stock_cost_layer c WHERE c.tenant_id = ${t.tenantId}::uuid AND c.item_id = i.id)::text AS layers,
+        (SELECT coalesce(sum(l.debit - l.credit), 0) FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
+          WHERE l.tenant_id = ${t.tenantId}::uuid AND l.item_id = i.id AND a.code IN ('155', '156') AND v.state IN ('posted','reversed'))::text AS ledger
+      FROM item i WHERE i.tenant_id = ${t.tenantId}::uuid AND i.code IN ('A', 'B', 'C', 'S') ORDER BY i.code`.execute(ctx.t.admin)).rows;
+    expect(rows.map((x) => [x.item, x.ledger]), JSON.stringify(rows)).toEqual(rows.map((x) => [x.item, x.layers]));
   });
 });

@@ -324,15 +324,18 @@ export async function runCosting(trx: Trx, ctx: Ctx, input: CostingInput) {
   }
   // Bên TK kho nhập của LR: mỗi hàng nhập nhận (giá trị mới − giá tạm tính) khi các chiều xuất của nhóm ghi đủ trong lần này (tổng khớp), nếu không thì chia chênh theo tỷ lệ.
   const outsideLr = [...new Set([...lrAcc.values()].map((x) => x.orig).filter((id) => !lrGroup.has(id)))];
-  const loaded = new Map<string, { item: string; wh: string; account: string; ratio: string | null }[]>();
-  if (outsideLr.length) for (const r of (await sql<{ vid: string; item: string; wh: string; account: string; ratio: string | null }>`SELECT m.voucher_id AS vid, i.code AS item, w.code AS wh, da.code AS account, l.cost_ratio::text AS ratio
+  const loaded = new Map<string, { item: string; wh: string; account: string; ratio: string | null; diff: string | null }[]>();
+  // diff = giá trị lớp giá đã lưu − giá tạm tính của chân nhập: chính xác theo từng hàng, dùng thay cho chia theo tỷ lệ.
+  if (outsideLr.length) for (const r of (await sql<{ vid: string; item: string; wh: string; account: string; ratio: string | null; diff: string | null }>`SELECT m.voucher_id AS vid, i.code AS item, w.code AS wh, da.code AS account, l.cost_ratio::text AS ratio,
+      ((SELECT sum(c.value) FROM stock_cost_layer c WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND c.kind IN ('receipt', 'adjustment'))
+        - (CASE WHEN l.unit_cost IS NOT NULL THEN round(coalesce(l.base_quantity, l.quantity * l.uom_factor) * l.unit_cost) ELSE l.amount END))::text AS diff
     FROM stock_move m JOIN voucher_item_line l ON l.tenant_id = m.tenant_id AND l.id = m.item_line_id JOIN item i ON i.id = m.item_id JOIN warehouse w ON w.id = m.warehouse_id JOIN account da ON da.id = l.debit_account_id
     WHERE m.voucher_id = ANY(${outsideLr}::uuid[]) AND m.direction = 'in' AND m.reversal_of IS NULL ORDER BY m.voucher_id, l.line_no`.execute(trx)).rows) loaded.set(r.vid, [...(loaded.get(r.vid) ?? []), r]);
   for (const x of lrAcc.values()) {
     const g = lrGroup.get(x.orig);
-    const ins = g ? g.ins.map((i) => ({ item: i.item_code, wh: i.wh_code, account: i.debit_code!, ratio: i.cost_ratio })) : (loaded.get(x.orig) ?? []);
+    const ins = g ? g.ins.map((i) => ({ item: i.item_code, wh: i.wh_code, account: i.debit_code!, ratio: i.cost_ratio, diff: null as string | null })) : (loaded.get(x.orig) ?? []);
     if (!ins.length) continue;
-    const exact = g ? lrValues(g).map((v, j) => v.minus(g.ins[j]!.base)) : null;
+    const exact = g ? lrValues(g).map((v, j) => v.minus(g.ins[j]!.base)) : ins.every((i) => i.diff !== null) ? ins.map((i) => D(i.diff!)) : null;
     const amounts = exact && exact.reduce((t, v) => t.plus(v), ZERO).eq(x.d) ? exact : splitByRatio(x.d, ins.map((i) => i.ratio ?? '0')).map((v) => D(v));
     ins.forEach((i, j) => {
       const k = [x.date, i.account, i.item, i.wh, ''].join('|');
