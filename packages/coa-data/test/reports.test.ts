@@ -68,4 +68,8 @@ describe('mẫu báo cáo tài chính', () => {
     }
     if (pending.length) console.warn(`CẢNH BÁO: ${pending.length} bộ báo cáo chưa hoàn tất (chờ văn bản), bỏ qua đối chiếu tài khoản: ${pending.join(', ')}`);
   });
+  it('B02 TT99: chỉ mã 22 và 23 dùng số thuần đánh giá lại (dòng phát sinh); TT133 không dùng', () => {
+    const withReval = rows.filter((r) => /REVAL/.test(r.formula ?? '')).map((r) => [r.regime, r.reportCode, r.lineCode, r.source, r.formula]);
+    expect(withReval).toEqual([['TT99', 'B02', '22', 'movement', '515!REVAL + REVAL_GAIN'], ['TT99', 'B02', '23', 'movement', '635!REVAL + REVAL_LOSS']]);
+  });
 });

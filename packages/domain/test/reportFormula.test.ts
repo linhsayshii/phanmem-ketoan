@@ -22,6 +22,24 @@ describe('parseFormula', () => {
       try { parseFormula(bad); throw new Error('phải ném lỗi'); } catch (e) { expect(e).toBeInstanceOf(FormulaError); expect((e as Error).name).toBe('FormulaError'); expect((e as Error).message).toMatch(/^Công thức "/); }
     }
   });
+  it('parseFormula nhận 515!REVAL, REVAL_GAIN, REVAL_LOSS; !REVAL trên dòng số dư là FormulaError', async () => {
+    expect(parseFormula('515!REVAL + REVAL_GAIN')).toEqual({ kind: 'bin', op: '+', left: { kind: 'account', prefix: '515', exclude: [], excludeReval: true }, right: { kind: 'reval', side: 'gain' } });
+    expect(parseFormula('635(6355)!REVAL - REVAL_LOSS')).toMatchObject({ left: { kind: 'account', prefix: '635', exclude: ['6355'], excludeReval: true }, right: { kind: 'reval', side: 'loss' } });
+    expect(parseFormula('515')).toEqual({ kind: 'account', prefix: '515', exclude: [] }); // không !REVAL thì dạng cũ, không có excludeReval
+    for (const bad of ['515!REV', '515!', '!REVAL', '0!REVAL', '1.5!REVAL', 'REVAL_GAINS', 'REVAL_X', 'N515/C635!REVAL']) expect(() => parseFormula(bad), bad).toThrow(FormulaError);
+    const stub: Resolver = { account: async () => D(7), pair: async () => D(0), reval: async () => ({ gain: D(5), loss: D(3) }) };
+    const lines = (formula: string, source: 'movement' | 'balance') => [{ lineCode: 'X', formula, source, side: 'net_credit' as const }];
+    expect((await evaluateReport(lines('515!REVAL + REVAL_GAIN - REVAL_LOSS', 'movement'), stub)).get('X')!.toString()).toBe('9'); // 7 + 5 - 3
+    await expect(evaluateReport(lines('515!REVAL', 'balance'), stub)).rejects.toThrow(/phát sinh/);
+    await expect(evaluateReport(lines('REVAL_GAIN', 'balance'), stub)).rejects.toBeInstanceOf(FormulaError);
+    await expect(evaluateReport(lines('REVAL_LOSS', 'lines' as never), stub)).rejects.toBeInstanceOf(FormulaError);
+  });
+  it('bộ giải nhận cờ excludeReval chỉ khi công thức có !REVAL', async () => {
+    const seen: unknown[] = [];
+    const r: Resolver = { account: async (ref) => { seen.push(ref); return D(0); }, pair: async () => D(0), reval: async () => ({ gain: D(0), loss: D(0) }) };
+    await evaluateReport([{ lineCode: 'X', formula: '515 + 635!REVAL', source: 'movement', side: 'net_credit' }], r);
+    expect(seen).toEqual([{ prefix: '515', exclude: [] }, { prefix: '635', exclude: [], excludeReval: true }]);
+  });
   it('formulaRefs liệt kê dòng và tài khoản tham chiếu', () => {
     expect(formulaRefs(parseFormula('[10] - 131(1312) + N911/C632'))).toEqual({ lines: ['10'], accounts: ['131', '1312', '911', '632'] });
   });
@@ -31,6 +49,7 @@ describe('evaluateReport', () => {
   const resolver: Resolver = {
     account: async (ref, source, side) => D(ref.prefix === '111' ? 100 : ref.prefix === '131' ? (side === 'debit' ? 500 : side === 'credit' ? 200 : 300) : 0).times(source === 'movement' ? 2 : 1),
     pair: async (d, c) => D(d[0] === '911' && c[0] === '632' ? 700 : 0),
+    reval: async () => ({ gain: D(0), loss: D(0) }),
   };
   it('tính theo thứ tự phụ thuộc, không phụ thuộc thứ tự khai báo', async () => {
     const r = await evaluateReport([

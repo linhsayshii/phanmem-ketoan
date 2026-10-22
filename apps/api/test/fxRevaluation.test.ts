@@ -533,3 +533,92 @@ describe('đánh giá lại số dư ngoại tệ cuối kỳ', () => {
     expect((await b.call('GET', '/api/fx/runs')).json()).toEqual([]);
   });
 });
+
+// Task 27b: B02 TT99 mã 22/23 trình bày số thuần chênh lệch đánh giá lại (DG và CL gỡ đánh giá lại khi đảo); chênh lệch thực hiện vẫn gộp.
+describe('B02 TT99: số thuần chênh lệch đánh giá lại', () => {
+  type T = Awaited<ReturnType<typeof tenant>>;
+  const b02 = async (t: T, from = '2026-01-01', to = '2026-12-31') => {
+    const r = await t.call('GET', `/api/reports/financial/B02?from=${from}&to=${to}`); expect(r.statusCode, r.body).toBe(200);
+    return Object.fromEntries((r.json().rows as { lineCode: string; current: string }[]).map((x) => [x.lineCode, x.current]));
+  };
+  const other = async (t: T) => { // 515 khác 50.000 và 635 khác 30.000 (không phải chênh lệch tỷ giá)
+    await t.pkt('2026-01-15', [L('111', '50000'), L('515', '0', '50000')]); await t.pkt('2026-01-16', [L('635', '30000'), L('111', '0', '30000')]);
+  };
+
+  it('lãi 1.000.000 (131) và lỗ 400.000 (331) cùng lần chạy: mã 22 = 515 khác + 600.000, mã 23 = 635 khác; mã 30 không đổi; truy xuất mã 22 cộng lại bằng mã 22', async () => {
+    const t = await tenant('TT99'); await other(t);
+    await t.usdInvoice('2026-01-10', '1000', '24600'); await t.usdPurchase('2026-01-12', '100', '21600');
+    const dg = await t.revalOk(); expect(dg.voucherIds).toHaveLength(1);
+    const gross = [D(await t.net('515')).neg(), D(await t.net('635'))]; // gộp: Có 515 = 1.050.000, Nợ 635 = 430.000
+    expect(gross.map(String)).toEqual(['1050000', '430000']);
+    const r = await b02(t);
+    expect([r['22'], r['23']]).toEqual(['650000', '30000']);
+    expect(D(r['22']!).minus(r['23']!).toString()).toBe(gross[0]!.minus(gross[1]!).toString()); // chênh 22 - 23 (nên cả mã 30) bằng cách trình bày gộp cũ
+    expect(r['30']).toBe(D(r['20']!).plus(r['21']!).plus(r['22']!).minus(D(r['23']!).plus(r['25']!).plus(r['26']!)).toString());
+    for (const [code, total] of [['22', '650000'], ['23', '30000']] as const) {
+      const d = await t.call('GET', `/api/reports/financial/B02/lines/${code}?from=2026-01-01&to=2026-12-31`); expect(d.statusCode, d.body).toBe(200);
+      const rows = d.json().accounts as { accountCode: string; accountName: string; amount: string }[];
+      expect(rows.map((x) => x.accountCode)).toEqual(code === '22' ? ['515', '515'] : ['635']);
+      expect(rows.reduce((s, x) => s.plus(x.amount), D(0)).toString()).toBe(total);
+      if (code === '22') expect(rows.map((x) => x.amount).sort()).toEqual(['50000', '600000']);
+    }
+  });
+
+  it('tổng lỗ đánh giá lại lớn hơn lãi: mã 23 nhận lỗ thuần, mã 22 không có phần đánh giá lại', async () => {
+    const t = await tenant('TT99');
+    await t.usdInvoice('2026-01-10', '1000', '25500'); await t.usdPurchase('2026-01-12', '500', '25000'); // lãi 100.000, lỗ 300.000
+    await t.revalOk();
+    const r = await b02(t); expect([r['22'], r['23']]).toEqual(['0', '200000']);
+    const d = (await t.call('GET', '/api/reports/financial/B02/lines/23?from=2026-01-01&to=2026-12-31')).json().accounts as { accountCode: string; amount: string }[];
+    expect(d.map((x) => [x.accountCode, x.amount])).toEqual([['635', '200000']]);
+    expect((await t.call('GET', '/api/reports/financial/B02/lines/22?from=2026-01-01&to=2026-12-31')).json().accounts).toEqual([]);
+  });
+
+  it('chạy lại đánh giá lại (đảo DG cũ, sinh DG mới) chỉ tính số thuần của trạng thái cuối', async () => {
+    const t = await tenant('TT99');
+    await t.usdInvoice('2026-01-10', '1000', '25000'); await t.usdPurchase('2026-01-12', '100', '25000');
+    await t.revalOk(); // @25.600: lãi 600.000, lỗ 60.000
+    let r = await b02(t); expect([r['22'], r['23']]).toEqual(['540000', '0']);
+    const again = await t.revalOk({ rates: { USD: '25700' } }); // lãi 700.000, lỗ 70.000
+    expect(again.reversedVoucherIds).toHaveLength(1);
+    r = await b02(t); expect([r['22'], r['23']]).toEqual(['630000', '0']);
+  });
+
+  it('đảo khoản công nợ đã đánh giá lại ghi ngày trước ngày DG: lãi 600.000 và lỗ 600.000 cùng ngày, mã 22 và 23 không có phần đánh giá lại', async () => {
+    const t = await tenant('TT99');
+    const inv = await t.usdInvoice('2026-01-10', '1000', '25000');
+    await t.revalOk();
+    expect((await t.call('POST', `/api/vouchers/${inv.id}/reverse`, { postingDate: '2026-01-20' })).statusCode).toBe(201);
+    const [cl] = await t.cls();
+    expect(await t.lines(cl!)).toEqual([['635', null, null, '600000', '0', '600000.0000', null], ['131', 'KH001', null, '0', '600000', '0.0000', null]]);
+    expect([await t.net('515'), await t.net('635')]).toEqual(['-600000', '600000']); // gộp cũ: 22 = 600.000 và 23 = 600.000
+    const r = await b02(t); expect([r['22'], r['23']]).toEqual(['0', '0']);
+  });
+
+  it('chênh lệch thực hiện CL của đối trừ thông thường vẫn trình bày gộp ở 22/23 (đánh giá lại 600.000 lãi, thu nốt lỗ 100.000)', async () => {
+    const t = await tenant('TT99');
+    const inv = await t.itemOf((await t.usdInvoice('2026-01-10', '1000', '25000')).id);
+    await t.revalOk();
+    // TT99 không có 1122: tiền gửi USD ghi vào 112.
+    const rcv = await t.itemOf((await t.pkt('2026-02-10', [L('112', '25500000', '0', { amountCurrency: '1000' }), K('131', 'KH001', '0', '25500000', { amountCurrency: '-1000' })], { currencyCode: 'USD', fxRate: '25500' })).id);
+    const r = await t.settle({ debitItemId: inv, creditItemId: rcv, amountCurrency: '1000' });
+    expect(await t.lines(r.fxVoucherId!)).toEqual([['635', null, null, '100000', '0', '100000.0000', null], ['131', 'KH001', null, '0', '100000', '0.0000', null]]);
+    const b = await b02(t); expect([b['22'], b['23']]).toEqual(['600000', '100000']);
+  });
+
+  it('!REVAL và REVAL_* chỉ lưu được trên dòng phát sinh (movement): dòng số dư → 400 FORMULA_INVALID', async () => {
+    const t = await tenant('TT99');
+    const def = (source: string, formula: string) => t.call('PUT', '/api/report-defs/B02', { regime: 'TT99', lines: [{ lineCode: '22', label: 'x', parentLineCode: null, source, side: 'net_credit', formula }] });
+    expect((await def('movement', '515!REVAL + REVAL_GAIN')).statusCode).toBe(200);
+    for (const f of ['515!REVAL', 'REVAL_LOSS']) { const r = await def('balance', f); expect([r.statusCode, r.json().error.code]).toEqual([400, 'FORMULA_INVALID']); }
+  });
+
+  it('TT133: B02 không đổi (không dùng REVAL; đánh giá lại đi qua 413)', async () => {
+    const t = await tenant('TT133');
+    await t.usdInvoice('2026-01-10', '1000', '25000'); await t.revalOk();
+    const defs = (await t.call('GET', '/api/report-defs/B02?regime=TT133')).json().lines as { formula: string | null }[];
+    expect(defs.some((l) => /REVAL/.test(l.formula ?? ''))).toBe(false);
+    const rows = (await t.call('GET', '/api/reports/financial/B02?from=2026-01-01&to=2026-12-31')).json().rows as { lineCode: string; current: string }[];
+    expect(rows.find((x) => x.lineCode === '21')!.current).toBe('600000'); // 515 TT133 (mã 21) vẫn lấy gộp: DG thứ hai kết chuyển 413 sang 515
+  });
+});

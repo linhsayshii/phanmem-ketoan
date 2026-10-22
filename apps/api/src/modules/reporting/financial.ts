@@ -36,6 +36,16 @@ interface PairUnit { dcode: string; dname: string; dkind: string | null; ccode: 
 const once = <T>(f: () => Promise<T>): (() => Promise<T>) => { let v: Promise<T> | undefined; return () => (v ??= f()); };
 
 export function reportData(trx: Trx, tenantId: string, regime: string, p: { from: string; to: string }) {
+  // Phát sinh trong kỳ không gồm chứng từ kết chuyển (KC và bản đảo của KC mang cờ is_closing), nếu không doanh thu/chi phí về 0.
+  // onlyReval: chỉ nhóm đánh giá lại ngoại tệ cuối kỳ = dòng của chứng từ DG (source_doc_type 'fx_revaluation', gồm bản đảo do chạy lại; DG của TT133 qua 413 rồi kết chuyển cũng cùng loại)
+  // và của chứng từ CL sinh khi đảo khoản công nợ đã đánh giá lại (đối trừ kiểu 'reversal' kèm fx_voucher_id): CL đó gỡ chênh lệch đánh giá lại của chính khoản ấy. CL đối trừ thông thường ('fx') và XQ không thuộc nhóm.
+  const movementRows = async (onlyReval: boolean): Promise<Unit[]> => (await sql<{ code: string; name: string; kind: string | null; d: string; c: string }>`
+      SELECT a.code, a.name, a.subledger_kind AS kind, sum(l.debit)::text AS d, sum(l.credit)::text AS c
+      FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
+      WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND NOT v.is_closing AND a.regime = ${regime}
+        AND v.posting_date BETWEEN ${p.from}::date AND ${p.to}::date AND l.posting_date BETWEEN ${p.from}::date AND ${p.to}::date
+        ${onlyReval ? sql`AND (v.source_doc_type = 'fx_revaluation' OR v.id IN (SELECT s.fx_voucher_id FROM settlement s WHERE s.tenant_id = ${tenantId}::uuid AND s.kind = 'reversal' AND s.fx_voucher_id IS NOT NULL))` : sql``}
+      GROUP BY a.id`.execute(trx)).rows.map((r) => ({ code: r.code, name: r.name, kind: r.kind, partyCode: null, d: D(r.d), c: D(r.c) }));
   return {
     // Đơn vị số dư: tài khoản công nợ theo từng đối tượng, tài khoản khác theo tài khoản; dư ròng gộp loại tiền. Nợ/Có của đơn vị là phần dư một bên.
     balance: once(async (): Promise<Unit[]> => (await sql<{ code: string; name: string; kind: string | null; partyCode: string | null; net: string }>`
@@ -44,13 +54,8 @@ export function reportData(trx: Trx, tenantId: string, regime: string, p: { from
         FROM fn_balances_at(${tenantId}::uuid, ${p.to}::date) b JOIN account a ON a.id = b.account_id WHERE a.regime = ${regime}
         GROUP BY 1, 2 HAVING sum(b.debit - b.credit) <> 0) x
       JOIN account a ON a.id = x.id LEFT JOIN party pt ON pt.id = x.party_id`.execute(trx)).rows.map((r) => { const n = D(r.net); return { code: r.code, name: r.name, kind: r.kind, partyCode: r.partyCode, d: n.gt(0) ? n : ZERO, c: n.lt(0) ? n.neg() : ZERO }; })),
-    // Phát sinh trong kỳ không gồm chứng từ kết chuyển (KC và bản đảo của KC mang cờ is_closing), nếu không doanh thu/chi phí về 0.
-    movement: once(async (): Promise<Unit[]> => (await sql<{ code: string; name: string; kind: string | null; d: string; c: string }>`
-      SELECT a.code, a.name, a.subledger_kind AS kind, sum(l.debit)::text AS d, sum(l.credit)::text AS c
-      FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
-      WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND NOT v.is_closing AND a.regime = ${regime}
-        AND v.posting_date BETWEEN ${p.from}::date AND ${p.to}::date AND l.posting_date BETWEEN ${p.from}::date AND ${p.to}::date
-      GROUP BY a.id`.execute(trx)).rows.map((r) => ({ code: r.code, name: r.name, kind: r.kind, partyCode: null, d: D(r.d), c: D(r.c) }))),
+    movement: once(() => movementRows(false)),
+    reval: once(() => movementRows(true)),
     // Đối ứng gồm cả chứng từ kết chuyển; cả hai tài khoản của cặp phải thuộc chế độ của báo cáo.
     pair: once(async (): Promise<PairUnit[]> => (await sql<{ dcode: string; dname: string; dkind: string | null; ccode: string; cname: string; ckind: string | null; amount: string }>`
       SELECT ad.code AS dcode, ad.name AS dname, ad.subledger_kind AS dkind, ac.code AS ccode, ac.name AS cname, ac.subledger_kind AS ckind, sum(p.amount)::text AS amount
@@ -66,10 +71,24 @@ const matches = (code: string, ref: { prefix: string; exclude: string[] }) => co
 const pick = (side: Side, u: { d: Decimal; c: Decimal }): Decimal => side === 'debit' ? u.d : side === 'credit' ? u.c : side === 'net_debit' ? u.d.minus(u.c) : u.c.minus(u.d);
 const pairMatches = (r: PairUnit, debit: string[], credit: string[]) => underAny(r.dcode, debit) && underAny(r.ccode, credit);
 
+// Đơn vị phát sinh sau khi trừ nhóm đánh giá lại (hậu tố !REVAL); đơn vị chỉ gồm nhóm đó về 0 thì bỏ.
+async function movementWithoutReval(data: ReportData): Promise<Unit[]> {
+  const rv = new Map((await data.reval()).map((u) => [u.code, u]));
+  return (await data.movement()).map((u) => { const r = rv.get(u.code); return r ? { ...u, d: u.d.minus(r.d), c: u.c.minus(r.c) } : u; });
+}
+// Số thuần đánh giá lại: N = Σ(Có − Nợ) của 515 − Σ(Nợ − Có) của 635 trong nhóm; lãi thuần = max(N, 0), lỗ thuần = max(−N, 0).
+export const REVAL_GAIN_PREFIX = '515'; export const REVAL_LOSS_PREFIX = '635';
+async function netReval(data: ReportData): Promise<{ gain: Decimal; loss: Decimal }> {
+  const us = await data.reval();
+  const n = sum(us.filter((u) => u.code.startsWith(REVAL_GAIN_PREFIX)).map((u) => u.c.minus(u.d))).minus(sum(us.filter((u) => u.code.startsWith(REVAL_LOSS_PREFIX)).map((u) => u.d.minus(u.c))));
+  return { gain: n.gt(0) ? n : ZERO, loss: n.lt(0) ? n.neg() : ZERO };
+}
+
 export function sqlResolver(data: ReportData): Resolver {
   return {
-    async account(ref, source, side) { return sum((await data[source]()).filter((u) => matches(u.code, ref)).map((u) => pick(side, u))); },
+    async account(ref, source, side) { return sum((ref.excludeReval ? await movementWithoutReval(data) : await data[source]()).filter((u) => matches(u.code, ref)).map((u) => pick(side, u))); },
     async pair(debit, credit) { return sum((await data.pair()).filter((r) => pairMatches(r, debit, credit)).map((r) => r.amount)); },
+    reval: () => netReval(data),
   };
 }
 
@@ -120,7 +139,7 @@ export async function evaluateFinancialReport(trx: Trx, tenantId: string, q: { r
 // Các hạng tử tài khoản/đối ứng của công thức kèm dấu (+1/-1); số và dòng [x] không có tài khoản trực tiếp nên bỏ qua.
 function signedTerms(e: Expr, sign = 1): { sign: number; term: Expr }[] {
   if (e.kind === 'bin') return [...signedTerms(e.left, sign), ...signedTerms(e.right, e.op === '-' ? -sign : sign)];
-  return e.kind === 'account' || e.kind === 'pair' ? [{ sign, term: e }] : [];
+  return e.kind === 'account' || e.kind === 'pair' || e.kind === 'reval' ? [{ sign, term: e }] : [];
 }
 
 // Truy ngược cấp 1: các đơn vị (tài khoản, đối tượng; hoặc cặp Nợ/Có với nguồn đối ứng) tạo nên chỉ tiêu, dùng đúng dữ liệu, tiền tố, loại trừ và dấu của công thức nên cộng lại bằng giá trị chỉ tiêu.
@@ -137,8 +156,12 @@ export async function drillLine(trx: Trx, tenantId: string, q: { reportCode: str
   const add = (key: string, row: Omit<DrillRow, 'amount'>, amount: Decimal) => rows.set(key, { ...row, amount: (rows.get(key)?.amount ?? ZERO).plus(amount) });
   for (const { sign, term } of signedTerms(parseFormula(l.formula))) {
     if (term.kind === 'account') {
-      for (const u of await data[l.source === 'movement' ? 'movement' : 'balance']()) if (matches(u.code, term))
+      for (const u of term.excludeReval ? await movementWithoutReval(data) : await data[l.source === 'movement' ? 'movement' : 'balance']()) if (matches(u.code, term))
         add(`${u.code}|${u.partyCode ?? ''}`, { accountCode: u.code, accountName: u.name, partyCode: u.partyCode, checks: [{ code: u.code, kind: u.kind }] }, pick(side, u).times(sign));
+    } else if (term.kind === 'reval') {
+      // Số thuần đánh giá lại là một con số của cả nhóm, không tách theo tài khoản: một dòng mang mã 515 (lãi) hoặc 635 (lỗ).
+      const net = await netReval(data); const gain = term.side === 'gain';
+      add(`REVAL|${term.side}`, { accountCode: gain ? REVAL_GAIN_PREFIX : REVAL_LOSS_PREFIX, accountName: `Chênh lệch đánh giá lại ngoại tệ cuối kỳ (${gain ? 'lãi' : 'lỗ'} thuần)`, partyCode: null, checks: [] }, (gain ? net.gain : net.loss).times(sign));
     } else if (term.kind === 'pair') {
       for (const r of await data.pair()) if (pairMatches(r, term.debit, term.credit))
         add(`${r.dcode}|${r.ccode}`, { accountCode: r.dcode, accountName: r.dname, counterAccountCode: r.ccode, partyCode: null, checks: [{ code: r.dcode, kind: r.dkind }, { code: r.ccode, kind: r.ckind }] }, r.amount.times(sign));
@@ -155,7 +178,7 @@ export interface ReportLineInput { lineCode: string; label: string; parentLineCo
 
 // Lưu toàn bộ dòng của một báo cáo. Kiểm tra trước khi ghi: cú pháp công thức, dòng [x] tồn tại, không vòng lặp (chạy thử với bộ giải trả 0), mã dòng không trùng, dòng cha tồn tại.
 export async function saveReportDef(trx: Trx, tenantId: string, regime: string, reportCode: string, lines: ReportLineInput[]): Promise<void> {
-  await evaluateReport(lines.map((l) => ({ lineCode: l.lineCode, formula: l.formula, source: l.source, side: l.side })), { account: async () => ZERO, pair: async () => ZERO });
+  await evaluateReport(lines.map((l) => ({ lineCode: l.lineCode, formula: l.formula, source: l.source, side: l.side })), { account: async () => ZERO, pair: async () => ZERO, reval: async () => ({ gain: ZERO, loss: ZERO }) });
   const codes = new Set(lines.map((l) => l.lineCode));
   if (codes.size !== lines.length) throw new AppError('VALIDATION', 'Mã dòng bị trùng', 400);
   for (const l of lines) if (l.parentLineCode && !codes.has(l.parentLineCode)) throw new AppError('VALIDATION', `Dòng ${l.lineCode}: không có dòng cha ${l.parentLineCode}`, 400);

@@ -60,6 +60,8 @@ describe('evalVatReturn', () => {
     expect(() => evalVatReturn({ lines: [{ code: 'A', kind: 'formula', formula: '511(5111) + [B]' }, { code: 'B', kind: 'carry' }] }, empty)).toThrow(/chỉ được tham chiếu chỉ tiêu/);
     expect(() => evalVatReturn({ lines: [{ code: 'A', kind: 'formula', formula: 'N511/C131' }] }, empty)).toThrow(/chỉ được tham chiếu chỉ tiêu/);
     expect(() => evalVatReturn({ lines: [{ code: 'A', kind: 'formula', formula: '[B] + 1.5' }, { code: 'B', kind: 'carry' }] }, empty)).toThrow(/số nguyên/);
+    // hạng tử đánh giá lại ngoại tệ của báo cáo tài chính không dùng được trong tờ khai
+    for (const f of ['REVAL_GAIN', '[B] + REVAL_LOSS', '515!REVAL']) expect(() => evalVatReturn({ lines: [{ code: 'A', kind: 'formula', formula: f }, { code: 'B', kind: 'carry' }] }, empty), f).toThrow(/chỉ được tham chiếu chỉ tiêu/);
     // hằng nguyên (parser đọc như tiền tố tài khoản) và 0 được nhận
     expect(evalVatReturn({ lines: [{ code: 'A', kind: 'formula', formula: '[B] + 100 - 0' }, { code: 'B', kind: 'carry' }] }, { ...empty, carry: '5' })).toEqual({ A: '105', B: '5' });
     expect(() => evalVatReturn({ lines: [{ code: 'A', kind: 'carry' }] }, { ...empty, carry: '1.5' })).toThrow(FormulaError);

@@ -24,7 +24,7 @@ const TAXABLE = '27'; const TOTAL = '34';
 function refsOnlyLines(e: Expr, src: string): void {
   if (e.kind === 'bin') { refsOnlyLines(e.left, src); refsOnlyLines(e.right, src); return; }
   if (e.kind === 'num' && e.value.includes('.')) throw new FormulaError(`Công thức "${src}": hằng số phải là số nguyên ("${e.value}")`);
-  const constant = e.kind === 'account' && e.exclude.length === 0 && /^\d+$/.test(e.prefix);
+  const constant = e.kind === 'account' && e.exclude.length === 0 && !e.excludeReval && /^\d+$/.test(e.prefix);
   if (e.kind !== 'line' && e.kind !== 'num' && !constant) throw new FormulaError(`Công thức "${src}": chỉ được tham chiếu chỉ tiêu [mã] và hằng số nguyên`);
 }
 
