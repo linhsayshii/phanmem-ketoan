@@ -65,6 +65,19 @@ describe('Màn hình soát lỗi dữ liệu', () => {
     expect(screen.getByText('Đã chạy 1 quy tắc, không phát hiện vấn đề')).toBeInTheDocument();
   });
 
+  it('mọi quy tắc đều bị bỏ qua: chỉ hiện cảnh báo, không hiện "Đã chạy 0 quy tắc, không phát hiện vấn đề"', async () => {
+    apiMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path.startsWith('/api/catalogs/data_check_rule') && !init) return { rows: RULES, total: 2 };
+      if (path === '/api/data-check/run') return { ran: 0, truncated: [], results: [], skipped: [{ code: 'CT_KHONG_CAN', reason: 'Bỏ qua do thiếu quyền xem công nợ' }] };
+      return { ok: true };
+    });
+    renderPage();
+    await screen.findByText('Chứng từ không cân');
+    await userEvent.click(screen.getByRole('button', { name: 'Soát lỗi' }));
+    expect(await screen.findByText('Chứng từ không cân: Bỏ qua do thiếu quyền xem công nợ')).toBeInTheDocument();
+    expect(screen.queryByText(/Đã chạy 0 quy tắc/)).toBeNull();
+  });
+
   it('công tắc Bật chỉ gửi is_enabled; sửa quy tắc không gửi code hay sql', async () => {
     renderPage();
     await screen.findByText('Chứng từ không cân');

@@ -63,6 +63,21 @@ describe('soát lỗi GĐ2: hóa đơn', () => {
   });
 });
 
+describe('soát lỗi GĐ2: hóa đơn (cùng chứng từ)', () => {
+  it('HD_TRUNG: cùng hóa đơn kê hai lần cùng mã thuế trong một chứng từ bị báo; hai mã thuế khác nhau của một hóa đơn thì không', async () => {
+    const t = await tenant();
+    const v = await t.create(t.invoice('HDM', '2026-03-10', '0000015', { autoPost: false,
+      items: [{ description: 'a', accountCode: '6422', amountCurrency: '1000000', taxCodes: ['V10'] }, { description: 'b', accountCode: '6422', amountCurrency: '1000000', taxCodes: ['V8'] }] }));
+    expect((await t.run(['HD_TRUNG'])).results).toEqual([]);
+    await t.admin(sql`INSERT INTO voucher_invoice(tenant_id, voucher_id, direction, serial, invoice_no, invoice_date, party_id, party_tax_code, invoice_group_id, tax_code_id, base_amount, tax_amount)
+      SELECT tenant_id, voucher_id, direction, serial, invoice_no, invoice_date, party_id, party_tax_code, invoice_group_id, tax_code_id, base_amount, tax_amount FROM voucher_invoice
+      WHERE voucher_id = ${v.id}::uuid ORDER BY id LIMIT 1`);
+    const r = await t.run(['HD_TRUNG']);
+    expect(r.results.map((x) => x.voucherId)).toEqual([v.id]);
+    expect(r.results[0]!.detail).toMatch(/hai lần trong cùng chứng từ/);
+  });
+});
+
 describe('soát lỗi GĐ2: thuế', () => {
   it('THUE_8_HET_HIEU_LUC: hóa đơn V8 ngày ngoài hiệu lực vat_reduced_rate bị báo, trong hiệu lực thì không', async () => {
     const t = await tenant();
@@ -71,6 +86,8 @@ describe('soát lỗi GĐ2: thuế', () => {
     await t.create(t.invoice('HDM', '2026-03-12', '0000022')); // V10
     const r = await t.run(['THUE_8_HET_HIEU_LUC']);
     expect(r.results.map((x) => x.voucherNo)).toEqual([out.voucherNo]);
+    await t.admin(sql`UPDATE tax_code SET kind = 'excise' WHERE tenant_id = ${t.tenantId}::uuid AND code = 'V8'`); // mã thuế suất 8 không phải GTGT thì không thuộc quy tắc
+    expect((await t.run(['THUE_8_HET_HIEU_LUC'])).results).toEqual([]);
   });
 
   it('THUE_LECH khớp /api/tax/reconcile: cùng tập chứng từ lệch (PKT chỉ có 1331, PT có Có 33311, chứng từ đảo qua kỳ sau, nộp thuế 33311)', async () => {
@@ -128,6 +145,18 @@ describe('soát lỗi GĐ2: tiền gửi, tiền mặt, công nợ', () => {
     expect(r.results.map((x) => x.voucherId)).toEqual([cashBig.id]);
   });
 
+  it('TIEN_MAT_VUOT_NGUONG: hóa đơn mua kê thẳng trên phiếu chi (Có 1111) từ ngưỡng bị báo; kê trên giấy báo nợ (Có 1121) thì không', async () => {
+    const t = await tenant();
+    expect((await t.call('POST', '/api/catalogs/bank', { code: 'VCB', name: 'Vietcombank' })).statusCode).toBe(201);
+    expect((await t.call('POST', '/api/catalogs/bank_account', { bank_code: 'VCB', account_no: '0011001', gl_account_code: '1121', currency_code: 'VND' })).statusCode).toBe(201);
+    const decl = (no: string) => ({ serial: 'PC26T', invoiceNo: no, invoiceDate: '2026-03-05', partyCode: 'NCC001', invoiceGroupCode: '03', taxCode: 'V10', baseAmount: '10000000', taxAmount: '1000000' });
+    const lines = (cash: string) => [{ accountCode: '6422', debit: '10000000', credit: '0' }, { accountCode: '1331', debit: '1000000', credit: '0' }, { accountCode: cash, debit: '0', credit: '11000000' }];
+    const pc = await t.call('POST', '/api/vouchers', { voucherType: 'PC', postingDate: '2026-03-12', documentDate: '2026-03-12', partyCode: 'NCC001', autoPost: true, lines: lines('1111'), invoices: [decl('0000043')] });
+    const bn = await t.call('POST', '/api/vouchers', { voucherType: 'BN', postingDate: '2026-03-13', documentDate: '2026-03-13', partyCode: 'NCC001', autoPost: true, bankAccountNo: '0011001', lines: lines('1121'), invoices: [decl('0000044')] });
+    expect(pc.statusCode, pc.body).toBe(201); expect(bn.statusCode, bn.body).toBe(201);
+    expect((await t.run(['TIEN_MAT_VUOT_NGUONG'])).results.map((x) => x.voucherId)).toEqual([pc.json().id]);
+  });
+
   it('CN_QUA_HAN: khoản quá hạn trên 90 ngày tại ngày kết thúc bị báo; chưa đủ 90 ngày hoặc đã thu hết thì không', async () => {
     const t = await tenant();
     const old = await t.create(t.invoice('HDB', '2026-01-10', '0000050', { dueDate: '2026-01-15' }));
@@ -168,13 +197,25 @@ describe('soát lỗi GĐ2: cờ nhạy cảm trên quy tắc', () => {
     expect(owner.skipped).toEqual([]);
     expect(owner.results.map((x) => x.ruleCode)).toContain('CN_QUA_HAN');
     const reason = 'Bỏ qua do thiếu quyền xem công nợ';
-    for (const flags of [[], ['view_receivable'], ['view_payable', 'view_cost']]) {
+    const cost = { code: 'SO_DU_SAI_LOAI', reason: 'Bỏ qua do thiếu quyền xem giá vốn' }; // quy tắc GĐ1 này in số dư nên có thể lộ giá vốn
+    for (const flags of [[], ['view_receivable'], ['view_receivable', 'view_cost']]) {
       const r = await t.run([], { from: '2026-01-01', to: '2026-12-31' }, await login(t, flags));
-      expect(r.skipped, flags.join()).toEqual([{ code: 'CN_LECH_SO_CAI', reason }, { code: 'CN_QUA_HAN', reason }]);
-      expect(r.ran).toBe(owner.ran - 2);
-      expect(r.results.filter((x) => ['CN_LECH_SO_CAI', 'CN_QUA_HAN'].includes(x.ruleCode))).toEqual([]);
+      expect(r.skipped, flags.join()).toEqual([{ code: 'CN_LECH_SO_CAI', reason }, { code: 'CN_QUA_HAN', reason }, ...(flags.includes('view_cost') ? [] : [cost])].sort((a, b) => a.code.localeCompare(b.code)));
+      expect(r.ran).toBe(owner.ran - r.skipped.length);
+      expect(r.results.filter((x) => r.skipped.some((k) => k.code === x.ruleCode))).toEqual([]);
     }
-    const both = await t.run([], { from: '2026-01-01', to: '2026-12-31' }, await login(t, ['view_receivable', 'view_payable']));
-    expect(both.skipped).toEqual([]); expect(both.ran).toBe(owner.ran);
+    const noCost = await t.run([], { from: '2026-01-01', to: '2026-12-31' }, await login(t, ['view_receivable', 'view_payable']));
+    expect(noCost.skipped).toEqual([cost]);
+    const all = await t.run([], { from: '2026-01-01', to: '2026-12-31' }, await login(t, ['view_receivable', 'view_payable', 'view_cost']));
+    expect(all.skipped).toEqual([]); expect(all.ran).toBe(owner.ran);
+  });
+
+  it('quy tắc bị bỏ qua không chạy SQL: câu SQL lỗi của quy tắc cần cờ chỉ hiện "Quy tắc lỗi" với người đủ cờ', async () => {
+    const t = await tenant();
+    await t.admin(sql`UPDATE data_check_rule SET sql = 'SELECT 1/0, 1, 1' WHERE tenant_id = ${t.tenantId}::uuid AND code = 'CN_QUA_HAN'`);
+    const owner = await t.run(['CN_QUA_HAN']);
+    expect(owner.results).toHaveLength(1); expect(owner.results[0]!.message).toMatch(/Quy tắc lỗi/);
+    const none = await t.run(['CN_QUA_HAN'], { from: '2026-01-01', to: '2026-12-31' }, await login(t, []));
+    expect(none.results).toEqual([]); expect(none.ran).toBe(0); expect(none.skipped.map((x) => x.code)).toEqual(['CN_QUA_HAN']);
   });
 });

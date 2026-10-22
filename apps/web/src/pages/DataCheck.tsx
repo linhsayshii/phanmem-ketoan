@@ -69,7 +69,7 @@ export default function DataCheckPage() {
           description={<ul style={{ margin: 0, paddingLeft: 20 }}>{check.data.skipped.map((k) => <li key={k.code}>{rules.data?.rows.find((r) => r.code === k.code)?.name ?? k.code}: {k.reason}</li>)}</ul>} />)}
 
       {check.data && (check.data.results.length === 0
-        ? <Alert type="success" showIcon message={`Đã chạy ${check.data.ran} quy tắc, không phát hiện vấn đề`} />
+        ? check.data.ran > 0 && <Alert type="success" showIcon message={`Đã chạy ${check.data.ran} quy tắc, không phát hiện vấn đề`} />
         : <Card title={`Kết quả: ${check.data.results.length} dòng từ ${groups.size} quy tắc (đã chạy ${check.data.ran} quy tắc)`}>
           <Collapse defaultActiveKey={[...groups.keys()]} items={[...groups].map(([code, rows]) => ({ key: code,
             label: <Space><Tag color={SEVERITY[rows[0]!.severity].color}>{SEVERITY[rows[0]!.severity].label}</Tag><b>{rows[0]!.ruleName}</b><span>({rows.length})</span></Space>,

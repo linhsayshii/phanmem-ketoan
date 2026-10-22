@@ -18,10 +18,11 @@ CREATE OR REPLACE FUNCTION seed_data_check_rules(p_tenant uuid) RETURNS void LAN
   (p_tenant, 'TK_TONG_HOP_TREN_DONG', 'Tài khoản tổng hợp trên dòng định khoản', 'error',
    $q$SELECT v.id, v.voucher_no, 'TK ' || a.code FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id WHERE v.state <> 'cancelled' AND a.is_group AND l.posting_date BETWEEN $1 AND $2$q$,
    'Chỉ định khoản vào tài khoản chi tiết', 'Chuyển sang tiểu khoản', true, '{}'),
+  -- Cờ view_cost: quy tắc in số dư theo tài khoản nên có thể lộ giá vốn (632 dư Có). Tài khoản công nợ mẫu đều lưỡng tính nên không vào quy tắc này; tài khoản công nợ tự tạo với loại dư N hoặc C vẫn có thể hiện số dư (chưa chặn thêm).
   -- Gộp theo a.id (không theo mã): một công ty có thể giữ nhiều hệ thống tài khoản cùng mã, hai tài khoản khác nhau không được bù trừ cho nhau. Số tiền báo là số dư ròng.
   (p_tenant, 'SO_DU_SAI_LOAI', 'Số dư trái loại dư của tài khoản', 'warning',
    $q$SELECT NULL::uuid, a.code || CASE WHEN p.code IS NOT NULL THEN ' / ' || p.code ELSE '' END, CASE WHEN a.normal_balance = 'debit' THEN 'Dư Có ' || -sum(b.debit - b.credit) ELSE 'Dư Nợ ' || sum(b.debit - b.credit) END FROM fn_balances_at(app_tenant(), $2) b JOIN account a ON a.id = b.account_id LEFT JOIN party p ON p.id = b.party_id WHERE a.normal_balance IN ('debit','credit') GROUP BY a.id, a.code, a.normal_balance, p.code HAVING (a.normal_balance = 'debit' AND sum(b.debit - b.credit) < 0) OR (a.normal_balance = 'credit' AND sum(b.debit - b.credit) > 0)$q$,
-   'Số dư cuối kỳ trái với loại dư', 'Kiểm tra định khoản hoặc đổi loại dư tài khoản (lưỡng tính)', true, '{}'),
+   'Số dư cuối kỳ trái với loại dư', 'Kiểm tra định khoản hoặc đổi loại dư tài khoản (lưỡng tính)', true, '{view_cost}'),
   (p_tenant, 'CHUA_GHI_SO_TRONG_KY_KHOA', 'Chứng từ chưa ghi sổ trong kỳ đã khóa', 'error',
    $q$SELECT v.id, coalesce(v.voucher_no, '(nháp)'), 'Kỳ ' || v.period_no || '/' || v.fiscal_year FROM voucher v JOIN fiscal_period fp ON fp.tenant_id = v.tenant_id AND fp.fiscal_year = v.fiscal_year AND fp.period_no = v.period_no WHERE v.state = 'draft' AND fp.status <> 'open' AND v.posting_date BETWEEN $1 AND $2$q$,
    'Kỳ đã khóa nhưng còn chứng từ nháp', 'Ghi sổ (cần quyền ghi lùi) hoặc hủy chứng từ', true, '{}'),
@@ -42,24 +43,30 @@ CREATE OR REPLACE FUNCTION seed_data_check_rules(p_tenant uuid) RETURNS void LAN
         AND ((i.direction = 'purchase' AND NOT i.is_import) OR (i.direction = 'sale' AND btrim(coalesce(p.tax_code, '')) <> ''))$q$,
    'Hóa đơn thiếu mã số thuế của người bán (mua vào) hoặc người mua (bán ra, đối tượng đã có MST)', 'Bổ sung mã số thuế trên hóa đơn (hoặc trên danh mục đối tượng rồi nhập lại hóa đơn)', true, '{}'),
   -- Cùng khóa với kiểm trùng lúc nhập (assertNotDuplicate, Task 18): fn_invoice_key của MST, ký hiệu, số; chứng từ nháp hoặc đã ghi sổ; không MST thì so cùng đối tượng.
-  -- Mỗi cặp một dòng (báo ở chứng từ có id lớn hơn, hoặc chứng từ trong khoảng ngày nếu chứng từ kia nằm ngoài); hai dòng của cùng hóa đơn nhiều mã thuế trên một chứng từ không phải trùng.
+  -- Mỗi cặp một dòng (báo ở chứng từ có id lớn hơn, hoặc chứng từ trong khoảng ngày nếu chứng từ kia nằm ngoài). Trong cùng một chứng từ chỉ trùng khi hai dòng cùng mã thuế (như assertNotDuplicate); hai dòng của một hóa đơn nhiều mã thuế không phải trùng.
   (p_tenant, 'HD_TRUNG', 'Hóa đơn mua nhập trùng', 'error',
-   $q$SELECT DISTINCT ON (a.voucher_id, b.voucher_id) a.voucher_id, coalesce(av.voucher_no, '(nháp)'), 'Hóa đơn ' || concat_ws(' ', a.serial, a.invoice_no) || ' trùng với chứng từ ' || coalesce(bv.voucher_no, '(nháp)')
+   $q$SELECT DISTINCT ON (a.voucher_id, b.voucher_id) a.voucher_id, coalesce(av.voucher_no, '(nháp)'), 'Hóa đơn ' || concat_ws(' ', a.serial, a.invoice_no) || CASE WHEN a.voucher_id = b.voucher_id THEN ' kê hai lần trong cùng chứng từ' ELSE ' trùng với chứng từ ' || coalesce(bv.voucher_no, '(nháp)') END
       FROM voucher_invoice a JOIN voucher av ON av.id = a.voucher_id
-      JOIN voucher_invoice b ON b.tenant_id = a.tenant_id AND b.direction = 'purchase' AND b.voucher_id <> a.voucher_id
+      JOIN voucher_invoice b ON b.tenant_id = a.tenant_id AND b.direction = 'purchase'
+        AND (b.voucher_id <> a.voucher_id OR (b.id <> a.id AND b.tax_code_id IS NOT DISTINCT FROM a.tax_code_id))
         AND fn_invoice_key(b.party_tax_code) = fn_invoice_key(a.party_tax_code) AND fn_invoice_key(b.serial) = fn_invoice_key(a.serial) AND fn_invoice_key(b.invoice_no) = fn_invoice_key(a.invoice_no)
         AND (fn_invoice_key(a.party_tax_code) <> '' OR b.party_id IS NOT DISTINCT FROM a.party_id)
       JOIN voucher bv ON bv.id = b.voucher_id AND bv.state IN ('draft','posted')
-      WHERE a.direction = 'purchase' AND av.state IN ('draft','posted') AND av.posting_date BETWEEN $1 AND $2 AND (a.voucher_id > b.voucher_id OR bv.posting_date NOT BETWEEN $1 AND $2)
+      WHERE a.direction = 'purchase' AND av.state IN ('draft','posted') AND av.posting_date BETWEEN $1 AND $2 AND (a.voucher_id >= b.voucher_id OR bv.posting_date NOT BETWEEN $1 AND $2)
       ORDER BY a.voucher_id, b.voucher_id$q$,
    'Cùng mã số thuế, ký hiệu và số hóa đơn đã nhập ở chứng từ khác', 'Giữ một chứng từ: hủy chứng từ nháp hoặc đảo chứng từ đã ghi sổ trùng (màn hình Khử trùng chứng từ)', true, '{}'),
   -- Phản chiếu đối chiếu thuế /api/tax/reconcile (tax/register.ts: effectiveRows + ledgerTax) theo từng (chứng từ, chiều) cho chứng từ có ngày ghi sổ trong khoảng:
   -- hóa đơn hiệu lực = hóa đơn của chứng từ gốc (đổi dấu theo bậc đảo; GGB, GGM ghi âm; chỉ mã thuế GTGT) so với phát sinh các tài khoản thuế của tax_distribution (Nợ − Có thuế mua, Có − Nợ thuế bán);
   -- bỏ chứng từ DK, chứng từ khấu trừ thuế vat_offset, và phần thuế bán của chứng từ nộp thuế GTGT (không hóa đơn, có dòng tiền 111/112, Nợ ròng thuế bán ở chứng từ gốc).
-  -- Khác đối chiếu ở một điểm: chọn chứng từ theo ngày ghi sổ chứ không theo kỳ kê khai đã lưu của hóa đơn.
+  -- Khác đối chiếu ở một điểm: chọn chứng từ theo ngày ghi sổ chứ không theo kỳ kê khai đã lưu của hóa đơn (không ảnh hưởng chứng từ có lệch hay không).
+  -- Chuỗi đảo chỉ đi từ chứng từ trong khoảng ngày lên các chứng từ gốc (up) rồi xuống lại, không quét toàn bộ lịch sử.
+  -- Danh sách GGB, GGM (hóa đơn ghi âm) viết cứng vì cờ refund chỉ nằm trong mã TypeScript (voucherTypeDef, packages/domain/src/voucherTypes.ts); thêm loại giảm giá, trả lại mới thì sửa cả ở register.ts lẫn đây.
   (p_tenant, 'THUE_LECH', 'Thuế GTGT trên hóa đơn lệch phát sinh sổ cái', 'error',
-   $q$WITH RECURSIVE eff(voucher_id, src_id, depth) AS (
-        SELECT v.id, v.id, 0 FROM voucher v WHERE v.state IN ('posted','reversed') AND EXISTS (SELECT 1 FROM voucher_invoice i WHERE i.voucher_id = v.id)
+   $q$WITH RECURSIVE up(id) AS (
+        SELECT v.id FROM voucher v WHERE v.posting_date BETWEEN $1 AND $2 AND v.state IN ('posted','reversed')
+        UNION SELECT v.reversal_of_id FROM voucher v JOIN up ON up.id = v.id WHERE v.reversal_of_id IS NOT NULL),
+      eff(voucher_id, src_id, depth) AS (
+        SELECT v.id, v.id, 0 FROM voucher v WHERE v.id IN (SELECT id FROM up) AND v.state IN ('posted','reversed') AND EXISTS (SELECT 1 FROM voucher_invoice i WHERE i.voucher_id = v.id)
         UNION ALL
         SELECT r.id, e.src_id, e.depth + 1 FROM voucher r JOIN eff e ON r.reversal_of_id = e.voucher_id WHERE r.state IN ('posted','reversed')),
       acc AS (SELECT DISTINCT d.scope, d.account_code AS code FROM tax_distribution d JOIN tax_code c ON c.id = d.tax_code_id WHERE d.line_type = 'tax' AND c.kind = 'vat' AND d.account_code IS NOT NULL),
@@ -94,11 +101,11 @@ CREATE OR REPLACE FUNCTION seed_data_check_rules(p_tenant uuid) RETURNS void LAN
   (p_tenant, 'THUE_8_HET_HIEU_LUC', 'Hóa đơn thuế suất 8% ngoài thời gian giảm thuế', 'warning',
    $q$SELECT v.id, coalesce(v.voucher_no, '(nháp)'), 'Hóa đơn ' || concat_ws(' ', i.serial, i.invoice_no) || ' ngày ' || to_char(i.invoice_date, 'DD/MM/YYYY') || ' dùng thuế suất 8%'
       FROM voucher_invoice i JOIN voucher v ON v.id = i.voucher_id JOIN tax_code t ON t.id = i.tax_code_id
-      WHERE v.state IN ('draft','posted') AND v.posting_date BETWEEN $1 AND $2 AND (t.code = 'V8' OR t.rate = 8)
+      WHERE v.state IN ('draft','posted') AND v.posting_date BETWEEN $1 AND $2 AND t.kind = 'vat' AND (t.code = 'V8' OR t.rate = 8)
         AND NOT EXISTS (SELECT 1 FROM legal_param lp WHERE lp.code = 'vat_reduced_rate' AND lp.valid_from <= i.invoice_date AND (lp.valid_to IS NULL OR lp.valid_to >= i.invoice_date))$q$,
    'Thuế suất 8% chỉ áp dụng trong thời gian giảm thuế GTGT theo nghị quyết', 'Đổi sang mã thuế đúng thuế suất của ngày hóa đơn', true, '{}'),
   -- Hóa đơn mua (cộng các dòng mã thuế của cùng ký hiệu, số trên một chứng từ) có tổng thanh toán ≥ vat_noncash_threshold tại ngày hóa đơn, có thuế khấu trừ (thuế > 0, nhóm khác 02 và 05)
-  -- và khoản phải trả của chứng từ đó đã đối trừ với khoản của phiếu thu/phiếu chi (PT, PC) đã ghi sổ: thanh toán tiền mặt thì thuế không đủ điều kiện khấu trừ.
+  -- và được trả tiền mặt: chứng từ kê hóa đơn có dòng Có trên tài khoản tiền mặt (PC trả ngay), hoặc khoản phải trả của chứng từ đó đã đối trừ với khoản của phiếu thu/phiếu chi (PT, PC) đã ghi sổ. Thanh toán tiền mặt thì thuế không đủ điều kiện khấu trừ.
   (p_tenant, 'TIEN_MAT_VUOT_NGUONG', 'Hóa đơn mua từ ngưỡng thanh toán không dùng tiền mặt nhưng trả bằng tiền mặt', 'warning',
    $q$SELECT v.id, coalesce(v.voucher_no, '(nháp)'), 'Hóa đơn ' || concat_ws(' ', x.serial, x.invoice_no) || ': tổng thanh toán ' || x.total || ' ≥ ' || t.th
       FROM (SELECT i.voucher_id, i.serial, i.invoice_no, min(i.invoice_date) AS invoice_date, sum(i.base_amount + i.tax_amount) AS total, sum(i.tax_amount) FILTER (WHERE coalesce(g.code, '') NOT IN ('02','05')) AS ded
@@ -106,10 +113,11 @@ CREATE OR REPLACE FUNCTION seed_data_check_rules(p_tenant uuid) RETURNS void LAN
       JOIN voucher v ON v.id = x.voucher_id AND v.state = 'posted' AND v.posting_date BETWEEN $1 AND $2
       CROSS JOIN LATERAL (SELECT (lp.value #>> '{}')::numeric AS th FROM legal_param lp WHERE lp.code = 'vat_noncash_threshold' AND lp.valid_from <= x.invoice_date AND (lp.valid_to IS NULL OR lp.valid_to >= x.invoice_date) ORDER BY lp.valid_from DESC LIMIT 1) t
       WHERE x.total >= t.th AND x.ded > 0
-        AND EXISTS (SELECT 1 FROM open_item o JOIN settlement s ON o.id IN (s.debit_item_id, s.credit_item_id)
+        AND (EXISTS (SELECT 1 FROM voucher_line cl JOIN account ca ON ca.id = cl.account_id WHERE cl.voucher_id = x.voucher_id AND cl.credit > 0 AND ca.subledger_kind = 'cash')
+          OR EXISTS (SELECT 1 FROM open_item o JOIN settlement s ON o.id IN (s.debit_item_id, s.credit_item_id)
                     JOIN open_item o2 ON o2.id = CASE WHEN o.id = s.debit_item_id THEN s.credit_item_id ELSE s.debit_item_id END
                     JOIN voucher pv ON pv.id = o2.voucher_id AND pv.voucher_type IN ('PT','PC') AND pv.state = 'posted'
-                    WHERE o.voucher_id = x.voucher_id)$q$,
+                    WHERE o.voucher_id = x.voucher_id))$q$,
    'Hóa đơn mua từ ngưỡng thanh toán không dùng tiền mặt nhưng được thanh toán bằng phiếu thu/phiếu chi tiền mặt', 'Thanh toán qua ngân hàng (Báo nợ) hoặc loại thuế GTGT của hóa đơn khỏi khấu trừ', true, '{}'),
   -- Khoản gốc (cộng các khoản con đánh giá lại) còn dư tại $2, quá hạn trên 90 ngày; phải thu: dư Nợ, phải trả: dư Có.
   (p_tenant, 'CN_QUA_HAN', 'Khoản công nợ quá hạn trên 90 ngày', 'warning',
@@ -125,4 +133,5 @@ $$;
 -- Công ty đã có: bổ sung quy tắc mới. Tắt nhật ký kiểm toán khi gieo bù vì migration không có người dùng (như 0014 chạy trước khi bật audit); trg_audit bật lại ngay sau.
 ALTER TABLE data_check_rule DISABLE TRIGGER trg_audit;
 SELECT seed_data_check_rules(id) FROM tenant;
+UPDATE data_check_rule SET flags = '{view_cost}' WHERE code = 'SO_DU_SAI_LOAI' AND is_system;
 ALTER TABLE data_check_rule ENABLE TRIGGER trg_audit;
