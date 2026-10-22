@@ -1,7 +1,8 @@
 import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
-import type { CatalogDef, ColumnDef } from './catalogs.js';
+import { idKeyOf, type CatalogDef, type ColumnDef } from './catalogs.js';
+import { applyConversions, resolveConversions, type Conversion } from './itemUoms.js';
 import { resolveLookups } from './crud.js';
 import { buildSheetTemplate, readSheet, zodIssueVi, type ImportError } from './excelSheet.js';
 
@@ -58,7 +59,7 @@ async function exists(trx: Transaction<Database>, def: CatalogDef, values: Recor
   const conds = [];
   for (const k of def.uniqueBy) {
     const col = def.columns.find((c) => c.key === k);
-    const dbCol = col?.lookup && col.lookup.catalog !== 'currency' ? k.replace(/_code$/, '_id') : k;
+    const dbCol = col?.lookup && col.lookup.catalog !== 'currency' ? idKeyOf(col) : k;
     if (values[dbCol] === null || values[dbCol] === undefined) {
       if (!def.nullsNotDistinct) return false; // khóa có NULL không bao giờ vi phạm UNIQUE thường
       conds.push(sql`${sql.ref(dbCol)} IS NULL`); continue;
@@ -72,7 +73,7 @@ async function exists(trx: Transaction<Database>, def: CatalogDef, values: Recor
 // Dòng tham chiếu chính danh mục này (bộ phận cha...) ghi trước các dòng chờ để dòng cha trong cùng file tra cứu được.
 // Có lỗi thì ném IMPORT_ERRORS; giao dịch của người gọi hoàn tác mọi dòng đã ghi.
 export async function importRows(trx: Transaction<Database>, tenantId: string, def: CatalogDef, rows: Record<string, unknown>[], errors: ImportError[]): Promise<number> {
-  const cache = new Map<string, unknown>(); let inserted = 0; let pending: Record<string, unknown>[] = [];
+  const cache = new Map<string, unknown>(); const uomCache = new Map<string, number>(); const convs: { code: string; list: Conversion[] }[] = []; let inserted = 0; let pending: Record<string, unknown>[] = [];
   const selfRef = def.columns.filter((c) => c.lookup?.catalog === def.name).map((c) => c.key);
   const flush = async () => {
     if (!pending.length || errors.length) { pending = []; return; }
@@ -83,8 +84,15 @@ export async function importRows(trx: Transaction<Database>, tenantId: string, d
     const { __row, ...data } = r as { __row: number } & Record<string, unknown>;
     try {
       if (selfRef.some((k) => data[k] !== undefined && data[k] !== null && data[k] !== '')) await flush();
-      const values = { ...(await resolveLookups(trx, def, data, cache)), tenant_id: tenantId };
+      const { uom_conversions: conv, ...resolved } = await resolveLookups(trx, def, data, cache);
+      const values: Record<string, unknown> = { ...resolved, tenant_id: tenantId };
       if (await exists(trx, def, values)) { errors.push({ row: __row, column: def.uniqueBy[0]!, message: 'Mã đã tồn tại trong hệ thống' }); continue; }
+      if (typeof conv === 'string' && conv.trim()) {
+        try { convs.push({ code: String(values['code']), list: await resolveConversions(trx, conv, values['base_uom_id'] as number, uomCache) }); } catch (e) {
+          if (!(e instanceof AppError && e.code === 'UOM_CONVERSION_INVALID')) throw e;
+          errors.push({ row: __row, column: 'uom_conversions', message: `Dòng ${__row}, cột ĐVT quy đổi: ${e.message}` }); continue;
+        }
+      }
       pending.push(values);
       if (pending.length >= BATCH) await flush();
     } catch (e) {
@@ -94,5 +102,9 @@ export async function importRows(trx: Transaction<Database>, tenantId: string, d
   }
   await flush();
   if (errors.length) throw new AppError('IMPORT_ERRORS', `${errors.length} dòng lỗi`, 409, errors.sort((a, b) => a.row - b.row).slice(0, MAX_ERRORS));
+  for (const c of convs) {
+    const id = (await sql<{ id: number }>`SELECT id FROM item WHERE code = ${c.code}`.execute(trx)).rows[0]!.id;
+    await applyConversions(trx, tenantId, id, c.list);
+  }
   return inserted;
 }

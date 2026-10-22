@@ -19,6 +19,7 @@ import settingRoutes from './modules/core/settings.js';
 import prefRoutes from './modules/core/prefs.js';
 import coaRoutes from './modules/coa/routes.js';
 import masterRoutes from './modules/master/routes.js';
+import itemRoutes from './modules/inventory/items.routes.js';
 import auditRoutes from './modules/audit/routes.js';
 import numberingRoutes from './modules/ledger/numbering.js';
 import voucherRoutes from './modules/ledger/vouchers.routes.js';
@@ -58,6 +59,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(prefRoutes);
   await app.register(coaRoutes);
   await app.register(masterRoutes);
+  await app.register(itemRoutes);
   await app.register(auditRoutes);
   await app.register(numberingRoutes);
   await app.register(voucherRoutes);

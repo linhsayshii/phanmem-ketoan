@@ -2,9 +2,13 @@ import { z } from 'zod';
 import type { Database } from '@kt/db';
 import { TAX_CODE_RE, VND_AMOUNT_RE } from '@kt/domain';
 
-export interface ColumnDef { key: string; label: string; type: 'text' | 'number' | 'boolean' | 'date' | 'select'; required?: boolean; options?: { value: string; label: string }[]; lookup?: { catalog: string }; width?: number }
+export interface ColumnDef { key: string; label: string; type: 'text' | 'number' | 'boolean' | 'date' | 'select'; required?: boolean; options?: { value: string; label: string }[]; lookup?: { catalog: string }; width?: number;
+  // Tài khoản kế toán theo mã (theo chế độ của kỳ mới nhất); idKey: tên cột id khi khác `<x>_id`; importOnly: cột chỉ có trong mẫu Excel, không phải cột bảng.
+  account?: boolean; idKey?: string; importOnly?: boolean }
 // nullsNotDistinct: ràng buộc duy nhất của bảng là UNIQUE NULLS NOT DISTINCT (NULL trùng NULL), nhập Excel kiểm trùng theo IS NULL.
-export interface CatalogDef { name: string; table: keyof Database; label: string; schema: z.ZodObject<z.ZodRawShape>; columns: ColumnDef[]; uniqueBy: string[]; sort: string; searchIn: string[]; nullsNotDistinct?: boolean }
+export interface CatalogDef { name: string; table: keyof Database; label: string; schema: z.ZodObject<z.ZodRawShape>; columns: ColumnDef[]; uniqueBy: string[]; sort: string; searchIn: string[]; nullsNotDistinct?: boolean; perm?: string }
+// Cột id trong DB của cột tra cứu `<x>_code`.
+export const idKeyOf = (c: ColumnDef): string => c.idKey ?? c.key.replace(/_code$/, '_id');
 
 // Số tiền VND: số nguyên không dấu, tối đa 16 chữ số (cột numeric(20,0)).
 const vnd = z.string().regex(VND_AMOUNT_RE);
@@ -24,6 +28,9 @@ export const dateIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => {
 // Mã tiền tệ khớp assertId của currency (/^[A-Z]{3}$/), nếu không dòng tạo ra sẽ không GET/PUT/DELETE được.
 const ccy = z.string().regex(/^[A-Z]{3}$/, 'Mã tiền tệ gồm 3 chữ in hoa');
 const code = z.string().trim().min(1).max(30);
+const qty = z.string().regex(/^\d{1,16}(\.\d{1,4})?$/, 'Số lượng không hợp lệ').nullable().optional();
+const uomFactor = z.string().regex(/^\d{1,14}(\.\d{1,6})?$/, 'Hệ số không hợp lệ').refine((v) => Number(v) > 0, 'Hệ số phải lớn hơn 0');
+const intOpt = (max: number) => z.union([z.number(), z.string().trim().regex(/^\d+$/, 'Nhập số nguyên').transform(Number)]).pipe(z.number().int().min(1).max(max)).nullable().optional();
 const text = (o = true) => (o ? z.string().nullable().optional() : z.string().trim().min(1));
 
 const defs: CatalogDef[] = [
@@ -109,6 +116,35 @@ const defs: CatalogDef[] = [
   { name: 'uom', table: 'uom', label: 'Đơn vị tính', uniqueBy: ['code'], sort: 'code', searchIn: ['code', 'name'],
     schema: z.object({ code, name: text(false), is_active: z.boolean().optional() }),
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên', type: 'text', required: true }] },
+  { name: 'item_group', table: 'item_group', label: 'Nhóm vật tư hàng hóa', perm: 'item', uniqueBy: ['code'], sort: 'code', searchIn: ['code', 'name'],
+    schema: z.object({ code, name: text(false), parent_code: text(), is_active: z.boolean().optional() }),
+    columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên nhóm', type: 'text', required: true },
+      { key: 'parent_code', label: 'Thuộc nhóm', type: 'text', lookup: { catalog: 'item_group' } }] },
+  { name: 'item', table: 'item', label: 'Vật tư hàng hóa', perm: 'item', uniqueBy: ['code'], sort: 'code', searchIn: ['code', 'name', 'barcode'],
+    schema: z.object({ code, name: text(false), name_en: text(), item_group_code: text(), kind: z.enum(['goods', 'material', 'finished', 'service', 'tool']).optional(), base_uom_code: code,
+      tracking: z.enum(['none', 'lot', 'lot_expiry']).optional(), shelf_life_days: intOpt(36500), default_tax_code: text(), min_qty: qty, max_qty: qty, location: text(), barcode: text(), spec_code: text(),
+      inventory_account_code: text(), revenue_account_code: text(), cogs_account_code: text(), uom_conversions: text(), is_active: z.boolean().optional() }),
+    columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên vật tư hàng hóa', type: 'text', required: true }, { key: 'name_en', label: 'Tên tiếng Anh', type: 'text' },
+      { key: 'item_group_code', label: 'Nhóm', type: 'text', lookup: { catalog: 'item_group' }, idKey: 'group_id' },
+      { key: 'kind', label: 'Tính chất', type: 'select', options: [{ value: 'goods', label: 'Hàng hóa' }, { value: 'material', label: 'Nguyên vật liệu' }, { value: 'finished', label: 'Thành phẩm' }, { value: 'service', label: 'Dịch vụ (không tồn kho)' }, { value: 'tool', label: 'Công cụ dụng cụ' }] },
+      { key: 'base_uom_code', label: 'ĐVT cơ sở', type: 'text', required: true, lookup: { catalog: 'uom' } },
+      { key: 'tracking', label: 'Theo dõi lô, hạn dùng', type: 'select', options: [{ value: 'none', label: 'Không' }, { value: 'lot', label: 'Theo lô' }, { value: 'lot_expiry', label: 'Theo lô và hạn dùng' }] },
+      { key: 'shelf_life_days', label: 'Hạn dùng (ngày)', type: 'number' }, { key: 'default_tax_code', label: 'Thuế GTGT ngầm định', type: 'text' },
+      { key: 'min_qty', label: 'Tồn tối thiểu', type: 'number' }, { key: 'max_qty', label: 'Tồn tối đa', type: 'number' }, { key: 'location', label: 'Vị trí', type: 'text' }, { key: 'barcode', label: 'Mã vạch', type: 'text' }, { key: 'spec_code', label: 'Quy cách', type: 'text' },
+      { key: 'inventory_account_code', label: 'TK kho', type: 'text', account: true }, { key: 'revenue_account_code', label: 'TK doanh thu', type: 'text', account: true }, { key: 'cogs_account_code', label: 'TK giá vốn', type: 'text', account: true },
+      { key: 'uom_conversions', label: 'ĐVT quy đổi (THUNG=24;HOP=6)', type: 'text', importOnly: true }] },
+  { name: 'item_uom', table: 'item_uom', label: 'ĐVT quy đổi', perm: 'item', uniqueBy: ['item_code', 'uom_code'], sort: 'item_id', searchIn: ['factor'],
+    schema: z.object({ item_code: code, uom_code: code, factor: uomFactor, is_purchase: z.boolean().optional(), is_sale: z.boolean().optional() }),
+    columns: [{ key: 'item_code', label: 'Vật tư hàng hóa', type: 'text', required: true, lookup: { catalog: 'item' } }, { key: 'uom_code', label: 'ĐVT', type: 'text', required: true, lookup: { catalog: 'uom' } },
+      { key: 'factor', label: 'Hệ số quy đổi ra ĐVT cơ sở', type: 'number', required: true }, { key: 'is_purchase', label: 'Dùng khi mua', type: 'boolean' }, { key: 'is_sale', label: 'Dùng khi bán', type: 'boolean' }] },
+  { name: 'warehouse', table: 'warehouse', label: 'Kho', perm: 'warehouse', uniqueBy: ['code'], sort: 'code', searchIn: ['code', 'name'],
+    schema: z.object({ code, name: text(false), inventory_account_code: text(), costing_method: z.enum(['avg_period', 'avg_moving', 'fifo', 'specific']).nullable().optional(),
+      kind: z.enum(['normal', 'consignment_out', 'consignment_in']).optional(), branch_code: text(), is_active: z.boolean().optional() }),
+    columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên kho', type: 'text', required: true },
+      { key: 'kind', label: 'Loại kho', type: 'select', options: [{ value: 'normal', label: 'Kho thường' }, { value: 'consignment_out', label: 'Kho gửi bán (TK 157)' }, { value: 'consignment_in', label: 'Kho nhận bán hộ' }] },
+      { key: 'inventory_account_code', label: 'TK kho', type: 'text', account: true },
+      { key: 'costing_method', label: 'Phương pháp tính giá xuất', type: 'select', options: [{ value: 'avg_period', label: 'Bình quân cuối kỳ' }, { value: 'avg_moving', label: 'Bình quân tức thời' }, { value: 'fifo', label: 'Nhập trước xuất trước' }, { value: 'specific', label: 'Đích danh' }] },
+      { key: 'branch_code', label: 'Chi nhánh', type: 'text', lookup: { catalog: 'department' }, idKey: 'branch_id' }] },
 ];
 // Mọi schema đều strict: khóa lạ trong thân yêu cầu bị từ chối (400 VALIDATION) thay vì bị bỏ qua.
 export const CATALOGS: CatalogDef[] = defs.map((d) => ({ ...d, schema: d.schema.strict() }));

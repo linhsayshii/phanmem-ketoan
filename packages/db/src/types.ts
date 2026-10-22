@@ -113,6 +113,18 @@ export interface ProjectTable {
   id: Generated<number>; tenant_id: string; code: string; name: string; parent_id: number | null; party_id: string | null;
   date_from: DateOnly | null; date_to: DateOnly | null; budget: Numeric | null; is_active: Generated<boolean>;
 }
+export interface ItemGroupTable { id: Generated<number>; tenant_id: string; code: string; name: string; parent_id: number | null; is_active: Generated<boolean>; created_at: Generated<Date> }
+export interface ItemTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; name_en: string | null; group_id: number | null; kind: Generated<string>; base_uom_id: number;
+  tracking: Generated<string>; shelf_life_days: number | null; default_tax_code: string | null; min_qty: Numeric | null; max_qty: Numeric | null;
+  location: string | null; barcode: string | null; spec_code: string | null; inventory_account_id: number | null; revenue_account_id: number | null; cogs_account_id: number | null;
+  is_active: Generated<boolean>; created_at: Generated<Date>;
+}
+export interface ItemUomTable { id: Generated<number>; tenant_id: string; item_id: number; uom_id: number; factor: Numeric; is_purchase: Generated<boolean>; is_sale: Generated<boolean>; created_at: Generated<Date> }
+export interface WarehouseTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; inventory_account_id: number | null; costing_method: string | null; kind: Generated<string>;
+  branch_id: number | null; is_active: Generated<boolean>; created_at: Generated<Date>;
+}
 export interface UomTable { id: Generated<number>; tenant_id: string; code: string; name: string; is_active: Generated<boolean> }
 
 export interface VoucherTypeTable {
@@ -275,6 +287,10 @@ export interface Database {
   cost_item: CostItemTable;
   project: ProjectTable;
   uom: UomTable;
+  item_group: ItemGroupTable;
+  item: ItemTable;
+  item_uom: ItemUomTable;
+  warehouse: WarehouseTable;
   voucher_type: VoucherTypeTable;
   voucher: VoucherTable;
   voucher_line: VoucherLineTable;
