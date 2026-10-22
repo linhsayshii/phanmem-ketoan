@@ -79,3 +79,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-23 06:00 | GĐ3 | cổng cuối và kiểm trên bản sao sạch tại 4620551 (migrate 0001–0068, seed ABC+XYZ), tag gd3-hoan-tat | 4620551 | lint, typecheck sạch; test 1408/1408; bất biến + sample-xyz 20/20; e2e 37/37
 2026-10-23 06:24 | GĐ4 | kế hoạch chi tiết, sổ quyết định; T1 quyền GĐ4, loại chứng từ TS/KH/LV, fa_proration, 2141–2143 theo dõi tài sản (0069) | 9dcd81e..4b3cc1d | api 821, rà soát sạch
 2026-10-23 06:44 | GĐ4 | T2 loại tài sản, thẻ tài sản, phân bổ chi phí, mã tài sản/khế ước trên dòng chứng từ, GV giữ tài sản (0070) | 74c2707..c021c6b | api 827, rà soát sạch
+2026-10-23 06:51 | GĐ4 | T3 động cơ khấu hao/phân bổ thuần (lũy kế mục tiêu, đơn vị theo ngày/tháng/kỳ) | 124af7a..1973348 | domain 197, rà soát sạch
