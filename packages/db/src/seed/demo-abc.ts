@@ -33,9 +33,13 @@ async function seedAbcData(c: pg.Client, tenantId: string, regime: Regime): Prom
   await c.query(`INSERT INTO bank_account(tenant_id, bank_id, account_no, account_name, branch, currency_code, gl_account_code) VALUES ($1,$2,'0011001234567','CONG TY TNHH THUONG MAI ABC','Sở giao dịch','VND','1121')`, [tenantId, b.rows[0].id]);
 }
 
+// `extend`: phần nghiệp vụ cả năm (ngoại tệ, công nợ, hóa đơn, thuế) dựng bằng dịch vụ của API (apps/api/scripts/seed-abc.ts), chạy trong cùng giao dịch.
+export interface SeedAbcOptions { code?: string; afterTenant?: () => Promise<void>; extend?: (tenantId: string, adminId: string) => Promise<void> }
+
 // Một giao dịch duy nhất cho người dùng, công ty và dữ liệu: lỗi ở bất kỳ bước nào thì không còn gì lại.
 // `code` và `afterTenant` chỉ để kiểm thử (tạo công ty mã khác, giả lập lỗi sau khi tạo công ty).
-export async function seedAbcTx(c: pg.Client, o: { code?: string; afterTenant?: () => Promise<void> } = {}): Promise<{ tenantId: string; created: boolean }> {
+// `extend` chạy khi công ty vừa tạo, hoặc công ty mẫu đã có từ trước mà chưa có chứng từ nào (dữ liệu mẫu cũ chỉ có danh mục); đã có chứng từ thì bỏ qua: chạy lại không tạo thêm.
+export async function seedAbcTx(c: pg.Client, o: SeedAbcOptions = {}): Promise<{ tenantId: string; created: boolean; extended: boolean }> {
   const hash = await argon2.hash('Matkhau1!', { type: argon2.argon2id });
   await c.query('BEGIN');
   try {
@@ -48,17 +52,23 @@ export async function seedAbcTx(c: pg.Client, o: { code?: string; afterTenant?: 
       await setTenantContext(c, t.id, admin);
       await seedAbcData(c, t.id, regime);
     }
+    const extended = !!o.extend && (t.created || !(await c.query('SELECT 1 FROM voucher WHERE tenant_id = $1 LIMIT 1', [t.id])).rows.length);
+    if (extended) {
+      await setTenantContext(c, t.id, admin);
+      await o.extend!(t.id, admin);
+    }
     await c.query('COMMIT');
-    return { tenantId: t.id, created: t.created };
+    return { tenantId: t.id, created: t.created, extended };
   } catch (e) { await c.query('ROLLBACK'); throw e; }
 }
 
-export async function seedAbc(adminUrl: string): Promise<{ tenantId: string; created: boolean }> {
+export async function seedAbc(adminUrl: string): Promise<{ tenantId: string; created: boolean; extended: boolean }> {
   const c = new pg.Client({ connectionString: adminUrl }); await c.connect();
   try { return await seedAbcTx(c); } finally { await c.end(); }
 }
 
+// Chỉ danh mục (không có chứng từ); `pnpm db:seed:abc` chạy apps/api/scripts/seed-abc.ts để có cả năm nghiệp vụ.
 if (process.argv[1] && process.argv[1].endsWith('demo-abc.ts')) {
   const r = await seedAbc(process.env.DATABASE_ADMIN_URL!);
-  console.log(r.created ? `Đã tạo công ty mẫu ABC (${r.tenantId}); đăng nhập admin / Matkhau1!` : `Công ty ABC đã có (${r.tenantId})`);
+  console.log(r.created ? `Đã tạo công ty mẫu ABC (${r.tenantId}), chỉ có danh mục; đăng nhập admin / Matkhau1!` : `Công ty ABC đã có (${r.tenantId})`);
 }

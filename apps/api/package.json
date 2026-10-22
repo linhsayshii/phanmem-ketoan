@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run --pool=forks --poolOptions.forks.singleFork=true",
     "cli": "tsx src/cli.ts",
-    "perf:100k": "tsx scripts/perf-100k.ts"
+    "perf:100k": "tsx scripts/perf-100k.ts",
+    "seed:abc": "tsx scripts/seed-abc.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^10.0.1", "@fastify/cors": "^10.0.1", "@fastify/multipart": "^9.0.1",
