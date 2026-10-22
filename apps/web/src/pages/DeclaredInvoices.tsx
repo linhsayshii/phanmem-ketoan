@@ -4,9 +4,9 @@ import { formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, TAX_CODE_RE, 
 import { KeyboardGrid } from '@kt/ui';
 import { PickDialog, groupFetcher, taxFetcher, useInvoiceGroups, useTaxDefs } from './voucherCommon.js';
 
-// Hóa đơn đầu vào kê khai nhập tay trên Phiếu chi, Giấy báo Nợ, Phiếu kế toán (chứng từ không tự dựng bảng kê như hóa đơn dịch vụ). Luôn là hóa đơn mua vào.
+// Hóa đơn đầu vào kê khai nhập tay trên Phiếu chi, Giấy báo Nợ, Phiếu kế toán, Chi phí mua hàng (CPM, màn hình LandedCost.tsx) (chứng từ không tự dựng bảng kê như hóa đơn dịch vụ). Luôn là hóa đơn mua vào.
 // Máy chủ cũng giữ danh sách loại này (DECLARING_TYPES trong apps/api/src/modules/invoices/declaration.ts).
-export const DECLARING_TYPES: readonly string[] = ['PC', 'BN', 'PKT'];
+export const DECLARING_TYPES: readonly string[] = ['PC', 'BN', 'PKT', 'CPM'];
 
 // Mọi ô là chuỗi; ngày lưu dạng YYYY-MM-DD, tiền là số nguyên đồng.
 export interface DeclRow { formNo: string; serial: string; invoiceNo: string; invoiceDate: string; invoiceGroupCode: string; taxCode: string; baseAmount: string; taxAmount: string; partyCode: string; partyTaxCode: string; partyName: string; partyAddress: string; note: string }

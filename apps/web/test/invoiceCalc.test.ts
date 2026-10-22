@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultGroup, type GroupRow, type TaxDefRow } from '../src/pages/invoiceCalc.js';
+import { defaultGroup, emptyInvRow, importLedger, type GroupRow, type TaxDefRow } from '../src/pages/invoiceCalc.js';
 
 const def = (code: string, rate: string | null, method: 'deduct' | 'none' = rate === null ? 'none' : 'deduct'): TaxDefRow =>
   ({ code, name: code, scope: 'both', isActive: true, def: { code, kind: 'vat', method, rate, priceInclude: false, distributions: [] } });
@@ -13,5 +13,13 @@ describe('defaultGroup', () => {
     expect(defaultGroup('sale', ['KCT'], defs, groups)).toBe('KCT');
     expect(defaultGroup('sale', ['V10'], defs, groups)).toBe('10');
     expect(defaultGroup('purchase', ['V10'], defs, groups)).toBe('01');
+  });
+});
+
+describe('importLedger', () => {
+  it('hàng nhập khẩu: Nợ kho / Có 3333, Nợ kho / Có 3332, Nợ 1331 / Có 33312; dòng không có thuế bỏ qua', () => {
+    const r = { ...emptyInvRow(), itemCode: 'H1', warehouseCode: 'K1', importTax: '50000', specialConsumptionTax: '20000', vatImport: '107000', vatImportCode: 'V10' };
+    const out = importLedger([r, { ...emptyInvRow(), itemCode: 'H2' }, emptyInvRow()], '156');
+    expect(out.map((l) => `${l.accountCode}:${l.debit}:${l.credit}:${l.itemCode ?? ''}`)).toEqual(['156:50000:0:H1', '3333:0:50000:', '156:20000:0:H1', '3332:0:20000:', '1331:107000:0:', '33312:0:107000:']);
   });
 });

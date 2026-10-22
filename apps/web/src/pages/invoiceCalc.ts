@@ -10,12 +10,14 @@ export interface GroupRow { scope: string; code: string; name: string; rate: str
 export interface InvRow { description: string; accountCode: string; quantity: string; unitPrice: string; amount: string; discountRate: string; discount: string; taxCodes: string; taxAmount: string;
   departmentCode: string; projectCode: string; costItemCode: string;
   // Mua hàng hóa (MH, TLM): dòng hàng nhập kho; sourceLineId là mã dòng nhập gốc khi trả lại hàng mua
-  itemCode: string; uomCode: string; warehouseCode: string; lotNo: string; expiryDate: string; sourceLineId: string }
+  itemCode: string; uomCode: string; warehouseCode: string; lotNo: string; expiryDate: string; sourceLineId: string;
+  // Mua hàng nhập khẩu (MH): thuế nhập khẩu, TTĐB, GTGT hàng nhập theo tờ khai hải quan (VND, nhập tay) và mã thuế GTGT của số thuế GTGT hàng nhập
+  importTax: string; specialConsumptionTax: string; vatImport: string; vatImportCode: string }
 export const emptyInvRow = (): InvRow => ({ description: '', accountCode: '', quantity: '', unitPrice: '', amount: '', discountRate: '', discount: '', taxCodes: '', taxAmount: '', departmentCode: '', projectCode: '', costItemCode: '',
-  itemCode: '', uomCode: '', warehouseCode: '', lotNo: '', expiryDate: '', sourceLineId: '' });
+  itemCode: '', uomCode: '', warehouseCode: '', lotNo: '', expiryDate: '', sourceLineId: '', importTax: '', specialConsumptionTax: '', vatImport: '', vatImportCode: '' });
 
 export const codesOf = (r: Pick<InvRow, 'taxCodes'>): string[] => r.taxCodes.split(/[\s,;]+/).filter(Boolean);
-const INPUT_KEYS = ['description', 'accountCode', 'quantity', 'unitPrice', 'amount', 'discountRate', 'discount', 'taxCodes', 'departmentCode', 'projectCode', 'costItemCode', 'itemCode', 'uomCode', 'warehouseCode', 'lotNo', 'expiryDate', 'sourceLineId'] as const;
+const INPUT_KEYS = ['description', 'accountCode', 'quantity', 'unitPrice', 'amount', 'discountRate', 'discount', 'taxCodes', 'departmentCode', 'projectCode', 'costItemCode', 'itemCode', 'uomCode', 'warehouseCode', 'lotNo', 'expiryDate', 'sourceLineId', 'importTax', 'specialConsumptionTax', 'vatImport', 'vatImportCode'] as const;
 export const isBlankRow = (r: InvRow): boolean => INPUT_KEYS.every((k) => (r[k] ?? '').trim() === '');
 
 export const NUM_RE = /^\d{1,16}(\.\d{1,4})?$/;
@@ -50,6 +52,19 @@ export interface Preview { lineTax: string[]; ledger: LedgerLine[]; byCode: Code
 export interface PreviewInput { scope: 'sale' | 'purchase'; documentType: 'invoice' | 'refund'; defs: TaxDefRow[]; rows: InvRow[]; currency: string; fxRate: string | null; minorUnit?: number | undefined;
   partyCode: string; counterAccountCode: string; declared: Record<string, string>;
   stockAccount?: string } // MH, TLM: tài khoản tạm cho dòng hàng chưa có tài khoản (kho 156 hoặc hàng đang đi đường 151); máy chủ tính tài khoản thật khi lưu
+// Bút toán thuế hàng nhập khẩu của các dòng (như máy chủ, service.ts buildInvoice): Nợ TK hàng / Có 3333 thuế NK, Nợ TK hàng / Có 3332 thuế TTĐB, Nợ 1331 / Có 33312 thuế GTGT hàng nhập. Số VND.
+export function importLedger(rows: InvRow[], stockAccount: string): LedgerLine[] {
+  const ln = (accountCode: string, debit: string, credit: string, description: string, r: InvRow): LedgerLine => ({ accountCode, debit, credit, amountCurrency: '0', fxRate: null, partyCode: null, description, dueDate: null,
+    ...(debit !== '0' && accountCode !== '1331' && r.itemCode.trim() ? { itemCode: r.itemCode.trim(), warehouseCode: r.warehouseCode.trim() || null } : {}) });
+  return rows.flatMap((r, k) => {
+    if (!r.itemCode.trim()) return [];
+    const acct = r.accountCode.trim() || stockAccount; const out: LedgerLine[] = [];
+    const pair = (amt: string, debitAcct: string, creditAcct: string, what: string) => { if (NUM_RE.test(amt) && D(amt).gt(0)) out.push(ln(debitAcct, amt, '0', `${what} dòng ${k + 1}`, r), ln(creditAcct, '0', amt, `${what} dòng ${k + 1}`, r)); };
+    pair(r.importTax, acct, '3333', 'Thuế nhập khẩu'); pair(r.specialConsumptionTax, acct, '3332', 'Thuế tiêu thụ đặc biệt hàng nhập khẩu'); pair(r.vatImport, '1331', '33312', 'Thuế GTGT hàng nhập khẩu');
+    return out;
+  });
+}
+
 export const NO_PREVIEW: Preview = { lineTax: [], ledger: [], byCode: [], error: null };
 
 // Xem trước thuế từng dòng, bảng thuế theo mã và bút toán. Dòng chưa có tài khoản bỏ qua (chưa đủ để hạch toán; lúc lưu mới báo thiếu).

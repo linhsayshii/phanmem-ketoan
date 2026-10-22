@@ -83,7 +83,7 @@ export const MENU: MenuItem[] = [
     ...VOUCHER_MENU_TYPES.map((code) => ({ key: code.toLowerCase(), label: typeLabel(VOUCHER_TYPES[code]!), to: `/chung-tu/${code}`, permission: 'voucher.view' })),
     { key: 'import-vouchers', label: 'Nhập chứng từ từ Excel', to: '/chung-tu/nhap-excel', permission: 'voucher.import' },
   ] },
-  { key: 'muahang', label: 'Mua hàng', to: '/chung-tu/MH', children: [voucherItem('MH', 'Mua hàng hóa'), voucherItem('TLM', 'Trả lại, giảm giá hàng mua'), voucherItem('HDM', 'Hóa đơn mua dịch vụ'), voucherItem('GGM', 'Giảm giá mua')] },
+  { key: 'muahang', label: 'Mua hàng', to: '/chung-tu/MH', children: [voucherItem('MH', 'Mua hàng hóa'), voucherItem('TLM', 'Trả lại, giảm giá hàng mua'), voucherItem('CPM', 'Chi phí mua hàng'), voucherItem('HDM', 'Hóa đơn mua dịch vụ'), voucherItem('GGM', 'Giảm giá mua')] },
   { key: 'banhang', label: 'Bán hàng', to: '/chung-tu/HDB', children: [voucherItem('HDB', 'Hóa đơn bán dịch vụ'), voucherItem('GGB', 'Giảm giá bán')] },
   { key: 'quy', label: 'Quỹ', to: '/quy', children: [
     { key: 'cashcount', label: 'Kiểm kê quỹ', to: '/quy/kiem-ke', permission: 'cash_count.view' },
