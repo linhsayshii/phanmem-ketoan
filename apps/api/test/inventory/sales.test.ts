@@ -6,7 +6,7 @@ import { setupLedgerTenant } from '../invariants/helpers.js';
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 let ctx: TestApp; let cookie: string; let seq = 0;
 type Res = { statusCode: number; body: string; json: () => any }; // eslint-disable-line @typescript-eslint/no-explicit-any
-const call = (method: 'POST' | 'PUT' | 'GET', url: string, payload?: object, c = cookie): Promise<Res> => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload && { payload }) });
+const call = (method: 'POST' | 'PUT' | 'GET' | 'DELETE', url: string, payload?: object, c = cookie): Promise<Res> => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload && { payload }) });
 const cat = async (name: string, payload: object) => { const r = await call('POST', `/api/catalogs/${name}`, payload); expect(r.statusCode, r.body).toBe(201); };
 const shape = (v: { lines?: { accountCode: string; debit: string; credit: string }[] }) => v.lines!.map((l) => `${l.accountCode}:${l.debit}:${l.credit}`).sort();
 const code = (r: Res) => r.json().error?.code ?? r.json().code;
@@ -250,6 +250,15 @@ describe('bán hàng hóa: sửa sau rà soát (vòng 2)', () => {
     expect(meta.statusCode, meta.body).toBe(200); expect(meta.body).not.toMatch(re);
     const dup = await call('POST', `/api/vouchers/${b.id}/duplicate`, { postingDate: '2026-03-06' }, c);
     expect(dup.statusCode, dup.body).toBe(409); expect(code(dup)).toBe('VOUCHER_TYPE_USE_INVOICE'); expect(dup.body).not.toMatch(re);
+  });
+
+  it('DELETE chứng từ kho nháp cần stock_voucher.delete: thiếu quyền 403, đủ quyền 204', async () => {
+    await pnk('R5', '2026-03-02', '10', '10');
+    const d = await create(sale([sl('R5', '1', '20')], { autoPost: false }));
+    const weak = await login(['voucher.view', 'voucher.delete'], []);
+    const no = await call('DELETE', `/api/vouchers/${d.id}`, undefined, weak); expect(no.statusCode, no.body).toBe(403);
+    const ok = await login(['voucher.view', 'voucher.delete', 'stock_voucher.view', 'stock_voucher.delete'], []);
+    expect((await call('DELETE', `/api/vouchers/${d.id}`, undefined, ok)).statusCode).toBe(204);
   });
 
   it('hai TLB cùng ngày: TLB đứng cuối theo thứ tự trong ngày nhận phần còn lại, tổng giá vốn trả = 10', async () => {

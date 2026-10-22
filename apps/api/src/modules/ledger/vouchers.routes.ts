@@ -154,6 +154,6 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.post('/api/vouchers/:id/discard', { preHandler: app.requirePermission('voucher.delete'), schema: { params: idParam } }, async (req) => app.withTenant(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.delete'); return redactCost(trx, req.auth!, await S.discardVoucher(trx, req.params.id)); }));
   app.post('/api/vouchers/:id/duplicate', { preHandler: app.requirePermission('voucher.create'), schema: { params: idParam, body: z.object({ postingDate: S.dateIso }) } }, async (req, reply) =>
     reply.status(201).send(await app.withOverride(req, async (trx) => redactCost(trx, req.auth!, await S.duplicateVoucher(trx, ctx(req), req.params.id, req.body.postingDate)))));
-  app.delete('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.delete'), schema: { params: idParam } }, async (req, reply) => { await app.withTenant(req, (trx) => S.deleteDraft(trx, req.params.id)); return reply.status(204).send(); });
+  app.delete('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.delete'), schema: { params: idParam } }, async (req, reply) => { await app.withTenant(req, async (trx) => { await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.delete'); await S.deleteDraft(trx, req.params.id); }); return reply.status(204).send(); });
 };
 export default routes;
