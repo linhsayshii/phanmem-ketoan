@@ -67,6 +67,16 @@ describe('soát lỗi kho', () => {
     expect(h.map((x) => x.ref)).toEqual(['156 / K1']); expect(h[0]!.detail).toBe('Lớp giá 900 / sổ cái 400');
   });
 
+  it('KHO_LECH_SO_CAI: phiếu xuất chưa tính giá vốn (giá tạm đã ghi sổ) không bị báo; sửa dòng sổ cái thì báo', async () => {
+    const t = await tenant();
+    const inn = await t.pnk('2026-01-02', [{ itemCode: 'H1', quantity: '100', unitPrice: '10' }]);
+    await t.pxk('2026-01-20', [{ itemCode: 'H1', quantity: '60' }]);
+    expect(await t.hits('KHO_LECH_SO_CAI')).toEqual([]);
+    expect(await t.hits('KHO_TON_0_CON_GIA_TRI')).toEqual([]);
+    await t.force(sql`UPDATE voucher_line SET debit = debit + 7 WHERE voucher_id = ${inn.id}::uuid AND debit > 0`);
+    expect((await t.hits('KHO_LECH_SO_CAI')).map((x) => x.ref)).toEqual(['156 / K1']);
+  });
+
   it('KHO_SAI_DVT: số lượng cơ sở khác số lượng × hệ số thì báo đúng chứng từ', async () => {
     const t = await tenant();
     await t.pnk('2026-01-02', [{ itemCode: 'H1', quantity: '100', unitPrice: '10' }]);
