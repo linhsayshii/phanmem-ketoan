@@ -215,7 +215,8 @@ export async function stockReconcile(trx: Trx, q: { asOf: string }) {
     card AS (SELECT item_id, warehouse_id, sum(${SQ}) AS qty FROM mv GROUP BY 1, 2),
     lay AS (SELECT item_id, warehouse_id, sum(CASE WHEN direction = 'in' THEN quantity WHEN NOT provisional THEN -quantity ELSE 0 END) AS qty,
       sum(CASE WHEN direction = 'in' THEN val WHEN NOT provisional THEN -val ELSE 0 END) AS val FROM mv GROUP BY 1, 2),
-    kho AS (SELECT inventory_account_id AS id FROM warehouse WHERE inventory_account_id IS NOT NULL UNION SELECT inventory_account_id FROM item WHERE inventory_account_id IS NOT NULL),
+    kho AS (SELECT inventory_account_id AS id FROM warehouse WHERE inventory_account_id IS NOT NULL UNION SELECT inventory_account_id FROM item WHERE inventory_account_id IS NOT NULL
+      UNION SELECT id FROM account WHERE code = '156'), -- TK mặc định khi kho và hàng đều không khai TK (như khi lập chứng từ)
     led AS (SELECT l.item_id, l.warehouse_id, string_agg(DISTINCT a.code, ', ' ORDER BY a.code) AS acc, sum(l.debit - l.credit) AS val
       FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
       WHERE v.state IN ('posted', 'reversed') AND l.posting_date <= ${q.asOf}::date AND a.id IN (SELECT id FROM kho) GROUP BY 1, 2)

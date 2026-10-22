@@ -42,7 +42,7 @@ async function tenant() {
     const r = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
     return `sid=${r.cookies.find((x) => x.name === 'sid')!.value}`;
   };
-  return { tenantId, call, pnk, pxk, costing, run, hits, force, login };
+  return { tenantId, call, cat, stock, pnk, pxk, costing, run, hits, force, login };
 }
 
 describe('soát lỗi kho', () => {
@@ -75,6 +75,21 @@ describe('soát lỗi kho', () => {
     expect(await t.hits('KHO_TON_0_CON_GIA_TRI')).toEqual([]);
     await t.force(sql`UPDATE voucher_line SET debit = debit + 7 WHERE voucher_id = ${inn.id}::uuid AND debit > 0`);
     expect((await t.hits('KHO_LECH_SO_CAI')).map((x) => x.ref)).toEqual(['156 / K1']);
+  });
+
+  it('kho và hàng không khai TK kho (mặc định 156): đối chiếu lệch 0, soát lỗi bắt dòng sổ cái bị sửa', async () => {
+    const t = await tenant();
+    await t.cat('warehouse', { code: 'K9', name: 'Kho không TK', costing_method: 'avg_period' });
+    await t.cat('item', { code: 'H9', name: 'Hàng không TK', base_uom_code: 'CAI', kind: 'goods', tracking: 'none' });
+    const inn = await t.stock({ voucherType: 'PNK', stockKind: 'purchase', postingDate: '2026-01-02', warehouseCode: 'K9', partyCode: 'NCC1', items: [{ itemCode: 'H9', uomCode: 'CAI', quantity: '10', unitPrice: '100' }] });
+    const rec = await t.call('GET', '/api/reports/stock-reconcile?asOf=2026-01-31');
+    expect(rec.statusCode, rec.body).toBe(200);
+    const row = rec.json().differences.filter((x: { itemCode: string }) => x.itemCode === 'H9');
+    expect(row, rec.body).toEqual([]); expect(rec.json().ok).toBe(true);
+    expect(await t.hits('KHO_LECH_SO_CAI')).toEqual([]);
+    await t.force(sql`UPDATE voucher_line SET debit = debit + 7 WHERE voucher_id = ${inn.id}::uuid AND debit > 0`);
+    expect((await t.hits('KHO_LECH_SO_CAI')).map((x) => x.ref)).toEqual(['156 / K9']);
+    expect((await t.call('GET', '/api/reports/stock-reconcile?asOf=2026-01-31')).json().ok).toBe(false);
   });
 
   it('KHO_SAI_DVT: số lượng cơ sở khác số lượng × hệ số thì báo đúng chứng từ', async () => {
