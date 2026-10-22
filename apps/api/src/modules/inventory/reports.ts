@@ -44,12 +44,12 @@ const scopeWhere = (s: Scope) => sql.join([sql`true`,
   ...(s.groupIds ? [sql`i.group_id = ANY(${s.groupIds}::bigint[])`] : [])], sql` AND `);
 
 // Phát sinh kho đến hết ngày `to` kèm giá trị; `withValue` false bỏ tra lớp giá (báo cáo chỉ số lượng).
-const mvCte = (s: Scope, to: string, withValue = true) => sql`mv AS (
+export const mvCte = (s: Scope, to: string, withValue = true) => sql`mv AS (
   SELECT m.id, m.item_id, m.warehouse_id, m.posting_date, m.direction, m.quantity, m.lot_no, m.expiry_date, m.voucher_id, m.reversal_of,
     v.voucher_no, v.voucher_type, v.description, v.day_order, v.seq_no, v.party_id, l.line_no, l.debit_account_id, l.credit_account_id,
     ${withValue ? sql`CASE WHEN m.direction = 'in' THEN coalesce(ly.val, 0)
       ELSE coalesce(a.amount, CASE WHEN l.unit_cost IS NOT NULL THEN round(coalesce(l.base_quantity, l.quantity * l.uom_factor) * l.unit_cost) ELSE l.amount END, 0) END` : sql`0`} AS val,
-    (m.direction = 'out' AND a.id IS NULL) AS provisional
+    (m.direction = 'out' AND a.id IS NULL) AS provisional, m.item_line_id
   FROM stock_move m JOIN voucher v ON v.id = m.voucher_id JOIN voucher_item_line l ON l.tenant_id = m.tenant_id AND l.id = m.item_line_id JOIN item i ON i.id = m.item_id
   LEFT JOIN stock_cost_assignment a ON a.tenant_id = m.tenant_id AND a.move_id = m.id AND a.is_current
   ${withValue ? sql`LEFT JOIN LATERAL (SELECT sum(c.value) AS val FROM stock_cost_layer c WHERE c.tenant_id = m.tenant_id AND c.move_id = m.id AND c.kind = 'receipt') ly ON true` : sql``}
@@ -58,7 +58,7 @@ const mvCte = (s: Scope, to: string, withValue = true) => sql`mv AS (
   -- Lớp điều chỉnh (hóa đơn mua, chi phí mua...) là dòng chỉ có giá trị, tính theo ngày ghi sổ của chứng từ nguồn của lớp (hợp đồng lớp adjustment); chưa có chứng từ thì theo ngày nhập.
   SELECT m.id, m.item_id, m.warehouse_id, coalesce(av.posting_date, m.posting_date), 'in', 0, m.lot_no, m.expiry_date, coalesce(c.voucher_id, m.voucher_id), m.reversal_of,
     coalesce(av.voucher_no, v.voucher_no), coalesce(av.voucher_type, v.voucher_type), coalesce(av.description, v.description), coalesce(av.day_order, v.day_order), coalesce(av.seq_no, v.seq_no), coalesce(av.party_id, v.party_id), l.line_no, NULL, NULL,
-    c.value, false
+    c.value, false, m.item_line_id
   FROM stock_cost_layer c JOIN stock_move m ON m.tenant_id = c.tenant_id AND m.id = c.move_id JOIN voucher v ON v.id = m.voucher_id JOIN voucher_item_line l ON l.tenant_id = m.tenant_id AND l.id = m.item_line_id JOIN item i ON i.id = m.item_id
   LEFT JOIN voucher av ON av.id = c.voucher_id
   WHERE c.kind = 'adjustment' AND coalesce(av.posting_date, m.posting_date) <= ${to}::date AND ${scopeWhere(s)}` : sql``})`;
