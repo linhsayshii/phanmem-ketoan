@@ -77,3 +77,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-23 04:21 | GĐ3 | T23 bất biến 7 sổ kho; perf:costing 54.000 dòng: 17,8–20,3 giây mỗi phương pháp | 193698a | api 811, inv7 xanh (FC_RUNS=40)
 2026-10-23 05:23 | GĐ3 | tài liệu người dùng; rà soát toàn nhánh (opus: 1 Critical, 2 Important, 10 Minor) và đợt sửa: trả lại hàng mua sau chi phí mua, quyền xóa chứng từ kho, TK kho mặc định 156 trong đối chiếu/soát lỗi (0067, 0068), Ctrl+S tồn kho đầu kỳ | 47ce682, 6d3bf68..4620551 | db 107, api 818, web 215, lint/typecheck sạch
 2026-10-23 06:00 | GĐ3 | cổng cuối và kiểm trên bản sao sạch tại 4620551 (migrate 0001–0068, seed ABC+XYZ), tag gd3-hoan-tat | 4620551 | lint, typecheck sạch; test 1408/1408; bất biến + sample-xyz 20/20; e2e 37/37
+2026-10-23 06:24 | GĐ4 | kế hoạch chi tiết, sổ quyết định; T1 quyền GĐ4, loại chứng từ TS/KH/LV, fa_proration, 2141–2143 theo dõi tài sản (0069) | 9dcd81e..4b3cc1d | api 821, rà soát sạch
