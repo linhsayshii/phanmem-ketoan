@@ -31,15 +31,17 @@ async function bankInfos(trx: Transaction<Database>, voucherId: string): Promise
 }
 
 type Trx = Transaction<Database>;
+// Loại chứng từ phát sinh kho: phiếu kho (module inventory), hoặc hóa đơn mua hàng hóa, trả lại hàng mua mang dòng hàng nhập, xuất kho.
+const createsStockMoves = (type: string) => voucherTypeDef(type)?.module === 'inventory' || type === 'MH' || type === 'TLM';
 type Auth = NonNullable<FastifyRequest['auth']>;
 // Chứng từ loại kho (module inventory) cần thêm quyền stock_voucher.*: quyền voucher.* chung chỉ mở chứng từ ngoài kho.
-async function requireStockPerm(trx: Trx, auth: Auth, id: string, perm: string) {
+export async function requireStockPerm(trx: Trx, auth: Auth, id: string, perm: string) {
   const r = await trx.selectFrom('voucher').select('voucher_type').where('id', '=', id).executeTakeFirst();
   const stock = r && (voucherTypeDef(r.voucher_type)?.module === 'inventory' // MH, TLM mang dòng hàng nhập, xuất kho khi có hàng hóa
     || ((r.voucher_type === 'MH' || r.voucher_type === 'TLM') && !!(await trx.selectFrom('voucher_item_line').select('id').where('voucher_id', '=', id).where('item_id', 'is not', null).limit(1).executeTakeFirst())));
   if (stock && !auth.permissions.has(perm)) throw new AppError('FORBIDDEN', `Thiếu quyền ${perm}`, 403);
 }
-async function withStockWarnings<T extends { warnings?: unknown[] }>(trx: Trx, tenantId: string, dto: T, voucherId: string): Promise<T> {
+export async function withStockWarnings<T extends { warnings?: unknown[] }>(trx: Trx, tenantId: string, dto: T, voucherId: string): Promise<T> {
   const w = await stockNegativeWarnings(trx, tenantId, voucherId);
   return w.length ? { ...dto, warnings: [...(dto.warnings ?? []), ...w] } : dto;
 }
@@ -62,7 +64,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     async (req) => app.withTenant(req, async (trx) => {
       const out = await S.listVouchers(trx, req.query);
       // phiếu kho: tổng tiền là giá trị tồn kho, che khi thiếu view_cost (không quét dòng từng phiếu)
-      if (!req.auth!.sensitive.has('view_cost')) out.rows = out.rows.map((r) => (voucherTypeDef(r.voucherType)?.module === 'inventory' ? { ...r, totalDebit: null as never } : r));
+      if (!req.auth!.sensitive.has('view_cost')) out.rows = out.rows.map((r) => (createsStockMoves(r.voucherType) ? { ...r, totalDebit: null as never } : r));
       return out;
     }));
   app.get('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.view'), schema: { params: idParam } }, async (req) => app.withTenant(req, async (trx) => {
@@ -79,6 +81,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       if (voucherTypeDef(v.voucherType)?.module === 'inventory') throw new AppError('PRINT_FORM_NOT_READY', 'Mẫu in phiếu kho chưa có', 409); // mẫu 01-VT, 02-VT làm ở Task 19
       const allowed = voucherTypeDef(v.voucherType)?.printForms ?? [];
       const form = req.query.form === 'default' ? allowed[0] : req.query.form;
+      if (createsStockMoves(v.voucherType) && (form === '01-VT' || form === '02-VT')) throw new AppError('PRINT_FORM_NOT_READY', 'Mẫu in phiếu kho chưa có', 409);
       if (form !== undefined && !allowed.includes(form)) throw new AppError('PRINT_FORM_INVALID', `Mẫu in "${req.query.form}" không dùng được cho chứng từ loại ${v.voucherType}`, 400);
       const t = await trx.selectFrom('tenant').selectAll().where('id', '=', req.auth!.tenantId!).executeTakeFirstOrThrow();
       // chế độ kế toán gắn với năm tài chính của chứng từ (một công ty có thể giữ nhiều chế độ)
@@ -122,7 +125,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     app.withTenant(req, async (trx) => {
       const v = await trx.selectFrom('voucher').select(['voucher_type', 'state']).where('id', '=', req.params.id).executeTakeFirst();
       if (!v) throw new AppError('VOUCHER_NOT_FOUND', 'Không có chứng từ', 404);
-      if (voucherTypeDef(v.voucher_type)?.module !== 'inventory' || v.state !== 'draft') throw new AppError('DAY_ORDER_NOT_ALLOWED', 'Chỉ đặt thứ tự trong ngày cho phiếu kho nháp', 409);
+      if (!createsStockMoves(v.voucher_type) || v.state !== 'draft') throw new AppError('DAY_ORDER_NOT_ALLOWED', 'Chỉ đặt thứ tự trong ngày cho phiếu kho nháp', 409);
       await trx.updateTable('voucher').set({ day_order: req.body.dayOrder }).where('id', '=', req.params.id).execute();
       return { id: req.params.id, dayOrder: req.body.dayOrder };
     }));

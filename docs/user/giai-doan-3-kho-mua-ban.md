@@ -74,6 +74,7 @@ Chọn "Cách nhận hàng" ở đầu tab Hàng tiền:
 - **Nhập kho cùng hóa đơn:** ghi sổ Nợ TK kho, Nợ 1331, Có 331 (hoặc 111, 112) và sinh phát sinh nhập kho ngay.
 - **Hàng về trước, hóa đơn về sau:** lập và ghi sổ Phiếu nhập kho mua hàng trước (giá tạm tính). Khi hóa đơn về, lập MH và chọn các phiếu nhập kho đã nhận. Phần mềm không nhập kho lần nữa: ghi Nợ 1331, chênh giá giữa hóa đơn và giá tạm tính vào TK kho, Có 331 phần chênh. Chênh giá được giữ thành lớp điều chỉnh giá vốn, cần tính lại giá vốn từ ngày nhập.
 - **Hóa đơn về trước, hàng về sau:** ghi sổ Nợ 151 (hàng đang đi đường), Nợ 1331, Có 331, chưa nhập kho. Khi hàng về, lập Phiếu nhập kho mua hàng, điền hóa đơn nguồn (`sourceInvoiceIds`): phiếu ghi Nợ 156, Có 151 theo số tiền trên hóa đơn. Hóa đơn phải đã ghi sổ.
+- **Công nợ phải trả:** số tiền tạm tính trên Phiếu nhập kho (hàng về trước hóa đơn) và phần chênh khi hóa đơn về là hai khoản mở riêng trên TK 331, đối trừ khi thanh toán. Hóa đơn hàng về trước phải cùng nhà cung cấp với phiếu nhập và phiếu nhập phải đã ghi sổ; trả lại hàng không vượt số lượng đã nhập. Hóa đơn đã có lần tính giá vốn phủ ngày nhập thì không bỏ ghi sổ, hãy đảo.
 
 "Trả lại, giảm giá hàng mua" (loại TLM) chọn hóa đơn gốc là một MH đã ghi sổ. Trả lại hàng: nhập "Mã dòng nhập gốc" và số lượng; hàng xuất theo đúng giá vốn lúc nhập, số tiền hàng phải bằng số lượng nhân giá nhập (ghi Nợ 331, Có kho, Có 1331). Chỉ giảm giá: để trống mã dòng, phần giảm giảm giá trị tồn kho.
 

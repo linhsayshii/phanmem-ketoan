@@ -4,7 +4,7 @@ import { READ_SNAPSHOT } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
 import { postWithCashCheck } from '../cash/books.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
-import { assertVoucherSensitive } from '../ledger/vouchers.routes.js';
+import { assertVoucherSensitive, requireStockPerm, withStockWarnings } from '../ledger/vouchers.routes.js';
 import { createSchedule, deleteSchedule, getSchedule, listSchedules, runAmortization, runInput, scheduleInput, scheduleUpdate, updateSchedule } from './amortization.js';
 import { createInvoice, getInvoice, invoiceInput, listTaxDefs, updateInvoice } from './service.js';
 
@@ -12,6 +12,8 @@ const idParam = z.object({ id: z.string().uuid() });
 const numId = z.object({ id: z.coerce.number().int().positive() });
 
 // Hóa đơn mua/bán dịch vụ, giảm giá, trả lại: dựng bút toán từ dòng hàng và mã thuế, ghi bảng kê hóa đơn kê khai thuế. Ghi sổ, bỏ ghi sổ, đảo, hủy dùng route /api/vouchers/:id/*.
+// Ghi sổ ngay khi lập: hóa đơn mua hàng hóa, trả lại hàng mua có dòng hàng cần thêm quyền stock_voucher.post như route ghi sổ.
+const postStocked = async (trx: Parameters<typeof requireStockPerm>[0], tenantId: string, id: string, auth: Parameters<typeof requireStockPerm>[1]) => { await requireStockPerm(trx, auth, id, 'stock_voucher.post'); return postWithCashCheck(trx, tenantId, id); };
 const routes: FastifyPluginAsyncZod = async (app) => {
   app.post('/api/invoices', { preHandler: app.requirePermission('voucher.create'), schema: { body: invoiceInput.extend({ autoPost: z.boolean().optional() }) } }, async (req, reply) => {
     if (req.body.autoPost && !req.auth!.permissions.has('voucher.post')) throw new AppError('FORBIDDEN', 'Thiếu quyền voucher.post', 403);
@@ -20,7 +22,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     // Như POST /api/vouchers: gửi lại cùng idempotencyKey trả hóa đơn cũ, chỉ ghi sổ hóa đơn vừa tạo (nháp, version 1).
     const dto = await app.withOverride(req, async (trx) => {
       const inv = await createInvoice(trx, { tenantId, userId: req.auth!.userId, auth: req.auth! }, input);
-      return autoPost && inv.state === 'draft' && inv.version === 1 ? { ...inv, ...(await postWithCashCheck(trx, tenantId, inv.id)) } : inv;
+      return autoPost && inv.state === 'draft' && inv.version === 1 ? withStockWarnings(trx, tenantId, { ...inv, ...(await postStocked(trx, tenantId, inv.id, req.auth!)) }, inv.id) : inv;
     });
     if (dto.state === 'posted') notifyRecompute(app, tenantId);
     return reply.status(201).send(dto);

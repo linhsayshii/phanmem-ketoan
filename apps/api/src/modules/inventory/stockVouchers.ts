@@ -44,17 +44,18 @@ async function invoiceLinks(trx: Trx, input: StockVoucherInput, selfId?: string)
   const ids = input.sourceInvoiceIds;
   if (!ids?.length) return null;
   if (input.voucherType !== 'PNK' || input.stockKind !== 'purchase') throw new AppError('VALIDATION', 'Hóa đơn nguồn (sourceInvoiceIds) chỉ dùng cho phiếu nhập kho mua hàng', 400);
+  if (input.items.some((i) => i.creditAccountCode && i.creditAccountCode !== '151')) throw new AppError('VALIDATION', 'Phiếu nhập theo hóa đơn về trước luôn ghi Có 151, không đổi tài khoản Có', 400);
   const vs = await trx.selectFrom('voucher').select(['id', 'voucher_type', 'state', 'receipt_state']).where('id', 'in', ids).execute();
   for (const id of ids) {
     const v = vs.find((x) => x.id === id);
     if (!v || v.voucher_type !== 'MH' || v.receipt_state !== 'invoice_first') throw new AppError('INVOICE_NOT_FOUND', 'Không tìm thấy hóa đơn mua hàng hóa về trước đã chọn', 404);
     if (v.state !== 'posted') throw new AppError('INVOICE_NOT_POSTED', 'Hóa đơn mua hàng hóa chưa ghi sổ, không lập phiếu nhập theo hóa đơn được', 409);
   }
-  const mh = await trx.selectFrom('voucher_item_line as l').select(['l.id', 'l.item_id', 'l.base_quantity', 'l.amount', 'l.discount_amount']).where('l.voucher_id', 'in', ids).where('l.item_id', 'is not', null).orderBy('l.voucher_id').orderBy('l.line_no').execute();
+  const mh = await trx.selectFrom('voucher_item_line as l').select(['l.id', 'l.item_id', 'l.base_quantity', 'l.amount', 'l.discount_amount', 'l.stock_value']).where('l.voucher_id', 'in', ids).where('l.item_id', 'is not', null).orderBy('l.voucher_id').orderBy('l.line_no').execute();
   const got = mh.length ? await trx.selectFrom('voucher_item_line as l').innerJoin('voucher as v', 'v.id', 'l.voucher_id').select(['l.link_line_id', 'l.base_quantity', 'l.amount'])
     .where('l.link_line_id', 'in', mh.map((m) => m.id)).where('v.voucher_type', '=', 'PNK').where('v.state', 'in', ['draft', 'posted']).$if(!!selfId, (q) => q.where('l.voucher_id', '<>', selfId!)).execute() : [];
   const left = new Map(mh.map((m) => [m.id, { qty: D(m.base_quantity ?? 0).minus(got.filter((g) => g.link_line_id === m.id).reduce((s, g) => s.plus(g.base_quantity ?? 0), D(0))),
-    amt: D(m.amount).minus(m.discount_amount).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).minus(got.filter((g) => g.link_line_id === m.id).reduce((s, g) => s.plus(g.amount), D(0))) }]));
+    amt: (m.stock_value !== null ? D(m.stock_value) : D(m.amount).minus(m.discount_amount).toDecimalPlaces(0, Decimal.ROUND_HALF_UP)).minus(got.filter((g) => g.link_line_id === m.id).reduce((s, g) => s.plus(g.amount), D(0))) }]));
   const itemIds = new Map((await trx.selectFrom('item').select(['id', 'code']).where('code', 'in', [...new Set(input.items.map((i) => i.itemCode))]).execute()).map((r) => [r.code, r.id]));
   const uf = new Map((await trx.selectFrom('item_uom as iu').innerJoin('uom as u', 'u.id', 'iu.uom_id').select(['iu.item_id', 'u.code', 'iu.factor']).where('iu.item_id', 'in', [...itemIds.values()]).execute()).map((r) => [`${r.item_id}:${r.code}`, r.factor]));
   return input.items.map((it, i) => {

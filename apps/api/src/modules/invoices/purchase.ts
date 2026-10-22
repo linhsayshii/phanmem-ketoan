@@ -43,12 +43,13 @@ export async function resolvePurchase(trx: Trx, a: { input: InvoiceInput; regime
   if (isMH && mode === 'goods_first') {
     const ids = a.input.receiptVoucherIds ?? [];
     if (!ids.length) throw bad('VALIDATION', 'Hóa đơn hàng về trước phải chọn phiếu nhập kho (receiptVoucherIds)');
-    const vs = await trx.selectFrom('voucher').select(['id', 'voucher_type', 'state', 'stock_kind']).where('id', 'in', ids).execute();
+    const vs = await trx.selectFrom('voucher').select(['id', 'voucher_type', 'state', 'stock_kind', 'party_id']).where('id', 'in', ids).execute();
     for (const id of ids) {
       const v = vs.find((x) => x.id === id);
       if (!v) throw bad('RECEIPT_NOT_FOUND', 'Không tìm thấy phiếu nhập kho đã chọn', 404);
       if (v.voucher_type !== 'PNK' || v.stock_kind !== 'purchase') throw bad('RECEIPT_INVALID', 'Chỉ liên kết phiếu nhập kho loại mua hàng', 409);
-      if (v.state !== 'draft' && v.state !== 'posted') throw bad('RECEIPT_NOT_POSTED', 'Phiếu nhập kho đã hủy hoặc đã đảo, không liên kết được', 409);
+      if (v.state !== 'posted') throw bad('RECEIPT_NOT_POSTED', 'Phiếu nhập kho phải ghi sổ trước khi liên kết với hóa đơn mua hàng về trước', 409);
+      if (v.party_id !== a.partyId) throw bad('RECEIPT_PARTY_MISMATCH', 'Phiếu nhập kho của nhà cung cấp khác với hóa đơn', 409);
     }
     pnkLines = await trx.selectFrom('voucher_item_line as l').innerJoin('warehouse as w', 'w.id', 'l.warehouse_id').leftJoin('account as da', 'da.id', 'l.debit_account_id')
       .select(['l.id', 'l.voucher_id', 'l.item_id', 'w.code as wh', 'l.base_quantity', 'l.amount', 'l.discount_amount', 'da.code as acct']).where('l.voucher_id', 'in', ids).where('l.direction', '=', 'in').orderBy('l.line_no').execute();
@@ -61,6 +62,7 @@ export async function resolvePurchase(trx: Trx, a: { input: InvoiceInput; regime
   }
   // Phiếu nhập kho theo hóa đơn: dòng MH hàng về sau được phiếu khác tham chiếu; kiểm ở sourceInvoiceIds của phiếu kho, không ở đây.
 
+  const returning = new Map<number, Decimal>(); // số lượng trả cộng dồn theo dòng nhập trong cùng hóa đơn
   const lineNo = (k: number) => k + 1;
   for (const k of idx) {
     const it = input.items[k]!; const n = lineNo(k);
@@ -77,9 +79,10 @@ export async function resolvePurchase(trx: Trx, a: { input: InvoiceInput; regime
     if (!isMH) { // TLM: trả lại hàng (có số lượng) hoặc chỉ giảm giá (không số lượng, không kho)
       if (!it.sourceLineId) throw bad('PURCHASE_RETURN_SOURCE_INVALID', `Dòng ${n}: phải chỉ rõ dòng hóa đơn mua hoặc phiếu nhập gốc (sourceLineId)`);
       const src = await trx.selectFrom('voucher_item_line as s').innerJoin('voucher as sv', 'sv.id', 's.voucher_id')
-        .select(['s.id', 's.link_line_id', 's.item_id', 'sv.state', 'sv.voucher_type', 'sv.receipt_state']).where('s.id', '=', it.sourceLineId).executeTakeFirst();
+        .select(['s.id', 's.link_line_id', 's.item_id', 'sv.state', 'sv.voucher_type', 'sv.receipt_state', 'sv.party_id']).where('s.id', '=', it.sourceLineId).executeTakeFirst();
       if (!src || src.state !== 'posted' || (src.voucher_type !== 'MH' && src.voucher_type !== 'PNK') || src.item_id !== item.id)
         throw bad('PURCHASE_RETURN_SOURCE_INVALID', `Dòng ${n}: dòng gốc phải là dòng hàng ${it.itemCode} đã ghi sổ của hóa đơn mua hàng hóa hoặc phiếu nhập kho`, 409);
+      if (src.party_id !== a.partyId) throw bad('PURCHASE_RETURN_PARTY_MISMATCH', `Dòng ${n}: chứng từ gốc của nhà cung cấp khác với hóa đơn trả lại, giảm giá`, 409);
       const lineId = src.voucher_type === 'MH' && src.receipt_state === 'goods_first' ? src.link_line_id : src.id; // hàng về trước: lô nhập nằm ở dòng phiếu nhập
       const mv = lineId === null ? undefined : (await sql<{ wh_id: string; qty: string; lot: string | null; value: string }>`
         SELECT m.warehouse_id::text AS wh_id, m.quantity::text AS qty, m.lot_no AS lot,
@@ -97,6 +100,12 @@ export async function resolvePurchase(trx: Trx, a: { input: InvoiceInput; regime
         continue;
       }
       needQty();
+      // Tổng số lượng trả (nháp và đã ghi sổ, gồm các dòng khác của chính hóa đơn này) không vượt số lượng nhập của lô.
+      const prior = await trx.selectFrom('voucher_item_line as l').innerJoin('voucher as v', 'v.id', 'l.voucher_id').select('l.base_quantity').where('l.link_line_id', '=', lineId).where('l.direction', '=', 'out')
+        .where('v.voucher_type', '=', 'TLM').where('v.state', 'in', ['draft', 'posted']).$if(!!a.selfId, (q) => q.where('l.voucher_id', '<>', a.selfId!)).execute();
+      const returned = prior.reduce((s, r) => s.plus(r.base_quantity ?? 0), D(0)).plus(returning.get(lineId) ?? 0).plus(base!);
+      if (returned.gt(mv.qty)) throw bad('RETURN_EXCEEDS_RECEIPT', `Dòng ${n}: tổng số lượng trả ${returned.toString()} vượt số lượng đã nhập ${D(mv.qty).toString()}`, 409);
+      returning.set(lineId, D(returning.get(lineId) ?? 0).plus(base!));
       const unitCost = D(mv.value).div(mv.qty).toDecimalPlaces(4, Decimal.ROUND_HALF_UP);
       const expected = round0(D(base!).times(unitCost));
       if (!net.eq(expected)) throw bad('PURCHASE_RETURN_AMOUNT_MISMATCH', `Dòng ${n}: tiền trả lại hàng phải bằng giá nhập gốc ${unitCost.toFixed(4)} × ${base} = ${expected.toFixed(0)} đồng (đang nhập ${net.toFixed(0)}); chênh lệch giá ghi giảm giá riêng`);
