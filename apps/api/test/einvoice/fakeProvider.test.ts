@@ -34,6 +34,13 @@ describe('nhà cung cấp giả lập', () => {
     expect(logs).toHaveLength(4);
   });
 
+  it('hai create song song cùng transactionUuid: cùng số, một dòng trong kho', async () => {
+    const t = await tenant(); const p = providerFor(row()); const u = uuid();
+    const [a, b] = await Promise.all([t.run((c) => p.create(c, doc(u))), t.run((c) => p.create(c, doc(u)))]);
+    expect(a.invoiceNo).toBe(b.invoiceNo);
+    expect(await ctx.t.admin.selectFrom('einvoice_fake_store').select('id').where('tenant_id', '=', t.tenantId).execute()).toHaveLength(1);
+  });
+
   it('timeout_after_create: ném NetworkError nhưng đã lưu; findByTransaction trả số đã cấp; timeout_before không lưu', async () => {
     const t = await tenant(); const u = uuid();
     const after = providerFor(row({ mode: 'timeout_after_create' }));

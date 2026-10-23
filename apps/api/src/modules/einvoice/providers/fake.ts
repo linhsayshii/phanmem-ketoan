@@ -30,10 +30,11 @@ export function fakeProvider(optionsRaw: unknown): EInvoiceProvider {
       const done = (ok: boolean, response: unknown, error?: string) => ctx.log({ action: 'create', request: { transactionUuid: doc.transactionUuid, serial: doc.serial }, response, httpStatus: ok ? 200 : null, ok, ...(error && { error }), ms: Date.now() - t0 });
       if (mode === 'reject') { await done(false, null, 'FAKE_REJECT'); throw new ProviderError('FAKE_REJECT', 'Nhà cung cấp giả lập từ chối hóa đơn', false); }
       if (mode === 'timeout_before') { await done(false, null, 'timeout'); throw new NetworkError('timeout', 'Hết thời gian chờ nhà cung cấp giả lập'); }
+      // Cấp số tăng dần theo ký hiệu; khóa tư vấn tránh hai lần cấp song song cùng số. Kiểm trùng uuid SAU khi có khóa
+      // (giao dịch đồng thời cùng uuid chờ ở đây rồi thấy bản đã commit, không đụng UNIQUE).
+      await sql`SELECT pg_advisory_xact_lock(hashtext(${'einvoice_fake:' + doc.serial}))`.execute(ctx.db);
       const existing = await byUuid(ctx, doc.transactionUuid);
       if (existing) { await done(true, { duplicate: true }); return resultOf(existing); }
-      // Cấp số tăng dần theo ký hiệu; khóa tư vấn tránh hai lần cấp song song cùng số.
-      await sql`SELECT pg_advisory_xact_lock(hashtext(${'einvoice_fake:' + doc.serial}))`.execute(ctx.db);
       const next = (await sql<{ n: string }>`SELECT (coalesce(max(invoice_no::int), 0) + 1)::text AS n FROM einvoice_fake_store WHERE serial = ${doc.serial}`.execute(ctx.db)).rows[0]!.n;
       const row = await ctx.db.insertInto('einvoice_fake_store').values({ tenant_id: sql<string>`current_setting('app.current_tenant')::uuid`, transaction_uuid: doc.transactionUuid, serial: doc.serial,
         invoice_no: next.padStart(7, '0'), issue_date: doc.issueDate, cqt_code: opt.withCode ? cqtCodeOf(doc.transactionUuid) : null }).returningAll().executeTakeFirstOrThrow() as unknown as Row;
