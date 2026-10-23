@@ -183,11 +183,19 @@ async function bookBalance(trx: Trx, id: number, account: string, date: string) 
 // bên Có tiền theo tỷ giá thanh toán nhập vào; chênh lệch vào lãi (Có) / lỗ (Nợ) tỷ giá của chế độ (fx_rule).
 export async function repay(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof repayInput>) {
   const { c, stat } = await activeLoan(trx, ctx.tenantId, id);
-  // Dư nợ gốc tại ngày trả (không phải cả đời khế ước): trả trước ngày giải ngân làm dư nợ ngày âm và lãi kỳ sau không tính được.
+  // Trả gốc không được vượt dư nợ nhỏ nhất từ ngày trả trở đi: dư nợ tại ngày trả và số dư chạy sau mỗi bút toán gốc về sau (trả lùi ngày không làm dư nợ các ngày sau âm,
+  // trả trước ngày giải ngân không làm dư nợ ngày trả âm), vì chạy lãi vay không tính được trên dư nợ âm.
   const at = (await loanStats(trx, b.date, id))[0]!;
-  if (D(b.principal).gt(at.outstandingCur)) {
-    const vnd = c.currency === 'VND' ? '' : ` (${formatVnNumber(at.outstandingVnd)} đồng)`;
-    throw new AppError('LOAN_REPAY_EXCEEDS', `Trả gốc ${formatVnNumber(b.principal)} ${c.currency} vượt dư nợ gốc ${formatVnNumber(at.outstandingCur)} ${c.currency}${vnd} của khế ước ${c.code} tại ngày ${b.date}`, 409);
+  const later = (await sql<{ low: string | null }>`SELECT min(bal)::text AS low FROM (
+      SELECT d, sum(net) OVER (ORDER BY d) AS bal FROM (
+        SELECT l.posting_date AS d, sum(-l.amount_currency) AS net
+        FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id AND v.state IN ('posted','reversed') JOIN account a ON a.id = l.account_id
+        WHERE l.contract_id = ${id}::bigint AND a.code = ${stat.principalAccount} GROUP BY l.posting_date) g) w
+    WHERE d > ${b.date}::date`.execute(trx)).rows[0]!.low;
+  const room = later !== null && D(later).lt(at.outstandingCur) ? D(later) : D(at.outstandingCur);
+  if (D(b.principal).gt(room)) {
+    const vnd = c.currency === 'VND' || !room.eq(at.outstandingCur) ? '' : ` (${formatVnNumber(at.outstandingVnd)} đồng)`;
+    throw new AppError('LOAN_OVERPAY', `Trả gốc ${formatVnNumber(b.principal)} ${c.currency} vượt dư nợ gốc tối đa trả được ${formatVnNumber(room.toString())} ${c.currency}${vnd} của khế ước ${c.code} tại ngày ${b.date} (tính cả các khoản gốc ghi sổ sau ngày này)`, 409);
   }
   const gl = await bankGl(trx, b.bankAccountNo);
   const lender = c.partyCode;

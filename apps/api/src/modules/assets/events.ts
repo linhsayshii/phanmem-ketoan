@@ -64,6 +64,13 @@ async function begin(trx: Trx, ctx: Ctx, id: number, date: string, needActive = 
   if (needActive && a.status === 'decreased') throw new AppError('ASSET_DECREASED', `Tài sản ${a.code} đã ghi giảm ngày ${a.decrease_date}`, 409);
   return { a, span: await periodAt(trx, ctx, date) };
 }
+// Ghi giảm không được sớm hơn ngày ghi tăng / biến động đã ghi sổ của thẻ (trừ chứng từ khấu hao, phân bổ): dòng ghi tăng sau ngày giảm làm nguyên giá sống lại sau ghi giảm.
+async function assertNotBeforeLedger(trx: Trx, id: number, date: string) {
+  const r = await sql<{ d: string | null }>`SELECT max(l.posting_date)::text AS d FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id AND v.state IN ('posted','reversed')
+    WHERE l.asset_id = ${id}::bigint AND v.source_doc_type IS DISTINCT FROM 'asset_run' AND l.posting_date > ${date}::date`.execute(trx);
+  const d = r.rows[0]!.d;
+  if (d) throw new AppError('ASSET_EVENT_ORDER', `Tài sản còn bút toán ghi tăng hoặc biến động ngày ${d}: ngày ghi giảm không được sớm hơn`, 409);
+}
 async function tsVoucher(trx: Trx, ctx: Ctx, eventId: string, date: string, description: string, lines: Line[]): Promise<string | null> {
   const ls = lines.filter((l) => !D(l.debit).isZero() || !D(l.credit).isZero());
   if (!ls.length) return null;
@@ -107,6 +114,7 @@ export async function increaseAsset(trx: Trx, ctx: Ctx, id: number, b: z.infer<t
  */
 export async function decreaseAsset(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof decreaseInput>) {
   const { a, span } = await begin(trx, ctx, id, b.date);
+  await assertNotBeforeLedger(trx, id, b.date);
   const fixed = a.kind === 'fixed';
   if (b.reason === 'to_tool' && (!fixed || !b.toolCard)) throw new AppError('VALIDATION', fixed ? 'Chuyển thành công cụ dụng cụ cần thông tin thẻ công cụ dụng cụ mới' : 'Chỉ tài sản cố định chuyển thành công cụ dụng cụ', 400);
   if (b.toolCard?.depreciationStartDate && b.toolCard.depreciationStartDate <= span.to)
@@ -157,6 +165,7 @@ export async function decreaseAsset(trx: Trx, ctx: Ctx, id: number, b: z.infer<t
 export async function decreaseTool(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof toolDecreaseInput>) {
   const { a, span } = await begin(trx, ctx, id, b.date);
   if (a.kind === 'fixed') throw new AppError('VALIDATION', 'Tài sản cố định ghi giảm bằng nghiệp vụ ghi giảm tài sản', 400);
+  await assertNotBeforeLedger(trx, id, b.date);
   if (a.kind === 'prepaid' && b.quantity !== undefined) throw new AppError('VALIDATION', 'Chi phí trả trước không có số lượng, không ghi giảm một phần', 400);
   const q = b.quantity !== undefined ? D(b.quantity) : D(a.quantity);
   if (q.gt(a.quantity)) throw new AppError('ASSET_QUANTITY', `Số lượng ghi giảm ${q.toString()} lớn hơn số lượng còn lại ${D(a.quantity).toString()}`, 400);

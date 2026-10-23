@@ -85,9 +85,11 @@ Sau tối ưu, đủ 5.000 thẻ (giây):
 
 | Loại | Chạy kỳ lớn nhất | Chạy kỳ trung bình | Chạy lại lớn nhất | Dòng phát sinh (12 kỳ) |
 |---|---|---|---|---|
-| Khấu hao TSCĐ | 13,2 | 5,2 | 1,3 | 36.000 |
+| Khấu hao TSCĐ | 13,3 | 5,2 | 1,3 | 36.000 |
 | Phân bổ CCDC | 3,0 | 2,0 | 0,4 | 15.750 |
 | Phân bổ trả trước | 1,0 | 0,8 | 0,2 | 6.000 |
+
+Số đo chạy `ANALYZE` trước mỗi lần chạy lại, nên giả định thống kê mới; trên hệ thống thật thời gian phụ thuộc autovacuum.
 
 Ba thay đổi:
 

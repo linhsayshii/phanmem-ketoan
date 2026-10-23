@@ -37,7 +37,7 @@ const lineOut = (l: { fiscal_year: number; period_no: number; units: string; amo
 const scheduleOut = (s: { id: number; version: number; eff_year: number; eff_period: number; basis_cost: string; basis_acc: string; units: string; reason: string }): AssetSchedule =>
   ({ id: s.id, version: s.version, effYear: s.eff_year, effPeriod: s.eff_period, basisCost: s.basis_cost, basisAcc: s.basis_acc, units: D(s.units).toString(), reason: s.reason });
 const linesOf = (trx: Trx, ids: number[]) => trx.selectFrom('asset_schedule_line').select(['schedule_id', 'fiscal_year', 'period_no', 'units', 'amount', 'accumulated'])
-  .where('schedule_id', 'in', ids).orderBy('fiscal_year').orderBy('period_no').execute();
+  .where(sql<boolean>`schedule_id = ANY(${ids}::bigint[])`).orderBy('fiscal_year').orderBy('period_no').execute();
 
 async function loadAsset(trx: Trx, assetId: number): Promise<Asset> {
   const a = await trx.selectFrom('asset').select(['code', 'tenant_id', 'kind', 'is_depreciable', 'life_units', 'opening_year', 'opening_remaining_units', 'depreciation_start_date', 'decrease_date']).where('id', '=', assetId).executeTakeFirst();
@@ -143,17 +143,17 @@ export async function scheduleFor(trx: Trx, assetId: number, span: PeriodSpan, o
 export async function scheduleForMany(trx: Trx, ids: number[], span: PeriodSpan, opts: { proration: Proration; runIdsOfPeriod: string[] }): Promise<Map<number, { schedule: AssetSchedule; line: ScheduleLine | null; values: { cost: string; accumulated: string } }>> {
   const out = new Map<number, { schedule: AssetSchedule; line: ScheduleLine | null; values: { cost: string; accumulated: string } }>();
   if (!ids.length) return out;
-  const assets = new Map((await trx.selectFrom('asset').select(['id', 'code', 'tenant_id', 'kind', 'is_depreciable', 'life_units', 'opening_year', 'opening_remaining_units', 'depreciation_start_date', 'decrease_date']).where('id', 'in', ids).execute()).map((a) => [a.id, a]));
-  const evs = await trx.selectFrom('asset_event').select(['asset_id', 'kind', 'event_date']).where('asset_id', 'in', ids).where('state', '=', 'active').where('kind', 'in', ['suspend', 'resume']).orderBy('event_date').orderBy('created_at').execute();
+  const assets = new Map((await trx.selectFrom('asset').select(['id', 'code', 'tenant_id', 'kind', 'is_depreciable', 'life_units', 'opening_year', 'opening_remaining_units', 'depreciation_start_date', 'decrease_date']).where(sql<boolean>`id = ANY(${ids}::bigint[])`).execute()).map((a) => [a.id, a]));
+  const evs = await trx.selectFrom('asset_event').select(['asset_id', 'kind', 'event_date']).where(sql<boolean>`asset_id = ANY(${ids}::bigint[])`).where('state', '=', 'active').where('kind', 'in', ['suspend', 'resume']).orderBy('event_date').orderBy('created_at').execute();
   const evOf = new Map<number, { kind: string; event_date: string }[]>();
   for (const e of evs) (evOf.get(e.asset_id) ?? evOf.set(e.asset_id, []).get(e.asset_id)!).push(e);
   const tenantId = assets.get(ids[0]!)!.tenant_id;
   const values = await assetValues(trx, tenantId, span.to, opts.runIdsOfPeriod, ids);
   const P = key(span.fiscalYear, span.periodNo);
-  const curs = await trx.selectFrom('asset_schedule').select(['id', 'asset_id', 'version', 'eff_year', 'eff_period', 'basis_cost', 'basis_acc', 'units', 'reason']).where('asset_id', 'in', ids).where('superseded_at', 'is', null)
+  const curs = await trx.selectFrom('asset_schedule').select(['id', 'asset_id', 'version', 'eff_year', 'eff_period', 'basis_cost', 'basis_acc', 'units', 'reason']).where(sql<boolean>`asset_id = ANY(${ids}::bigint[])`).where('superseded_at', 'is', null)
     .where(sql<boolean>`(eff_year, eff_period) <= (${span.fiscalYear}, ${span.periodNo})`).orderBy('eff_year', 'desc').orderBy('eff_period', 'desc').orderBy('version', 'desc').execute();
   const curOf = new Map<number, Cur>(); for (const c of curs) if (!curOf.has(c.asset_id)) curOf.set(c.asset_id, c); // dòng đầu mỗi thẻ là phiên bản muộn nhất
-  const lines = curOf.size ? await trx.selectFrom('asset_schedule_line').select(['schedule_id', 'fiscal_year', 'period_no', 'units', 'amount', 'accumulated']).where('schedule_id', 'in', [...curOf.values()].map((c) => c.id)).execute() : [];
+  const lines = curOf.size ? await trx.selectFrom('asset_schedule_line').select(['schedule_id', 'fiscal_year', 'period_no', 'units', 'amount', 'accumulated']).where(sql<boolean>`schedule_id = ANY(${[...curOf.values()].map((c) => c.id)}::bigint[])`).execute() : [];
   const lineOf = new Map<number, typeof lines>(); for (const l of lines) (lineOf.get(l.schedule_id) ?? lineOf.set(l.schedule_id, []).get(l.schedule_id)!).push(l);
   const known = await knownPeriods(trx);
   const memo = new Map<string, PeriodSpan[]>();
@@ -174,9 +174,9 @@ export async function scheduleForMany(trx: Trx, ids: number[], span: PeriodSpan,
   if (!fresh.length) return out;
 
   const freshIds = fresh.map((f) => f.id);
-  await trx.updateTable('asset_schedule').set({ superseded_at: sql`now()` }).where('asset_id', 'in', freshIds).where('superseded_at', 'is', null)
+  await trx.updateTable('asset_schedule').set({ superseded_at: sql`now()` }).where(sql<boolean>`asset_id = ANY(${freshIds}::bigint[])`).where('superseded_at', 'is', null)
     .where(sql<boolean>`(eff_year, eff_period) >= (${span.fiscalYear}, ${span.periodNo})`).execute();
-  const maxV = new Map((await trx.selectFrom('asset_schedule').select(['asset_id', (eb) => eb.fn.max('version').as('v')]).where('asset_id', 'in', freshIds).groupBy('asset_id').execute()).map((x) => [x.asset_id, x.v ?? 0]));
+  const maxV = new Map((await trx.selectFrom('asset_schedule').select(['asset_id', (eb) => eb.fn.max('version').as('v')]).where(sql<boolean>`asset_id = ANY(${freshIds}::bigint[])`).groupBy('asset_id').execute()).map((x) => [x.asset_id, x.v ?? 0]));
   const inserted = await trx.insertInto('asset_schedule').values(fresh.map((f) => ({ tenant_id: f.a.tenant_id, asset_id: f.id, version: (maxV.get(f.id) ?? 0) + 1, eff_year: span.fiscalYear, eff_period: span.periodNo,
     basis_cost: f.r.next.basisCost, basis_acc: f.r.next.basisAcc, units: f.r.next.units, reason: f.r.next.reason }))).returning(['id', 'asset_id', 'version', 'eff_year', 'eff_period', 'basis_cost', 'basis_acc', 'units', 'reason']).execute();
   const sOf = new Map(inserted.map((s) => [s.asset_id, s]));
@@ -239,7 +239,7 @@ export async function remainingUnitsOf(trx: Trx, assets: { id: number; isDepreci
         AND (s2.eff_year, s2.eff_period) > (s.eff_year, s.eff_period) AND (s2.eff_year, s2.eff_period) <= (l.fiscal_year, l.period_no))
     GROUP BY s.asset_id`.execute(trx);
   const stored = new Map(r.rows.map((x) => [x.asset_id, D(x.units).toString()]));
-  const hasVersion = new Set((await trx.selectFrom('asset_schedule').select('asset_id').distinct().where('asset_id', 'in', assets.map((a) => a.id)).where('superseded_at', 'is', null).execute()).map((x) => x.asset_id));
+  const hasVersion = new Set((await trx.selectFrom('asset_schedule').select('asset_id').distinct().where(sql<boolean>`asset_id = ANY(${assets.map((a) => a.id)}::bigint[])`).where('superseded_at', 'is', null).execute()).map((x) => x.asset_id));
   for (const a of assets) {
     if (a.status !== 'active' || !a.isDepreciable) out.set(a.id, '0');
     else if (hasVersion.has(a.id)) out.set(a.id, stored.get(a.id) ?? '0');

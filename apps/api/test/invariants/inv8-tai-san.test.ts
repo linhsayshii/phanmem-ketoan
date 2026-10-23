@@ -117,7 +117,7 @@ async function world(regime: Regime, proration: 'day' | 'month') {
         if (id === undefined || await status(op.slot) === 'decreased') return;
         const r = s!.kind === 'fixed' ? await call('POST', `/api/assets/${id}/decrease`, { date: op.date, reason: 'liquidation', counterAccountCode: '811' })
           : await call('POST', `/api/assets/${id}/decrease-tool`, { date: op.date, counterAccountCode: '811', ...(op.partial ? { quantity: '3' } : {}) });
-        if (accepted(r)) hit('decrease');
+        if (accepted(r)) { hit('decrease'); if (s!.kind !== 'fixed' && op.partial) hit('decrease-partial'); }
         return;
       }
       case 'cancel': {
@@ -186,21 +186,33 @@ describe('Bất biến 8: sổ tài sản và lãi vay', () => {
       for (const op of chain) { await w.apply(op); await w.checkLedger(op.probe); }
       await w.finish(probes);
       for (const [k, c] of w.done) total.set(k, (total.get(k) ?? 0) + c);
-    }), { numRuns: runs(8), examples: [['TT133', 'day', FIXED_EXAMPLE, ['2026-02-14', '2026-08-03', '2026-11-30']], ['TT99', 'month', FIXED_EXAMPLE, ['2026-01-01', '2026-05-17', '2026-12-31']]] });
-    for (const k of ['buy', 'increase', 'run', 'rerun', 'decrease', 'cancel', 'revalue', 'suspend', 'resume', 'life', 'unpost']) expect(total.get(k) ?? 0, `thao tác ${k} chưa từng thành công`).toBeGreaterThan(0);
+    }), { numRuns: runs(8), examples: [['TT133', 'day', FIXED_EXAMPLE, ['2026-02-14', '2026-08-03', '2026-11-30']], ['TT99', 'month', FIXED_EXAMPLE, ['2026-01-01', '2026-05-17', '2026-12-31']],
+      // ghi giảm sớm hơn ngày mua (phản ví dụ seed 1879022946): phải bị từ chối, nguyên giá không sống lại sau ghi giảm
+      ['TT133', 'day', [{ kind: 'buy', slot: 3, date: '2026-01-02', amount: '100000', life: 3, probe: '2026-01-31' }, { kind: 'decrease', slot: 3, date: '2026-01-01', partial: false, probe: '2026-01-31' }], ['2026-01-31']]] });
+    for (const k of ['buy', 'increase', 'run', 'rerun', 'decrease', 'decrease-partial', 'cancel', 'revalue', 'suspend', 'resume', 'life', 'unpost']) expect(total.get(k) ?? 0, `thao tác ${k} chưa từng thành công`).toBeGreaterThan(0);
   }, timeoutFor(1_800_000));
 
   it('(d) tài sản không biến động chạy đủ đời: tổng khấu hao / phân bổ = nguyên giá, đúng từng đồng', async () => {
     const arbCard = fc.record({ startMonth: fc.integer({ min: 1, max: 8 }), day: fc.integer({ min: 1, max: 28 }), off: fc.nat(), amount: fc.integer({ min: 100_000, max: 500_000_000 }) });
     await fc.assert(fc.asyncProperty(arbRegime, arbProration, fc.uniqueArray(fc.integer({ min: 0, max: 3 }), { minLength: 1, maxLength: 4 }), fc.array(arbCard, { minLength: 4, maxLength: 4 }), async (regime, proration, slots, cards) => {
       const w = await world(regime, proration);
-      let sum = 0n;
+      // Thẻ đầu kỳ: nguyên giá 60tr, hao mòn đầu 54tr, còn 6 tháng; tổng chi phí năm phải thêm nguyên giá − hao mòn đầu = 6tr.
+      const acct = FIXED_ACCOUNTS[regime][0];
+      const put = async (method: 'PUT' | 'POST', url: string, payload?: object, code = 200) => { const r = await w.call(method, url, payload); if (r.statusCode !== code) throw new Error(`${r.statusCode} ${r.body}`); return r.json(); };
+      const brow = (accountCode: string, debit: string, credit = '0') => ({ accountCode, partyCode: null, currencyCode: 'VND', debit, credit, debitCurrency: '0', creditCurrency: '0' });
+      await put('POST', '/api/asset-categories', { code: 'DK', name: 'Đầu kỳ', kind: 'fixed', assetAccountCode: acct, depreciationAccountCode: '2141', defaultLifeUnits: 60 }, 201);
+      await put('PUT', '/api/opening-balance/2026', { rows: [brow(acct, '60000000'), brow('2141', '0', '54000000'), brow(regime === 'TT99' ? '41111' : '4111', '0', '6000000')] });
+      await put('PUT', '/api/opening-assets/2026', { rows: [{ code: 'OP1', name: 'Thẻ đầu kỳ', categoryCode: 'DK', openingCost: '60000000', openingAccumulated: '54000000', openingRemainingUnits: '6' }] });
+      await put('POST', '/api/opening-balance/2026/post');
+      const opId = (await w.rows(sql<{ id: string }>`SELECT id FROM asset WHERE tenant_id = ${w.tenantId}::uuid AND code = 'OP1'`))[0]!.id;
+      await put('PUT', `/api/assets/${opId}/allocations`, { validFromYear: 2026, validFromPeriod: 1, lines: [{ expenseAccountCode: '6422', ratio: '100' }] });
+      let sum = 6_000_000n;
       for (const slot of slots) {
         const c = cards[slot]!; const life = 2 + (c.off % (10 - c.startMonth)); // tháng bắt đầu + đời ≤ 11
         await w.apply({ kind: 'buy', slot, date: `2026-${String(c.startMonth).padStart(2, '0')}-${String(c.day).padStart(2, '0')}`, amount: String(c.amount), life, probe: '2026-12-31' });
         expect(w.ids[slot], `tạo thẻ ${slot}`).toBeDefined(); sum += BigInt(c.amount);
       }
-      for (const k of w.kindsPresent()) await w.settleKind(k);
+      for (const k of new Set([0, ...w.kindsPresent()])) await w.settleKind(k);
       const exp = await w.rows(sql<{ s: string }>`SELECT coalesce(sum(l.debit - l.credit), 0)::text AS s FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id AND v.tenant_id = l.tenant_id
         WHERE l.tenant_id = ${w.tenantId}::uuid AND v.source_doc_type = 'asset_run' AND v.state IN ('posted','reversed') AND l.asset_id IS NULL`);
       expect(exp[0]!.s, 'tổng chi phí khấu hao + phân bổ = tổng nguyên giá').toBe(sum.toString());
@@ -218,7 +230,7 @@ describe('Bất biến 8: sổ tài sản và lãi vay', () => {
       { weight: 2, arbitrary: fc.record({ kind: fc.constant('repay' as const), date: arbDate2026, amount: fc.integer({ min: 1_000_000, max: 300_000_000 }) }) },
       { weight: 3, arbitrary: fc.record({ kind: fc.constant('run' as const), period: fc.integer({ min: 1, max: 12 }) }) });
     const arbRate2 = fc.record({ date: arbDate2026.filter((d) => d > '2026-01-01'), rate: fc.constantFrom('7.5', '11', '10.25') });
-    let runsDone = 0;
+    let runsDone = 0; let nonZero = 0;
     await fc.assert(fc.asyncProperty(arbRegime, fc.constantFrom(360 as const, 365 as const), arbRate2, fc.array(arbLoanOp, { minLength: 2, maxLength: 10 }), async (regime, dayBasis, rate2, ops) => {
       const { cookie, tenantId } = await setupLedgerTenant(ctx, `A8L${Date.now()}${n++}`, regime);
       const call = (method: 'GET' | 'POST', url: string, payload: object): Promise<Res> => ctx.app.inject({ method, url, headers: { cookie }, payload });
@@ -242,10 +254,12 @@ describe('Bất biến 8: sổ tài sản và lãi vay', () => {
         const expected = periodInterest({ from: periodStart(p), to: periodEnd(p), balances, rates, dayBasis, decimals: 0 });
         const got = (await sql<{ s: string }>`SELECT coalesce(sum(l.debit - l.credit), 0)::text AS s FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id AND v.tenant_id = l.tenant_id JOIN account a ON a.id = l.account_id AND a.tenant_id = l.tenant_id
           WHERE l.tenant_id = ${tenantId}::uuid AND a.code = '635' AND v.source_doc_type = 'loan_interest' AND v.state IN ('posted','reversed') AND l.posting_date BETWEEN ${periodStart(p)}::date AND ${periodEnd(p)}::date`.execute(ctx.t.admin)).rows[0]!.s;
-        expect(got, `lãi kỳ ${p}`).toBe(expected);
+        expect(got, `lãi kỳ ${p}`).toBe(expected); if (expected !== '0') nonZero++;
       }
     }), { numRuns: runs(10), examples: [['TT133', 360, { date: '2026-01-02', rate: '7.5' }, [{ kind: 'disburse', date: '2026-02-01', amount: 1_000_000 }, { kind: 'repay', date: '2026-01-01', amount: 1_000_000 }, { kind: 'run', period: 1 }, { kind: 'run', period: 1 }]],
-      ['TT99', 365, { date: '2026-02-16', rate: '10.25' }, [{ kind: 'disburse', date: '2026-01-11', amount: 400_000_000 }, { kind: 'run', period: 1 }, { kind: 'disburse', date: '2026-01-25', amount: 100_000_000 }, { kind: 'repay', date: '2026-03-05', amount: 200_000_000 }]]] });
-    expect(runsDone).toBeGreaterThan(0);
+      ['TT99', 365, { date: '2026-02-16', rate: '10.25' }, [{ kind: 'disburse', date: '2026-01-11', amount: 400_000_000 }, { kind: 'run', period: 1 }, { kind: 'disburse', date: '2026-01-25', amount: 100_000_000 }, { kind: 'repay', date: '2026-03-05', amount: 200_000_000 }]],
+      // trả lùi ngày: dư nợ ngày 15/02 đủ nhưng làm số dư sau 01/03 âm, phải bị từ chối (LOAN_OVERPAY) để chạy lãi vay không lỗi
+      ['TT133', 365, { date: '2026-06-01', rate: '11' }, [{ kind: 'disburse', date: '2026-02-01', amount: 1_000_000 }, { kind: 'repay', date: '2026-03-01', amount: 1_000_000 }, { kind: 'repay', date: '2026-02-15', amount: 1_000_000 }, { kind: 'run', period: 3 }]]] });
+    expect(runsDone).toBeGreaterThan(0); expect(nonZero, 'chưa kỳ nào có lãi khác 0 được so sánh').toBeGreaterThan(0);
   }, timeoutFor(900_000));
 });
