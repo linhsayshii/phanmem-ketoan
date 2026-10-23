@@ -4,6 +4,7 @@ import { D, evaluateReport, parseFormula, sum, ZERO, type AccountRef, type Decim
 import { AppError } from '../../plugins/errors.js';
 import { assertSensitive, regimeOf } from './ledgers.js';
 import { formNoFor } from './print/forms.js';
+import { loanLongRows } from '../loans/stats.js';
 
 type Trx = Transaction<Database>;
 export const REPORT_NAMES: Record<string, Record<string, string>> = {
@@ -73,15 +74,17 @@ export function reportData(trx: Trx, tenantId: string, regime: string, p: { from
       JOIN account a ON a.id = x.id LEFT JOIN party pt ON pt.id = x.party_id`.execute(trx)).rows;
       if (!opts.longTerm) return base.map((r) => unitOf(r, D(r.net), false));
       const cutoff = shiftYear(p.to, 1);
-      const long = (await sql<{ code: string; name: string; kind: string | null; partyCode: string | null; net: string }>`
+      const long = [...(await sql<{ code: string; name: string; kind: string | null; partyCode: string | null; net: string }>`
       SELECT a.code, a.name, a.subledger_kind AS kind, pt.code AS "partyCode", x.n::text AS net FROM (
         SELECT o.account_id AS id, o.party_id, sum(o.residual) AS n FROM fn_open_items_at(${tenantId}::uuid, ${p.to}::date) o
         WHERE o.due_date > ${cutoff}::date GROUP BY 1, 2
         UNION ALL
         SELECT l.account_id, NULL::uuid, sum(l.debit - l.credit) FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
         WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND l.posting_date <= ${p.to}::date AND l.due_date > ${cutoff}::date
-          AND a.subledger_kind IS DISTINCT FROM 'receivable' AND a.subledger_kind IS DISTINCT FROM 'payable' GROUP BY 1) x
-      JOIN account a ON a.id = x.id LEFT JOIN party pt ON pt.id = x.party_id WHERE a.regime = ${regime} AND x.n <> 0`.execute(trx)).rows;
+          AND a.subledger_kind IS DISTINCT FROM 'receivable' AND a.subledger_kind IS DISTINCT FROM 'payable'
+          -- gốc vay của khế ước vay tách theo lịch trả (loanLongRows), không theo hạn ghi ở dòng
+          AND NOT EXISTS (SELECT 1 FROM loan_term lt WHERE lt.tenant_id = l.tenant_id AND lt.contract_id = l.contract_id AND lt.principal_account_code = a.code) GROUP BY 1) x
+      JOIN account a ON a.id = x.id LEFT JOIN party pt ON pt.id = x.party_id WHERE a.regime = ${regime} AND x.n <> 0`.execute(trx)).rows, ...await loanLongRows(trx, p.to, regime)];
       const key = (r: { code: string; partyCode: string | null }) => `${r.code}|${r.partyCode ?? ''}`;
       const rows = new Map(base.map((r) => [key(r), { r, n: D(r.net), l: ZERO }]));
       for (const r of long) { const k = key(r); const x = rows.get(k); if (x) x.l = D(r.net); else rows.set(k, { r, n: ZERO, l: D(r.net) }); }

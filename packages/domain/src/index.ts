@@ -19,3 +19,4 @@ export * from './costing.js';
 export * from './stock.js';
 export * from './landedCost.js';
 export * from './depreciation.js';
+export * from './loanInterest.js';

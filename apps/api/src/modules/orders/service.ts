@@ -192,7 +192,7 @@ export async function convertOrder(trx: Trx, ctx: CreateCtx, id: string, b: z.in
 // ---- Hợp đồng ----
 export async function listContracts(trx: Trx, kind?: string) {
   return (await sql`SELECT c.id::int, c.code, c.name, p.code AS "partyCode", c.kind, c.signed_date::text AS "signedDate", c.valid_to::text AS "validTo", c.value::text, c.currency_code AS "currencyCode", c.status, c.note
-    FROM contract c LEFT JOIN party p ON p.tenant_id = c.tenant_id AND p.id = c.party_id WHERE (${kind ?? null}::text IS NULL OR c.kind = ${kind ?? null}) ORDER BY c.code`.execute(trx)).rows;
+    FROM contract c LEFT JOIN party p ON p.tenant_id = c.tenant_id AND p.id = c.party_id WHERE c.kind <> 'loan' AND (${kind ?? null}::text IS NULL OR c.kind = ${kind ?? null}) ORDER BY c.code`.execute(trx)).rows;
 }
 export async function saveContract(trx: Trx, tenantId: string, id: number | null, b: z.infer<typeof contractInput>) {
   const party = b.partyCode ? await idOf(trx, 'party', b.partyCode, 'đối tượng') : null;
@@ -200,11 +200,11 @@ export async function saveContract(trx: Trx, tenantId: string, id: number | null
     ? await sql<{ id: number }>`INSERT INTO contract(tenant_id, code, name, party_id, kind, signed_date, valid_to, value, currency_code, status, note)
         VALUES (${tenantId}::uuid, ${b.code}, ${b.name}, ${party}::uuid, ${b.kind}, ${b.signedDate ?? null}::date, ${b.validTo ?? null}::date, ${b.value}::numeric, ${b.currencyCode}, ${b.status}, ${b.note ?? null}) RETURNING id::int`.execute(trx)
     : await sql<{ id: number }>`UPDATE contract SET code = ${b.code}, name = ${b.name}, party_id = ${party}::uuid, kind = ${b.kind}, signed_date = ${b.signedDate ?? null}::date, valid_to = ${b.validTo ?? null}::date,
-        value = ${b.value}::numeric, currency_code = ${b.currencyCode}, status = ${b.status}, note = ${b.note ?? null} WHERE id = ${id}::bigint RETURNING id::int`.execute(trx);
+        value = ${b.value}::numeric, currency_code = ${b.currencyCode}, status = ${b.status}, note = ${b.note ?? null} WHERE id = ${id}::bigint AND kind <> 'loan' RETURNING id::int`.execute(trx);
   if (!r.rows[0]) throw new AppError('NOT_FOUND', 'Không tìm thấy hợp đồng', 404);
   return (await listContracts(trx)).find((c) => (c as { id: number }).id === r.rows[0]!.id)!;
 }
 export async function deleteContract(trx: Trx, id: number): Promise<void> {
-  const r = await sql`DELETE FROM contract WHERE id = ${id}::bigint`.execute(trx);
+  const r = await sql`DELETE FROM contract WHERE id = ${id}::bigint AND kind <> 'loan'`.execute(trx);
   if (!r.numAffectedRows) throw new AppError('NOT_FOUND', 'Không tìm thấy hợp đồng', 404);
 }

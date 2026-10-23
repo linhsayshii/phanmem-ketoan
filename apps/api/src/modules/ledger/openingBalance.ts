@@ -21,6 +21,8 @@ export const openingRow = z.object({
   debit: vnd.default('0'), credit: vnd.default('0'), debitCurrency: foreign.default('0'), creditCurrency: foreign.default('0'),
   // Số dư công nợ theo từng hóa đơn: số, ngày chứng từ gốc và hạn thanh toán (chỉ tài khoản phải thu/phải trả).
   docNo: z.string().trim().min(1).max(50).nullable().optional(), docDate: isoDate.nullable().optional(), dueDate: isoDate.nullable().optional(),
+  // Khế ước vay của số dư TK 341x (gốc), 335 (lãi phải trả).
+  contractCode: z.string().trim().min(1).max(50).nullable().optional(),
 }).superRefine((r, ctx) => {
   // Mỗi số nhập phải vào được chứng từ: số bị bỏ qua âm thầm (sai bên, dòng VND có nguyên tệ) là mất dữ liệu.
   const [d, c, dc, cc] = [r.debit, r.credit, r.debitCurrency, r.creditCurrency].map((x) => D(x).gt(0));
@@ -52,8 +54,8 @@ export async function openingPeriod(trx: Trx, year: number) {
 
 const openingRows = (trx: Trx, year: number, regime: string) =>
   trx.selectFrom('opening_balance as o').innerJoin('account as a', 'a.id', 'o.account_id').leftJoin('party as p', 'p.id', 'o.party_id')
-    .leftJoin('bank_account as ba', 'ba.id', 'o.bank_account_id').leftJoin('bank as bk', 'bk.id', 'ba.bank_id')
-    .select(['o.id', 'o.account_id', 'o.party_id', 'o.bank_account_id', 'o.currency_code', 'o.debit', 'o.credit', 'o.debit_currency', 'o.credit_currency', 'o.doc_no', 'o.doc_date', 'o.due_date',
+    .leftJoin('contract as ct', 'ct.id', 'o.contract_id').leftJoin('bank_account as ba', 'ba.id', 'o.bank_account_id').leftJoin('bank as bk', 'bk.id', 'ba.bank_id')
+    .select(['o.id', 'o.account_id', 'o.party_id', 'o.bank_account_id', 'o.currency_code', 'o.debit', 'o.credit', 'o.debit_currency', 'o.credit_currency', 'o.doc_no', 'o.doc_date', 'o.due_date', 'o.contract_id', 'ct.code as contractCode', 'ct.kind as contractKind',
       'a.code as accountCode', 'a.name as accountName', 'a.is_group', 'a.is_active', 'a.normal_balance', 'a.subledger_kind', 'a.track_currency', 'a.root_type', 'p.code as partyCode', 'p.name as partyName', 'ba.account_no as bankAccountNo', 'bk.name as bankName'])
     .where('o.fiscal_year', '=', year).where('a.regime', '=', regime).orderBy('a.code').orderBy('p.code').orderBy('ba.account_no').orderBy('o.doc_date').orderBy('o.doc_no').orderBy('o.id').execute();
 type DbRow = Awaited<ReturnType<typeof openingRows>>[number];
@@ -61,7 +63,7 @@ type DbRow = Awaited<ReturnType<typeof openingRows>>[number];
 export async function listOpening(trx: Trx, year: number): Promise<(OpeningRow & { id: number; accountName: string; partyName: string | null; bankName: string | null })[]> {
   const { regime } = await openingPeriod(trx, year);
   return (await openingRows(trx, year, regime)).map((r) => ({ id: r.id, accountCode: r.accountCode, accountName: r.accountName, partyCode: r.partyCode, partyName: r.partyName, bankAccountNo: r.bankAccountNo, bankName: r.bankName,
-    currencyCode: r.currency_code, debit: r.debit, credit: r.credit, debitCurrency: r.debit_currency, creditCurrency: r.credit_currency, docNo: r.doc_no, docDate: r.doc_date, dueDate: r.due_date }));
+    currencyCode: r.currency_code, debit: r.debit, credit: r.credit, debitCurrency: r.debit_currency, creditCurrency: r.credit_currency, docNo: r.doc_no, docDate: r.doc_date, dueDate: r.due_date, contractCode: r.contractCode }));
 }
 
 // 1000 dòng × 15 cột < 65535 tham số bind của PostgreSQL.
@@ -87,6 +89,13 @@ function docProblem(r: OpeningRow, account: { subledger_kind: string | null }, d
   if (r.docDate && r.docDate > dkDate) return { column: 'doc_date', error: new AppError('OPENING_DOC_DATE_AFTER', `Ngày chứng từ ${formatVnDate(r.docDate)} sau ngày số dư đầu kỳ ${formatVnDate(dkDate)}`, 400) };
   return null;
 }
+// Khế ước chỉ gắn vào số dư TK vay (341x) và lãi phải trả (335), phải là khế ước vay.
+function contractProblem(r: OpeningRow, contract: { kind: string } | null): AppError | null {
+  if (!r.contractCode) return null;
+  if (!contract || contract.kind !== 'loan') return new AppError('OPENING_CONTRACT_NOT_ALLOWED', `${r.contractCode} không phải khế ước vay`, 400);
+  if (!r.accountCode.startsWith('341') && !r.accountCode.startsWith('335')) return new AppError('OPENING_CONTRACT_NOT_ALLOWED', `Tài khoản ${r.accountCode} không theo dõi theo khế ước vay (chỉ 341x, 335)`, 400);
+  return null;
+}
 const banksOf = async (trx: Trx, nos: string[]) =>
   new Map((nos.length ? await trx.selectFrom('bank_account').select(['id', 'account_no', 'gl_account_code']).where('account_no', 'in', nos).execute() : []).map((b) => [b.account_no, b]));
 
@@ -99,14 +108,18 @@ export async function replaceOpening(trx: Trx, tenantId: string, year: number, r
   const parties = new Map((partyCodes.length ? await trx.selectFrom('party').select(['id', 'code']).where('code', 'in', partyCodes).execute() : []).map((p) => [p.code, p.id]));
   const currencies = new Set((curCodes.length ? await trx.selectFrom('currency').select('code').where('code', 'in', curCodes).execute() : []).map((c) => c.code));
   const banks = await banksOf(trx, uniq(live.map((r) => r.bankAccountNo ?? null)));
+  const contractCodes = uniq(live.map((r) => r.contractCode ?? null));
+  const contracts = new Map((contractCodes.length ? await trx.selectFrom('contract').select(['id', 'code', 'kind']).where('code', 'in', contractCodes).execute() : []).map((c) => [c.code, c]));
   const values = live.map((r) => {
     const account = accounts.get(r.accountCode); if (!account) throw notFound('tài khoản', r.accountCode);
     const party_id = r.partyCode ? parties.get(r.partyCode) : null; if (party_id === undefined) throw notFound('đối tượng', r.partyCode!);
     if (!currencies.has(r.currencyCode)) throw notFound('loại tiền', r.currencyCode);
     const bank = r.bankAccountNo ? banks.get(r.bankAccountNo) : undefined; const bad = bankProblem(r, account, bank); if (bad) throw bad;
     const doc = docProblem(r, account, dkDate); if (doc) throw doc.error;
+    const contract = r.contractCode ? contracts.get(r.contractCode) : null; if (contract === undefined) throw notFound('khế ước', r.contractCode!);
+    const cbad = contractProblem(r, contract ?? null); if (cbad) throw cbad;
     return { tenant_id: tenantId, fiscal_year: year, account_id: account.id, party_id, bank_account_id: bank?.id ?? null, currency_code: r.currencyCode, debit: r.debit, credit: r.credit, debit_currency: r.debitCurrency, credit_currency: r.creditCurrency,
-      doc_no: r.docNo ?? null, doc_date: r.docDate ?? null, due_date: r.dueDate ?? null };
+      doc_no: r.docNo ?? null, doc_date: r.docDate ?? null, due_date: r.dueDate ?? null, contract_id: contract?.id ?? null };
   });
   await trx.deleteFrom('opening_balance').where('fiscal_year', '=', year).execute();
   for (const c of chunks(values)) await trx.insertInto('opening_balance').values(c).execute();
@@ -211,7 +224,7 @@ export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: str
     // có dấu: + Nợ, − Có (dòng VND được trigger đặt lại bằng Nợ − Có)
     amount_currency: D(r.debit_currency).minus(r.credit_currency).toString(), party_id: r.party_id, bank_account_id: r.bank_account_id,
     // số dư công nợ theo hóa đơn: fn_open_items_create lấy số/ngày chứng từ gốc từ extra_dims, hạn từ due_date của dòng
-    description: r.doc_no ? `Số dư ${r.doc_no}` : 'Số dư đầu kỳ', due_date: r.due_date,
+    description: r.doc_no ? `Số dư ${r.doc_no}` : 'Số dư đầu kỳ', due_date: r.due_date, contract_id: r.contract_id,
     extra_dims: JSON.stringify({ ...(r.doc_no ? { opening_doc_no: r.doc_no } : {}), ...(r.doc_date ? { opening_doc_date: r.doc_date } : {}) }) });
   const lines: Insertable<Database['voucher_line']>[] = rows.filter((r) => !stockCodes.has(r.accountCode)).flatMap(rowLines);
   // Dòng kho: sổ cái gộp theo (tài khoản, hàng, kho), bỏ nhóm 0 đồng; dòng hàng chiều nhập (mỗi lô một dòng) để post_voucher sinh phát sinh kho và lớp giá ngày đầu năm.
@@ -245,24 +258,26 @@ export async function unpostOpening(trx: Trx, tenantId: string, year: number): P
 
 // ===== Excel =====
 const COLS = [['accountCode', 'Số hiệu TK (*)'], ['partyCode', 'Mã đối tượng'], ['bankAccountNo', 'Tài khoản ngân hàng'], ['docNo', 'Số chứng từ'], ['docDate', 'Ngày chứng từ'], ['dueDate', 'Hạn thanh toán'],
-  ['currencyCode', 'Loại tiền (*)'], ['debit', 'Dư Nợ'], ['credit', 'Dư Có'], ['debitCurrency', 'Dư Nợ nguyên tệ'], ['creditCurrency', 'Dư Có nguyên tệ']] as const;
+  ['currencyCode', 'Loại tiền (*)'], ['debit', 'Dư Nợ'], ['credit', 'Dư Có'], ['debitCurrency', 'Dư Nợ nguyên tệ'], ['creditCurrency', 'Dư Có nguyên tệ'], ['contractCode', 'Khế ước vay']] as const;
 type ColKey = (typeof COLS)[number][0];
 // Ba bố cục nhận được: mẫu hiện hành; mẫu trước (chưa có cột chứng từ của số dư công nợ theo hóa đơn); mẫu cũ (chưa có cả cột Tài khoản ngân hàng).
 const NEW_KEYS: ColKey[] = COLS.map((c) => c[0]);
-const BANK_KEYS = NEW_KEYS.filter((k) => !['docNo', 'docDate', 'dueDate'].includes(k)); const OLD_KEYS = BANK_KEYS.filter((k) => k !== 'bankAccountNo');
+const NOCONTRACT_KEYS = NEW_KEYS.filter((k) => k !== 'contractCode');
+const BANK_KEYS = NOCONTRACT_KEYS.filter((k) => !['docNo', 'docDate', 'dueDate'].includes(k)); const OLD_KEYS = BANK_KEYS.filter((k) => k !== 'bankAccountNo');
 const normHeader = (s: string) => s.normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
 const snake = (k: string) => k.replace(/[A-Z]/g, (m) => '_' + m.toLowerCase());
 
 export async function openingTemplate(): Promise<Buffer> {
   const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Du_lieu');
-  ws.addRow(COLS.map((c) => c[1])); ws.addRow(COLS.map((c) => snake(c[0]))); ws.getRow(2).hidden = true; ws.addRow(['VI_DU', '', '', '', '', '', 'VND', 0, 0, 0, 0]);
+  ws.addRow(COLS.map((c) => c[1])); ws.addRow(COLS.map((c) => snake(c[0]))); ws.getRow(2).hidden = true; ws.addRow(['VI_DU', '', '', '', '', '', 'VND', 0, 0, 0, 0, '']);
   ws.getRow(1).font = { bold: true }; ws.columns.forEach((col) => { col.width = 22; });
-  for (const i of [1, 2, 3, 4, 7]) ws.getColumn(i).numFmt = '@'; // cột chữ định dạng văn bản để Excel giữ số 0 đầu của mã
+  for (const i of [1, 2, 3, 4, 7, 12]) ws.getColumn(i).numFmt = '@'; // cột chữ định dạng văn bản để Excel giữ số 0 đầu của mã
   for (const i of [5, 6]) ws.getColumn(i).numFmt = 'dd/mm/yyyy';
   const hd = wb.addWorksheet('Huong_dan');
   hd.addRow(['Mỗi dòng một tài khoản chi tiết (và một đối tượng với tài khoản công nợ, một tài khoản ngân hàng với tài khoản tiền gửi ngân hàng: nhập số tài khoản đã khai trong danh mục Tài khoản ngân hàng). Chỉ nhập một bên Nợ hoặc Có. Tổng dư Nợ phải bằng tổng dư Có.']);
   hd.addRow(['Dòng 1: tên cột (cột có (*) bắt buộc). Dòng 3 là ví dụ (VI_DU): bị bỏ qua, có thể xóa hoặc để nguyên; nhập dữ liệu ngay bên dưới.']);
   hd.addRow(['Số dư công nợ (131, 331...) nhập theo từng hóa đơn: mỗi hóa đơn một dòng với Số chứng từ, Ngày chứng từ, Hạn thanh toán (ngày dạng dd/mm/yyyy). Các cột này để trống ở tài khoản khác.']);
+  hd.addRow(['Số dư vay (TK 341x) và lãi phải trả (335) nhập theo khế ước vay: ghi mã khế ước ở cột Khế ước vay (khai khế ước ở màn hình Khế ước vay trước).']);
   hd.addRow(['Số tiền VND là số nguyên đồng; dư nguyên tệ nhập ở cột nguyên tệ (tối đa 4 số lẻ) cùng bên Nợ/Có với số VND. Số nhập dạng 1.500.000 hoặc 1.500.000,25.']);
   hd.addRow(['Nhập Excel thay thế toàn bộ số dư đầu kỳ đã nhập của năm; sau đó cần Ghi sổ số dư đầu kỳ để cập nhật chứng từ DK.']);
   return Buffer.from(await wb.xlsx.writeBuffer());
@@ -289,12 +304,13 @@ export async function parseOpeningWorkbook(trx: Trx, year: number, buffer: Buffe
   if (ws.rowCount > MAX_ROWS + 3) throw new AppError('IMPORT_TOO_LARGE', 'File vượt quá 20.000 dòng', 400);
   // Bố cục cột nhận biết bằng tiêu đề dòng 1, phải khớp đúng một trong ba mẫu (mẫu trước, mẫu cũ thì các cột sau dịch sang trái); tiêu đề lạ thì từ chối, không đoán, kẻo đọc lệch cột Nợ/Có.
   const headerIs = (keys: ColKey[]) => keys.every((k, i) => normHeader(txt(ws.getRow(1).getCell(i + 1))) === normHeader(COLS.find((c) => c[0] === k)![1]));
-  const cols = [NEW_KEYS, BANK_KEYS, OLD_KEYS].find(headerIs);
+  const cols = [NEW_KEYS, NOCONTRACT_KEYS, BANK_KEYS, OLD_KEYS].find(headerIs);
   if (!cols) throw new AppError('IMPORT_BAD_HEADER', `Tiêu đề cột ở dòng 1 không đúng mẫu. Cần: ${COLS.map((c) => c[1]).join(', ')} (hoặc mẫu trước chưa có ba cột Số chứng từ, Ngày chứng từ, Hạn thanh toán; mẫu cũ chưa có cả cột Tài khoản ngân hàng). Hãy tải lại mẫu Excel.`, 400);
   const { regime, date_from: dkDate } = await openingPeriod(trx, year);
   const accounts = new Map((await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', regime).execute()).map((a) => [a.code, a]));
   const banks = new Map((await trx.selectFrom('bank_account').select(['account_no', 'gl_account_code']).execute()).map((b) => [b.account_no, b]));
   const parties = new Set((await trx.selectFrom('party').select('code').execute()).map((p) => p.code));
+  const contracts = new Map((await trx.selectFrom('contract').select(['code', 'kind']).execute()).map((c) => [c.code, c]));
   const currencies = new Set((await trx.selectFrom('currency').select('code').execute()).map((c) => c.code));
   const rows: OpeningRow[] = []; const errors: ImportError[] = []; const seen = new Map<string, number>();
   const cell = (row: ExcelJS.Row, key: ColKey) => row.getCell(cols.indexOf(key) + 1);
@@ -310,7 +326,7 @@ export async function parseOpeningWorkbook(trx: Trx, year: number, buffer: Buffe
     const badDate = dates.flatMap((v, k) => (v === undefined ? [k ? 'due_date' : 'doc_date'] : []));
     if (badDate.length) { for (const column of badDate) errors.push({ row: i, column, message: 'Ngày không hợp lệ' }); return; }
     const parsed = openingRow.safeParse({ accountCode: txt(cell(row, 'accountCode')), partyCode: txt(cell(row, 'partyCode')) || null, bankAccountNo: has('bankAccountNo') ? txt(cell(row, 'bankAccountNo')) || null : null,
-      docNo: has('docNo') ? txt(cell(row, 'docNo')) || null : null, docDate: dates[0], dueDate: dates[1],
+      docNo: has('docNo') ? txt(cell(row, 'docNo')) || null : null, docDate: dates[0], dueDate: dates[1], contractCode: has('contractCode') ? txt(cell(row, 'contractCode')) || null : null,
       currencyCode: (txt(cell(row, 'currencyCode')) || 'VND').toUpperCase(), debit: n[0], credit: n[1], debitCurrency: n[2], creditCurrency: n[3] });
     if (!parsed.success) { for (const is of parsed.error.issues) errors.push({ row: i, column: snake(String(is.path[0])), message: is.message }); return; }
     const r = parsed.data;
@@ -322,8 +338,11 @@ export async function parseOpeningWorkbook(trx: Trx, year: number, buffer: Buffe
     if (bad) return fail('bank_account_no', bad.message);
     const doc = docProblem(r, account, dkDate);
     if (doc) return fail(doc.column, doc.error.message);
+    if (r.contractCode && !contracts.has(r.contractCode)) return fail('contract_code', `Không có khế ước ${r.contractCode}`);
+    const cbad = contractProblem(r, r.contractCode ? contracts.get(r.contractCode) ?? null : null);
+    if (cbad) return fail('contract_code', cbad.message);
     if (!currencies.has(r.currencyCode)) return fail('currency_code', `Không có loại tiền ${r.currencyCode}`);
-    const key = `${r.accountCode}|${r.partyCode ?? ''}|${r.bankAccountNo ?? ''}|${r.currencyCode}|${r.docNo ?? ''}`;
+    const key = `${r.accountCode}|${r.partyCode ?? ''}|${r.bankAccountNo ?? ''}|${r.currencyCode}|${r.docNo ?? ''}|${r.contractCode ?? ''}`;
     if (seen.has(key)) return fail('account_code', `Trùng với dòng ${seen.get(key)}`);
     seen.set(key, i); rows.push(r);
   });

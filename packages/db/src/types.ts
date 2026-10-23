@@ -220,6 +220,7 @@ export interface OpeningBalanceTable {
   id: Generated<number>; tenant_id: string; fiscal_year: number; account_id: number; party_id: string | null; bank_account_id: number | null; currency_code: Generated<string>;
   debit: NumericDefault; credit: NumericDefault; debit_currency: NumericDefault; credit_currency: NumericDefault;
   doc_no: string | null; doc_date: DateOnly | null; due_date: DateOnly | null; // số dư công nợ theo từng hóa đơn
+  contract_id: number | null; // khế ước vay (TK 341x, 335)
 }
 export interface OpeningStockTable {
   id: Generated<number>; tenant_id: string; fiscal_year: number; item_id: number; warehouse_id: number; lot_no: Generated<string>; expiry_date: DateOnly | null; quantity: Numeric; value: NumericDefault;

@@ -412,7 +412,7 @@ describe('API số dư đầu kỳ theo tài khoản ngân hàng', () => {
   const header = ['Số hiệu TK (*)', 'Mã đối tượng', 'Tài khoản ngân hàng', 'Số chứng từ', 'Ngày chứng từ', 'Hạn thanh toán', 'Loại tiền (*)', 'Dư Nợ', 'Dư Có', 'Dư Nợ nguyên tệ', 'Dư Có nguyên tệ'];
   it('mẫu Excel có cột Tài khoản ngân hàng ngay sau cột đối tượng, tiếp theo là Số chứng từ, Ngày chứng từ, Hạn thanh toán', async () => {
     const { ws } = await sheet();
-    expect(ws.getRow(1).values).toEqual([undefined, ...header]);
+    expect(ws.getRow(1).values).toEqual([undefined, ...header, 'Khế ước vay']);
     expect([3, 4, 5, 6].map((i) => ws.getRow(2).getCell(i).value)).toEqual(['bank_account_no', 'doc_no', 'doc_date', 'due_date']);
   });
 
