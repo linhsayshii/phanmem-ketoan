@@ -8,7 +8,7 @@ import { canTransition, D, decideEdit, formatVnDate, formatVnNumber, parseVnNumb
 import { KeyboardGrid, LookupSelect, VnNumberInput, useUnsavedChanges, type LookupRow } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
-import { accountFetcherFor } from '../lookups.js';
+import { ASSET_ACCOUNT_RE, accountFetcherFor, assetFetcher } from '../lookups.js';
 import { STATE_LABEL, typeLabel } from './VoucherList.js';
 import { Attachments, PickDialog, groupFetcher, iso, quickAdd, reportError, taxFetcher, text, useInvoiceGroups, useTaxDefs } from './voucherCommon.js';
 import { codesOf, defaultGroup, deriveRow, emptyInvRow, importLedger, isBlankRow, NO_PREVIEW, NUM_RE, previewInvoice, snapOf, type InvRow, type RowSnap } from './invoiceCalc.js';
@@ -16,7 +16,7 @@ import { codesOf, defaultGroup, deriveRow, emptyInvRow, importLedger, isBlankRow
 // Hóa đơn mua/bán dịch vụ và giảm giá, trả lại (HDM, HDB, GGM, GGB): lập ở màn hình riêng, gọi /api/invoices.
 // Thuế và bút toán xem trước tính ngay trên màn hình bằng chính hàm của @kt/domain mà máy chủ dùng khi lưu (xem invoiceCalc.ts).
 interface ItemDto { lineNo: number; description: string | null; quantity: string | null; unitPrice: string | null; amountCurrency: string; discountRate: string | null; discountAmountCurrency: string;
-  taxCodes: string[]; accountCode: string; departmentCode: string | null; projectCode: string | null; costItemCode: string | null;
+  taxCodes: string[]; accountCode: string; assetCode?: string | null; departmentCode: string | null; projectCode: string | null; costItemCode: string | null;
   id?: number; itemCode?: string | null; uomCode?: string | null; warehouseCode?: string | null; lotNo?: string | null; expiryDate?: string | null; receiptVoucherId?: string | null; linkLineId?: number | null;
   importMode?: boolean; importTax?: string | null; specialConsumptionTax?: string | null; vatImport?: string | null; vatImportCode?: string | null; vatImportBase?: string | null }
 interface InvoiceRef { id: number; formNo: string | null; serial: string | null; invoiceNo: string; invoiceDate: string; partyName: string | null; partyTaxCode: string | null; partyAddress: string | null;
@@ -33,13 +33,14 @@ type PartyRow = LookupRow & { tax_code?: string | null; address?: string | null;
 interface ListRow { id: string; voucherType: string; voucherNo: string | null; postingDate: string; partyName: string | null }
 
 const BLANK_SNAP: RowSnap = snapOf(emptyInvRow());
-const LOOKUP_CATALOG: Record<string, string> = { accountCode: 'account', taxCodes: 'tax_code', departmentCode: 'department', projectCode: 'project', costItemCode: 'cost_item', itemCode: 'item', uomCode: 'uom', warehouseCode: 'warehouse', vatImportCode: 'tax_code' };
+const LOOKUP_CATALOG: Record<string, string> = { accountCode: 'account', taxCodes: 'tax_code', departmentCode: 'department', projectCode: 'project', costItemCode: 'cost_item', itemCode: 'item', uomCode: 'uom', warehouseCode: 'warehouse', vatImportCode: 'tax_code', assetCode: 'asset' };
+const assetPick = assetFetcher();
 // Dòng công nợ đối ứng như máy chủ: tài khoản mặc định của đối tượng nếu thuộc nhóm 131 (bán) / 331 (mua), không thì 131 / 331.
 const counterOf = (scope: 'sale' | 'purchase', p: PartyInfo | null): string => { const prefix = scope === 'sale' ? '131' : '331'; return p?.defaultAccount?.startsWith(prefix) ? p.defaultAccount : prefix; };
 const plain = (s: string | null | undefined): string => (s == null ? '' : D(s).toFixed()); // "10.0000" -> "10"
 const rowOf = (it: ItemDto): InvRow => ({ description: it.description ?? '', accountCode: it.accountCode, quantity: plain(it.quantity), unitPrice: plain(it.unitPrice), amount: plain(it.amountCurrency),
   discountRate: plain(it.discountRate), discount: D(it.discountAmountCurrency).isZero() ? '' : plain(it.discountAmountCurrency), taxCodes: it.taxCodes.join(','), taxAmount: '',
-  departmentCode: it.departmentCode ?? '', projectCode: it.projectCode ?? '', costItemCode: it.costItemCode ?? '',
+  assetCode: it.assetCode ?? '', departmentCode: it.departmentCode ?? '', projectCode: it.projectCode ?? '', costItemCode: it.costItemCode ?? '',
   itemCode: it.itemCode ?? '', uomCode: it.itemCode ? it.uomCode ?? '' : '', warehouseCode: it.warehouseCode ?? '', lotNo: it.lotNo ?? '', expiryDate: it.expiryDate ?? '', sourceLineId: it.linkLineId ? String(it.linkLineId) : '',
   importTax: plain(it.importTax), specialConsumptionTax: plain(it.specialConsumptionTax), vatImport: plain(it.vatImport), vatImportCode: it.vatImportCode ?? '', vatImportBase: plain(it.vatImportBase) });
 const money = (v: string): string => (D(v).isZero() ? '' : formatVnNumber(v, D(v).decimalPlaces()));
@@ -183,7 +184,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
     if (!goodsLine && !r.accountCode.trim()) throw new Error(`Dòng ${k + 1}: chọn tài khoản`);
     if (!r.amount) throw new Error(`Dòng ${k + 1}: nhập thành tiền`);
     return [{ description: text(r.description), ...(goodsLine ? {} : { accountCode: r.accountCode.trim() }), amountCurrency: r.amount, discountCurrency: r.discount || '0', taxCodes: codesOf(r),
-      departmentCode: text(r.departmentCode), projectCode: text(r.projectCode), costItemCode: text(r.costItemCode),
+      departmentCode: text(r.departmentCode), projectCode: text(r.projectCode), costItemCode: text(r.costItemCode), ...(!goodsLine && text(r.assetCode) ? { assetCode: text(r.assetCode) } : {}),
       ...(r.quantity ? { quantity: r.quantity } : {}), ...(r.unitPrice ? { unitPrice: r.unitPrice } : {}), ...(r.discountRate ? { discountRate: r.discountRate } : {}),
       ...(goodsLine ? { itemCode: r.itemCode.trim(), uomCode: r.uomCode.trim(), ...(r.warehouseCode.trim() ? { warehouseCode: r.warehouseCode.trim() } : {}), ...(r.lotNo.trim() ? { lotNo: r.lotNo.trim() } : {}),
         ...(r.expiryDate.trim() ? { expiryDate: r.expiryDate.trim() } : {}), ...(r.sourceLineId.trim() ? { sourceLineId: Number(r.sourceLineId) } : {}) } : {}),
@@ -247,6 +248,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
   const mayUnpost = canTransition(state, 'unpost') && decision === 'unpost_edit_post' && can('voucher.unpost');
   const mayReverse = canTransition(state, 'reverse') && decision !== 'adjust_in_open_period' && can('voucher.post');
 
+  const showAsset = rows.some((r) => ASSET_ACCOUNT_RE.test(r.accountCode) || !!r.assetCode);
   const columns = useMemo<ColDef<InvRow>[]>(() => {
     const amountOk = isVnd ? (n: string) => VND_AMOUNT_RE.test(n) : (n: string) => NUM_RE.test(n);
     // Dẫn xuất ngay lúc ghi giá trị ô: Enter mở luôn ô kế (vd. Thành tiền) nên ô đó phải thấy số mới, không đợi cellValueChanged tới trễ.
@@ -269,10 +271,12 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
         numCol('vatImport', 'Thuế GTGT hàng NK (đồng)', (n) => VND_AMOUNT_RE.test(n), { width: 170, headerTooltip: 'Thuế GTGT hàng nhập khẩu theo tờ khai (Nợ 1331 / Có 33312)' }),
         { field: 'vatImportCode', headerName: 'Mã thuế GTGT NK (F4)', width: 160 },
         numCol('vatImportBase', 'Giá tính thuế GTGT NK (đồng)', (n) => VND_AMOUNT_RE.test(n), { width: 190, headerTooltip: 'Theo tờ khai hải quan; để trống: tiền hàng quy đổi + thuế NK + thuế TTĐB' })] satisfies ColDef<InvRow>[] : []),
+      // shortcut: chưa có cột Khế ước (TK 341x/335) vì chưa có API tra cứu khế ước; Task 11 thêm.
+      ...(!goodsDoc && showAsset ? [{ field: 'assetCode', headerName: 'Tài sản (F4)', width: 130, editable: (p) => ASSET_ACCOUNT_RE.test(p.data?.accountCode ?? '') } satisfies ColDef<InvRow>] : []),
       { field: 'departmentCode', headerName: 'Bộ phận', width: 100 }, { field: 'projectCode', headerName: 'Vụ việc', width: 100 }, { field: 'costItemCode', headerName: 'Khoản mục', width: 110 },
     ] satisfies ColDef<InvRow>[]).map(live);
-  }, [scope, isVnd, dp, goodsDoc, isMH, isSaleGoods, stockMode, importMode]);
-  const onLookup = useCallback((col: string, row: number) => { if (col in LOOKUP_CATALOG && editable) setLookup({ col, row }); }, [editable]);
+  }, [scope, isVnd, dp, goodsDoc, isMH, isSaleGoods, stockMode, importMode, showAsset]);
+  const onLookup = useCallback((col: string, row: number) => { if (col in LOOKUP_CATALOG && editable && (col !== 'assetCode' || ASSET_ACCOUNT_RE.test(rowsRef.current[row]?.accountCode ?? ''))) setLookup({ col, row }); }, [editable]);
   const pick = (code: string) => { // đổi đối tượng dòng (không ghi tại chỗ): ô đang sửa phía sau hộp thoại bị hủy, không ghi đè giá trị vừa chọn
     if (!lookup) return;
     const old = rowsRef.current[lookup.row]; if (!old) return;
@@ -406,7 +410,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
       </Form>
       {!isNew && <Attachments voucherId={id} canEdit={can('voucher.update')} />}
       <PickDialog open={!!lookup} catalog={lookup ? LOOKUP_CATALOG[lookup.col]! : 'account'} withQuickAdd={!!lookup && ['departmentCode', 'projectCode', 'costItemCode'].includes(lookup.col)}
-        {...(lookup?.col === 'accountCode' ? { fetcher: accountFetcher } : lookup?.col === 'taxCodes' ? { fetcher: taxes } : lookup?.col === 'vatImportCode' ? { fetcher: vatTaxes } : {})} onPick={pick} onClose={() => setLookup(null)} />
+        {...(lookup?.col === 'accountCode' ? { fetcher: accountFetcher } : lookup?.col === 'taxCodes' ? { fetcher: taxes } : lookup?.col === 'vatImportCode' ? { fetcher: vatTaxes } : lookup?.col === 'assetCode' ? { fetcher: assetPick } : {})} onPick={pick} onClose={() => setLookup(null)} />
       <Modal open={!!reverse} title="Lập chứng từ đảo" okText="Lập chứng từ đảo" cancelText="Không" destroyOnHidden onCancel={() => setReverse(null)}
         okButtonProps={{ loading: action.isPending, disabled: !reverse?.date }}
         onOk={() => { if (reverse) action.mutate({ act: 'reverse', body: { postingDate: iso(reverse.date), ...(reverse.description.trim() ? { description: reverse.description.trim() } : {}) } }); }}>

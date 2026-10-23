@@ -5,7 +5,8 @@ import { READ_SNAPSHOT, type Database } from '@kt/db';
 import { getSettings } from '../core/settings.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { listRuns, runAssetPeriod } from './periodRun.js';
-import { previewSchedule } from './schedule.js';
+import { assetValues, previewSchedule } from './schedule.js';
+import { dateIso } from '../ledger/vouchers.service.js';
 import { adjustToolValue, cancelEvent, changeLife, decreaseAsset, decreaseInput, increaseAsset, increaseInput, lifeInput, listEvents, resumeAsset, resumeInput, revalueAsset, revalueInput, suspendAsset, suspendInput, toolAdjustInput, toolDecreaseInput, decreaseTool, transferAsset, transferInput } from './events.js';
 import { allocationInput, assetInput, categoryInput, deleteAsset, deleteCategory, getAsset, listAssets, listCategories, lookupAssets, saveAsset, saveCategory, setAllocations } from './assets.js';
 
@@ -22,7 +23,13 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.put('/api/asset-categories/:id', { preHandler: app.requirePermission('asset.update'), schema: { params: numId, body: categoryInput } }, async (req) => app.withTenant(req, (trx) => saveCategory(trx, tid(req), req.params.id, req.body)));
   app.delete('/api/asset-categories/:id', { preHandler: app.requirePermission('asset.delete'), schema: { params: numId } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteCategory(trx, req.params.id)); return reply.status(204).send(); });
 
-  app.get('/api/assets', { preHandler: app.requirePermission('asset.view'), schema: { querystring: z.object({ kind: kindQ.optional(), q: z.string().optional() }) } }, async (req) => app.withTenant(req, (trx) => listAssets(trx, req.query.kind, req.query.q), READ_SNAPSHOT));
+  app.get('/api/assets', { preHandler: app.requirePermission('asset.view'), schema: { querystring: z.object({ kind: kindQ.optional(), q: z.string().optional(), at: dateIso.optional() }) } }, async (req) =>
+    // Nguyên giá, hao mòn lũy kế tại ngày `at` (mặc định toàn bộ sổ cái) cho màn hình danh sách.
+    app.withTenant(req, async (trx) => {
+      const rows = await listAssets(trx, req.query.kind, req.query.q);
+      const vals = await assetValues(trx, tid(req), req.query.at ?? '9999-12-31', [], rows.map((r) => r.id));
+      return rows.map((r) => ({ ...r, cost: vals.get(r.id)?.cost ?? '0', accumulated: vals.get(r.id)?.accumulated ?? '0' }));
+    }, READ_SNAPSHOT));
   app.get('/api/assets/:id', { preHandler: app.requirePermission('asset.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => getAsset(trx, req.params.id), READ_SNAPSHOT));
   app.post('/api/assets', { preHandler: app.requirePermission('asset.create'), schema: { body: assetInput } }, async (req, reply) =>
     reply.status(201).send(await app.withTenant(req, (trx) => saveAsset(trx, tid(req), null, req.body))));

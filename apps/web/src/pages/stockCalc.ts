@@ -1,8 +1,8 @@
 import { D, Decimal, parseVnDate, formatVnDate, STOCK_KINDS, type StockVoucherType } from '@kt/domain';
 
 // Dòng hàng của phiếu kho: mọi ô là chuỗi (số lượng, đơn giá là chuỗi thập phân); ngày lô, hạn dùng nhập dạng dd/mm/yyyy, gửi lên dạng ISO.
-export interface StockRow { itemCode: string; uomCode: string; quantity: string; unitPrice: string; lotNo: string; mfgDate: string; expiryDate: string }
-export const emptyStockRow = (): StockRow => ({ itemCode: '', uomCode: '', quantity: '', unitPrice: '', lotNo: '', mfgDate: '', expiryDate: '' });
+export interface StockRow { itemCode: string; uomCode: string; quantity: string; unitPrice: string; lotNo: string; mfgDate: string; expiryDate: string; debitAccountCode: string; assetCode: string }
+export const emptyStockRow = (): StockRow => ({ itemCode: '', uomCode: '', quantity: '', unitPrice: '', lotNo: '', mfgDate: '', expiryDate: '', debitAccountCode: '', assetCode: '' });
 export const isBlankStockRow = (r: StockRow): boolean => Object.values(r).every((v) => v.trim() === '');
 export const QTY_RE = /^\d{1,16}(\.\d{1,4})?$/;
 
@@ -29,7 +29,7 @@ export function itemsBody(rows: StockRow[], withPrice: boolean) {
     if (!QTY_RE.test(r.quantity) || D(r.quantity).lte(0)) throw new Error(`Dòng ${n}: số lượng phải lớn hơn 0`);
     if (withPrice && r.unitPrice && !QTY_RE.test(r.unitPrice)) throw new Error(`Dòng ${n}: đơn giá không hợp lệ`);
     return [{ itemCode: r.itemCode.trim(), uomCode: r.uomCode.trim(), quantity: r.quantity, ...(withPrice && r.unitPrice ? { unitPrice: r.unitPrice } : {}),
-      ...(r.lotNo.trim() ? { lotNo: r.lotNo.trim() } : {}), mfgDate: isoOf(r.mfgDate, n, 'ngày sản xuất'), expiryDate: isoOf(r.expiryDate, n, 'hạn dùng') }];
+      ...(r.lotNo.trim() ? { lotNo: r.lotNo.trim() } : {}), ...(r.debitAccountCode.trim() ? { debitAccountCode: r.debitAccountCode.trim() } : {}), ...(r.assetCode.trim() ? { assetCode: r.assetCode.trim() } : {}), mfgDate: isoOf(r.mfgDate, n, 'ngày sản xuất'), expiryDate: isoOf(r.expiryDate, n, 'hạn dùng') }];
   });
 }
 export const dateCell = (iso: string | null): string => (iso ? formatVnDate(iso) : '');

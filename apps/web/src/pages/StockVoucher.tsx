@@ -10,12 +10,13 @@ import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { staleText } from './CostingRun.js';
 import { STATE_LABEL } from './VoucherList.js';
+import { ASSET_ACCOUNT_RE, accountFetcherFor, assetFetcher } from '../lookups.js';
 import { PickDialog, iso, quickAdd, reportError, text } from './voucherCommon.js';
 import { dateCell, emptyStockRow, itemsBody, kindLabel, kindsOf, QTY_RE, rowAmount, type StockRow } from './stockCalc.js';
 
 // Phiếu nhập kho, xuất kho, chuyển kho (PNK, PXK, CK): lập qua /api/stock-vouchers; ghi sổ, bỏ ghi sổ, đảo, hủy qua /api/vouchers/:id/*.
 // Phiếu xuất, chuyển ghi sổ theo giá tạm tính; giá vốn thật do kỳ tính giá vốn xác định sau.
-interface ItemDto { lineNo: number; itemCode: string; itemName: string; uomCode: string; quantity: string; unitPrice: string | null; unitCost: string | null; amount: string;
+interface ItemDto { debitAccountCode?: string | null; assetCode?: string | null; lineNo: number; itemCode: string; itemName: string; uomCode: string; quantity: string; unitPrice: string | null; unitCost: string | null; amount: string;
   lotNo: string | null; mfgDate: string | null; expiryDate: string | null }
 interface LedgerDto { lineNo: number; accountCode: string; accountName: string; debit: string; credit: string; itemCode: string | null; warehouseCode: string | null }
 interface StockDoc { id: string; voucherType: string; voucherNo: string | null; state: string; postingDate: string; documentDate: string; description: string | null; partyCode: string | null; personName: string | null;
@@ -31,6 +32,7 @@ const numCol = (field: keyof StockRow, headerName: string, width = 110): ColDef<
   valueParser: (p) => { const t = String(p.newValue ?? '').trim(); if (t === '') return ''; const n = parseVnNumber(t); return n !== null && QTY_RE.test(n) ? n : p.oldValue; } });
 const dateCol = (field: keyof StockRow, headerName: string): ColDef<StockRow> => ({ field, headerName, width: 110, headerTooltip: 'Ngày/tháng/năm' });
 
+const assetPick = assetFetcher();
 export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: string }) {
   const type = def.code as StockVoucherType;
   const isNew = id === 'moi';
@@ -70,7 +72,7 @@ export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: str
     const d = v.data; if (!d) return;
     form.setFieldsValue({ postingDate: dayjs(d.postingDate), documentDate: dayjs(d.documentDate), stockKind: d.stockKind ?? kinds[0]!.code, warehouseCode: d.warehouseCode, destWarehouseCode: d.destWarehouseCode,
       partyCode: d.partyCode, personName: d.personName, description: d.description });
-    const loaded = d.items.map((it): StockRow => ({ itemCode: it.itemCode, uomCode: it.uomCode, quantity: plain(it.quantity), unitPrice: plain(it.unitPrice), lotNo: it.lotNo ?? '', mfgDate: dateCell(it.mfgDate), expiryDate: dateCell(it.expiryDate) }));
+    const loaded = d.items.map((it): StockRow => ({ itemCode: it.itemCode, uomCode: it.uomCode, quantity: plain(it.quantity), unitPrice: plain(it.unitPrice), lotNo: it.lotNo ?? '', mfgDate: dateCell(it.mfgDate), expiryDate: dateCell(it.expiryDate), debitAccountCode: it.debitAccountCode ?? '', assetCode: it.assetCode ?? '' }));
     setAll(d.state === 'draft' ? [...loaded, emptyStockRow()] : loaded);
     setInfo((m) => ({ ...m, ...Object.fromEntries(d.items.map((it) => [it.itemCode, { name: it.itemName, baseUom: it.uomCode, tracking: it.lotNo || it.expiryDate ? 'lot' : 'none' }])) }));
     setServerCost(Object.fromEntries(d.items.map((it) => [it.lineNo, { amount: it.amount, unitCost: it.unitCost }])));
@@ -167,11 +169,16 @@ export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: str
       valueGetter: (p) => { if (!p.data) return ''; if (withPrice) return rowAmount(p.data); const k = costRef.current[p.node?.rowIndex != null ? p.node.rowIndex + 1 : 0]; return editable ? '' : k?.amount ?? ''; },
       valueFormatter: (p) => money(p.value as string), headerTooltip: withPrice ? 'Số lượng x đơn giá' : 'Hiện sau khi lưu: số lượng x giá vốn tạm tính' },
     { field: 'lotNo', headerName: 'Số lô', width: 100 }, dateCol('mfgDate', 'Ngày sản xuất'), dateCol('expiryDate', 'Hạn dùng'),
-  ], [withPrice, editable]);
+    // Xuất kho cho tài sản: TK Nợ là TK tài sản (hoặc 242) thì chọn thẻ tài sản.
+    ...(type === 'PXK' ? [{ field: 'debitAccountCode', headerName: 'TK Nợ (F4)', width: 110, headerTooltip: 'Để trống: theo mục đích xuất kho' } satisfies ColDef<StockRow>,
+      { field: 'assetCode', headerName: 'Tài sản (F4)', width: 130, editable: (p) => ASSET_ACCOUNT_RE.test(p.data?.debitAccountCode ?? '') } satisfies ColDef<StockRow>] : []),
+  ], [withPrice, editable, type]);
   const total = rows.reduce((s, r) => s.plus(withPrice ? rowAmount(r) || '0' : '0'), D(0)).toFixed();
   const savedTotal = Object.values(serverCost).reduce((s, k) => s.plus(k.amount), D(0)).toFixed();
-  const onLookup = useCallback((col: string, row: number) => { if (editable && (col === 'itemCode' || col === 'uomCode')) setLookupRow(row); }, [editable]);
+  const onLookup = useCallback((col: string, row: number) => { if (editable && (col === 'itemCode' || col === 'uomCode' || col === 'debitAccountCode' || (col === 'assetCode' && ASSET_ACCOUNT_RE.test(rowsRef.current[row]?.debitAccountCode ?? '')))) setLookupRow(row); }, [editable]);
   const lookupCol = useRef('itemCode');
+  // shortcut: tra TK Nợ theo chế độ của năm cuối, không theo ngày chứng từ; đổi khi một công ty giữ nhiều chế độ cùng lúc.
+  const accountPick = useMemo(() => accountFetcherFor(), []);
   const pick = (code: string) => {
     if (lookupRow === null) return;
     const cur = rowsRef.current; const old = cur[lookupRow]; if (!old) return;
@@ -215,8 +222,8 @@ export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: str
         { title: 'Tài khoản', dataIndex: 'accountCode', width: 110 }, { title: 'Tên tài khoản', dataIndex: 'accountName' }, { title: 'Hàng', dataIndex: 'itemCode', width: 120, render: (s: string | null) => s ?? '' },
         { title: 'Kho', dataIndex: 'warehouseCode', width: 100, render: (s: string | null) => s ?? '' },
         { title: 'Nợ', dataIndex: 'debit', align: 'right', width: 140, render: money }, { title: 'Có', dataIndex: 'credit', align: 'right', width: 140, render: money }]} />}
-      <PickDialog open={lookupRow !== null} catalog={lookupCol.current === 'uomCode' ? 'uom' : 'item'} fetcher={lookupCol.current === 'itemCode' ? async (q) => (await api<{ id: number; code: string; name: string }[]>(`/api/lookups/items?q=${encodeURIComponent(q)}`)) : undefined as never}
-        onPick={(code) => { if (lookupCol.current === 'uomCode') { const cur = rowsRef.current; changeRows(cur.map((r, i) => (i === lookupRow ? { ...r, uomCode: code } : r))); } else pick(code); }} onClose={() => setLookupRow(null)} />
+      <PickDialog open={lookupRow !== null} catalog={lookupCol.current === 'uomCode' ? 'uom' : lookupCol.current === 'debitAccountCode' ? 'account' : lookupCol.current === 'assetCode' ? 'asset' : 'item'} fetcher={lookupCol.current === 'debitAccountCode' ? accountPick : lookupCol.current === 'assetCode' ? assetPick : lookupCol.current === 'itemCode' ? async (q) => (await api<{ id: number; code: string; name: string }[]>(`/api/lookups/items?q=${encodeURIComponent(q)}`)) : undefined as never}
+        onPick={(code) => { if (lookupCol.current !== 'itemCode') { const f = lookupCol.current; changeRows(rowsRef.current.map((r, i) => (i === lookupRow ? { ...r, [f]: code } : r))); } else pick(code); }} onClose={() => setLookupRow(null)} />
       <Modal open={!!reverse} title="Lập chứng từ đảo" okText="Lập chứng từ đảo" cancelText="Không" destroyOnHidden onCancel={() => setReverse(null)}
         okButtonProps={{ loading: action.isPending, disabled: !reverse?.date }}
         onOk={() => { if (reverse) action.mutate({ act: 'reverse', body: { postingDate: iso(reverse.date), ...(reverse.description.trim() ? { description: reverse.description.trim() } : {}) } }); }}>

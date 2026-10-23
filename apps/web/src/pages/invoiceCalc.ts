@@ -8,16 +8,16 @@ export interface TaxDefRow { code: string; name: string; scope: 'sale' | 'purcha
 export interface GroupRow { scope: string; code: string; name: string; rate: string | null }
 // Mọi ô là chuỗi: số tiền là chuỗi thập phân, mã thuế là chữ cách nhau bằng dấu phẩy. taxAmount do máy tính điền, không nhập.
 export interface InvRow { description: string; accountCode: string; quantity: string; unitPrice: string; amount: string; discountRate: string; discount: string; taxCodes: string; taxAmount: string;
-  departmentCode: string; projectCode: string; costItemCode: string;
+  assetCode: string; departmentCode: string; projectCode: string; costItemCode: string;
   // Mua hàng hóa (MH, TLM): dòng hàng nhập kho; sourceLineId là mã dòng nhập gốc khi trả lại hàng mua
   itemCode: string; uomCode: string; warehouseCode: string; lotNo: string; expiryDate: string; sourceLineId: string;
   // Mua hàng nhập khẩu (MH): thuế nhập khẩu, TTĐB, GTGT hàng nhập theo tờ khai hải quan (VND, nhập tay), mã thuế GTGT của số thuế GTGT hàng nhập và giá tính thuế GTGT theo tờ khai (trống: hàng + NK + TTĐB)
   importTax: string; specialConsumptionTax: string; vatImport: string; vatImportCode: string; vatImportBase: string }
-export const emptyInvRow = (): InvRow => ({ description: '', accountCode: '', quantity: '', unitPrice: '', amount: '', discountRate: '', discount: '', taxCodes: '', taxAmount: '', departmentCode: '', projectCode: '', costItemCode: '',
+export const emptyInvRow = (): InvRow => ({ description: '', accountCode: '', quantity: '', unitPrice: '', amount: '', discountRate: '', discount: '', taxCodes: '', taxAmount: '', assetCode: '', departmentCode: '', projectCode: '', costItemCode: '',
   itemCode: '', uomCode: '', warehouseCode: '', lotNo: '', expiryDate: '', sourceLineId: '', importTax: '', specialConsumptionTax: '', vatImport: '', vatImportCode: '', vatImportBase: '' });
 
 export const codesOf = (r: Pick<InvRow, 'taxCodes'>): string[] => r.taxCodes.split(/[\s,;]+/).filter(Boolean);
-const INPUT_KEYS = ['description', 'accountCode', 'quantity', 'unitPrice', 'amount', 'discountRate', 'discount', 'taxCodes', 'departmentCode', 'projectCode', 'costItemCode', 'itemCode', 'uomCode', 'warehouseCode', 'lotNo', 'expiryDate', 'sourceLineId', 'importTax', 'specialConsumptionTax', 'vatImport', 'vatImportCode', 'vatImportBase'] as const;
+const INPUT_KEYS = ['description', 'accountCode', 'quantity', 'unitPrice', 'amount', 'discountRate', 'discount', 'taxCodes', 'assetCode', 'departmentCode', 'projectCode', 'costItemCode', 'itemCode', 'uomCode', 'warehouseCode', 'lotNo', 'expiryDate', 'sourceLineId', 'importTax', 'specialConsumptionTax', 'vatImport', 'vatImportCode', 'vatImportBase'] as const;
 export const isBlankRow = (r: InvRow): boolean => INPUT_KEYS.every((k) => (r[k] ?? '').trim() === '');
 
 export const NUM_RE = /^\d{1,16}(\.\d{1,4})?$/;

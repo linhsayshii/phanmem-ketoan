@@ -35,6 +35,7 @@ describe('thẻ tài sản, phân bổ chi phí', () => {
     expect(ok.statusCode, ok.body).toBe(200);
     const list = await t.call('GET', '/api/assets?kind=fixed');
     expect(list.json()[0].allocations).toMatchObject([{ expenseAccountCode: '6422', ratio: '60.000000' }, { expenseAccountCode: '6421', ratio: '40.000000' }]);
+    expect(list.json()[0]).toMatchObject({ cost: '0', accumulated: '0' });
     const look = await t.call('GET', '/api/lookups/assets?q=ts0');
     expect(look.json()).toEqual([{ id: a.id, code: 'TS01', name: 'TSCĐ TS01', kind: 'fixed', assetAccountCode: '2111' }]);
     expect(err(await t.call('POST', '/api/assets', { code: 'X', name: 'X', kind: 'fixed', assetAccountCode: '6422', depreciationAccountCode: '2141' }))).toEqual([400, 'ASSET_ACCOUNT_INVALID']);

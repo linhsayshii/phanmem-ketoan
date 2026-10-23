@@ -55,3 +55,18 @@ export function cashFlowFetcherFor(postingDate?: string): (q: string, signal: Ab
     return ((await r.json()) as { code: string; name: string }[]).filter((c) => !k || c.code.startsWith(k) || c.name.toLowerCase().includes(k)).map((c) => ({ id: c.code, code: c.code, name: c.name }));
   };
 }
+
+// Cột "Tài sản" của dòng chứng từ chỉ có ý nghĩa với TK tài sản (211-213, hao mòn 214x, 217) và 242.
+// shortcut: nhận diện theo đầu số tài khoản, không đọc subledger_kind; đổi khi có tài khoản tài sản đặt ngoài các đầu số này.
+export const ASSET_ACCOUNT_RE = /^(21[1-4]|217|242)/;
+// Thẻ tài sản (TSCĐ, CCDC, chi phí trả trước) cho F4: /api/lookups/assets, lọc theo loại thẻ nếu có.
+export const assetFetcher = (kind?: 'fixed' | 'tool' | 'prepaid') => async (q: string, signal: AbortSignal): Promise<LookupRow[]> => {
+  const r = await fetch(`/api/lookups/assets?q=${encodeURIComponent(q)}&size=50${kind ? `&kind=${kind}` : ''}`, { credentials: 'include', signal });
+  return r.ok ? ((await r.json()) as LookupRow[]).map(({ id, code, name }) => ({ id, code, name })) : [];
+};
+// Loại tài sản của phân hệ tài sản cho F4.
+export const assetCategoryFetcher = (kind: 'fixed' | 'tool' | 'prepaid') => async (q: string, signal: AbortSignal): Promise<LookupRow[]> => {
+  const r = await fetch(`/api/asset-categories?kind=${kind}`, { credentials: 'include', signal });
+  const k = q.trim().toLowerCase();
+  return r.ok ? ((await r.json()) as (LookupRow & { isActive: boolean })[]).filter((c) => c.isActive && (!k || c.code.toLowerCase().startsWith(k) || c.name.toLowerCase().includes(k))).map(({ id, code, name }) => ({ id, code, name })) : [];
+};
