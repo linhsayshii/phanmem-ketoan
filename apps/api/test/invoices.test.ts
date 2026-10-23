@@ -342,7 +342,9 @@ describe('giảm giá và hàng bán trả lại (GGB, GGM)', () => {
     expect(err(await gg(buy.invoices[0]!.id))).toEqual([404, 'INVOICE_NOT_FOUND']); // khác chiều
     expect(err(await gg(999999999))).toEqual([404, 'INVOICE_NOT_FOUND']);
     expect(err(await t.call('POST', '/api/invoices', t.invoice('GGB')))).toEqual([400, 'VALIDATION']); // thiếu hóa đơn gốc
-    expect(err(await t.call('POST', '/api/invoices', t.invoice('HDB', {}, { invoiceNo: '0000011', adjustsInvoiceId: other.invoices[0]!.id })))).toEqual([400, 'VALIDATION']);
+    // HDB trỏ hóa đơn gốc là điều chỉnh tăng (GĐ5 Task 6): vẫn phải cùng đối tượng; hóa đơn mua không điều chỉnh tăng
+    expect(err(await t.call('POST', '/api/invoices', t.invoice('HDB', {}, { invoiceNo: '0000011', adjustsInvoiceId: other.invoices[0]!.id })))).toEqual([404, 'INVOICE_NOT_FOUND']);
+    expect(err(await t.call('POST', '/api/invoices', t.invoice('HDM', {}, { invoiceNo: '0000012', adjustsInvoiceId: buy.invoices[0]!.id })))).toEqual([400, 'VALIDATION']);
   });
 });
 

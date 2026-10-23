@@ -1,3 +1,4 @@
+import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { sql } from 'kysely';
 import { z } from 'zod';
@@ -7,6 +8,9 @@ import { makeProviderCtx, providerFor } from './providers/index.js';
 import { dateIso as isoDate } from '../master/catalogs.js';
 import { deleteProvider, deleteSeries, listProviders, listSeries, providerInput, saveProvider, saveSeries, seriesInput } from './config.js';
 import { discardFailed, einvoiceDto, einvoiceFile, einvoiceQuery, issueEInvoice, refreshEInvoice, retryEInvoice } from './issue.js';
+import { adjustInput, cancelInput, issueAdjustment, issueReplacement, cancelEInvoice, replaceInput, reverseMarked, setPaid, voucherOf } from './lifecycle.js';
+import { notifyRecompute } from '../ledger/notifyRecompute.js';
+import { requireStockPerm } from '../ledger/vouchers.routes.js';
 
 const numId = z.object({ id: z.coerce.number().int().positive() });
 const listQuery = z.object({ status: z.enum(['draft', 'sending', 'issued', 'failed', 'replaced', 'cancelled']).optional(), from: isoDate.optional(), to: isoDate.optional(), q: z.string().trim().max(100).optional() });
@@ -42,11 +46,33 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   // Phát hành, thử lại, bỏ hóa đơn lỗi, tra mã CQT: gọi nhà cung cấp ngoài giao dịch của request (issue.ts tự mở giao dịch từng pha).
   const view = app.requirePermission('einvoice.view');
   const issue = app.requirePermission('einvoice.issue');
-  const ectx = (req: { auth: { tenantId: string | null; userId: string } | null; ip: string }) => ({ tenantId: tid(req), userId: req.auth!.userId, ip: req.ip });
+  const ectx = (req: { auth: { tenantId: string | null; userId: string; permissions: Set<string> } | null; ip: string }) =>
+    ({ tenantId: tid(req), userId: req.auth!.userId, ip: req.ip, canBackdate: req.auth!.permissions.has('voucher.backdate_locked') });
   app.post('/api/einvoices', { preHandler: issue, schema: { body: z.object({ voucherId: z.string().uuid(), issueDate: isoDate.optional() }) } }, async (req, reply) =>
     reply.status(201).send(await issueEInvoice(app.db, ectx(req), req.body.voucherId, { issueDate: req.body.issueDate })));
-  app.post('/api/einvoices/:id/retry', { preHandler: issue, schema: { params: numId } }, async (req) => retryEInvoice(app.db, ectx(req), req.params.id));
+  app.post('/api/einvoices/:id/retry', { preHandler: issue, schema: { params: numId } }, async (req) => { const r = await retryEInvoice(app.db, ectx(req), req.params.id); notifyRecompute(app, tid(req)); return r; });
   app.post('/api/einvoices/:id/discard', { preHandler: issue, schema: { params: numId } }, async (req) => discardFailed(app.db, ectx(req), req.params.id));
+  // Điều chỉnh, thay thế, hủy, thanh toán. Thay thế/hủy đảo chứng từ của hóa đơn gốc: cần thêm quyền ghi sổ (và quyền kho với chứng từ có hàng hóa) như route đảo chứng từ.
+  const post = app.requirePermission('voucher.post');
+  const stockPerm = (req: FastifyRequest, id: number) => app.withTenant(req, async (trx) => {
+    const v = await voucherOf(trx, id);
+    if (v) await requireStockPerm(trx, req.auth!, v, 'stock_voucher.post');
+  });
+  app.post('/api/einvoices/:id/adjust', { preHandler: issue, schema: { params: numId, body: adjustInput } }, async (req, reply) =>
+    reply.status(201).send(await issueAdjustment(app.db, ectx(req), req.params.id, req.body)));
+  app.post('/api/einvoices/:id/replace', { preHandler: [issue, post], schema: { params: numId, body: replaceInput } }, async (req, reply) => {
+    await stockPerm(req, req.params.id);
+    const r = await issueReplacement(app.db, ectx(req), req.params.id, req.body); notifyRecompute(app, tid(req)); return reply.status(201).send(r);
+  });
+  app.post('/api/einvoices/:id/cancel', { preHandler: [issue, post], schema: { params: numId, body: cancelInput } }, async (req) => {
+    await stockPerm(req, req.params.id);
+    const r = await cancelEInvoice(app.db, ectx(req), req.params.id, req.body); notifyRecompute(app, tid(req)); return r;
+  });
+  app.post('/api/einvoices/:id/reverse-original', { preHandler: [issue, post], schema: { params: numId } }, async (req) => {
+    await stockPerm(req, req.params.id);
+    const r = await reverseMarked(app.db, ectx(req), req.params.id); notifyRecompute(app, tid(req)); return r;
+  });
+  app.post('/api/einvoices/:id/paid', { preHandler: issue, schema: { params: numId, body: z.object({ paid: z.boolean() }) } }, async (req) => setPaid(app.db, ectx(req), req.params.id, req.body.paid));
   app.post('/api/einvoices/:id/refresh', { preHandler: issue, schema: { params: numId } }, async (req) => refreshEInvoice(app.db, ectx(req), req.params.id));
 
   app.get('/api/einvoices', { preHandler: view, schema: { querystring: listQuery } }, async (req) => app.withTenant(req, async (trx) => {

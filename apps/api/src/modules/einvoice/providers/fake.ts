@@ -57,7 +57,15 @@ export function fakeProvider(optionsRaw: unknown): EInvoiceProvider {
       }
       return { cqtCode: r.cqt_code, cqtStatus: r.cqt_code ? 'accepted' : 'none' };
     },
-    async cancel(ctx, ref) { await bySerialNo(ctx, ref); await ctx.db.updateTable('einvoice_fake_store').set({ cancelled: true }).where('serial', '=', ref.serial).where('invoice_no', '=', ref.invoiceNo).execute(); },
-    async setPaid() { /* giả lập không lưu trạng thái thanh toán */ },
+    async cancel(ctx, ref, reason, date) {
+      await bySerialNo(ctx, ref);
+      await ctx.db.updateTable('einvoice_fake_store').set({ cancelled: true }).where('serial', '=', ref.serial).where('invoice_no', '=', ref.invoiceNo).execute();
+      await ctx.log({ action: 'cancel', request: { serial: ref.serial, invoiceNo: ref.invoiceNo, reason, date }, response: { ok: true }, httpStatus: 200, ok: true, ms: 0 });
+    },
+    // Giả lập không lưu trạng thái thanh toán, chỉ ghi nhật ký lời gọi.
+    async setPaid(ctx, ref, paid) {
+      await bySerialNo(ctx, ref);
+      await ctx.log({ action: 'set_paid', request: { serial: ref.serial, invoiceNo: ref.invoiceNo, paid }, response: { ok: true }, httpStatus: 200, ok: true, ms: 0 });
+    },
   };
 }

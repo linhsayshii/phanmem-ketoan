@@ -123,7 +123,9 @@ async function buildInvoice(trx: Trx, tenantId: string, input0: InvoiceInput, op
   const scope = def.invoiceDirection!; const documentType = def.refund ? 'refund' : 'invoice';
   const isVnd = input.currencyCode === 'VND';
   if (def.refund && input.invoice.adjustsInvoiceId === undefined) throw new AppError('VALIDATION', `${def.name}: phải chỉ rõ hóa đơn gốc (adjustsInvoiceId)`, 400);
-  if (!def.refund && input.invoice.adjustsInvoiceId !== undefined) throw new AppError('VALIDATION', `${def.name} không điều chỉnh hóa đơn khác (adjustsInvoiceId chỉ dùng cho giảm giá, trả lại)`, 400);
+  // Hóa đơn bán (HDB, BH) trỏ hóa đơn gốc khi là hóa đơn điều chỉnh tăng (Task 6 GĐ5).
+  if (!def.refund && input.invoice.adjustsInvoiceId !== undefined && input.voucherType !== 'HDB' && input.voucherType !== 'BH')
+    throw new AppError('VALIDATION', `${def.name} không điều chỉnh hóa đơn khác (adjustsInvoiceId chỉ dùng cho giảm giá, trả lại và hóa đơn bán điều chỉnh tăng)`, 400);
   for (const [i, it] of input.items.entries()) {
     if (isVnd && !(VND_AMOUNT_RE.test(it.amountCurrency) && VND_AMOUNT_RE.test(it.discountCurrency))) throw new AppError('VALIDATION', `Dòng ${i + 1}: ${VND_AMOUNT_MSG}`, 400);
     if (D(it.discountCurrency).gt(it.amountCurrency)) throw new AppError('VALIDATION', `Dòng ${i + 1}: chiết khấu lớn hơn tiền hàng`, 400);
@@ -284,9 +286,10 @@ async function buildInvoice(trx: Trx, tenantId: string, input0: InvoiceInput, op
       return g.id;
     };
     const partyId = party.id;
-    if (input.invoice.adjustsInvoiceId !== undefined) { // hóa đơn gốc: cùng chiều, cùng đối tượng, chưa hủy; không tự đối trừ công nợ
+    if (input.invoice.adjustsInvoiceId !== undefined) { // hóa đơn gốc: cùng chiều, cùng đối tượng, chưa hủy (điều chỉnh tăng: gốc đã ghi sổ); không tự đối trừ công nợ
       const orig = await trx.selectFrom('voucher_invoice as i').innerJoin('voucher as v', 'v.id', 'i.voucher_id').select('i.id')
-        .where('i.id', '=', input.invoice.adjustsInvoiceId).where('i.direction', '=', scope).where('i.party_id', '=', partyId).where('v.state', '<>', 'cancelled').executeTakeFirst();
+        .where('i.id', '=', input.invoice.adjustsInvoiceId).where('i.direction', '=', scope).where('i.party_id', '=', partyId)
+        .where('v.state', def.refund ? '<>' : '=', def.refund ? 'cancelled' : 'posted').executeTakeFirst();
       if (!orig) throw new AppError('INVOICE_NOT_FOUND', 'Không tìm thấy hóa đơn gốc của cùng đối tượng và cùng chiều mua/bán', 404);
     }
     // Một dòng mỗi nhóm mã thuế: cơ sở và thuế là số VND đã ghi sổ (sau khi chia chênh làm tròn), nên bảng kê khớp đúng bút toán.
