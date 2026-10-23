@@ -38,7 +38,7 @@ export async function findDuplicates(trx: Trx, tenantId: string, auth: { sensiti
     inv AS (
       SELECT vi.voucher_id, array_agg(DISTINCT vi.direction || ':' || fn_invoice_key(vi.party_tax_code) || ':' || fn_invoice_key(vi.serial) || ':' || fn_invoice_key(vi.invoice_no)
         || CASE WHEN fn_invoice_key(vi.party_tax_code) = '' THEN ':' || coalesce(vi.party_id::text, '') ELSE '' END) AS keys
-      FROM voucher_invoice vi JOIN cand c ON c.id = vi.voucher_id WHERE vi.tenant_id = ${tenantId}::uuid GROUP BY vi.voucher_id),
+      FROM voucher_invoice vi JOIN cand c ON c.id = vi.voucher_id WHERE vi.tenant_id = ${tenantId}::uuid AND vi.invoice_no IS NOT NULL GROUP BY vi.voucher_id),
     pairs AS (
       SELECT DISTINCT ON (least(a.id, b.id), greatest(a.id, b.id)) a.id AS a_id, b.id AS b_id, abs(a.posting_date - b.posting_date) AS gap,
         a.party_id IS NOT NULL AND a.party_id = b.party_id AS same_party,

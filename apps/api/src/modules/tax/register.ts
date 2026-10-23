@@ -33,6 +33,8 @@ export interface InvoiceLine {
 // Hóa đơn hiệu lực của chứng từ đã ghi sổ hoặc đã đảo. Chứng từ đảo không có dòng voucher_invoice: đọc hóa đơn gốc qua reversal_of_id, đổi dấu (đảo của đảo đổi dấu lại).
 // Kỳ hiệu lực (eff_ord = năm × 12 + tháng): dòng gốc theo kỳ kê khai đã lưu (declare_year/declare_period theo declare_period_kind của dòng; kỳ quý tính ở tháng cuối quý);
 // dòng của chứng từ đảo theo ngày ghi sổ chứng từ đảo nhưng không sớm hơn kỳ kê khai của hóa đơn gốc (đảo trước kỳ đã ghi đè thì triệt tiêu ở kỳ kê khai). Giảm giá, trả lại (GGB, GGM) ghi số âm.
+// Hóa đơn bán đang chờ nhà cung cấp cấp số (voucher_invoice.invoice_no NULL): vẫn kê khai theo kỳ chứng từ.
+const NOT_ISSUED = 'Chưa phát hành';
 async function effectiveRows(trx: Trx, where: ReturnType<typeof sql>): Promise<InvoiceLine[]> {
   const r = await sql<Record<string, string | number | boolean | null>>`
     WITH RECURSIVE eff(voucher_id, src_id, depth) AS (
@@ -54,7 +56,7 @@ async function effectiveRows(trx: Trx, where: ReturnType<typeof sql>): Promise<I
   return r.rows.map((x) => {
     const sign = (Number(x.depth) % 2 === 0 ? 1 : -1) * (voucherTypeDef(String(x.srcType))?.refund ? -1 : 1);
     const money = (v: unknown) => D(String(v)).times(sign).toFixed(0);
-    return { stt: 0, invoiceId: Number(x.invoiceId), groupCode: String(x.groupCode), groupName: String(x.groupName), formNo: x.formNo as string | null, serial: x.serial as string | null, invoiceNo: String(x.invoiceNo), invoiceDate: String(x.invoiceDate),
+    return { stt: 0, invoiceId: Number(x.invoiceId), groupCode: String(x.groupCode), groupName: String(x.groupName), formNo: x.formNo as string | null, serial: x.serial as string | null, invoiceNo: x.invoiceNo === null ? NOT_ISSUED : String(x.invoiceNo), invoiceDate: String(x.invoiceDate),
       partyCode: x.partyCode as string | null, partyName: x.partyName as string | null, partyTaxCode: x.partyTaxCode as string | null, baseAmount: money(x.baseAmount), taxRate: x.taxRate === null ? null : D(String(x.taxRate)).toString(), taxAmount: money(x.taxAmount),
       taxCode: x.taxCode as string | null, isImport: Boolean(x.isImport), voucherId: String(x.voucherId), voucherNo: x.voucherNo as string | null, voucherType: String(x.voucherType), kind: Number(x.depth) === 0 ? 'original' : 'reversal',
       direction: x.direction as Direction, taxKind: x.taxKind as string | null, depth: Number(x.depth), declareKind: x.declareKind as PeriodKind };

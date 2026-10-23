@@ -258,9 +258,10 @@ export interface VoucherItemLineTable {
 }
 // Bảng kê hóa đơn kê khai thuế: một dòng mỗi (hóa đơn, mã thuế).
 export interface VoucherInvoiceTable {
-  id: Generated<number>; tenant_id: string; voucher_id: string; direction: string; form_no: string | null; serial: string | null; invoice_no: string; invoice_date: DateOnly;
+  id: Generated<number>; tenant_id: string; voucher_id: string; direction: string; form_no: string | null; serial: string | null; invoice_no: string | null; invoice_date: DateOnly;
   party_id: string | null; party_name: string | null; party_tax_code: string | null; party_address: string | null; invoice_group_id: number | null; header_group_id: number | null; tax_code_id: number | null;
   base_amount: Numeric; tax_amount: Numeric; is_import: Generated<boolean>; adjusts_invoice_id: number | null; declare_year: number | null; declare_period: number | null; declare_period_kind: Generated<string>; note: string | null;
+  einvoice_series_id: number | null; einvoice_pending: Generated<boolean>;
 }
 // Quy tắc tỷ giá theo chế độ, nạp từ fx-rules.json (bảng tham chiếu dùng chung).
 export interface FxRuleTable { regime: string; rules: ColumnType<unknown, string, string> }
@@ -336,6 +337,21 @@ export interface EinvoiceProviderTable {
 export interface EinvoiceSeriesTable {
   id: Generated<number>; tenant_id: string; provider_id: number; form_no: string; serial: string; year: number; kind: Generated<string>;
   provider_template: string | null; is_active: Generated<boolean>; note: string | null;
+}
+
+export interface EinvoiceTable {
+  id: Generated<number>; tenant_id: string; voucher_id: string; series_id: number; provider_id: number; relation: Generated<string>; original_id: number | null; adjust_kind: string | null;
+  status: string; transaction_uuid: string; invoice_no: string | null; issued_at: Timestamp | null; issue_date: DateOnly | null; cqt_code: string | null; cqt_status: Generated<string>;
+  provider_ref: ColumnType<Record<string, unknown>, string | undefined, string>; payload: ColumnType<unknown, string | null | undefined, string | null>; xml: string | null;
+  error_code: string | null; error_message: string | null; needs_reversal: Generated<boolean>; adjusted: Generated<boolean>; paid: Generated<boolean>; attempts: Generated<number>;
+  last_attempt_at: Timestamp | null; created_by: string | null; created_at: Generated<string>;
+}
+export interface EinvoiceLogTable {
+  id: Generated<number>; tenant_id: string; einvoice_id: number | null; provider_id: number; action: string; request: ColumnType<unknown, string | null | undefined, never>;
+  response: ColumnType<unknown, string | null | undefined, never>; http_status: number | null; ok: boolean; error: string | null; ms: number | null; created_by: string | null; created_at: Generated<string>;
+}
+export interface EinvoiceFakeStoreTable {
+  id: Generated<number>; tenant_id: string; transaction_uuid: string; serial: string; invoice_no: string; issue_date: DateOnly; cqt_code: string | null; cancelled: Generated<boolean>; created_at: Generated<string>;
 }
 
 export interface Database {
@@ -425,4 +441,7 @@ export interface Database {
   data_check_rule: DataCheckRuleTable;
   einvoice_provider: EinvoiceProviderTable;
   einvoice_series: EinvoiceSeriesTable;
+  einvoice: EinvoiceTable;
+  einvoice_log: EinvoiceLogTable;
+  einvoice_fake_store: EinvoiceFakeStoreTable;
 }

@@ -27,14 +27,15 @@ export const voucherInvoiceInput = z.object({
 export type VoucherInvoiceInput = z.infer<typeof voucherInvoiceInput>;
 
 export interface VoucherInvoiceDto {
-  id: number; direction: 'purchase' | 'sale'; formNo: string | null; serial: string | null; invoiceNo: string; invoiceDate: string;
+  id: number; direction: 'purchase' | 'sale'; formNo: string | null; serial: string | null; invoiceNo: string | null; einvoicePending: boolean; invoiceDate: string;
   partyCode: string | null; partyName: string | null; partyTaxCode: string | null; partyAddress: string | null; invoiceGroupCode: string | null; headerGroupCode: string | null; taxCode: string | null;
   baseAmount: string; taxAmount: string; isImport: boolean; adjustsInvoiceId: number | null; declareYear: number | null; declarePeriod: number | null; note: string | null;
 }
 
 // Dòng sẵn sàng ghi: đã đổi mã sang id.
 export interface InvoiceRow {
-  direction: 'purchase' | 'sale'; formNo: string | null | undefined; serial: string | null | undefined; invoiceNo: string; invoiceDate: string; partyId: string | null;
+  direction: 'purchase' | 'sale'; formNo: string | null | undefined; serial: string | null | undefined; invoiceNo: string | null; invoiceDate: string; partyId: string | null;
+  einvoiceSeriesId?: number | null; // có: hóa đơn bán chờ số (invoiceNo null), số do nhà cung cấp hóa đơn điện tử cấp sau
   invoiceGroupId: number | null; headerGroupId?: number | null; taxCodeId: number | null; baseAmount: string; taxAmount: string; isImport?: boolean | undefined; adjustsInvoiceId?: number | null; note?: string | null | undefined;
   // Ghi đè thông tin đối tượng trên hóa đơn (bỏ trống: lấy từ danh mục); kiểm trùng và khóa tư vấn dùng mã số thuế đã ghi đè.
   partyTaxCode?: string | null | undefined; partyName?: string | null | undefined; partyAddress?: string | null | undefined;
@@ -96,7 +97,7 @@ export async function insertInvoiceRows(trx: Trx, tenantId: string, voucherId: s
     if (r.direction === 'purchase') await assertNotDuplicate(trx, tenantId, voucherId, r, p.taxCode);
     const d = declarePeriod(r.invoiceDate, vatPeriod);
     await trx.insertInto('voucher_invoice').values({
-      tenant_id: tenantId, voucher_id: voucherId, direction: r.direction, form_no: blank(r.formNo), serial: blank(r.serial), invoice_no: r.invoiceNo, invoice_date: r.invoiceDate,
+      tenant_id: tenantId, voucher_id: voucherId, direction: r.direction, form_no: blank(r.formNo), serial: blank(r.serial), invoice_no: r.invoiceNo, einvoice_series_id: r.einvoiceSeriesId ?? null, einvoice_pending: r.invoiceNo === null, invoice_date: r.invoiceDate,
       party_id: r.partyId, party_name: p.name, party_tax_code: p.taxCode, party_address: p.address, invoice_group_id: r.invoiceGroupId, header_group_id: r.headerGroupId ?? r.invoiceGroupId, tax_code_id: r.taxCodeId,
       base_amount: r.baseAmount, tax_amount: r.taxAmount, is_import: r.isImport ?? false, adjusts_invoice_id: r.adjustsInvoiceId ?? null, declare_year: d.year, declare_period: d.period, declare_period_kind: vatPeriod, note: blank(r.note),
     }).execute();
@@ -109,10 +110,10 @@ export async function deleteInvoiceRows(trx: Trx, voucherId: string): Promise<vo
 
 export async function listInvoiceRows(trx: Trx, voucherId: string): Promise<VoucherInvoiceDto[]> {
   const rows = await trx.selectFrom('voucher_invoice as i').leftJoin('party as p', 'p.id', 'i.party_id').leftJoin('invoice_group as g', 'g.id', 'i.invoice_group_id').leftJoin('invoice_group as h', 'h.id', 'i.header_group_id').leftJoin('tax_code as t', 't.id', 'i.tax_code_id')
-    .select(['i.id', 'i.direction', 'i.form_no', 'i.serial', 'i.invoice_no', 'i.invoice_date', 'p.code as party_code', 'i.party_name', 'i.party_tax_code', 'i.party_address', 'g.code as group_code', 'h.code as header_group_code', 't.code as tax_code',
+    .select(['i.id', 'i.direction', 'i.form_no', 'i.serial', 'i.invoice_no', 'i.einvoice_pending', 'i.invoice_date', 'p.code as party_code', 'i.party_name', 'i.party_tax_code', 'i.party_address', 'g.code as group_code', 'h.code as header_group_code', 't.code as tax_code',
       'i.base_amount', 'i.tax_amount', 'i.is_import', 'i.adjusts_invoice_id', 'i.declare_year', 'i.declare_period', 'i.note'])
     .where('i.voucher_id', '=', voucherId).orderBy('i.id').execute();
-  return rows.map((r) => ({ id: r.id, direction: r.direction as 'purchase' | 'sale', formNo: r.form_no, serial: r.serial, invoiceNo: r.invoice_no, invoiceDate: r.invoice_date, partyCode: r.party_code, partyName: r.party_name,
+  return rows.map((r) => ({ id: r.id, direction: r.direction as 'purchase' | 'sale', formNo: r.form_no, serial: r.serial, invoiceNo: r.invoice_no, einvoicePending: r.einvoice_pending, invoiceDate: r.invoice_date, partyCode: r.party_code, partyName: r.party_name,
     partyTaxCode: r.party_tax_code, partyAddress: r.party_address, invoiceGroupCode: r.group_code, headerGroupCode: r.header_group_code, taxCode: r.tax_code, baseAmount: r.base_amount, taxAmount: r.tax_amount, isImport: r.is_import,
     adjustsInvoiceId: r.adjusts_invoice_id, declareYear: r.declare_year, declarePeriod: r.declare_period, note: r.note }));
 }

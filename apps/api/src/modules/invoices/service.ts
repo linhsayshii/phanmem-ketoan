@@ -30,7 +30,8 @@ export const invoiceItemInput = z.object({
   vatImportBase: z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG).optional(), // giá tính thuế GTGT hàng nhập theo tờ khai (CIF quy đổi theo tỷ giá hải quan + NK + TTĐB); trống: hàng VND + NK + TTĐB
 });
 export const invoiceHeaderInput = z.object({
-  formNo: optText(20), serial: optText(20), invoiceNo: z.string().trim().min(1).max(30), invoiceDate: dateIso, invoiceGroupCode: z.string().min(1), isImport: z.boolean().optional(),
+  formNo: optText(20), serial: optText(20), invoiceNo: z.string().trim().min(1).max(30).optional(), invoiceDate: dateIso, invoiceGroupCode: z.string().min(1), isImport: z.boolean().optional(),
+  einvoiceSeriesId: z.number().int().positive().optional(), // chỉ HDB, BH, GGB, TLB: hóa đơn điện tử, bỏ trống invoiceNo (nhà cung cấp cấp số khi phát hành), ký hiệu lấy từ dải ký hiệu
   employeeCode: z.string().min(1).optional(), // nhân viên bán hàng: ghi lên mọi dòng sổ cái của chứng từ, báo cáo bán hàng nhóm theo nhân viên lấy dòng đầu có nhân viên
   ...partyOverride, // ghi đè thông tin đối tượng trên hóa đơn (bỏ trống: lấy từ danh mục)
   adjustsInvoiceId: z.number().int().positive().optional(), // bắt buộc với giảm giá, trả lại (GGB, GGM): dòng của hóa đơn gốc
@@ -126,6 +127,20 @@ async function buildInvoice(trx: Trx, tenantId: string, input0: InvoiceInput, op
   for (const [i, it] of input.items.entries()) {
     if (isVnd && !(VND_AMOUNT_RE.test(it.amountCurrency) && VND_AMOUNT_RE.test(it.discountCurrency))) throw new AppError('VALIDATION', `Dòng ${i + 1}: ${VND_AMOUNT_MSG}`, 400);
     if (D(it.discountCurrency).gt(it.amountCurrency)) throw new AppError('VALIDATION', `Dòng ${i + 1}: chiết khấu lớn hơn tiền hàng`, 400);
+  }
+
+  let invoiceNo: string | null = null; let formNo = input.invoice.formNo; let serial = input.invoice.serial; const seriesId = input.invoice.einvoiceSeriesId;
+  if (seriesId !== undefined) {
+    if (!['HDB', 'BH', 'GGB', 'TLB'].includes(input.voucherType)) throw new AppError('VALIDATION', `${def.name} không phát hành hóa đơn điện tử`, 400);
+    if (input.invoice.invoiceNo !== undefined) throw new AppError('VALIDATION', 'Hóa đơn điện tử do nhà cung cấp cấp số: để trống số hóa đơn', 400);
+    const s = await trx.selectFrom('einvoice_series').select(['form_no', 'serial', 'year', 'is_active']).where('id', '=', seriesId).executeTakeFirst();
+    if (!s) throw new AppError('SERIES_NOT_FOUND', 'Không có ký hiệu hóa đơn này', 404);
+    if (!s.is_active) throw new AppError('SERIES_INACTIVE', `Ký hiệu ${s.form_no}${s.serial} đã ngừng sử dụng`, 409);
+    if (s.year !== Number(input.postingDate.slice(0, 4))) throw new AppError('SERIES_YEAR_MISMATCH', `Ký hiệu ${s.form_no}${s.serial} dùng cho năm ${s.year}, không khớp ngày hạch toán`, 400);
+    formNo = s.form_no; serial = s.serial;
+  } else {
+    if (input.invoice.invoiceNo === undefined) throw new AppError('VALIDATION', 'Nhập số hóa đơn', 400);
+    invoiceNo = input.invoice.invoiceNo;
   }
 
   const party = await trx.selectFrom('party').select(['id', 'payment_term_days', 'default_account_code']).where('code', '=', input.partyCode).executeTakeFirst();
@@ -282,7 +297,7 @@ async function buildInvoice(trx: Trx, tenantId: string, input0: InvoiceInput, op
       const baseAmount = lineNos.reduce((s, n) => s.plus(detail.baseVnd[Number(n)] ?? 0), D(0)).toFixed(0);
       const taxAmount = code === null ? '0' : D(detail.taxVnd[code] ?? 0).toFixed(0);
       if (D(baseAmount).isZero() && D(taxAmount).isZero()) continue;
-      rows.push({ direction: scope, formNo: input.invoice.formNo, serial: input.invoice.serial, invoiceNo: input.invoice.invoiceNo, invoiceDate: input.invoice.invoiceDate, partyId, invoiceGroupId: groupFor(code), headerGroupId: group.id,
+      rows.push({ direction: scope, formNo, serial, invoiceNo, ...(seriesId !== undefined && { einvoiceSeriesId: seriesId }), invoiceDate: input.invoice.invoiceDate, partyId, invoiceGroupId: groupFor(code), headerGroupId: group.id,
         taxCodeId: code === null ? null : ids.get(code)!, baseAmount, taxAmount, isImport: input.invoice.isImport, adjustsInvoiceId: input.invoice.adjustsInvoiceId ?? null,
         partyTaxCode: input.invoice.partyTaxCode, partyName: input.invoice.partyName, partyAddress: input.invoice.partyAddress });
     }
@@ -303,7 +318,7 @@ async function buildInvoice(trx: Trx, tenantId: string, input0: InvoiceInput, op
     let impIds = new Map<string, number>();
     const extra = [...imp.keys()].filter((c) => !ids.has(c));
     if (extra.length) impIds = new Map((await trx.selectFrom('tax_code').select(['id', 'code']).where('code', 'in', extra).execute()).map((r) => [r.code, r.id]));
-    for (const [code, g] of imp) rows.push({ direction: scope, formNo: input.invoice.formNo, serial: input.invoice.serial, invoiceNo: input.invoice.invoiceNo, invoiceDate: input.invoice.invoiceDate, partyId, invoiceGroupId: group.id, headerGroupId: group.id,
+    for (const [code, g] of imp) rows.push({ direction: scope, formNo, serial, invoiceNo, ...(seriesId !== undefined && { einvoiceSeriesId: seriesId }), invoiceDate: input.invoice.invoiceDate, partyId, invoiceGroupId: group.id, headerGroupId: group.id,
       taxCodeId: ids.get(code) ?? impIds.get(code)!, baseAmount: g.base.toFixed(0), taxAmount: g.tax.toFixed(0), isImport: true, adjustsInvoiceId: null,
       partyTaxCode: input.invoice.partyTaxCode, partyName: input.invoice.partyName, partyAddress: input.invoice.partyAddress });
     await insertInvoiceRows(trx, tenantId, voucherId, rows);
