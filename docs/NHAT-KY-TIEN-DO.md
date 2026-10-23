@@ -82,3 +82,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-23 06:51 | GĐ4 | T3 động cơ khấu hao/phân bổ thuần (lũy kế mục tiêu, đơn vị theo ngày/tháng/kỳ) | 124af7a..1973348 | domain 197, rà soát sạch
 2026-10-23 07:35 | GĐ4 | T4 lịch khấu hao theo phiên bản, chứng từ KH/PB kỳ, chạy lại không trùng, cần chạy lại (0071) | b2c877e..ee13df7 | api 838, rà soát sạch (opus, 1 vòng sửa)
 2026-10-23 08:13 | GĐ4 | T5 ghi tăng/ghi giảm/đánh giá lại/điều chuyển/dừng khấu hao TSCĐ (0072) | 14e6025..394fa08 | api 849, rà soát sạch (opus, 1 vòng sửa)
+2026-10-23 08:46 | GĐ4 | T6 ghi giảm một phần CCDC, điều chỉnh giá trị, CPTT phân bổ từ kỳ sau | 830ee88..1bd8399 | api 855+, rà soát sạch (opus, 2 vòng sửa)
