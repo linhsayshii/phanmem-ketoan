@@ -97,3 +97,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-23 21:45 | GĐ4 | rà soát toàn nhánh (opus): 0 Critical, 5 Important, 13 Minor; một đợt sửa I1–I5 + 8 Minor (giá vốn đứng đầu quy trình cuối kỳ, cách tính khấu hao tháng đầu trên màn Công ty, che số khế ước theo view_payable), rà soát lại 13/13 | 3ce2c40..bae7726 | api 929, lint, typecheck sạch
 2026-10-23 22:50 | GĐ4 | cổng cuối và kiểm trên bản sao sạch tại bae7726 (migrate 0001–0077, seed ABC+XYZ), tag gd4-hoan-tat | bae7726 | lint, typecheck sạch; test 1548/1548; bất biến + sample-xyz 23/23; e2e 44/44
 2026-10-23 23:43 | GĐ5 | kế hoạch chi tiết, khảo cứu tích hợp (SInvoice, ngân hàng, XML QĐ 1233, văn bản TNDN); T1 quyền GĐ5, mã hóa bí mật AES-256-GCM, httpJson (0078) | 05bb475..e2c867d | api 934, rà soát sạch (1 vòng sửa)
+2026-10-24 00:09 | GĐ5 | T2 ký hiệu hóa đơn TT 91/2026, nhà cung cấp HĐĐT, dải ký hiệu, che bí mật trong nhật ký (0079) | 3add02b..e1c954e | api 939, rà soát sạch
