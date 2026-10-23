@@ -148,7 +148,7 @@ function LoanDrawer({ loan, onClose }: { loan: LoanRow | 'new'; onClose: () => v
     <KeyboardGrid<Record<string, string>> rows={inst as unknown as Record<string, string>[]} columns={instCols} onRowsChange={(r) => setInst(r as unknown as InstallmentRow[])} addRowTemplate={() => ({ dueDate: '', principal: '', note: '' })} readOnly={!canEdit} height={280} />
     <div style={{ marginTop: 4 }}>Tổng gốc theo lịch: <Tag data-testid="schedule-total">{money(total.toString())}</Tag></div></>);
   const docsTab = id === null ? needCard : (<>
-    {l && (can('loan.update') && can('voucher.create')) && l.status === 'active' && <Space wrap style={{ marginBottom: 8 }}>
+    {l && (can('loan.update') && can('voucher.create') && can('voucher.post')) && l.status === 'active' && <Space wrap style={{ marginBottom: 8 }}>
       <Button onClick={() => setAction('disburse')}>Giải ngân</Button><Button onClick={() => setAction('repay')}>Trả nợ</Button>
       <Popconfirm title="Tất toán khế ước này?" okText="Tất toán" cancelText="Không" onConfirm={() => settle.mutate()}><Button>Tất toán</Button></Popconfirm></Space>}
     {l && <div style={{ marginBottom: 8 }}>Dư nợ gốc: <b data-testid="loan-outstanding">{money(l.outstanding)}</b> · Đã rút: <b>{money(l.drawn)}</b> · Lãi phải trả (VND): <b>{money(l.interestPayable)}</b></div>}
