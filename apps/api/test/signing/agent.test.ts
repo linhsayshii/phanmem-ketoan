@@ -47,3 +47,22 @@ describe('tiện ích ký cục bộ tham chiếu', () => {
     expect((await fetch(`${base}/v1/sign`, { method: 'OPTIONS', headers: { origin: 'https://evil.example' } })).status).toBe(403);
   });
 });
+
+describe('tiện ích ký: xác nhận y/n tuần tự', () => {
+  it('hai yêu cầu ký đồng thời: câu hỏi hiện lần lượt, câu trả lời không bị lẫn (y cho yêu cầu đầu, n cho yêu cầu sau)', async () => {
+    const p = spawn(process.execPath, [agentPath, '--key', key.keyFile, '--cert', key.certFile, '--port', '0', '--origin', ORIGIN], { stdio: ['pipe', 'pipe', 'pipe'] });
+    try {
+      let asked = 0; let err = '';
+      p.stderr!.on('data', (d: Buffer) => { err += String(d); asked = (err.match(/\(y\/n\)/g) ?? []).length; });
+      const url = await new Promise<string>((res, rej) => { p.stdout!.on('data', (d: Buffer) => { const m = /listening on (http:\/\/127\.0\.0\.1:\d+)/.exec(String(d)); if (m) res(m[1]!); }); p.on('exit', () => rej(new Error('agent thoát'))); });
+      const go = (digest: Buffer) => fetch(`${url}/v1/sign`, { method: 'POST', headers: { 'content-type': 'application/json', origin: ORIGIN }, body: JSON.stringify({ certSerial: serial, digestB64: digest.toString('base64'), algorithm: 'RSA-SHA256' }) });
+      const a = go(Buffer.alloc(32, 1)); const b = go(Buffer.alloc(32, 2));
+      const until = async (n: number) => { for (let i = 0; i < 100 && asked < n; i++) await new Promise((r) => setTimeout(r, 50)); expect(asked).toBe(n); };
+      await until(1); await new Promise((r) => setTimeout(r, 200)); expect(asked).toBe(1); // câu hỏi thứ hai chưa hiện khi câu đầu chưa trả lời
+      p.stdin!.write('y\n'); await until(2); p.stdin!.write('n\n');
+      const [ra, rb] = await Promise.all([a, b]);
+      expect([ra.status, rb.status].sort()).toEqual([200, 403]);
+      expect(((await (ra.status === 403 ? ra : rb).json()) as { error: string }).error).toBe('USER_DECLINED');
+    } finally { p.kill(); }
+  });
+});

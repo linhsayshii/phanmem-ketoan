@@ -18,7 +18,7 @@ describe('xmldsig', () => {
   it('prepareEnveloped + ký bằng khóa thử + finish → verifyEnveloped valid, SigningTime đúng, chứng thư đúng', () => {
     for (const [xml, ref] of [[small, undefined], [fixture, '#data']] as const) {
       const signed = sign(xml, ref);
-      const v = verifyEnveloped(signed);
+      const v = verifyEnveloped(signed, ref ? { targets: ['DLHDon'] } : {});
       expect(v.reason).toBeUndefined();
       expect(v).toMatchObject({ valid: true, signingTime: '2026-10-24T09:30:00' });
       expect(v.certDer!.equals(key.certDer)).toBe(true);
@@ -33,7 +33,7 @@ describe('xmldsig', () => {
       const signed = sign(xml, ref);
       const bad = signed.replace(xml === small ? '<Tien>1000' : '<SHDon>00000123', xml === small ? '<Tien>1001' : '<SHDon>00000124');
       expect(bad).not.toBe(signed);
-      expect(verifyEnveloped(bad).valid).toBe(false);
+      expect(verifyEnveloped(bad, { targets: ['DLHDon'] }).valid).toBe(false);
     }
     const s = sign(small);
     expect(verifyEnveloped(s.replace('2026-10-24T09:30:00', '2026-10-25T09:30:00'))).toMatchObject({ valid: false });
@@ -60,5 +60,44 @@ describe('xmldsig', () => {
     gen.computeSignature(uniq, { location: { reference: '/HDon', action: 'append' } });
     const v = verifyEnveloped(gen.getSignedXml());
     expect(v).toMatchObject({ valid: true, signingTime: null });
+  });
+
+  describe('chống đánh tráo chữ ký (signature wrapping) và giới hạn đầu vào', () => {
+    const signed = sign(fixture, '#data'); // mẫu thật: cả DLHDon và MCCQT mang Id="data"
+    const forged = fixture.slice(fixture.indexOf('<DLHDon'), fixture.indexOf('</DLHDon>') + '</DLHDon>'.length).replace('00000123', '99999999');
+    it('mẫu thật Id="data" ở DLHDon và MCCQT: có targets [DLHDon] thì hợp lệ và chỉ phủ DLHDon; không targets thì Id trùng → invalid', () => {
+      const v = verifyEnveloped(signed, { targets: ['DLHDon'] });
+      expect(v.reason).toBeUndefined();
+      expect(v.covered.map((e) => e.localName)).toEqual(['DLHDon']);
+      expect(verifyEnveloped(signed)).toMatchObject({ valid: false, reason: expect.stringMatching(/Id trùng/) });
+    });
+    it('thêm DLHDon giả (Id="data") làm anh em, trước hay sau bản thật → invalid', () => {
+      for (const bad of [signed.replace('<DLHDon Id="data">', `${forged}<DLHDon Id="data">`), signed.replace('</DLHDon>', `</DLHDon>${forged}`)]) {
+        expect(bad).toContain('99999999');
+        expect(verifyEnveloped(bad, { targets: ['DLHDon'] })).toMatchObject({ valid: false, reason: expect.stringMatching(/Id trùng/) });
+        expect(verifyEnveloped(bad).valid).toBe(false);
+      }
+    });
+    it('Id của phần tử ngoài targets không bị tính là trùng; phần tử trong targets bị đổi Id thì Reference không còn trỏ tới đâu → invalid', () => {
+      expect(verifyEnveloped(signed.replace('<MCCQT Id="data">', '<MCCQT Id="khac">'), { targets: ['DLHDon'] }).valid).toBe(true);
+      expect(verifyEnveloped(signed.replace('<DLHDon Id="data">', '<DLHDon Id="khac">'), { targets: ['DLHDon'] }).valid).toBe(false);
+    });
+    it('Reference trỏ phần tử không thuộc targets → invalid', () => {
+      expect(verifyEnveloped(signed, { targets: ['MCCQT'] }).valid).toBe(false);
+    });
+    it('đầu vào quá lớn (> 5 MB) → invalid, không phân tích', () => {
+      const big = `<a>${'x'.repeat(5 * 1024 * 1024 + 1)}</a>`;
+      expect(verifyEnveloped(big)).toMatchObject({ valid: false, reason: expect.stringMatching(/quá lớn/) });
+    });
+    it('nhiều X509Certificate: chọn chứng thư có khóa kiểm được chữ ký, báo đúng chứng thư đó', () => {
+      const s = sign(small);
+      const extra = `<ds:X509Certificate>${other.certDer.toString('base64')}</ds:X509Certificate>`;
+      for (const bad of [s.replace('<ds:X509Certificate>', `${extra}<ds:X509Certificate>`), s.replace('</ds:X509Data>', `${extra}</ds:X509Data>`)]) {
+        const v = verifyEnveloped(bad);
+        expect(v.reason).toBeUndefined();
+        expect(v.certDer!.equals(key.certDer)).toBe(true);
+        expect(v.subject).toContain('CN=Nguyen Van A');
+      }
+    });
   });
 });

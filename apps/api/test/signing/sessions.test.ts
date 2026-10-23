@@ -13,17 +13,24 @@ const good = makeKey('Nguoi ky'); const other = makeKey('Ben khac'); const old =
 let smart: FastifyInstance; let smartUrl = '';
 const smartCalls: { path: string; body: Record<string, any> }[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
 let smartReady = false; // false = người dùng chưa xác nhận
+let smartDown = false; // true = /status cắt kết nối (lỗi mạng tạm thời)
+let smartFail = ''; // khác rỗng = get_certificate trả lỗi với message này
+let redirectHits = 0;
 
 beforeAll(async () => {
-  ctx = await createTestApp();
+  ctx = await createTestApp({ SMARTCA_ALLOWED_HOSTS: '127.0.0.1', SMARTCA_ALLOW_HTTP: 'true' });
   // VNPT SmartCA giả: get_certificate, sign (nhận băm hex), status (trả chữ ký sau khi "xác nhận").
   smart = Fastify();
-  smart.post('/v1/credentials/get_certificate', async (req) => { smartCalls.push({ path: 'cert', body: req.body as never });
+  smart.post('/redir/v1/credentials/get_certificate', async (_req, reply) => reply.redirect('/hit', 307));
+  smart.post('/hit', async () => { redirectHits++; return {}; });
+  smart.post('/v1/credentials/get_certificate', async (req, reply) => { smartCalls.push({ path: 'cert', body: req.body as never });
+    if (smartFail) return reply.status(400).send({ status_code: 400, message: smartFail });
     return { status_code: 200, data: { user_certificates: [{ serial_number: 'AA11', cert_data: good.certDer.toString('base64'), cert_status: 'Hoạt động' }] } }; });
   smart.post('/v1/signatures/sign', async (req) => { smartCalls.push({ path: 'sign', body: req.body as never });
     const hex = (req.body as any).sign_files[0].data_to_be_signed as string; // eslint-disable-line @typescript-eslint/no-explicit-any
     lastDigest = Buffer.from(hex, 'hex').toString('base64'); return { status_code: 200, data: { tran_code: 'TRAN-1' } }; });
-  smart.post('/v1/signatures/sign/:tran/status', async (req) => { smartCalls.push({ path: 'status', body: req.body as never });
+  smart.post('/v1/signatures/sign/:tran/status', async (req, reply) => { smartCalls.push({ path: 'status', body: req.body as never });
+    if (smartDown) { req.raw.destroy(); return reply; }
     const docId = [...smartCalls].reverse().find((c) => c.path === 'sign')!.body.sign_files[0].doc_id;
     return { status_code: 200, data: { signatures: [{ doc_id: docId, signature_value: smartReady ? signDigest(good.keyPem, lastDigest) : null }] } }; });
   await smart.listen({ port: 0, host: '127.0.0.1' });
@@ -145,6 +152,8 @@ describe('ký số: hồ sơ và phiên', () => {
     expect((await t.call('POST', `/api/signing/sessions/${s.id}/poll`)).json().status).toBe('signed');
     expect((await t.call('POST', `/api/signing/sessions/${s.id}/poll`)).json().status).toBe('signed');
     expect(verifyEnveloped((await t.call('GET', `/api/signing/sessions/${s.id}/result`)).body).valid).toBe(true);
+    expect((await t.call('GET', `/api/tax/vat-returns/${ref}/xml?signedSession=${s.id}&format=htkk-01gtgt`)).statusCode).toBe(200);
+    expect(err(await t.call('GET', `/api/tax/vat-returns/${ref}/xml?signedSession=${s.id}&format=khac`))).toEqual([400, 'SIGNED_FORMAT_MISMATCH']);
   });
 
   it('SmartCA (máy giả): lấy chứng thư, ký băm, poll pending rồi signed; thông tin đăng nhập mã hóa, không lộ ra API/audit', async () => {
@@ -176,5 +185,41 @@ describe('ký số: hồ sơ và phiên', () => {
     const base = { kind: 'smartca', label: 'S', spId: 'x', spPassword: 'y', userId: 'u' };
     expect(err(await t.call('POST', '/api/signing/profiles', { ...base, baseUrl: 'http://127.0.0.1:9' }))).toEqual([502, 'SMARTCA_UNREACHABLE']);
     expect(err(await t.call('POST', '/api/signing/profiles', { ...base, baseUrl: smartUrl, serial: 'KHONGCO' }))).toEqual([404, 'SMARTCA_CERT_NOT_FOUND']);
+  });
+
+  it('hoàn tất hai lần song song: đúng một lần thành công, lần kia 409 (không ghi đè)', async () => {
+    const t = await tenant(); const ref = await t.ret();
+    await t.call('POST', '/api/signing/profiles', agentProfile());
+    const sess = (await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref })).json() as { id: string; digestB64: string };
+    const body = { signatureB64: signDigest(good.keyPem, sess.digestB64) };
+    const rs = await Promise.all([t.call('POST', `/api/signing/sessions/${sess.id}/complete`, body), t.call('POST', `/api/signing/sessions/${sess.id}/complete`, body)]);
+    expect(rs.map((r) => r.statusCode).sort(), rs.map((r) => r.body).join('|')).toEqual([200, 409]);
+  });
+
+  it('SmartCA: baseUrl ngoài danh sách cho phép → 400 SMARTCA_URL_NOT_ALLOWED, không gọi ra ngoài; chuyển hướng không được theo; message thượng nguồn bị làm sạch', async () => {
+    const t = await tenant();
+    const base = { kind: 'smartca', label: 'S', spId: 'x', spPassword: 'y', userId: 'u' };
+    for (const baseUrl of ['https://evil.example/sca', 'https://127.0.0.1@evil.example/', 'ftp://127.0.0.1/', 'http://localhost:1/']) {
+      expect(err(await t.call('POST', '/api/signing/profiles', { ...base, baseUrl })), baseUrl).toEqual([400, 'SMARTCA_URL_NOT_ALLOWED']);
+    }
+    expect(err(await t.call('POST', '/api/signing/profiles', { ...base, baseUrl: `${smartUrl}/redir` }))).toEqual([502, 'SMARTCA_UNREACHABLE']);
+    expect(redirectHits).toBe(0);
+    smartFail = '<script>alert(1)</script>\n' + 'a'.repeat(400);
+    const r = await t.call('POST', '/api/signing/profiles', { ...base, baseUrl: smartUrl }); smartFail = '';
+    expect(r.statusCode).toBe(502);
+    expect(r.json().error.message).not.toMatch(/[<>\n]/);
+    expect(r.json().error.message.length).toBeLessThan(200);
+  });
+
+  it('SmartCA: lỗi mạng tạm thời khi poll giữ phiên pending (không failed); tiếp tục được khi mạng về', async () => {
+    const t = await tenant(); const ref = await t.ret();
+    await t.call('POST', '/api/signing/profiles', { kind: 'smartca', label: 'S', baseUrl: smartUrl, spId: 'sp', spPassword: 'pw', userId: 'u' });
+    smartReady = false; smartDown = false;
+    const s = (await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref })).json() as { id: string };
+    smartDown = true;
+    expect(err(await t.call('POST', `/api/signing/sessions/${s.id}/poll`))).toEqual([502, 'SMARTCA_UNREACHABLE']);
+    smartDown = false; smartReady = true;
+    expect((await t.call('GET', `/api/signing/sessions/${s.id}`)).json().status).toBe('pending');
+    expect((await t.call('POST', `/api/signing/sessions/${s.id}/poll`)).json().status).toBe('signed');
   });
 });

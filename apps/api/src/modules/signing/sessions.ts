@@ -6,6 +6,7 @@ import { AppError } from '../../plugins/errors.js';
 import { openSecret, sealSecret } from '../../lib/secretBox.js';
 import { renderReturnXml } from '../tax/vatXml.js';
 import { FAKE_CERT_DER } from './providers/fake.js';
+import { assertFakeAllowed, assertSmartcaUrl, type SigningPolicy } from './providers/policy.js';
 import { describeCertificate, LOCAL_AGENT_URL } from './providers/localAgent.js';
 import { getCertificates, SMARTCA_UAT_URL, type SmartCaCfg } from './providers/smartca.js';
 import { SIGNING_MODE, SigningProviderError, type SigningKind } from './providers/types.js';
@@ -36,15 +37,16 @@ export const listProfiles = async (trx: Trx, userId: string) => (await trx.selec
 
 // Chứng thư của hồ sơ mới: SmartCA gọi VNPT nên chạy NGOÀI giao dịch (gọi trước, lưu sau).
 export interface ProfileCert { der: Buffer; subject: string; serial: string; notAfter: Date; credentials: Buffer | null }
-export async function resolveProfileCert(b: ProfileInput): Promise<ProfileCert> {
+export async function resolveProfileCert(b: ProfileInput, pol: SigningPolicy): Promise<ProfileCert> {
   if (b.kind === 'local_agent') return { ...describeCertificate(b.certB64), credentials: null };
   if (b.kind === 'fake') {
-    if (process.env.NODE_ENV === 'production') throw new AppError('SIGNING_FAKE_DISABLED', 'Hồ sơ ký giả lập không dùng ở môi trường chính thức', 400);
+    assertFakeAllowed(pol);
     return { ...describeCertificate(FAKE_CERT_DER.toString('base64')), credentials: null };
   }
+  assertSmartcaUrl(b.baseUrl, pol); // trước khi mã hóa hay gọi ra ngoài
   const cfg: SmartCaCfg = { baseUrl: b.baseUrl, spId: b.spId, spPassword: b.spPassword, userId: b.userId, ...(b.serial && { serial: b.serial }) };
   const credentials = sealSecret(JSON.stringify(cfg)); // thiếu DATA_ENCRYPTION_KEY: 409 trước khi gọi ra ngoài
-  const certs = (await getCertificates(cfg)).filter((c) => !c.status || /hoạt động|active/i.test(c.status));
+  const certs = (await getCertificates(cfg, pol)).filter((c) => !c.status || /hoạt động|active/i.test(c.status));
   const c = b.serial ? certs.find((x) => x.serial.toLowerCase() === b.serial!.toLowerCase()) : certs[0];
   if (!c) throw new AppError('SMARTCA_CERT_NOT_FOUND', 'Không tìm thấy chứng thư SmartCA đang hoạt động của thuê bao này', 404);
   return { ...describeCertificate(c.certB64), credentials };
@@ -90,10 +92,11 @@ type SessionRow = Selectable<Database['signing_session']>;
 export const sessionDto = (s: SessionRow, kind: SigningKind) => ({ id: s.id, status: s.status, docKind: s.doc_kind, docRef: s.doc_ref, kind, mode: SIGNING_MODE[kind], digestB64: s.digest_b64,
   expiresAt: new Date(s.expires_at).toISOString(), ...(kind === 'local_agent' && { agentUrl: LOCAL_AGENT_URL }), ...(s.error_message && { error: s.error_message }) });
 
-export async function createSession(trx: Trx, ctx: SessionCtx, b: z.infer<typeof sessionInput>) {
+export async function createSession(trx: Trx, ctx: SessionCtx, pol: SigningPolicy, b: z.infer<typeof sessionInput>) {
   const q = trx.selectFrom('signing_profile').selectAll().where('user_id', '=', ctx.userId);
   const profile = await (b.profileId ? q.where('id', '=', b.profileId) : q.where('is_default', '=', true)).executeTakeFirst();
   if (!profile) { if (b.profileId) throw profileNotFound(); throw new AppError('SIGNING_PROFILE_MISSING', 'Chưa có hồ sơ ký số: thêm chứng thư ở Cài đặt ký số', 409); }
+  if (profile.kind === 'fake') assertFakeAllowed(pol);
   if (new Date(profile.cert_not_after).getTime() <= Date.now()) throw new AppError('CERTIFICATE_EXPIRED', 'Chứng thư số đã hết hạn, không ký được', 409);
   const xml = await documentXml(trx, ctx, b.docKind, b.docRef);
   const id = (await sql<{ id: string }>`SELECT gen_random_uuid() AS id`.execute(trx)).rows[0]!.id;
@@ -119,8 +122,9 @@ export async function markFailed(trx: Trx, id: string, message: string) { await 
 export async function setProviderRef(trx: Trx, id: string, ref: string) { await trx.updateTable('signing_session').set({ provider_ref: ref }).where('id', '=', id).execute(); }
 
 // Ghép chữ ký, kiểm bằng chứng thư của hồ sơ; sai → 400 SIGNATURE_INVALID (phiên vẫn 'pending' để thử lại tới khi hết hạn).
+const notPending = (what: string) => new AppError('SIGNING_SESSION_NOT_PENDING', `Phiên ký số đã ${what}`, 409);
 export async function completeSession(trx: Trx, s: SessionRow, profile: ProfileRow, signatureB64: string): Promise<string> {
-  if (s.status !== 'pending') throw new AppError('SIGNING_SESSION_NOT_PENDING', `Phiên ký số đã ${s.status === 'signed' ? 'hoàn tất' : 'kết thúc'}`, 409);
+  if (s.status !== 'pending') throw notPending(s.status === 'signed' ? 'hoàn tất' : 'kết thúc');
   if (new Date(profile.cert_not_after).getTime() <= Date.now()) throw new AppError('CERTIFICATE_EXPIRED', 'Chứng thư số đã hết hạn, không ký được', 409);
   if (!/^[A-Za-z0-9+/]{100,}={0,2}$/.test(signatureB64)) throw new AppError('SIGNATURE_INVALID', 'Chữ ký không hợp lệ', 400);
   const p = prepareEnveloped(s.xml_unsigned, profile.cert_der, { signingTime: s.signing_time, signatureId: `sig-${s.id}` });
@@ -130,11 +134,13 @@ export async function completeSession(trx: Trx, s: SessionRow, profile: ProfileR
   if (!v.valid || !v.certDer?.equals(profile.cert_der) || new X509Certificate(v.certDer).serialNumber.toLowerCase() !== profile.cert_serial) {
     throw new AppError('SIGNATURE_INVALID', 'Chữ ký không khớp chứng thư số của hồ sơ ký', 400);
   }
-  await trx.updateTable('signing_session').set({ status: 'signed', signed_xml: signed, error_message: null }).where('id', '=', s.id).execute();
+  // Chỉ chuyển từ pending: hai lần hoàn tất song song thì lần sau 0 dòng → 409 (không ghi đè XML đã ký).
+  const done = await trx.updateTable('signing_session').set({ status: 'signed', signed_xml: signed, error_message: null }).where('id', '=', s.id).where('status', '=', 'pending').returning('id').executeTakeFirst();
+  if (!done) throw notPending('kết thúc');
   return signed;
 }
 
 export const toAppError = (e: unknown): never => {
-  if (e instanceof SigningProviderError) throw new AppError(e.code, e.message, e.code === 'CERTIFICATE_INVALID' ? 400 : 502);
+  if (e instanceof SigningProviderError) throw new AppError(e.code, e.message, e.code === 'CERTIFICATE_INVALID' || e.code === 'SMARTCA_URL_NOT_ALLOWED' ? 400 : 502);
   throw e;
 };

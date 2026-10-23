@@ -9,6 +9,7 @@ export function describeCertificate(certB64: string): CertInfo {
   try {
     const der = Buffer.from(certB64, 'base64'); const c = new X509Certificate(der);
     if (c.publicKey.asymmetricKeyType !== 'rsa') throw new Error('không phải RSA');
+    if (new Date(c.validFrom).getTime() > Date.now()) throw new Error('chưa có hiệu lực');
     return { der: c.raw, subject: c.subject.split('\n').reverse().join(','), serial: c.serialNumber.toLowerCase(), notAfter: new Date(c.validTo) };
   } catch (e) {
     throw new SigningProviderError('CERTIFICATE_INVALID', `Chứng thư số không hợp lệ: ${e instanceof Error ? e.message : String(e)}`);

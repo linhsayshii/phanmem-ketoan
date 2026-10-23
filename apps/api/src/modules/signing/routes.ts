@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
 import { fakeSign } from './providers/fake.js';
+import { assertFakeAllowed, policyOf } from './providers/policy.js';
 import { pollSign, startSign } from './providers/smartca.js';
-import type { SigningKind } from './providers/types.js';
+import { SigningProviderError, type SigningKind } from './providers/types.js';
 import {
   completeSession, createSession, deleteProfile, expiredError, isExpired, listProfiles, loadSession, markExpired, markFailed, profileInput, resolveProfileCert, saveProfile,
   sessionDto, sessionInput, setDefaultProfile, setProviderRef, smartcaCfgOf, toAppError, type SessionCtx,
@@ -16,11 +17,12 @@ const uuidId = z.object({ id: z.string().uuid() });
 // Ký số XML. Hồ sơ và phiên là của riêng từng người dùng (lọc theo user_id; của người khác trả 404).
 const routes: FastifyPluginAsyncZod = async (app) => {
   const use = app.requirePermission('signing.use');
+  const policy = policyOf(app.config);
   const ctxOf = (req: { auth: { tenantId: string | null; userId: string; permissions: Set<string> } | null }): SessionCtx => ({ tenantId: req.auth!.tenantId!, userId: req.auth!.userId, permissions: req.auth!.permissions });
 
   app.get('/api/signing/profiles', { preHandler: use }, async (req) => app.withTenant(req, (trx) => listProfiles(trx, req.auth!.userId), READ_SNAPSHOT));
   app.post('/api/signing/profiles', { preHandler: use, schema: { body: profileInput } }, async (req, reply) => {
-    const cert = await resolveProfileCert(req.body).catch(toAppError); // SmartCA gọi VNPT ngoài giao dịch
+    const cert = await resolveProfileCert(req.body, policy).catch(toAppError); // SmartCA gọi VNPT ngoài giao dịch
     return reply.status(201).send(await app.withTenant(req, (trx) => saveProfile(trx, req.auth!.tenantId!, req.auth!.userId, req.body, cert)));
   });
   app.post('/api/signing/profiles/:id/default', { preHandler: use, schema: { params: numId } }, async (req, reply) => {
@@ -34,10 +36,10 @@ const routes: FastifyPluginAsyncZod = async (app) => {
 
   // Tạo phiên: dựng XML, tính băm SignedInfo. SmartCA: gửi băm đi ngay, người dùng xác nhận trên ứng dụng rồi trình duyệt gọi /poll.
   app.post('/api/signing/sessions', { preHandler: use, schema: { body: sessionInput } }, async (req, reply) => {
-    const { session, profile } = await app.withTenant(req, (trx) => createSession(trx, ctxOf(req), req.body));
+    const { session, profile } = await app.withTenant(req, (trx) => createSession(trx, ctxOf(req), policy, req.body));
     if (profile.kind === 'smartca') {
       try {
-        const ref = await startSign(smartcaCfgOf(profile), { transactionId: `KT-${session.id}`, docId: session.id, digestB64: session.digest_b64, desc: `Ky ${session.doc_kind} ${session.doc_ref}` });
+        const ref = await startSign(smartcaCfgOf(profile), policy, { transactionId: `KT-${session.id}`, docId: session.id, digestB64: session.digest_b64, desc: `Ky ${session.doc_kind} ${session.doc_ref}` });
         await app.withTenant(req, (trx) => setProviderRef(trx, session.id, ref));
       } catch (e) {
         await app.withTenant(req, (trx) => markFailed(trx, session.id, e instanceof Error ? e.message : String(e)));
@@ -76,14 +78,18 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     if (session.status === 'signed') return { id: session.id, status: 'signed' };
     let sig: string | null;
     try {
-      if (profile.kind === 'fake') sig = fakeSign(session.digest_b64);
-      else sig = await pollSign(smartcaCfgOf(profile), session.provider_ref ?? '', session.id);
+      if (profile.kind === 'fake') { assertFakeAllowed(policy); sig = fakeSign(session.digest_b64); }
+      else sig = await pollSign(smartcaCfgOf(profile), policy, session.provider_ref ?? '', session.id);
     } catch (e) {
-      await app.withTenant(req, (trx) => markFailed(trx, session.id, e instanceof Error ? e.message : String(e)));
+      // Lỗi mạng tạm thời hoặc lỗi cấu hình (AppError): giữ phiên 'pending'; chỉ lỗi dứt khoát của SmartCA mới đánh dấu failed.
+      if (!(e instanceof SigningProviderError && e.code === 'SMARTCA_UNREACHABLE') && !(e instanceof AppError)) await app.withTenant(req, (trx) => markFailed(trx, session.id, e instanceof Error ? e.message : String(e)));
       return toAppError(e);
     }
     if (sig === null) return { id: session.id, status: 'pending' };
-    await app.withTenant(req, (trx) => completeSession(trx, session, profile, sig));
+    try { await app.withTenant(req, (trx) => completeSession(trx, session, profile, sig)); } catch (e) {
+      if (!(e instanceof AppError && e.code === 'SIGNING_SESSION_NOT_PENDING')) throw e; // lần hỏi song song đã hoàn tất trước: trả trạng thái hiện tại
+      return { id: session.id, status: (await app.withTenant(req, (trx) => loadSession(trx, req.auth!.userId, session.id), READ_SNAPSHOT)).session.status };
+    }
     return { id: session.id, status: 'signed' };
   });
 

@@ -68,6 +68,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   // signedSession: tải bản đã ký của phiên ký số (của chính người dùng, đã ký xong, đúng tờ khai này) thay cho bản chưa ký.
   app.get('/api/tax/vat-returns/:id/xml', { preHandler: app.requirePermission('tax_return.view'), schema: { params: numId, querystring: z.object({ format: z.string().default('htkk-01gtgt'), signedSession: z.string().uuid().optional() }) } }, async (req, reply) => {
     if (!req.auth!.permissions.has('tax.view')) throw new AppError('FORBIDDEN', 'Thiếu quyền tax.view', 403);
+    if (req.query.signedSession && req.query.format !== 'htkk-01gtgt') throw new AppError('SIGNED_FORMAT_MISMATCH', 'Bản đã ký chỉ có ở định dạng htkk-01gtgt', 400); // phiên ký luôn dựng định dạng mặc định
     const r = await app.withTenant(req, async (trx) => {
       const out = await renderReturnXml(trx, req.auth!.tenantId!, req.params.id, req.query.format);
       if (!req.query.signedSession) return out;

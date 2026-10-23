@@ -19,7 +19,9 @@ const cert = new X509Certificate(readFileSync(o.cert));
 const SHA256_PREFIX = Buffer.from('3031300d060960864801650304020105000420', 'hex'); // DigestInfo của SHA-256
 const info = { serial: cert.serialNumber.toLowerCase(), subject: cert.subject.split('\n').reverse().join(','), notAfter: new Date(cert.validTo).toISOString(), certB64: cert.raw.toString('base64') };
 const rl = o.yes ? null : createInterface({ input: process.stdin, output: process.stderr });
-const ask = (q) => new Promise((res) => rl.question(q, (a) => res(/^y(es)?$/i.test(a.trim()))));
+// Hàng đợi: mỗi lúc chỉ một câu hỏi y/n, để câu trả lời không lẫn giữa các yêu cầu ký đồng thời.
+let queue = Promise.resolve();
+const ask = (q) => (queue = queue.then(() => new Promise((res) => rl.question(q, (a) => res(/^y(es)?$/i.test(a.trim()))))));
 
 const server = createServer(async (req, res) => {
   const origin = req.headers.origin;

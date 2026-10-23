@@ -29,12 +29,13 @@ const canon = (node: El, alg: string): string => {
   return a.process(node, { ancestorNamespaces: findAncestorNsForElement(node) }) as string;
 };
 const idOf = (el: El) => el.getAttribute('Id') ?? el.getAttribute('ID') ?? el.getAttribute('id');
-const byId = (doc: Document, id: string): El | null => {
+const allById = (doc: Document, id: string): El[] => {
   const hits: El[] = [];
   const walk = (el: El) => { if (idOf(el) === id) hits.push(el); for (const c of Array.from(el.childNodes)) if (c.nodeType === 1) walk(c as El); };
   walk(doc.documentElement);
-  return hits[0] ?? null; // mẫu hóa đơn thật đặt cùng Id="data" cho DLHDon và MCCQT: lấy phần tử đầu; người gọi tự kiểm signedPaths để chống đánh tráo
+  return hits;
 };
+const byId = (doc: Document, id: string): El | null => allById(doc, id)[0] ?? null; // chỉ dùng khi KÝ tài liệu của ta; kiểm chữ ký dùng resolveRef (chặn Id trùng)
 const digestOf = (target: El, transforms: string[], sig: El | null, hash: string): string => {
   const c14nAlg = transforms.find((t) => t === C14N || t === EXC_C14N) ?? C14N;
   const parent = sig?.parentNode ?? null; const next = sig?.nextSibling ?? null;
@@ -86,13 +87,35 @@ export function prepareEnveloped(xml: string, cert: Buffer, opts: { refUri?: str
 }
 
 // signedPaths: đường dẫn tuyệt đối (vd '/HDon/DLHDon') của các phần tử dữ liệu được ký; hóa đơn đầu vào phải đòi đúng '/HDon/DLHDon'.
-export interface Verified { valid: boolean; signedPaths: string[]; certDer: Buffer | null; subject: string | null; signingTime: string | null; reason?: string }
+// covered: chính các phần tử được chữ ký phủ (ngoài ds:Signature); người gọi chỉ được đọc dữ liệu từ các nút này, không tra lại theo đường dẫn.
+export interface Verified { valid: boolean; signedPaths: string[]; covered: El[]; certDer: Buffer | null; subject: string | null; signingTime: string | null; reason?: string }
+
+export const MAX_XML_BYTES = 5 * 1024 * 1024;
+
+// Reference '#id' → đúng MỘT phần tử. Có targets: chỉ xét phần tử có tên cục bộ trong targets (Id trùng ở phần tử ngoài targets, như MCCQT cùng Id="data" với DLHDon, không tính);
+// phần tử nằm trong chính ds:Signature (SignedProperties) luôn phải là duy nhất toàn tài liệu. Không targets: bất kỳ Id nào xuất hiện hai lần đều bị từ chối. Chống signature wrapping.
+function resolveRef(doc: Document, sig: El, uri: string, targets: string[] | undefined): El {
+  if (uri === '') {
+    const root = doc.documentElement;
+    if (targets && !targets.includes(root.localName ?? '')) throw new Error('Reference trỏ cả tài liệu nhưng gốc không thuộc phần tử được phép ký');
+    return root;
+  }
+  if (!uri.startsWith('#')) throw new Error(`Reference "${uri}" không trỏ tới phần tử nào`);
+  const hits = allById(doc, uri.slice(1));
+  const own = hits.filter((h) => sig.contains(h as never));
+  const pool = own.length ? hits : targets ? hits.filter((h) => targets.includes(h.localName ?? '')) : hits;
+  if (pool.length === 0) throw new Error(`Reference "${uri}" không trỏ tới phần tử nào${targets ? ` thuộc ${targets.join('/')}` : ''}`);
+  if (pool.length > 1) throw new Error(`Id trùng "${uri.slice(1)}" trên ${pool.length} phần tử: nghi đánh tráo nội dung`);
+  return pool[0]!;
+}
 
 // signaturePath: đường dẫn tên cục bộ từ phần tử gốc tới ds:Signature cần kiểm (vd ['DSCKS','NBan','Signature']); bỏ trống = ds:Signature đầu tiên.
 // Chỉ kiểm mật mã (chữ ký, băm các Reference, ràng buộc SigningTime); hạn và chuỗi tin cậy của chứng thư do người gọi quyết định.
-export function verifyEnveloped(xml: string, opts: { signaturePath?: string[] } = {}): Verified {
-  const fail = (reason: string): Verified => ({ valid: false, signedPaths: [], certDer: null, subject: null, signingTime: null, reason });
+// targets: tên cục bộ các phần tử dữ liệu được phép làm đích Reference (vd ['DLHDon']); nên luôn truyền khi biết cấu trúc tài liệu.
+export function verifyEnveloped(xml: string, opts: { signaturePath?: string[]; targets?: string[] } = {}): Verified {
+  const fail = (reason: string): Verified => ({ valid: false, signedPaths: [], covered: [], certDer: null, subject: null, signingTime: null, reason });
   try {
+    if (Buffer.byteLength(xml, 'utf8') > MAX_XML_BYTES) return fail(`XML quá lớn (tối đa ${MAX_XML_BYTES / 1024 / 1024} MB)`);
     const doc = parse(xml);
     let sig: El | undefined;
     if (opts.signaturePath) {
@@ -103,16 +126,15 @@ export function verifyEnveloped(xml: string, opts: { signaturePath?: string[] } 
     if (!sig || sig.localName !== 'Signature' || sig.namespaceURI !== DS) return fail('Không có chữ ký');
     const signedInfo = children(sig, DS, 'SignedInfo')[0];
     const sigValue = children(sig, DS, 'SignatureValue')[0]?.textContent?.replace(/\s+/g, '');
-    const certB64 = children(children(children(sig, DS, 'KeyInfo')[0] ?? sig, DS, 'X509Data')[0] ?? sig, DS, 'X509Certificate')[0]?.textContent?.replace(/\s+/g, '');
-    if (!signedInfo || !sigValue || !certB64) return fail('Chữ ký thiếu SignedInfo, SignatureValue hoặc chứng thư');
+    const certsB64 = children(children(children(sig, DS, 'KeyInfo')[0] ?? sig, DS, 'X509Data')[0] ?? sig, DS, 'X509Certificate').map((c) => (c.textContent ?? '').replace(/\s+/g, '')).filter(Boolean);
+    if (!signedInfo || !sigValue || !certsB64.length) return fail('Chữ ký thiếu SignedInfo, SignatureValue hoặc chứng thư');
     const c14nAlg = children(signedInfo, DS, 'CanonicalizationMethod')[0]?.getAttribute('Algorithm') ?? '';
     const sigHash = SIG_ALGS[children(signedInfo, DS, 'SignatureMethod')[0]?.getAttribute('Algorithm') ?? ''];
     if (!sigHash) return fail('Thuật toán ký không hỗ trợ (chỉ RSA-SHA256/384/512)');
     const covered: El[] = [];
     for (const ref of children(signedInfo, DS, 'Reference')) {
       const uri = ref.getAttribute('URI') ?? '';
-      const target = uri === '' ? doc.documentElement : uri.startsWith('#') ? byId(doc, uri.slice(1)) : null;
-      if (!target) return fail(`Reference "${uri}" không trỏ tới phần tử nào`);
+      const target = resolveRef(doc, sig, uri, opts.targets);
       const transforms = children(children(ref, DS, 'Transforms')[0] ?? ref, DS, 'Transform').map((t) => t.getAttribute('Algorithm') ?? '');
       if (transforms.some((t) => t !== ENVELOPED && t !== C14N && t !== EXC_C14N)) return fail('Transform không hỗ trợ');
       const hash = DIGEST_ALGS[children(ref, DS, 'DigestMethod')[0]?.getAttribute('Algorithm') ?? ''];
@@ -121,12 +143,15 @@ export function verifyEnveloped(xml: string, opts: { signaturePath?: string[] } 
       covered.push(target);
     }
     if (!covered.some((t) => !sig.contains(t as never))) return fail('Chữ ký không phủ dữ liệu nào ngoài chính nó');
-    const cert = new X509Certificate(Buffer.from(certB64, 'base64'));
-    if (cert.publicKey.asymmetricKeyType !== 'rsa') return fail('Chứng thư không phải RSA');
-    if (!cryptoVerify(sigHash, Buffer.from(canon(signedInfo, c14nAlg), 'utf8'), cert.publicKey, Buffer.from(sigValue, 'base64'))) return fail('Chữ ký không khớp chứng thư');
+    // Nhiều chứng thư (chuỗi CA kèm theo): lấy chứng thư RSA có khóa kiểm được SignedInfo.
+    const signedBytes = Buffer.from(canon(signedInfo, c14nAlg), 'utf8'); const sigBytes = Buffer.from(sigValue, 'base64');
+    const cert = certsB64.map((b) => { try { return new X509Certificate(Buffer.from(b, 'base64')); } catch { return null; } })
+      .find((c) => c?.publicKey.asymmetricKeyType === 'rsa' && cryptoVerify(sigHash, signedBytes, c.publicKey, sigBytes));
+    if (!cert) return fail('Chữ ký không khớp chứng thư');
     // SigningTime chỉ tin khi nằm trong phần tử được ký (XAdES SignedProperties hoặc DSig SignatureProperties).
     const st = Array.from(sig.getElementsByTagNameNS('*', 'SigningTime')).find((e) => covered.some((c) => c.contains(e as never)));
-    return { valid: true, signedPaths: covered.filter((t) => !sig.contains(t as never)).map(pathOf), certDer: cert.raw, subject: subjectOf(cert), signingTime: st?.textContent?.trim() ?? null };
+    const data = covered.filter((t) => !sig.contains(t as never));
+    return { valid: true, signedPaths: data.map(pathOf), covered: data, certDer: cert.raw, subject: subjectOf(cert), signingTime: st?.textContent?.trim() ?? null };
   } catch (e) {
     return fail(e instanceof Error ? e.message : String(e));
   }

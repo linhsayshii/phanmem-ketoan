@@ -36,3 +36,13 @@ Bộ chuyển đổi `apps/api/src/modules/signing/providers/smartca.ts` theo `d
 ## Hồ sơ giả lập
 
 Loại `fake` ký bằng khóa thử công khai, chỉ cho môi trường không phải sản xuất.
+
+## Bảo vệ (vòng sửa 1 sau rà soát an ninh)
+
+- **Địa chỉ SmartCA (SSRF):** `baseUrl` chỉ nhận https tới tên miền trong `SMARTCA_ALLOWED_HOSTS` (mặc định `rmgateway.vnptit.vn`, `gwsca.vnpt.vn`), không kèm tài khoản:mật khẩu. Kiểm khi tạo/sửa hồ sơ và trước mỗi lần gọi; không theo chuyển hướng (`redirect: 'error'`). `SMARTCA_ALLOW_HTTP=true` chỉ để kiểm thử với máy giả, cấu hình production từ chối giá trị này. Thông báo lỗi của thượng nguồn được làm sạch (chỉ chữ, số, vài dấu; tối đa 80 ký tự).
+- **Hồ sơ `fake`:** bị từ chối khi tạo hồ sơ, tạo phiên và poll nếu `NODE_ENV=production` (đọc từ cấu hình ứng dụng).
+- **Phiên:** hoàn tất chỉ chuyển từ `pending` (lần song song thứ hai nhận 409). Lỗi mạng tạm thời khi poll (`SMARTCA_UNREACHABLE`) giữ phiên `pending`; chỉ lỗi dứt khoát của SmartCA mới đánh dấu `failed`.
+- **Xác minh XML-DSig (`verifyEnveloped`):** tham số `targets` là tên cục bộ các phần tử được tham chiếu; `#id` chỉ phân giải trong các phần tử đó, trùng Id (hơn một ứng viên) là không hợp lệ. Không có `targets` thì mọi Id xuất hiện hơn một lần đều không hợp lệ. Mẫu hóa đơn thật đặt `Id="data"` ở cả `DLHDon` và `MCCQT`, nên gọi với `targets: ['DLHDon']`. Kết quả có `covered` (các phần tử được chữ ký bao phủ): bước đọc dữ liệu chỉ phân tích các nút này. Có nhiều `X509Certificate` thì chọn chứng thư có khóa xác minh được SignedInfo. Tài liệu quá 5 MB bị từ chối.
+- **Chứng thư:** chưa có hiệu lực (`notBefore` ở tương lai) bị từ chối; tự ký vẫn được phép.
+- **Tiện ích ký:** các câu hỏi y/n xếp hàng tuần tự, trả lời không lẫn giữa các yêu cầu đồng thời.
+- **Tải XML đã ký:** `signedSession` yêu cầu `format=htkk-01gtgt` (định dạng duy nhất hiện có), sai thì 400 `SIGNED_FORMAT_MISMATCH`.

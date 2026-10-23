@@ -2,7 +2,7 @@ export class NetworkError extends Error {
   constructor(public kind: 'timeout' | 'network', message: string) { super(message); }
 }
 
-export async function httpJson<T>(url: string, init: { method: string; headers?: Record<string, string>; body?: unknown; timeoutMs: number }): Promise<{ status: number; body: T; raw: string; ms: number }> {
+export async function httpJson<T>(url: string, init: { method: string; headers?: Record<string, string>; body?: unknown; timeoutMs: number; redirect?: RequestRedirect }): Promise<{ status: number; body: T; raw: string; ms: number }> {
   const t0 = Date.now();
   let status: number;
   let raw: string;
@@ -12,6 +12,7 @@ export async function httpJson<T>(url: string, init: { method: string; headers?:
       headers: { ...(init.body !== undefined && { 'content-type': 'application/json' }), accept: 'application/json', ...init.headers },
       body: init.body === undefined ? null : JSON.stringify(init.body),
       signal: AbortSignal.timeout(init.timeoutMs),
+      ...(init.redirect && { redirect: init.redirect }),
     });
     status = res.status;
     raw = await res.text();
