@@ -14,6 +14,7 @@ Tiến trình kiểm thử bị giết (SIGKILL, mất điện) để lại `ket
 ## Các biến thường dùng
 
 - `pnpm test`: chạy toàn bộ (mỗi gói tuần tự, `--no-file-parallelism`); một gói: `pnpm -F @kt/api test -- test/vouchers.test.ts`.
+- `DATA_ENCRYPTION_KEY`: khóa mã hóa bí mật tích hợp (base64 của 32 byte). `apps/api/vitest.config.ts` đặt khóa cố định cho kiểm thử; kiểm thử thiếu khóa tự xóa biến trong chính nó. Chạy API thật: `openssl rand -base64 32` vào `.env`.
 - `INVARIANTS=1`: chạy thêm các kiểm thử bất biến (fast-check) trong `apps/api/test/invariants`, mặc định bị bỏ qua; cùng bộ dữ liệu mẫu XYZ và ABC: `INVARIANTS=1 pnpm -F @kt/api test -- test/invariants test/sample-xyz.test.ts test/sample-abc.test.ts`.
 - `pnpm -F @kt/api perf:costing`: đo `runCosting` cả năm trên 54.000 dòng kho cho bốn phương pháp giá vốn (DB tạm, khoảng 10 phút gồm 144 giây sinh dữ liệu); tiêu chí dưới 30 giây mỗi phương pháp, số đo trong `docs/dev/hieu-nang.md`. Bất biến sổ kho: `INVARIANTS=1 pnpm -F @kt/api test -- test/invariants/inv7-kho.test.ts`.
 - `pnpm -F @kt/api perf:assets`: đo chạy kỳ khấu hao, phân bổ CCDC, phân bổ trả trước trên 5.000 thẻ (DB tạm, khoảng 8 phút gồm 110 giây sinh dữ liệu); tiêu chí mỗi lần chạy kỳ dưới 15 giây, chạy lại dưới 10 giây, số đo trong `docs/dev/hieu-nang.md`. Bất biến 8 (sổ tài sản, chạy lại kỳ, giới hạn nguyên giá/hao mòn, tổng khấu hao đúng, lãi vay): `INVARIANTS=1 pnpm -F @kt/api test -- test/invariants/inv8-tai-san.test.ts`.

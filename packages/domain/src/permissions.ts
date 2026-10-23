@@ -74,5 +74,12 @@ export const PERMISSIONS: readonly { code: string; name: string; group: string }
   ...crud('asset', 'tài sản, công cụ dụng cụ, chi phí trả trước', 'Tài sản', [['run', 'Chạy khấu hao, phân bổ']]),
   ...crud('loan', 'khế ước vay', 'Khế ước vay', [['run', 'Tính lãi vay']]),
   { code: 'period_close.view', name: 'Xem quy trình cuối kỳ', group: 'Cuối kỳ' },
+  // GĐ5: hóa đơn điện tử, hóa đơn đầu vào, ngân hàng, khóa API, thuế TNDN, ký số.
+  ...crud('einvoice', 'hóa đơn điện tử', 'Hóa đơn điện tử', [['issue', 'Phát hành'], ['config', 'Cấu hình nhà cung cấp, ký hiệu']]),
+  ...crud('inbound_invoice', 'hóa đơn đầu vào', 'Hóa đơn điện tử'),
+  ...crud('bank_feed', 'kết nối và giao dịch ngân hàng', 'Ngân hàng', [['match', 'Đối chiếu']]),
+  { code: 'api_key.manage', name: 'Quản lý khóa API', group: 'Hệ thống' },
+  ...crud('cit', 'thuế TNDN', 'Thuế'),
+  { code: 'signing.use', name: 'Ký số', group: 'Hệ thống' },
 ];
 export const PERMISSION_CODES: readonly string[] = PERMISSIONS.map((p) => p.code);

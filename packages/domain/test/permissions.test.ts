@@ -61,3 +61,13 @@ describe('quyền GĐ4', () => {
     expect(new Set(PERMISSION_CODES).size).toBe(PERMISSION_CODES.length);
   });
 });
+
+describe('quyền GĐ5', () => {
+  it('có đủ mã hóa đơn điện tử, hóa đơn đầu vào, ngân hàng, khóa API, thuế TNDN, ký số; không trùng', () => {
+    const group = (c: string) => PERMISSIONS.find((p) => p.code === c)?.group;
+    for (const c of ['einvoice.view', 'einvoice.issue', 'einvoice.config', 'inbound_invoice.view', 'inbound_invoice.delete', 'bank_feed.view', 'bank_feed.match', 'api_key.manage', 'cit.view', 'cit.delete', 'signing.use']) expect(PERMISSION_CODES, c).toContain(c);
+    expect([group('einvoice.issue'), group('inbound_invoice.view'), group('bank_feed.match'), group('api_key.manage'), group('cit.view'), group('signing.use')])
+      .toEqual(['Hóa đơn điện tử', 'Hóa đơn điện tử', 'Ngân hàng', 'Hệ thống', 'Thuế', 'Hệ thống']);
+    expect(new Set(PERMISSION_CODES).size).toBe(PERMISSION_CODES.length);
+  });
+});

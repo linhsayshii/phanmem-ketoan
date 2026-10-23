@@ -14,6 +14,10 @@ const schema = z.object({
   WEB_ORIGIN: z.string().default('http://localhost:5173'),
   BACKUP_DIR: z.string().default('./backups'),
   ATTACHMENT_DIR: z.string().default('./attachments').transform((p) => path.resolve(repoRoot, p)),
+  // Khóa AES-256 (base64 của 32 byte, ví dụ `openssl rand -base64 32`) mã hóa mật khẩu nhà cung cấp hóa đơn, khóa API ngân hàng; production bắt buộc.
+  DATA_ENCRYPTION_KEY: z.string().optional(),
+  // Địa chỉ công khai của hệ thống, dùng in URL webhook cho người dùng cấu hình bên nhà cung cấp.
+  PUBLIC_BASE_URL: z.string().url().optional(),
   PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: z.string().optional(),
   LOGIN_MAX_FAILS_USER: z.coerce.number().int().positive().default(5),
   LOGIN_MAX_FAILS_USER_ALL: z.coerce.number().int().positive().default(50),
@@ -30,6 +34,7 @@ const schema = z.object({
 }).superRefine((c, ctx) => {
   if (c.NODE_ENV !== 'production') return;
   if (c.SESSION_SECRET.length < 32 || c.SESSION_SECRET === 'doi-chuoi-nay-khi-trien-khai') ctx.addIssue({ code: 'custom', path: ['SESSION_SECRET'], message: 'SESSION_SECRET phải dài ít nhất 32 ký tự và khác giá trị mẫu khi chạy production' });
+  if (!c.DATA_ENCRYPTION_KEY) ctx.addIssue({ code: 'custom', path: ['DATA_ENCRYPTION_KEY'], message: 'DATA_ENCRYPTION_KEY là bắt buộc khi chạy production' });
   if (c.COOKIE_SECURE !== 'true') ctx.addIssue({ code: 'custom', path: ['COOKIE_SECURE'], message: 'COOKIE_SECURE phải là true khi chạy production' });
 });
 export type Config = z.infer<typeof schema>;

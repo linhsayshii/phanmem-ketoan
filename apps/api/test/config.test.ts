@@ -10,7 +10,8 @@ describe('cấu hình', () => {
     expect(() => loadConfig({ ...base, NODE_ENV: 'production', COOKIE_SECURE: 'true' })).toThrow(/SESSION_SECRET/);
     expect(() => loadConfig({ ...base, NODE_ENV: 'production', SESSION_SECRET: 'doi-chuoi-nay-khi-trien-khai', COOKIE_SECURE: 'true' })).toThrow(/SESSION_SECRET/);
     expect(() => loadConfig({ ...base, NODE_ENV: 'production', SESSION_SECRET: 'a'.repeat(32) })).toThrow(/COOKIE_SECURE/);
-    expect(loadConfig({ ...base, NODE_ENV: 'production', SESSION_SECRET: 'a'.repeat(32), COOKIE_SECURE: 'true' }).COOKIE_SECURE).toBe('true');
+    expect(() => loadConfig({ ...base, NODE_ENV: 'production', SESSION_SECRET: 'a'.repeat(32), COOKIE_SECURE: 'true' })).toThrow(/DATA_ENCRYPTION_KEY/);
+    expect(loadConfig({ ...base, NODE_ENV: 'production', SESSION_SECRET: 'a'.repeat(32), COOKIE_SECURE: 'true', DATA_ENCRYPTION_KEY: 'k' }).COOKIE_SECURE).toBe('true');
   });
   it('TRUST_PROXY: mặc định false, nhận true, số bước, danh sách IP', () => {
     expect(loadConfig(base).TRUST_PROXY).toBe(false);

@@ -1,10 +1,24 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { sql } from 'kysely';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
 import { setupLedgerTenant } from './invariants/helpers.js';
 
 let ctx: TestApp;
 beforeAll(async () => { ctx = await createTestApp(); });
 afterAll(async () => { await ctx.close(); });
+
+describe('quyền GĐ5 theo vai trò', () => {
+  it('công ty mới: ketoan_vien có einvoice.issue, bank_feed.match; không có einvoice.config, api_key.manage; xem có einvoice.view', async () => {
+    const { tenantId } = await bootstrapTenant(ctx, { code: `Q5${Date.now()}` });
+    const r = await sql<{ code: string; perm: string }>`SELECT r.code, rp.permission_code AS perm FROM role_permission rp JOIN role r ON r.id = rp.role_id WHERE rp.tenant_id = ${tenantId}::uuid`.execute(ctx.t.admin);
+    const has = (role: string, perm: string) => r.rows.some((x) => x.code === role && x.perm === perm);
+    for (const p of ['einvoice.issue', 'bank_feed.match', 'bank_feed.view', 'inbound_invoice.create', 'cit.update', 'signing.use']) expect(has('ketoan_vien', p), p).toBe(true);
+    for (const p of ['einvoice.config', 'api_key.manage', 'bank_feed.create']) expect(has('ketoan_vien', p), p).toBe(false);
+    expect(has('ketoan_truong', 'einvoice.config')).toBe(true);
+    expect(has('xem', 'einvoice.view')).toBe(true);
+    expect(has('xem', 'einvoice.issue')).toBe(false);
+  });
+});
 
 describe('tùy chọn hệ thống', () => {
   it('mặc định đầy đủ, cập nhật từng phần, từ chối giá trị sai', async () => {
