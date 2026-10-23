@@ -4,6 +4,7 @@ import { QUEUES, createDb, createPool, ensureRecomputeQueue, type RecomputeBalan
 import { createBoss } from './boss.js';
 import { runBackup } from './jobs/backup.js';
 import { recomputeAndRequeue } from './jobs/recomputeBalances.js';
+import { EINVOICE_RECONCILE_CRON, runEInvoiceReconcile } from './jobs/einvoiceReconcile.js';
 
 const env = z.object({ DATABASE_URL: z.string(), DATABASE_ADMIN_URL: z.string(), BACKUP_DIR: z.string().default('./backups'), BACKUP_CRON: z.string().default('0 2 * * *'), BACKUP_KEEP: z.coerce.number().int().min(1).default(14) }).parse(process.env);
 const log = (msg: string, extra: Record<string, unknown> = {}) => console.log(JSON.stringify({ ts: new Date().toISOString(), msg, ...extra }));
@@ -36,6 +37,13 @@ await boss.work<RecomputeBalancesJob>(QUEUES.recomputeBalances, { batchSize: 1 }
     log('recompute failed', { tenantId: job!.data.tenantId, error: String(e) });
     throw e;
   }
+});
+await boss.createQueue(QUEUES.einvoiceReconcile);
+await boss.schedule(QUEUES.einvoiceReconcile, EINVOICE_RECONCILE_CRON, {}, { tz: 'Asia/Ho_Chi_Minh' });
+// Lỗi từng hóa đơn đã được nuốt và đếm trong reconcilePending; lỗi còn lại (mất kết nối DB) để pg-boss ghi nhận, lượt 5 phút sau chạy lại.
+await boss.work(QUEUES.einvoiceReconcile, async () => {
+  const r = await runEInvoiceReconcile(db);
+  if (r.checked) log('einvoice reconcile', r);
 });
 // dừng êm: đợi job đang chạy xong (tối đa 60 giây) rồi mới thoát
 for (const s of ['SIGTERM', 'SIGINT'] as const) process.once(s, () => { void boss.stop({ graceful: true, timeout: 60000, wait: true }).finally(() => process.exit(0)); });

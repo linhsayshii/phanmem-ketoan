@@ -48,7 +48,15 @@ export function fakeProvider(optionsRaw: unknown): EInvoiceProvider {
       if (kind === 'pdf') return Buffer.from(`<html><body><h1>Hóa đơn giả lập ${esc(r.serial)}/${esc(r.invoice_no)}</h1><p>Ngày ${esc(r.issue_date)}</p></body></html>`, 'utf8');
       return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>\n<HDon><DLHDon><TTChung><KHMSHDon>${esc(ref.formNo)}</KHMSHDon><KHHDon>${esc(r.serial)}</KHHDon><SHDon>${Number(r.invoice_no)}</SHDon><NLap>${esc(r.issue_date)}</NLap></TTChung></DLHDon>${r.cqt_code ? `<MCCQT Id="MCCQT">${r.cqt_code}</MCCQT>` : ''}</HDon>`, 'utf8');
     },
-    async refreshStatus(ctx, ref) { const r = await bySerialNo(ctx, ref); return { cqtCode: r.cqt_code, cqtStatus: r.cqt_code ? 'accepted' : 'none' }; },
+    // Mô phỏng cơ quan thuế cấp mã sau: hóa đơn ký hiệu C chưa có mã thì lần tra đầu tiên cấp mã (ký hiệu K không bao giờ có mã).
+    async refreshStatus(ctx, ref) {
+      const r = await bySerialNo(ctx, ref);
+      if (!r.cqt_code && r.serial.startsWith('C')) {
+        r.cqt_code = cqtCodeOf(r.transaction_uuid);
+        await ctx.db.updateTable('einvoice_fake_store').set({ cqt_code: r.cqt_code }).where('transaction_uuid', '=', r.transaction_uuid).execute();
+      }
+      return { cqtCode: r.cqt_code, cqtStatus: r.cqt_code ? 'accepted' : 'none' };
+    },
     async cancel(ctx, ref) { await bySerialNo(ctx, ref); await ctx.db.updateTable('einvoice_fake_store').set({ cancelled: true }).where('serial', '=', ref.serial).where('invoice_no', '=', ref.invoiceNo).execute(); },
     async setPaid() { /* giả lập không lưu trạng thái thanh toán */ },
   };

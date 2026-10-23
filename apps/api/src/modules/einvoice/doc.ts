@@ -10,8 +10,9 @@ const CURRENCY_WORDS: Record<string, string> = { USD: 'đô la Mỹ', EUR: 'ơ r
 const num = (x: string | null | undefined) => D(x ?? 0);
 
 // Mã thuế -> thuế suất hóa đơn: có suất thì chuỗi số ('0','5','8','10'); không suất thì KCT (không chịu thuế), KKK -> KKKNT (không kê khai, tính nộp), còn lại KHAC.
-function taxRateOf(c: { code: string; rate: string | null } | undefined): string {
-  if (!c) return 'KCT';
+// Thiếu mã thuế GTGT thì không đoán (đoán KCT là sai thuế suất trên hóa đơn): chặn phát hành trước khi gọi nhà cung cấp.
+function taxRateOf(c: { code: string; rate: string | null } | undefined, where: string): string {
+  if (!c) throw new AppError('LINE_MISSING_TAX_CODE', `${where} chưa có mã thuế GTGT: chọn thuế suất (0%, 5%, 8%, 10%, không chịu thuế…) rồi mới phát hành hóa đơn điện tử`, 400);
   if (c.rate !== null) return D(c.rate).toString();
   return c.code === 'KCT' ? 'KCT' : c.code === 'KKK' ? 'KKKNT' : 'KHAC';
 }
@@ -50,7 +51,7 @@ export async function buildEInvoiceDoc(trx: Trx, einvoiceId: number): Promise<EI
 
   const lines: EInvoiceLine[] = items.map((l, k) => {
     const vat = l.tax_codes.map((c) => byCode.get(c)).find((c) => c?.kind === 'vat');
-    const taxRate = taxRateOf(vat);
+    const taxRate = taxRateOf(vat, `Dòng ${k + 1}`);
     const amount = num(foreign ? l.amount_currency : l.amount);
     const discount = num(foreign ? l.discount_amount_currency : l.discount_amount);
     const base = amount.minus(discount);
@@ -60,7 +61,7 @@ export async function buildEInvoiceDoc(trx: Trx, einvoiceId: number): Promise<EI
       amount: amount.toFixed(dp), discountRate: num(l.discount_rate).isZero() ? null : num(l.discount_rate).toString(), discountAmount: discount.toFixed(dp),
       taxRate, taxAmount: tax.toFixed(dp), total: base.plus(tax).toFixed(dp) };
   });
-  if (!foreign) for (const r of invs) addGroup(taxRateOf(r.tax_code_id === null ? undefined : byId.get(r.tax_code_id)), num(r.base_amount), num(r.tax_amount));
+  if (!foreign) for (const r of invs) addGroup(taxRateOf(r.tax_code_id === null ? undefined : byId.get(r.tax_code_id), 'Bảng kê hóa đơn'), num(r.base_amount), num(r.tax_amount));
   const taxGroups = toGroups(groups, dp);
   const beforeTax = taxGroups.reduce((s, g) => s.plus(g.base), D(0));
   const tax = taxGroups.reduce((s, g) => s.plus(g.tax), D(0));

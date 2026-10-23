@@ -172,6 +172,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@kt/api':
+        specifier: workspace:*
+        version: link:../api
       '@kt/db':
         specifier: workspace:*
         version: link:../../packages/db

@@ -3,6 +3,7 @@ RUN corepack enable
 WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc tsconfig.base.json ./
 COPY packages ./packages
+COPY apps/api ./apps/api
 COPY apps/worker ./apps/worker
 RUN pnpm install --frozen-lockfile --filter . --filter @kt/worker...
 

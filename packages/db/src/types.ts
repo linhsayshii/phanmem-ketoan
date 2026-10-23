@@ -344,7 +344,7 @@ export interface EinvoiceTable {
   status: string; transaction_uuid: string; invoice_no: string | null; issued_at: Timestamp | null; issue_date: DateOnly | null; cqt_code: string | null; cqt_status: Generated<string>;
   provider_ref: ColumnType<Record<string, unknown>, string | undefined, string>; payload: ColumnType<unknown, string | null | undefined, string | null>; xml: string | null;
   error_code: string | null; error_message: string | null; needs_reversal: Generated<boolean>; adjusted: Generated<boolean>; paid: Generated<boolean>; attempts: Generated<number>;
-  last_attempt_at: Timestamp | null; created_by: string | null; created_at: Generated<string>;
+  last_attempt_at: Timestamp | null; created_by: string | null; created_at: Generated<string>; discarded_at: Timestamp | null;
 }
 export interface EinvoiceLogTable {
   id: Generated<number>; tenant_id: string; einvoice_id: number | null; provider_id: number; action: string; request: ColumnType<unknown, string | null | undefined, never>;

@@ -1,4 +1,4 @@
-export const QUEUES = { backup: 'backup', recomputeBalances: 'balance.recompute' } as const;
+export const QUEUES = { backup: 'backup', recomputeBalances: 'balance.recompute', einvoiceReconcile: 'einvoice-reconcile' } as const;
 export interface RecomputeBalancesJob { tenantId: string }
 
 // Chính sách 'short': tối đa một job chờ (created) cho mỗi singletonKey (= công ty); job đang chạy không tính, nên ghi sổ trong lúc chạy vẫn xếp được job mới.
