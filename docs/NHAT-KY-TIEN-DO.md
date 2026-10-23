@@ -92,3 +92,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-23 14:04 | GĐ4 | T13 sổ/thẻ TSCĐ, sổ theo nơi sử dụng, 06-TSCĐ, tăng giảm, 07-VT CCDC, sổ CCDC/CPTT | bedecfe..461f2be | api 900, e2e bao-cao-tai-san xanh, rà soát sạch (2 vòng sửa)
 2026-10-23 14:49 | GĐ4 | T14 kiểm kê tài sản/CCDC (05-TSCĐ), biên bản 01/02/04-TSCĐ (0075) | fc4ea6a..10d0274 | api 907, e2e kiem-ke-tai-san xanh, rà soát sạch (1 vòng sửa)
 2026-10-23 15:36 | GĐ4 | T15 soát lỗi tài sản và khế ước vay (0076) | 3aab072..abc67fa | api 915, rà soát sạch (1 vòng sửa)
+2026-10-23 16:29 | GĐ4 | T16 dữ liệu mẫu ABC: tài sản, CCDC, CPTT, khế ước, cuối kỳ 12 tháng; số kỳ vọng tính tay | 6b96c4d..93c2e9e | api 922, opus tính lại 12/12 khớp, rà soát sạch (1 vòng sửa)
