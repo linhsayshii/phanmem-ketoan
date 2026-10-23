@@ -22,21 +22,23 @@ type EventData = {
   validFrom?: { year: number; period: number }; scheduleId?: number | null; toolAssetId?: number | null;
 };
 const RUN_KIND: Record<string, RunKind> = { fixed: 'depreciation', tool: 'tool', prepaid: 'prepaid' };
+// refine chạy cả khi regex hỏng (zod chỉ đánh dấu dirty): D() trên chuỗi rác sẽ ném → 500, nên bọc.
+const num = (s: string) => D(/^-?\d+(\.\d+)?$/.test(s) ? s : '0');
 const vnd = z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG);
-const units = z.string().regex(/^\d{1,4}(\.\d{1,12})?$/, 'Số đơn vị còn lại không hợp lệ').refine((s) => D(s).gt(0), 'Số đơn vị còn lại phải lớn hơn 0');
+const units = z.string().regex(/^\d{1,4}(\.\d{1,12})?$/, 'Số đơn vị còn lại không hợp lệ').refine((s) => num(s).gt(0), 'Số đơn vị còn lại phải lớn hơn 0');
 const allocLines = allocationInput.shape.lines;
 
 export const increaseInput = z.object({
   date: dateIso, reason: z.enum(['construction', 'contribution', 'finance_lease', 'donation', 'other', 'purchase', 'stock']),
-  counterAccountCode: z.string().min(1), amount: vnd.refine((s) => D(s).gt(0), 'Số tiền phải lớn hơn 0'), partyCode: z.string().nullable().optional(), description: z.string().max(500).nullable().optional(),
+  counterAccountCode: z.string().min(1), amount: vnd.refine((s) => num(s).gt(0), 'Số tiền phải lớn hơn 0'), partyCode: z.string().nullable().optional(), description: z.string().max(500).nullable().optional(),
 });
 export const decreaseInput = z.object({
   date: dateIso, reason: z.enum(['liquidation', 'contribution', 'to_tool', 'loss', 'other']), counterAccountCode: z.string().min(1).optional(),
   toolCard: z.object({ code: z.string().trim().min(1).max(30), name: z.string().trim().min(1).max(200), periods: z.number().int().min(1).max(1200), allocations: allocLines, depreciationStartDate: dateIso.optional() }).optional(),
 });
 export const revalueInput = z.object({ date: dateIso, newCost: vnd, newAccumulated: vnd, remainingUnits: units.optional(), counterAccountCode: z.string().min(1).default('412') });
-export const toolDecreaseInput = z.object({ date: dateIso, quantity: z.string().regex(/^\d{1,16}(\.\d{1,4})?$/, 'Số lượng không hợp lệ').refine((s) => D(s).gt(0), 'Số lượng ghi giảm phải lớn hơn 0').optional(), counterAccountCode: z.string().min(1), reason: z.string().max(500).nullable().optional() });
-export const toolAdjustInput = z.object({ date: dateIso, delta: z.string().regex(/^-?\d{1,16}$/, VND_AMOUNT_MSG).refine((s) => !D(s).isZero(), 'Số tiền điều chỉnh phải khác 0'), counterAccountCode: z.string().min(1), partyCode: z.string().nullable().optional() });
+export const toolDecreaseInput = z.object({ date: dateIso, quantity: z.string().regex(/^\d{1,16}(\.\d{1,4})?$/, 'Số lượng không hợp lệ').refine((s) => num(s).gt(0), 'Số lượng ghi giảm phải lớn hơn 0').optional(), counterAccountCode: z.string().min(1), reason: z.string().max(500).nullable().optional() });
+export const toolAdjustInput = z.object({ date: dateIso, delta: z.string().regex(/^-?\d{1,16}$/, VND_AMOUNT_MSG).refine((s) => !num(s).isZero(), 'Số tiền điều chỉnh phải khác 0'), counterAccountCode: z.string().min(1), partyCode: z.string().nullable().optional() });
 export const transferInput = z.object({ date: dateIso, departmentCode: z.string().nullable(), allocations: allocLines });
 export const suspendInput = z.object({ date: dateIso, reason: z.string().trim().min(1).max(500) });
 export const resumeInput = z.object({ date: dateIso });

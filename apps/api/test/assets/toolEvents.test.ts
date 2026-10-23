@@ -69,6 +69,7 @@ describe('biến động CCDC, chi phí trả trước', () => {
     const adj = await t.ok(t.ev(id, 'adjust-value', { date: '2026-04-05', delta: '600000', counterAccountCode: '331', partyCode: 'NCC001' }));
     const side = async (vid: string) => (await t.ok(t.call('GET', `/api/vouchers/${vid}`))).lines.map((l: any) => [l.accountCode, l.debit, l.credit, l.assetCode]); // eslint-disable-line @typescript-eslint/no-explicit-any
     expect(await side(adj.voucherId)).toEqual([['242', '600000', '0', 'CC01'], ['331', '0', '600000', null]]);
+    expect((await t.ok(t.call('GET', `/api/vouchers/${adj.voucherId}`))).lines[1].partyCode).toBe('NCC001');
     expect((await t.run('tool', 4)).lines).toEqual([{ assetCode: 'CC01', amount: '1066667' }]); // (9.000.000 + 600.000) / 9
     expect((await t.sched(id)).reduce((s, l) => s.plus(l.amount), D(0)).toFixed(0)).toBe('12600000');
     const neg = await t.ok(t.ev(id, 'adjust-value', { date: '2026-04-06', delta: '-100000', counterAccountCode: '1111' }));
@@ -81,6 +82,8 @@ describe('biến động CCDC, chi phí trả trước', () => {
     const id = await t.card('tool', 'CC01', '12000000', 12, '2026-01-01', '10');
     expect(err(await t.ev(id, 'adjust-value', { date: '2026-02-05', delta: '-1000', counterAccountCode: '1111' }))).toEqual([409, 'PERIOD_RUN_GAP']);
     expect(err(await t.ev(id, 'decrease-tool', { date: '2026-02-05', quantity: '0', counterAccountCode: '811' }))).toEqual([400, 'VALIDATION']);
+    for (const [action, body] of [['decrease-tool', { quantity: 'abc' }], ['decrease-tool', { quantity: '' }], ['adjust-value', { delta: 'abc' }], ['increase', { reason: 'other', amount: 'abc' }]] as const)
+      expect(err(await t.ev(id, action, { date: '2026-02-05', counterAccountCode: '1111', ...body }))).toEqual([400, 'VALIDATION']);
     const s = await tenant();
     const sid = await s.card('tool', 'CC02', '3000000', 3, '2026-01-01');
     for (const p of [1, 2, 3]) await s.run('tool', p);
