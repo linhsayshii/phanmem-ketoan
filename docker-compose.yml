@@ -30,6 +30,7 @@ services:
       WEB_ORIGIN: http://localhost:8080
       BACKUP_DIR: /backups
       ATTACHMENT_DIR: /attachments
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-}
     ports: ["127.0.0.1:3000:3000"]
     volumes:
       - backups:/backups:ro
@@ -47,6 +48,7 @@ services:
       BACKUP_DIR: /backups
       BACKUP_CRON: "0 2 * * *"
       BACKUP_KEEP: "14"
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-} # đối soát hóa đơn điện tử mở mật khẩu nhà cung cấp
     stop_grace_period: 70s # chờ boss.stop graceful (60 giây) xong trước khi Docker SIGKILL
     volumes:
       - backups:/backups

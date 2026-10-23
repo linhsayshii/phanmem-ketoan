@@ -45,7 +45,7 @@ export interface EInvoiceProvider {
   readonly code: 'fake' | 'sinvoice';
   ping(ctx: ProviderCtx): Promise<void>;
   create(ctx: ProviderCtx, doc: EInvoiceDoc): Promise<IssueResult>;
-  findByTransaction(ctx: ProviderCtx, doc: Pick<EInvoiceDoc, 'transactionUuid' | 'seller'>): Promise<IssueResult | null>;
+  findByTransaction(ctx: ProviderCtx, doc: Pick<EInvoiceDoc, 'transactionUuid' | 'seller' | 'serial' | 'providerTemplate' | 'formNo'>): Promise<IssueResult | null>;
   getFile(ctx: ProviderCtx, ref: OriginalRef, kind: 'pdf' | 'xml'): Promise<Buffer>;
   refreshStatus(ctx: ProviderCtx, ref: OriginalRef): Promise<Pick<IssueResult, 'cqtCode' | 'cqtStatus'>>;
   cancel?(ctx: ProviderCtx, ref: OriginalRef, reason: string, date: string): Promise<void>;

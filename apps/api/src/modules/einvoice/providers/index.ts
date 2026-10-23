@@ -1,14 +1,19 @@
 import type { Kysely } from 'kysely';
 import { withTenant, type Database } from '@kt/db';
 import { AppError } from '../../../plugins/errors.js';
+import { openSecret } from '../../../lib/secretBox.js';
 import { fakeProvider } from './fake.js';
+import { SInvoiceProvider } from './sinvoice.js';
 import type { EInvoiceProvider, ProviderCtx, ProviderRow } from './types.js';
 
 export * from './types.js';
 
 export function providerFor(row: ProviderRow): EInvoiceProvider {
   if (row.code === 'fake') return fakeProvider(row.options);
-  // 'sinvoice' do Task 7 đăng ký.
+  if (row.code === 'sinvoice') {
+    if (!row.secret) throw new AppError('EINVOICE_PROVIDER_NO_SECRET', 'Nhà cung cấp SInvoice chưa có mật khẩu: nhập mật khẩu trong cài đặt nhà cung cấp hóa đơn điện tử', 409);
+    return new SInvoiceProvider({ baseUrl: row.base_url.replace(/\/+$/, ''), username: row.username, password: openSecret(row.secret), sellerTaxCode: row.seller_tax_code });
+  }
   throw new AppError('EINVOICE_PROVIDER_UNSUPPORTED', `Chưa hỗ trợ nhà cung cấp hóa đơn điện tử "${row.code}"`, 409);
 }
 
@@ -23,10 +28,17 @@ export function makeProviderCtx(db: Kysely<Database>, p: { tenantId: string; pro
   };
 }
 
-// Chạy một lần gọi nhà cung cấp trong giao dịch riêng của công ty và COMMIT cả khi nhà cung cấp ném lỗi (rồi ném lại): nhật ký einvoice_log
-// và kho giả lập (timeout_after_create) phải sống sót qua lỗi. Không gọi từ trong giao dịch đang giữ khóa nghiệp vụ.
+// Chạy một lần gọi nhà cung cấp. Nhà cung cấp `fake` dùng kho trong DB nên chạy trong một giao dịch công ty và COMMIT cả khi ném lỗi (nhật ký và kho giả lập sống sót qua lỗi).
+// Nhà cung cấp thật KHÔNG giữ giao dịch qua lời gọi HTTP: `ctx.db` bị chặn (ném lỗi nếu dùng) và mỗi dòng nhật ký einvoice_log ghi trong một giao dịch ngắn riêng,
+// commit độc lập với kết quả lời gọi. Không gọi từ trong giao dịch đang giữ khóa nghiệp vụ.
 export async function withProviderCtx<T>(db: Kysely<Database>, p: { tenantId: string; userId?: string | null; providerId: number; einvoiceId: number | null }, fn: (ctx: ProviderCtx) => Promise<T>): Promise<T> {
-  const r = await withTenant(db, { tenantId: p.tenantId, ...(p.userId ? { userId: p.userId } : {}) }, async (trx) => {
+  const tctx = { tenantId: p.tenantId, ...(p.userId ? { userId: p.userId } : {}) };
+  const code = (await withTenant(db, tctx, (trx) => trx.selectFrom('einvoice_provider').select('code').where('id', '=', p.providerId).executeTakeFirst()))?.code;
+  if (code && code !== 'fake') {
+    const noDb = new Proxy({}, { get() { throw new Error('Nhà cung cấp thật không được dùng ctx.db: không giữ giao dịch DB khi gọi HTTP'); } }) as Kysely<Database>;
+    return fn({ db: noDb, log: (e) => withTenant(db, tctx, (trx) => makeProviderCtx(trx, p).log(e)) });
+  }
+  const r = await withTenant(db, tctx, async (trx) => {
     try { return { ok: true as const, value: await fn(makeProviderCtx(trx, p)) }; } catch (e) { return { ok: false as const, error: e }; }
   });
   if (!r.ok) throw r.error;
