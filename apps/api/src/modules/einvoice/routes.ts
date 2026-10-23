@@ -16,7 +16,7 @@ import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { requireStockPerm } from '../ledger/vouchers.routes.js';
 
 const numId = z.object({ id: z.coerce.number().int().positive() });
-const listQuery = z.object({ status: z.enum(['draft', 'sending', 'issued', 'failed', 'replaced', 'cancelled']).optional(), from: isoDate.optional(), to: isoDate.optional(), q: z.string().trim().max(100).optional() });
+const listQuery = z.object({ status: z.enum(['draft', 'sending', 'issued', 'failed', 'replaced', 'cancelled']).optional(), from: isoDate.optional(), to: isoDate.optional(), q: z.string().trim().max(100).optional(), needsReversal: z.literal('true').optional() });
 
 // Cấu hình nhà cung cấp hóa đơn điện tử và dải ký hiệu.
 const routes: FastifyPluginAsyncZod = async (app) => {
@@ -95,9 +95,10 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.get('/api/einvoices', { preHandler: view, schema: { querystring: listQuery } }, async (req) => app.withTenant(req, async (trx) => {
-    const { status, from, to, q } = req.query;
+    const { status, from, to, q, needsReversal } = req.query;
     let qb = einvoiceQuery(trx).where('e.discarded_at', 'is', null);
     if (status) qb = qb.where('e.status', '=', status);
+    if (needsReversal) qb = qb.where('e.needs_reversal', '=', true);
     if (from) qb = qb.where(sql<string>`coalesce(e.issue_date, e.created_at::date)`, '>=', from);
     if (to) qb = qb.where(sql<string>`coalesce(e.issue_date, e.created_at::date)`, '<=', to);
     if (q) { const like = `%${q}%`; qb = qb.where((w) => w.or([w('e.invoice_no', 'ilike', like), w('v.voucher_no', 'ilike', like), w(sql<string>`e.payload->'buyer'->>'name'`, 'ilike', like)])); }

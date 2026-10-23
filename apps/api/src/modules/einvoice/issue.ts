@@ -22,14 +22,14 @@ export const notFound = () => new AppError('EINVOICE_NOT_FOUND', 'Không tìm th
 export const einvoiceQuery = (trx: Trx) => trx.selectFrom('einvoice as e').innerJoin('einvoice_series as s', 's.id', 'e.series_id').innerJoin('voucher as v', 'v.id', 'e.voucher_id')
   .select(['e.id', 'e.voucher_id', 'v.voucher_no', 'v.voucher_type', 'v.posting_date', 'e.series_id', 's.form_no', 's.serial', 'e.relation', 'e.original_id', 'e.status', 'e.transaction_uuid',
     'e.invoice_no', 'e.issue_date', 'e.issued_at', 'e.cqt_code', 'e.cqt_status', 'e.error_code', 'e.error_message', 'e.attempts', 'e.last_attempt_at', 'e.discarded_at', 'e.created_at', 'e.adjusted', 'e.needs_reversal', 'e.paid',
-    sql<string | null>`e.payload->'buyer'->>'name'`.as('buyer_name'), sql<string | null>`e.payload->'totals'->>'total'`.as('total'), sql<string | null>`e.payload->>'currency'`.as('currency')]);
+    sql<string | null>`e.payload->'buyer'->>'name'`.as('buyer_name'), sql<string | null>`e.payload->'buyer'->>'taxCode'`.as('buyer_tax_code'), sql<string | null>`e.payload->'totals'->>'beforeTax'`.as('before_tax'), sql<string | null>`e.payload->'totals'->>'tax'`.as('tax'), sql<string | null>`e.payload->'totals'->>'total'`.as('total'), sql<string | null>`e.payload->>'currency'`.as('currency')]);
 type Row = Awaited<ReturnType<ReturnType<typeof einvoiceQuery>['executeTakeFirstOrThrow']>>;
 export const einvoiceDto = (r: Row) => ({
   id: r.id, voucherId: r.voucher_id, voucherNo: r.voucher_no, voucherType: r.voucher_type, postingDate: r.posting_date, seriesId: r.series_id, formNo: r.form_no, serial: r.serial,
   relation: r.relation, originalId: r.original_id, status: r.status, transactionUuid: r.transaction_uuid, invoiceNo: r.invoice_no, issueDate: r.issue_date, issuedAt: r.issued_at,
   cqtCode: r.cqt_code, cqtStatus: r.cqt_status, errorCode: r.error_code, errorMessage: r.error_message, attempts: r.attempts, lastAttemptAt: r.last_attempt_at, discardedAt: r.discarded_at,
   adjusted: r.adjusted, needsReversal: r.needs_reversal, paid: r.paid,
-  buyerName: r.buyer_name, total: r.total, currency: r.currency, createdAt: r.created_at,
+  buyerName: r.buyer_name, buyerTaxCode: r.buyer_tax_code, beforeTax: r.before_tax, tax: r.tax, total: r.total, currency: r.currency, createdAt: r.created_at,
 });
 export type EInvoiceDto = ReturnType<typeof einvoiceDto> & { warnings?: { code: string; message: string }[] };
 export const loadDto = async (trx: Trx, id: number) => einvoiceDto(await einvoiceQuery(trx).where('e.id', '=', id).executeTakeFirstOrThrow());

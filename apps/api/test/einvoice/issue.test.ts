@@ -71,6 +71,13 @@ describe('phát hành hóa đơn điện tử', () => {
     const list = await t.call('GET', '/api/einvoices?status=issued&from=2026-03-01&to=2026-03-31&q=0000001');
     expect(list.json().map((x: { id: number }) => x.id)).toEqual([e.id]);
     expect((await t.call('GET', '/api/einvoices?q=khong-co')).json()).toEqual([]);
+    expect(list.json()[0]).toMatchObject({ beforeTax: '10000000', tax: '1000000', total: '11000000' });
+    expect(list.json()[0]).toHaveProperty('buyerTaxCode');
+    // lọc phía máy chủ theo cần đảo chứng từ gốc
+    expect((await t.call('GET', '/api/einvoices?needsReversal=true')).json()).toEqual([]);
+    await sql`UPDATE einvoice SET needs_reversal = true WHERE id = ${e.id}`.execute(t.admin);
+    expect((await t.call('GET', '/api/einvoices?needsReversal=true')).json().map((x: { id: number }) => x.id)).toEqual([e.id]);
+    await sql`UPDATE einvoice SET needs_reversal = false WHERE id = ${e.id}`.execute(t.admin);
     expect((await t.call('GET', `/api/vouchers/${v.id}/einvoice`)).json().einvoice).toMatchObject({ id: e.id, status: 'issued' });
     // ngày hóa đơn khác tháng hạch toán: phát hành được, có cảnh báo
     const w = await t.issue((await t.sale()).id, '2026-04-02');
