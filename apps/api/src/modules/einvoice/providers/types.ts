@@ -22,8 +22,8 @@ export interface EInvoiceDoc {
     | { kind: 'replacement'; original: OriginalRef; agreementNo?: string; agreementDate?: string; reason: string };
 }
 export interface IssueResult { invoiceNo: string; issueDate: string; cqtCode: string | null; cqtStatus: 'none' | 'waiting' | 'accepted' | 'rejected'; providerRef: Record<string, unknown> }
-// Thông báo hóa đơn điện tử có sai sót (Task 8 bổ sung trường nếu nhà cung cấp cần).
-export interface ErrorNoticeDoc { original: OriginalRef; kind: 'cancel' | 'adjust' | 'replace' | 'explain'; reason: string; noticeDate: string }
+// Thông báo hóa đơn điện tử đã lập sai (Mẫu số 04/SS-HĐĐT, TT 91/2026/TT-BTC): mỗi dòng là một hóa đơn; action 'notice' = Thông báo, 'explain' = Giải trình (cột 8).
+export interface ErrorNoticeDoc { noticeDate: string; lines: { original: OriginalRef; cqtCode: string | null; invoiceType: string; action: 'notice' | 'explain'; reason: string }[] }
 
 // Thời gian chờ tối đa một lời gọi nhà cung cấp (SInvoice 60 giây theo tài liệu): adapter thật đặt timeout bằng hằng này.
 export const PROVIDER_TIMEOUT_SEC = 60;

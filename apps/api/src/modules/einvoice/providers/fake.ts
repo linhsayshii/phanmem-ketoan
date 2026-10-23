@@ -62,6 +62,12 @@ export function fakeProvider(optionsRaw: unknown): EInvoiceProvider {
       await ctx.db.updateTable('einvoice_fake_store').set({ cancelled: true }).where('serial', '=', ref.serial).where('invoice_no', '=', ref.invoiceNo).execute();
       await ctx.log({ action: 'cancel', request: { serial: ref.serial, invoiceNo: ref.invoiceNo, reason, date }, response: { ok: true }, httpStatus: 200, ok: true, ms: 0 });
     },
+    // Giả lập không lưu thông báo, chỉ ghi nhật ký và trả mã tham chiếu.
+    async sendErrorNotice(ctx, notice) {
+      const ref = `FAKE-SS-${createHash('sha256').update(JSON.stringify(notice)).digest('hex').slice(0, 10).toUpperCase()}`;
+      await ctx.log({ action: 'send_error_notice', request: { noticeDate: notice.noticeDate, lines: notice.lines.length }, response: { ref }, httpStatus: 200, ok: true, ms: 0 });
+      return { ref };
+    },
     // Giả lập không lưu trạng thái thanh toán, chỉ ghi nhật ký lời gọi.
     async setPaid(ctx, ref, paid) {
       await bySerialNo(ctx, ref);

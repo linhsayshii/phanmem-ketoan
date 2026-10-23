@@ -9,6 +9,9 @@ import { dateIso as isoDate } from '../master/catalogs.js';
 import { deleteProvider, deleteSeries, listProviders, listSeries, providerInput, saveProvider, saveSeries, seriesInput } from './config.js';
 import { discardFailed, einvoiceDto, einvoiceFile, einvoiceQuery, issueEInvoice, refreshEInvoice, retryEInvoice } from './issue.js';
 import { adjustInput, cancelInput, issueAdjustment, issueReplacement, cancelEInvoice, replaceInput, reverseMarked, setPaid, voucherOf } from './lifecycle.js';
+import { createNotice, deleteNotice, listNotices, loadNotice, markNoticeSent, noticeInput, sendNotice, updateNotice } from './errorNotice.js';
+import { errorNoticeHtml } from '../reporting/print/einvoiceForms.js';
+import { renderPdf } from '../reporting/print/pdf.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { requireStockPerm } from '../ledger/vouchers.routes.js';
 
@@ -74,6 +77,22 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
   app.post('/api/einvoices/:id/paid', { preHandler: issue, schema: { params: numId, body: z.object({ paid: z.boolean() }) } }, async (req) => setPaid(app.db, ectx(req), req.params.id, req.body.paid));
   app.post('/api/einvoices/:id/refresh', { preHandler: issue, schema: { params: numId } }, async (req) => refreshEInvoice(app.db, ectx(req), req.params.id));
+
+  // Thông báo hóa đơn điện tử đã lập sai (04/SS-HĐĐT): chỉ bản nháp sửa/xóa được; gửi qua nhà cung cấp hoặc đánh dấu đã gửi tay.
+  app.get('/api/einvoice/error-notices', { preHandler: view }, async (req) => app.withTenant(req, listNotices, READ_SNAPSHOT));
+  app.get('/api/einvoice/error-notices/:id', { preHandler: view, schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => loadNotice(trx, req.params.id), READ_SNAPSHOT));
+  app.post('/api/einvoice/error-notices', { preHandler: issue, schema: { body: noticeInput } }, async (req, reply) =>
+    reply.status(201).send(await app.withTenant(req, (trx) => createNotice(trx, tid(req), req.auth!.userId, req.body))));
+  app.put('/api/einvoice/error-notices/:id', { preHandler: issue, schema: { params: numId, body: noticeInput } }, async (req) => app.withTenant(req, (trx) => updateNotice(trx, tid(req), req.auth!.userId, req.params.id, req.body)));
+  app.delete('/api/einvoice/error-notices/:id', { preHandler: issue, schema: { params: numId } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteNotice(trx, req.params.id)); return reply.status(204).send(); });
+  app.post('/api/einvoice/error-notices/:id/send', { preHandler: issue, schema: { params: numId } }, async (req) => sendNotice(app.db, ectx(req), req.params.id));
+  app.post('/api/einvoice/error-notices/:id/mark-sent', { preHandler: issue, schema: { params: numId, body: z.object({ providerRef: z.string().trim().max(200).optional() }).nullish() } }, async (req) =>
+    markNoticeSent(app.db, ectx(req), req.params.id, req.body?.providerRef || null));
+  app.get('/api/einvoice/error-notices/:id/print', { preHandler: view, schema: { params: numId, querystring: z.object({ format: z.enum(['html', 'pdf']).default('html') }) } }, async (req, reply) => {
+    const r = await app.withTenant(req, (trx) => errorNoticeHtml(trx, tid(req), req.params.id), READ_SNAPSHOT);
+    if (req.query.format === 'html') return reply.type('text/html; charset=utf-8').send(r.html);
+    return reply.type('application/pdf').header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(r.name)}.pdf`).send(await renderPdf(r.html));
+  });
 
   app.get('/api/einvoices', { preHandler: view, schema: { querystring: listQuery } }, async (req) => app.withTenant(req, async (trx) => {
     const { status, from, to, q } = req.query;

@@ -346,6 +346,14 @@ export interface EinvoiceTable {
   error_code: string | null; error_message: string | null; needs_reversal: Generated<boolean>; adjusted: Generated<boolean>; paid: Generated<boolean>; attempts: Generated<number>;
   last_attempt_at: Timestamp | null; created_by: string | null; created_at: Generated<string>; discarded_at: Timestamp | null;
 }
+export interface EinvoiceErrorNoticeTable {
+  id: Generated<number>; tenant_id: string; notice_kind: string; tax_notice_no: string | null; tax_notice_date: DateOnly | null; notice_date: DateOnly; place: Generated<string>;
+  provider_id: number | null; status: Generated<string>; provider_ref: string | null; sent_at: Timestamp | null; created_by: string | null; created_at: Generated<string>;
+}
+export interface EinvoiceErrorNoticeLineTable {
+  id: Generated<number>; tenant_id: string; notice_id: number; line_no: number; einvoice_id: number | null; cqt_code: string | null; form_no: string; serial: string; invoice_no: string;
+  issue_date: DateOnly; invoice_type: string; action: string; reason: string;
+}
 export interface EinvoiceLogTable {
   id: Generated<number>; tenant_id: string; einvoice_id: number | null; provider_id: number; action: string; request: ColumnType<unknown, string | null | undefined, never>;
   response: ColumnType<unknown, string | null | undefined, never>; http_status: number | null; ok: boolean; error: string | null; ms: number | null; created_by: string | null; created_at: Generated<string>;
@@ -442,6 +450,8 @@ export interface Database {
   einvoice_provider: EinvoiceProviderTable;
   einvoice_series: EinvoiceSeriesTable;
   einvoice: EinvoiceTable;
+  einvoice_error_notice: EinvoiceErrorNoticeTable;
+  einvoice_error_notice_line: EinvoiceErrorNoticeLineTable;
   einvoice_log: EinvoiceLogTable;
   einvoice_fake_store: EinvoiceFakeStoreTable;
 }
