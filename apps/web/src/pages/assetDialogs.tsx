@@ -1,12 +1,12 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert, DatePicker, Form, Input, Modal, Select, Space, Tag } from 'antd';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs, { type Dayjs } from 'dayjs';
 import { D, formatVnDate, formatVnNumber, isImeComposing, parseVnNumber, todayVn } from '@kt/domain';
 import { KeyboardGrid, LookupSelect, VnNumberInput } from '@kt/ui';
 import { api } from '../api/client.js';
-import { accountFetcherFor } from '../lookups.js';
+import { accountFetcherFor, regimeFor, type FiscalYearRef } from '../lookups.js';
 import { PickDialog, iso, text } from './voucherCommon.js';
 
 export type AssetKind = 'fixed' | 'tool' | 'prepaid';
@@ -71,6 +71,10 @@ export function EventDialog({ asset, kind, onClose, onDone }: { asset: DialogAss
   const date = Form.useWatch('date', form) as Dayjs | undefined; const reason = Form.useWatch('reason', form) as string | undefined;
   const dateIso = date ? iso(date) : undefined;
   const fetcher = useMemo(() => accountFetcherFor(dateIso), [dateIso]);
+  // TK chênh lệch đánh giá lại mặc định theo chế độ của ngày nghiệp vụ: TT133 không có 412 (dùng 4118); người dùng đã chọn thì giữ.
+  const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<FiscalYearRef[]>('/api/fiscal-years'), enabled: kind === 'revalue' });
+  const revalCounter = (d: string) => (years.data && regimeFor(years.data, d) === 'TT133' ? '4118' : '412');
+  useEffect(() => { if (kind === 'revalue' && years.data && dateIso && !form.isFieldTouched('counterAccountCode')) form.setFieldsValue({ counterAccountCode: revalCounter(dateIso) }); }, [kind, dateIso, years.data]);
   const money = (name: keyof Values, label: string, required = true) => <Form.Item label={label} name={name} rules={required ? [{ required: true, message: `Nhập ${label.toLowerCase()}` }] : []}><VnNumberInput aria-label={label} /></Form.Item>;
   const account = (name: keyof Values, label: string, required = true) => <Form.Item label={label} name={name} rules={required ? [{ required: true, message: `Chọn ${label.toLowerCase()}` }] : []}><LookupSelect catalog="account" fetcher={fetcher} allowClear /></Form.Item>;
 
@@ -138,7 +142,7 @@ export function EventDialog({ asset, kind, onClose, onDone }: { asset: DialogAss
   return (
     <Modal open={open} title={kind ? `${EVENT_TITLE[kind]} ${asset.code}` : ''} destroyOnHidden width={needAlloc ? 760 : 520} okText={result ? 'Đóng' : 'Lưu (Ctrl+S)'} cancelText={result ? undefined : 'Bỏ qua'} cancelButtonProps={{ style: result ? { display: 'none' } : {} }}
       okButtonProps={{ loading: run.isPending }} onCancel={onClose} onOk={() => (result ? onClose() : submit())}
-      afterOpenChange={(o) => { if (o) { form.resetFields(); form.setFieldsValue({ date: dayjs(todayVn()), ...(kind === 'revalue' ? { counterAccountCode: '412' } : {}) }); setErr(null); setResult(null);
+      afterOpenChange={(o) => { if (o) { form.resetFields(); form.setFieldsValue({ date: dayjs(todayVn()), ...(kind === 'revalue' ? { counterAccountCode: revalCounter(todayVn()) } : {}) }); setErr(null); setResult(null);
         setAlloc(kind === 'transfer' && asset.allocations.length ? toRows(asset.allocations) : [emptyAlloc()]); } }}>
       {open && <div onKeyDown={onKey}>
         {result ? (

@@ -120,6 +120,16 @@ describe('biến động TSCĐ', () => {
     expect(out[1]).toEqual(out[0]);
   });
 
+  it('đánh giá lại không nhập TK chênh lệch: TT133 mặc định 4118, TT200 mặc định 412', async () => {
+    for (const [regime, counter] of [['TT133', '4118'], ['TT200', '412']] as const) {
+      const t = await tenant(regime);
+      const id = await t.fixed('TS01', '120000000', 60);
+      for (const p of [1, 2]) await t.runOk(p);
+      const r = await t.ok(t.ev(id, 'revalue', { date: '2026-03-01', newCost: '132000000', newAccumulated: '6000000' }));
+      expect(await t.lines(r.voucherId)).toEqual(['2111|12000000|0|TS01|', '2141|0|2000000|TS01|', `${counter}|0|10000000||`]);
+    }
+  });
+
   it('chế độ month: ghi giảm 16/03 không khấu hao tháng 3, TS không có dòng khấu hao', async () => {
     const t = await tenant();
     await t.ok(t.call('PUT', '/api/settings', { fa_proration: 'month' }));

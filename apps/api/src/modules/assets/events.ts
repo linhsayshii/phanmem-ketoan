@@ -36,7 +36,7 @@ export const decreaseInput = z.object({
   date: dateIso, reason: z.enum(['liquidation', 'contribution', 'to_tool', 'loss', 'other']), counterAccountCode: z.string().min(1).optional(),
   toolCard: z.object({ code: z.string().trim().min(1).max(30), name: z.string().trim().min(1).max(200), periods: z.number().int().min(1).max(1200), allocations: allocLines, depreciationStartDate: dateIso.optional() }).optional(),
 });
-export const revalueInput = z.object({ date: dateIso, newCost: vnd, newAccumulated: vnd, remainingUnits: units.optional(), counterAccountCode: z.string().min(1).default('412') });
+export const revalueInput = z.object({ date: dateIso, newCost: vnd, newAccumulated: vnd, remainingUnits: units.optional(), counterAccountCode: z.string().min(1).optional() });
 export const toolDecreaseInput = z.object({ date: dateIso, quantity: z.string().regex(/^\d{1,16}(\.\d{1,4})?$/, 'Số lượng không hợp lệ').refine((s) => num(s).gt(0), 'Số lượng ghi giảm phải lớn hơn 0').optional(), counterAccountCode: z.string().min(1), reason: z.string().max(500).nullable().optional() });
 export const toolAdjustInput = z.object({ date: dateIso, delta: z.string().regex(/^-?\d{1,16}$/, VND_AMOUNT_MSG).refine((s) => !num(s).isZero(), 'Số tiền điều chỉnh phải khác 0'), counterAccountCode: z.string().min(1), partyCode: z.string().nullable().optional() });
 export const transferInput = z.object({ date: dateIso, departmentCode: z.string().nullable(), allocations: allocLines });
@@ -211,7 +211,7 @@ async function lifeVersion(trx: Trx, ctx: Ctx, id: number, kind: string, span: P
   return (await scheduleFor(trx, id, span, { proration, runIdsOfPeriod: await runIdsOf(trx, RUN_KIND[kind]!, span.fiscalYear, span.periodNo), lifeChange: remainingUnits })).schedule.id;
 }
 
-/** Đánh giá lại TSCĐ: chênh lệch nguyên giá và hao mòn so với sổ cái tại ngày đánh giá; đối ứng (412 mặc định) phần ròng; có số đơn vị còn lại thì điều chỉnh thời gian từ kỳ đó. */
+/** Đánh giá lại TSCĐ: chênh lệch nguyên giá và hao mòn so với sổ cái tại ngày đánh giá; đối ứng (mặc định 412, TT133 4118) phần ròng; có số đơn vị còn lại thì điều chỉnh thời gian từ kỳ đó. */
 export async function revalueAsset(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof revalueInput>) {
   const { a, span } = await begin(trx, ctx, id, b.date);
   if (a.kind !== 'fixed') throw new AppError('VALIDATION', 'Đánh giá lại chỉ áp dụng cho tài sản cố định', 400);
@@ -219,16 +219,18 @@ export async function revalueAsset(trx: Trx, ctx: Ctx, id: number, b: z.infer<ty
   // Giá trị trước khấu hao kỳ P (bỏ lần chạy KH kỳ P, sẽ chạy lại): cùng chênh lệch dù KH kỳ P đã chạy hay chưa, kể cả ngày đánh giá là P.to.
   const v = (await assetValues(trx, ctx.tenantId, b.date, await runIdsOf(trx, 'depreciation', span.fiscalYear, span.periodNo), [id])).get(id)!;
   const dCost = D(b.newCost).minus(v.cost); const dAcc = D(b.newAccumulated).minus(v.accumulated);
+  // TK chênh lệch mặc định theo chế độ của ngày đánh giá: TT133 không có 412, dùng 4118.
+  const counter = b.counterAccountCode ?? ((await trx.selectFrom('fiscal_period').select('regime').where('fiscal_year', '=', span.fiscalYear).where('period_no', '=', span.periodNo).executeTakeFirstOrThrow()).regime === 'TT133' ? '4118' : '412');
   if (dCost.isZero() && dAcc.isZero() && !b.remainingUnits) throw new AppError('VALIDATION', 'Giá trị đánh giá lại bằng giá trị trên sổ, không có chênh lệch', 400);
   const eventId = randomUUID();
   const voucherId = await tsVoucher(trx, ctx, eventId, b.date, `Đánh giá lại tài sản ${a.code}`, [
     signed(a.asset_account_code, dCost, 'debit', { assetCode: a.code }),
     signed(a.depreciation_account_code!, dAcc, 'credit', { assetCode: a.code }),
-    signed(b.counterAccountCode, dCost.minus(dAcc), 'credit'),
+    signed(counter, dCost.minus(dAcc), 'credit'),
   ]);
   const scheduleId = b.remainingUnits ? await lifeVersion(trx, ctx, id, a.kind, span, b.remainingUnits) : null;
   await record(trx, ctx, { id: eventId, assetId: id, kind: 'revaluation', date: b.date, voucherId,
-    data: { before: { cost: v.cost, accumulated: v.accumulated }, after: { cost: b.newCost, accumulated: b.newAccumulated }, counterAccountCode: b.counterAccountCode, remainingUnits: b.remainingUnits ?? null, scheduleId } });
+    data: { before: { cost: v.cost, accumulated: v.accumulated }, after: { cost: b.newCost, accumulated: b.newAccumulated }, counterAccountCode: counter, remainingUnits: b.remainingUnits ?? null, scheduleId } });
   await refresh(trx, ctx, a.kind, span);
   return { eventId, voucherId };
 }

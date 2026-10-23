@@ -172,7 +172,7 @@ Giá trị ghi giảm = giá trị còn lại tại ngày giảm (bỏ lần ph�
 
 ## 6. Các biến động khác
 
-- Đánh giá lại (TSCĐ): nhập Nguyên giá mới, Hao mòn lũy kế mới, Số kỳ còn lại (tùy chọn) và TK chênh lệch (điền sẵn 412). Chế độ TT133 không có TK 412: phải nhập TK chênh lệch khác, ví dụ 4118, nếu không máy chủ báo không tìm thấy tài khoản. Hao mòn mới lớn hơn nguyên giá mới thì 400. Có số kỳ còn lại thì dựng phiên bản lịch mới.
+- Đánh giá lại (TSCĐ): nhập Nguyên giá mới, Hao mòn lũy kế mới, Số kỳ còn lại (tùy chọn) và TK chênh lệch (điền sẵn theo chế độ của ngày nghiệp vụ: 412; chế độ TT133 không có TK 412 nên điền sẵn 4118, sửa được). Để trống thì máy chủ dùng cùng mặc định. Hao mòn mới lớn hơn nguyên giá mới thì 400. Có số kỳ còn lại thì dựng phiên bản lịch mới.
 - Điều chuyển: chọn Bộ phận mới; lưới phân bổ chi phí điền sẵn từ phân bổ hiện hành, sửa nếu cần.
 - Dừng khấu hao (TSCĐ): bắt buộc nhập lý do. Khi thẻ đang dừng, nút đổi thành "Tiếp tục khấu hao". Khoảng dừng không tính khấu hao. Lỗi: "ASSET_SUSPENDED", "ASSET_NOT_SUSPENDED", "ASSET_PAUSE_ORDER".
 - Điều chỉnh thời gian sử dụng: nhập Số kỳ còn lại. Từ kỳ hiệu lực, mức khấu hao hoặc phân bổ tính lại theo số kỳ mới.
