@@ -121,3 +121,13 @@ Kế hoạch: `2026-10-23-giai-doan-4-chi-tiet.md`. Đánh số tiếp GĐ3 (k�
 485. Mẫu 01-TSCĐ bỏ cột E "Tỷ lệ khấu hao" và 04-TSCĐ của TT133 tách giá trị đánh giá lại thành 3 cột, chênh lệch ghi Tăng/Giảm; TT99 thêm dòng "Số:", tiêu đề "TỔNG HỢP" và cột ĐVT cho mẫu 05 theo đúng bố cục văn bản gốc — ghi lại để người rà soát đối chiếu; giá nếu sai: sửa `assetForms.ts` theo mẫu. (T14)
 
 486. Kiểm thử kiểm kê dùng ngày 31/03/2026 sau 3 kỳ khấu hao (TS01 120.000.000/60 tháng còn 114.000.000, TS02 36.000.000/36 tháng còn 33.000.000; thanh lý 16/03 in 120.000.000 / 4.967.742 / 115.032.258), không dùng 31/12 vì cần số khấu hao tính tay được. Quyết định 478–485 viết triển khai trước kiểm thử nên không có lần chạy RED thật; hai lỗi gặp khi chạy lần đầu (FOR UPDATE trên bên nullable của LEFT JOIN, mã TK 412 không có trong TT133 nên dùng 4118) là lỗi thật đã sửa. (T14)
+
+487. Migration soát lỗi GĐ4 là 0076_soat_loi_gd4.sql (0077 trong kế hoạch bị dời vì 0075 là số cuối) — số liệu bám thứ tự thực tế — đổi tên nếu có migration chen vào. (T15)
+
+488. Sáu quy tắc TS_*/KU_* không có cờ nhạy cảm: chỉ in mã tài sản, mã khế ước và số tiền, không in bên cho vay hay công nợ theo đối tượng (khác CN_* của GĐ2 có view_receivable/view_payable) — theo kế hoạch — thêm `view_payable` vào flags nếu sau này in tên bên cho vay. (T15)
+
+489. TS_KHAU_HAO_CAN_CHAY_LAI cài bằng SQL tương đương assetRunStale (so dấu vân tay `id:nguyên giá:hao mòn` đã làm tròn của tài sản thuộc lần chạy với `result.basis`, cộng điều kiện kỳ trước được chạy lại sau lần kiểm cuối); kiểm thử so khớp tập (loại, kỳ) với hàm TypeScript — tránh hai nơi lệch nhau — nếu assetRunStale đổi, sửa cả quy tắc (migration mới). (T15)
+
+490. KU_QUA_HAN: kỳ quá hạn là `due_date < $2` (đúng ngày đến hạn chưa quá hạn); phân bổ số đã trả vào kỳ sớm nhất trước như loanLongTermPart, số đã trả và phần lịch trả trước ngày dùng phần mềm (dư đầu kỳ) theo loans/stats.ts (quyết định 446); chỉ khế ước còn dư nợ gốc theo sổ. Kiểm thử đối chiếu tổng quá hạn với loanLongTermPart — một công thức chung — đổi nếu coi đúng ngày đến hạn là quá hạn. (T15)
+
+491. KU_CHUA_TINH_LAI: kỳ coi là đã đóng bước kết chuyển khi nhật ký closing gần nhất của kỳ ok, hoặc có chứng từ is_closing đã ghi sổ không phải bản đảo; khế ước tính theo dư nợ gốc (Có − Nợ TK gốc có contract_id) tại cuối kỳ > 0, vì period_run loan_interest là một lần chạy cho cả kỳ nên chỉ cần có lần chạy hiệu lực của kỳ — nếu muốn riêng từng khế ước phải lưu khế ước trong result lần chạy. (T15)
