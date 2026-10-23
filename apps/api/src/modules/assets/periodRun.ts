@@ -5,7 +5,7 @@ import { AppError } from '../../plugins/errors.js';
 import { getSettings } from '../core/settings.js';
 import * as S from '../ledger/vouchers.service.js';
 import { lockTenant } from './assets.js';
-import { scheduleFor } from './schedule.js';
+import { assetValues, scheduleFor } from './schedule.js';
 
 // Chạy khấu hao TSCĐ (KH) và phân bổ CCDC/chi phí trả trước (PB) theo kỳ: một lần chạy hiệu lực mỗi (loại, kỳ), một chứng từ ngày cuối kỳ.
 // Chạy lại: chứng từ khớp thì giữ (chỉ cập nhật checked_at), lệch thì đảo cũ ngày cuối kỳ rồi sinh lần chạy và chứng từ mới (chứng từ hệ thống không bỏ ghi sổ được).
@@ -24,18 +24,25 @@ async function periodSpan(trx: Trx, fy: number, pn: number) {
   if (!p) throw new AppError('PERIOD_NOT_FOUND', `Không có kỳ ${pn}/${fy}`, 404);
   return { span: { fiscalYear: fy, periodNo: pn, from: p.date_from, to: p.date_to } as PeriodSpan, status: p.status };
 }
-const runIdsOf = async (trx: Trx, fy: number, pn: number) => (await trx.selectFrom('period_run').select('id').where('fiscal_year', '=', fy).where('period_no', '=', pn).execute()).map((r) => r.id);
+// Mọi lần chạy (mọi trạng thái) của loại ở kỳ P: chứng từ của chúng (kể cả bản đảo) bị bỏ khi tính hao mòn "trừ lần chạy kỳ P".
+const runIdsOf = async (trx: Trx, kind: RunKind, fy: number, pn: number) =>
+  (await trx.selectFrom('period_run').select('id').where('kind', '=', kind).where('fiscal_year', '=', fy).where('period_no', '=', pn).execute()).map((r) => r.id);
 
-// Số kỳ P của từng tài sản đúng loại: đang dùng (hoặc ghi giảm sau P.to), còn tính khấu hao, ngày bắt đầu ≤ P.to. Ghi giảm trong P: không có trong lần chạy (quy ước 7).
+// Tài sản của lần chạy kỳ P: đúng loại, đang dùng (hoặc ghi giảm sau P.to), còn tính khấu hao, ngày bắt đầu ≤ P.to. Ghi giảm trong P: không có trong lần chạy (quy ước 7).
+const selectAssets = (trx: Trx, kind: RunKind, span: PeriodSpan) => (span.periodNo < 1 || span.periodNo > 12 ? Promise.resolve([]) // kỳ điều chỉnh không tiêu thụ đơn vị
+  : trx.selectFrom('asset').select(['id', 'code', 'asset_account_code', 'depreciation_account_code']).where('kind', '=', ASSET_KIND[kind]).where('is_depreciable', '=', true)
+    .where('depreciation_start_date', '<=', span.to).where(sql<boolean>`coalesce(decrease_date > ${span.to}::date, status = 'active')`).orderBy('code').execute());
+
+// Dấu vân tay sổ cái của lần chạy: nguyên giá, hao mòn (trừ lần chạy kỳ P) từng tài sản; khác thì lần chạy cũ (assetRunStale).
+const fingerprint = (xs: { assetId: number; cost: string; accumulated: string }[]) => xs.map((x) => `${x.assetId}:${D(x.cost).toFixed(0)}:${D(x.accumulated).toFixed(0)}`).sort().join(';');
+
 async function computeAmounts(trx: Trx, kind: RunKind, span: PeriodSpan, proration: Proration) {
-  if (span.periodNo < 1 || span.periodNo > 12) return []; // kỳ điều chỉnh không tiêu thụ đơn vị
-  const assets = await trx.selectFrom('asset').select(['id', 'code', 'asset_account_code', 'depreciation_account_code']).where('kind', '=', ASSET_KIND[kind]).where('is_depreciable', '=', true)
-    .where('depreciation_start_date', '<=', span.to).where(sql<boolean>`coalesce(decrease_date > ${span.to}::date, status = 'active')`).orderBy('code').execute();
-  const runIdsOfPeriod = await runIdsOf(trx, span.fiscalYear, span.periodNo);
+  const assets = await selectAssets(trx, kind, span);
+  const runIdsOfPeriod = await runIdsOf(trx, kind, span.fiscalYear, span.periodNo);
   const out = [];
   for (const a of assets) {
     const r = await scheduleFor(trx, a.id, span, { proration, runIdsOfPeriod });
-    out.push({ ...a, scheduleId: r.schedule.id, amount: r.line?.amount ?? '0' });
+    out.push({ ...a, scheduleId: r.schedule.id, amount: r.line?.amount ?? '0', cost: r.values.cost, accumulated: r.values.accumulated });
   }
   return out;
 }
@@ -81,18 +88,22 @@ async function assertNoGap(trx: Trx, kind: RunKind, span: PeriodSpan, proration:
   if (hit) throw new AppError('PERIOD_RUN_GAP', `Kỳ ${prev.period_no}/${prev.fiscal_year} chưa chạy ${LABEL[kind]} mà có số phát sinh (tài sản ${hit}): chạy kỳ đó trước`, 409);
 }
 
+// Khóa kỳ chỉ kiểm khi lần chạy phải ghi (đảo, tạo lần chạy/chứng từ mới): lần chạy khớp ở kỳ khóa vẫn qua, để chạy lại dây chuyền (refreshRuns) không vấp kỳ khóa không đổi.
 async function runOne(trx: Trx, ctx: Ctx, input: { kind: RunKind; fiscalYear: number; periodNo: number }, checkGap: boolean) {
   await lockTenant(trx, ctx.tenantId);
   const { kind, fiscalYear: fy, periodNo: pn } = input;
   const { span, status } = await periodSpan(trx, fy, pn);
-  if (status === 'hard_locked') throw new AppError('PERIOD_HARD_LOCKED', `Kỳ ${pn}/${fy} đã khóa cứng: không chạy ${LABEL[kind]}`, 409);
-  if (status === 'soft_locked' && !ctx.canBackdate) throw new AppError('PERIOD_SOFT_LOCKED', `Kỳ ${pn}/${fy} đã khóa sổ, cần quyền ghi lùi ngày`, 409);
+  const assertWritable = () => {
+    if (status === 'hard_locked') throw new AppError('PERIOD_HARD_LOCKED', `Kỳ ${pn}/${fy} đã khóa cứng: không chạy ${LABEL[kind]}`, 409);
+    if (status === 'soft_locked' && !ctx.canBackdate) throw new AppError('PERIOD_SOFT_LOCKED', `Kỳ ${pn}/${fy} đã khóa sổ, cần quyền ghi lùi ngày để chạy ${LABEL[kind]}`, 409);
+  };
   const proration = (await getSettings(trx, ctx.tenantId)).fa_proration;
   if (checkGap) await assertNoGap(trx, kind, span, proration);
 
   const items = await computeAmounts(trx, kind, span, proration);
   const lines = await buildLines(trx, kind, span, items.filter((i) => !D(i.amount).isZero()));
   const result = items.filter((i) => !D(i.amount).isZero()).map((i) => ({ assetCode: i.code, amount: i.amount }));
+  const resultJson = JSON.stringify({ lines: result, basis: items.map((i) => ({ assetId: i.id, cost: i.cost, accumulated: i.accumulated })) });
   const stamp = (runId: string) => items.length
     ? trx.updateTable('asset_schedule_line').set({ run_id: runId }).where('fiscal_year', '=', fy).where('period_no', '=', pn).where('schedule_id', 'in', items.map((i) => i.scheduleId)).execute() : Promise.resolve();
 
@@ -104,21 +115,22 @@ async function runOne(trx: Trx, ctx: Ctx, input: { kind: RunKind; fiscalYear: nu
       const cur = await trx.selectFrom('voucher_line as l').innerJoin('account as a', 'a.id', 'l.account_id').leftJoin('asset as s', 's.id', 'l.asset_id').leftJoin('department as d', 'd.id', 'l.department_id')
         .leftJoin('project as p', 'p.id', 'l.project_id').leftJoin('cost_item as c', 'c.id', 'l.cost_item_id')
         .select(['a.code as accountCode', 'l.debit', 'l.credit', 's.code as assetCode', 'd.code as departmentCode', 'p.code as projectCode', 'c.code as costItemCode'])
-        .where('l.voucher_id', '=', active.voucher_id).orderBy('l.line_no').execute();
-      same = cur.map(lineKey).join(';') === lines.map(lineKey).join(';');
+        .where('l.voucher_id', '=', active.voucher_id).where('l.posting_date', '=', span.to).execute();
+      same = cur.map(lineKey).sort().join(';') === lines.map(lineKey).sort().join(';');
     }
     if (same) {
-      await trx.updateTable('period_run').set({ checked_at: sql`now()` }).where('id', '=', active.id).execute();
+      await trx.updateTable('period_run').set({ checked_at: sql`now()`, result: resultJson }).where('id', '=', active.id).execute();
       await stamp(active.id);
       return { runId: active.id, voucherId: active.voucher_id, reversedVoucherIds: [] as string[], unchanged: true, lines: result };
     }
   }
+  assertWritable();
   const reversed: string[] = [];
   if (active) {
     if (active.voucher_id && active.state === 'posted') { await S.reverseVoucher(trx, active.voucher_id, { postingDate: span.to }); reversed.push(active.voucher_id); }
     await trx.updateTable('period_run').set({ status: 'superseded' }).where('id', '=', active.id).execute();
   }
-  const run = await trx.insertInto('period_run').values({ tenant_id: ctx.tenantId, kind, fiscal_year: fy, period_no: pn, created_by: ctx.userId, result: JSON.stringify({ lines: result }) })
+  const run = await trx.insertInto('period_run').values({ tenant_id: ctx.tenantId, kind, fiscal_year: fy, period_no: pn, created_by: ctx.userId, result: resultJson })
     .returning('id').executeTakeFirstOrThrow();
   let voucherId: string | null = null;
   if (lines.length) {
@@ -145,20 +157,19 @@ export async function refreshRuns(trx: Trx, ctx: Ctx, kind: RunKind, fromYear: n
 }
 
 /**
- * Lần chạy hiệu lực của kỳ có cần chạy lại: có chứng từ (không phải của lần chạy tài sản) ghi sổ sau lần chạy/kiểm cuối mà có dòng tài sản loại đó ngày ≤ P.to,
- * hoặc lần chạy kỳ trước được tạo sau lần chạy/kiểm cuối của kỳ này. So mốc thời gian trong SQL (giữ micro giây). Chưa chạy: không cũ.
+ * Lần chạy hiệu lực của kỳ có cần chạy lại: dấu vân tay sổ cái hiện tại (nguyên giá, hao mòn tại P.to trừ các lần chạy kỳ P, từng tài sản thuộc lần chạy)
+ * khác dấu vân tay đã lưu lúc chạy/kiểm cuối — bắt cả ghi sổ, bỏ ghi sổ, hủy, đảo, ghi sổ xen giữa lúc chạy, tài sản vào/ra lần chạy —
+ * hoặc lần chạy hiệu lực của một kỳ trước được tạo sau lần chạy/kiểm cuối của kỳ này. Chưa chạy: không cũ.
  */
 export async function assetRunStale(trx: Trx, kind: RunKind, fiscalYear: number, periodNo: number): Promise<{ stale: boolean; reason: string | null }> {
-  const run = await trx.selectFrom('period_run').select('id').where('kind', '=', kind).where('fiscal_year', '=', fiscalYear).where('period_no', '=', periodNo).where('status', '=', 'active').executeTakeFirst();
+  const run = await trx.selectFrom('period_run').select(['id', 'tenant_id', 'result']).where('kind', '=', kind).where('fiscal_year', '=', fiscalYear).where('period_no', '=', periodNo).where('status', '=', 'active').executeTakeFirst();
   if (!run) return { stale: false, reason: null };
-  const v = (await sql<{ voucher_no: string | null }>`SELECT v.voucher_no FROM period_run r
-    JOIN fiscal_period fp ON fp.tenant_id = r.tenant_id AND fp.fiscal_year = r.fiscal_year AND fp.period_no = r.period_no
-    JOIN voucher_line l ON l.tenant_id = r.tenant_id AND l.asset_id IS NOT NULL AND l.posting_date <= fp.date_to
-    JOIN asset a ON a.tenant_id = l.tenant_id AND a.id = l.asset_id AND a.kind = ${ASSET_KIND[kind]}
-    JOIN voucher v ON v.tenant_id = l.tenant_id AND v.id = l.voucher_id
-    WHERE r.id = ${run.id}::uuid AND v.state IN ('posted','reversed') AND v.posted_at > coalesce(r.checked_at, r.created_at) AND v.source_doc_type IS DISTINCT FROM 'asset_run'
-    ORDER BY v.posted_at LIMIT 1`.execute(trx)).rows[0];
-  if (v) return { stale: true, reason: `Chứng từ ${v.voucher_no ?? ''} ghi sổ sau lần chạy có số liệu tài sản đến cuối kỳ` };
+  const { span } = await periodSpan(trx, fiscalYear, periodNo);
+  const assets = await selectAssets(trx, kind, span);
+  const vals = await assetValues(trx, run.tenant_id, span.to, await runIdsOf(trx, kind, fiscalYear, periodNo), assets.map((a) => a.id));
+  const now = fingerprint(assets.map((a) => ({ assetId: a.id, ...vals.get(a.id)! })));
+  const stored = (run.result as { basis?: { assetId: number; cost: string; accumulated: string }[] }).basis ?? [];
+  if (now !== fingerprint(stored)) return { stale: true, reason: `Số liệu tài sản đến cuối kỳ ${periodNo}/${fiscalYear} đã thay đổi sau lần chạy` };
   const q = (await sql<{ fiscal_year: number; period_no: number }>`SELECT q.fiscal_year, q.period_no FROM period_run r
     JOIN period_run q ON q.tenant_id = r.tenant_id AND q.kind = r.kind AND q.status = 'active' AND (q.fiscal_year, q.period_no) < (r.fiscal_year, r.period_no) AND q.created_at > coalesce(r.checked_at, r.created_at)
     WHERE r.id = ${run.id}::uuid ORDER BY q.fiscal_year, q.period_no LIMIT 1`.execute(trx)).rows[0];

@@ -25,8 +25,8 @@ async function tenant() {
   const fixed = async (code: string, cost: string, lifeUnits: number, alloc: object[] = [{ expenseAccountCode: '6422', ratio: '100' }], more: object = {}) => {
     const a = await ok(call('POST', '/api/assets', { code, name: `TSCĐ ${code}`, kind: 'fixed', assetAccountCode: '2111', depreciationAccountCode: '2141', depreciationStartDate: '2026-01-01', lifeUnits, ...more }), 201);
     await ok(call('PUT', `/api/assets/${a.id}/allocations`, { validFromYear: 2026, validFromPeriod: 1, lines: alloc }));
-    await pkt('2026-01-01', [nợ('2111', cost, { assetCode: code }), có('331', cost, { partyCode: 'NCC001' })]);
-    return a as { id: number };
+    const v = await pkt('2026-01-01', [nợ('2111', cost, { assetCode: code }), có('331', cost, { partyCode: 'NCC001' })]);
+    return { id: a.id as number, voucherId: v.id as string };
   };
   const run = (periodNo: number) => call('POST', '/api/asset-runs', { kind: 'depreciation', fiscalYear: 2026, periodNo });
   const runOk = (periodNo: number) => ok(run(periodNo));
@@ -41,6 +41,12 @@ const lineKey = (l: { accountCode: string; debit: string; credit: string; assetC
 describe('chạy khấu hao TSCĐ theo kỳ (KH)', () => {
   it('TS01 nguyên giá 120.000.000, 60 tháng từ 01/01/2026: KH tháng 1 Nợ 6422 2.000.000 / Có 2141 TS01', async () => {
     const t = await tenant(); const a = await t.fixed('TS01', '120000000', 60);
+    // Chưa chạy kỳ nào: lịch xem trước tính trong bộ nhớ đủ 60 kỳ, tổng bằng nguyên giá, không lưu phiên bản.
+    const pre = await t.ok(t.call('GET', `/api/assets/${a.id}/schedule`)) as { periodNo: number; amount: string }[];
+    expect(pre).toHaveLength(60);
+    expect(pre.reduce((s, l) => s + Number(l.amount), 0)).toBe(120_000_000);
+    expect(pre[0]).toMatchObject({ periodNo: 1, amount: '2000000' });
+    expect(await t.count(`asset_schedule WHERE true`)).toBe(0);
     const r = await t.runOk(1);
     expect(r).toMatchObject({ unchanged: false, reversedVoucherIds: [], lines: [{ assetCode: 'TS01', amount: '2000000' }] });
     const v = await t.voucher(r.voucherId);
@@ -123,6 +129,10 @@ describe('chạy khấu hao TSCĐ theo kỳ (KH)', () => {
     expect(r.lines).toEqual([{ assetCode: 'TS01', amount: '2000005' }, { assetCode: 'TS02', amount: '1000000' }]);
     const v = await t.voucher(r.voucherId);
     expect(v.lines.map(lineKey)).toEqual(['6422|1200003|0||PB1', '6422|800002|0||PB2', '2141|0|2000005|TS01|', '6421|1000000|0||', '2141|0|1000000|TS02|']);
+    // Lưu lại phân bổ cùng nội dung, khác thứ tự dòng: chạy lại vẫn không đổi (so khóa dòng không theo thứ tự).
+    const ts01 = (await t.ok(t.call('GET', '/api/assets?kind=fixed')))[0];
+    await t.ok(t.call('PUT', `/api/assets/${ts01.id}/allocations`, { validFromYear: 2026, validFromPeriod: 1, lines: [{ expenseAccountCode: '6422', departmentCode: 'PB2', ratio: '40' }, { expenseAccountCode: '6422', departmentCode: 'PB1', ratio: '60' }] }));
+    expect(await t.runOk(1)).toMatchObject({ unchanged: true, voucherId: r.voucherId });
   });
 
   it('kỳ khóa cứng → 409 PERIOD_HARD_LOCKED; khóa sổ không có quyền ghi lùi → 409 PERIOD_SOFT_LOCKED', async () => {
@@ -154,5 +164,40 @@ describe('chạy khấu hao TSCĐ theo kỳ (KH)', () => {
     expect(await u.runOk(2)).toMatchObject({ voucherId: null, lines: [], unchanged: false });
     expect(await u.runOk(2)).toMatchObject({ voucherId: null, unchanged: true });
     expect(await u.count(`asset_schedule WHERE true`)).toBe(1);
+  });
+  it('assetRunStale: bỏ ghi sổ rồi hủy chứng từ mua sau khi chạy → cũ; không đổi gì → không cũ; kỳ trước chạy lại sau → cũ', async () => {
+    const t = await tenant(); const a = await t.fixed('TS01', '120000000', 60); await t.fixed('TS02', '36000000', 36);
+    await t.runOk(1); await t.runOk(2);
+    const stale = (p: number) => t.db((trx) => assetRunStale(trx, 'depreciation', 2026, p));
+    expect(await stale(1)).toEqual({ stale: false, reason: null });
+    expect(await stale(2)).toEqual({ stale: false, reason: null });
+    await t.ok(t.call('POST', `/api/vouchers/${a.voucherId}/unpost`));
+    await t.ok(t.call('POST', `/api/vouchers/${a.voucherId}/discard`));
+    expect((await stale(1)).stale).toBe(true);
+    expect((await stale(2)).stale).toBe(true);
+    const r1 = await t.runOk(1);
+    expect(r1.lines).toEqual([{ assetCode: 'TS02', amount: '1000000' }]);
+    expect(await stale(1)).toEqual({ stale: false, reason: null });
+    // Kỳ 2: sổ cái kỳ 2 đã khác (và kỳ 1 vừa được tạo lại sau lần chạy kỳ 2).
+    expect((await stale(2)).stale).toBe(true);
+    await t.runOk(2);
+    expect(await stale(2)).toEqual({ stale: false, reason: null });
+    // Chỉ đổi TK chi phí của kỳ 1 (hao mòn không đổi): kỳ 1 tạo lần chạy mới, kỳ 2 cũ vì lần chạy kỳ trước mới hơn.
+    const ts02 = (await t.ok(t.call('GET', '/api/assets?kind=fixed'))).find((x: { code: string }) => x.code === 'TS02');
+    await t.ok(t.call('PUT', `/api/assets/${ts02.id}/allocations`, { validFromYear: 2026, validFromPeriod: 1, lines: [{ expenseAccountCode: '6421', ratio: '100' }] }));
+    expect((await t.runOk(1)).unchanged).toBe(false);
+    expect(await stale(2)).toEqual({ stale: true, reason: 'Kỳ 1/2026 được chạy lại sau lần chạy kỳ này' });
+  });
+
+  it('refreshRuns: kỳ sau khóa sổ mà lần chạy không đổi thì qua; phải ghi chứng từ mới ở kỳ khóa mà không có quyền ghi lùi → 409 nêu kỳ', async () => {
+    const t = await tenant(); await t.fixed('TS01', '120000000', 60);
+    await t.runOk(1); await t.runOk(2);
+    await t.ok(t.call('POST', '/api/periods/2026/2/lock', { level: 'soft' }));
+    const refresh = () => t.db((trx) => refreshRuns(trx, { tenantId: t.tenantId, userId: t.userId, canBackdate: false }, 'depreciation', 2026, 1));
+    expect(await refresh()).toEqual([{ fiscalYear: 2026, periodNo: 1, unchanged: true }, { fiscalYear: 2026, periodNo: 2, unchanged: true }]);
+    await t.pkt('2026-01-20', [nợ('2111', '12000000', { assetCode: 'TS01' }), có('331', '12000000', { partyCode: 'NCC001' })]);
+    await expect(refresh()).rejects.toMatchObject({ code: 'PERIOD_SOFT_LOCKED', message: expect.stringContaining('Kỳ 2/2026') });
+    expect(await t.count(`period_run WHERE status = 'active'`)).toBe(2);
+    expect(await t.count(`voucher WHERE voucher_type = 'KH'`)).toBe(2); // giao dịch hủy toàn bộ, không đảo kỳ 1
   });
 });

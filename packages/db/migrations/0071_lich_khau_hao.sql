@@ -42,7 +42,8 @@ CREATE TABLE asset_schedule_line (
   FOREIGN KEY (tenant_id, run_id) REFERENCES period_run (tenant_id, id));
 
 SELECT rls_enable(t) FROM unnest(ARRAY['period_run','asset_schedule','asset_schedule_line']::regclass[]) AS t;
-SELECT audit_enable(t) FROM unnest(ARRAY['period_run','asset_schedule','asset_schedule_line']::regclass[]) AS t;
+-- Nhật ký kiểm toán chỉ cho lần chạy (người dùng bấm chạy); lịch do hệ thống sinh, mỗi phiên bản U+12 dòng, không ghi audit_event.
+SELECT audit_enable('period_run');
 
 CREATE INDEX voucher_line_asset ON voucher_line (tenant_id, asset_id, posting_date) WHERE asset_id IS NOT NULL;
 

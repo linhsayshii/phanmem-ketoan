@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
+import { getSettings } from '../core/settings.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { listRuns, runAssetPeriod } from './periodRun.js';
 import { previewSchedule } from './schedule.js';
@@ -26,7 +27,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.put('/api/assets/:id', { preHandler: app.requirePermission('asset.update'), schema: { params: numId, body: assetInput } }, async (req) => app.withTenant(req, (trx) => saveAsset(trx, tid(req), req.params.id, req.body)));
   app.delete('/api/assets/:id', { preHandler: app.requirePermission('asset.delete'), schema: { params: numId } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteAsset(trx, tid(req), req.params.id)); return reply.status(204).send(); });
   app.put('/api/assets/:id/allocations', { preHandler: app.requirePermission('asset.update'), schema: { params: numId, body: allocationInput } }, async (req) => app.withTenant(req, (trx) => setAllocations(trx, tid(req), req.params.id, req.body)));
-  app.get('/api/assets/:id/schedule', { preHandler: app.requirePermission('asset.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => previewSchedule(trx, req.params.id), READ_SNAPSHOT));
+  app.get('/api/assets/:id/schedule', { preHandler: app.requirePermission('asset.view'), schema: { params: numId } }, async (req) => app.withTenant(req, async (trx) => previewSchedule(trx, req.params.id, (await getSettings(trx, tid(req))).fa_proration), READ_SNAPSHOT));
 
   // Chạy khấu hao (KH) / phân bổ CCDC, chi phí trả trước (PB) kỳ; kỳ khóa sổ cần quyền ghi lùi.
   app.get('/api/asset-runs', { preHandler: app.requirePermission('asset.view'), schema: { querystring: z.object({ kind: runKind.optional(), year: z.coerce.number().int().optional() }) } },
