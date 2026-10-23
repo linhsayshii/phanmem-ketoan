@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
-import { regimeOf } from '../reporting/ledgers.js';
+import { assertSensitive, regimeOf } from '../reporting/ledgers.js';
 import { assertPrint, isoDate, ordered, orderedMsg, respondReport } from '../reporting/routes.js';
 import { dateIso } from '../ledger/vouchers.service.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
@@ -13,17 +13,19 @@ const numId = z.object({ id: z.coerce.number().int().positive() });
 
 // Khế ước vay: hợp đồng, lãi suất theo hiệu lực, lịch trả gốc; giải ngân, trả nợ, tất toán; tính lãi vay kỳ (LV).
 const routes: FastifyPluginAsyncZod = async (app) => {
+  // Số dư khế ước vay là công nợ phải trả theo bên cho vay: mọi đọc số liệu khế ước cần view_payable (403 như arap).
+  const payable = async (req: { auth: { sensitive: Set<string> } | null }) => assertSensitive(req.auth!, { subledger_kind: 'payable', code: '3411' });
   const tid = (req: { auth: { tenantId: string | null } | null }) => req.auth!.tenantId!;
   const ctx = (req: { auth: { tenantId: string | null; userId: string } | null }) => ({ tenantId: req.auth!.tenantId!, userId: req.auth!.userId });
-  app.get('/api/loans', { preHandler: app.requirePermission('loan.view'), schema: { querystring: z.object({ at: dateIso.optional() }) } }, async (req) => app.withTenant(req, (trx) => listLoans(trx, req.query.at), READ_SNAPSHOT));
+  app.get('/api/loans', { preHandler: [app.requirePermission('loan.view'), payable], schema: { querystring: z.object({ at: dateIso.optional() }) } }, async (req) => app.withTenant(req, (trx) => listLoans(trx, req.query.at), READ_SNAPSHOT));
   // Sổ theo dõi khế ước vay (JSON; HTML/PDF/Excel cần report.print). Đường tĩnh /report đứng trước /:id.
-  app.get('/api/loans/report', { preHandler: app.requirePermission('report.view'), schema: { querystring: z.object({ from: isoDate, to: isoDate, format: z.enum(['json', 'html', 'pdf', 'xlsx']).default('json') }).refine(ordered, orderedMsg) } }, async (req, reply) => {
+  app.get('/api/loans/report', { preHandler: [app.requirePermission('report.view'), payable], schema: { querystring: z.object({ from: isoDate, to: isoDate, format: z.enum(['json', 'html', 'pdf', 'xlsx']).default('json') }).refine(ordered, orderedMsg) } }, async (req, reply) => {
     const q = req.query; if (q.format !== 'json') assertPrint(req.auth!);
     const out = await app.withTenant(req, async (trx) => { const data = await loanReport(trx, q.from, q.to); return { data, doc: q.format === 'json' ? null : await loanDoc(trx, req.auth!.tenantId!, await regimeOf(trx, q), data) }; }, READ_SNAPSHOT);
     return q.format === 'json' ? out.data : respondReport(reply, [out.doc!], q.format, `so-theo-doi-khe-uoc-${q.from}-${q.to}`);
   });
-  app.get('/api/loans/:id', { preHandler: app.requirePermission('loan.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => getLoan(trx, req.params.id), READ_SNAPSHOT));
-  app.get('/api/loans/:id/vouchers', { preHandler: app.requirePermission('loan.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => loanVouchers(trx, req.params.id), READ_SNAPSHOT));
+  app.get('/api/loans/:id', { preHandler: [app.requirePermission('loan.view'), payable], schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => getLoan(trx, req.params.id), READ_SNAPSHOT));
+  app.get('/api/loans/:id/vouchers', { preHandler: [app.requirePermission('loan.view'), payable], schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => loanVouchers(trx, req.params.id), READ_SNAPSHOT));
   app.post('/api/loans', { preHandler: app.requirePermission('loan.create'), schema: { body: loanInput } }, async (req, reply) =>
     reply.status(201).send(await app.withTenant(req, (trx) => saveLoan(trx, tid(req), null, req.body))));
   app.put('/api/loans/:id', { preHandler: app.requirePermission('loan.update'), schema: { params: numId, body: loanInput } }, async (req) => app.withTenant(req, (trx) => saveLoan(trx, tid(req), req.params.id, req.body)));
@@ -39,7 +41,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.post('/api/loans/:id/settle', { preHandler: app.requirePermission('loan.update'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => settleLoan(trx, tid(req), req.params.id)));
 
   // Lãi dự tính theo tháng theo lịch trả (màn hình khế ước); tính lãi vay kỳ thành chứng từ LV, kỳ khóa sổ cần quyền ghi lùi.
-  app.get('/api/loans/:id/interest-preview', { preHandler: app.requirePermission('loan.view'), schema: { params: numId, querystring: z.object({ from: dateIso, to: dateIso }).refine((q) => q.from <= q.to, 'Từ ngày phải trước hoặc bằng đến ngày') } },
+  app.get('/api/loans/:id/interest-preview', { preHandler: [app.requirePermission('loan.view'), payable], schema: { params: numId, querystring: z.object({ from: dateIso, to: dateIso }).refine((q) => q.from <= q.to, 'Từ ngày phải trước hoặc bằng đến ngày') } },
     async (req) => app.withTenant(req, (trx) => interestPreview(trx, req.params.id, req.query.from, req.query.to), READ_SNAPSHOT));
   app.post('/api/loan-runs', { preHandler: app.requirePermission('loan.run'), schema: { body: z.object({ fiscalYear: z.number().int(), periodNo: z.number().int().min(1).max(15) }) } }, async (req) => {
     const auth = req.auth!;

@@ -17,7 +17,7 @@ interface LoanRow { id: number; code: string; name: string; partyCode: string | 
   principalAccountCode: string; interestExpenseAccountCode: string; interestPayableAccountCode: string; dayBasis: number; purpose: string | null; outstanding: string; interestPayable: string; drawn: string;
   rates?: { validFrom: string; annualRate: string }[]; installments?: { dueDate: string; principal: string; note: string | null }[] }
 interface VoucherRef { id: string; voucherType: string; voucherNo: string | null; postingDate: string; state: string; description: string | null }
-interface ReportRow { id: number; code: string; name: string; currency: string; openingCur: string; openingVnd: string; drawnVnd: string; repaidVnd: string; closingCur: string; closingVnd: string;
+interface ReportRow { id: number; code: string; name: string; currency: string; openingCur: string; openingVnd: string; drawnCur: string; drawnVnd: string; repaidCur: string; repaidVnd: string; closingCur: string; closingVnd: string;
   interestOpening: string; interestEstimated: string; interestOther: string; interestPaid: string; interestClosing: string; nextDueDate: string | null; nextDuePrincipal: string | null }
 interface Report { rows: ReportRow[]; totals: Record<string, string> }
 const money = (s: string | null | undefined) => formatVnNumber(s ?? '0', 0);
@@ -192,19 +192,20 @@ function LoanReportTab() {
       {can('report.print') && <><Button onClick={() => window.open(`${url}&format=pdf`, '_blank')}>In PDF</Button><Button onClick={() => window.open(`${url}&format=xlsx`, '_blank')}>Xuất Excel</Button></>}
     </Space>
     {q.error && <Alert type="error" showIcon message={(q.error as Error).message} style={{ marginBottom: 8 }} />}
-    <Table<ReportRow> size="small" rowKey="id" loading={q.isLoading} dataSource={q.data?.rows ?? []} pagination={false} scroll={{ x: 1700 }} data-testid="loan-report" locale={{ emptyText: 'Chưa có khế ước' }}
+    <Table<ReportRow> size="small" rowKey="id" loading={q.isLoading} dataSource={q.data?.rows ?? []} pagination={false} scroll={{ x: 2300 }} data-testid="loan-report" locale={{ emptyText: 'Chưa có khế ước' }}
       columns={[{ title: 'Khế ước', dataIndex: 'code', fixed: 'left', width: 110 }, { title: 'Tên', dataIndex: 'name', width: 160 }, { title: 'Loại tiền', dataIndex: 'currency', width: 70 },
         { title: 'Dư nợ đầu kỳ', dataIndex: 'openingVnd', align: 'right', render: money }, { title: 'Giải ngân', dataIndex: 'drawnVnd', align: 'right', render: money }, { title: 'Trả gốc', dataIndex: 'repaidVnd', align: 'right', render: money },
-        { title: 'Dư nợ cuối kỳ (nguyên tệ)', dataIndex: 'closingCur', align: 'right', render: (v: string) => formatVnNumber(v, 0) }, { title: 'Dư nợ cuối kỳ (VND)', dataIndex: 'closingVnd', align: 'right', render: money },
+        ...(['openingCur', 'drawnCur', 'repaidCur', 'closingCur'] as const).map((k) => ({ title: `${{ openingCur: 'Dư nợ đầu kỳ', drawnCur: 'Giải ngân', repaidCur: 'Trả gốc', closingCur: 'Dư nợ cuối kỳ' }[k]} (nguyên tệ)`, dataIndex: k, align: 'right' as const, render: (v: string, r: ReportRow) => (r.currency === 'VND' ? '' : formatVnNumber(v, 4)) })),
+        { title: 'Dư nợ cuối kỳ (VND)', dataIndex: 'closingVnd', align: 'right', render: money },
         { title: 'Lãi phải trả đầu kỳ', dataIndex: 'interestOpening', align: 'right', render: money }, { title: 'Lãi dự tính (LV)', dataIndex: 'interestEstimated', align: 'right', render: money },
         { title: 'Lãi trích khác', dataIndex: 'interestOther', align: 'right', render: money }, { title: 'Lãi đã trả', dataIndex: 'interestPaid', align: 'right', render: money },
         { title: 'Lãi phải trả cuối kỳ', dataIndex: 'interestClosing', align: 'right', render: money },
         { title: 'Kỳ trả gốc kế tiếp', render: (_, r) => (r.nextDueDate ? `${formatVnDate(r.nextDueDate)}: ${money(r.nextDuePrincipal)}` : '') }]}
       summary={() => t && (<Table.Summary.Row><Table.Summary.Cell index={0} colSpan={3}><b>Cộng</b></Table.Summary.Cell>
         {(['openingVnd', 'drawnVnd', 'repaidVnd'] as const).map((k, i) => <Table.Summary.Cell key={k} index={3 + i} align="right"><b>{money(t[k])}</b></Table.Summary.Cell>)}
-        <Table.Summary.Cell index={6} /><Table.Summary.Cell index={7} align="right"><b data-testid="report-total-closing">{money(t['closingVnd'])}</b></Table.Summary.Cell>
-        {(['interestOpening', 'interestEstimated', 'interestOther', 'interestPaid', 'interestClosing'] as const).map((k, i) => <Table.Summary.Cell key={k} index={8 + i} align="right"><b>{money(t[k])}</b></Table.Summary.Cell>)}
-        <Table.Summary.Cell index={13} /></Table.Summary.Row>)} />
+        <Table.Summary.Cell index={6} colSpan={4} /><Table.Summary.Cell index={10} align="right"><b data-testid="report-total-closing">{money(t['closingVnd'])}</b></Table.Summary.Cell>
+        {(['interestOpening', 'interestEstimated', 'interestOther', 'interestPaid', 'interestClosing'] as const).map((k, i) => <Table.Summary.Cell key={k} index={11 + i} align="right"><b>{money(t[k])}</b></Table.Summary.Cell>)}
+        <Table.Summary.Cell index={16} /></Table.Summary.Row>)} />
   </>);
 }
 
