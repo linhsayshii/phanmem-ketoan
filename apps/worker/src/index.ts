@@ -43,9 +43,10 @@ await boss.schedule(QUEUES.einvoiceReconcile, EINVOICE_RECONCILE_CRON, {}, { tz:
 // Lỗi từng hóa đơn đã được nuốt và đếm trong reconcilePending; lỗi còn lại (mất kết nối DB) để pg-boss ghi nhận, lượt 5 phút sau chạy lại.
 await boss.work(QUEUES.einvoiceReconcile, async () => {
   const r = await runEInvoiceReconcile(db);
-  const { errorDetails, ...counts } = r;
+  const { errorDetails, notices, ...counts } = r;
   if (counts.checked) log('einvoice reconcile', counts);
   for (const d of errorDetails) log('einvoice reconcile error', { ...d });
+  for (const d of notices) log('einvoice reconcile notice', { ...d });
 });
 // dừng êm: đợi job đang chạy xong (tối đa 60 giây) rồi mới thoát
 for (const s of ['SIGTERM', 'SIGINT'] as const) process.once(s, () => { void boss.stop({ graceful: true, timeout: 60000, wait: true }).finally(() => process.exit(0)); });

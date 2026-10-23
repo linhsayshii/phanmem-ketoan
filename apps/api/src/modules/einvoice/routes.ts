@@ -50,7 +50,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     ({ tenantId: tid(req), userId: req.auth!.userId, ip: req.ip, canBackdate: req.auth!.permissions.has('voucher.backdate_locked') });
   app.post('/api/einvoices', { preHandler: issue, schema: { body: z.object({ voucherId: z.string().uuid(), issueDate: isoDate.optional() }) } }, async (req, reply) =>
     reply.status(201).send(await issueEInvoice(app.db, ectx(req), req.body.voucherId, { issueDate: req.body.issueDate })));
-  app.post('/api/einvoices/:id/retry', { preHandler: issue, schema: { params: numId } }, async (req) => { const r = await retryEInvoice(app.db, ectx(req), req.params.id); notifyRecompute(app, tid(req)); return r; });
+  app.post('/api/einvoices/:id/retry', { preHandler: issue, schema: { params: numId } }, async (req) => retryEInvoice(app.db, ectx(req), req.params.id));
   app.post('/api/einvoices/:id/discard', { preHandler: issue, schema: { params: numId } }, async (req) => discardFailed(app.db, ectx(req), req.params.id));
   // Điều chỉnh, thay thế, hủy, thanh toán. Thay thế/hủy đảo chứng từ của hóa đơn gốc: cần thêm quyền ghi sổ (và quyền kho với chứng từ có hàng hóa) như route đảo chứng từ.
   const post = app.requirePermission('voucher.post');

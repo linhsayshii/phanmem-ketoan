@@ -1,10 +1,12 @@
-import type { Kysely, Transaction } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import { z } from 'zod';
 import { withTenant, type Database } from '@kt/db';
+import { formatVnDate, todayVn } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
+import { reverseWithCashCheck } from '../cash/books.js';
 import { dateIso } from '../master/catalogs.js';
-import { assertReversible, finalizeIssue, loadDto, loadIssued, notFound, prepare, send, tctx, tryReverse, type EInvoiceCtx, type EInvoiceDto, type ProviderFactory, type Relation } from './issue.js';
-import { providerFor, ProviderError, withProviderCtx } from './providers/index.js';
+import { finalizeIssue, loadDto, loadIssued, notFound, prepare, REVERSAL_PENDING, send, tctx, type EInvoiceCtx, type EInvoiceDto, type ProviderFactory, type Relation } from './issue.js';
+import { makeProviderCtx, providerFor, ProviderError, withProviderCtx } from './providers/index.js';
 
 // Hóa đơn điều chỉnh, thay thế, hủy, trạng thái thanh toán (TT 91/2026/TT-BTC Điều 10). Điều chỉnh/thay thế là chứng từ bán mới phát hành hai pha như hóa đơn gốc
 // (issue.ts: prepare/send/finalizeIssue); thay thế và hủy đảo chứng từ của hóa đơn gốc sau khi kết quả đã commit.
@@ -70,7 +72,13 @@ export async function issueReplacement(db: Db, ctx: EInvoiceCtx, originalId: num
     return prepare(trx, ctx, input.voucherId, input.issueDate, factory, rel);
   });
   const dto = await finalizeIssue(db, ctx, p.id, await send(db, ctx, p, factory, false));
-  return p.warnings.length ? { ...dto, warnings: [...p.warnings, ...(dto.warnings ?? [])] } : dto;
+  // Phát hành xong và gốc đã chuyển `replaced`: đảo ngay (route này đã kiểm quyền ghi sổ). Đảo lỗi thì cảnh báo thay cho "chờ đảo".
+  const pending = dto.warnings?.some((w) => w.code === REVERSAL_PENDING);
+  const rest = (dto.warnings ?? []).filter((w) => w.code !== REVERSAL_PENDING);
+  const warnings = [...p.warnings, ...rest, ...(pending ? await tryReverse(db, ctx, originalId) : [])];
+  const out = { ...dto };
+  delete out.warnings;
+  return warnings.length ? { ...out, warnings } : out;
 }
 
 // Hủy: TT 91/2026/TT-BTC Điều 10 khoản 1 chỉ cho hóa đơn đã cấp mã (hoặc không mã đã gửi dữ liệu cho cơ quan thuế) xử lý bằng 04/SS-HĐĐT, điều chỉnh hoặc thay thế,
@@ -92,7 +100,14 @@ export async function cancelEInvoice(db: Db, ctx: EInvoiceCtx, id: number, input
     if (e instanceof ProviderError) throw new AppError(e.code, `Nhà cung cấp từ chối hủy hóa đơn: ${e.message}`, e.retriable ? 502 : 409);
     throw e;
   }
-  await withTenant(db, tctx(ctx), (trx) => trx.updateTable('einvoice').set({ status: 'cancelled', needs_reversal: true }).where('id', '=', id).where('status', '=', 'issued').execute());
+  const u = await withTenant(db, tctx(ctx), (trx) => trx.updateTable('einvoice').set({ status: 'cancelled', needs_reversal: true }).where('id', '=', id).where('status', '=', 'issued').executeTakeFirst());
+  if (!u.numUpdatedRows) {
+    // Hóa đơn đã chuyển trạng thái khác (vd. hóa đơn thay thế chốt trước) trong lúc nhà cung cấp hủy: hủy mồ côi, ghi nhật ký ở giao dịch riêng rồi báo.
+    const msg = `Nhà cung cấp đã hủy hóa đơn ${ref.serial} số ${ref.invoiceNo} nhưng hóa đơn điện tử trong phần mềm đã đổi trạng thái trong lúc hủy: kiểm tra hóa đơn ở nhà cung cấp và xử lý tay`;
+    await withTenant(db, tctx(ctx), (trx) => makeProviderCtx(trx, { tenantId: ctx.tenantId, providerId: provider.id, einvoiceId: id, userId: ctx.userId ?? null })
+      .log({ action: 'orphan_cancelled', request: { reason: input.reason, date: input.date }, response: null, httpStatus: null, ok: false, error: msg, ms: 0 }));
+    throw new AppError('EINVOICE_ORPHAN_CANCELLED', msg, 409);
+  }
   const warnings = await tryReverse(db, ctx, id, input.date);
   const dto = await withTenant(db, tctx(ctx), (trx) => loadDto(trx, id));
   return warnings.length ? { ...dto, warnings } : dto;
@@ -115,4 +130,63 @@ export async function setPaid(db: Db, ctx: EInvoiceCtx, id: number, paid: boolea
 
 // Voucher của hóa đơn (để kiểm quyền kho trước khi đảo).
 export const voucherOf = async (trx: Trx, id: number) => (await trx.selectFrom('einvoice').select('voucher_id').where('id', '=', id).executeTakeFirst())?.voucher_id;
-export { reverseMarked } from './issue.js';
+
+// Kỳ chứa ngày ghi được: mở, hoặc khóa mềm khi người dùng có quyền ghi lùi ngày. Kỳ khóa cứng không ghi được.
+async function writable(trx: Trx, ctx: EInvoiceCtx, date: string): Promise<boolean> {
+  const p = await trx.selectFrom('fiscal_period').select('status').where('date_from', '<=', date).where('date_to', '>=', date).where('period_no', '>', 0).executeTakeFirst();
+  return !!p && (p.status === 'open' || (p.status === 'soft_locked' && !!ctx.canBackdate));
+}
+
+// Ngày đảo chứng từ của hóa đơn bị thay thế/hủy: ngày gốc nếu kỳ gốc ghi được (đảo triệt tiêu ngay ở kỳ kê khai gốc), không thì ngày dự phòng
+// (ngày chứng từ thay thế, ngày hủy). Cả hai kỳ đều khóa: 409.
+async function reversalDate(trx: Trx, ctx: EInvoiceCtx, voucherId: string, fallback: string): Promise<string> {
+  const v = await trx.selectFrom('voucher').select(['voucher_no', 'posting_date', 'state']).where('id', '=', voucherId).executeTakeFirstOrThrow();
+  if (v.state !== 'posted') throw new AppError('VOUCHER_NOT_POSTED', `Chứng từ ${v.voucher_no ?? ''} của hóa đơn không còn ở trạng thái đã ghi sổ: không đảo được`, 409);
+  if (await writable(trx, ctx, v.posting_date)) return v.posting_date;
+  if (fallback >= v.posting_date && await writable(trx, ctx, fallback)) return fallback;
+  throw new AppError('EINVOICE_REVERSAL_LOCKED', `Không đảo được chứng từ ${v.voucher_no ?? ''}: kỳ chứa ngày ${formatVnDate(v.posting_date)} và kỳ chứa ngày ${formatVnDate(fallback)} đã khóa sổ `
+    + '(kỳ khóa mềm cần quyền ghi lùi ngày); mở kỳ rồi làm lại', 409);
+}
+
+// Pha 1 của thay thế/hủy: chứng từ hóa đơn gốc phải đảo được (đã ghi sổ, chưa đối trừ công nợ, kỳ ghi được) trước khi gửi nhà cung cấp.
+async function assertReversible(trx: Trx, ctx: EInvoiceCtx, voucherId: string, fallback: string): Promise<void> {
+  await reversalDate(trx, ctx, voucherId, fallback);
+  const settled = await sql<{ x: number }>`SELECT 1 AS x FROM open_item o JOIN settlement s ON s.tenant_id = o.tenant_id AND (s.debit_item_id = o.id OR s.credit_item_id = o.id)
+    WHERE o.voucher_id = ${voucherId}::uuid AND s.kind <> 'reversal' LIMIT 1`.execute(trx);
+  if (settled.rows.length) throw new AppError('OPEN_ITEM_SETTLED', 'Chứng từ của hóa đơn gốc đã đối trừ công nợ (đã thu tiền): hủy đối trừ trước rồi mới thay thế hoặc hủy hóa đơn', 409);
+}
+
+// Đảo chứng từ của hóa đơn có needs_reversal (bị thay thế hoặc hủy), giao dịch riêng, qua reverseWithCashCheck như route đảo chứng từ (kiểm tồn quỹ âm theo cài đặt).
+// Bỏ khóa EINVOICE_ISSUED chỉ trong giao dịch này (set_config cục bộ). Ngày dự phòng: hóa đơn bị thay thế lấy ngày chứng từ của hóa đơn thay thế (kể cả hóa đơn
+// thay thế đã bị thay tiếp); hóa đơn bị hủy lấy ngày hủy (thử lại sau: hôm nay). Chỉ gọi từ route có quyền ghi sổ.
+export async function reverseMarked(db: Db, ctx: EInvoiceCtx, id: number, cancelDate?: string): Promise<EInvoiceDto> {
+  return withTenant(db, tctx(ctx), async (trx) => {
+    const e = await trx.selectFrom('einvoice as e').innerJoin('einvoice_series as s', 's.id', 'e.series_id').select(['e.id', 'e.status', 'e.needs_reversal', 'e.voucher_id', 'e.invoice_no', 's.serial'])
+      .where('e.id', '=', id).forUpdate('e').executeTakeFirst();
+    if (!e) throw notFound();
+    if (!e.needs_reversal) throw new AppError('EINVOICE_NO_REVERSAL_NEEDED', 'Chứng từ của hóa đơn không cần đảo (đã đảo hoặc hóa đơn chưa bị thay thế, hủy)', 409);
+    let fallback = cancelDate ?? todayVn();
+    let description = `Đảo do hủy hóa đơn ${e.serial} số ${e.invoice_no}`;
+    if (e.status === 'replaced') {
+      const by = await trx.selectFrom('einvoice as r').innerJoin('voucher as v', 'v.id', 'r.voucher_id').select(['r.invoice_no', 'v.posting_date'])
+        .where('r.original_id', '=', id).where('r.relation', '=', 'replacement').where('r.status', 'in', ['issued', 'replaced']).orderBy('r.id', 'desc').executeTakeFirst();
+      if (by) fallback = by.posting_date;
+      description = `Đảo do hóa đơn ${e.serial} số ${e.invoice_no} bị thay thế${by ? ` bởi hóa đơn số ${by.invoice_no}` : ''}`;
+    }
+    const postingDate = await reversalDate(trx, ctx, e.voucher_id, fallback);
+    await sql`SELECT set_config('app.einvoice_reversal', 'on', true)`.execute(trx);
+    if (ctx.canBackdate) await sql`SELECT set_config('app.override_soft_lock', 'on', true)`.execute(trx);
+    await reverseWithCashCheck(trx, ctx.tenantId, e.voucher_id, { postingDate, description });
+    await sql`SELECT set_config('app.einvoice_reversal', 'off', true)`.execute(trx);
+    await trx.updateTable('einvoice').set({ needs_reversal: false }).where('id', '=', id).execute();
+    return loadDto(trx, id);
+  });
+}
+
+// Đảo ngay sau khi kết quả đã commit: lỗi thành cảnh báo, cờ needs_reversal giữ lại để "Đảo chứng từ gốc" làm lại.
+async function tryReverse(db: Db, ctx: EInvoiceCtx, id: number, cancelDate?: string): Promise<{ code: string; message: string }[]> {
+  try { await reverseMarked(db, ctx, id, cancelDate); return []; } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return [{ code: 'EINVOICE_REVERSAL_FAILED', message: `Hóa đơn điện tử đã xử lý xong nhưng chưa đảo được chứng từ của hóa đơn gốc (${msg}). Khắc phục rồi dùng "Đảo chứng từ gốc"` }];
+  }
+}

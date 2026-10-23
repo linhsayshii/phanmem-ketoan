@@ -1,16 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { sql } from 'kysely';
 import { createTestApp, type TestApp } from '../helpers.js';
-import { setupLedgerTenant } from '../invariants/helpers.js';
+import { postVoucher, setupLedgerTenant } from '../invariants/helpers.js';
 import { cancelEInvoice, issueReplacement } from '../../src/modules/einvoice/lifecycle.js';
-import { providerFor, type EInvoiceProvider, type ProviderRow } from '../../src/modules/einvoice/providers/index.js';
+import { reconcilePending } from '../../src/modules/einvoice/reconcile.js';
+import { providerFor, RETRY_GUARD_SEC, type EInvoiceProvider, type ProviderRow } from '../../src/modules/einvoice/providers/index.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 let ctx: TestApp; let n = 0;
 beforeAll(async () => { ctx = await createTestApp(); });
 afterAll(async () => { await ctx.close(); });
 
-type Res = { statusCode: number; body: string; json: () => any }; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Res = { statusCode: number; body: string; json: () => any; cookies: { name: string; value: string }[] }; // eslint-disable-line @typescript-eslint/no-explicit-any
 const err = (r: Res) => [r.statusCode, r.json().error?.code];
 const ITEMS = (amount: string, name = 'Dịch vụ') => [{ description: name, accountCode: '5113', amountCurrency: amount, taxCodes: ['V10'] }];
 
@@ -18,12 +19,12 @@ const ITEMS = (amount: string, name = 'Dịch vụ') => [{ description: name, ac
 async function tenant(withCode = true) {
   const { cookie, tenantId, userId } = await setupLedgerTenant(ctx, `EL${Date.now()}${n++}`);
   const admin = ctx.t.admin;
-  const call = (method: 'GET' | 'POST', url: string, payload?: object): Promise<Res> => ctx.app.inject({ method, url, headers: { cookie }, ...(payload ? { payload } : {}) }) as unknown as Promise<Res>;
+  const call = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object): Promise<Res> => ctx.app.inject({ method, url, headers: { cookie }, ...(payload ? { payload } : {}) }) as unknown as Promise<Res>;
   const providerId = (await sql<{ id: number }>`INSERT INTO einvoice_provider (tenant_id, code, name, options) VALUES (${tenantId}::uuid, 'fake', 'Giả lập', ${JSON.stringify({ withCode })}::jsonb) RETURNING id::int`.execute(admin)).rows[0]!.id;
   const seriesId = (await sql<{ id: number }>`INSERT INTO einvoice_series (tenant_id, provider_id, form_no, serial, year) VALUES (${tenantId}::uuid, ${providerId}, '1', 'C26TAA', 2026) RETURNING id::int`.execute(admin)).rows[0]!.id;
-  const sale = async (o: { type?: string; date?: string; party?: string; items?: object[]; adjusts?: number } = {}) => {
+  const sale = async (o: { type?: string; date?: string; party?: string; items?: object[]; adjusts?: number; draft?: boolean; counter?: string } = {}) => {
     const date = o.date ?? '2026-03-10';
-    const r = await call('POST', '/api/invoices', { voucherType: o.type ?? 'HDB', postingDate: date, documentDate: date, partyCode: o.party ?? 'KH001', autoPost: true, items: o.items ?? ITEMS('10000000'),
+    const r = await call('POST', '/api/invoices', { voucherType: o.type ?? 'HDB', postingDate: date, documentDate: date, partyCode: o.party ?? 'KH001', autoPost: !o.draft, items: o.items ?? ITEMS('10000000'), ...(o.counter && { counterAccountCode: o.counter }),
       invoice: { invoiceDate: date, invoiceGroupCode: '10', einvoiceSeriesId: seriesId, ...(o.adjusts && { adjustsInvoiceId: o.adjusts }) }, idempotencyKey: `k${n++}` });
     expect(r.statusCode, r.body).toBe(201);
     return r.json() as { id: string; invoices: { id: number }[] };
@@ -35,7 +36,31 @@ async function tenant(withCode = true) {
   const voucher = async (id: string) => (await sql<{ state: string; reversed_by: string | null; rev_date: string | null; rev_desc: string | null }>`
     SELECT v.state, v.reversed_by_id::text AS reversed_by, r.posting_date::text AS rev_date, r.description AS rev_desc FROM voucher v LEFT JOIN voucher r ON r.id = v.reversed_by_id WHERE v.id = ${id}::uuid`.execute(admin)).rows[0]!;
   const period = (no: number, status: string) => sql`UPDATE fiscal_period SET status = ${status} WHERE tenant_id = ${tenantId}::uuid AND fiscal_year = 2026 AND period_no = ${no}`.execute(admin);
-  return { cookie, tenantId, userId, admin, call, sale, issue, row, voucher, period, ectx: { tenantId, userId } };
+  const mode = (options: object) => sql`UPDATE einvoice_provider SET options = ${JSON.stringify({ withCode, ...options })}::jsonb WHERE id = ${providerId}`.execute(admin);
+  const age = (id: number) => sql`UPDATE einvoice SET last_attempt_at = now() - make_interval(secs => ${RETRY_GUARD_SEC + 10}) WHERE id = ${id}`.execute(admin);
+  // Kế toán viên có einvoice.issue nhưng không có quyền ghi sổ (voucher.post).
+  const noPostUser = async () => {
+    const username = `nopost_${Date.now()}_${n++}`;
+    expect((await call('POST', '/api/users', { username, fullName: 'KT', password: 'Matkhau1!', roleCode: 'ketoan_vien', sensitiveFlags: [] })).statusCode).toBe(201);
+    await sql`DELETE FROM role_permission WHERE tenant_id = ${tenantId}::uuid AND permission_code = 'voucher.post' AND role_id = (SELECT id FROM role WHERE tenant_id = ${tenantId}::uuid AND code = 'ketoan_vien')`.execute(admin);
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } }) as unknown as Res;
+    const c = `sid=${login.cookies.find((x) => x.name === 'sid')!.value}`;
+    return (url: string, payload?: object): Promise<Res> => ctx.app.inject({ method: 'POST', url, headers: { cookie: c }, ...(payload ? { payload } : {}) }) as unknown as Promise<Res>;
+  };
+  // Thay thế mà nhà cung cấp hết thời gian chờ sau khi đã cấp số: hóa đơn thay thế ở `sending`, gốc chưa đổi.
+  const pendingReplacement = async () => {
+    const v = await sale();
+    const o = await issue(v.id);
+    const r2 = await sale({ date: '2026-03-20' });
+    await mode({ mode: 'timeout_after_create' });
+    const rep = await call('POST', `/api/einvoices/${o.id}/replace`, { voucherId: r2.id, reason: 'Sai đơn giá', issueDate: '2026-03-20' });
+    expect(rep.statusCode, rep.body).toBe(201);
+    expect(rep.json().status).toBe('sending');
+    await mode({});
+    await age(rep.json().id);
+    return { v, o, rid: rep.json().id as number };
+  };
+  return { cookie, tenantId, userId, admin, call, sale, issue, row, voucher, period, mode, age, noPostUser, pendingReplacement, ectx: { tenantId, userId } };
 }
 
 describe('hóa đơn điều chỉnh, thay thế, hủy', () => {
@@ -192,5 +217,91 @@ describe('hóa đơn điều chỉnh, thay thế, hủy', () => {
     expect(r.json()).toMatchObject({ paid: true });
     expect((await t.row(o.id)).paid).toBe(true);
     expect((await t.call('POST', `/api/einvoices/${o.id}/paid`, { paid: false })).json()).toMatchObject({ paid: false });
+  });
+
+  it('worker đối soát hoàn tất hóa đơn thay thế đang gửi: gốc replaced, needs_reversal true, chứng từ gốc chưa đảo, có notice', async () => {
+    const t = await tenant();
+    const { v, o, rid } = await t.pendingReplacement();
+    expect(await t.row(o.id)).toMatchObject({ status: 'issued', needs_reversal: false });
+    const res = await reconcilePending(ctx.t.db, providerFor, { olderThanSec: RETRY_GUARD_SEC, limit: 10_000 });
+    expect(res.errorDetails.filter((d) => d.einvoiceId === rid)).toEqual([]);
+    expect(res.notices).toContainEqual(expect.objectContaining({ tenantId: t.tenantId, einvoiceId: rid, code: 'EINVOICE_REVERSAL_PENDING' }));
+    expect(await t.row(rid)).toMatchObject({ status: 'issued' });
+    expect(await t.row(o.id)).toMatchObject({ status: 'replaced', needs_reversal: true });
+    expect((await t.voucher(v.id)).state).toBe('posted');
+  });
+
+  it('người thiếu voucher.post: /retry hoàn tất thay thế nhưng không đảo; replace, cancel, reverse-original → 403', async () => {
+    const t = await tenant();
+    const { v, o, rid } = await t.pendingReplacement();
+    const vien = await t.noPostUser();
+    const r = await vien(`/api/einvoices/${rid}/retry`);
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json()).toMatchObject({ status: 'issued', warnings: [{ code: 'EINVOICE_REVERSAL_PENDING' }] });
+    expect(r.json().warnings[0].message).toContain('Đảo chứng từ gốc');
+    expect(await t.row(o.id)).toMatchObject({ status: 'replaced', needs_reversal: true });
+    expect((await t.voucher(v.id)).state).toBe('posted');
+    expect(err(await vien(`/api/einvoices/${o.id}/reverse-original`))).toEqual([403, 'FORBIDDEN']);
+    expect(err(await vien(`/api/einvoices/${rid}/replace`, { voucherId: v.id, reason: 'x' }))).toEqual([403, 'FORBIDDEN']);
+    expect(err(await vien(`/api/einvoices/${rid}/cancel`, { reason: 'x', date: '2026-03-21' }))).toEqual([403, 'FORBIDDEN']);
+    const ok = await t.call('POST', `/api/einvoices/${o.id}/reverse-original`);
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(await t.voucher(v.id)).toMatchObject({ state: 'reversed', rev_date: '2026-03-10' });
+  });
+
+  it('chuỗi thay thế: A bị R1 thay (chưa đảo), R1 bị R2 thay; reverse-original A vẫn tìm được hóa đơn thay thế, không lỗi 500', async () => {
+    const t = await tenant();
+    const v = await t.sale();
+    const a = await t.issue(v.id);
+    const r1v = await t.sale({ date: '2026-03-20' });
+    const locking = (r: ProviderRow): EInvoiceProvider => { const p = providerFor(r); return { ...p, create: async (c, d) => { const res = await p.create(c, d); await t.period(3, 'hard_locked'); return res; } }; };
+    const r1 = await issueReplacement(ctx.t.db, { ...t.ectx, canBackdate: true }, a.id, { voucherId: r1v.id, reason: 'Sai', issueDate: '2026-03-20' }, locking);
+    expect(await t.row(a.id)).toMatchObject({ status: 'replaced', needs_reversal: true });
+    await t.period(3, 'open');
+    const r2v = await t.sale({ date: '2026-03-25' });
+    const r2 = await t.call('POST', `/api/einvoices/${r1.id}/replace`, { voucherId: r2v.id, reason: 'Sai tiếp', issueDate: '2026-03-25' });
+    expect(r2.statusCode, r2.body).toBe(201);
+    expect(await t.row(r1.id)).toMatchObject({ status: 'replaced', needs_reversal: false });
+    const ok = await t.call('POST', `/api/einvoices/${a.id}/reverse-original`);
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(await t.voucher(v.id)).toMatchObject({ state: 'reversed', rev_date: '2026-03-10' });
+  });
+
+  it('hủy: thay thế đã chốt trước khi kết quả hủy về (0 dòng cập nhật) → 409 EINVOICE_ORPHAN_CANCELLED, nhật ký orphan_cancelled', async () => {
+    const t = await tenant(false);
+    const v = await t.sale();
+    const o = await t.issue(v.id);
+    const racing = (r: ProviderRow): EInvoiceProvider => {
+      const p = providerFor(r);
+      return { ...p, cancel: async (c, ref, reason, date) => { await p.cancel!(c, ref, reason, date); await sql`UPDATE einvoice SET status = 'replaced' WHERE id = ${o.id}`.execute(t.admin); } };
+    };
+    await expect(cancelEInvoice(ctx.t.db, t.ectx, o.id, { reason: 'Lập nhầm', date: '2026-03-12' }, racing)).rejects.toMatchObject({ code: 'EINVOICE_ORPHAN_CANCELLED', status: 409 });
+    expect(await t.row(o.id)).toMatchObject({ status: 'replaced', needs_reversal: false });
+    expect((await sql<{ action: string; ok: boolean }>`SELECT action, ok FROM einvoice_log WHERE einvoice_id = ${o.id} ORDER BY id`.execute(t.admin)).rows).toEqual([
+      { action: 'create', ok: true }, { action: 'cancel', ok: true }, { action: 'orphan_cancelled', ok: false }]);
+  });
+
+  it('chế độ chặn tồn quỹ âm: đảo chứng từ bán thu tiền mặt làm quỹ âm → reverse-original 409 CASH_NEGATIVE, cờ giữ nguyên', async () => {
+    const t = await tenant();
+    expect((await t.call('PUT', '/api/settings', { cash_negative: 'block' })).statusCode).toBe(200);
+    const v = await t.sale({ counter: '1111' });
+    expect((await postVoucher(ctx, t.cookie, '2026-03-15', [{ accountCode: '6422', debit: '11000000' }, { accountCode: '1111', credit: '11000000' }])).statusCode).toBe(201);
+    const o = await t.issue(v.id);
+    const r2 = await t.sale({ date: '2026-03-20' });
+    const rep = await t.call('POST', `/api/einvoices/${o.id}/replace`, { voucherId: r2.id, reason: 'Sai', issueDate: '2026-03-20' });
+    expect(rep.statusCode, rep.body).toBe(201);
+    expect(rep.json().warnings).toMatchObject([{ code: 'EINVOICE_REVERSAL_FAILED' }]);
+    expect(rep.json().warnings[0].message).toContain('tồn quỹ tiền mặt');
+    expect(err(await t.call('POST', `/api/einvoices/${o.id}/reverse-original`))).toEqual([409, 'CASH_NEGATIVE']);
+    expect(await t.row(o.id)).toMatchObject({ status: 'replaced', needs_reversal: true });
+    expect((await t.voucher(v.id)).state).toBe('posted');
+  });
+
+  it('điều chỉnh tăng trỏ hóa đơn gốc chưa ghi sổ → bị từ chối', async () => {
+    const t = await tenant();
+    const d = await t.sale({ draft: true });
+    const r = await t.call('POST', '/api/invoices', { voucherType: 'HDB', postingDate: '2026-03-10', documentDate: '2026-03-10', partyCode: 'KH001', autoPost: true, items: ITEMS('100000'),
+      invoice: { invoiceDate: '2026-03-10', invoiceGroupCode: '10', adjustsInvoiceId: d.invoices[0]!.id, invoiceNo: '77', formNo: '1', serial: 'C26TAA' } });
+    expect(err(r)).toEqual([404, 'INVOICE_NOT_FOUND']);
   });
 });

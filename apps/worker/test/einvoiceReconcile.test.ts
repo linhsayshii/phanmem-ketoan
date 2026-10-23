@@ -26,7 +26,7 @@ describe('job đối soát hóa đơn điện tử', () => {
     const old = await sending(tenantId, providerId, seriesId, 300);
     const fresh = await sending(tenantId, providerId, seriesId, 130); // cũ hơn 120 giây nhưng chưa quá 150: lần gửi có thể còn chạy
 
-    expect(await runEInvoiceReconcile(t.db)).toEqual({ checked: 1, issued: 0, failed: 1, errors: 0, errorDetails: [] });
+    expect(await runEInvoiceReconcile(t.db)).toEqual({ checked: 1, issued: 0, failed: 1, errors: 0, errorDetails: [], notices: [] });
     const rows = (await sql<{ id: number; status: string; error_code: string | null }>`SELECT id::int, status, error_code FROM einvoice WHERE tenant_id = ${tenantId}::uuid ORDER BY id`.execute(t.admin)).rows;
     expect(rows).toEqual([{ id: old, status: 'failed', error_code: 'FAKE_REJECT' }, { id: fresh, status: 'sending', error_code: null }]);
     // nhật ký gọi nhà cung cấp ghi dưới công ty của hóa đơn
@@ -35,6 +35,6 @@ describe('job đối soát hóa đơn điện tử', () => {
     const acl = (await sql<{ acl: string }>`SELECT proacl::text AS acl FROM pg_proc WHERE proname = 'fn_einvoice_pending_tenants'`.execute(t.admin)).rows[0]!.acl;
     expect(acl).toContain('app_user=X/');
     expect(acl).not.toMatch(/[{,]=X\//);
-    expect(await runEInvoiceReconcile(t.db)).toEqual({ checked: 0, issued: 0, failed: 0, errors: 0, errorDetails: [] });
+    expect(await runEInvoiceReconcile(t.db)).toEqual({ checked: 0, issued: 0, failed: 0, errors: 0, errorDetails: [], notices: [] });
   });
 });
