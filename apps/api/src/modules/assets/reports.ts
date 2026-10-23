@@ -218,15 +218,18 @@ export async function allocationSheet(trx: Trx, q: { fiscalYear: number; periodN
 }
 
 // ---- Báo cáo tăng giảm tài sản theo loại (quản trị) ----
+// Tăng/giảm trong kỳ: bỏ cặp chứng từ gốc và bút toán đảo cùng nằm trong [from, to] (chạy lại KH/PB, hủy biến động, đảo): cặp đó không là phát sinh thật, tổng ròng bằng 0.
 export async function movementReport(trx: Trx, tenantId: string, q: { kind: string; from: string; to: string }) {
+  const inRange = sql`l.posting_date >= ${q.from}::date AND NOT ((o.id IS NOT NULL AND o.posting_date >= ${q.from}::date) OR (rv.id IS NOT NULL AND rv.posting_date <= ${q.to}::date))`;
   const r = await sql<Record<string, string | null>>`SELECT coalesce(c.code, '') AS "categoryCode", coalesce(c.name, '(Chưa phân loại)') AS "categoryName",
       sum(l.debit - l.credit) FILTER (WHERE ac.code = s.asset_account_code AND l.posting_date < ${q.from}::date)::text AS "openCost",
-      sum(l.debit) FILTER (WHERE ac.code = s.asset_account_code AND l.posting_date >= ${q.from}::date)::text AS "incCost",
-      sum(l.credit) FILTER (WHERE ac.code = s.asset_account_code AND l.posting_date >= ${q.from}::date)::text AS "decCost",
+      sum(l.debit) FILTER (WHERE ac.code = s.asset_account_code AND ${inRange})::text AS "incCost",
+      sum(l.credit) FILTER (WHERE ac.code = s.asset_account_code AND ${inRange})::text AS "decCost",
       sum(l.credit - l.debit) FILTER (WHERE ac.code = s.depreciation_account_code AND l.posting_date < ${q.from}::date)::text AS "openAcc",
-      sum(l.credit) FILTER (WHERE ac.code = s.depreciation_account_code AND l.posting_date >= ${q.from}::date)::text AS "incAcc",
-      sum(l.debit) FILTER (WHERE ac.code = s.depreciation_account_code AND l.posting_date >= ${q.from}::date)::text AS "decAcc"
+      sum(l.credit) FILTER (WHERE ac.code = s.depreciation_account_code AND ${inRange})::text AS "incAcc",
+      sum(l.debit) FILTER (WHERE ac.code = s.depreciation_account_code AND ${inRange})::text AS "decAcc"
     FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id AND v.tenant_id = l.tenant_id JOIN account ac ON ac.id = l.account_id AND ac.tenant_id = l.tenant_id
+    LEFT JOIN voucher o ON o.id = v.reversal_of_id AND o.tenant_id = v.tenant_id LEFT JOIN voucher rv ON rv.id = v.reversed_by_id AND rv.tenant_id = v.tenant_id
     JOIN asset s ON s.id = l.asset_id AND s.tenant_id = l.tenant_id LEFT JOIN asset_category c ON c.id = s.category_id
     WHERE l.tenant_id = ${tenantId}::uuid AND s.kind = ${q.kind} AND l.posting_date <= ${q.to}::date AND ${POSTED} AND (ac.code = s.asset_account_code OR ac.code = s.depreciation_account_code)
     GROUP BY c.code, c.name ORDER BY c.code NULLS LAST`.execute(trx);

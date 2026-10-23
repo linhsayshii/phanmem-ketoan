@@ -324,7 +324,6 @@ Ghi chú:
 - Bảng khấu hao và bảng phân bổ chọn Năm, Kỳ (1 đến 12). Tab Thẻ chọn "Tính đến ngày" và tài sản ("Chọn tài sản để xem thẻ tài sản" nếu chưa chọn).
 - Mẫu 06-TSCĐ: I + II - III = IV; số tiền chia theo phân bổ chi phí hiệu lực.
 - Cột Ghi chú của S10-DNN chưa có (để trống).
-- Báo cáo tăng giảm cộng Nợ và Có gộp, nên chạy lại kỳ có thể làm tăng cả hai cột tăng và giảm.
 
 ## 12. Kiểm kê tài sản và biên bản
 

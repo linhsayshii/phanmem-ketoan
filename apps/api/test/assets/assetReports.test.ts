@@ -44,6 +44,19 @@ describe('sổ, thẻ, bảng và báo cáo tài sản', () => {
     expect(r.totals.openingNet).toBe('0');
   });
 
+  it('báo cáo tăng giảm: chạy lại KH và hủy ghi giảm trong kỳ không làm tăng/giảm ảo (bỏ cặp gốc và đảo cùng trong kỳ)', async () => {
+    const t = await tenant();
+    const id = await t.card('fixed', 'TS01', '120000000', 60);
+    for (const p of [1, 2, 3]) await t.run('depreciation', p);
+    const d = await t.ok(t.call('POST', `/api/assets/${id}/decrease`, { date: '2026-03-16', reason: 'liquidation', counterAccountCode: '811' }));
+    await t.ok(t.call('POST', `/api/asset-events/${d.eventId}/cancel`));
+    const r = await t.ok(t.call('GET', '/api/asset-reports/movement?kind=fixed&from=2026-01-01&to=2026-03-31'));
+    expect(r.totals).toMatchObject({ increaseCost: '120000000', decreaseCost: '0', increaseAccumulated: '6000000', decreaseAccumulated: '0', closingCost: '120000000', closingAccumulated: '6000000' });
+    // Kỳ 3 riêng: đầu kỳ gồm KH 1, 2; trong kỳ chỉ KH 3 hiệu lực.
+    const m = await t.ok(t.call('GET', '/api/asset-reports/movement?kind=fixed&from=2026-03-01&to=2026-03-31'));
+    expect(m.totals).toMatchObject({ openingAccumulated: '4000000', increaseAccumulated: '2000000', decreaseAccumulated: '0', increaseCost: '0', decreaseCost: '0' });
+  });
+
   it('06-TSCĐ kỳ 3: tổng = Có 2141 của chứng từ KH kỳ 3; phần giảm có TS01 khi bị ghi giảm', async () => {
     const t = await tenant();
     const id = await t.card('fixed', 'TS01', '120000000', 60); await t.card('fixed', 'TS02', '36000000', 36);
