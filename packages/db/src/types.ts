@@ -189,6 +189,13 @@ export interface AssetEventTable {
   id: Generated<string>; tenant_id: string; asset_id: number; kind: string; event_date: DateOnly; voucher_id: string | null;
   data: ColumnType<Record<string, unknown>, string, string>; state: Generated<string>; created_by: string | null; created_at: Generated<string>;
 }
+export interface AssetCountTable {
+  id: Generated<number>; tenant_id: string; kind: string; count_date: DateOnly; department_id: number | null; members: ColumnType<unknown, string, string>; note: string | null;
+  status: Generated<string>; created_by: string | null; created_at: Generated<string>;
+}
+export interface AssetCountLineTable {
+  id: Generated<number>; tenant_id: string; count_id: number; asset_id: number; book_quantity: Numeric; actual_quantity: Numeric | null; book_cost: Numeric; book_nbv: Numeric; condition: string | null; note: string | null;
+}
 export interface AssetScheduleLineTable {
   id: Generated<number>; tenant_id: string; schedule_id: number; fiscal_year: number; period_no: number; units: Numeric; amount: Numeric; accumulated: Numeric; run_id: string | null;
 }
@@ -377,6 +384,8 @@ export interface Database {
   asset_schedule: AssetScheduleTable;
   asset_schedule_line: AssetScheduleLineTable;
   asset_event: AssetEventTable;
+  asset_count: AssetCountTable;
+  asset_count_line: AssetCountLineTable;
   voucher_counter: VoucherCounterTable;
   voucher_line_history: VoucherLineHistoryTable;
   voucher_attachment: VoucherAttachmentTable;

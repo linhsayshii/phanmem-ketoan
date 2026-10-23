@@ -37,6 +37,11 @@ const FORMS: Record<string, Record<string, string>> = {
   'asset-location': { TT99: 'S22-DN', TT133: 'S10-DNN' },
   'asset-card': { TT99: 'S23-DN', TT133: 'S11-DNN' },
   '06-TSCĐ': { TT99: '06 - TSCĐ', TT133: '06 - TSCĐ' },
+  // Biên bản giao nhận (01), thanh lý (02), đánh giá lại (03 không in), kiểm kê TSCĐ (05): có trong văn bản gốc của cả hai (tt99-full.txt dòng 1190-1197, 2347-2625; tt133-full.txt dòng 9366-9371, 10416-10610). TT200 chưa có văn bản gốc nên không in số mẫu.
+  '01-TSCĐ': { TT99: '01 - TSCĐ', TT133: '01 - TSCĐ' },
+  '02-TSCĐ': { TT99: '02 - TSCĐ', TT133: '02 - TSCĐ' },
+  '04-TSCĐ': { TT99: '04 - TSCĐ', TT133: '04 - TSCĐ' },
+  '05-TSCĐ': { TT99: '05 - TSCĐ', TT133: '05 - TSCĐ' },
 };
 // Chú thích dưới "Mẫu số" của chứng từ, đúng chữ trên mẫu (khác chú thích của sổ: TT99 ghi "Kèm theo", TT133 ghi "Ban hành theo").
 const VOUCHER_LEGEND: Record<string, string> = {

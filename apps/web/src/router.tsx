@@ -17,6 +17,7 @@ import OrdersPage from './pages/Orders.js';
 import StocktakePage from './pages/Stocktake.js';
 import StockReportsPage from './pages/StockReports.js';
 import AssetReportsPage from './pages/AssetReports.js';
+import AssetCountPage from './pages/AssetCount.js';
 import { PurchaseReportsPage, SalesReportsPage } from './pages/SalesPurchaseReports.js';
 import CostingRunPage from './pages/CostingRun.js';
 import AuditLogPage from './pages/AuditLog.js';
@@ -122,6 +123,7 @@ export const MENU: MenuItem[] = [
     { key: 'ccdc', label: 'Công cụ dụng cụ', to: '/tai-san/ccdc', permission: 'asset.view' },
     { key: 'cptt', label: 'Chi phí trả trước', to: '/tai-san/chi-phi-tra-truoc', permission: 'asset.view' },
     { key: 'asset-cat', label: 'Loại tài sản', to: '/tai-san/loai', permission: 'asset.view' },
+    { key: 'asset-count', label: 'Kiểm kê tài sản', to: '/tai-san/kiem-ke', permission: 'asset.view' },
     { key: 'asset-reports', label: 'Báo cáo tài sản', to: '/tai-san/bao-cao', permission: 'report.view' },
   ] },
   { key: 'khe-uoc', label: 'Khế ước vay', to: '/khe-uoc', permission: 'loan.view' },
@@ -188,12 +190,13 @@ const openingStockRoute = createRoute({ getParentRoute: () => appRoute, path: '/
 const openingAssetsRoute = createRoute({ getParentRoute: () => appRoute, path: '/so-cai/tai-san-dau-ky', component: AssetOpeningPage });
 const stockReportsRoute = createRoute({ getParentRoute: () => appRoute, path: '/kho/bao-cao', component: StockReportsPage });
 const assetReportsRoute = createRoute({ getParentRoute: () => appRoute, path: '/tai-san/bao-cao', component: AssetReportsPage });
+const assetCountRoute = createRoute({ getParentRoute: () => appRoute, path: '/tai-san/kiem-ke', component: AssetCountPage });
 const salesReportsRoute = createRoute({ getParentRoute: () => appRoute, path: '/ban-hang/bao-cao', component: SalesReportsPage });
 const purchaseReportsRoute = createRoute({ getParentRoute: () => appRoute, path: '/mua-hang/bao-cao', component: PurchaseReportsPage });
 const stocktakeRoute = createRoute({ getParentRoute: () => appRoute, path: '/kho/kiem-ke', component: StocktakePage });
 const costingRoute = createRoute({ getParentRoute: () => appRoute, path: '/kho/gia-von', component: CostingRunPage });
 const catalogRoute = createRoute({ getParentRoute: () => appRoute, path: '/danh-muc/$name', component: CatalogPage });
 
-export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, openingAssetsRoute, periodCloseRoute, closingRoute, amortizationRoute, tscdRoute, ccdcRoute, cpttRoute, assetCatRoute, loansRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, stocktakeRoute, stockReportsRoute, assetReportsRoute, salesReportsRoute, purchaseReportsRoute, costingRoute, catalogRoute])]);
+export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, openingAssetsRoute, periodCloseRoute, closingRoute, amortizationRoute, tscdRoute, ccdcRoute, cpttRoute, assetCatRoute, loansRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, stocktakeRoute, stockReportsRoute, assetReportsRoute, assetCountRoute, salesReportsRoute, purchaseReportsRoute, costingRoute, catalogRoute])]);
 export const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }

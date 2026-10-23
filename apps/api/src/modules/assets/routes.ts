@@ -6,6 +6,9 @@ import { READ_SNAPSHOT, type Database } from '@kt/db';
 import { assertPrint, isoDate, ordered, orderedMsg, respondReport } from '../reporting/routes.js';
 import { regimeOf } from '../reporting/ledgers.js';
 import type { ReportDoc } from '../reporting/print/html.js';
+import { renderPdf } from '../reporting/print/pdf.js';
+import { assetCountHtml, eventFormHtml } from '../reporting/print/assetForms.js';
+import { countInput, countUpdate, createCount, deleteCount, fillCount, finishCount, listCounts, loadCount, updateCount } from './assetCount.js';
 import { allocationDoc, bookDocs, cardDoc, depreciationDoc, locationDocs, movementDoc, toolRegisterDoc } from '../reporting/print/assetForms.js';
 import { allocationSheet, assetCard, assetRegister, assetsByLocation, depreciationSheet, movementReport, toolRegister } from './reports.js';
 import { getSettings } from '../core/settings.js';
@@ -89,6 +92,26 @@ const routes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/api/lookups/assets', { preHandler: app.requirePermission('asset.view'), schema: { querystring: z.object({ q: z.string().default(''), kind: kindQ.optional(), size: z.coerce.number().int().min(1).max(200).default(50) }) } },
     async (req) => app.withTenant(req, (trx) => lookupAssets(trx, req.query.q, req.query.kind, req.query.size), READ_SNAPSHOT));
+  // ---- Kiểm kê TSCĐ, CCDC (05 - TSCĐ): số sổ sách điền tại ngày kiểm kê; chênh lệch không tự ghi sổ, màn hình gợi ý Ghi giảm / Ghi tăng ----
+  const countId = z.object({ id: z.coerce.number().int().positive() });
+  app.get('/api/asset-counts', { preHandler: app.requirePermission('asset.view') }, async (req) => app.withTenant(req, (trx) => listCounts(trx), READ_SNAPSHOT));
+  app.get('/api/asset-counts/:id', { preHandler: app.requirePermission('asset.view'), schema: { params: countId } }, async (req) => app.withTenant(req, (trx) => loadCount(trx, req.params.id), READ_SNAPSHOT));
+  app.post('/api/asset-counts', { preHandler: app.requirePermission('asset.create'), schema: { body: countInput } }, async (req, reply) =>
+    reply.status(201).send(await app.withTenant(req, (trx) => createCount(trx, { tenantId: tid(req), userId: req.auth!.userId }, req.body))));
+  app.put('/api/asset-counts/:id', { preHandler: app.requirePermission('asset.update'), schema: { params: countId, body: countUpdate } }, async (req) => app.withTenant(req, (trx) => updateCount(trx, req.params.id, req.body)));
+  app.delete('/api/asset-counts/:id', { preHandler: app.requirePermission('asset.delete'), schema: { params: countId } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteCount(trx, req.params.id)); return reply.status(204).send(); });
+  app.post('/api/asset-counts/:id/fill', { preHandler: app.requirePermission('asset.update'), schema: { params: countId } }, async (req) => app.withTenant(req, (trx) => fillCount(trx, { tenantId: tid(req) }, req.params.id)));
+  app.post('/api/asset-counts/:id/finish', { preHandler: app.requirePermission('asset.update'), schema: { params: countId } }, async (req) => app.withTenant(req, (trx) => finishCount(trx, req.params.id)));
+
+  // ---- In biên bản: 01/02/04 - TSCĐ từ biến động, 05 - TSCĐ từ biên bản kiểm kê ----
+  const printFmt = z.enum(['html', 'pdf']).default('html');
+  const sendForm = async (reply: FastifyReply, f: 'html' | 'pdf', r: { html: string; name: string }) => f === 'html' ? reply.type('text/html; charset=utf-8').send(r.html)
+    : reply.type('application/pdf').header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(r.name)}.pdf`).send(await renderPdf(r.html));
+  app.get('/api/print/asset-event/:eventId', { preHandler: app.requirePermission('asset.view'), schema: { params: z.object({ eventId: z.string().uuid() }), querystring: z.object({ form: z.enum(['01-TSCD', '02-TSCD', '04-TSCD']).optional(), format: printFmt }) } }, async (req, reply) =>
+    sendForm(reply, req.query.format, await app.withTenant(req, (trx) => eventFormHtml(trx, tid(req), req.params.eventId, req.query.form), READ_SNAPSHOT)));
+  app.get('/api/print/asset-count/:id', { preHandler: app.requirePermission('asset.view'), schema: { params: countId, querystring: z.object({ format: printFmt }) } }, async (req, reply) =>
+    sendForm(reply, req.query.format, await app.withTenant(req, async (trx) => assetCountHtml(trx, tid(req), await loadCount(trx, req.params.id)), READ_SNAPSHOT)));
+
   // ---- Sổ, thẻ và báo cáo tài sản: đọc trong giao dịch REPEATABLE READ READ ONLY; JSON cho màn hình, html/pdf/xlsx cần thêm quyền report.print ----
   const view = app.requirePermission('report.view');
   const fmt = z.enum(['json', 'html', 'pdf', 'xlsx']).default('json');

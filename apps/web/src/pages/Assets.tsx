@@ -17,7 +17,7 @@ interface AssetRow { id: number; code: string; name: string; kind: AssetKind; ca
   allocations: Alloc[]; cost: string; accumulated: string; remainingUnits: string }
 interface Category { id: number; code: string; name: string; kind: AssetKind; assetAccountCode: string; depreciationAccountCode: string | null; defaultLifeUnits: number | null; isActive: boolean }
 interface ScheduleRow { fiscalYear: number; periodNo: number; units: string; amount: string; accumulated: string; voucherId: string | null; voucherNo: string | null }
-interface EventRow { id: string; kind: string; eventDate: string; voucherId: string | null; voucherNo: string | null; state: 'active' | 'cancelled' }
+interface EventRow { id: string; kind: string; eventDate: string; voucherId: string | null; voucherNo: string | null; state: 'active' | 'cancelled'; data?: { reason?: string } }
 const money = (s: string) => formatVnNumber(s, 0);
 const EVENT_KIND_LABEL: Record<string, string> = { increase: 'Ghi tăng', decrease: 'Ghi giảm', value_adjust: 'Điều chỉnh giá trị', revaluation: 'Đánh giá lại', transfer: 'Điều chuyển', suspend: 'Dừng khấu hao', resume: 'Tiếp tục khấu hao', life_change: 'Điều chỉnh thời gian sử dụng' };
 const STATUS_LABEL: Record<string, string> = { active: 'Đang dùng', decreased: 'Đã ghi giảm' };
@@ -115,6 +115,7 @@ function AssetDrawer({ kind, asset, onClose }: { kind: AssetKind; asset: AssetRo
       columns={[{ title: 'Ngày', dataIndex: 'eventDate', render: formatVnDate }, { title: 'Nghiệp vụ', dataIndex: 'kind', render: (k: string) => EVENT_KIND_LABEL[k] ?? k },
         { title: 'Chứng từ', render: (_, r) => (r.voucherId ? <Link to="/chung-tu/$type/$id" params={{ type: 'TS', id: r.voucherId }}>{r.voucherNo ?? 'Xem'}</Link> : '') },
         { title: 'Trạng thái', dataIndex: 'state', render: (s: string) => (s === 'active' ? <Tag color="green">Hiệu lực</Tag> : <Tag>Đã hủy</Tag>) },
+        { title: '', render: (_, r) => (kind === 'fixed' && r.state === 'active' && (r.kind === 'increase' || r.kind === 'revaluation' || (r.kind === 'decrease' && r.data?.reason === 'liquidation')) ? <Button size="small" onClick={() => window.open(`/api/print/asset-event/${r.id}?format=pdf`, '_blank')}>In biên bản</Button> : null) },
         { title: '', render: (_, r) => (canEdit && r.state === 'active' ? <Popconfirm title="Hủy biến động này?" okText="Hủy biến động" cancelText="Không" onConfirm={() => cancel.mutate(r.id)}><Button size="small" danger>Hủy</Button></Popconfirm> : null) }]} />
   </>);
   const allocTab = id === null ? needCard : (<>
