@@ -100,3 +100,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-24 00:09 | GĐ5 | T2 ký hiệu hóa đơn TT 91/2026, nhà cung cấp HĐĐT, dải ký hiệu, che bí mật trong nhật ký (0079) | 3add02b..e1c954e | api 939, rà soát sạch
 2026-10-24 00:50 | GĐ5 | T3 bảng hóa đơn điện tử, chứng từ bán chờ số, ghi số qua fn_einvoice_set_number, khóa chứng từ đã phát hành (0080) | 585a082..f7f84c5 | api 952, rà soát sạch (opus)
 2026-10-24 01:18 | GĐ5 | T4 EInvoiceProvider, mô hình hóa đơn trung lập, nhà cung cấp giả lập, kiểm tra kết nối, kiểm thử httpJson | 129a682..ff09116 | api 966, rà soát sạch (1 vòng sửa)
+2026-10-24 01:59 | GĐ5 | T5 phát hành hai pha, thử lại theo mã giao dịch, chặn thử lại chồng, hóa đơn mồ côi, đối soát nền (worker einvoice-reconcile), tải PDF/XML | 7aa858d..46e6952 | einvoice 41, worker 12, rà soát opus sạch (1 vòng sửa)
