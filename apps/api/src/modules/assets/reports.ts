@@ -14,7 +14,7 @@ const reasonOf = (d: Record<string, unknown>) => { const r = String(d['reason'] 
 interface A { id: number; code: string; name: string; kind: string; assetAccount: string; depAccount: string | null; lifeUnits: number | null; isDepreciable: boolean; openingRemaining: string | null; status: string; decreaseDate: string | null;
   useDate: string | null; country: string | null; yearMade: number | null; cardNo: string | null; spec: string | null; uom: string | null; quantity: string; categoryCode: string | null; categoryName: string | null; departmentId: number | null; departmentCode: string | null; departmentName: string | null }
 interface Ev { assetId: number; kind: string; date: string; voucherNo: string | null; data: Record<string, unknown> }
-interface L { assetId: number; voucherNo: string; date: string; description: string | null; account: string; debit: string; credit: string; sourceType: string | null }
+interface L { assetId: number; voucherNo: string; date: string; description: string | null; account: string; debit: string; credit: string; sourceType: string | null; sourceId: string | null }
 
 async function assetsOf(trx: Trx, kinds: string[]): Promise<A[]> {
   return (await sql<A>`SELECT a.id::int AS id, a.code, a.name, a.kind, a.asset_account_code AS "assetAccount", a.depreciation_account_code AS "depAccount", a.life_units AS "lifeUnits", a.is_depreciable AS "isDepreciable",
@@ -31,7 +31,7 @@ async function eventsOf(trx: Trx, ids: number[], kinds: string[], to: string): P
 // Dòng nguyên giá (TK tài sản) và hao mòn (TK hao mòn) có mã tài sản đến ngày `to`.
 async function linesOf(trx: Trx, tenantId: string, ids: number[], to: string): Promise<L[]> {
   if (!ids.length) return [];
-  return (await sql<L>`SELECT l.asset_id::int AS "assetId", v.voucher_no AS "voucherNo", l.posting_date::text AS date, v.description, ac.code AS account, l.debit::text AS debit, l.credit::text AS credit, v.source_doc_type AS "sourceType"
+  return (await sql<L>`SELECT l.asset_id::int AS "assetId", v.voucher_no AS "voucherNo", l.posting_date::text AS date, v.description, ac.code AS account, l.debit::text AS debit, l.credit::text AS credit, v.source_doc_type AS "sourceType", v.source_doc_id::text AS "sourceId"
     FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id AND v.tenant_id = l.tenant_id JOIN account ac ON ac.id = l.account_id AND ac.tenant_id = l.tenant_id JOIN asset s ON s.id = l.asset_id AND s.tenant_id = l.tenant_id
     WHERE l.tenant_id = ${tenantId}::uuid AND l.asset_id = ANY (${ids}::bigint[]) AND l.posting_date <= ${to}::date AND ${POSTED} AND (ac.code = s.asset_account_code OR ac.code = s.depreciation_account_code)
     ORDER BY l.posting_date, v.created_at, l.line_no`.execute(trx)).rows;
@@ -242,11 +242,14 @@ export async function movementReport(trx: Trx, tenantId: string, q: { kind: stri
 export async function toolRegister(trx: Trx, tenantId: string, q: { kind: 'tool' | 'prepaid'; from: string; to: string }) {
   const as = await assetsOf(trx, [q.kind]); const ids = as.map((a) => a.id);
   const lines = group(await linesOf(trx, tenantId, ids, q.to), (l) => l.assetId); const vals = await assetValues(trx, tenantId, q.to, [], ids);
+  const decIds = new Set(ids.length ? (await sql<{ id: string }>`SELECT id::text AS id FROM asset_event WHERE kind = 'decrease' AND asset_id = ANY (${ids}::bigint[])`.execute(trx)).rows.map((r) => r.id) : []);
   const base = as.map((a) => {
-    const ls = (lines.get(a.id) ?? []).filter((l) => l.account === a.assetAccount); const run = ls.filter((l) => l.sourceType === 'asset_run');
-    const initial = ls.reduce((t, l) => t.plus(l.debit), ZERO); const allocated = run.reduce((t, l) => t.plus(l.credit).minus(l.debit), ZERO);
-    const period = run.filter((l) => l.date >= q.from).reduce((t, l) => t.plus(l.credit).minus(l.debit), ZERO);
-    const decreased = ls.filter((l) => l.sourceType !== 'asset_run').reduce((t, l) => t.plus(l.credit), ZERO); // ghi giảm = phát sinh Có ngoài lần phân bổ
+    const ls = (lines.get(a.id) ?? []).filter((l) => l.account === a.assetAccount);
+    // Chia theo nguồn, mỗi cột là số ròng gồm cả bút toán đảo: ban đầu − phân bổ − ghi giảm = còn lại (= Σ dòng 242 có asset_id).
+    const kindOf = (l: L) => (l.sourceType === 'asset_run' ? 'run' : l.sourceType === 'asset_event' && decIds.has(l.sourceId ?? '') ? 'dec' : 'init');
+    const net = (f: (l: L) => boolean, sign: 1 | -1) => ls.filter(f).reduce((t, l) => t.plus(D(l.debit).minus(l.credit).times(sign)), ZERO);
+    const initial = net((l) => kindOf(l) === 'init', 1); const allocated = net((l) => kindOf(l) === 'run', -1);
+    const period = net((l) => kindOf(l) === 'run' && l.date >= q.from, -1); const decreased = net((l) => kindOf(l) === 'dec', -1);
     return { a, first: ls.find((l) => !D(l.debit).isZero()), initial, allocated, period, decreased, cost: vals.get(a.id)?.cost ?? '0' };
   }).filter((x) => x.first);
   const remaining = await remainingUnitsOf(trx, base.map((x) => ({ id: x.a.id, isDepreciable: x.a.isDepreciable, lifeUnits: x.a.lifeUnits, openingRemainingUnits: x.a.openingRemaining, status: x.a.status, cost: x.cost })));

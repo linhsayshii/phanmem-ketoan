@@ -123,7 +123,7 @@ describe('sổ, thẻ, bảng và báo cáo tài sản', () => {
     const t = await tenant('TT200');
     const id = await t.card('tool', 'CC01', '12000000', 12, '242', '10');
     for (const p of [1, 2, 3]) await t.run('tool', p); // còn lại 9.000.000 → giảm 4/10 = 3.600.000
-    await t.ok(t.call('POST', `/api/assets/${id}/decrease-tool`, { date: '2026-04-10', quantity: '4', counterAccountCode: '811' }));
+    const dec = await t.ok(t.call('POST', `/api/assets/${id}/decrease-tool`, { date: '2026-04-10', quantity: '4', counterAccountCode: '811' }));
     const g = (await t.ok(t.call('GET', '/api/asset-reports/by-location?from=2026-01-01&to=2026-06-30'))).groups[0];
     expect(D(g.rows[0].incQty).toString()).toBe('10');
     expect(D(g.rows[0].decQty).toString()).toBe('4');
@@ -131,6 +131,15 @@ describe('sổ, thẻ, bảng và báo cáo tài sản', () => {
     expect(g.rows[0].decAmount).toBe('3600000');
     const r = await t.ok(t.call('GET', '/api/asset-reports/tool-register?kind=tool&from=2026-01-01&to=2026-06-30'));
     expect(r.rows[0]).toMatchObject({ assetCode: 'CC01', decreased: '3600000' });
+    const identity = async () => {
+      const x = (await t.ok(t.call('GET', '/api/asset-reports/tool-register?kind=tool&from=2026-01-01&to=2026-06-30'))).rows[0];
+      expect(D(x.initial).minus(x.allocatedTotal).minus(x.decreased).toFixed(0), JSON.stringify(x)).toBe(x.remaining);
+      expect(x.remaining).toBe(D(await t.sum(['242'], '2026-06-30', 'debit', true)).minus(await t.sum(['242'], '2026-06-30', 'credit', true)).toFixed(0));
+      return x;
+    };
+    await identity(); // sau khi ghi giảm, các kỳ PB đã chạy lại (đảo + sinh mới)
+    await t.ok(t.call('POST', `/api/asset-events/${dec.eventId}/cancel`));
+    expect(await identity()).toMatchObject({ decreased: '0', initial: '12000000' });
   });
 
   it('chỉ report.view: JSON được, html/pdf/xlsx 403', async () => {
