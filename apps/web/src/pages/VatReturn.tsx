@@ -8,6 +8,7 @@ import { D, formatVnNumber } from '@kt/domain';
 import { VnNumberInput, useHotkeys, useRememberedFilter, useUnsavedChanges } from '@kt/ui';
 import { ApiError, api } from '../api/client.js';
 import { useAuth } from '../auth.js';
+import { downloadSignedVatReturn, signDocument } from '../signing/signXml.js';
 
 // Tờ khai thuế GTGT 01/GTGT: bảng chỉ tiêu dựng từ mẫu dữ liệu của máy chủ (/api/tax/vat-template), không viết cứng danh sách chỉ tiêu.
 // Chỉ tiêu nhập tay (manual, carry) và chỉ tiêu cho ghi đè (overridable) sửa được khi còn nháp; chỉ tiêu tính (hóa đơn, công thức) chỉ đọc. Đã chốt thì khóa toàn bộ.
@@ -154,6 +155,12 @@ export default function VatReturnPage() {
     const name = /filename\*=UTF-8''([^;]+)/.exec(res.headers.get('content-disposition') ?? '')?.[1];
     const url = URL.createObjectURL(await res.blob()); const a = document.createElement('a'); a.href = url; a.download = name ? decodeURIComponent(name) : 'to-khai-01-gtgt.xml'; a.click(); URL.revokeObjectURL(url);
   };
+  const [signing, setSigning] = useState('');
+  const signXml = async () => {
+    if (!cur) return;
+    try { const sid = await signDocument({ docKind: 'vat_return', docRef: String(cur.id) }, setSigning); await downloadSignedVatReturn(cur.id, sid); void message.success('Đã ký số và tải XML'); }
+    catch (e) { void message.error((e as Error).message); } finally { setSigning(''); }
+  };
   const setPeriod = (next: { year?: number; period?: number }) => guard(() => { setSelId(null); setF({ ...f, ...next }); });
 
   return (
@@ -178,6 +185,7 @@ export default function VatReturnPage() {
           {latest && latest.status === 'final' && can('tax_return.create') && <Button loading={create.isPending} onClick={() => create.mutate(latest.revision + 1)}>Lập bổ sung</Button>}
           {can('tax.offset') && <Button onClick={() => { setOffsetRes(null); setOffsetDate(periodEnd(kind, f.year, period)); setOffsetOpen(true); }}>Khấu trừ thuế cuối kỳ</Button>}
           {cur && can('tax.view') && <Tooltip title={cur.status === 'final' ? (xmlUnverified ? 'XML chưa kiểm chứng với HTKK' : '') : 'Chốt tờ khai trước khi xuất XML'}><Button disabled={cur.status !== 'final'} onClick={() => void exportXml()}>Xuất XML</Button></Tooltip>}
+          {cur && can('tax.view') && can('signing.use') && <Tooltip title={signing || (cur.status === 'final' ? '' : 'Chốt tờ khai trước khi ký')}><Button disabled={cur.status !== 'final'} loading={!!signing} onClick={() => void signXml()}>Ký và tải XML</Button></Tooltip>}
           {cur && can('report.print') && <Button onClick={() => window.open(`/api/tax/vat-returns/${cur.id}/print?format=pdf`, '_blank')}>In</Button>}
           {dirty && <Typography.Text type="warning">Có thay đổi chưa lưu (Ctrl+S)</Typography.Text>}
         </Space>

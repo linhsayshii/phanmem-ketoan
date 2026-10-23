@@ -339,6 +339,16 @@ export interface EinvoiceSeriesTable {
   provider_template: string | null; is_active: Generated<boolean>; note: string | null;
 }
 
+export interface SigningProfileTable {
+  id: Generated<number>; tenant_id: string; user_id: string; kind: string; label: string; cert_der: Buffer; cert_subject: string; cert_serial: string;
+  cert_not_after: Timestamp; credentials: Buffer | null; is_default: Generated<boolean>; created_at: Generated<string>;
+}
+export interface SigningSessionTable {
+  id: Generated<string>; tenant_id: string; user_id: string; profile_id: number; doc_kind: string; doc_ref: string; xml_unsigned: string; signing_time: string;
+  signed_info_c14n: string; digest_b64: string; status: Generated<string>; provider_ref: string | null; error_message: string | null; signed_xml: string | null;
+  expires_at: Timestamp; created_at: Generated<string>;
+}
+
 export interface EinvoiceTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; series_id: number; provider_id: number; relation: Generated<string>; original_id: number | null; adjust_kind: string | null;
   status: string; transaction_uuid: string; invoice_no: string | null; issued_at: Timestamp | null; issue_date: DateOnly | null; cqt_code: string | null; cqt_status: Generated<string>;
@@ -448,6 +458,8 @@ export interface Database {
   report_line: ReportLineTable;
   data_check_rule: DataCheckRuleTable;
   einvoice_provider: EinvoiceProviderTable;
+  signing_profile: SigningProfileTable;
+  signing_session: SigningSessionTable;
   einvoice_series: EinvoiceSeriesTable;
   einvoice: EinvoiceTable;
   einvoice_error_notice: EinvoiceErrorNoticeTable;

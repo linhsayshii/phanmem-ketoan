@@ -49,6 +49,7 @@ import orderRoutes from './modules/orders/routes.js';
 import assetRoutes from './modules/assets/routes.js';
 import loanRoutes from './modules/loans/routes.js';
 import einvoiceRoutes from './modules/einvoice/routes.js';
+import signingRoutes from './modules/signing/routes.js';
 import openingAssetRoutes from './modules/assets/openingAssets.js';
 
 declare module 'fastify' { interface FastifyInstance { config: Config; boss: PgBoss | null } }
@@ -105,6 +106,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(assetRoutes);
   await app.register(loanRoutes);
   await app.register(einvoiceRoutes);
+  await app.register(signingRoutes);
   await app.register(openingAssetRoutes);
   app.get('/api/health', async () => ({ ok: true }));
   return app;

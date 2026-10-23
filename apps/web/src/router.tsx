@@ -35,6 +35,7 @@ import InvoiceRegisterPage from './pages/InvoiceRegister.js';
 import VatReturnPage from './pages/VatReturn.js';
 import EInvoicesPage from './pages/EInvoices.js';
 import EInvoiceConfigPage from './pages/EInvoiceConfig.js';
+import SigningSetupPage from './pages/SigningSetup.js';
 import EInvoiceErrorNoticePage from './pages/EInvoiceErrorNotice.js';
 import SettlementPage from './pages/Settlement.js';
 import FxToolsPage from './pages/FxTools.js';
@@ -111,6 +112,7 @@ export const MENU: MenuItem[] = [
   { key: 'thue', label: 'Thuế', to: '/thue', children: [
     { key: 'invoice-register', label: 'Bảng kê hóa đơn', to: '/thue/bang-ke-hoa-don', permission: 'tax.view' },
     { key: 'vat-return', label: 'Tờ khai thuế GTGT', to: '/thue/to-khai-gtgt', permission: 'tax_return.view' },
+    { key: 'signing', label: 'Cài đặt ký số', to: '/thue/ky-so', permission: 'signing.use' },
   ] },
   { key: 'hddt', label: 'Hóa đơn điện tử', to: '/hoa-don-dien-tu', children: [
     { key: 'hddt-ds', label: 'Danh sách hóa đơn điện tử', to: '/hoa-don-dien-tu', permission: 'einvoice.view' },
@@ -205,9 +207,10 @@ const stocktakeRoute = createRoute({ getParentRoute: () => appRoute, path: '/kho
 const costingRoute = createRoute({ getParentRoute: () => appRoute, path: '/kho/gia-von', component: CostingRunPage });
 const catalogRoute = createRoute({ getParentRoute: () => appRoute, path: '/danh-muc/$name', component: CatalogPage });
 
+const signingRoute = createRoute({ getParentRoute: () => appRoute, path: '/thue/ky-so', component: SigningSetupPage });
 const einvoicesRoute = createRoute({ getParentRoute: () => appRoute, path: '/hoa-don-dien-tu', component: EInvoicesPage });
 const einvoiceNoticeRoute = createRoute({ getParentRoute: () => appRoute, path: '/hoa-don-dien-tu/thong-bao-sai-sot', component: EInvoiceErrorNoticePage });
 const einvoiceConfigRoute = createRoute({ getParentRoute: () => appRoute, path: '/hoa-don-dien-tu/cau-hinh', component: EInvoiceConfigPage });
-export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, openingAssetsRoute, periodCloseRoute, closingRoute, amortizationRoute, tscdRoute, ccdcRoute, cpttRoute, assetCatRoute, loansRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, einvoicesRoute, einvoiceNoticeRoute, einvoiceConfigRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, stocktakeRoute, stockReportsRoute, assetReportsRoute, assetCountRoute, salesReportsRoute, purchaseReportsRoute, costingRoute, catalogRoute])]);
+export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, openingAssetsRoute, periodCloseRoute, closingRoute, amortizationRoute, tscdRoute, ccdcRoute, cpttRoute, assetCatRoute, loansRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, signingRoute, einvoicesRoute, einvoiceNoticeRoute, einvoiceConfigRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, stocktakeRoute, stockReportsRoute, assetReportsRoute, assetCountRoute, salesReportsRoute, purchaseReportsRoute, costingRoute, catalogRoute])]);
 export const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }

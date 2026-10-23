@@ -4,11 +4,11 @@ import { READ_SNAPSHOT } from '@kt/db';
 import { assertPrint, respondReport } from '../reporting/routes.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { logCloseStep, periodOfDate, runSummary } from '../ledger/periodClose.js';
-import { companyInfo } from '../reporting/print/bookSet.js';
 import { invoiceRegister, reconcileDoc, reconcileTax, registerDoc } from './register.js';
 import { offsetInput, runVatOffset } from './vatOffset.js';
 import { createReturn, deleteReturn, finalizeReturn, getReturn, listReturns, previewReturn, returnDoc, returnInput, returnUpdate, templateOfPeriod, updateReturn } from './vatReturn.js';
 import { XML_FORMATS } from './xml/index.js';
+import { renderReturnXml } from './vatXml.js';
 import { AppError } from '../../plugins/errors.js';
 
 const period = { year: z.coerce.number().int().min(2000).max(2100), period: z.coerce.number().int().min(1).max(12), periodKind: z.enum(['month', 'quarter']).default('month') };
@@ -65,20 +65,19 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.get('/api/tax/xml-formats', { preHandler: app.requirePermission('tax_return.view') }, async () => Object.values(XML_FORMATS).map((f) => ({ id: f.id, formCode: f.formCode, verified: f.verified })));
 
   // Xuất XML qua adapter định dạng (XML_FORMATS). Chỉ tờ khai đã chốt: bản nháp có thể còn lệch sổ. verified = false: tiêu đề x-kt-unverified để màn hình cảnh báo "chưa kiểm chứng với HTKK".
-  app.get('/api/tax/vat-returns/:id/xml', { preHandler: app.requirePermission('tax_return.view'), schema: { params: numId, querystring: z.object({ format: z.string().default('htkk-01gtgt') }) } }, async (req, reply) => {
+  // signedSession: tải bản đã ký của phiên ký số (của chính người dùng, đã ký xong, đúng tờ khai này) thay cho bản chưa ký.
+  app.get('/api/tax/vat-returns/:id/xml', { preHandler: app.requirePermission('tax_return.view'), schema: { params: numId, querystring: z.object({ format: z.string().default('htkk-01gtgt'), signedSession: z.string().uuid().optional() }) } }, async (req, reply) => {
     if (!req.auth!.permissions.has('tax.view')) throw new AppError('FORBIDDEN', 'Thiếu quyền tax.view', 403);
-    const fmt = XML_FORMATS[req.query.format];
-    if (!fmt || !Object.hasOwn(XML_FORMATS, req.query.format)) throw new AppError('XML_FORMAT_INVALID', `Định dạng XML "${req.query.format}" không có; dùng ${Object.keys(XML_FORMATS).join(', ')}`, 400);
-    const { ret, company } = await app.withTenant(req, async (trx) => {
-      const r = await getReturn(trx, req.params.id); const c = await companyInfo(trx, req.auth!.tenantId!, '', null);
-      return { ret: r, company: c };
+    const r = await app.withTenant(req, async (trx) => {
+      const out = await renderReturnXml(trx, req.auth!.tenantId!, req.params.id, req.query.format);
+      if (!req.query.signedSession) return out;
+      const sess = await trx.selectFrom('signing_session').select(['signed_xml']).where('id', '=', req.query.signedSession).where('user_id', '=', req.auth!.userId)
+        .where('doc_kind', '=', 'vat_return').where('doc_ref', '=', String(req.params.id)).where('status', '=', 'signed').executeTakeFirst();
+      if (!sess?.signed_xml) throw new AppError('SIGNING_SESSION_NOT_FOUND', 'Không tìm thấy phiên ký đã hoàn tất cho tờ khai này', 404);
+      return { ...out, xml: sess.signed_xml, file: out.file.replace(/\.xml$/, '_signed.xml') };
     }, READ_SNAPSHOT);
-    if (ret.status !== 'final') throw new AppError('TAX_RETURN_NOT_FINAL', 'Chỉ xuất XML tờ khai đã chốt', 409);
-    if (!company.taxCode) throw new AppError('COMPANY_TAX_CODE_MISSING', 'Công ty chưa có mã số thuế: nhập ở Cài đặt công ty trước khi xuất XML', 409);
-    const xml = fmt.render(ret, { name: company.name, taxCode: company.taxCode, address: company.address, legalRep: company.legalRep });
-    const file = `${fmt.formCode.replace('/', '')}_${company.taxCode}_${ret.periodKind === 'month' ? 'T' : 'Q'}${ret.period}-${ret.year}${ret.revision ? `-BS${ret.revision}` : ''}.xml`;
-    if (!fmt.verified) reply.header('x-kt-unverified', '1');
-    return reply.type('application/xml; charset=utf-8').header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file)}`).send(xml);
+    if (!r.verified) reply.header('x-kt-unverified', '1');
+    return reply.type('application/xml; charset=utf-8').header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(r.file)}`).send(r.xml);
   });
 
   // Khấu trừ thuế GTGT cuối kỳ (chứng từ KTT); kỳ khóa sổ cần quyền ghi lùi ngày.
