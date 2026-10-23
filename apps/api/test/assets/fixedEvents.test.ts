@@ -83,6 +83,41 @@ describe('biến động TSCĐ', () => {
     expect(err(await t.call('POST', `/api/vouchers/${r.voucherId}/unpost`))).toEqual([409, 'VOUCHER_SYSTEM_GENERATED']);
   });
 
+  it('ghi giảm khi kỳ trước chưa chạy KH mà có số → 409 PERIOD_RUN_GAP nêu kỳ, không ghi gì; sai đầu vào → 400; biến động của thẻ không có → 404', async () => {
+    const t = await tenant();
+    const id = await t.fixed('TS01', '120000000', 60);
+    await t.runOk(1);
+    const r = await t.ev(id, 'decrease', { date: '2026-03-16', reason: 'liquidation', counterAccountCode: '811' });
+    expect(err(r)).toEqual([409, 'PERIOD_RUN_GAP']);
+    expect(r.json().error.message).toContain('Kỳ 2/2026');
+    expect(await t.count(`voucher WHERE voucher_type = 'TS'`)).toBe(0);
+    expect(await t.asset(id)).toMatchObject({ status: 'active', decreaseDate: null });
+    // Ngày bắt đầu phân bổ CCDC nằm trong kỳ ghi giảm: 400 (phân bổ của thẻ mới hiệu lực từ kỳ sau).
+    await t.runOk(2);
+    expect(err(await t.ev(id, 'decrease', { date: '2026-03-16', reason: 'to_tool',
+      toolCard: { code: 'CC09', name: 'CC', periods: 12, depreciationStartDate: '2026-03-20', allocations: [{ expenseAccountCode: '6422', ratio: '100' }] } }))).toEqual([400, 'VALIDATION']);
+    expect(err(await t.ev(id, 'revalue', { date: '2026-03-01', newCost: '1000', newAccumulated: '1001', counterAccountCode: '811' }))).toEqual([400, 'VALIDATION']);
+    expect(err(await t.call('GET', '/api/assets/999999999/events'))).toEqual([404, 'ASSET_NOT_FOUND']);
+  });
+
+  it('đánh giá lại ngày 31/03: KH 3 đã chạy hay chưa đều cùng chênh lệch (giá trị trước KH kỳ 3)', async () => {
+    const out = [];
+    for (const ran of [true, false]) {
+      const t = await tenant('TT200');
+      const id = await t.fixed('TS01', '120000000', 60);
+      for (const p of ran ? [1, 2, 3] : [1, 2]) await t.runOk(p);
+      // Hao mòn trước KH 3 = 4.000.000: nguyên giá 132.000.000, hao mòn 6.000.000 → Nợ 2111 12.000.000 / Có 2141 2.000.000 / Có 412 10.000.000.
+      const r = await t.ok(t.ev(id, 'revalue', { date: '2026-03-31', newCost: '132000000', newAccumulated: '6000000', counterAccountCode: '412' }));
+      out.push(await t.lines(r.voucherId));
+      if (!ran) await t.runOk(3);
+      // KH 3 theo phiên bản mới: 126.000.000 / 58 = 2.172.414; hao mòn 31/03 = 6.000.000 + 2.172.414.
+      expect((await t.runs()).find((x) => x.periodNo === 3)!.result.lines).toEqual([{ assetCode: 'TS01', amount: '2172414' }]);
+      expect(await t.values(id, '2026-03-31')).toEqual({ cost: '132000000', accumulated: '8172414' });
+    }
+    expect(out[0]).toEqual(['2111|12000000|0|TS01|', '2141|0|2000000|TS01|', '412|0|10000000||']);
+    expect(out[1]).toEqual(out[0]);
+  });
+
   it('chế độ month: ghi giảm 16/03 không khấu hao tháng 3, TS không có dòng khấu hao', async () => {
     const t = await tenant();
     await t.ok(t.call('PUT', '/api/settings', { fa_proration: 'month' }));

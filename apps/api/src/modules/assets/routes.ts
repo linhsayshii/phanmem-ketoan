@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import type { Transaction } from 'kysely';
 import { z } from 'zod';
-import { READ_SNAPSHOT } from '@kt/db';
+import { READ_SNAPSHOT, type Database } from '@kt/db';
 import { getSettings } from '../core/settings.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { listRuns, runAssetPeriod } from './periodRun.js';
@@ -43,15 +44,19 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   // Biến động tài sản: ghi tăng, ghi giảm, đánh giá lại, điều chuyển, dừng/tiếp tục khấu hao, điều chỉnh thời gian sử dụng; hủy biến động.
   const runCtx = (req: { auth: { tenantId: string | null; userId: string; permissions: Set<string> } | null }) =>
     ({ tenantId: req.auth!.tenantId!, userId: req.auth!.userId, canBackdate: req.auth!.permissions.has('voucher.backdate_locked') });
-  const events = [['increase', increaseInput, increaseAsset], ['decrease', decreaseInput, decreaseAsset], ['revalue', revalueInput, revalueAsset], ['transfer', transferInput, transferAsset],
-    ['suspend', suspendInput, suspendAsset], ['resume', resumeInput, resumeAsset], ['life', lifeInput, changeLife]] as const;
-  for (const [path, body, fn] of events) {
+  const event = <T extends z.ZodTypeAny>(path: string, body: T, fn: (trx: Transaction<Database>, ctx: ReturnType<typeof runCtx>, id: number, b: z.infer<T>) => Promise<unknown>) =>
     app.post(`/api/assets/:id/${path}`, { preHandler: app.requirePermission('asset.update'), schema: { params: numId, body } }, async (req) => {
-      const out = await app.withOverride(req, (trx) => (fn as (trx: Parameters<typeof increaseAsset>[0], ctx: ReturnType<typeof runCtx>, id: number, b: unknown) => Promise<unknown>)(trx, runCtx(req), req.params.id, req.body));
+      const out = await app.withOverride(req, (trx) => fn(trx, runCtx(req), req.params.id, req.body));
       notifyRecompute(app, tid(req));
       return out;
     });
-  }
+  event('increase', increaseInput, increaseAsset);
+  event('decrease', decreaseInput, decreaseAsset);
+  event('revalue', revalueInput, revalueAsset);
+  event('transfer', transferInput, transferAsset);
+  event('suspend', suspendInput, suspendAsset);
+  event('resume', resumeInput, resumeAsset);
+  event('life', lifeInput, changeLife);
   app.post('/api/asset-events/:id/cancel', { preHandler: app.requirePermission('asset.update'), schema: { params: z.object({ id: z.string().uuid() }) } }, async (req) => {
     const out = await app.withOverride(req, (trx) => cancelEvent(trx, runCtx(req), req.params.id));
     notifyRecompute(app, tid(req));

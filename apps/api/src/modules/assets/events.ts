@@ -8,13 +8,19 @@ import { getSettings } from '../core/settings.js';
 import * as S from '../ledger/vouchers.service.js';
 import { dateIso } from '../ledger/vouchers.service.js';
 import { allocationInput, idOf, lockTenant, saveAsset, setAllocations } from './assets.js';
-import { buildLines, refreshRuns, runIdsOf, type Ctx, type RunKind } from './periodRun.js';
+import { assertNoGap, buildLines, refreshRuns, runIdsOf, type Ctx, type RunKind } from './periodRun.js';
 import { assetValues, scheduleFor } from './schedule.js';
 
 // Biến động tài sản (quy ước 7, 9 và hợp đồng ghi sổ GĐ4): mỗi nghiệp vụ khóa tư vấn, kiểm kỳ của ngày nghiệp vụ ghi được, ghi asset_event
 // (nhật ký kiểm toán qua audit_enable), chứng từ TS (source_doc_type 'asset_event') nếu có tiền, rồi chạy lại các lần chạy hiện có từ kỳ của ngày đó.
 type Trx = Transaction<Database>;
 type Line = { accountCode: string; debit: string; credit: string; assetCode?: string; partyCode?: string | null; departmentCode?: string | null; projectCode?: string | null; costItemCode?: string | null; description?: string };
+type AllocRow = { expense_account_code: string; department_id: number | null; project_id: number | null; cost_item_id: number | null; ratio: string };
+// Giá trị trước/sau lưu trong asset_event.data, đọc lại khi hủy biến động.
+type EventData = {
+  before?: { use_date?: string | null; depreciation_start_date?: string | null; status?: string; decrease_date?: string | null; departmentId?: number | null; allocations?: AllocRow[] };
+  validFrom?: { year: number; period: number }; scheduleId?: number | null; toolAssetId?: number | null;
+};
 const RUN_KIND: Record<string, RunKind> = { fixed: 'depreciation', tool: 'tool', prepaid: 'prepaid' };
 const vnd = z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG);
 const units = z.string().regex(/^\d{1,4}(\.\d{1,12})?$/, 'Số đơn vị còn lại không hợp lệ').refine((s) => D(s).gt(0), 'Số đơn vị còn lại phải lớn hơn 0');
@@ -99,8 +105,12 @@ export async function decreaseAsset(trx: Trx, ctx: Ctx, id: number, b: z.infer<t
   const { a, span } = await begin(trx, ctx, id, b.date);
   const fixed = a.kind === 'fixed';
   if (b.reason === 'to_tool' && (!fixed || !b.toolCard)) throw new AppError('VALIDATION', fixed ? 'Chuyển thành công cụ dụng cụ cần thông tin thẻ công cụ dụng cụ mới' : 'Chỉ tài sản cố định chuyển thành công cụ dụng cụ', 400);
+  if (b.toolCard?.depreciationStartDate && b.toolCard.depreciationStartDate <= span.to)
+    throw new AppError('VALIDATION', `Ngày bắt đầu phân bổ công cụ dụng cụ phải sau kỳ ghi giảm (sau ngày ${span.to})`, 400);
   const proration = (await getSettings(trx, ctx.tenantId)).fa_proration;
   const kind = RUN_KIND[a.kind]!;
+  // Kỳ trước chưa chạy mà có số: lần chạy sau đó sẽ còn khấu hao tài sản đã xóa sổ (hao mòn khác 0 sau ghi giảm) → chạy kỳ đó trước.
+  await assertNoGap(trx, kind, span, proration);
   await trx.updateTable('asset').set({ status: 'decreased', decrease_date: b.date }).where('id', '=', id).execute();
 
   let partial = '0';
@@ -146,7 +156,9 @@ async function lifeVersion(trx: Trx, ctx: Ctx, id: number, kind: string, span: P
 export async function revalueAsset(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof revalueInput>) {
   const { a, span } = await begin(trx, ctx, id, b.date);
   if (a.kind !== 'fixed') throw new AppError('VALIDATION', 'Đánh giá lại chỉ áp dụng cho tài sản cố định', 400);
-  const v = (await assetValues(trx, ctx.tenantId, b.date, [], [id])).get(id)!;
+  if (D(b.newAccumulated).gt(b.newCost)) throw new AppError('VALIDATION', 'Hao mòn sau đánh giá lại không được lớn hơn nguyên giá sau đánh giá lại', 400);
+  // Giá trị trước khấu hao kỳ P (bỏ lần chạy KH kỳ P, sẽ chạy lại): cùng chênh lệch dù KH kỳ P đã chạy hay chưa, kể cả ngày đánh giá là P.to.
+  const v = (await assetValues(trx, ctx.tenantId, b.date, await runIdsOf(trx, 'depreciation', span.fiscalYear, span.periodNo), [id])).get(id)!;
   const dCost = D(b.newCost).minus(v.cost); const dAcc = D(b.newAccumulated).minus(v.accumulated);
   if (dCost.isZero() && dAcc.isZero() && !b.remainingUnits) throw new AppError('VALIDATION', 'Giá trị đánh giá lại bằng giá trị trên sổ, không có chênh lệch', 400);
   const eventId = randomUUID();
@@ -218,17 +230,17 @@ export async function cancelEvent(trx: Trx, ctx: Ctx, eventId: string) {
     .where(sql<boolean>`(event_date > ${e.event_date}::date OR created_at > (SELECT x.created_at FROM asset_event x WHERE x.id = ${e.id}::uuid))`).orderBy('event_date', 'desc').limit(1).executeTakeFirst();
   if (later) throw new AppError('ASSET_EVENT_ORDER', `Tài sản còn biến động muộn hơn (ngày ${later.event_date}): hủy biến động đó trước`, 409);
   const { a, span } = await begin(trx, ctx, e.asset_id, e.event_date, false);
-  const d = e.data as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const d = e.data as EventData;
   if (e.voucher_id) await S.reverseVoucher(trx, e.voucher_id, { postingDate: e.event_date, description: `Hủy biến động tài sản ${a.code}` });
   if (e.kind === 'increase') {
-    await trx.updateTable('asset').set({ use_date: d.before.use_date, depreciation_start_date: d.before.depreciation_start_date }).where('id', '=', a.id).execute();
+    await trx.updateTable('asset').set({ use_date: d.before!.use_date ?? null, depreciation_start_date: d.before!.depreciation_start_date ?? null }).where('id', '=', a.id).execute();
   } else if (e.kind === 'decrease') {
-    await trx.updateTable('asset').set({ status: d.before.status, decrease_date: d.before.decrease_date }).where('id', '=', a.id).execute();
+    await trx.updateTable('asset').set({ status: d.before!.status ?? 'active', decrease_date: d.before!.decrease_date ?? null }).where('id', '=', a.id).execute();
   } else if (e.kind === 'transfer') {
-    await trx.updateTable('asset').set({ department_id: d.before.departmentId }).where('id', '=', a.id).execute();
-    await trx.deleteFrom('asset_allocation').where('asset_id', '=', a.id).where('valid_from_year', '=', d.validFrom.year).where('valid_from_period', '=', d.validFrom.period).execute();
-    const rows = d.before.allocations as { expense_account_code: string; department_id: number | null; project_id: number | null; cost_item_id: number | null; ratio: string }[];
-    if (rows.length) await trx.insertInto('asset_allocation').values(rows.map((r) => ({ ...r, tenant_id: ctx.tenantId, asset_id: a.id, valid_from_year: d.validFrom.year, valid_from_period: d.validFrom.period }))).execute();
+    await trx.updateTable('asset').set({ department_id: d.before!.departmentId ?? null }).where('id', '=', a.id).execute();
+    const vf = d.validFrom!; const rows = d.before!.allocations ?? [];
+    await trx.deleteFrom('asset_allocation').where('asset_id', '=', a.id).where('valid_from_year', '=', vf.year).where('valid_from_period', '=', vf.period).execute();
+    if (rows.length) await trx.insertInto('asset_allocation').values(rows.map((r) => ({ ...r, tenant_id: ctx.tenantId, asset_id: a.id, valid_from_year: vf.year, valid_from_period: vf.period }))).execute();
   }
   if (e.kind === 'life_change' || (e.kind === 'revaluation' && d.scheduleId)) // bỏ phiên bản điều chỉnh và các phiên bản dựng trên nó; lần chạy lại dựng từ phiên bản trước
     await trx.updateTable('asset_schedule').set({ superseded_at: sql`now()` }).where('asset_id', '=', a.id).where('superseded_at', 'is', null)
@@ -240,6 +252,7 @@ export async function cancelEvent(trx: Trx, ctx: Ctx, eventId: string) {
 }
 
 export async function listEvents(trx: Trx, assetId: number) {
+  if (!(await trx.selectFrom('asset').select('id').where('id', '=', assetId).executeTakeFirst())) throw new AppError('ASSET_NOT_FOUND', 'Không tìm thấy thẻ tài sản', 404);
   return (await trx.selectFrom('asset_event as e').leftJoin('voucher as v', 'v.id', 'e.voucher_id')
     .select(['e.id', 'e.kind', 'e.event_date', 'e.voucher_id', 'v.voucher_no', 'e.state', 'e.data', 'e.created_at']).where('e.asset_id', '=', assetId)
     .orderBy('e.event_date').orderBy('e.created_at').execute())

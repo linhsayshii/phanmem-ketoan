@@ -71,7 +71,7 @@ export async function buildLines(trx: Trx, kind: RunKind, span: PeriodSpan, item
 }
 
 // Quy ước 6: kỳ liền trước (kỳ 1..12) có số khác 0 mà chưa có lần chạy hiệu lực → 409. Tính thử trong điểm lưu rồi bỏ (không để lại phiên bản lịch).
-async function assertNoGap(trx: Trx, kind: RunKind, span: PeriodSpan, proration: Proration) {
+export async function assertNoGap(trx: Trx, kind: RunKind, span: PeriodSpan, proration: Proration) {
   const prev = await trx.selectFrom('fiscal_period').select(['fiscal_year', 'period_no']).where('period_no', '>=', 1).where('period_no', '<=', 12)
     .where(sql<boolean>`(fiscal_year, period_no) < (${span.fiscalYear}, ${span.periodNo})`).orderBy('fiscal_year', 'desc').orderBy('period_no', 'desc').limit(1).executeTakeFirst();
   if (!prev) return;
