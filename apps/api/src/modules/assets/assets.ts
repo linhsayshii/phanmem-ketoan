@@ -79,6 +79,11 @@ export async function saveCategory(trx: Trx, tenantId: string, id: number | null
   await assertAssetAccounts(trx, b.kind, b.assetAccountCode, b.depreciationAccountCode);
   const v = { code: b.code, name: b.name, kind: b.kind, asset_account_code: b.assetAccountCode, depreciation_account_code: b.depreciationAccountCode ?? null, default_life_units: b.defaultLifeUnits ?? null, is_active: b.isActive ?? true };
   if (id === null) return catDto(await trx.insertInto('asset_category').values({ tenant_id: tenantId, ...v }).returningAll().executeTakeFirstOrThrow());
+  // Loại đã có thẻ: đổi nhóm hoặc tài khoản làm thẻ khác loại của nó (lưu thẻ báo sai loại) → khóa như tài khoản của thẻ.
+  const cur = await trx.selectFrom('asset_category').select(['kind', 'asset_account_code', 'depreciation_account_code']).where('id', '=', id).forUpdate().executeTakeFirst();
+  if (cur && (cur.kind !== v.kind || cur.asset_account_code !== v.asset_account_code || cur.depreciation_account_code !== v.depreciation_account_code)
+    && await trx.selectFrom('asset').select('id').where('category_id', '=', id).limit(1).executeTakeFirst())
+    throw new AppError('ASSET_ACCOUNT_LOCKED', 'Loại tài sản đã có thẻ tài sản, không đổi được nhóm, tài khoản tài sản và tài khoản hao mòn', 409);
   const r = await trx.updateTable('asset_category').set(v).where('id', '=', id).returningAll().executeTakeFirst();
   if (!r) throw new AppError('NOT_FOUND', 'Không tìm thấy loại tài sản', 404);
   return catDto(r);

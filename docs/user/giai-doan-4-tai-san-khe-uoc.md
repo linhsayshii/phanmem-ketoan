@@ -31,7 +31,7 @@ Mỗi thẻ thuộc một loại. Loại quyết định tài khoản tài sản
 4. Nhập Số kỳ sử dụng mặc định và đánh dấu Đang dùng.
 5. Lưu. Thông báo "Đã lưu loại tài sản".
 
-Mã tài khoản của thẻ được tra theo chế độ kế toán của năm tài chính muộn nhất. Khi loại đã có thẻ có sổ cái, không đổi được nhóm hoặc tài khoản ("ASSET_ACCOUNT_LOCKED", 409). Loại đã có thẻ không xóa được ("CATEGORY_IN_USE": Loại tài sản đã có thẻ tài sản, không xóa được). Tài khoản không phù hợp với nhóm: "ASSET_ACCOUNT_INVALID".
+Mã tài khoản của thẻ được tra theo chế độ kế toán của năm tài chính muộn nhất. Khi loại đã có thẻ, không đổi được nhóm, TK tài sản hoặc TK hao mòn ("ASSET_ACCOUNT_LOCKED", 409); tên, số kỳ mặc định, Đang dùng vẫn sửa được. Loại đã có thẻ không xóa được ("CATEGORY_IN_USE": Loại tài sản đã có thẻ tài sản, không xóa được). Tài khoản không phù hợp với nhóm: "ASSET_ACCOUNT_INVALID".
 
 Các tài khoản hao mòn 2141, 2142, 2143 được gắn sổ chi tiết theo tài sản: dòng hao mòn bắt buộc có mã tài sản.
 

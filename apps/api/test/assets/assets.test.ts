@@ -77,4 +77,17 @@ describe('thẻ tài sản, phân bổ chi phí', () => {
     expect(err(put)).toEqual([409, 'ASSET_ACCOUNT_LOCKED']);
     expect((await t.call('DELETE', `/api/assets/${free.id}`)).statusCode).toBe(204);
   });
+
+  it('loại tài sản đã có thẻ: đổi nhóm hoặc tài khoản → 409 ASSET_ACCOUNT_LOCKED; đổi tên được; loại chưa có thẻ đổi được', async () => {
+    const t = await tenant();
+    const cat = { code: 'MM', name: 'Máy móc', kind: 'fixed', assetAccountCode: '2111', depreciationAccountCode: '2141', defaultLifeUnits: 60 };
+    const c = await t.call('POST', '/api/asset-categories', cat); expect(c.statusCode, c.body).toBe(201);
+    expect((await t.call('PUT', `/api/asset-categories/${c.json().id}`, { ...cat, assetAccountCode: '2112' })).statusCode).toBe(200);
+    expect((await t.call('POST', '/api/assets', { code: 'TS05', name: 'Máy', kind: 'fixed', categoryCode: 'MM' })).statusCode).toBe(201);
+    for (const more of [{ assetAccountCode: '2111' }, { depreciationAccountCode: '2142' }, { kind: 'tool', assetAccountCode: '242', depreciationAccountCode: null }]) {
+      const r = await t.call('PUT', `/api/asset-categories/${c.json().id}`, { ...cat, assetAccountCode: '2112', ...more });
+      expect(err(r)).toEqual([409, 'ASSET_ACCOUNT_LOCKED']);
+    }
+    expect((await t.call('PUT', `/api/asset-categories/${c.json().id}`, { ...cat, assetAccountCode: '2112', name: 'Máy móc thiết bị' })).json()).toMatchObject({ name: 'Máy móc thiết bị' });
+  });
 });
