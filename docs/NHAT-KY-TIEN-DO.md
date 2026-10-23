@@ -102,3 +102,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-24 01:18 | GĐ5 | T4 EInvoiceProvider, mô hình hóa đơn trung lập, nhà cung cấp giả lập, kiểm tra kết nối, kiểm thử httpJson | 129a682..ff09116 | api 966, rà soát sạch (1 vòng sửa)
 2026-10-24 01:59 | GĐ5 | T5 phát hành hai pha, thử lại theo mã giao dịch, chặn thử lại chồng, hóa đơn mồ côi, đối soát nền (worker einvoice-reconcile), tải PDF/XML | 7aa858d..46e6952 | einvoice 41, worker 12, rà soát opus sạch (1 vòng sửa)
 2026-10-24 02:52 | GĐ5 | T6 hóa đơn điều chỉnh tăng/giảm, thay thế, hủy (TT 91/2026 Điều 10), đảo chứng từ gốc tách giao dịch, trạng thái thanh toán | 9376472..c8fecbd | einvoice+invoices 89, worker 12, rà soát opus sạch (1 vòng sửa)
+2026-10-24 03:24 | GĐ5 | T7 adapter Viettel SInvoice theo tài liệu công khai (chưa thử môi trường thật), nhật ký nhà cung cấp thật ghi giao dịch ngắn riêng | a48afa4..48ed881 | api 1014, einvoice 75, rà soát sạch (sửa nhỏ tại chỗ)
