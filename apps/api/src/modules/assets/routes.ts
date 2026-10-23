@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { READ_SNAPSHOT, type Database } from '@kt/db';
 import { getSettings } from '../core/settings.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
+import { logCloseStep, runSummary } from '../ledger/periodClose.js';
 import { listRuns, runAssetPeriod } from './periodRun.js';
 import { assetValues, remainingUnitsOf, scheduleView } from './schedule.js';
 import { dateIso } from '../ledger/vouchers.service.js';
@@ -45,7 +46,12 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     async (req) => app.withTenant(req, (trx) => listRuns(trx, req.query.kind, req.query.year), READ_SNAPSHOT));
   app.post('/api/asset-runs', { preHandler: app.requirePermission('asset.run'), schema: { body: z.object({ kind: runKind, fiscalYear: z.number().int(), periodNo: z.number().int().min(1).max(15) }) } }, async (req) => {
     const auth = req.auth!;
-    const out = await app.withOverride(req, (trx) => runAssetPeriod(trx, { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') }, req.body));
+    const ctx = { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') };
+    const out = await app.withOverride(req, async (trx) => {
+      const r = await runAssetPeriod(trx, ctx, req.body);
+      await logCloseStep(trx, ctx, { fiscalYear: req.body.fiscalYear, periodNo: req.body.periodNo, step: req.body.kind, ok: true, summary: runSummary(r) });
+      return r;
+    });
     if (!out.unchanged) notifyRecompute(app, auth.tenantId!);
     return out;
   });

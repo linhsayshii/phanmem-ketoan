@@ -38,6 +38,7 @@ import openingBalanceRoutes from './modules/ledger/openingBalance.js';
 import openingStockRoutes from './modules/inventory/openingStock.js';
 import balanceRoutes from './modules/ledger/balances.js';
 import closingRoutes from './modules/ledger/closing.js';
+import periodCloseRoutes from './modules/ledger/periodClose.routes.js';
 import reportingRoutes from './modules/reporting/routes.js';
 import cashRoutes from './modules/cash/routes.js';
 import toolsRoutes from './modules/tools/routes.js';
@@ -92,6 +93,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(openingStockRoutes);
   await app.register(balanceRoutes);
   await app.register(closingRoutes);
+  await app.register(periodCloseRoutes);
   await app.register(reportingRoutes);
   await app.register(cashRoutes);
   await app.register(toolsRoutes);

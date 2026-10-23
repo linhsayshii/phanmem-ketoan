@@ -6,6 +6,7 @@ import { computeCosting, D, Decimal, formatVnDate, splitByRatio, ZERO, type Cost
 import { AppError } from '../../plugins/errors.js';
 import { getSettings } from '../core/settings.js';
 import * as S from '../ledger/vouchers.service.js';
+import { logCloseStep, periodOfDate, runSummary } from '../ledger/periodClose.js';
 
 type Trx = Transaction<Database>;
 const METHODS = ['avg_period', 'avg_moving', 'fifo', 'specific'] as const;
@@ -473,7 +474,15 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   const hideCost = (auth: { sensitive: Set<string> }) => !auth.sensitive.has('view_cost');
   app.post('/api/inventory/costing-runs', { preHandler: app.requirePermission('costing.run'), schema: { body: costingInput } }, async (req) => {
     const auth = req.auth!;
-    const r = await app.withOverride(req, (trx) => runCosting(trx, { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') }, req.body));
+    const ctx = { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') };
+    const r = await app.withOverride(req, async (trx) => {
+      const x = await runCosting(trx, ctx, req.body);
+      // Chỉ lần tính toàn kho, toàn vật tư phủ trọn một kỳ tháng mới là bước giá vốn của quy trình cuối kỳ.
+      const p = await periodOfDate(trx, req.body.periodTo);
+      if (p && !req.body.itemCode && !req.body.warehouseCode && req.body.periodFrom <= p.from && req.body.periodTo >= p.to)
+        await logCloseStep(trx, ctx, { fiscalYear: p.fiscalYear, periodNo: p.periodNo, step: 'costing', ok: !x.summary.errors.length, summary: { ...runSummary(x), errors: x.summary.errors.length } });
+      return x;
+    });
     return hideCost(auth) ? { ...r, summary: { ...r.summary, delta: null } } : r; // giá vốn: cần view_cost
   });
   app.put('/api/stock-vouchers/:id/receipt-price', { preHandler: app.requirePermission('costing.run'), schema: { params: z.object({ id: z.string().uuid() }),

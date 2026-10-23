@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
 import { assertPrint, respondReport } from '../reporting/routes.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
+import { logCloseStep, periodOfDate, runSummary } from '../ledger/periodClose.js';
 import { companyInfo } from '../reporting/print/bookSet.js';
 import { invoiceRegister, reconcileDoc, reconcileTax, registerDoc } from './register.js';
 import { offsetInput, runVatOffset } from './vatOffset.js';
@@ -83,7 +84,13 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   // Khấu trừ thuế GTGT cuối kỳ (chứng từ KTT); kỳ khóa sổ cần quyền ghi lùi ngày.
   app.post('/api/tax/vat-offset', { preHandler: app.requirePermission('tax.offset'), schema: { body: offsetInput } }, async (req) => {
     const auth = req.auth!;
-    const out = await app.withOverride(req, (trx) => runVatOffset(trx, { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') }, req.body));
+    const ctx = { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') };
+    const out = await app.withOverride(req, async (trx) => {
+      const r = await runVatOffset(trx, ctx, req.body);
+      const p = await periodOfDate(trx, req.body.date);
+      if (p?.to === req.body.date) await logCloseStep(trx, ctx, { fiscalYear: p.fiscalYear, periodNo: p.periodNo, step: 'vat_offset', ok: true, summary: runSummary(r) });
+      return r;
+    });
     if (!out.unchanged) notifyRecompute(app, auth.tenantId!);
     return out;
   });

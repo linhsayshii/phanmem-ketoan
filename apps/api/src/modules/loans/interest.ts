@@ -141,6 +141,18 @@ export async function runLoanInterest(trx: Trx, ctx: Ctx, input: { fiscalYear: n
 }
 
 /**
+ * Lần chạy hiệu lực của kỳ có cần chạy lại (quyết định 462): lãi tính lại hiện nay (không ghi) khác lãi đã lưu ở kết quả lần chạy.
+ * Chưa chạy: không cũ. Chỉ so lãi từng khế ước (kết quả lần chạy không lưu dấu vân tay cơ sở tính).
+ */
+export async function loanInterestStale(trx: Trx, fiscalYear: number, periodNo: number): Promise<boolean> {
+  const run = await trx.selectFrom('period_run').select('result').where('kind', '=', KIND).where('fiscal_year', '=', fiscalYear).where('period_no', '=', periodNo).where('status', '=', 'active').executeTakeFirst();
+  if (!run) return false;
+  const key = (xs: { code: string; interest: string }[]) => xs.filter((x) => !D(x.interest).isZero()).map((x) => `${x.code}:${x.interest}`).sort().join(';');
+  const stored = ((run.result as { lines?: { loanCode: string; interest: string }[] }).lines ?? []).map((x) => ({ code: x.loanCode, interest: x.interest }));
+  return key(stored) !== key(await computeInterest(trx, (await periodSpan(trx, fiscalYear, periodNo)).span));
+}
+
+/**
  * Lãi dự tính theo tháng dương lịch trong [from, to] của một khế ước (màn hình): dư nợ theo sổ cái, cộng các kỳ trả gốc còn lại của lịch
  * (số đã trả trừ vào kỳ sớm nhất trước, như B01) trừ dần vào ngày đến hạn sau lần ghi sổ gốc cuối cùng. Kỳ quá hạn chưa trả giữ nguyên dư nợ.
  */

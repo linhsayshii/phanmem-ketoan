@@ -1,3 +1,4 @@
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
@@ -6,6 +7,7 @@ import { loadDefaultClosingSteps } from '@kt/coa-data';
 import { todayVn, VND_AMOUNT_MSG, VND_AMOUNT_RE, type Regime } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { notifyRecompute } from './notifyRecompute.js';
+import { logCloseStep, periodOfDate, runSummary } from './periodClose.js';
 import { dateIso } from './vouchers.service.js';
 
 export const stepInput = z.object({ id: z.string().uuid().optional(), stepOrder: z.number().int(), name: z.string().min(1), mode: z.enum(['transfer', 'allocate']),
@@ -56,6 +58,21 @@ export async function laterStepsDone(trx: Trx, stepId: string, date: string): Pr
 const regimeSel = { regime: z.enum(['TT99', 'TT133', 'TT200', 'TT58']).optional(), date: dateIso.optional() };
 const runBody = z.object({ stepId: z.string().uuid(), postingDate: dateIso });
 
+// Mỗi bước một giao dịch, dừng ở lỗi đầu tiên: các bước đã chạy giữ nguyên (xem nhật ký chạy), chạy lại thì bước xong trước đó không có gì để kết chuyển nữa.
+// Chạy xong hết thì ghi nhật ký quy trình cuối kỳ (bước closing) khi ngày kết chuyển là ngày cuối một kỳ tháng.
+export async function runAllClosing(app: FastifyInstance, req: FastifyRequest, postingDate: string) {
+  const tenantId = req.auth!.tenantId!;
+  const steps = (await app.withTenant(req, async (trx) => listSteps(trx, await resolveRegime(trx, undefined, postingDate)))).filter((s) => s.isActive && s.runAt === 'period_end');
+  const out: { stepId: string; voucherIds: string[] }[] = [];
+  try { for (const s of steps) out.push({ stepId: s.id, voucherIds: await app.withTenant(req, (trx) => runStep(trx, tenantId, s.id, postingDate)) }); }
+  finally { if (out.length) notifyRecompute(app, tenantId); }
+  await app.withTenant(req, async (trx) => {
+    const p = await periodOfDate(trx, postingDate);
+    if (p?.to === postingDate) await logCloseStep(trx, { tenantId, userId: req.auth!.userId }, { fiscalYear: p.fiscalYear, periodNo: p.periodNo, step: 'closing', ok: true, summary: runSummary({ voucherIds: out.flatMap((o) => o.voucherIds) }) });
+  });
+  return { steps: out };
+}
+
 const routes: FastifyPluginAsyncZod = async (app) => {
   // Chưa có năm tài chính thì chưa có sơ đồ nào để hiện: trả danh sách rỗng thay vì lỗi.
   app.get('/api/closing/steps', { preHandler: app.requirePermission('closing_step.view'), schema: { querystring: z.object(regimeSel) } }, async (req) =>
@@ -100,14 +117,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     return out;
   });
   // Mỗi bước một giao dịch, dừng ở lỗi đầu tiên: các bước đã chạy giữ nguyên (xem nhật ký chạy), chạy lại thì bước xong trước đó không có gì để kết chuyển nữa.
-  app.post('/api/closing/run-all', { preHandler: app.requirePermission('closing.run'), schema: { body: z.object({ postingDate: dateIso }) } }, async (req) => {
-    const tenantId = req.auth!.tenantId!;
-    const steps = (await app.withTenant(req, async (trx) => listSteps(trx, await resolveRegime(trx, undefined, req.body.postingDate)))).filter((s) => s.isActive && s.runAt === 'period_end');
-    const out: { stepId: string; voucherIds: string[] }[] = [];
-    try { for (const s of steps) out.push({ stepId: s.id, voucherIds: await app.withTenant(req, (trx) => runStep(trx, tenantId, s.id, req.body.postingDate)) }); }
-    finally { if (out.length) notifyRecompute(app, tenantId); }
-    return { steps: out };
-  });
+  app.post('/api/closing/run-all', { preHandler: app.requirePermission('closing.run'), schema: { body: z.object({ postingDate: dateIso }) } }, async (req) => runAllClosing(app, req, req.body.postingDate));
   app.get('/api/closing/runs', { preHandler: app.requirePermission('closing_step.view'), schema: { querystring: z.object({ year: z.coerce.number().int().optional() }) } }, async (req) =>
     app.withTenant(req, async (trx) => {
       let q = trx.selectFrom('closing_run as r').leftJoin('closing_step as s', 's.id', 'r.step_id').innerJoin('voucher as v', 'v.id', 'r.voucher_id')

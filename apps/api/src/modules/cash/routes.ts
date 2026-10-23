@@ -13,6 +13,7 @@ import { countInput, createCount, deleteCount, getCount, listCounts, renderCashC
 import { adjustInput, outflowRate, rateAt, runOutflowAdjust } from './fx.js';
 import { previewRevaluation, revaluationInput, runRevaluation } from './revaluation.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
+import { logCloseStep, periodOfDate, runSummary } from '../ledger/periodClose.js';
 
 const format = z.enum(['json', 'html', 'pdf', 'xlsx']).default('json');
 const range = z.object({ from: isoDate, to: isoDate });
@@ -44,7 +45,12 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     }, READ_SNAPSHOT));
   app.post('/api/fx/outflow-adjust', { preHandler: app.requirePermission('fx.run'), schema: { body: adjustInput } }, async (req) => {
     const auth = req.auth!;
-    const out = await app.withOverride(req, (trx) => runOutflowAdjust(trx, { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') }, req.body));
+    const ctx = { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') };
+    const out = await app.withOverride(req, async (trx) => {
+      const r = await runOutflowAdjust(trx, ctx, req.body);
+      await logCloseStep(trx, ctx, { fiscalYear: req.body.fiscalYear, periodNo: req.body.periodNo, step: 'fx_outflow', ok: true, summary: runSummary(r) });
+      return r;
+    });
     if (out.voucherIds.length || out.reversedVoucherIds.length) notifyRecompute(app, auth.tenantId!);
     return out;
   });
@@ -59,7 +65,12 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       for (const l of out.lines) assertSensitive(auth, { subledger_kind: l.kind, code: l.accountCode });
       return out;
     }
-    const out = await app.withOverride(req, (trx) => runRevaluation(trx, c, req.body));
+    const out = await app.withOverride(req, async (trx) => {
+      const r = await runRevaluation(trx, c, req.body);
+      const p = await periodOfDate(trx, req.body.date);
+      if (p?.to === req.body.date) await logCloseStep(trx, c, { fiscalYear: p.fiscalYear, periodNo: p.periodNo, step: 'fx_revaluation', ok: true, summary: runSummary(r) });
+      return r;
+    });
     if (out.voucherIds.length || out.reversedVoucherIds.length) notifyRecompute(app, auth.tenantId!);
     return out;
   });

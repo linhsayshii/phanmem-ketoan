@@ -4,6 +4,7 @@ import { READ_SNAPSHOT } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
 import { postWithCashCheck } from '../cash/books.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
+import { logCloseStep, runSummary } from '../ledger/periodClose.js';
 import { assertVoucherSensitive, requireStockPerm, withStockWarnings } from '../ledger/vouchers.routes.js';
 import { createSchedule, deleteSchedule, getSchedule, listSchedules, runAmortization, runInput, scheduleInput, scheduleUpdate, updateSchedule } from './amortization.js';
 import { redactCost } from './sales.js';
@@ -55,7 +56,13 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
   app.post('/api/amortizations/run', { preHandler: app.requirePermission('amortization.run'), schema: { body: runInput } }, async (req) => {
     const auth = req.auth!;
-    const out = await app.withOverride(req, (trx) => runAmortization(trx, { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') }, req.body));
+    const ctx = { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') };
+    const out = await app.withOverride(req, async (trx) => {
+      const r = await runAmortization(trx, ctx, req.body);
+      await logCloseStep(trx, ctx, { fiscalYear: r.fiscalYear, periodNo: r.periodNo, step: 'amortization', ok: true,
+        summary: { ...runSummary({ voucherIds: r.created.map((c) => c.voucherId), reversedVoucherIds: r.reversedVoucherIds, unchanged: !r.created.length && r.unchanged > 0 }), skippedSchedules: r.skipped.length } });
+      return r;
+    });
     if (out.created.length || out.reversedVoucherIds.length) notifyRecompute(app, auth.tenantId!);
     return out;
   });

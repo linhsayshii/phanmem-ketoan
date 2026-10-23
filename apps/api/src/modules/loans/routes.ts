@@ -5,6 +5,7 @@ import { assertSensitive, regimeOf } from '../reporting/ledgers.js';
 import { assertPrint, isoDate, ordered, orderedMsg, respondReport } from '../reporting/routes.js';
 import { dateIso } from '../ledger/vouchers.service.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
+import { logCloseStep, runSummary } from '../ledger/periodClose.js';
 import { loanDoc, loanReport, loanVouchers } from './reports.js';
 import { interestPreview, runLoanInterest } from './interest.js';
 import { deleteLoan, disburse, disburseInput, getLoan, listLoans, lookupContracts, loanInput, repay, repayInput, saveLoan, settleLoan } from './loans.js';
@@ -45,7 +46,12 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     async (req) => app.withTenant(req, (trx) => interestPreview(trx, req.params.id, req.query.from, req.query.to), READ_SNAPSHOT));
   app.post('/api/loan-runs', { preHandler: app.requirePermission('loan.run'), schema: { body: z.object({ fiscalYear: z.number().int(), periodNo: z.number().int().min(1).max(15) }) } }, async (req) => {
     const auth = req.auth!;
-    const out = await app.withOverride(req, (trx) => runLoanInterest(trx, { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') }, req.body));
+    const ctx = { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') };
+    const out = await app.withOverride(req, async (trx) => {
+      const r = await runLoanInterest(trx, ctx, req.body);
+      await logCloseStep(trx, ctx, { fiscalYear: req.body.fiscalYear, periodNo: req.body.periodNo, step: 'loan_interest', ok: true, summary: runSummary(r) });
+      return r;
+    });
     if (!out.unchanged) notifyRecompute(app, auth.tenantId!);
     return out;
   });
