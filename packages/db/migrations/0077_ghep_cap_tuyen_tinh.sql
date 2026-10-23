@@ -3,8 +3,9 @@
 -- mỗi khoảng giữa hai điểm liền nhau thuộc đúng một dòng Nợ và một dòng Có, tìm bằng số đoạn đã qua (so sánh bằng). Kết quả ghép và thứ tự giữ nguyên bản 0042.
 -- Thân hàm lấy từ bản cuối (0042); nhánh một–nhiều và việc cắt phân vùng theo posting_date không đổi.
 
-CREATE OR REPLACE FUNCTION fn_build_pairs(p_voucher uuid) RETURNS void LANGUAGE plpgsql AS $$
-DECLARE v voucher; nd int; nc int; total numeric; v_nl text;
+CREATE OR REPLACE FUNCTION fn_build_pairs(p_voucher uuid) RETURNS void LANGUAGE plpgsql SET enable_nestloop = off AS $$
+-- enable_nestloop = off theo thuộc tính hàm (tự trả lại khi hàm xong hoặc lỗi): sau khi cắt phân vùng, bộ lập kế hoạch đoán mỗi CTE vài dòng và chọn vòng lặp lồng (bình phương số dòng) thay cho nối băm.
+DECLARE v voucher; nd int; nc int; total numeric;
 BEGIN
   SELECT * INTO v FROM voucher WHERE id = p_voucher;
   DELETE FROM voucher_pair WHERE voucher_id = p_voucher;
@@ -18,8 +19,6 @@ BEGIN
     -- n–n: ghép tham lam theo thứ tự line_no (góc tây bắc). Dòng Nợ và dòng Có là các đoạn nối tiếp trên trục [0, total);
     -- mỗi cặp là phần giao của một đoạn Nợ với một đoạn Có, nên tổng các cặp của từng dòng đúng bằng số Nợ/Có của dòng đó.
     -- n: số thứ tự đoạn (từ 0); pts: các điểm cuối khác nhau; khoảng (lo, hi] thuộc đoạn Nợ số (số điểm cuối Nợ nhỏ hơn hi) và đoạn Có số (số điểm cuối Có nhỏ hơn hi).
-    -- Sau khi cắt phân vùng, bộ lập kế hoạch đoán mỗi CTE vài dòng và chọn vòng lặp lồng (bình phương số dòng) thay cho nối băm: tắt vòng lặp lồng trong câu lệnh này rồi trả lại.
-    v_nl := current_setting('enable_nestloop'); PERFORM set_config('enable_nestloop', 'off', true);
     INSERT INTO voucher_pair(tenant_id, voucher_id, posting_date, debit_account_id, credit_account_id, debit_party_id, credit_party_id, amount, is_closing, debit_line_id, credit_line_id)
     WITH d AS (SELECT id, account_id, party_id, sum(debit) OVER (ORDER BY line_no) AS hi, row_number() OVER (ORDER BY line_no) - 1 AS n FROM voucher_line WHERE voucher_id = p_voucher AND posting_date = v.posting_date AND debit > 0),
          c AS (SELECT id, account_id, party_id, sum(credit) OVER (ORDER BY line_no) AS hi, row_number() OVER (ORDER BY line_no) - 1 AS n FROM voucher_line WHERE voucher_id = p_voucher AND posting_date = v.posting_date AND credit > 0),
@@ -31,6 +30,5 @@ BEGIN
     FROM seg JOIN d ON d.n = seg.dn JOIN c ON c.n = seg.cn
     WHERE seg.amt > 0
     ORDER BY seg.hi;
-    PERFORM set_config('enable_nestloop', v_nl, true);
   END IF;
 END $$;

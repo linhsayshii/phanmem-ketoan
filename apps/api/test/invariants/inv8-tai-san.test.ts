@@ -211,8 +211,7 @@ describe('Bất biến 8: sổ tài sản và lãi vay', () => {
     }), { numRuns: runs(10), examples: [['TT133', 'day', [0, 1, 2, 3], [{ startMonth: 1, day: 15, off: 3, amount: 100_000 }, { startMonth: 8, day: 28, off: 1, amount: 499_999_999 }, { startMonth: 3, day: 1, off: 7, amount: 1_000_003 }, { startMonth: 2, day: 31 - 3, off: 0, amount: 7 * 100_000 }]]] });
   }, timeoutFor(900_000));
 
-  // it.fails: lỗi thật của engine vay (quyết định 506): repay không kiểm số dư tại ngày trả nên trả trước ngày giải ngân được nhận, LV kỳ sau trả 400. Bỏ .fails khi sửa lỗi.
-  it.fails('(e) lãi vay: Σ LV mỗi kỳ = periodInterest tính độc lập từ dòng sổ cái', async () => {
+  it('(e) lãi vay: Σ LV mỗi kỳ = periodInterest tính độc lập từ dòng sổ cái', async () => {
     type LoanOp = { kind: 'disburse' | 'repay'; date: string; amount: number } | { kind: 'run'; period: number };
     const arbLoanOp: fc.Arbitrary<LoanOp> = fc.oneof(
       { weight: 4, arbitrary: fc.record({ kind: fc.constant('disburse' as const), date: arbDate2026, amount: fc.integer({ min: 1_000_000, max: 500_000_000 }) }) },

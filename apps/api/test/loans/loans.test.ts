@@ -56,7 +56,10 @@ describe('khế ước vay', () => {
     const id = (await call('GET', '/api/loans')).json().find((x: { code: string }) => x.code === 'VAY01').id as number;
     const p = await call('POST', `/api/loans/${id}/repay`, { date: '2026-06-30', principal: '250000000', bankAccountNo: '0011001' });
     expect(p.statusCode, p.body).toBe(201); expect(p.json().voucherType).toBe('BN');
-    expect((await call('POST', `/api/loans/${id}/repay`, { date: '2026-07-01', principal: '900000000', bankAccountNo: '0011001' })).json().error.code).toBe('LOAN_OVERPAY');
+    expect((await call('POST', `/api/loans/${id}/repay`, { date: '2026-07-01', principal: '900000000', bankAccountNo: '0011001' })).json().error.code).toBe('LOAN_REPAY_EXCEEDS');
+    // trả trước ngày giải ngân đầu tiên: dư nợ tại ngày trả bằng 0 nên bị chặn (trước đây nhận và làm lỗi chạy lãi vay)
+    const early = await call('POST', `/api/loans/${id}/repay`, { date: '2026-01-10', principal: '1', bankAccountNo: '0011001' });
+    expect(early.statusCode).toBe(409); expect(early.json().error.code).toBe('LOAN_REPAY_EXCEEDS');
     expect((await call('GET', `/api/loans/${id}`)).json().outstanding).toBe('750000000');
     const s = await call('POST', `/api/loans/${id}/settle`); expect(s.statusCode).toBe(409); expect(s.json().error.code).toBe('LOAN_OUTSTANDING');
     const del = await call('DELETE', `/api/loans/${id}`); expect(del.statusCode).toBe(409); expect(del.json().error.code).toBe('LOAN_IN_USE');

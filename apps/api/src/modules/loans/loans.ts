@@ -183,7 +183,12 @@ async function bookBalance(trx: Trx, id: number, account: string, date: string) 
 // bên Có tiền theo tỷ giá thanh toán nhập vào; chênh lệch vào lãi (Có) / lỗ (Nợ) tỷ giá của chế độ (fx_rule).
 export async function repay(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof repayInput>) {
   const { c, stat } = await activeLoan(trx, ctx.tenantId, id);
-  if (D(b.principal).gt(stat.outstandingCur)) throw new AppError('LOAN_OVERPAY', `Trả gốc ${formatVnNumber(b.principal)} vượt dư nợ gốc ${formatVnNumber(stat.outstandingCur)} của khế ước ${c.code}`, 409);
+  // Dư nợ gốc tại ngày trả (không phải cả đời khế ước): trả trước ngày giải ngân làm dư nợ ngày âm và lãi kỳ sau không tính được.
+  const at = (await loanStats(trx, b.date, id))[0]!;
+  if (D(b.principal).gt(at.outstandingCur)) {
+    const vnd = c.currency === 'VND' ? '' : ` (${formatVnNumber(at.outstandingVnd)} đồng)`;
+    throw new AppError('LOAN_REPAY_EXCEEDS', `Trả gốc ${formatVnNumber(b.principal)} ${c.currency} vượt dư nợ gốc ${formatVnNumber(at.outstandingCur)} ${c.currency}${vnd} của khế ước ${c.code} tại ngày ${b.date}`, 409);
+  }
   const gl = await bankGl(trx, b.bankAccountNo);
   const lender = c.partyCode;
   const part = (amt: string) => money(c.currency, amt, b.fxRate);
