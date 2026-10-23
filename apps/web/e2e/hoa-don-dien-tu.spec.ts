@@ -106,4 +106,23 @@ test('Hóa đơn điện tử: cấu hình nhà cung cấp giả lập và ký h
   await expect(rowOf('Hóa đơn điều chỉnh')).toBeVisible();
   await expect(rowOf('Hóa đơn gốc')).toBeVisible();
   await expect(rowOf(name)).toHaveCount(2);
+
+  // Thông báo 04/SS-HĐĐT: từ chi tiết hóa đơn gốc, F4 chọn hóa đơn, lưu nháp, gửi
+  await page.locator('.ant-drawer .ant-drawer-close').click();
+  await rowOf('Hóa đơn gốc').getByRole('button', { name: 'Chi tiết' }).click();
+  await expect(page.getByRole('dialog').getByText('Hóa đơn liên quan')).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: 'Lập 04/SS' }).click();
+  await expect(page.getByRole('heading', { name: /04\/SS-HĐĐT/ })).toBeVisible();
+  const nd = page.locator('.ant-modal').filter({ has: page.locator('.ag-root') });
+  await expect(nd).toBeVisible();
+  await expect(nd.locator('.ag-row')).toHaveCount(2);
+  await expect(nd).toContainText(no);
+  await nd.locator('.ag-row [col-id="reason"]').first().dblclick();
+  await page.keyboard.type('Sai địa chỉ người mua'); await page.keyboard.press('Enter');
+  await nd.getByRole('button', { name: 'Lưu' }).click();
+  await expect(page.locator('.ant-message').getByText('Đã lưu thông báo')).toBeVisible();
+  await expect(nd.getByRole('button', { name: 'Gửi', exact: true })).toBeVisible();
+  await nd.getByRole('button', { name: 'Gửi', exact: true }).click();
+  await expect(page.locator('.ant-message').getByText('Đã gửi thông báo')).toBeVisible();
+  await expect(page.locator('tbody tr.ant-table-row', { hasText: 'Đã gửi' })).toBeVisible();
 });

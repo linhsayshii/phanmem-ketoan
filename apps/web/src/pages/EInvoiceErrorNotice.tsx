@@ -41,10 +41,11 @@ export default function EInvoiceErrorNoticePage() {
     void api<EInvoice>(`/api/einvoices/${preId}`).then((e) => { open('new', fromInvoice(e)); window.history.replaceState(null, '', window.location.pathname); }).catch(() => undefined);
   }, [preId, providers.isSuccess]);
 
+  const used = (l: NoticeLine) => !!l.einvoiceId || !!l.invoiceNo;
   const body = (v: Record<string, unknown>) => ({
     noticeKind: kind, ...(kind === 'tax_notice' ? { taxNoticeNo: v['taxNoticeNo'], taxNoticeDate: (v['taxNoticeDate'] as dayjs.Dayjs | null)?.format('YYYY-MM-DD') } : {}),
     noticeDate: (v['noticeDate'] as dayjs.Dayjs).format('YYYY-MM-DD'), place: v['place'] ?? '', ...(v['providerId'] ? { providerId: v['providerId'] } : {}),
-    lines: lines.map((l) => ({ ...(l.einvoiceId ? { einvoiceId: l.einvoiceId } : { formNo: l.formNo, serial: l.serial, invoiceNo: l.invoiceNo, issueDate: l.issueDate, cqtCode: l.cqtCode || null, invoiceType: l.invoiceType || undefined }),
+    lines: lines.filter(used).map((l) => ({ ...(l.einvoiceId ? { einvoiceId: l.einvoiceId } : { formNo: l.formNo, serial: l.serial, invoiceNo: l.invoiceNo, issueDate: l.issueDate, cqtCode: l.cqtCode || null, invoiceType: l.invoiceType || undefined }),
       action: kind === 'self' ? 'notice' : 'explain', reason: l.reason })) });
   const save = useMutation({
     mutationFn: (v: Record<string, unknown>) => (editing === 'new' ? api<Notice>('/api/einvoice/error-notices', { method: 'POST', json: body(v) }) : api<Notice>(`/api/einvoice/error-notices/${(editing as Notice).id}`, { method: 'PUT', json: body(v) })),
@@ -88,7 +89,7 @@ export default function EInvoiceErrorNoticePage() {
           {canEdit && editing && editing !== 'new' && editing.status === 'draft' && <><Button loading={sendM.isPending} onClick={() => sendM.mutate(editing.id)}>Gửi</Button><Button loading={markM.isPending} onClick={() => markM.mutate(editing.id)}>Đánh dấu đã gửi</Button></>}
           <Button onClick={() => setEditing(null)}>Đóng</Button>
           {canEdit && draft && <Button type="primary" loading={save.isPending} onClick={() => form.submit()}>Lưu</Button>}</Space>}>
-        <Form form={form} layout="vertical" disabled={!draft || !canEdit} onFinish={(v) => { if (lines.some((l) => !l.reason.trim())) { void message.error('Nhập lý do (9) cho mọi dòng'); return; } save.mutate(v); }}>
+        <Form form={form} layout="vertical" disabled={!draft || !canEdit} onFinish={(v) => { if (!lines.some(used)) { void message.error('Chọn ít nhất một hóa đơn'); return; } if (lines.filter(used).some((l) => !l.reason.trim())) { void message.error('Nhập lý do (9) cho mọi dòng'); return; } save.mutate(v); }}>
           <Space wrap align="start">
             <Form.Item name="noticeKind" label="Loại thông báo"><Select aria-label="Loại thông báo" style={{ width: 300 }} onChange={setKind} options={Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }))} /></Form.Item>
             {kind === 'tax_notice' && <><Form.Item name="taxNoticeNo" label="Số thông báo của CQT" rules={[{ required: true, whitespace: true, message: 'Nhập số thông báo' }]}><Input /></Form.Item>

@@ -8,7 +8,7 @@ import { useAuth } from '../auth.js';
 import type { Series } from './einvoiceCommon.js';
 
 // Cấu hình hóa đơn điện tử: nhà cung cấp (mật khẩu chỉ ghi) và dải ký hiệu mẫu số/ký hiệu (TT 91/2026 Phụ lục I).
-interface Provider { id: number; code: 'fake' | 'sinvoice'; name: string; baseUrl: string; username: string; hasSecret: boolean; sellerTaxCode: string; isActive: boolean }
+interface Provider { id: number; code: 'fake' | 'sinvoice'; name: string; baseUrl: string; username: string; hasSecret: boolean; sellerTaxCode: string; isActive: boolean; options?: Record<string, unknown> }
 const CODES = [{ value: 'fake', label: 'Giả lập (kiểm thử)' }, { value: 'sinvoice', label: 'SInvoice (Viettel)' }];
 const required = [{ required: true, whitespace: true, message: 'Bắt buộc nhập' }];
 
@@ -18,7 +18,7 @@ function ProviderCard({ providers, canEdit }: { providers: Provider[]; canEdit: 
   const [tested, setTested] = useState<Record<number, { ok: boolean; message: string }>>({});
   const open = (p: Provider | 'new') => { setEditing(p); form.resetFields(); form.setFieldsValue(p === 'new' ? { code: 'sinvoice', isActive: true } : { ...p, password: '' }); };
   const save = useMutation({
-    mutationFn: (v: Record<string, unknown>) => { const json = { ...v, password: v['password'] || undefined }; return editing === 'new' ? api('/api/einvoice/providers', { method: 'POST', json }) : api(`/api/einvoice/providers/${(editing as Provider).id}`, { method: 'PUT', json }); },
+    mutationFn: (v: Record<string, unknown>) => { const json = { ...v, password: v['password'] || undefined, ...(editing !== 'new' && (editing as Provider).options ? { options: (editing as Provider).options } : {}) }; return editing === 'new' ? api('/api/einvoice/providers', { method: 'POST', json }) : api(`/api/einvoice/providers/${(editing as Provider).id}`, { method: 'PUT', json }); },
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['einvoice-providers'] }); setEditing(null); void message.success('Đã lưu nhà cung cấp'); }, onError: (e) => void message.error((e as Error).message) });
   const del = useMutation({ mutationFn: (id: number) => api(`/api/einvoice/providers/${id}`, { method: 'DELETE' }), onSuccess: () => { void qc.invalidateQueries({ queryKey: ['einvoice-providers'] }); void message.success('Đã xóa nhà cung cấp'); }, onError: (e) => void message.error((e as Error).message) });
   const test = useMutation({ mutationFn: (id: number) => api<{ ok: boolean; message: string }>(`/api/einvoice/providers/${id}/test`, { method: 'POST' }), onSuccess: (r, id) => setTested((t) => ({ ...t, [id]: r })), onError: (e) => void message.error((e as Error).message) });

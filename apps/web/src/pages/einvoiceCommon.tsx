@@ -5,7 +5,7 @@ import { ApiError } from '../api/client.js';
 export interface EInvoice {
   id: number; voucherId: string; voucherNo: string | null; voucherType: string; postingDate: string; seriesId: number; formNo: string; serial: string; relation: 'original' | 'adjustment' | 'replacement';
   originalId: number | null; status: 'draft' | 'sending' | 'issued' | 'failed' | 'replaced' | 'cancelled'; invoiceNo: string | null; issueDate: string | null; cqtCode: string | null; cqtStatus: string;
-  errorCode: string | null; errorMessage: string | null; attempts: number; adjusted: boolean; needsReversal: boolean; paid: boolean; buyerName: string | null; total: string | null; currency: string | null; createdAt: string;
+  errorCode: string | null; errorMessage: string | null; attempts: number; adjusted: boolean; needsReversal: boolean; paid: boolean; buyerName: string | null; buyerTaxCode: string | null; beforeTax: string | null; tax: string | null; total: string | null; currency: string | null; createdAt: string;
   warnings?: { code: string; message: string }[];
 }
 export interface EInvoiceLog { id: number; action: string; request: unknown; response: unknown; httpStatus: number | null; ok: boolean; error: string | null; ms: number; createdAt: string }
