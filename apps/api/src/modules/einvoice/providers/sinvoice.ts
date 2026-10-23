@@ -51,7 +51,8 @@ export class SInvoiceProvider implements EInvoiceProvider {
     const brief = (b: unknown) => (b && typeof b === 'object' && 'fileToBytes' in b ? { ...b, fileToBytes: `[${String((b as { fileToBytes: unknown }).fileToBytes ?? '').length} ký tự base64]` } : b);
     let r;
     try { r = await httpJson<T>(url, { method: 'POST', ...init, timeoutMs: this.timeoutMs }); } catch (e) {
-      await ctx.log({ action, request: redact(logRequest, SECRET_KEYS), response: null, httpStatus: null, ok: false, error: e instanceof Error ? e.message : String(e), ms: Date.now() - t0 });
+      // Ghi nhật ký lỗi không được che lỗi HTTP gốc.
+      await ctx.log({ action, request: redact(logRequest, SECRET_KEYS), response: null, httpStatus: null, ok: false, error: e instanceof Error ? e.message : String(e), ms: Date.now() - t0 }).catch(() => undefined);
       throw e;
     }
     const err = this.errorOf(r.status, r.body);
@@ -74,7 +75,7 @@ export class SInvoiceProvider implements EInvoiceProvider {
   private async login(ctx: ProviderCtx): Promise<string> {
     const req = { username: this.cfg.username, password: this.cfg.password };
     const r = await this.send<{ access_token?: string; expires_in?: number }>(ctx, 'login', `${this.cfg.baseUrl}/auth/login`, { body: req }, req);
-    if (r.err) throw r.err.code === 'SINVOICE_AUTH' || r.status < 500 ? fail('SINVOICE_AUTH', r.err.message) : r.err;
+    if (r.err) throw r.err.retriable ? r.err : fail('SINVOICE_AUTH', r.err.message);
     const token = r.body?.access_token;
     if (!token) throw fail('SINVOICE_AUTH', 'SInvoice không trả access_token khi đăng nhập');
     tokens.set(this.tokenKey, { token, exp: Date.now() + Math.max(0, (r.body.expires_in ?? 300) * 1000 - TOKEN_MARGIN_MS) });
@@ -151,7 +152,7 @@ export class SInvoiceProvider implements EInvoiceProvider {
         sellerEmail: doc.seller.email ?? '', sellerCountryCode: 'VN', ...(doc.seller.bankAccount && { sellerBankAccount: doc.seller.bankAccount, sellerBankName: doc.seller.bankName ?? '' }) },
       payments: [{ paymentMethodName: doc.paymentMethod }],
       itemInfo: doc.lines.map(item),
-      taxBreakdowns: doc.taxGroups.map((g) => ({ taxPercentage: taxPct(g.taxRate), taxableAmount: money(g.base), taxAmount: money(g.tax), taxableAmountPos: !decrease, taxAmountPos: !decrease })),
+      taxBreakdowns: doc.taxGroups.map((g) => ({ taxPercentage: taxPct(g.taxRate), taxableAmount: money(D(g.base).abs().toString()), taxAmount: money(D(g.tax).abs().toString()), taxableAmountPos: !decrease, taxAmountPos: !decrease })),
       // Tổng lấy nguyên từ doc.totals để SInvoice không tự cộng lệch sổ cái (Odoo để SInvoice tự tính, §3: chọn khác có chủ đích, xem Quyết định).
       summarizeInfo: { sumOfTotalLineAmountWithoutTax: money(doc.lines.reduce((s, l) => s.plus(D(l.amount).abs()), D(0)).toString()), totalAmountWithoutTax: money(t.beforeTax), totalTaxAmount: money(t.tax),
         totalAmountWithTax: money(t.total), totalAmountWithTaxInWords: t.totalInWords },
@@ -165,7 +166,7 @@ export class SInvoiceProvider implements EInvoiceProvider {
 
   private result(doc: Pick<EInvoiceDoc, 'transactionUuid' | 'serial' | 'providerTemplate' | 'formNo'>, r: { invoiceNo: string; reservationCode?: string; codeOfTax?: string | null; issueMs: number; templateCode?: string }): IssueResult {
     const cqtCode = r.codeOfTax || null;
-    return { invoiceNo: r.invoiceNo.slice(6), issueDate: vnDate(r.issueMs), cqtCode, cqtStatus: doc.serial.startsWith('C') ? (cqtCode ? 'accepted' : 'waiting') : 'none',
+    return { invoiceNo: r.invoiceNo.startsWith(doc.serial) ? r.invoiceNo.slice(doc.serial.length) : r.invoiceNo, issueDate: vnDate(r.issueMs), cqtCode, cqtStatus: doc.serial.startsWith('C') ? (cqtCode ? 'accepted' : 'waiting') : 'none',
       providerRef: { invoiceNo: r.invoiceNo, templateCode: r.templateCode ?? doc.providerTemplate ?? doc.formNo, supplierTaxCode: this.cfg.sellerTaxCode, transactionUuid: doc.transactionUuid, reservationCode: r.reservationCode ?? null, issueMs: r.issueMs } };
   }
 
@@ -175,7 +176,7 @@ export class SInvoiceProvider implements EInvoiceProvider {
     let r;
     try { r = await this.call<{ result?: { invoiceNo?: string; reservationCode?: string; codeOfTax?: string | null } }>(ctx, 'create', `InvoiceWS/createInvoice/${this.cfg.sellerTaxCode}`, { json: body }); } catch (e) {
       // §5.1 mục 5: SInvoice có thể từ chối transactionUuid trùng nhưng nguồn không nêu mã lỗi. Lỗi nghiệp vụ không thử lại: tra theo uuid một lần, đã có hóa đơn thì trả hóa đơn đó (không tạo thứ hai).
-      if (e instanceof ProviderError && !e.retriable && e.code !== 'SINVOICE_AUTH') { const found = await this.findByTransaction(ctx, doc); if (found) return found; }
+      if (e instanceof ProviderError && !e.retriable && e.code !== 'SINVOICE_AUTH') { const found = await this.findByTransaction(ctx, doc).catch(() => null); if (found) return found; }
       throw e;
     }
     if (!r.result?.invoiceNo) throw fail('SINVOICE_BAD_RESPONSE', 'SInvoice không trả số hóa đơn', true);
