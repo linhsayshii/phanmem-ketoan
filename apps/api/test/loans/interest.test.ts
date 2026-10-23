@@ -78,4 +78,41 @@ describe('lãi vay theo kỳ (LV)', () => {
     // tháng 12: (9e8 × 10% × 30 + 2e8 × 10% × 1) / 365 = 7.452.054,79
     expect(m[11]).toMatchObject({ from: '2026-12-01', interest: '7452055' });
   });
+
+  it('trả hết khế ước USD ngày 20/09 theo 25.100 gồm lãi đến ngày, LV tháng 9 theo 25.200: phần dư VND của 335 vào 515, tất toán được', async () => {
+    for (const pn of [4, 5, 6, 7, 8]) expect((await run(pn)).statusCode).toBe(200);
+    const usd = (await call('GET', '/api/loans')).json().find((x: { code: string }) => x.code === 'USDA').id as number;
+    const acc = await sql<{ cur: string }>`SELECT (-sum(l.amount_currency))::text AS cur FROM voucher_line l JOIN account a ON a.id = l.account_id JOIN contract k ON k.id = l.contract_id
+      WHERE k.code = 'USDA' AND k.tenant_id = ${tenantId}::uuid AND a.code = '335'`.execute(ctx.t.admin);
+    expect(acc.rows[0]!.cur).toBe('4033.3500'); // 500 + 466,67 + 516,67 + 500 + 516,67 + 500 + 516,67 + 516,67
+    // lãi 01–19/09: 100.000 × 6% × 19 / 360 = 316,67; trả 4.350,02 theo tỷ giá ghi sổ 25.000 = 108.750.500
+    const p = await call('POST', `/api/loans/${usd}/repay`, { date: '2026-09-20', principal: '100000', interest: '4350.02', fxRate: '25100', bankAccountNo: '0011001' });
+    expect(p.statusCode, p.body).toBe(201);
+    expect((await call('POST', '/api/catalogs/exchange_rate', { currency_code: 'USD', rate_date: '2026-09-30', rate_type: 'transfer_avg', rate: '25200' })).statusCode).toBe(201);
+    // dư 335 sau LV: 100.833.750 − 108.750.500 + 316,67 × 25.200 (7.980.084) = 63.334, nguyên tệ 0
+    const r = await run(9); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().lines).toContainEqual({ loanCode: 'USDA', interest: '316.67', interestVnd: '7980084', fxDifference: '63334' });
+    expect((await lines(r.json().voucherId)).filter((l) => l.contract === 'USDA' || l.code === '515')).toMatchObject([
+      { code: '335', credit: '7980084', ac: '-316.6700' }, { code: '335', debit: '63334', cur: 'USD', ac: '0.0000' }, { code: '515', credit: '63334' }]);
+    expect((await run(9)).json().unchanged).toBe(true);
+    const s = await call('POST', `/api/loans/${usd}/settle`); expect(s.statusCode, s.body).toBe(200);
+  });
+
+  it('khế ước nháp: lãi dự tính 0, không 404', async () => {
+    const d = await call('POST', '/api/loans', { code: 'NHAP', name: 'Nháp', status: 'draft', rates: [{ validFrom: '2026-01-01', annualRate: '8' }] }); expect(d.statusCode, d.body).toBe(201);
+    const r = await call('GET', `/api/loans/${d.json().id}/interest-preview?from=2026-01-01&to=2026-01-31`); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().total).toBe('0');
+  });
+
+  it('kỳ khóa sổ: người có quyền ghi lùi chạy lại đảo ngày cuối kỳ; kỳ khóa cứng → 409 PERIOD_HARD_LOCKED', async () => {
+    const put = await call('PUT', `/api/loans/${loanId}`, { code: 'VAYA', name: 'Vay A', partyCode: 'NCC001', value: '2000000000', signedDate: '2026-01-01',
+      rates: [{ validFrom: '2026-01-01', annualRate: '9.5' }, { validFrom: '2026-02-16', annualRate: '10' }], installments: [{ dueDate: '2026-12-31', principal: '900000000' }] });
+    expect(put.statusCode, put.body).toBe(200);
+    for (const no of [1, 2]) expect((await call('POST', `/api/periods/2026/${no}/lock`, { level: 'soft' })).statusCode).toBeLessThan(300);
+    const feb = await run(2); expect(feb.statusCode, feb.body).toBe(200); expect(feb.json().unchanged).toBe(false);
+    const rv = await ctx.t.admin.selectFrom('voucher').select('posting_date').where('reversal_of_id', '=', feb.json().reversedVoucherIds[0]).executeTakeFirstOrThrow();
+    expect(rv.posting_date).toBe('2026-02-28');
+    for (const no of [0, 1]) expect((await call('POST', `/api/periods/2026/${no}/lock`, { level: 'hard' })).statusCode).toBeLessThan(300);
+    const jan = await run(1); expect(jan.statusCode).toBe(409); expect(jan.json().error.code).toBe('PERIOD_HARD_LOCKED');
+  });
 });

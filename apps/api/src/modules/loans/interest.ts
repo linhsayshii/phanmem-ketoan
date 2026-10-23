@@ -18,12 +18,12 @@ const KIND = 'loan_interest';
 type Basis = { balances: { date: string; balance: string }[]; rates: { validFrom: string; annualRate: string }[] };
 type Loan = { id: number; code: string; currency: string; partyCode: string | null; expenseAccount: string; payableAccount: string; dayBasis: 360 | 365 };
 
-// Khế ước (trừ nháp) cùng bậc dư nợ gốc cuối ngày theo loại tiền khế ước (Σ Có − Nợ nguyên tệ dòng TK gốc có contract_id) và lãi suất theo hiệu lực, đến hết `to`.
+// Khế ước (trừ nháp; một khế ước nêu mã thì kể cả nháp, cho lãi dự tính) cùng bậc dư nợ gốc cuối ngày theo loại tiền khế ước (Σ Có − Nợ nguyên tệ dòng TK gốc có contract_id) và lãi suất theo hiệu lực, đến hết `to`.
 async function loansWithBasis(trx: Trx, to: string, id?: number): Promise<(Loan & Basis)[]> {
   const loans = (await sql<Loan>`SELECT c.id::int AS id, c.code, c.currency_code AS currency, p.code AS "partyCode", lt.interest_expense_account_code AS "expenseAccount",
       lt.interest_payable_account_code AS "payableAccount", lt.day_basis AS "dayBasis"
     FROM contract c JOIN loan_term lt ON lt.tenant_id = c.tenant_id AND lt.contract_id = c.id LEFT JOIN party p ON p.tenant_id = c.tenant_id AND p.id = c.party_id
-    WHERE c.kind = 'loan' AND c.status <> 'draft' AND (${id ?? null}::bigint IS NULL OR c.id = ${id ?? null}::bigint) ORDER BY c.code`.execute(trx)).rows;
+    WHERE c.kind = 'loan' AND (c.status <> 'draft' OR ${id ?? null}::bigint IS NOT NULL) AND (${id ?? null}::bigint IS NULL OR c.id = ${id ?? null}::bigint) ORDER BY c.code`.execute(trx)).rows;
   if (!loans.length) return [];
   const ids = loans.map((l) => l.id);
   const moves = (await sql<{ id: number; date: string; change: string }>`SELECT l.contract_id::int AS id, l.posting_date::text AS date, (-sum(l.amount_currency))::text AS change
@@ -65,25 +65,45 @@ export async function runLoanInterest(trx: Trx, ctx: Ctx, input: { fiscalYear: n
   const { fiscalYear: fy, periodNo: pn } = input;
   const { span, status } = await periodSpan(trx, fy, pn);
   await assertNoGap(trx, span);
-  const items = (await computeInterest(trx, span)).filter((x) => !D(x.interest).isZero());
+  const loans = await computeInterest(trx, span);
+  const regime = (await trx.selectFrom('fiscal_period').select('regime').where('fiscal_year', '=', fy).where('period_no', '=', pn).executeTakeFirstOrThrow()).regime;
+  // Dư Có TK lãi phải trả (VND, nguyên tệ) của khế ước ngoại tệ đến P.to, trừ mọi chứng từ của các lần chạy kỳ P (kể cả bản đảo: đảo chép source_doc_*).
+  const fxIds = loans.filter((x) => x.currency !== 'VND').map((x) => x.id);
+  const runIds = (await trx.selectFrom('period_run').select('id').where('kind', '=', KIND).where('fiscal_year', '=', fy).where('period_no', '=', pn).execute()).map((r) => r.id);
+  const payable = new Map(fxIds.length ? (await sql<{ id: number; vnd: string; cur: string }>`SELECT l.contract_id::int AS id, sum(l.credit - l.debit)::text AS vnd, (-sum(l.amount_currency))::text AS cur
+    FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id AND v.state IN ('posted','reversed') JOIN account a ON a.id = l.account_id
+    JOIN loan_term lt ON lt.tenant_id = l.tenant_id AND lt.contract_id = l.contract_id AND lt.interest_payable_account_code = a.code
+    WHERE l.contract_id = ANY(${fxIds}::bigint[]) AND l.currency_code <> 'VND' AND l.posting_date <= ${span.to}::date
+      AND (v.source_doc_type IS DISTINCT FROM ${KIND} OR v.source_doc_id <> ALL(${runIds}::uuid[])) GROUP BY l.contract_id`.execute(trx)).rows.map((r) => [r.id, r] as const) : []);
 
   // Khế ước ngoại tệ: quy VND theo tỷ giá ngày cuối kỳ, loại tỷ giá nợ phải trả (cài đặt công ty, không có thì theo chế độ) như đánh giá lại.
+  let rules: Awaited<ReturnType<typeof fxRulesFor>> | undefined;
+  const ruleSet = async () => (rules ??= await fxRulesFor(trx, regime));
   let rateType: Awaited<ReturnType<typeof getSettings>>['fx_rate_type'] | undefined;
-  const lines: VLine[] = []; const result = [];
-  for (const x of items) {
-    let fxRate: string | undefined; let vnd = x.interest;
-    if (x.currency !== 'VND') {
-      if (!rateType) {
-        const regime = (await trx.selectFrom('fiscal_period').select('regime').where('fiscal_year', '=', fy).where('period_no', '=', pn).executeTakeFirstOrThrow()).regime;
-        rateType = (await getSettings(trx, ctx.tenantId)).fx_reval_rate_liability ?? (await fxRulesFor(trx, regime)).liabilityRate;
-      }
-      fxRate = (await rateAt(trx, ctx.tenantId, { currency: x.currency, date: span.to, type: rateType })).rate;
-      vnd = D(x.interest).times(fxRate).toDecimalPlaces(0).toFixed(0);
-    }
+  const lines: VLine[] = []; const result: { loanCode: string; interest: string; interestVnd: string; fxDifference?: string }[] = [];
+  for (const x of loans) {
     const description = `Lãi vay khế ước ${x.code} kỳ ${pn}/${fy}`;
-    lines.push({ accountCode: x.expenseAccount, debit: vnd, credit: '0', currencyCode: 'VND', description },
-      { accountCode: x.payableAccount, debit: '0', credit: vnd, currencyCode: x.currency, ...(fxRate && { amountCurrency: D(x.interest).neg().toFixed(2), fxRate }), partyCode: x.partyCode, contractCode: x.code, description });
-    result.push({ loanCode: x.code, interest: x.interest, interestVnd: vnd });
+    let vnd = x.interest;
+    if (!D(x.interest).isZero()) {
+      let fxRate: string | undefined;
+      if (x.currency !== 'VND') {
+        rateType ??= (await getSettings(trx, ctx.tenantId)).fx_reval_rate_liability ?? (await ruleSet()).liabilityRate;
+        fxRate = (await rateAt(trx, ctx.tenantId, { currency: x.currency, date: span.to, type: rateType })).rate;
+        vnd = D(x.interest).times(fxRate).toDecimalPlaces(0).toFixed(0);
+      }
+      lines.push({ accountCode: x.expenseAccount, debit: vnd, credit: '0', currencyCode: 'VND', description },
+        { accountCode: x.payableAccount, debit: '0', credit: vnd, currencyCode: x.currency, ...(fxRate && { amountCurrency: D(x.interest).neg().toFixed(2), fxRate }), partyCode: x.partyCode, contractCode: x.code, description });
+    }
+    // Lãi phải trả ngoại tệ hết nguyên tệ sau LV mà còn dư VND (trả lãi trước khi trích, theo tỷ giá khác): kết chuyển phần dư vào lãi/lỗ tỷ giá đã thực hiện.
+    const pb = payable.get(x.id);
+    const residual = pb && D(pb.cur).plus(x.interest).isZero() ? D(pb.vnd).plus(vnd) : D(0);
+    if (!residual.isZero()) {
+      const fx = await ruleSet(); const amount = residual.abs().toFixed(0); const over = residual.gt(0); // dư Có thừa: giảm nợ, lãi tỷ giá
+      const desc = `Chênh lệch tỷ giá lãi vay khế ước ${x.code} kỳ ${pn}/${fy}`;
+      lines.push({ accountCode: x.payableAccount, debit: over ? amount : '0', credit: over ? '0' : amount, currencyCode: x.currency, amountCurrency: '0', partyCode: x.partyCode, contractCode: x.code, description: desc },
+        { accountCode: over ? fx.gainAccount : fx.lossAccount, debit: over ? '0' : amount, credit: over ? amount : '0', currencyCode: 'VND', description: desc });
+    }
+    if (!D(x.interest).isZero() || !residual.isZero()) result.push({ loanCode: x.code, interest: x.interest, interestVnd: vnd, ...(!residual.isZero() && { fxDifference: residual.toFixed(0) }) });
   }
   const resultJson = JSON.stringify({ lines: result });
 

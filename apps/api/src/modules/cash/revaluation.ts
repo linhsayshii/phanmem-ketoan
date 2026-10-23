@@ -19,10 +19,11 @@ type Input = z.infer<typeof revaluationInput>;
 // Một khoản mục tiền tệ có gốc ngoại tệ còn số dư nguyên tệ tại ngày: nhóm tiền (tài khoản, tài khoản ngân hàng, loại tiền) hoặc khoản công nợ gốc (dư VND gồm cả khoản con).
 export interface RevaluationLine {
   kind: string | null; accountCode: string; bankAccountNo: string | null; partyCode: string | null; openItemId: number | null; docNo: string | null; currency: string;
-  balanceCurrency: string; balance: string; rateType: string; rate: string; revalued: string; difference: string;
+  balanceCurrency: string; balance: string; rateType: string; rate: string; revalued: string; difference: string; contractCode?: string | null;
 }
 type Line = S.SystemVoucherInput['lines'][number];
 interface CashRow { kind: string; accountCode: string; bankAccountNo: string | null; currency: string; balance: string; cur: string }
+interface LoanRow { accountCode: string; contractCode: string; partyCode: string | null; currency: string; balance: string; cur: string }
 interface ItemRow { openItemId: number; kind: string | null; accountCode: string; partyCode: string; docNo: string | null; currency: string; dueDate: string | null; balance: string; cur: string;
   partyCur: string; settledAfter: boolean }
 
@@ -50,6 +51,13 @@ async function compute(trx: Trx, ctx: Ctx, input: Input) {
       AND v.id <> ALL(${prev}::uuid[])
     GROUP BY a.subledger_kind, a.code, l.bank_account_id, ba.account_no, l.currency_code HAVING sum(l.amount_currency) <> 0 OR (${specific}::boolean AND sum(l.debit - l.credit) <> 0)
     ORDER BY a.code, ba.account_no NULLS FIRST, l.currency_code`.execute(trx)).rows;
+  // Khế ước vay ngoại tệ: TK gốc vay và lãi phải trả (không theo dõi công nợ) theo từng khế ước, dòng có contract_id.
+  const loans = (await sql<LoanRow>`
+    SELECT a.code AS "accountCode", c.code AS "contractCode", pa.code AS "partyCode", l.currency_code AS currency, sum(l.debit - l.credit)::text AS balance, sum(l.amount_currency)::text AS cur
+    FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id JOIN contract c ON c.id = l.contract_id AND c.kind = 'loan'
+    JOIN loan_term lt ON lt.tenant_id = c.tenant_id AND lt.contract_id = c.id AND a.code IN (lt.principal_account_code, lt.interest_payable_account_code) LEFT JOIN party pa ON pa.id = c.party_id
+    WHERE v.state IN ('posted', 'reversed') AND l.posting_date <= ${date}::date AND a.regime = ${p.regime} AND a.subledger_kind IS NULL AND l.currency_code <> 'VND' AND v.id <> ALL(${prev}::uuid[])
+    GROUP BY a.code, c.code, pa.code, l.currency_code HAVING sum(l.amount_currency) <> 0 ORDER BY a.code, c.code, l.currency_code`.execute(trx)).rows;
   // Khoản công nợ gốc còn dư nguyên tệ; dư VND của nhóm = dư khoản gốc + dư các khoản con (đánh giá lại các kỳ trước).
   // Khoản gốc đã đảo sau ngày vẫn đánh giá lại (còn dư tại ngày): khoản con sinh ra được đóng ngay sau khi ghi DG (closeReversedRoots).
   // settledAfter: đã đối trừ (không phải đảo) ngày sau ngày đánh giá lại. partyCur: dư nguyên tệ thuần của đối tượng trên tài khoản, loại tiền.
@@ -90,6 +98,7 @@ async function compute(trx: Trx, ctx: Ctx, input: Input) {
     rows.push({ ...rest, balanceCurrency: cur, rateType, rate, revalued, difference: D(revalued).minus(r.balance).toFixed(0) });
   };
   for (const g of cash) await add({ ...g, partyCode: null, openItemId: null, docNo: null, dueDate: null }, true);
+  for (const g of loans) await add({ ...g, kind: null, bankAccountNo: null, openItemId: null, docNo: null, dueDate: null }, D(g.cur).gt(0));
   const vn = formatVnDate(date);
   // Số chứng từ chỉ nêu khi người gọi có cờ xem mọi tài khoản liên quan.
   const docList = (xs: { kind: string | null; accountCode: string; docNo: string | null }[]) =>
@@ -114,9 +123,9 @@ async function compute(trx: Trx, ctx: Ctx, input: Input) {
     const fx = await ruleSet();
     for (const r of diffs) {
       const d = D(r.difference); const amount = d.abs().toFixed(0);
-      const what = r.openItemId ? `${r.docNo ?? ''} – ${r.partyCode}` : `${r.accountCode}${r.bankAccountNo ? ` – ${r.bankAccountNo}` : ''}`;
+      const what = r.openItemId ? `${r.docNo ?? ''} – ${r.partyCode}` : `${r.accountCode}${r.bankAccountNo ? ` – ${r.bankAccountNo}` : ''}${r.contractCode ? ` – ${r.contractCode}` : ''}`;
       main.push({ accountCode: r.accountCode, currencyCode: r.currency, amountCurrency: '0', debit: d.gt(0) ? amount : '0', credit: d.gt(0) ? '0' : amount, partyCode: r.partyCode,
-        bankAccountNo: r.bankAccountNo, dueDate: r.dueDate, ...(r.openItemId && { extraDims: { reval_of: String(r.openItemId) } }), description: `Đánh giá lại ${what} ${r.currency} theo tỷ giá ${D(r.rate).toString()}` });
+        bankAccountNo: r.bankAccountNo, dueDate: r.dueDate, contractCode: r.contractCode ?? null, ...(r.openItemId && { extraDims: { reval_of: String(r.openItemId) } }), description: `Đánh giá lại ${what} ${r.currency} theo tỷ giá ${D(r.rate).toString()}` });
     }
     // Đối ứng: TK đánh giá lại (413, bên Có lãi, bên Nợ lỗ) rồi kết chuyển số ròng sang 515/635; chế độ không dùng 413 (TT99) thì ghi thẳng 515/635.
     const vnd = (accountCode: string, debit: string, credit: string, description: string): Line => ({ accountCode, currencyCode: 'VND', debit, credit, description });
@@ -130,14 +139,14 @@ async function compute(trx: Trx, ctx: Ctx, input: Input) {
   }
 
   // Kết quả trùng hệt DG đang hiệu lực (cùng dòng, cùng số, cùng khoản gốc) thì không đảo, không sinh.
-  const keyOf = (x: { code: string; bankNo?: string | null | undefined; party?: string | null | undefined; currency: string; debit: string; credit: string; revalOf?: string | null | undefined }) =>
-    [x.code, x.bankNo ?? '', x.party ?? '', x.currency, x.debit, x.credit, x.revalOf ?? ''].join('|');
-  const active = prev.length ? (await sql<{ code: string; bankNo: string | null; party: string | null; currency: string; debit: string; credit: string; revalOf: string | null }>`
-    SELECT a.code, ba.account_no AS "bankNo", pa.code AS party, l.currency_code AS currency, l.debit::text AS debit, l.credit::text AS credit, l.extra_dims->>'reval_of' AS "revalOf"
-    FROM voucher_line l JOIN account a ON a.id = l.account_id LEFT JOIN bank_account ba ON ba.id = l.bank_account_id LEFT JOIN party pa ON pa.id = l.party_id
+  const keyOf = (x: { code: string; bankNo?: string | null | undefined; party?: string | null | undefined; currency: string; debit: string; credit: string; revalOf?: string | null | undefined; contract?: string | null | undefined }) =>
+    [x.code, x.bankNo ?? '', x.party ?? '', x.currency, x.debit, x.credit, x.revalOf ?? '', x.contract ?? ''].join('|');
+  const active = prev.length ? (await sql<{ code: string; bankNo: string | null; party: string | null; currency: string; debit: string; credit: string; revalOf: string | null; contract: string | null }>`
+    SELECT a.code, ba.account_no AS "bankNo", pa.code AS party, l.currency_code AS currency, l.debit::text AS debit, l.credit::text AS credit, l.extra_dims->>'reval_of' AS "revalOf", k.code AS contract
+    FROM voucher_line l JOIN account a ON a.id = l.account_id LEFT JOIN bank_account ba ON ba.id = l.bank_account_id LEFT JOIN party pa ON pa.id = l.party_id LEFT JOIN contract k ON k.id = l.contract_id
     WHERE l.voucher_id = ANY(${prev}::uuid[])`.execute(trx)).rows : [];
   const unchanged = active.map(keyOf).sort().join('\n') === [...main, ...transfer].map((l) => keyOf({ code: l.accountCode, bankNo: l.bankAccountNo, party: l.partyCode, currency: l.currencyCode ?? 'VND',
-    debit: l.debit, credit: l.credit, revalOf: l.extraDims?.reval_of })).sort().join('\n');
+    debit: l.debit, credit: l.credit, revalOf: l.extraDims?.reval_of, contract: l.contractCode })).sort().join('\n');
   if (!unchanged) {
     // Chạy lại phải đảo DG cũ: khoản con đã được đối trừ (thu, trả sau đánh giá lại) thì người dùng hủy đối trừ trước, không tự hủy.
     // Khoản con đóng do đảo khoản gốc (đối trừ 'reversal') không tính: DG cũ vẫn đảo được, bản đảo của khoản con được đóng lại cùng khoản con mới.

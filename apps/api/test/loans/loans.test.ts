@@ -140,4 +140,14 @@ describe('khế ước vay', () => {
     expect(D(left.rows[0]!.vnd).isZero() && D(left.rows[0]!.cur).isZero()).toBe(true);
     expect((await call('POST', `/api/loans/${id}/settle`)).statusCode).toBe(200);
   });
+
+  it('đánh giá lại 31/12: khế ước USD 100.000 ghi sổ 25.000, tỷ giá 25.400 → Nợ 635 (TT99 không dùng 413) / Có 3411 40.000.000 gắn khế ước', async () => {
+    const c = await call('POST', '/api/loans', loan('USD03', { currencyCode: 'USD', value: '0', installments: [] })); expect(c.statusCode, c.body).toBe(201);
+    expect((await call('POST', `/api/loans/${c.json().id}/disburse`, { date: '2026-11-02', amount: '100000', fxRate: '25000', bankAccountNo: '0011001' })).statusCode).toBe(201);
+    const r = await call('POST', '/api/fx/revaluation', { date: '2026-12-31', rates: { USD: '25400' } }); expect(r.statusCode, r.body).toBe(200);
+    const all = await lines(r.json().voucherIds[0]);
+    expect(all.filter((l) => l.contract === 'USD03')).toEqual([{ code: '3411', debit: '0', credit: '40000000', contract: 'USD03' }]);
+    expect(all.some((l) => l.code === '635' && D(l.debit).gte(40000000))).toBe(true);
+    const again = await call('POST', '/api/fx/revaluation', { date: '2026-12-31', rates: { USD: '25400' } }); expect(again.json().unchanged).toBe(true);
+  });
 });
