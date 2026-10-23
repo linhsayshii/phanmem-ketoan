@@ -11,7 +11,7 @@ import { assetValues, scheduleFor } from './schedule.js';
 // Chạy lại: chứng từ khớp thì giữ (chỉ cập nhật checked_at), lệch thì đảo cũ ngày cuối kỳ rồi sinh lần chạy và chứng từ mới (chứng từ hệ thống không bỏ ghi sổ được).
 type Trx = Transaction<Database>;
 export type RunKind = 'depreciation' | 'tool' | 'prepaid';
-type Ctx = { tenantId: string; userId: string; canBackdate: boolean };
+export type Ctx = { tenantId: string; userId: string; canBackdate: boolean };
 const ASSET_KIND: Record<RunKind, string> = { depreciation: 'fixed', tool: 'tool', prepaid: 'prepaid' };
 const LABEL: Record<RunKind, string> = { depreciation: 'khấu hao tài sản cố định', tool: 'phân bổ công cụ dụng cụ', prepaid: 'phân bổ chi phí trả trước' };
 
@@ -19,13 +19,13 @@ type VLine = { accountCode: string; debit: string; credit: string; assetCode?: s
 const lineKey = (l: { accountCode: string; debit: string; credit: string; assetCode?: string | null | undefined; departmentCode?: string | null | undefined; projectCode?: string | null | undefined; costItemCode?: string | null | undefined }) =>
   [l.accountCode, D(l.debit).toFixed(0), D(l.credit).toFixed(0), l.assetCode ?? '', l.departmentCode ?? '', l.projectCode ?? '', l.costItemCode ?? ''].join('|');
 
-async function periodSpan(trx: Trx, fy: number, pn: number) {
+export async function periodSpan(trx: Trx, fy: number, pn: number) {
   const p = await trx.selectFrom('fiscal_period').select(['date_from', 'date_to', 'status']).where('fiscal_year', '=', fy).where('period_no', '=', pn).executeTakeFirst();
   if (!p) throw new AppError('PERIOD_NOT_FOUND', `Không có kỳ ${pn}/${fy}`, 404);
   return { span: { fiscalYear: fy, periodNo: pn, from: p.date_from, to: p.date_to } as PeriodSpan, status: p.status };
 }
 // Mọi lần chạy (mọi trạng thái) của loại ở kỳ P: chứng từ của chúng (kể cả bản đảo) bị bỏ khi tính hao mòn "trừ lần chạy kỳ P".
-const runIdsOf = async (trx: Trx, kind: RunKind, fy: number, pn: number) =>
+export const runIdsOf = async (trx: Trx, kind: RunKind, fy: number, pn: number) =>
   (await trx.selectFrom('period_run').select('id').where('kind', '=', kind).where('fiscal_year', '=', fy).where('period_no', '=', pn).execute()).map((r) => r.id);
 
 // Tài sản của lần chạy kỳ P: đúng loại, đang dùng (hoặc ghi giảm sau P.to), còn tính khấu hao, ngày bắt đầu ≤ P.to. Ghi giảm trong P: không có trong lần chạy (quy ước 7).
@@ -46,10 +46,10 @@ async function computeAmounts(trx: Trx, kind: RunKind, span: PeriodSpan, prorati
   }
   return out;
 }
-type Amount = Awaited<ReturnType<typeof computeAmounts>>[number];
+type Amount = Pick<Awaited<ReturnType<typeof computeAmounts>>[number], 'id' | 'code' | 'amount' | 'asset_account_code' | 'depreciation_account_code'>;
 
 // Mỗi tài sản: Nợ TK chi phí theo phân bổ hiện hành tại P (bộ phận, vụ việc, khoản mục; chia phần dư lớn nhất) / Có TK hao mòn (TSCĐ) hoặc 242 (CCDC/CPTT) mang mã tài sản.
-async function buildLines(trx: Trx, kind: RunKind, span: PeriodSpan, items: Amount[]): Promise<VLine[]> {
+export async function buildLines(trx: Trx, kind: RunKind, span: PeriodSpan, items: Amount[]): Promise<VLine[]> {
   if (!items.length) return [];
   const al = await trx.selectFrom('asset_allocation as x').leftJoin('department as d', 'd.id', 'x.department_id').leftJoin('project as p', 'p.id', 'x.project_id').leftJoin('cost_item as c', 'c.id', 'x.cost_item_id')
     .select(['x.asset_id', 'x.valid_from_year', 'x.valid_from_period', 'x.expense_account_code', 'x.ratio', 'd.code as department_code', 'p.code as project_code', 'c.code as cost_item_code'])

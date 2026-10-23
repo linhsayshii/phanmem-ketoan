@@ -185,6 +185,10 @@ export interface AssetScheduleTable {
   id: Generated<number>; tenant_id: string; asset_id: number; version: number; eff_year: number; eff_period: number;
   basis_cost: Numeric; basis_acc: Numeric; units: Numeric; reason: string; superseded_at: Timestamp | null; created_at: Generated<string>;
 }
+export interface AssetEventTable {
+  id: Generated<string>; tenant_id: string; asset_id: number; kind: string; event_date: DateOnly; voucher_id: string | null;
+  data: ColumnType<Record<string, unknown>, string, string>; state: Generated<string>; created_by: string | null; created_at: Generated<string>;
+}
 export interface AssetScheduleLineTable {
   id: Generated<number>; tenant_id: string; schedule_id: number; fiscal_year: number; period_no: number; units: Numeric; amount: Numeric; accumulated: Numeric; run_id: string | null;
 }
@@ -371,6 +375,7 @@ export interface Database {
   period_run: PeriodRunTable;
   asset_schedule: AssetScheduleTable;
   asset_schedule_line: AssetScheduleLineTable;
+  asset_event: AssetEventTable;
   voucher_counter: VoucherCounterTable;
   voucher_line_history: VoucherLineHistoryTable;
   voucher_attachment: VoucherAttachmentTable;

@@ -8,9 +8,21 @@ type Trx = Transaction<Database>;
 export interface AssetSchedule { id: number; version: number; effYear: number; effPeriod: number; basisCost: string; basisAcc: string; units: string; reason: string }
 type Asset = { code: string; tenant_id: string; kind: string; is_depreciable: boolean; life_units: number | null; opening_year: number | null; opening_remaining_units: string | null; depreciation_start_date: string | null; decrease_date: string | null };
 
-/** Khoảng hoạt động của thẻ: nơi duy nhất dựng cửa sổ (Task 5 thêm khoảng dừng từ asset_event). Chưa có ngày bắt đầu: không khấu hao. */
-export function windowOf(a: { depreciation_start_date: string | null; decrease_date: string | null }): ActiveWindow | null {
-  return a.depreciation_start_date ? { start: a.depreciation_start_date, end: a.decrease_date, pauses: [] } : null;
+/**
+ * Khoảng hoạt động của thẻ: nơi duy nhất dựng cửa sổ. Bắt đầu ngày bắt đầu khấu hao, kết thúc ngày ghi giảm, khoảng dừng từ các biến động
+ * dừng/tiếp tục còn hiệu lực (theo ngày; dừng mở khoảng, tiếp tục đóng khoảng đang mở). Chưa có ngày bắt đầu: không khấu hao.
+ */
+export async function windowOf(trx: Trx, assetId: number, a: { depreciation_start_date: string | null; decrease_date: string | null }): Promise<ActiveWindow | null> {
+  if (!a.depreciation_start_date) return null;
+  const evs = await trx.selectFrom('asset_event').select(['kind', 'event_date']).where('asset_id', '=', assetId).where('state', '=', 'active')
+    .where('kind', 'in', ['suspend', 'resume']).orderBy('event_date').orderBy('created_at').execute();
+  const pauses: ActiveWindow['pauses'] = [];
+  for (const e of evs) {
+    const open = pauses.at(-1);
+    if (e.kind === 'suspend') pauses.push({ from: e.event_date, to: null });
+    else if (open && open.to === null) open.to = e.event_date;
+  }
+  return { start: a.depreciation_start_date, end: a.decrease_date, pauses };
 }
 export const unitOf = (kind: string, proration: Proration): DepreciationUnit => (kind !== 'fixed' ? 'period' : proration === 'day' ? 'month_day' : 'month_whole');
 
@@ -52,8 +64,8 @@ type Plan = { values: { cost: string; accumulated: string }; cur: Cur | undefine
  * (V không có dòng P thì units(P) = 0 hoặc V đã tiêu thụ hết đơn vị). Sai một điều kiện: trả phiên bản mới eff = P (chưa lưu).
  * Ngày đọc sổ cái là P.to khi chạy kỳ; lịch xem trước đọc toàn bộ sổ cái.
  */
-async function plan(trx: Trx, assetId: number, a: Asset, span: PeriodSpan, o: { proration: Proration; runIdsOfPeriod: string[]; valuesAt: string; known: PeriodSpan[] }): Promise<Plan> {
-  const w = windowOf(a); const unit = unitOf(a.kind, o.proration);
+async function plan(trx: Trx, assetId: number, a: Asset, span: PeriodSpan, o: { proration: Proration; runIdsOfPeriod: string[]; valuesAt: string; known: PeriodSpan[]; lifeChange?: string | undefined }): Promise<Plan> {
+  const w = await windowOf(trx, assetId, a); const unit = unitOf(a.kind, o.proration);
   const u = w ? periodUnits(span, w, unit) : '0';
   const values = (await assetValues(trx, a.tenant_id, o.valuesAt, o.runIdsOfPeriod, [assetId])).get(assetId)!;
   const fixed = a.kind === 'fixed';
@@ -63,7 +75,8 @@ async function plan(trx: Trx, assetId: number, a: Asset, span: PeriodSpan, o: { 
   const cur = await trx.selectFrom('asset_schedule').select(['id', 'version', 'eff_year', 'eff_period', 'basis_cost', 'basis_acc', 'units', 'reason']).where('asset_id', '=', assetId).where('superseded_at', 'is', null)
     .where(sql<boolean>`(eff_year, eff_period) <= (${span.fiscalYear}, ${span.periodNo})`).orderBy('eff_year', 'desc').orderBy('eff_period', 'desc').orderBy('version', 'desc').limit(1).executeTakeFirst();
   let units = ZERO; let reason = 'initial';
-  if (cur) {
+  if (o.lifeChange !== undefined) { units = D(o.lifeChange); reason = 'life_change'; } // điều chỉnh thời gian: phiên bản mới eff = P, U = số đơn vị còn lại người dùng nhập
+  else if (cur) {
     const lines = await linesOf(trx, [cur.id]);
     const prior = lines.filter((l) => key(l.fiscal_year, l.period_no) < P);
     const amt = prior.reduce((s, l) => s.plus(l.amount), ZERO); const used = prior.reduce((s, l) => s.plus(l.units), ZERO);
@@ -93,7 +106,7 @@ async function plan(trx: Trx, assetId: number, a: Asset, span: PeriodSpan, o: { 
 const startYear = (known: PeriodSpan[], start: string) => known.find((p) => p.from <= start && start <= p.to)?.fiscalYear ?? Number(start.slice(0, 4));
 
 /** Phiên bản lịch áp cho kỳ P và dòng của nó; lệch thì lưu phiên bản mới eff = P và thay mọi phiên bản eff ≥ P. `values`: số sổ cái đã dùng (dấu vân tay của lần chạy). */
-export async function scheduleFor(trx: Trx, assetId: number, span: PeriodSpan, opts: { proration: Proration; runIdsOfPeriod: string[] }): Promise<{ schedule: AssetSchedule; line: ScheduleLine | null; created: boolean; values: { cost: string; accumulated: string } }> {
+export async function scheduleFor(trx: Trx, assetId: number, span: PeriodSpan, opts: { proration: Proration; runIdsOfPeriod: string[]; lifeChange?: string }): Promise<{ schedule: AssetSchedule; line: ScheduleLine | null; created: boolean; values: { cost: string; accumulated: string } }> {
   const a = await loadAsset(trx, assetId);
   const r = await plan(trx, assetId, a, span, { ...opts, valuesAt: span.to, known: await knownPeriods(trx) });
   if (r.ok) return { schedule: scheduleOut(r.cur!), line: r.line, created: false, values: r.values };
@@ -113,7 +126,7 @@ export async function scheduleFor(trx: Trx, assetId: number, span: PeriodSpan, o
  */
 export async function previewSchedule(trx: Trx, assetId: number, proration: Proration): Promise<ScheduleLine[]> {
   const a = await loadAsset(trx, assetId);
-  const w = windowOf(a);
+  const w = await windowOf(trx, assetId, a);
   if (!w || !a.is_depreciable) return [];
   const known = await knownPeriods(trx);
   const y0 = startYear(known, w.start);

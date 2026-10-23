@@ -59,7 +59,7 @@ export async function assertAssetAccounts(trx: Trx, kind: string, assetAccountCo
 export async function lockTenant(trx: Trx, tenantId: string) { await sql`SELECT pg_advisory_xact_lock(hashtext('asset_run'), hashtext(${tenantId}))`.execute(trx); }
 const hasLedger = async (trx: Trx, id: number) => !!(await trx.selectFrom('voucher_line').select('id').where('asset_id', '=', id).limit(1).executeTakeFirst())
   || !!(await trx.selectFrom('voucher_item_line').select('id').where('asset_id', '=', id).limit(1).executeTakeFirst());
-async function idOf(trx: Trx, table: 'department' | 'project' | 'cost_item' | 'asset_category', code: string | null | undefined, label: string): Promise<number | null> {
+export async function idOf(trx: Trx, table: 'department' | 'project' | 'cost_item' | 'asset_category', code: string | null | undefined, label: string): Promise<number | null> {
   if (!code) return null;
   const r = await trx.selectFrom(table).select('id').where('code', '=', code).executeTakeFirst();
   if (!r) throw new AppError('LOOKUP_NOT_FOUND', `Không có ${label} mã "${code}"`, 404);

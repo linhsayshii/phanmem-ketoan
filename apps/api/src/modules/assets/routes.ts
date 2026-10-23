@@ -5,6 +5,7 @@ import { getSettings } from '../core/settings.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { listRuns, runAssetPeriod } from './periodRun.js';
 import { previewSchedule } from './schedule.js';
+import { cancelEvent, changeLife, decreaseAsset, decreaseInput, increaseAsset, increaseInput, lifeInput, listEvents, resumeAsset, resumeInput, revalueAsset, revalueInput, suspendAsset, suspendInput, transferAsset, transferInput } from './events.js';
 import { allocationInput, assetInput, categoryInput, deleteAsset, deleteCategory, getAsset, listAssets, listCategories, lookupAssets, saveAsset, saveCategory, setAllocations } from './assets.js';
 
 const numId = z.object({ id: z.coerce.number().int().positive() });
@@ -38,6 +39,25 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     if (!out.unchanged) notifyRecompute(app, auth.tenantId!);
     return out;
   });
+
+  // Biến động tài sản: ghi tăng, ghi giảm, đánh giá lại, điều chuyển, dừng/tiếp tục khấu hao, điều chỉnh thời gian sử dụng; hủy biến động.
+  const runCtx = (req: { auth: { tenantId: string | null; userId: string; permissions: Set<string> } | null }) =>
+    ({ tenantId: req.auth!.tenantId!, userId: req.auth!.userId, canBackdate: req.auth!.permissions.has('voucher.backdate_locked') });
+  const events = [['increase', increaseInput, increaseAsset], ['decrease', decreaseInput, decreaseAsset], ['revalue', revalueInput, revalueAsset], ['transfer', transferInput, transferAsset],
+    ['suspend', suspendInput, suspendAsset], ['resume', resumeInput, resumeAsset], ['life', lifeInput, changeLife]] as const;
+  for (const [path, body, fn] of events) {
+    app.post(`/api/assets/:id/${path}`, { preHandler: app.requirePermission('asset.update'), schema: { params: numId, body } }, async (req) => {
+      const out = await app.withOverride(req, (trx) => (fn as (trx: Parameters<typeof increaseAsset>[0], ctx: ReturnType<typeof runCtx>, id: number, b: unknown) => Promise<unknown>)(trx, runCtx(req), req.params.id, req.body));
+      notifyRecompute(app, tid(req));
+      return out;
+    });
+  }
+  app.post('/api/asset-events/:id/cancel', { preHandler: app.requirePermission('asset.update'), schema: { params: z.object({ id: z.string().uuid() }) } }, async (req) => {
+    const out = await app.withOverride(req, (trx) => cancelEvent(trx, runCtx(req), req.params.id));
+    notifyRecompute(app, tid(req));
+    return out;
+  });
+  app.get('/api/assets/:id/events', { preHandler: app.requirePermission('asset.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => listEvents(trx, req.params.id), READ_SNAPSHOT));
 
   app.get('/api/lookups/assets', { preHandler: app.requirePermission('asset.view'), schema: { querystring: z.object({ q: z.string().default(''), kind: kindQ.optional(), size: z.coerce.number().int().min(1).max(200).default(50) }) } },
     async (req) => app.withTenant(req, (trx) => lookupAssets(trx, req.query.q, req.query.kind, req.query.size), READ_SNAPSHOT));
