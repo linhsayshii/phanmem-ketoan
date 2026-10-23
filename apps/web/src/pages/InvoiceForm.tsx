@@ -8,6 +8,7 @@ import { canTransition, D, decideEdit, formatVnDate, formatVnNumber, parseVnNumb
 import { KeyboardGrid, LookupSelect, VnNumberInput, useUnsavedChanges, type LookupRow } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
+import { StatusTags, isLive, reportEInvoiceError, showWarnings, type EInvoice, type Series } from './einvoiceCommon.js';
 import { assetPick, isAssetAccount, accountFetcherFor } from '../lookups.js';
 import { STATE_LABEL, typeLabel } from './VoucherList.js';
 import { Attachments, PickDialog, groupFetcher, iso, quickAdd, reportError, taxFetcher, text, useInvoiceGroups, useTaxDefs } from './voucherCommon.js';
@@ -19,12 +20,12 @@ interface ItemDto { lineNo: number; description: string | null; quantity: string
   taxCodes: string[]; accountCode: string; assetCode?: string | null; departmentCode: string | null; projectCode: string | null; costItemCode: string | null;
   id?: number; itemCode?: string | null; uomCode?: string | null; warehouseCode?: string | null; lotNo?: string | null; expiryDate?: string | null; receiptVoucherId?: string | null; linkLineId?: number | null;
   importMode?: boolean; importTax?: string | null; specialConsumptionTax?: string | null; vatImport?: string | null; vatImportCode?: string | null; vatImportBase?: string | null }
-interface InvoiceRef { id: number; formNo: string | null; serial: string | null; invoiceNo: string; invoiceDate: string; partyName: string | null; partyTaxCode: string | null; partyAddress: string | null;
+interface InvoiceRef { id: number; formNo: string | null; serial: string | null; invoiceNo: string | null; einvoicePending?: boolean; einvoiceSeriesId?: number | null; invoiceDate: string; partyName: string | null; partyTaxCode: string | null; partyAddress: string | null;
   invoiceGroupCode: string | null; headerGroupCode?: string | null; taxCode: string | null; taxAmount: string; adjustsInvoiceId: number | null }
 interface InvoiceDoc { id: string; voucherType: string; voucherNo: string | null; state: string; postingDate: string; documentDate: string; description: string | null; partyCode: string | null; partyName: string | null;
   dueDate: string | null; currencyCode: string; fxRate: string | null; version: number; periodStatus: 'open' | 'soft_locked' | 'hard_locked'; hashed: boolean; receiptState?: StockMode | null; invoices: InvoiceRef[]; items: ItemDto[]; lines?: { employeeCode?: string | null }[]; warnings?: { code: string; message: string }[] }
 interface FormValues { employeeCode?: string | null; postingDate: Dayjs; documentDate: Dayjs; partyCode?: string | null; currencyCode?: string; fxRate?: string | null; dueDate?: Dayjs | null; description?: string | null;
-  formNo?: string | null; serial?: string | null; invoiceNo?: string; invoiceDate: Dayjs; invoiceGroupCode?: string }
+  formNo?: string | null; serial?: string | null; invoiceNo?: string; einvoiceSeriesId?: number | null; invoiceDate: Dayjs; invoiceGroupCode?: string }
 // Đối tượng đã chọn: tên, mã số thuế, địa chỉ lấy từ danh mục (máy chủ cũng chụp ba trường này lúc lưu). defaultAccount: undefined là chưa biết (chứng từ vừa tải), null là đối tượng không đặt tài khoản công nợ.
 type StockMode = 'through_stock' | 'goods_first' | 'invoice_first';
 const STOCK_MODE_LABEL: Record<StockMode, string> = { through_stock: 'Nhập kho cùng hóa đơn', goods_first: 'Hàng về trước, hóa đơn về sau', invoice_first: 'Hóa đơn về trước, hàng về sau' };
@@ -51,6 +52,8 @@ const numCol = (field: keyof InvRow, headerName: string, ok: (n: string) => bool
   valueParser: (p) => { const t = String(p.newValue ?? '').trim(); if (t === '') return ''; const n = parseVnNumber(t); return n !== null && ok(n) ? n : p.oldValue; }, ...extra });
 const RATE_RE = /^\d{1,3}(\.\d{1,4})?$/;
 
+// Hóa đơn gốc điện tử chưa có số: không in "null".
+const invLabel = (i: InvoiceRef) => `${i.formNo ?? ''}${i.serial ?? ''} ${i.invoiceNo ?? (i.einvoicePending ? 'Chưa phát hành' : '')}`.trim();
 export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const isNew = id === 'moi';
   const navigate = useNavigate(); const qc = useQueryClient(); const { can } = useAuth();
@@ -105,7 +108,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
     const d = v.data; if (!d) return;
     const inv = d.invoices[0]; const headerGroup = inv?.headerGroupCode ?? inv?.invoiceGroupCode; // nhóm đầu hóa đơn đã lưu; hóa đơn cũ không có thì nhóm dòng đầu
     form.setFieldsValue({ postingDate: dayjs(d.postingDate), documentDate: dayjs(d.documentDate), partyCode: d.partyCode, currencyCode: d.currencyCode, fxRate: d.fxRate, dueDate: d.dueDate ? dayjs(d.dueDate) : null, description: d.description,
-      formNo: inv?.formNo ?? '', serial: inv?.serial ?? '', invoiceNo: inv?.invoiceNo ?? '', invoiceDate: dayjs(inv?.invoiceDate ?? d.documentDate), ...(headerGroup ? { invoiceGroupCode: headerGroup } : {}), employeeCode: d.lines?.find((l) => l.employeeCode)?.employeeCode ?? null });
+      formNo: inv?.formNo ?? '', serial: inv?.serial ?? '', invoiceNo: inv?.invoiceNo ?? '', einvoiceSeriesId: inv?.einvoiceSeriesId ?? null, invoiceDate: dayjs(inv?.invoiceDate ?? d.documentDate), ...(headerGroup ? { invoiceGroupCode: headerGroup } : {}), employeeCode: d.lines?.find((l) => l.employeeCode)?.employeeCode ?? null });
     const loaded = d.items.map(rowOf); for (const r of loaded) snaps.current.set(r, snapOf(r));
     setAll(d.state === 'draft' ? [...loaded, emptyInvRow()] : loaded);
     setParty(d.partyCode ? { code: d.partyCode, name: inv?.partyName ?? d.partyName ?? '', taxCode: inv?.partyTaxCode ?? '', address: inv?.partyAddress ?? '', defaultAccount: undefined } : null);
@@ -203,7 +206,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
     return { voucherType: eff.code, postingDate: iso(f.postingDate), documentDate: iso(f.documentDate), partyCode: f.partyCode ?? '', currencyCode: f.currencyCode ?? 'VND',
       ...(isSaleGoods && exportMode ? { exportMode: true } : {}), ...(isMH ? { stockMode, ...(stockMode === 'goods_first' ? { receiptVoucherIds: receiptIds } : {}) } : {}),
       ...((f.currencyCode ?? 'VND') !== 'VND' && f.fxRate ? { fxRate: f.fxRate } : {}), ...(f.dueDate ? { dueDate: iso(f.dueDate) } : {}), description: text(f.description), items,
-      invoice: { ...(live.current.party ? { partyTaxCode: live.current.party.taxCode.trim(), partyName: live.current.party.name.trim(), partyAddress: live.current.party.address.trim() } : {}), formNo: text(f.formNo), serial: text(f.serial), invoiceNo: (f.invoiceNo ?? '').trim(), invoiceDate: iso(f.invoiceDate), invoiceGroupCode: f.invoiceGroupCode ?? '', ...(f.employeeCode ? { employeeCode: f.employeeCode } : {}),
+      invoice: { ...(live.current.party ? { partyTaxCode: live.current.party.taxCode.trim(), partyName: live.current.party.name.trim(), partyAddress: live.current.party.address.trim() } : {}), formNo: text(f.formNo), serial: text(f.serial), ...(f.einvoiceSeriesId ? { einvoiceSeriesId: f.einvoiceSeriesId } : { invoiceNo: (f.invoiceNo ?? '').trim() }), invoiceDate: iso(f.invoiceDate), invoiceGroupCode: f.invoiceGroupCode ?? '', ...(f.employeeCode ? { employeeCode: f.employeeCode } : {}),
         ...(refund ? { adjustsInvoiceId: live.current.adjusts } : {}), ...(Object.keys(declaredTax).length ? { declaredTax } : {}) } };
   };
   // Lưu bản đang nhập; ghi sổ (F9) lưu trước rồi mới ghi để không ghi sổ bản cũ trên máy chủ.
@@ -234,8 +237,20 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
   const canSave = ready && mayEdit;
   const mayPost = (isNew || canTransition(state, 'post')) && can('voucher.post');
   const canPost = ready && mayPost;
+  // Hóa đơn điện tử (HDB, BH, GGB, TLB): ký hiệu chọn ở tab Hóa đơn, số do nhà cung cấp cấp khi phát hành (Ctrl+Shift+E).
+  const isEinv = ['HDB', 'BH', 'GGB', 'TLB'].includes(eff.code);
+  const seriesQ = useQuery({ queryKey: ['einvoice-series'], enabled: isEinv && can('einvoice.view'), queryFn: () => api<Series[]>('/api/einvoice/series') });
+  const einvQ = useQuery({ queryKey: ['voucher-einvoice', id], enabled: !isNew && isEinv && can('einvoice.view'), queryFn: () => api<{ einvoice: EInvoice | null }>(`/api/vouchers/${id}/einvoice`) });
+  const einv = einvQ.data?.einvoice ?? null;
+  const seriesId = Form.useWatch('einvoiceSeriesId', form);
+  const issue = useMutation({ mutationFn: () => api<EInvoice>('/api/einvoices', { method: 'POST', json: { voucherId: id } }), onError: reportEInvoiceError,
+    onSuccess: async (r) => { void message.success(r.invoiceNo ? `Đã phát hành hóa đơn ${r.invoiceNo}` : 'Đã gửi hóa đơn, đang chờ nhà cung cấp cấp số'); showWarnings(r); void qc.invalidateQueries({ queryKey: ['voucher-einvoice'] }); await invalidate(); } });
+  const pendingNo = !!v.data?.invoices[0]?.einvoicePending;
+  const mayIssue = isEinv && !isNew && state === 'posted' && pendingNo && !einv && !refund && adjusts == null && can('einvoice.issue') && !dirty;
+  const einvLive = isLive(einv);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); if (!(e.target as Element | null)?.closest?.('.ant-modal-root') && mayIssue && !issue.isPending) issue.mutate(); return; }
       const isSave = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's'; const isPost = e.key === 'F9';
       if (!isSave && !isPost) return;
       e.preventDefault(); // chặn hộp "Lưu trang" của trình duyệt
@@ -244,8 +259,8 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
       if (isPost && canPost && canSave && !save.isPending) save.mutate(true);
     };
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
-  }, [save, canSave, canPost]);
-  const mayUnpost = canTransition(state, 'unpost') && decision === 'unpost_edit_post' && can('voucher.unpost');
+  }, [save, canSave, canPost, mayIssue, issue]);
+  const mayUnpost = canTransition(state, 'unpost') && decision === 'unpost_edit_post' && can('voucher.unpost') && !einvLive;
   const mayReverse = canTransition(state, 'reverse') && decision !== 'adjust_in_open_period' && can('voucher.post');
 
   const showAsset = rows.some((r) => isAssetAccount(r.accountCode) || !!r.assetCode);
@@ -343,9 +358,12 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
   );
   const mst = (
     <Row gutter={12}>
-      <Col span={4}><Form.Item label="Mẫu số" name="formNo"><Input maxLength={20} /></Form.Item></Col>
-      <Col span={4}><Form.Item label="Ký hiệu" name="serial"><Input maxLength={20} /></Form.Item></Col>
-      <Col span={5}><Form.Item label="Số hóa đơn" name="invoiceNo" rules={[{ required: true, whitespace: true, message: 'Nhập số hóa đơn' }]}><Input maxLength={30} /></Form.Item></Col>
+      {isEinv && can('einvoice.view') && <Col span={24}><Form.Item label="Ký hiệu HĐĐT" name="einvoiceSeriesId" extra={seriesId ? 'Số hóa đơn do nhà cung cấp cấp khi bấm Phát hành HĐĐT sau khi ghi sổ.' : 'Để trống nếu dùng hóa đơn giấy hoặc nhập số tay.'}>
+        <Select allowClear aria-label="Ký hiệu HĐĐT" style={{ maxWidth: 320 }} placeholder="Không dùng hóa đơn điện tử" disabled={!!einv}
+          options={(seriesQ.data ?? []).filter((x) => x.isActive || x.id === seriesId).map((x) => ({ value: x.id, label: `${x.formNo}${x.serial}` }))} /></Form.Item></Col>}
+      <Col span={4}><Form.Item label="Mẫu số" name="formNo"><Input maxLength={20} disabled={!!seriesId} /></Form.Item></Col>
+      <Col span={4}><Form.Item label="Ký hiệu" name="serial"><Input maxLength={20} disabled={!!seriesId} /></Form.Item></Col>
+      <Col span={5}><Form.Item label="Số hóa đơn" name="invoiceNo" rules={seriesId ? [] : [{ required: true, whitespace: true, message: 'Nhập số hóa đơn' }]}><Input maxLength={30} disabled={!!seriesId} placeholder={seriesId ? 'Chưa phát hành' : undefined} /></Form.Item></Col>
       <Col span={5}><Form.Item label="Ngày hóa đơn" name="invoiceDate" rules={[{ required: true, message: 'Nhập ngày hóa đơn' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
       <Col span={6}><Form.Item label="Nhóm kê khai (F4)" name="invoiceGroupCode" rules={[{ required: true, message: 'Chọn nhóm kê khai' }]}><LookupSelect catalog="invoice_group" fetcher={groupsOf} /></Form.Item></Col>
       <Col span={6}><Form.Item label="Nhân viên bán hàng (F4)" name="employeeCode"><LookupSelect catalog="employee" allowClear /></Form.Item></Col>
@@ -359,8 +377,8 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
         <Col span={8}><Form.Item label="Dòng hóa đơn gốc">
           {origInvoices.length > 1
             ? <Select placeholder="Chọn dòng" disabled={!editable} value={adjusts} onChange={(a) => { setAdjusts(a); setDirty(true); }}
-              options={origInvoices.map((i) => ({ value: i.id, label: `${i.invoiceNo} - ${i.taxCode ?? ''}` }))} />
-            : <Input readOnly value={adjusts == null ? '' : origInvoices[0] ? `${origInvoices[0].invoiceNo}` : `Hóa đơn gốc #${adjusts}`} />}</Form.Item></Col>
+              options={origInvoices.map((i) => ({ value: i.id, label: `${invLabel(i)} - ${i.taxCode ?? ''}` }))} />
+            : <Input readOnly value={adjusts == null ? '' : origInvoices[0] ? invLabel(origInvoices[0]) : `Hóa đơn gốc #${adjusts}`} />}</Form.Item></Col>
       </>}
     </Row>
   );
@@ -381,10 +399,11 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
 
   if (mismatch) return <Spin />; // đang chuyển sang đường dẫn đúng loại của chứng từ
   return (
-    <Card title={<Space><span>{typeLabel(eff)} {v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}</span><Tag>{STATE_LABEL[state]}</Tag></Space>}
+    <Card title={<Space><span>{typeLabel(eff)} {v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}</span><Tag>{STATE_LABEL[state]}</Tag>{einv && <><StatusTags e={einv} /><b>{einv.formNo}{einv.serial} {einv.invoiceNo ?? ''}</b></>}</Space>}
       extra={<Space>
         {mayEdit && <Button onClick={() => save.mutate(false)} type="primary" loading={save.isPending} disabled={!ready}>Lưu (Ctrl+S)</Button>}
         {mayEdit && mayPost && <Button onClick={() => save.mutate(true)} disabled={!ready || save.isPending}>Ghi sổ (F9)</Button>}
+        {mayIssue && <Button type="primary" loading={issue.isPending} onClick={() => issue.mutate()}>Phát hành HĐĐT (Ctrl+Shift+E)</Button>}
         {!isNew && mayUnpost && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'unpost' }))}>Bỏ ghi sổ</Button>}
         {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo} ngày ${formatVnDate(p)}` }); })}>Đảo</Button>}
         {!isNew && editable && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy chứng từ?', content: 'Số chứng từ (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
