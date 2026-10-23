@@ -5,7 +5,7 @@ import { READ_SNAPSHOT, type Database } from '@kt/db';
 import { getSettings } from '../core/settings.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { listRuns, runAssetPeriod } from './periodRun.js';
-import { assetValues, scheduleView } from './schedule.js';
+import { assetValues, remainingUnitsOf, scheduleView } from './schedule.js';
 import { dateIso } from '../ledger/vouchers.service.js';
 import { adjustToolValue, cancelEvent, changeLife, decreaseAsset, decreaseInput, increaseAsset, increaseInput, lifeInput, listEvents, resumeAsset, resumeInput, revalueAsset, revalueInput, suspendAsset, suspendInput, toolAdjustInput, toolDecreaseInput, decreaseTool, transferAsset, transferInput } from './events.js';
 import { allocationInput, assetInput, categoryInput, deleteAsset, deleteCategory, getAsset, listAssets, listCategories, lookupAssets, saveAsset, saveCategory, setAllocations } from './assets.js';
@@ -28,10 +28,9 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     app.withTenant(req, async (trx) => {
       const rows = await listAssets(trx, req.query.kind, req.query.q);
       const vals = await assetValues(trx, tid(req), req.query.at ?? '9999-12-31', [], rows.map((r) => r.id));
-      // shortcut: số kỳ còn lại tính từng thẻ bằng scheduleView (N lần dựng lịch), đổi sang một truy vấn gộp khi danh sách vượt vài trăm thẻ.
-      const proration = (await getSettings(trx, tid(req))).fa_proration;
-      return Promise.all(rows.map(async (r) => ({ ...r, cost: vals.get(r.id)?.cost ?? '0', accumulated: vals.get(r.id)?.accumulated ?? '0',
-        remainingUnits: r.status === 'active' ? (await scheduleView(trx, r.id, proration)).remainingUnits : '0' })));
+      const withVals = rows.map((r) => ({ ...r, cost: vals.get(r.id)?.cost ?? '0', accumulated: vals.get(r.id)?.accumulated ?? '0' }));
+      const remaining = await remainingUnitsOf(trx, withVals);
+      return withVals.map((r) => ({ ...r, remainingUnits: remaining.get(r.id) ?? '0' }));
     }, READ_SNAPSHOT));
   app.get('/api/assets/:id', { preHandler: app.requirePermission('asset.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => getAsset(trx, req.params.id), READ_SNAPSHOT));
   app.post('/api/assets', { preHandler: app.requirePermission('asset.create'), schema: { body: assetInput } }, async (req, reply) =>

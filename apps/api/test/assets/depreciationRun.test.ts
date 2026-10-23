@@ -47,7 +47,9 @@ describe('chạy khấu hao TSCĐ theo kỳ (KH)', () => {
     expect(pre.reduce((s, l) => s + Number(l.amount), 0)).toBe(120_000_000);
     expect(pre[0]).toMatchObject({ periodNo: 1, amount: '2000000' });
     expect(await t.count(`asset_schedule WHERE true`)).toBe(0);
+    expect((await t.ok(t.call('GET', '/api/assets?kind=fixed')))[0]).toMatchObject({ remainingUnits: '60' });
     const r = await t.runOk(1);
+    expect((await t.ok(t.call('GET', '/api/assets?kind=fixed')))[0]).toMatchObject({ remainingUnits: '59' });
     expect(r).toMatchObject({ unchanged: false, reversedVoucherIds: [], lines: [{ assetCode: 'TS01', amount: '2000000' }] });
     const v = await t.voucher(r.voucherId);
     expect(v).toMatchObject({ voucherType: 'KH', state: 'posted', postingDate: '2026-01-31' });

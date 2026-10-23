@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Checkbox, DatePicker, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Space, Table, Tabs, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
 import { LookupSelect, useHotkeys, useRememberedFilter, VnNumberInput } from '@kt/ui';
@@ -107,12 +108,12 @@ function AssetDrawer({ kind, asset, onClose }: { kind: AssetKind; asset: AssetRo
       locale={{ emptyText: 'Chưa có lịch: thẻ chưa có nguyên giá hoặc chưa nhập ngày bắt đầu' }}
       columns={[{ title: 'Kỳ', render: (_, r) => `${String(r.periodNo).padStart(2, '0')}/${r.fiscalYear}` }, { title: 'Số kỳ', dataIndex: 'units', align: 'right' },
         { title: kind === 'fixed' ? 'Khấu hao' : 'Phân bổ', dataIndex: 'amount', align: 'right', render: money }, { title: 'Lũy kế', dataIndex: 'accumulated', align: 'right', render: money },
-        { title: 'Chứng từ', render: (_, r) => (r.voucherId ? <a href={`/chung-tu/${kind === 'fixed' ? 'KH' : 'PB'}/${r.voucherId}`}>{r.voucherNo ?? 'Xem'}</a> : '') }]} />);
+        { title: 'Chứng từ', render: (_, r) => (r.voucherId ? <Link to="/chung-tu/$type/$id" params={{ type: kind === 'fixed' ? 'KH' : 'PB', id: r.voucherId }}>{r.voucherNo ?? 'Xem'}</Link> : '') }]} />);
   const eventsTab = id === null ? needCard : (<>
     {a && canEdit && <Space wrap style={{ marginBottom: 8 }}>{actionsOf(kind, suspended).map((k) => <Button key={k} onClick={() => setEvent(k)}>{EVENT_TITLE[k]}</Button>)}</Space>}
     <Table<EventRow> size="small" rowKey="id" loading={events.isLoading} dataSource={events.data ?? []} pagination={false} data-testid="events-table"
       columns={[{ title: 'Ngày', dataIndex: 'eventDate', render: formatVnDate }, { title: 'Nghiệp vụ', dataIndex: 'kind', render: (k: string) => EVENT_KIND_LABEL[k] ?? k },
-        { title: 'Chứng từ', render: (_, r) => (r.voucherId ? <a href={`/chung-tu/TS/${r.voucherId}`}>{r.voucherNo ?? 'Xem'}</a> : '') },
+        { title: 'Chứng từ', render: (_, r) => (r.voucherId ? <Link to="/chung-tu/$type/$id" params={{ type: 'TS', id: r.voucherId }}>{r.voucherNo ?? 'Xem'}</Link> : '') },
         { title: 'Trạng thái', dataIndex: 'state', render: (s: string) => (s === 'active' ? <Tag color="green">Hiệu lực</Tag> : <Tag>Đã hủy</Tag>) },
         { title: '', render: (_, r) => (canEdit && r.state === 'active' ? <Popconfirm title="Hủy biến động này?" okText="Hủy biến động" cancelText="Không" onConfirm={() => cancel.mutate(r.id)}><Button size="small" danger>Hủy</Button></Popconfirm> : null) }]} />
   </>);

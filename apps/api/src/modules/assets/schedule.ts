@@ -150,6 +150,32 @@ export async function previewSchedule(trx: Trx, assetId: number, proration: Pror
   return [...composed.filter((l) => key(l.fiscalYear, l.periodNo) < N), ...r.next.lines];
 }
 
+/**
+ * Số đơn vị còn lại của nhiều thẻ bằng MỘT truy vấn: Σ đơn vị các dòng lịch hiện hành (phiên bản chưa bị thay, dòng thuộc đoạn hiệu lực của phiên bản)
+ * chưa có lần chạy hiệu lực. Thẻ chưa có phiên bản nào (chưa chạy kỳ nào): thời gian sử dụng còn lại của thẻ nếu có nguyên giá (> 0) và tính khấu hao.
+ * shortcut: đọc lịch đã lưu, không dựng lại lịch trong bộ nhớ như scheduleView; thẻ có thay đổi sổ cái/thời gian từ sau lần chạy cuối lệch cho đến lần chạy kế
+ * (màn hình lịch vẫn hiện bản dựng lại), đổi sang scheduleView cho các thẻ đó nếu cần chính xác tuyệt đối.
+ */
+export async function remainingUnitsOf(trx: Trx, assets: { id: number; isDepreciable: boolean; lifeUnits: number | null; openingRemainingUnits: string | null; status: string; cost: string }[]): Promise<Map<number, string>> {
+  const out = new Map<number, string>(); if (!assets.length) return out;
+  const r = await sql<{ asset_id: number; units: string }>`SELECT s.asset_id::int, sum(l.units)::text AS units
+    FROM asset_schedule s JOIN asset_schedule_line l ON l.schedule_id = s.id
+    LEFT JOIN period_run r ON r.id = l.run_id AND r.status = 'active'
+    WHERE s.asset_id = ANY (${assets.map((a) => a.id)}::bigint[]) AND s.superseded_at IS NULL AND r.id IS NULL
+      AND (l.fiscal_year, l.period_no) >= (s.eff_year, s.eff_period)
+      AND NOT EXISTS (SELECT 1 FROM asset_schedule s2 WHERE s2.asset_id = s.asset_id AND s2.superseded_at IS NULL
+        AND (s2.eff_year, s2.eff_period) > (s.eff_year, s.eff_period) AND (s2.eff_year, s2.eff_period) <= (l.fiscal_year, l.period_no))
+    GROUP BY s.asset_id`.execute(trx);
+  const stored = new Map(r.rows.map((x) => [x.asset_id, D(x.units).toString()]));
+  const hasVersion = new Set((await trx.selectFrom('asset_schedule').select('asset_id').distinct().where('asset_id', 'in', assets.map((a) => a.id)).where('superseded_at', 'is', null).execute()).map((x) => x.asset_id));
+  for (const a of assets) {
+    if (a.status !== 'active' || !a.isDepreciable) out.set(a.id, '0');
+    else if (hasVersion.has(a.id)) out.set(a.id, stored.get(a.id) ?? '0');
+    else out.set(a.id, D(a.cost).gt(0) ? D(a.openingRemainingUnits ?? a.lifeUnits ?? 0).toString() : '0');
+  }
+  return out;
+}
+
 export type ScheduleViewLine = ScheduleLine & { ran: boolean; voucherId: string | null; voucherNo: string | null };
 /** Lịch cho màn hình: previewSchedule kèm lần chạy hiệu lực của từng kỳ (số chứng từ) và số đơn vị còn lại (Σ đơn vị các kỳ chưa chạy). */
 export async function scheduleView(trx: Trx, assetId: number, proration: Proration): Promise<{ lines: ScheduleViewLine[]; remainingUnits: string }> {
