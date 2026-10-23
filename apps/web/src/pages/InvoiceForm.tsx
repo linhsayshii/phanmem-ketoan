@@ -271,7 +271,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
         numCol('vatImport', 'Thuế GTGT hàng NK (đồng)', (n) => VND_AMOUNT_RE.test(n), { width: 170, headerTooltip: 'Thuế GTGT hàng nhập khẩu theo tờ khai (Nợ 1331 / Có 33312)' }),
         { field: 'vatImportCode', headerName: 'Mã thuế GTGT NK (F4)', width: 160 },
         numCol('vatImportBase', 'Giá tính thuế GTGT NK (đồng)', (n) => VND_AMOUNT_RE.test(n), { width: 190, headerTooltip: 'Theo tờ khai hải quan; để trống: tiền hàng quy đổi + thuế NK + thuế TTĐB' })] satisfies ColDef<InvRow>[] : []),
-      // shortcut: chưa có cột Khế ước (TK 341x/335) vì chưa có API tra cứu khế ước; Task 11 thêm.
+      // Hóa đơn không có cột Khế ước: API hóa đơn không nhận khế ước ở dòng; khế ước vay (341x, 335) nhập ở phiếu kế toán, giấy báo.
       ...(!goodsDoc && showAsset ? [{ field: 'assetCode', headerName: 'Tài sản (F4)', width: 130, editable: (p) => isAssetAccount(p.data?.accountCode ?? '') } satisfies ColDef<InvRow>] : []),
       { field: 'departmentCode', headerName: 'Bộ phận', width: 100 }, { field: 'projectCode', headerName: 'Vụ việc', width: 100 }, { field: 'costItemCode', headerName: 'Khoản mục', width: 110 },
     ] satisfies ColDef<InvRow>[]).map(live);

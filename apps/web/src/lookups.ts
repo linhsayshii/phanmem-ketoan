@@ -67,6 +67,13 @@ export const assetFetcher = (kind?: 'fixed' | 'tool' | 'prepaid') => async (q: s
   return r.ok ? ((await r.json()) as LookupRow[]).map(({ id, code, name }) => ({ id, code, name })) : [];
 };
 export const assetPick = assetFetcher();
+// Cột "Khế ước" của dòng chứng từ: TK vay 341x và lãi vay phải trả 335 (khế ước vay).
+// shortcut: nhận diện theo đầu số tài khoản và chỉ tra khế ước vay; thêm hợp đồng bán/mua khi có phân hệ hợp đồng.
+export const isContractAccount = (code: string | undefined | null): boolean => /^(341|335)/.test(code ?? '');
+export const contractPick = async (q: string, signal: AbortSignal): Promise<LookupRow[]> => {
+  const r = await fetch(`/api/lookups/contracts?q=${encodeURIComponent(q)}&size=50&kind=loan`, { credentials: 'include', signal });
+  return r.ok ? ((await r.json()) as LookupRow[]).map(({ id, code, name }) => ({ id, code, name })) : [];
+};
 // Loại tài sản của phân hệ tài sản cho F4.
 export const assetCategoryFetcher = (kind: 'fixed' | 'tool' | 'prepaid') => async (q: string, signal: AbortSignal): Promise<LookupRow[]> => {
   const r = await fetch(`/api/asset-categories?kind=${kind}`, { credentials: 'include', signal });

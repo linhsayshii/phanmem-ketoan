@@ -1,8 +1,11 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
+import { regimeOf } from '../reporting/ledgers.js';
+import { assertPrint, isoDate, ordered, orderedMsg, respondReport } from '../reporting/routes.js';
 import { dateIso } from '../ledger/vouchers.service.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
+import { loanDoc, loanReport, loanVouchers } from './reports.js';
 import { interestPreview, runLoanInterest } from './interest.js';
 import { deleteLoan, disburse, disburseInput, getLoan, listLoans, lookupContracts, loanInput, repay, repayInput, saveLoan, settleLoan } from './loans.js';
 
@@ -13,7 +16,14 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   const tid = (req: { auth: { tenantId: string | null } | null }) => req.auth!.tenantId!;
   const ctx = (req: { auth: { tenantId: string | null; userId: string } | null }) => ({ tenantId: req.auth!.tenantId!, userId: req.auth!.userId });
   app.get('/api/loans', { preHandler: app.requirePermission('loan.view'), schema: { querystring: z.object({ at: dateIso.optional() }) } }, async (req) => app.withTenant(req, (trx) => listLoans(trx, req.query.at), READ_SNAPSHOT));
+  // Sổ theo dõi khế ước vay (JSON; HTML/PDF/Excel cần report.print). Đường tĩnh /report đứng trước /:id.
+  app.get('/api/loans/report', { preHandler: app.requirePermission('report.view'), schema: { querystring: z.object({ from: isoDate, to: isoDate, format: z.enum(['json', 'html', 'pdf', 'xlsx']).default('json') }).refine(ordered, orderedMsg) } }, async (req, reply) => {
+    const q = req.query; if (q.format !== 'json') assertPrint(req.auth!);
+    const out = await app.withTenant(req, async (trx) => { const data = await loanReport(trx, q.from, q.to); return { data, doc: q.format === 'json' ? null : await loanDoc(trx, req.auth!.tenantId!, await regimeOf(trx, q), data) }; }, READ_SNAPSHOT);
+    return q.format === 'json' ? out.data : respondReport(reply, [out.doc!], q.format, `so-theo-doi-khe-uoc-${q.from}-${q.to}`);
+  });
   app.get('/api/loans/:id', { preHandler: app.requirePermission('loan.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => getLoan(trx, req.params.id), READ_SNAPSHOT));
+  app.get('/api/loans/:id/vouchers', { preHandler: app.requirePermission('loan.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => loanVouchers(trx, req.params.id), READ_SNAPSHOT));
   app.post('/api/loans', { preHandler: app.requirePermission('loan.create'), schema: { body: loanInput } }, async (req, reply) =>
     reply.status(201).send(await app.withTenant(req, (trx) => saveLoan(trx, tid(req), null, req.body))));
   app.put('/api/loans/:id', { preHandler: app.requirePermission('loan.update'), schema: { params: numId, body: loanInput } }, async (req) => app.withTenant(req, (trx) => saveLoan(trx, tid(req), req.params.id, req.body)));
