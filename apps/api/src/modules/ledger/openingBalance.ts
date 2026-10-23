@@ -9,6 +9,7 @@ import { excelDate, MAX_ERRORS, MAX_ROWS, plainCell, type ImportError } from '..
 import { assertZipSafe } from '../master/excelSheet.js';
 import { isoDate } from '../reporting/routes.js';
 import { stockGroups, stockIssues, type StockGroup } from '../inventory/openingStock.js';
+import { assetIssues, openingCards, type OpeningCard } from '../assets/openingAssets.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { getVoucher, postVoucher, type VoucherDto } from './vouchers.service.js';
 
@@ -36,7 +37,7 @@ export const openingRow = z.object({
 });
 export type OpeningRow = z.infer<typeof openingRow>;
 export interface OpeningIssue {
-  code: 'UNBALANCED' | 'ACCOUNT_GROUP' | 'WRONG_SIDE' | 'PARTY_REQUIRED' | 'PARTY_NOT_ALLOWED' | 'CURRENCY_NOT_TRACKED' | 'ACCOUNT_PNL' | 'ACCOUNT_INACTIVE' | 'SUBLEDGER_MODULE_REQUIRED' | 'BANK_ACCOUNT_MISSING' | 'OPENING_STOCK_MISMATCH' | 'ACCOUNT_NOT_FOUND';
+  code: 'UNBALANCED' | 'ACCOUNT_GROUP' | 'WRONG_SIDE' | 'PARTY_REQUIRED' | 'PARTY_NOT_ALLOWED' | 'CURRENCY_NOT_TRACKED' | 'ACCOUNT_PNL' | 'ACCOUNT_INACTIVE' | 'SUBLEDGER_MODULE_REQUIRED' | 'BANK_ACCOUNT_MISSING' | 'OPENING_STOCK_MISMATCH' | 'ACCOUNT_NOT_FOUND' | 'ASSET_OPENING_MISMATCH' | 'ASSET_OPENING_INVALID';
   message: string; accountCode?: string; partyCode?: string | null;
   warning?: true; // cảnh báo: hiện khi kiểm tra nhưng không chặn ghi sổ
 }
@@ -112,13 +113,15 @@ export async function replaceOpening(trx: Trx, tenantId: string, year: number, r
   return values.length;
 }
 
-function issuesOf(rows: DbRow[]): OpeningIssue[] {
+// Tài khoản nguyên giá, hao mòn có thẻ đầu kỳ thì số dư được tách theo thẻ ở phân hệ tài sản (assetIssues), không còn bị khóa.
+const cardAccounts = (cards: OpeningCard[]) => new Set(cards.flatMap((c) => [c.asset_account_code, ...(c.depreciation_account_code ? [c.depreciation_account_code] : [])]));
+function issuesOf(rows: DbRow[], covered: Set<string>): OpeningIssue[] {
   const issues: OpeningIssue[] = [];
   for (const r of rows) {
     const at = { accountCode: r.accountCode, partyCode: r.partyCode }; const code = r.accountCode;
     if (r.is_group) issues.push({ code: 'ACCOUNT_GROUP', message: `Tài khoản ${code} là tài khoản tổng hợp`, ...at });
     if (!r.is_active) issues.push({ code: 'ACCOUNT_INACTIVE', message: `Tài khoản ${code} đã ngừng sử dụng`, ...at });
-    if (r.subledger_kind === 'fixed_asset')
+    if (r.subledger_kind === 'fixed_asset' && !covered.has(code))
       issues.push({ code: 'SUBLEDGER_MODULE_REQUIRED', message: `Tài khoản ${code} theo dõi chi tiết tài sản cố định; số dư nhập ở phân hệ tài sản`, ...at });
     if (['income', 'expense'].includes(r.root_type)) issues.push({ code: 'ACCOUNT_PNL', message: `Tài khoản ${code} loại 5–9 không có số dư đầu kỳ`, ...at });
     if (r.normal_balance === 'debit' && D(r.credit).gt(0)) issues.push({ code: 'WRONG_SIDE', message: `Tài khoản ${code} chỉ có số dư Nợ`, ...at });
@@ -147,8 +150,8 @@ async function stockAccountIssues(trx: Trx, regime: string, groups: StockGroup[]
 export async function checkOpening(trx: Trx, year: number): Promise<OpeningIssue[]> {
   const { regime } = await openingPeriod(trx, year);
   const rows = await openingRows(trx, year, regime);
-  const groups = await stockGroups(trx, year);
-  return [...issuesOf(rows), ...stockIssues(rows, groups), ...await stockAccountIssues(trx, regime, groups)];
+  const groups = await stockGroups(trx, year); const cards = await openingCards(trx, year);
+  return [...issuesOf(rows, cardAccounts(cards)), ...stockIssues(rows, groups), ...await stockAccountIssues(trx, regime, groups), ...assetIssues(cards, rows)];
 }
 
 // Chỉ ghi sổ số dư mới bỏ ghi sổ được chứng từ DK của chính nó: cờ app.opening_repost (xem unpost_voucher, 0015) chỉ bật quanh đúng lệnh này rồi đặt lại.
@@ -168,8 +171,8 @@ export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: str
   await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`opening_balance:${ctx.tenantId}:${year}`}, 0))`.execute(trx);
   const rows = await openingRows(trx, year, p0.regime);
   if (!rows.length) throw new AppError('OPENING_EMPTY', 'Chưa nhập số dư đầu kỳ nào', 409);
-  const groups = await stockGroups(trx, year);
-  const issues = [...issuesOf(rows), ...stockIssues(rows, groups), ...await stockAccountIssues(trx, p0.regime, groups)].filter((i) => !i.warning);
+  const groups = await stockGroups(trx, year); const cards = await openingCards(trx, year);
+  const issues = [...issuesOf(rows, cardAccounts(cards)), ...stockIssues(rows, groups), ...await stockAccountIssues(trx, p0.regime, groups), ...assetIssues(cards, rows)].filter((i) => !i.warning);
   if (issues.length) throw new AppError('OPENING_INVALID', 'Số dư đầu kỳ chưa hợp lệ', 409, issues);
   // DK lập tay cùng năm không bị chiếm (bỏ ghi sổ + xóa dòng) và cũng không có DK thứ hai (số dư cộng đôi); chứng từ đã đảo hoặc hủy thì không tính.
   const dks = await trx.selectFrom('voucher').select(['id', 'state', 'source_doc_type']).where('voucher_type', '=', 'DK').where('fiscal_year', '=', year).where('reversal_of_id', 'is', null)
@@ -188,13 +191,29 @@ export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: str
   }
   // Tài khoản kho: dòng sổ cái lấy từ tồn đầu kỳ (theo hàng–kho); số dư từng tài khoản đã được kiểm bằng tổng tồn.
   const stockCodes = new Set([...groups.map((g) => g.accountCode), ...rows.filter((r) => r.subledger_kind === 'inventory').map((r) => r.accountCode)]);
-  const lines: Insertable<Database['voucher_line']>[] = rows.filter((r) => !stockCodes.has(r.accountCode)).map((r) => ({
+  // Tài khoản có thẻ tài sản đầu kỳ: mỗi thẻ một dòng gắn asset_id (Nợ nguyên giá/giá trị còn lại, Có hao mòn), phần còn lại của số dư (chỉ 242) giữ một dòng không gắn tài sản.
+  const cardLines = new Map<string, { assetId: number; code: string; debit: string; credit: string }[]>();
+  for (const c of cards) {
+    const put = (acc: string, debit: string, credit: string) => { if (D(debit).gt(0) || D(credit).gt(0)) cardLines.set(acc, [...(cardLines.get(acc) ?? []), { assetId: c.id, code: c.code, debit, credit }]); };
+    put(c.asset_account_code, c.opening_cost ?? '0', '0'); if (c.depreciation_account_code) put(c.depreciation_account_code, '0', c.opening_accumulated ?? '0');
+  }
+  const base = (r: DbRow) => ({ tenant_id: ctx.tenantId, voucher_id: id, line_no: 0, account_id: r.account_id, posting_date: p0.date_from, currency_code: r.currency_code, due_date: r.due_date });
+  const rowLines = (r: DbRow): Insertable<Database['voucher_line']>[] => {
+    const cl = cardLines.get(r.accountCode); if (!cl) return [plainLine(r)];
+    cardLines.delete(r.accountCode); // nhiều dòng cùng tài khoản: thẻ chỉ tách ở dòng đầu
+    const out: Insertable<Database['voucher_line']>[] = cl.map((x) => ({ ...base(r), debit: x.debit, credit: x.credit, amount_currency: '0', party_id: null, bank_account_id: null, description: `Số dư đầu kỳ thẻ ${x.code}`, extra_dims: '{}', asset_id: x.assetId }));
+    const debit = D(r.debit).minus(sum(cl.map((x) => x.debit))); const credit = D(r.credit).minus(sum(cl.map((x) => x.credit)));
+    if (debit.gt(0) || credit.gt(0)) out.push({ ...plainLine(r), debit: debit.toString(), credit: credit.toString() });
+    return out;
+  };
+  const plainLine = (r: DbRow): Insertable<Database['voucher_line']> => ({
     tenant_id: ctx.tenantId, voucher_id: id, line_no: 0, account_id: r.account_id, posting_date: p0.date_from, currency_code: r.currency_code, debit: r.debit, credit: r.credit,
     // có dấu: + Nợ, − Có (dòng VND được trigger đặt lại bằng Nợ − Có)
     amount_currency: D(r.debit_currency).minus(r.credit_currency).toString(), party_id: r.party_id, bank_account_id: r.bank_account_id,
     // số dư công nợ theo hóa đơn: fn_open_items_create lấy số/ngày chứng từ gốc từ extra_dims, hạn từ due_date của dòng
     description: r.doc_no ? `Số dư ${r.doc_no}` : 'Số dư đầu kỳ', due_date: r.due_date,
-    extra_dims: JSON.stringify({ ...(r.doc_no ? { opening_doc_no: r.doc_no } : {}), ...(r.doc_date ? { opening_doc_date: r.doc_date } : {}) }) }));
+    extra_dims: JSON.stringify({ ...(r.doc_no ? { opening_doc_no: r.doc_no } : {}), ...(r.doc_date ? { opening_doc_date: r.doc_date } : {}) }) });
+  const lines: Insertable<Database['voucher_line']>[] = rows.filter((r) => !stockCodes.has(r.accountCode)).flatMap(rowLines);
   // Dòng kho: sổ cái gộp theo (tài khoản, hàng, kho), bỏ nhóm 0 đồng; dòng hàng chiều nhập (mỗi lô một dòng) để post_voucher sinh phát sinh kho và lớp giá ngày đầu năm.
   const sAcc = new Map((stockCodes.size ? await trx.selectFrom('account').select(['id', 'code']).where('regime', '=', p0.regime).where('code', 'in', [...stockCodes]).execute() : []).map((x) => [x.code, x.id]));
   const byKey = new Map<string, { g: StockGroup; value: Decimal }>();
