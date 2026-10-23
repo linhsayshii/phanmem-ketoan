@@ -207,6 +207,27 @@ describe('biến động TSCĐ', () => {
     expect(err(await t.call('POST', `/api/asset-events/${tr.eventId}/cancel`))).toEqual([409, 'ASSET_EVENT_CANCELLED']);
   });
 
+  it('sửa phân bổ chi phí từ kỳ 3 khi KH 1–3 đã chạy: KH 3 chạy lại theo phân bổ mới, KH 1, 2 giữ; sửa thời gian sử dụng trên thẻ đã chạy → 409 ASSET_SCHEDULE_LOCKED', async () => {
+    const t = await tenant();
+    const id = await t.fixed('TS01', '120000000', 60);
+    for (const p of [1, 2, 3]) await t.runOk(p);
+    const before = await t.runs();
+    await t.ok(t.call('PUT', `/api/assets/${id}/allocations`, { validFromYear: 2026, validFromPeriod: 3, lines: [{ expenseAccountCode: '6421', ratio: '100' }] }));
+    const after = await t.runs();
+    expect(after.find((x) => x.periodNo === 2)!.voucherId).toBe(before.find((x) => x.periodNo === 2)!.voucherId);
+    expect((await t.voucher(before.find((x) => x.periodNo === 3)!.voucherId!)).state).toBe('reversed');
+    expect(await t.lines(after.find((x) => x.periodNo === 3)!.voucherId!)).toEqual(['6421|2000000|0||', '2141|0|2000000|TS01|']);
+    const s = await t.ok(t.call('GET', '/api/asset-reports/depreciation-sheet?fiscalYear=2026&periodNo=3'));
+    expect(s.rows[3].byAccount).toEqual({ 6421: '2000000' });
+    const body = { code: 'TS01', name: 'Đổi tên', kind: 'fixed', assetAccountCode: '2111', depreciationAccountCode: '2141', lifeUnits: 60, depreciationStartDate: '2026-01-01' };
+    expect(await t.ok(t.call('PUT', `/api/assets/${id}`, body))).toMatchObject({ name: 'Đổi tên' });
+    for (const more of [{ lifeUnits: 48 }, { depreciationStartDate: '2026-02-01' }, { isDepreciable: false }]) {
+      const r = await t.call('PUT', `/api/assets/${id}`, { ...body, ...more });
+      expect(err(r)).toEqual([409, 'ASSET_SCHEDULE_LOCKED']);
+      expect(r.json().error.message).toContain('Điều chỉnh thời gian sử dụng');
+    }
+  });
+
   it('hủy ghi giảm: đảo TS, tài sản active, KH các kỳ sau chạy lại có lại tài sản', async () => {
     const t = await tenant();
     const id = await t.fixed('TS01', '120000000', 60); await t.fixed('TS02', '36000000', 36);

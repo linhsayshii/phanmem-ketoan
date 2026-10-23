@@ -59,6 +59,8 @@ export async function assertAssetAccounts(trx: Trx, kind: string, assetAccountCo
 export async function lockTenant(trx: Trx, tenantId: string) { await sql`SELECT pg_advisory_xact_lock(hashtext('asset_run'), hashtext(${tenantId}))`.execute(trx); }
 const hasLedger = async (trx: Trx, id: number) => !!(await trx.selectFrom('voucher_line').select('id').where('asset_id', '=', id).limit(1).executeTakeFirst())
   || !!(await trx.selectFrom('voucher_item_line').select('id').where('asset_id', '=', id).limit(1).executeTakeFirst());
+const hasRun = async (trx: Trx, id: number) => !!(await trx.selectFrom('asset_schedule_line as l').innerJoin('asset_schedule as s', 's.id', 'l.schedule_id').innerJoin('period_run as r', 'r.id', 'l.run_id')
+  .select('l.id').where('s.asset_id', '=', id).where('r.status', '=', 'active').limit(1).executeTakeFirst());
 export async function idOf(trx: Trx, table: 'department' | 'project' | 'cost_item' | 'asset_category', code: string | null | undefined, label: string): Promise<number | null> {
   if (!code) return null;
   const r = await trx.selectFrom(table).select('id').where('code', '=', code).executeTakeFirst();
@@ -149,10 +151,13 @@ export async function saveAsset(trx: Trx, tenantId: string, id: number | null, b
     opening_accumulated: b.openingAccumulated ?? null, opening_remaining_units: b.openingRemainingUnits ?? null, note: b.note ?? null,
   };
   if (id === null) return getAsset(trx, (await trx.insertInto('asset').values({ tenant_id: tenantId, ...v }).returning('id').executeTakeFirstOrThrow()).id);
-  const cur = await trx.selectFrom('asset').select(['kind', 'asset_account_code', 'depreciation_account_code', 'quantity', 'department_id']).where('id', '=', id).forUpdate().executeTakeFirst();
+  const cur = await trx.selectFrom('asset').select(['kind', 'asset_account_code', 'depreciation_account_code', 'quantity', 'department_id', 'depreciation_start_date', 'life_units', 'is_depreciable']).where('id', '=', id).forUpdate().executeTakeFirst();
   if (!cur) throw new AppError('ASSET_NOT_FOUND', 'Không tìm thấy thẻ tài sản', 404);
   if ((cur.kind !== v.kind || cur.asset_account_code !== v.asset_account_code || cur.depreciation_account_code !== v.depreciation_account_code) && await hasLedger(trx, id))
     throw new AppError('ASSET_ACCOUNT_LOCKED', 'Tài sản đã có bút toán trên sổ cái, không đổi được loại, tài khoản tài sản và tài khoản hao mòn', 409);
+  // Thẻ đã vào lần chạy khấu hao/phân bổ hiệu lực: đổi ngày bắt đầu, thời gian sử dụng, tính khấu hao trên thẻ làm lịch của các kỳ đã chạy lệch sổ cái mà không ai biết → dùng biến động.
+  if ((cur.depreciation_start_date !== v.depreciation_start_date || cur.life_units !== v.life_units || cur.is_depreciable !== v.is_depreciable) && await hasRun(trx, id))
+    throw new AppError('ASSET_SCHEDULE_LOCKED', 'Tài sản đã có lần chạy khấu hao, phân bổ: không sửa ngày bắt đầu, thời gian sử dụng, tính khấu hao trên thẻ. Dùng nghiệp vụ Điều chỉnh thời gian sử dụng hoặc Dừng, Tiếp tục khấu hao', 409);
   // Thẻ đã có biến động hoặc bút toán: số lượng và bộ phận chỉ đổi qua biến động (ghi giảm, điều chuyển), PUT không ghi đè.
   const touched = await hasLedger(trx, id) || !!(await trx.selectFrom('asset_event').select('id').where('asset_id', '=', id).limit(1).executeTakeFirst());
   await trx.updateTable('asset').set(touched ? { ...v, quantity: cur.quantity, department_id: cur.department_id } : v).where('id', '=', id).execute();

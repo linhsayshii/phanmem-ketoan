@@ -17,8 +17,8 @@ import { logCloseStep, runSummary } from '../ledger/periodClose.js';
 import { listRuns, runAssetPeriod } from './periodRun.js';
 import { assetValues, remainingUnitsOf, scheduleView } from './schedule.js';
 import { dateIso } from '../ledger/vouchers.service.js';
-import { adjustToolValue, cancelEvent, changeLife, decreaseAsset, decreaseInput, increaseAsset, increaseInput, lifeInput, listEvents, resumeAsset, resumeInput, revalueAsset, revalueInput, suspendAsset, suspendInput, toolAdjustInput, toolDecreaseInput, decreaseTool, transferAsset, transferInput } from './events.js';
-import { allocationInput, assetInput, categoryInput, deleteAsset, deleteCategory, getAsset, listAssets, listCategories, lookupAssets, saveAsset, saveCategory, setAllocations } from './assets.js';
+import { adjustToolValue, cancelEvent, changeLife, decreaseAsset, decreaseInput, increaseAsset, increaseInput, lifeInput, listEvents, resumeAsset, resumeInput, revalueAsset, revalueInput, suspendAsset, suspendInput, toolAdjustInput, toolDecreaseInput, decreaseTool, transferAsset, transferInput, updateAllocations } from './events.js';
+import { allocationInput, assetInput, categoryInput, deleteAsset, deleteCategory, getAsset, listAssets, listCategories, lookupAssets, saveAsset, saveCategory } from './assets.js';
 
 const numId = z.object({ id: z.coerce.number().int().positive() });
 const kindQ = z.enum(['fixed', 'tool', 'prepaid']);
@@ -47,7 +47,6 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     reply.status(201).send(await app.withTenant(req, (trx) => saveAsset(trx, tid(req), null, req.body))));
   app.put('/api/assets/:id', { preHandler: app.requirePermission('asset.update'), schema: { params: numId, body: assetInput } }, async (req) => app.withTenant(req, (trx) => saveAsset(trx, tid(req), req.params.id, req.body)));
   app.delete('/api/assets/:id', { preHandler: app.requirePermission('asset.delete'), schema: { params: numId } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteAsset(trx, tid(req), req.params.id)); return reply.status(204).send(); });
-  app.put('/api/assets/:id/allocations', { preHandler: app.requirePermission('asset.update'), schema: { params: numId, body: allocationInput } }, async (req) => app.withTenant(req, (trx) => setAllocations(trx, tid(req), req.params.id, req.body)));
   app.get('/api/assets/:id/schedule', { preHandler: app.requirePermission('asset.view'), schema: { params: numId } }, async (req) => app.withTenant(req, async (trx) => (await scheduleView(trx, req.params.id, (await getSettings(trx, tid(req))).fa_proration)).lines, READ_SNAPSHOT));
 
   // Chạy khấu hao (KH) / phân bổ CCDC, chi phí trả trước (PB) kỳ; kỳ khóa sổ cần quyền ghi lùi.
@@ -83,6 +82,12 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   event('suspend', suspendInput, suspendAsset);
   event('resume', resumeInput, resumeAsset);
   event('life', lifeInput, changeLife);
+  // Phân bổ chi phí: lưu rồi chạy lại các lần chạy từ kỳ hiệu lực (kỳ khóa sổ đổi số cần quyền ghi lùi).
+  app.put('/api/assets/:id/allocations', { preHandler: app.requirePermission('asset.update'), schema: { params: numId, body: allocationInput } }, async (req) => {
+    const out = await app.withOverride(req, (trx) => updateAllocations(trx, runCtx(req), req.params.id, req.body));
+    notifyRecompute(app, tid(req));
+    return out;
+  });
   app.post('/api/asset-events/:id/cancel', { preHandler: app.requirePermission('asset.update'), schema: { params: z.object({ id: z.string().uuid() }) } }, async (req) => {
     const out = await app.withOverride(req, (trx) => cancelEvent(trx, runCtx(req), req.params.id));
     notifyRecompute(app, tid(req));

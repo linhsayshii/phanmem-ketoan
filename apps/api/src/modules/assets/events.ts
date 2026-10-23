@@ -233,6 +233,13 @@ export async function revalueAsset(trx: Trx, ctx: Ctx, id: number, b: z.infer<ty
   return { eventId, voucherId };
 }
 
+/** Phân bổ chi phí của thẻ (PUT): thay bộ dòng hiệu lực từ (năm, kỳ) rồi chạy lại các lần chạy hiện có từ kỳ đó như điều chuyển, để KH/PB và 06-TSCĐ cùng phân bổ. */
+export async function updateAllocations(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof allocationInput>) {
+  const out = await setAllocations(trx, ctx.tenantId, id, b);
+  await refreshRuns(trx, ctx, RUN_KIND[out.kind]!, b.validFromYear, b.validFromPeriod);
+  return out;
+}
+
 /** Điều chuyển bộ phận: bộ phận của thẻ đổi, phân bổ chi phí mới hiệu lực từ kỳ của ngày điều chuyển; không chứng từ. */
 export async function transferAsset(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof transferInput>) {
   const { a, span } = await begin(trx, ctx, id, b.date);
