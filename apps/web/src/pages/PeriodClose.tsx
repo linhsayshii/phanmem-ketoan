@@ -31,7 +31,11 @@ export default function PeriodClosePage() {
     onError: (e) => { void message.error((e as Error).message); },
     // Làm mới cả khi lỗi: chạy có thể đã ghi nhật ký một phần.
     onSettled: () => { void qc.invalidateQueries({ queryKey: ['period-close'] }); },
-    onSuccess: (_r, a) => { void message.success(a.skip ? 'Đã bỏ qua bước' : 'Đã chạy bước'); },
+    onSuccess: (r, a) => {
+      const s = r.steps.find((x) => x.key === a.step);
+      if (!a.skip && s?.status === 'pending' && s.reason) void message.warning(`Bước chạy chưa hoàn tất: ${s.reason}`); // lần chạy lỗi không được tính là xong
+      else void message.success(a.skip ? 'Đã bỏ qua bước' : 'Đã chạy bước');
+    },
   });
   const steps = state.data?.steps ?? [];
   const next = steps.find((s) => s.key === state.data?.nextStep);
@@ -47,7 +51,7 @@ export default function PeriodClosePage() {
         <span>Năm tài chính</span>
         <Select aria-label="Năm tài chính" style={{ width: 110 }} value={year} loading={years.isLoading} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: y.fiscalYear }))} onChange={setYear} />
         <span>Kỳ</span>
-        <Select aria-label="Kỳ" style={{ width: 120 }} value={period} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: periodLabel(i + 1) }))} onChange={setPeriod} />
+        <Select aria-label="Chọn kỳ" virtual={false} style={{ width: 120 }} value={period} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: periodLabel(i + 1) }))} onChange={setPeriod} />
         <Button type="primary" disabled={!next || !mayRun(next)} loading={run.isPending} onClick={runNext}>
           {next ? `Chạy bước tiếp theo (F9): ${next.name}` : 'Đã xong quy trình'}
         </Button>

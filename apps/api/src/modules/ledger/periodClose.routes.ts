@@ -30,6 +30,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       if (!('optional' in def)) throw new AppError('STEP_NOT_OPTIONAL', `Bước "${def.name}" bắt buộc, không bỏ qua được`, 409);
       return app.withTenant(req, async (trx) => {
         await periodSpan(trx, fy, pn);
+        if ((await closeStatus(trx, fy, pn)).steps.find((x) => x.key === step)!.status !== 'pending') throw new AppError('STEP_NOT_PENDING', `Bước "${def.name}" đã có lần chạy, không bỏ qua được`, 409);
         await logCloseStep(trx, ctx, { fiscalYear: fy, periodNo: pn, step, ok: true, summary: { skipped: true } });
         return { result: { skipped: true }, ...(await closeStatus(trx, fy, pn)) };
       });

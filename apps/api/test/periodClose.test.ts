@@ -44,7 +44,11 @@ describe('quy trình cuối kỳ có thứ tự', () => {
 
   it('chạy lại tool sau depreciation → depreciation có status rerun, reason nêu bước trước chạy sau', async () => {
     const t = await tenant(); await t.asset();
+    const a = await t.ok(t.call('POST', '/api/assets', { code: 'CC01', name: 'Máy khoan', kind: 'tool', assetAccountCode: '242', depreciationStartDate: '2026-01-05', lifeUnits: 3 }), 201);
+    await t.ok(t.call('PUT', `/api/assets/${a.id}/allocations`, { validFromYear: 2026, validFromPeriod: 1, lines: [{ expenseAccountCode: '6422', ratio: '100' }] }));
     for (const k of ['tool', 'prepaid', 'depreciation']) await t.run(k);
+    // dữ liệu CCDC đổi (mua thêm ghi lùi) nên chạy lại tool có thay đổi thật
+    await t.pkt('2026-01-05', [{ accountCode: '242', debit: '6000000', credit: '0', assetCode: 'CC01' }, { accountCode: '331', debit: '0', credit: '6000000', partyCode: 'NCC001' }]);
     const r = await t.run('tool'); expect(r.statusCode, r.body).toBe(200);
     const dep = t.step(r, 'depreciation');
     expect(dep.status).toBe('rerun'); expect(dep.reason).toContain('Phân bổ công cụ dụng cụ');
@@ -89,6 +93,28 @@ describe('quy trình cuối kỳ có thứ tự', () => {
     const bad = await t.run('tool', 1, { skip: true }); expect(bad.statusCode).toBe(409); expect(bad.json().error.code).toBe('STEP_NOT_OPTIONAL');
     const r = await t.run('fx_revaluation', 1, { skip: true }); expect(r.statusCode, r.body).toBe(200);
     expect(t.step(r, 'fx_revaluation').status).toBe('skipped_empty');
+  });
+
+  it('chạy lại bước không đổi gì (unchanged) không làm các bước sau thành rerun', async () => {
+    const t = await tenant(); await t.asset();
+    for (const k of ['tool', 'prepaid', 'depreciation']) await t.run(k);
+    const r = await t.run('tool'); expect(r.statusCode, r.body).toBe(200);
+    expect(t.step(r, 'depreciation').status).toBe('done'); expect(t.step(r, 'prepaid').status).toBe('done');
+    expect(r.json().nextStep).toBe('loan_interest');
+  });
+
+  it('giá vốn: nhập ghi lùi sau khi tính → costing rerun (stock_cost_state.stale_from)', async () => {
+    const t = await tenant();
+    for (const [name, payload] of [['warehouse', { code: 'K1', name: 'Kho K1', inventory_account_code: '156', costing_method: 'avg_period' }], ['item', { code: 'H1', name: 'Hàng H1', base_uom_code: 'CAI', kind: 'goods', tracking: 'none' }]] as const)
+      await t.ok(t.call('POST', `/api/catalogs/${name}`, payload), 201);
+    const pnk = async (date: string) => { const v = await t.ok(t.call('POST', '/api/stock-vouchers', { description: 'Nhập', voucherType: 'PNK', stockKind: 'purchase', postingDate: date, warehouseCode: 'K1', partyCode: 'NCC001', items: [{ itemCode: 'H1', uomCode: 'CAI', quantity: '10', unitPrice: '10' }] }), 201);
+      await t.ok(t.call('POST', `/api/vouchers/${v.id}/post`, {})); };
+    await pnk('2026-01-02');
+    const r = await t.run('costing'); expect(r.statusCode, r.body).toBe(200);
+    expect(t.step(r, 'costing').status).toBe('done');
+    await pnk('2026-01-05');
+    const c = (await t.status()).steps[5]!;
+    expect(c.status).toBe('rerun'); expect(c.reason).toContain('giá vốn');
   });
 
   it('lãi vay: giải ngân ghi lùi sau khi tính lãi → loan_interest rerun', async () => {

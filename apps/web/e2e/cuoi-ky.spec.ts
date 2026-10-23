@@ -11,30 +11,40 @@ async function signIn(page: Page, request: APIRequestContext) {
   await expect(page).not.toHaveURL(/dang-nhap/);
 }
 
-test('Quy trình cuối kỳ: chạy bước, F9 chạy bước kế tiếp, bỏ qua bước tùy chọn', async ({ page, request }) => {
+test('Quy trình cuối kỳ: chạy bước, bỏ qua bước tùy chọn, F9 chạy bước kế tiếp', async ({ page, request }) => {
   await signIn(page, request);
+  // Chọn kỳ chưa có nhật ký (mỗi lần chạy dùng một kỳ của năm cuối); hết kỳ trống thì bỏ qua có ghi chú, không chạy rỗng.
+  const years = await (await request.get('/api/fiscal-years')).json() as { fiscalYear: number }[];
+  const year = years.at(-1)!.fiscalYear;
+  let period = 0;
+  for (let p = 1; p <= 12 && !period; p++) {
+    const st = await (await request.get(`/api/period-close/${year}/${p}`)).json() as { steps: { key: string; status: string }[] };
+    if (st.steps.every((x) => x.status === 'pending')) period = p;
+  }
+  test.skip(!period, 'Mọi kỳ của năm cuối đã có nhật ký: cần cơ sở dữ liệu e2e mới');
   await page.goto('/so-cai/cuoi-ky');
   await expect(page.getByRole('heading', { name: 'Quy trình cuối kỳ' })).toBeVisible();
+  await page.locator('.ant-select', { has: page.getByRole('combobox', { name: 'Chọn kỳ' }) }).click();
+  await page.getByTitle(`Tháng ${period}`, { exact: true }).click();
   const rows = page.getByTestId('close-steps');
   await expect(rows.locator('tbody tr')).toHaveCount(10);
+  const tool = rows.locator('tr', { hasText: 'Phân bổ công cụ dụng cụ' });
+  await expect(tool).toContainText('Chưa chạy');
+  await expect(page.getByRole('button', { name: /Chạy bước tiếp theo.*Phân bổ công cụ dụng cụ/ })).toBeVisible();
 
   // Chạy riêng bước đầu: dòng chuyển sang "Đã chạy"
-  const tool = rows.locator('tr', { hasText: 'Phân bổ công cụ dụng cụ' });
-  await tool.getByRole('button', { name: /^Chạy/ }).click();
+  await tool.getByRole('button', { name: 'Chạy', exact: true }).click();
   await expect(tool).toContainText('Đã chạy');
 
-  // Đánh giá lại ngoại tệ là bước tùy chọn: bỏ qua được
+  // Đánh giá lại ngoại tệ là bước tùy chọn, chưa chạy: bỏ qua được
   const fx = rows.locator('tr', { hasText: 'Đánh giá lại ngoại tệ' });
-  if (await fx.getByRole('button', { name: 'Bỏ qua' }).count()) {
-    await fx.getByRole('button', { name: 'Bỏ qua' }).click();
-    await page.locator('.ant-popover').getByRole('button', { name: 'Bỏ qua' }).click();
-    await expect(fx).toContainText('Đã bỏ qua');
-  }
+  await fx.getByRole('button', { name: 'Bỏ qua' }).click();
+  await page.locator('.ant-popover').getByRole('button', { name: 'Bỏ qua' }).click();
+  await expect(fx).toContainText('Đã bỏ qua');
 
-  // F9 chạy bước kế tiếp (nếu còn)
-  const nextBtn = page.getByRole('button', { name: /Chạy bước tiếp theo/ });
-  if (await nextBtn.isEnabled().catch(() => false)) {
-    await page.keyboard.press('F9');
-    await expect(page.getByText('Đã chạy bước').first()).toBeVisible();
-  }
+  // F9 chạy bước kế tiếp: Chi phí trả trước
+  const prepaid = rows.locator('tr', { hasText: 'Phân bổ chi phí trả trước' });
+  await expect(prepaid).toContainText('Chưa chạy');
+  await page.keyboard.press('F9');
+  await expect(prepaid).toContainText('Đã chạy');
 });

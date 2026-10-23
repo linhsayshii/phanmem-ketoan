@@ -37,14 +37,19 @@ export async function logCloseStep(trx: Trx, ctx: { tenantId: string; userId: st
     VALUES (${ctx.tenantId}::uuid, ${a.fiscalYear}, ${a.periodNo}, ${a.step}, clock_timestamp(), ${ctx.userId}::uuid, ${a.ok}, ${JSON.stringify(a.summary)}::jsonb)`.execute(trx);
 }
 
-type Log = { step: string; ran_at: string; summary: { skipped?: boolean; voucherIds?: string[] }; user: string | null };
+type Log = { step: string; ran_at: string; ok: boolean; summary: { skipped?: boolean; unchanged?: boolean; errors?: number; voucherIds?: string[] }; user: string | null };
 
 export async function closeStatus(trx: Trx, fiscalYear: number, periodNo: number) {
   const { span } = await periodSpan(trx, fiscalYear, periodNo);
-  const logs = (await sql<Log>`SELECT l.step, l.ran_at::text AS ran_at, l.summary, u.full_name AS "user" FROM period_close_log l LEFT JOIN app_user u ON u.id = l.user_id
-    WHERE l.fiscal_year = ${fiscalYear} AND l.period_no = ${periodNo} AND l.ok ORDER BY l.ran_at, l.id`.execute(trx)).rows;
-  const last = new Map<string, Log>(); const lastReal = new Map<string, Log>(); // lần bỏ qua không làm các bước sau phải chạy lại
-  for (const l of logs) { last.set(l.step, l); if (!l.summary.skipped) lastReal.set(l.step, l); }
+  const logs = (await sql<Log>`SELECT l.step, l.ran_at::text AS ran_at, l.ok, l.summary, u.full_name AS "user" FROM period_close_log l LEFT JOIN app_user u ON u.id = l.user_id
+    WHERE l.fiscal_year = ${fiscalYear} AND l.period_no = ${periodNo} ORDER BY l.ran_at, l.id`.execute(trx)).rows;
+  // lần bỏ qua hoặc chạy lại không đổi gì không làm các bước sau phải chạy lại; lần chạy lỗi (ok = false) không tính là xong
+  const last = new Map<string, Log>(); const lastReal = new Map<string, Log>(); const failed = new Map<string, Log>();
+  for (const l of logs) {
+    if (!l.ok) { failed.set(l.step, l); continue; }
+    failed.delete(l.step); last.set(l.step, l);
+    if (!l.summary.skipped && !l.summary.unchanged) lastReal.set(l.step, l);
+  }
   const ids = [...new Set([...last.values()].flatMap((l) => l.summary.voucherIds ?? []))];
   const nos = new Map((ids.length ? await trx.selectFrom('voucher').select(['id', 'voucher_no', 'voucher_type']).where('id', 'in', ids).execute() : []).map((v) => [v.id, v]));
   const staleCosting = (await sql<{ n: string }>`SELECT count(*)::text AS n FROM stock_cost_state WHERE stale_from <= ${span.to}::date`.execute(trx)).rows[0]!.n !== '0';
@@ -53,9 +58,11 @@ export async function closeStatus(trx: Trx, fiscalYear: number, periodNo: number
   for (const [i, def] of CLOSE_STEPS.entries()) {
     const l = last.get(def.key);
     let status: StepStatus = 'pending'; let reason: string | null = null;
+    const f = failed.get(def.key);
+    if (f) reason = `Lần chạy gần nhất lỗi (${f.summary.errors ?? 0} mục), chưa tính là xong`;
     if (l) {
       status = l.summary.skipped ? 'skipped_empty' : 'done';
-      const later = CLOSE_STEPS.slice(0, i).find((s) => (lastReal.get(s.key)?.ran_at ?? '') > l.ran_at);
+      const later = CLOSE_STEPS.slice(0, i).find((s) => Date.parse(lastReal.get(s.key)?.ran_at ?? '1970-01-01') > Date.parse(l.ran_at));
       if (!l.summary.skipped) {
         if (later) { status = 'rerun'; reason = `Bước "${later.name}" chạy sau lần chạy này`; }
         else if (def.key === 'tool' || def.key === 'prepaid' || def.key === 'depreciation') {
