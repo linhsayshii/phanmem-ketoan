@@ -184,9 +184,9 @@ describe('chạy khấu hao TSCĐ theo kỳ (KH)', () => {
     expect((await stale(2)).stale).toBe(true);
     await t.runOk(2);
     expect(await stale(2)).toEqual({ stale: false, reason: null });
-    // Chỉ đổi TK chi phí của kỳ 1 (hao mòn không đổi): kỳ 1 tạo lần chạy mới, kỳ 2 cũ vì lần chạy kỳ trước mới hơn.
+    // Chỉ đổi TK chi phí của kỳ 1 (hao mòn không đổi) thẳng trong DB (PUT phân bổ tự chạy lại kỳ 1, 2): kỳ 1 tạo lần chạy mới, kỳ 2 cũ vì lần chạy kỳ trước mới hơn.
     const ts02 = (await t.ok(t.call('GET', '/api/assets?kind=fixed'))).find((x: { code: string }) => x.code === 'TS02');
-    await t.ok(t.call('PUT', `/api/assets/${ts02.id}/allocations`, { validFromYear: 2026, validFromPeriod: 1, lines: [{ expenseAccountCode: '6421', ratio: '100' }] }));
+    await ctx.t.admin.updateTable('asset_allocation').set({ expense_account_code: '6421' }).where('asset_id', '=', ts02.id).execute();
     expect((await t.runOk(1)).unchanged).toBe(false);
     expect(await stale(2)).toEqual({ stale: true, reason: 'Kỳ 1/2026 được chạy lại sau lần chạy kỳ này' });
   });
