@@ -99,3 +99,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-23 23:43 | GĐ5 | kế hoạch chi tiết, khảo cứu tích hợp (SInvoice, ngân hàng, XML QĐ 1233, văn bản TNDN); T1 quyền GĐ5, mã hóa bí mật AES-256-GCM, httpJson (0078) | 05bb475..e2c867d | api 934, rà soát sạch (1 vòng sửa)
 2026-10-24 00:09 | GĐ5 | T2 ký hiệu hóa đơn TT 91/2026, nhà cung cấp HĐĐT, dải ký hiệu, che bí mật trong nhật ký (0079) | 3add02b..e1c954e | api 939, rà soát sạch
 2026-10-24 00:50 | GĐ5 | T3 bảng hóa đơn điện tử, chứng từ bán chờ số, ghi số qua fn_einvoice_set_number, khóa chứng từ đã phát hành (0080) | 585a082..f7f84c5 | api 952, rà soát sạch (opus)
+2026-10-24 01:18 | GĐ5 | T4 EInvoiceProvider, mô hình hóa đơn trung lập, nhà cung cấp giả lập, kiểm tra kết nối, kiểm thử httpJson | 129a682..ff09116 | api 966, rà soát sạch (1 vòng sửa)
