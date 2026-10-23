@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
-import { D, VND_AMOUNT_MSG, VND_AMOUNT_RE, type PeriodSpan } from '@kt/domain';
+import { D, Decimal, VND_AMOUNT_MSG, VND_AMOUNT_RE, type PeriodSpan } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { getSettings } from '../core/settings.js';
 import * as S from '../ledger/vouchers.service.js';
@@ -18,7 +18,7 @@ type Line = { accountCode: string; debit: string; credit: string; assetCode?: st
 type AllocRow = { expense_account_code: string; department_id: number | null; project_id: number | null; cost_item_id: number | null; ratio: string };
 // Giá trị trước/sau lưu trong asset_event.data, đọc lại khi hủy biến động.
 type EventData = {
-  before?: { use_date?: string | null; depreciation_start_date?: string | null; status?: string; decrease_date?: string | null; departmentId?: number | null; allocations?: AllocRow[] };
+  before?: { use_date?: string | null; depreciation_start_date?: string | null; status?: string; decrease_date?: string | null; quantity?: string; departmentId?: number | null; allocations?: AllocRow[] };
   validFrom?: { year: number; period: number }; scheduleId?: number | null; toolAssetId?: number | null;
 };
 const RUN_KIND: Record<string, RunKind> = { fixed: 'depreciation', tool: 'tool', prepaid: 'prepaid' };
@@ -35,6 +35,8 @@ export const decreaseInput = z.object({
   toolCard: z.object({ code: z.string().trim().min(1).max(30), name: z.string().trim().min(1).max(200), periods: z.number().int().min(1).max(1200), allocations: allocLines, depreciationStartDate: dateIso.optional() }).optional(),
 });
 export const revalueInput = z.object({ date: dateIso, newCost: vnd, newAccumulated: vnd, remainingUnits: units.optional(), counterAccountCode: z.string().min(1).default('412') });
+export const toolDecreaseInput = z.object({ date: dateIso, quantity: z.string().regex(/^\d{1,16}(\.\d{1,4})?$/, 'Số lượng không hợp lệ').optional(), counterAccountCode: z.string().min(1), reason: z.string().max(500).nullable().optional() });
+export const toolAdjustInput = z.object({ date: dateIso, delta: z.string().regex(/^-?\d{1,16}$/, VND_AMOUNT_MSG).refine((s) => !D(s).isZero(), 'Số tiền điều chỉnh phải khác 0'), counterAccountCode: z.string().min(1) });
 export const transferInput = z.object({ date: dateIso, departmentCode: z.string().nullable(), allocations: allocLines });
 export const suspendInput = z.object({ date: dateIso, reason: z.string().trim().min(1).max(500) });
 export const resumeInput = z.object({ date: dateIso });
@@ -146,6 +148,45 @@ export async function decreaseAsset(trx: Trx, ctx: Ctx, id: number, b: z.infer<t
   return { eventId, voucherId, partialDepreciation: partial };
 }
 
+/**
+ * Ghi giảm CCDC/CPTT một phần hoặc toàn bộ: giá trị ghi giảm = round_half_up(giá trị còn lại × số lượng giảm / số lượng thẻ), giá trị còn lại bỏ lần phân bổ kỳ P (chạy lại sau);
+ * Nợ đối ứng / Có 242. Giảm hết số lượng → thẻ 'decreased'; giảm một phần → số lượng thẻ giảm, kỳ sau phân bổ phần còn lại trên số kỳ còn lại (phiên bản lịch mới).
+ */
+export async function decreaseTool(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof toolDecreaseInput>) {
+  const { a, span } = await begin(trx, ctx, id, b.date);
+  if (a.kind === 'fixed') throw new AppError('VALIDATION', 'Tài sản cố định ghi giảm bằng nghiệp vụ ghi giảm tài sản', 400);
+  if (a.kind === 'prepaid' && b.quantity !== undefined) throw new AppError('VALIDATION', 'Chi phí trả trước không có số lượng, không ghi giảm một phần', 400);
+  const q = b.quantity !== undefined ? D(b.quantity) : D(a.quantity);
+  if (!q.gt(0) || q.gt(a.quantity)) throw new AppError('ASSET_QUANTITY', `Số lượng ghi giảm ${q.toString()} lớn hơn số lượng còn lại ${D(a.quantity).toString()}`, 400);
+  await assertNoGap(trx, RUN_KIND[a.kind]!, span, (await getSettings(trx, ctx.tenantId)).fa_proration);
+  const nbv = D((await assetValues(trx, ctx.tenantId, b.date, await runIdsOf(trx, RUN_KIND[a.kind]!, span.fiscalYear, span.periodNo), [id])).get(id)!.cost);
+  const all = q.eq(a.quantity);
+  const value = all ? nbv : nbv.times(q).div(a.quantity).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+  const left = D(a.quantity).minus(q).toString();
+  await trx.updateTable('asset').set(all ? { status: 'decreased', decrease_date: b.date } : { quantity: left }).where('id', '=', id).execute();
+  const eventId = randomUUID();
+  const voucherId = await tsVoucher(trx, ctx, eventId, b.date, b.reason ?? `Ghi giảm ${a.code}`, [
+    signed(b.counterAccountCode, value, 'debit'), signed(a.asset_account_code, value, 'credit', { assetCode: a.code })]);
+  await record(trx, ctx, { id: eventId, assetId: id, kind: 'decrease', date: b.date, voucherId,
+    data: { reason: 'tool', counterAccountCode: b.counterAccountCode, quantity: q.toString(), value: value.toFixed(0), nbv: nbv.toFixed(0), before: { status: a.status, decrease_date: a.decrease_date, quantity: a.quantity } } });
+  await refresh(trx, ctx, a.kind, span);
+  return { eventId, voucherId, value: value.toFixed(0) };
+}
+
+/** Điều chỉnh giá trị CCDC/CPTT (delta > 0 tăng: Nợ 242 / Có đối ứng; delta < 0 giảm); giá trị còn lại không được âm (không thấp hơn đã phân bổ). */
+export async function adjustToolValue(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof toolAdjustInput>) {
+  const { a, span } = await begin(trx, ctx, id, b.date);
+  if (a.kind === 'fixed') throw new AppError('VALIDATION', 'Tài sản cố định điều chỉnh bằng nghiệp vụ đánh giá lại', 400);
+  const nbv = D((await assetValues(trx, ctx.tenantId, b.date, await runIdsOf(trx, RUN_KIND[a.kind]!, span.fiscalYear, span.periodNo), [id])).get(id)!.cost);
+  if (nbv.plus(b.delta).isNegative()) throw new AppError('VALIDATION', `Giảm giá trị ${D(b.delta).abs().toFixed(0)} làm giá trị thấp hơn số đã phân bổ (giá trị còn lại ${nbv.toFixed(0)})`, 400);
+  const eventId = randomUUID();
+  const voucherId = await tsVoucher(trx, ctx, eventId, b.date, `Điều chỉnh giá trị ${a.code}`, [
+    signed(a.asset_account_code, D(b.delta), 'debit', { assetCode: a.code }), signed(b.counterAccountCode, D(b.delta), 'credit')]);
+  await record(trx, ctx, { id: eventId, assetId: id, kind: 'value_adjust', date: b.date, voucherId, data: { delta: b.delta, counterAccountCode: b.counterAccountCode, nbv: nbv.toFixed(0) } });
+  await refresh(trx, ctx, a.kind, span);
+  return { eventId, voucherId };
+}
+
 // Phiên bản lịch mới life_change eff = kỳ P với số đơn vị còn lại đã nhập (hủy biến động: thay mọi phiên bản eff ≥ P, động cơ dựng lại từ phiên bản trước).
 async function lifeVersion(trx: Trx, ctx: Ctx, id: number, kind: string, span: PeriodSpan, remainingUnits: string) {
   const proration = (await getSettings(trx, ctx.tenantId)).fa_proration;
@@ -231,11 +272,16 @@ export async function cancelEvent(trx: Trx, ctx: Ctx, eventId: string) {
   if (later) throw new AppError('ASSET_EVENT_ORDER', `Tài sản còn biến động muộn hơn (ngày ${later.event_date}): hủy biến động đó trước`, 409);
   const { a, span } = await begin(trx, ctx, e.asset_id, e.event_date, false);
   const d = e.data as EventData;
+  if (e.kind === 'decrease' && d.toolAssetId) { // thẻ CCDC sinh ra còn biến động hoặc đã phân bổ thì không hủy được (đảo 242 sẽ làm âm giá trị)
+    const used = await trx.selectFrom('asset_event').select('id').where('asset_id', '=', d.toolAssetId).where('state', '=', 'active').limit(1).executeTakeFirst()
+      ?? await trx.selectFrom('voucher_line as l').innerJoin('voucher as v', 'v.id', 'l.voucher_id').select('l.id').where('l.asset_id', '=', d.toolAssetId).where('v.voucher_type', '=', 'PB').where('v.state', '=', 'posted').where('l.credit', '>', '0').limit(1).executeTakeFirst();
+    if (used) throw new AppError('ASSET_EVENT_ORDER', 'Thẻ công cụ dụng cụ sinh ra từ ghi giảm này đã có biến động hoặc phân bổ: xử lý trước', 409);
+  }
   if (e.voucher_id) await S.reverseVoucher(trx, e.voucher_id, { postingDate: e.event_date, description: `Hủy biến động tài sản ${a.code}` });
   if (e.kind === 'increase') {
     await trx.updateTable('asset').set({ use_date: d.before!.use_date ?? null, depreciation_start_date: d.before!.depreciation_start_date ?? null }).where('id', '=', a.id).execute();
   } else if (e.kind === 'decrease') {
-    await trx.updateTable('asset').set({ status: d.before!.status ?? 'active', decrease_date: d.before!.decrease_date ?? null }).where('id', '=', a.id).execute();
+    await trx.updateTable('asset').set({ status: d.before!.status ?? 'active', decrease_date: d.before!.decrease_date ?? null, ...(d.before!.quantity ? { quantity: d.before!.quantity } : {}) }).where('id', '=', a.id).execute();
   } else if (e.kind === 'transfer') {
     await trx.updateTable('asset').set({ department_id: d.before!.departmentId ?? null }).where('id', '=', a.id).execute();
     const vf = d.validFrom!; const rows = d.before!.allocations ?? [];

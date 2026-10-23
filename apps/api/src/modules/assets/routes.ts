@@ -6,7 +6,7 @@ import { getSettings } from '../core/settings.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { listRuns, runAssetPeriod } from './periodRun.js';
 import { previewSchedule } from './schedule.js';
-import { cancelEvent, changeLife, decreaseAsset, decreaseInput, increaseAsset, increaseInput, lifeInput, listEvents, resumeAsset, resumeInput, revalueAsset, revalueInput, suspendAsset, suspendInput, transferAsset, transferInput } from './events.js';
+import { adjustToolValue, cancelEvent, changeLife, decreaseAsset, decreaseInput, increaseAsset, increaseInput, lifeInput, listEvents, resumeAsset, resumeInput, revalueAsset, revalueInput, suspendAsset, suspendInput, toolAdjustInput, toolDecreaseInput, decreaseTool, transferAsset, transferInput } from './events.js';
 import { allocationInput, assetInput, categoryInput, deleteAsset, deleteCategory, getAsset, listAssets, listCategories, lookupAssets, saveAsset, saveCategory, setAllocations } from './assets.js';
 
 const numId = z.object({ id: z.coerce.number().int().positive() });
@@ -52,6 +52,8 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     });
   event('increase', increaseInput, increaseAsset);
   event('decrease', decreaseInput, decreaseAsset);
+  event('decrease-tool', toolDecreaseInput, decreaseTool);
+  event('adjust-value', toolAdjustInput, adjustToolValue);
   event('revalue', revalueInput, revalueAsset);
   event('transfer', transferInput, transferAsset);
   event('suspend', suspendInput, suspendAsset);
