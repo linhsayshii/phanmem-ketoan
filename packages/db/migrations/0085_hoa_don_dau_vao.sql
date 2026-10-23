@@ -1,6 +1,7 @@
 -- GĐ5 Task 11: hóa đơn điện tử đầu vào nhận từ XML (tải lên, API, thư điện tử).
 -- Giữ nguyên XML gốc (bản có giá trị pháp lý) cùng dữ liệu đã đọc; chống trùng theo băm SHA-256 và theo (MST người bán, ký hiệu, số).
--- Số tiền dùng NUMERIC(24,6): QĐ 1233 cho tối đa 21 chữ số, 6 chữ số thập phân (kể cả hóa đơn ngoại tệ); quy đổi VND làm ở bước lập chứng từ.
+-- Số tiền NUMERIC(20,4) (tối đa 16 chữ số nguyên, 4 số lẻ, theo quy ước tiền của dự án), số lượng/đơn giá NUMERIC(24,6), tỷ giá NUMERIC(20,10).
+-- Số không đọc được hoặc quá cột thì để NULL và đặt blocked; quy đổi VND làm ở bước lập chứng từ.
 CREATE TABLE inbound_invoice (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   tenant_id uuid NOT NULL REFERENCES tenant(id),

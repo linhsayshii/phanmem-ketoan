@@ -191,4 +191,27 @@ describe('hóa đơn đầu vào: lưu và chống trùng', () => {
     expect((await t.call('GET', `/api/inbound-invoices/${a.id}`)).json().warnings.map((w: { code: string }) => w.code)).toContain('TAXCODE_LOOKUP_FAILED');
     expect((await t.one(VAT())).status).toBe('duplicate'); expect(calls).toBe(1);
   });
+
+  it('phần tệp 21 MB không làm hỏng cả lượt: tệp trước và sau vẫn nhận, tệp lớn có dòng lỗi riêng', async () => {
+    const t = await tenant();
+    const r = await t.upload([{ name: 'a.xml', data: VAT() }, { name: 'lon.zip', data: Buffer.alloc(21 * 1024 * 1024, 1) }, { name: 'b.xml', data: withNo(VAT(), '00000321') }]);
+    expect(r.statusCode, r.body.slice(0, 200)).toBe(200);
+    expect(r.json().results.map((x: { status: string; error?: { code: string } }) => x.error?.code ?? x.status)).toEqual(['new', 'FILE_TOO_LARGE', 'new']);
+  });
+
+  it('hóa đơn 6000 dòng: chèn dòng theo lô, không vượt giới hạn tham số', async () => {
+    const t = await tenant();
+    const lines = Array.from({ length: 6000 }, (_, i) => `<HHDVu><STT>${i + 1}</STT><THHDVu>h${i}</THHDVu><ThTien>1</ThTien></HHDVu>`).join('');
+    const a = await t.one(VAT().replace(/<DSHHDVu>[\s\S]*<\/DSHHDVu>/, `<DSHHDVu>${lines}</DSHHDVu>`));
+    expect(a.status).toBe('new');
+    expect((await t.call('GET', `/api/inbound-invoices/${a.id}`)).json().lines).toHaveLength(6000);
+  });
+
+  it('chuỗi từ dịch vụ tra MST có ký tự thay thế lẻ hoặc NUL không làm hỏng lưu jsonb', async () => {
+    const t = await tenant();
+    expect((await t.call('PUT', '/api/settings', { tax_code_lookup: 'vietqr' })).statusCode).toBe(200);
+    setTaxCodeLookupForTest({ lookup: async () => ({ found: true, name: 'A\uD800B\u0000C', address: null, status: null, source: 'x', checkedAt: 'now' }) });
+    const a = await t.one(VAT()); expect(a.status).toBe('new');
+    expect((await t.call('GET', `/api/inbound-invoices/${a.id}`)).json().taxCodeCheck).toMatchObject({ found: true, name: 'ABC' });
+  });
 });

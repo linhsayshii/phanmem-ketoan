@@ -58,8 +58,8 @@ export async function storeInbound(trx: Transaction<Database>, ctx: { tenantId: 
     buyer_matches: buyerMatches, blocked: p.blocked, tax_code_check: meta.taxCheck ? JSON.stringify(meta.taxCheck) : null, warnings: JSON.stringify(warnings),
     status: duplicateOf ? 'duplicate' : 'new', duplicate_of: duplicateOf, party_id: partyId,
   }).returning('id').executeTakeFirstOrThrow();
-  if (p.lines.length) {
-    await trx.insertInto('inbound_invoice_line').values(p.lines.map((l) => ({
+  for (let at = 0; at < p.lines.length; at += 1000) { // lô 1000 dòng: một INSERT vượt 65535 tham số ở khoảng 5000 dòng
+    await trx.insertInto('inbound_invoice_line').values(p.lines.slice(at, at + 1000).map((l) => ({
       tenant_id: ctx.tenantId, invoice_id: row.id, line_no: l.lineNo, kind: l.kind, code: l.code, name: l.name || '(không tên)', uom: l.uom,
       quantity: pick(l.quantity, QTY_RE), unit_price: pick(l.unitPrice, QTY_RE), discount_amount: pick(l.discountAmount, MONEY_RE), amount: pick(l.amount, MONEY_RE), tax_rate: l.taxRate,
     }))).execute();

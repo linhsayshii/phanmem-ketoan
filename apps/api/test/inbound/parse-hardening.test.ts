@@ -59,4 +59,27 @@ describe('parseInvoiceXml: chống đầu vào độc', () => {
     expect(codes(parseInvoiceXml(VAT().replace('<ThTien>300000</ThTien>', '<ThTien>500.000</ThTien>')))).toContain('VND_FRACTION');
     expect(codes(parseInvoiceXml(VAT()))).not.toContain('VND_FRACTION');
   });
+
+  it('ký tự thay thế (surrogate) lẻ → XML_INVALID', () => {
+    expect(code(() => parseInvoiceXml(VAT().replace('Giấy in A4', 'Giấy&#xD800;in')))).toEqual(['XML_INVALID', 400]);
+    expect(code(() => parseInvoiceXml(VAT().replace('Giấy in A4', 'Giấy\uDC00in')))).toEqual(['XML_INVALID', 400]);
+    expect(parseInvoiceXml(VAT().replace('Giấy in A4', 'Giấy \u{1F600} in')).lines[0]!.name).toContain('\u{1F600}');
+  });
+
+  it('hàng trăm nghìn phần tử con không làm tràn ngăn xếp', () => {
+    expect(() => parseInvoiceXml(VAT().replace('</NDHDon>', `${'<x/>'.repeat(300_000)}</NDHDon>`))).not.toThrow();
+  });
+
+  it('nhóm thuế sai số: NULL và blocked, không thành 0 hay bị bỏ ngầm', () => {
+    const x = VAT().replace('<TgTCThue>', '<THTTLTSuat><LTSuat><TSuat>10%</TSuat><ThTien>1300000</ThTien><TThue>1.23456</TThue></LTSuat></THTTLTSuat><TgTCThue>');
+    const p = parseInvoiceXml(x);
+    expect(p.taxGroups[0]).toEqual({ taxRate: '10', base: '1300000', tax: null }); expect(p.blocked).toBe(true);
+  });
+
+  it('hóa đơn ngoại tệ thiếu hoặc sai tỷ giá → blocked + FX_RATE_MISSING', () => {
+    const usd = VAT().replace('<Ma>VND</Ma>', '<Ma>USD</Ma>');
+    const miss = parseInvoiceXml(usd); expect(miss.blocked).toBe(true); expect(codes(miss)).toContain('FX_RATE_MISSING');
+    const bad = parseInvoiceXml(usd.replace('</TTChung>', '<TGia>abc</TGia></TTChung>')); expect(bad.blocked).toBe(true);
+    const ok = parseInvoiceXml(usd.replace('</TTChung>', '<TGia>25000.5</TGia></TTChung>')); expect(ok.blocked).toBe(false); expect(ok.fxRate).toBe('25000.5');
+  });
 });

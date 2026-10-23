@@ -7,7 +7,7 @@ import { AppError } from '../../plugins/errors.js';
 import { getSettings } from '../core/settings.js';
 import { MAX_INVOICE_XML_BYTES, parseInvoiceXml, stripBom } from './parseXml.js';
 import { sha256Of, storeInbound } from './store.js';
-import { taxCheckWarnings, taxCodeLookupFor, validateLookup, type TaxLookupResult } from './taxCodeLookup.js';
+import { cleanText, taxCheckWarnings, taxCodeLookupFor, validateLookup, type TaxLookupResult } from './taxCodeLookup.js';
 
 // Giới hạn một lượt tải: số tệp, số phần multipart, dung lượng thô mỗi tệp (zip ≤ 20 MB, XML ≤ 2 MB), tổng dung lượng giải nén cả lượt.
 // Mỗi tệp xử lý xong mới đọc tệp kế tiếp nên bộ nhớ chỉ giữ một tệp (hoặc một zip đã giải nén) tại một thời điểm.
@@ -69,7 +69,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     const mode = await app.withTenant(req, async (trx) => (await getSettings(trx, tenantId)).tax_code_lookup, READ_SNAPSHOT);
     const lookup = taxCodeLookupFor(mode); const cache = new Map<string, Promise<TaxLookupResult | { error: string }>>();
     const check = (mst: string) => {
-      if (!cache.has(mst)) cache.set(mst, Promise.resolve().then(() => lookup!.lookup(mst)).then(validateLookup).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) })));
+      if (!cache.has(mst)) cache.set(mst, Promise.resolve().then(() => lookup!.lookup(mst)).then(validateLookup).catch((e: unknown) => ({ error: cleanText(e instanceof Error ? e.message : String(e)) })));
       return cache.get(mst)!;
     };
     // Mọi lỗi của một tệp chỉ thành dòng lỗi của tệp đó; lỗi lạ được ghi nhật ký, không trả chi tiết ra ngoài.
@@ -90,7 +90,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       }
     };
     try {
-      for await (const part of req.parts({ limits: { files: MAX_UPLOAD_FILES, parts: MAX_UPLOAD_FILES + 10, fileSize: ZIP_MAX_TOTAL_BYTES } })) {
+      for await (const part of req.parts({ throwFileSizeLimit: false, limits: { files: MAX_UPLOAD_FILES, parts: MAX_UPLOAD_FILES + 10, fileSize: ZIP_MAX_TOTAL_BYTES, fieldSize: 1024 } } as Parameters<typeof req.parts>[0])) {
         if (part.type !== 'file') continue;
         seen++;
         const name = baseName(part.filename);

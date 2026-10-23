@@ -11,8 +11,10 @@ export const MONEY_RE = /^-?\d{1,16}(\.\d{1,4})?$/;
 const QTY_RE = /^-?\d{1,16}(\.\d{1,6})?$/;
 const FX_RE = /^\d{1,10}(\.\d{1,10})?$/;
 const MAX_DEPTH = 64;
+// Ký tự điều khiển và surrogate lẻ: PostgreSQL (text, jsonb) không nhận.
 // eslint-disable-next-line no-control-regex -- mục đích chính là phát hiện ký tự điều khiển
-const CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/;
+const CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+const clip = (s: string, n = 40): string => Array.from(s).slice(0, n).join(''); // cắt theo điểm mã, không cắt đôi cặp surrogate
 export const stripBom = (xml: string): string => (xml.charCodeAt(0) === 0xfeff ? xml.slice(1) : xml);
 
 export interface ParsedLine { lineNo: number; kind: 'goods' | 'promotion' | 'discount' | 'note'; code: string | null; name: string; uom: string | null; quantity: string | null; unitPrice: string | null; discountAmount: string | null; amount: string | null; taxRate: string | null }
@@ -20,7 +22,7 @@ export interface InvoiceWarning { code: string; message: string; [k: string]: un
 export interface ParsedInvoice {
   formNo: string; serial: string; invoiceNo: string; issueDate: string; currency: string; fxRate: string | null; paymentMethod: string | null; cqtCode: string | null;
   seller: { name: string; taxCode: string | null; address: string | null }; buyer: { name: string | null; taxCode: string | null; address: string | null };
-  lines: ParsedLine[]; taxGroups: { taxRate: string; base: string; tax: string }[]; totals: { beforeTax: string | null; tax: string | null; discount: string | null; total: string | null }; blocked: boolean;
+  lines: ParsedLine[]; taxGroups: { taxRate: string; base: string | null; tax: string | null }[]; totals: { beforeTax: string | null; tax: string | null; discount: string | null; total: string | null }; blocked: boolean;
   signatures: { seller: SigCheck | null; cqt: SigCheck | null }; extra: { key: string; kind: string | null; value: string }[]; warnings: InvoiceWarning[];
 }
 
@@ -41,7 +43,7 @@ const elements = (el: El, name: string): El[] => {
     const n = stack.pop()!;
     if (n.nodeType !== 1) continue;
     if ((n as El).localName === name) out.push(n as El);
-    stack.push(...Array.from(n.childNodes).reverse());
+    const ch = n.childNodes; for (let i = ch.length - 1; i >= 0; i--) stack.push(ch[i]!);
   }
   return out;
 };
@@ -138,13 +140,13 @@ export function parseInvoiceXml(input: string): ParsedInvoice {
   const num = (raw: string | null, field: string, kind: 'money' | 'qty' | 'fx' = 'money'): string | null => {
     if (raw === null) return null;
     if (re[kind].test(raw)) return raw;
-    warnings.push({ code: 'NUMBER_FORMAT', message: `Số "${raw.slice(0, 40)}" ở ${field} không đúng dạng (chấm thập phân, ${lim[kind]}): bỏ trống` });
+    warnings.push({ code: 'NUMBER_FORMAT', message: `Số "${clip(raw)}" ở ${field} không đúng dạng (chấm thập phân, ${lim[kind]}): bỏ trống` });
     if (kind === 'money') blocked = true;
     return null;
   };
   const ok = (s: string | null): s is string => s !== null && MONEY_RE.test(s);
   // Kết quả tính (tổng suy ra) phải vừa cột.
-  const fit = (v: string, field: string): string | null => { if (MONEY_RE.test(v)) return v; warnings.push({ code: 'NUMBER_FORMAT', message: `${field} tính ra ${v.slice(0, 40)} vượt giới hạn cột: bỏ trống` }); blocked = true; return null; };
+  const fit = (v: string, field: string): string | null => { if (MONEY_RE.test(v)) return v; warnings.push({ code: 'NUMBER_FORMAT', message: `${field} tính ra ${clip(v)} vượt giới hạn cột: bỏ trống` }); blocked = true; return null; };
 
   const tt = only(dl, 'TTChung');
   const formNo = text(tt, 'KHMSHDon'); const serial = text(tt, 'KHHDon'); const invoiceNo = text(tt, 'SHDon'); const issueDate = text(tt, 'NLap');
@@ -180,7 +182,7 @@ export function parseInvoiceXml(input: string): ParsedInvoice {
 
   const tg = only(only(dl, 'NDHDon'), 'TToan');
   let taxGroups = kids(only(tg, 'THTTLTSuat'), 'LTSuat').map((g, i) => ({
-    taxRate: normRate(text(g, 'TSuat'), warnings) ?? '', base: num(text(g, 'ThTien'), `LTSuat ${i + 1} ThTien`) ?? '0', tax: num(text(g, 'TThue'), `LTSuat ${i + 1} TThue`) ?? '0' }));
+    taxRate: normRate(text(g, 'TSuat'), warnings) ?? '', base: num(text(g, 'ThTien'), `LTSuat ${i + 1} ThTien`), tax: num(text(g, 'TThue'), `LTSuat ${i + 1} TThue`) }));
   const sumOf = (xs: (string | null)[]) => xs.filter(ok).reduce((s, x) => s.plus(D(x)), D(0));
   if (taxGroups.length === 0 && lines.length > 0) {
     // Mẫu thiếu THTTLTSuat (và hóa đơn bán hàng không có thuế): suy ra theo dòng, thuế = thành tiền × thuế suất khi thuế suất là số.
@@ -191,7 +193,7 @@ export function parseInvoiceXml(input: string): ParsedInvoice {
       g.base = g.base.plus(amt); g.tax = g.tax.plus(/^\d+(\.\d+)?$/.test(rate) ? amt.times(rate).div(100).toDecimalPlaces(0) : 0);
       by.set(rate, g);
     }
-    taxGroups = [...by].filter(([r]) => r !== '').map(([taxRate, g]) => ({ taxRate, base: g.base.toFixed(), tax: g.tax.toFixed() }));
+    taxGroups = [...by].filter(([r]) => r !== '').map(([taxRate, g]) => ({ taxRate, base: fit(g.base.toFixed(), `nhóm thuế ${taxRate} (tiền)`), tax: fit(g.tax.toFixed(), `nhóm thuế ${taxRate} (thuế)`) }));
     warnings.push({ code: 'TAXGROUPS_DERIVED', message: 'Hóa đơn không có THTTLTSuat: nhóm thuế suy ra từ các dòng hàng' });
   }
   const rawBt = text(tg, 'TgTCThue'); const rawTax = text(tg, 'TgTThue'); const rawTotal = text(tg, 'TgTTTBSo');
@@ -205,6 +207,7 @@ export function parseInvoiceXml(input: string): ParsedInvoice {
   else if (ok(beforeTax) && ok(tax) && ok(total) && !D(beforeTax).plus(D(tax)).eq(D(total))) warnings.push({ code: 'TOTAL_MISMATCH', message: `Tổng chưa thuế ${beforeTax} + thuế ${tax} khác tổng thanh toán ${total} (có thể do phí, giảm trừ hoặc chiết khấu)` });
 
   const fxRate = num(text(tt, 'TGia'), 'TGia', 'fx');
+  if (currency !== 'VND' && fxRate === null) { blocked = true; warnings.push({ code: 'FX_RATE_MISSING', message: `Hóa đơn ${clip(currency, 10)} thiếu hoặc sai tỷ giá (TGia): chưa quy đổi được sang VND` }); }
   const extra = kids(only(dl, 'TTKhac'), 'TTin').map((t) => ({ key: text(t, 'TTruong') ?? '', kind: text(t, 'KDLieu'), value: text(t, 'DLieu') ?? '' }));
   const mccqt = mccqtEl?.textContent?.trim() || null;
   if (seller?.valid && !seller.taxCodeInCert) warnings.push({ code: 'SIGNER_TAXCODE_UNKNOWN', message: 'Chứng thư số của người bán không ghi MST: không đối chiếu được người ký với người bán' });

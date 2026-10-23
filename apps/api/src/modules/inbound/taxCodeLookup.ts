@@ -31,11 +31,15 @@ export class FakeLookup implements TaxCodeLookup {
 }
 
 // Kiểm kiểu phản hồi của dịch vụ ngoài (có thể là bản thay thế/lỗi): sai kiểu thì coi là tra lỗi.
+// eslint-disable-next-line no-control-regex -- bỏ NUL, ký tự điều khiển và surrogate lẻ mà jsonb không nhận
+const UNSAFE_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+export const cleanText = (s: string): string => s.replace(UNSAFE_RE, '');
 export function validateLookup(r: unknown): TaxLookupResult {
   const o = r as Partial<Record<keyof TaxLookupResult, unknown>> | null;
   const s = (v: unknown) => v === null || typeof v === 'string';
   if (!o || typeof o.found !== 'boolean' || !s(o.name) || !s(o.address) || !s(o.status) || typeof o.source !== 'string' || typeof o.checkedAt !== 'string') throw new Error('Phản hồi tra MST không đúng dạng');
-  return o as TaxLookupResult;
+  const c = (v: unknown) => (typeof v === 'string' ? cleanText(v) : null);
+  return { found: o.found, name: c(o.name), address: c(o.address), status: c(o.status), source: cleanText(o.source), checkedAt: cleanText(o.checkedAt) };
 }
 
 let override: TaxCodeLookup | null = null;
