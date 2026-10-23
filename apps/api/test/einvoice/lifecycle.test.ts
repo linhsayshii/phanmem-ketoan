@@ -81,6 +81,9 @@ describe('hóa đơn điều chỉnh, thay thế, hủy', () => {
     expect(a.payload.relation).toMatchObject({ kind: 'adjustment', adjust: 'decrease', original: { invoiceNo: '0000001', serial: 'C26TAA', issueDate: '2026-03-10' }, reason: 'Giảm giá theo biên bản', agreementNo: 'BB01', agreementDate: '2026-03-15' });
     expect(await t.row(o.id)).toMatchObject({ status: 'issued', adjusted: true });
     expect((await t.call('GET', `/api/einvoices/${o.id}`)).json()).toMatchObject({ adjusted: true, needsReversal: false });
+    const related = async (id: number) => (await t.call('GET', `/api/einvoices?relatedTo=${id}`)).json().map((x: { id: number }) => x.id).sort();
+    expect(await related(o.id)).toEqual([r.json().id]);
+    expect(await related(r.json().id)).toEqual([o.id]);
     // thay đổi ghi audit_event
     expect((await sql<{ n: number }>`SELECT count(*)::int AS n FROM audit_event WHERE tenant_id = ${t.tenantId}::uuid AND entity = 'einvoice' AND entity_id = ${String(o.id)} AND after->>'adjusted' = 'true'`.execute(t.admin)).rows[0]!.n).toBe(1);
     // đã điều chỉnh thì lần sau cũng điều chỉnh, không thay thế (TT 91/2026 Điều 10 khoản 6 điểm a)
