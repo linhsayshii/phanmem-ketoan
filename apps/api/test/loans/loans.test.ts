@@ -187,6 +187,7 @@ describe('khế ước vay', () => {
     const pc = await kt('POST', '/api/period-close/run', { fiscalYear: 2026, periodNo: 1, step: 'loan_interest' }); expect(pc.statusCode, pc.body).toBe(200);
     expect(pc.json().result).toMatchObject({ lines: null, unchanged: true });
     expect((await kt('GET', '/api/asset-runs?year=2026')).json()).toEqual([]);
+    expect((await admin('POST', '/api/loan-runs', { fiscalYear: 2026, periodNo: 13 })).statusCode).toBe(400);
     // Có view_payable: thấy lãi từng khế ước.
     expect((await admin('POST', '/api/loan-runs', { fiscalYear: 2026, periodNo: 1 })).json().lines).toEqual([{ loanCode: 'VAYS', interest: expect.any(String), interestVnd: expect.any(String) }]);
     // Thiếu voucher.post: giải ngân, trả nợ 403.

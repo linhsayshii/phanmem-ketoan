@@ -98,6 +98,8 @@ describe('biến động TSCĐ', () => {
       toolCard: { code: 'CC09', name: 'CC', periods: 12, depreciationStartDate: '2026-03-20', allocations: [{ expenseAccountCode: '6422', ratio: '100' }] } }))).toEqual([400, 'VALIDATION']);
     expect(err(await t.ev(id, 'revalue', { date: '2026-03-01', newCost: '1000', newAccumulated: '1001', counterAccountCode: '811' }))).toEqual([400, 'VALIDATION']);
     expect(err(await t.call('GET', '/api/assets/999999999/events'))).toEqual([404, 'ASSET_NOT_FOUND']);
+    // Chạy kỳ chỉ nhận kỳ tháng 1–12 (nhật ký cuối kỳ chỉ có kỳ tháng).
+    expect((await t.call('POST', '/api/asset-runs', { kind: 'depreciation', fiscalYear: 2026, periodNo: 13 })).statusCode).toBe(400);
   });
 
   it('đánh giá lại ngày 31/03: KH 3 đã chạy hay chưa đều cùng chênh lệch (giá trị trước KH kỳ 3)', async () => {

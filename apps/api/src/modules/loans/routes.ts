@@ -46,7 +46,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   // Lãi dự tính theo tháng theo lịch trả (màn hình khế ước); tính lãi vay kỳ thành chứng từ LV, kỳ khóa sổ cần quyền ghi lùi.
   app.get('/api/loans/:id/interest-preview', { preHandler: [app.requirePermission('loan.view'), payable], schema: { params: numId, querystring: z.object({ from: dateIso, to: dateIso }).refine((q) => q.from <= q.to, 'Từ ngày phải trước hoặc bằng đến ngày') } },
     async (req) => app.withTenant(req, (trx) => interestPreview(trx, req.params.id, req.query.from, req.query.to), READ_SNAPSHOT));
-  app.post('/api/loan-runs', { preHandler: app.requirePermission('loan.run'), schema: { body: z.object({ fiscalYear: z.number().int(), periodNo: z.number().int().min(1).max(15) }) } }, async (req) => {
+  app.post('/api/loan-runs', { preHandler: app.requirePermission('loan.run'), schema: { body: z.object({ fiscalYear: z.number().int(), periodNo: z.number().int().min(1).max(12) }) } }, async (req) => {
     const auth = req.auth!;
     const ctx = { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') };
     const out = await app.withOverride(req, async (trx) => {

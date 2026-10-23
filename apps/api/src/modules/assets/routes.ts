@@ -52,7 +52,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   // Chạy khấu hao (KH) / phân bổ CCDC, chi phí trả trước (PB) kỳ; kỳ khóa sổ cần quyền ghi lùi.
   app.get('/api/asset-runs', { preHandler: app.requirePermission('asset.view'), schema: { querystring: z.object({ kind: runKind.optional(), year: z.coerce.number().int().optional() }) } },
     async (req) => app.withTenant(req, (trx) => listRuns(trx, req.query.kind, req.query.year), READ_SNAPSHOT));
-  app.post('/api/asset-runs', { preHandler: app.requirePermission('asset.run'), schema: { body: z.object({ kind: runKind, fiscalYear: z.number().int(), periodNo: z.number().int().min(1).max(15) }) } }, async (req) => {
+  app.post('/api/asset-runs', { preHandler: app.requirePermission('asset.run'), schema: { body: z.object({ kind: runKind, fiscalYear: z.number().int(), periodNo: z.number().int().min(1).max(12) }) } }, async (req) => {
     const auth = req.auth!;
     const ctx = { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') };
     const out = await app.withOverride(req, async (trx) => {

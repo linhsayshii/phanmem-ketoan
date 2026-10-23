@@ -55,6 +55,7 @@ Lưu ý:
 - Nguyên giá không nhập trên thẻ. Nguyên giá phát sinh khi ghi tăng (mục 3) hoặc từ số dư đầu kỳ (mục 8).
 - Khi thẻ đã có bút toán, Số lượng và Bộ phận chỉ đổi qua nghiệp vụ ghi giảm hoặc điều chuyển; giá trị sửa trực tiếp trên thẻ bị bỏ qua.
 - Thẻ chưa có ngày bắt đầu, chưa có thời gian sử dụng hoặc không tính khấu hao thì không có lịch.
+- Thẻ đã vào lần chạy khấu hao hoặc phân bổ: không sửa được Ngày bắt đầu, Số kỳ sử dụng, "Có tính khấu hao" trên thẻ ("ASSET_SCHEDULE_LOCKED", 409). Dùng nghiệp vụ "Điều chỉnh thời gian sử dụng" hoặc "Dừng khấu hao", "Tiếp tục khấu hao" (mục 6).
 - Xóa thẻ đã có sổ cái: "ASSET_IN_USE" (409).
 
 ### 2.3. Tab "Phân bổ chi phí"
@@ -67,7 +68,7 @@ Quy định chi phí khấu hao hoặc phân bổ của thẻ ghi vào đâu.
 
 Thông báo lỗi: "Nhập ít nhất một dòng phân bổ chi phí", "Dòng phân bổ N: chọn tài khoản chi phí", "Dòng phân bổ N: tỷ lệ không hợp lệ", "Tổng tỷ lệ phân bổ phải bằng 100%". Máy chủ trả "ALLOCATION_RATIO" khi tổng khác 100.
 
-Mỗi lần lưu tạo một bộ dòng có hiệu lực từ kỳ đã chọn; các kỳ trước vẫn dùng bộ cũ. Kỳ chưa có phân bổ thì chạy kỳ báo "ASSET_ALLOCATION_MISSING".
+Mỗi lần lưu tạo một bộ dòng có hiệu lực từ kỳ đã chọn; các kỳ trước vẫn dùng bộ cũ. Kỳ đã chọn đã chạy khấu hao hoặc phân bổ thì khi lưu, các lần chạy từ kỳ đó trở đi được chạy lại theo phân bổ mới (chứng từ cũ được đảo, chứng từ mới được lập; kỳ khóa như mục 4.3). Kỳ chưa có phân bổ thì chạy kỳ báo "ASSET_ALLOCATION_MISSING".
 
 ### 2.4. Tab "Lịch khấu hao" và "Lịch phân bổ"
 
@@ -85,7 +86,7 @@ Có ba đường vào.
 
 ### 3.1. Mua bằng hóa đơn hoặc chứng từ
 
-Trên dòng chứng từ (hóa đơn mua, phiếu kế toán, phiếu chi...), tài khoản 211 đến 214, 217, 242 có cột "Tài sản (F4)". Chọn thẻ cho dòng đó; chứng từ ghi sổ thì nguyên giá của thẻ tăng. Thẻ chỉ ghi trên tài khoản của loại (hoặc tài khoản hao mòn của loại): sai thì "ASSET_ACCOUNT_MISMATCH" (400), nội dung "tài sản X chỉ ghi trên tài khoản A hoặc B". Dòng 242 không gắn mã tài sản vẫn hợp lệ.
+Trên dòng chứng từ (hóa đơn mua, phiếu kế toán, phiếu chi...), tài khoản 211x đến 213x, hao mòn 2141 đến 2143 và 242 có cột "Tài sản (F4)" (2147, 217 không gắn thẻ tài sản). Chọn thẻ cho dòng đó; chứng từ ghi sổ thì nguyên giá của thẻ tăng. Thẻ chỉ ghi trên tài khoản của loại (hoặc tài khoản hao mòn của loại): sai thì "ASSET_ACCOUNT_MISMATCH" (400), nội dung "tài sản X chỉ ghi trên tài khoản A hoặc B". Dòng 242 không gắn mã tài sản vẫn hợp lệ.
 
 ### 3.2. Từ kho
 
@@ -138,7 +139,7 @@ Chạy ở Sổ cái > Quy trình cuối kỳ (mục 9) cho ba bước: phân b�
 
 Mỗi bước so dữ liệu đầu vào với lần chạy trước. Ghi sổ, bỏ ghi sổ, đảo chứng từ, tài sản vào hoặc ra làm bước chuyển thành "Cần chạy lại". Bấm "Chạy lại" ở Quy trình cuối kỳ.
 
-Nghiệp vụ tài sản có ngày trong kỳ P làm các lần chạy từ kỳ P trở đi được chạy lại khi lưu nghiệp vụ; kỳ khóa thì nghiệp vụ bị từ chối.
+Nghiệp vụ tài sản có ngày trong kỳ P (kể cả sửa phân bổ chi phí hiệu lực từ kỳ P) làm các lần chạy từ kỳ P trở đi được chạy lại khi lưu. Lần chạy của một kỳ khóa phía sau chỉ chặn nghiệp vụ khi số của nó phải đổi: kỳ khóa sổ cần quyền "voucher.backdate_locked" ("PERIOD_SOFT_LOCKED"), kỳ khóa cứng bị từ chối ("PERIOD_HARD_LOCKED"); lần chạy ở kỳ khóa mà số không đổi thì không chặn.
 
 ## 5. Ghi giảm
 
@@ -235,7 +236,7 @@ Cách dùng:
 Lưu ý:
 - Phần mềm không chặn chạy sai thứ tự; chỉ cảnh báo bằng trạng thái "Cần chạy lại".
 - Chạy từng bước đòi hỏi quyền của bước; thiếu quyền: 403 "FORBIDDEN" ("Thiếu quyền …").
-- Nhật ký chỉ ghi khi lần chạy ứng với kỳ tháng đầy đủ (kỳ 1 đến 12).
+- Nhật ký chỉ ghi khi lần chạy ứng với kỳ tháng đầy đủ (kỳ 1 đến 12): chạy khấu hao, phân bổ, lãi vay chỉ nhận kỳ 1 đến 12 (kỳ khác: 400).
 
 ## 10. Khế ước vay
 
