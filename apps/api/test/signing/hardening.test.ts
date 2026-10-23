@@ -18,7 +18,7 @@ describe('chính sách SmartCA (chống SSRF) và hồ sơ giả lập', () => {
   });
   it.each([
     'http://rmgateway.vnptit.vn/sca/sp769', 'https://evil.example/', 'https://rmgateway.vnptit.vn.evil.example/', 'https://rmgateway.vnptit.vn@evil.example/',
-    'https://user:pw@rmgateway.vnptit.vn/', 'https://127.0.0.1/', 'https://169.254.169.254/latest', 'ftp://rmgateway.vnptit.vn/', 'khong-phai-url',
+    'https://user:pw@rmgateway.vnptit.vn/', 'https://127.0.0.1/', 'https://169.254.169.254/latest', 'ftp://rmgateway.vnptit.vn/', 'khong-phai-url', 'https://rmgateway.vnptit.vn:22/sca/sp769',
   ])('từ chối %s', (u) => {
     expect(() => assertSmartcaUrl(u, p)).toThrow(expect.objectContaining({ code: 'SMARTCA_URL_NOT_ALLOWED' }));
   });

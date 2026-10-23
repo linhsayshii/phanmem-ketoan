@@ -15,7 +15,8 @@ export function assertSmartcaUrl(raw: string, p: SigningPolicy): void {
   let u: URL;
   try { u = new URL(raw); } catch { throw new SigningProviderError('SMARTCA_URL_NOT_ALLOWED', 'Địa chỉ máy chủ SmartCA không hợp lệ'); }
   const okScheme = u.protocol === 'https:' || (u.protocol === 'http:' && p.smartcaAllowHttp);
-  if (!okScheme || u.username || u.password || !p.smartcaHosts.includes(u.hostname.toLowerCase())) {
+  // Cổng khác mặc định chỉ cho máy giả lập kiểm thử (cùng cờ http).
+  if (!okScheme || u.username || u.password || (u.port !== '' && !p.smartcaAllowHttp) || !p.smartcaHosts.includes(u.hostname.toLowerCase())) {
     throw new SigningProviderError('SMARTCA_URL_NOT_ALLOWED', 'Địa chỉ máy chủ SmartCA không nằm trong danh sách cho phép (https tới cổng của VNPT)');
   }
 }
