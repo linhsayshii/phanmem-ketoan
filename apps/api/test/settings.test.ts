@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
+import { setupLedgerTenant } from './invariants/helpers.js';
 
 let ctx: TestApp;
 beforeAll(async () => { ctx = await createTestApp(); });
@@ -24,6 +25,18 @@ describe('tùy chọn hệ thống', () => {
     expect((await ctx.app.inject({ method: 'GET', url: '/api/settings', headers: { cookie } })).json()).toMatchObject({ stock_negative: 'warn' });
     expect((await ctx.app.inject({ method: 'PUT', url: '/api/settings', headers: { cookie }, payload: { fa_proration: 'week' } })).statusCode).toBe(400);
     expect((await ctx.app.inject({ method: 'PUT', url: '/api/settings', headers: { cookie }, payload: { fa_proration: 'month' } })).statusCode).toBe(200);
+  });
+  it('đổi fa_proration khi đã có lần chạy khấu hao hiệu lực → 409 FA_PRORATION_LOCKED; gửi lại giá trị cũ vẫn được', async () => {
+    const { cookie, tenantId } = await setupLedgerTenant(ctx, `FP${Date.now()}`);
+    const put = (fa_proration: string) => ctx.app.inject({ method: 'PUT', url: '/api/settings', headers: { cookie }, payload: { fa_proration, vat_period: 'month' } });
+    expect((await put('month')).statusCode).toBe(200);
+    await ctx.t.admin.insertInto('period_run').values({ tenant_id: tenantId, kind: 'depreciation', fiscal_year: 2026, period_no: 1, result: '{}' }).execute();
+    const r = await put('day');
+    expect(r.statusCode).toBe(409);
+    expect(r.json().error).toMatchObject({ code: 'FA_PRORATION_LOCKED' });
+    expect(r.json().error.message).toContain('khấu hao tháng đầu, tháng cuối');
+    expect((await put('month')).statusCode).toBe(200);
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/settings', headers: { cookie } })).json()).toMatchObject({ fa_proration: 'month' });
   });
   it('công ty mới: ketoan_vien có asset.create, loan.create; không có asset.run, loan.run; xem có asset.view', async () => {
     const { cookie } = await bootstrapTenant(ctx, { code: `GD4${Date.now()}` });

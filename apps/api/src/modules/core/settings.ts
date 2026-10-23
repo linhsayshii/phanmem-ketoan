@@ -1,7 +1,8 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import type { Transaction } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
+import { AppError } from '../../plugins/errors.js';
 
 export const SETTINGS = z.object({
   book_form: z.enum(['NKC']).default('NKC'),
@@ -36,6 +37,13 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.put('/api/settings', { preHandler: app.requirePermission('setting.update'), schema: { body: SETTINGS.partial().strict() } }, async (req) => {
     const tenantId = req.auth!.tenantId!;
     await app.withTenant(req, async (trx) => {
+      // Cách tính khấu hao tháng đầu/cuối đổi khi đã có lần chạy KH hiệu lực: lịch các kỳ đã chạy lệch lặng lẽ → chỉ đổi trước lần chạy đầu tiên (khóa tư vấn như chạy kỳ).
+      if (req.body.fa_proration !== undefined) {
+        await sql`SELECT pg_advisory_xact_lock(hashtext('asset_run'), hashtext(${tenantId}))`.execute(trx);
+        if (req.body.fa_proration !== (await getSettings(trx, tenantId)).fa_proration
+          && await trx.selectFrom('period_run').select('id').where('kind', '=', 'depreciation').where('status', '=', 'active').limit(1).executeTakeFirst())
+          throw new AppError('FA_PRORATION_LOCKED', 'Đã có lần chạy khấu hao TSCĐ: không đổi được cách tính khấu hao tháng đầu, tháng cuối (chỉ đổi trước lần chạy khấu hao đầu tiên)', 409);
+      }
       for (const [key, value] of Object.entries(req.body)) {
         await trx.insertInto('tenant_setting').values({ tenant_id: tenantId, key, value: JSON.stringify(value) })
           .onConflict((oc) => oc.columns(['tenant_id', 'key']).doUpdateSet({ value: JSON.stringify(value), updated_at: new Date().toISOString() })).execute();

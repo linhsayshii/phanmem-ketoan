@@ -110,9 +110,11 @@ Mọi hộp thoại biến động báo trước: "Các kỳ khấu hao/phân b�
 
 ### 4.1. Chế độ khấu hao
 
-Cài đặt "fa_proration":
-- "day" (mặc định): khấu hao theo ngày, tháng đầu và tháng cuối tính theo số ngày thực tế.
-- "month": khấu hao theo tháng, tính tháng đủ.
+Chọn ở Hệ thống > Thông tin công ty > tab "Tùy chọn hệ thống" > "Cách tính khấu hao tháng đầu, tháng cuối" (cài đặt "fa_proration"):
+- "Theo số ngày thực tế" ("day", mặc định): khấu hao theo ngày, tháng đầu và tháng cuối tính theo số ngày thực tế.
+- "Tròn tháng" ("month"): khấu hao theo tháng, tính tháng đủ.
+
+Chỉ đổi được trước lần chạy khấu hao TSCĐ đầu tiên. Đã có lần chạy khấu hao hiệu lực thì máy chủ từ chối "FA_PRORATION_LOCKED" (409): "Đã có lần chạy khấu hao TSCĐ: không đổi được cách tính khấu hao tháng đầu, tháng cuối".
 
 Đây là giả định của phần mềm, vì chưa có văn bản gốc để đối chiếu. CCDC và CPTT luôn phân bổ theo kỳ (tháng), không có phần kỳ.
 
