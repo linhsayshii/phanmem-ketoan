@@ -11,6 +11,8 @@ export const SETTINGS = z.object({
   hidden_modules: z.array(z.string()).default([]),
   extra_dims: z.array(z.object({ key: z.string().regex(/^[a-z_]+$/), label: z.string().min(1) })).default([]),
   fx_rate_type: z.enum(['transfer_avg', 'buy', 'sell']).default('transfer_avg'),
+  // Tra MST người bán hóa đơn đầu vào: off = không gửi MST ra ngoài (mặc định), vietqr = tra qua dịch vụ VietQR (bên thứ ba).
+  tax_code_lookup: z.enum(['off', 'vietqr']).default('off'),
   // Ghi sổ làm tồn quỹ tiền mặt hoặc số dư tiền gửi âm: warn = ghi sổ và cảnh báo, block = chặn (409 CASH_NEGATIVE).
   cash_negative: z.enum(['warn', 'block']).default('warn'),
   // Tỷ giá ghi Có tài khoản tiền ngoại tệ: moving_average = bình quân di động (điền sẵn trên phiếu chi, tính lại cuối kỳ bằng chứng từ XQ), specific = người dùng nhập tỷ giá.

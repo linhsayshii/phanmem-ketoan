@@ -349,6 +349,19 @@ export interface SigningSessionTable {
   expires_at: Timestamp; created_at: Generated<string>;
 }
 
+export interface InboundInvoiceTable {
+  id: Generated<number>; tenant_id: string; source: string; received_at: Generated<string>; received_by: string | null; api_key_id: string | null; xml: string; xml_sha256: string;
+  form_no: string; serial: string; invoice_no: string; issue_date: DateOnly; seller_tax_code: string | null; seller_name: string; seller_address: string | null;
+  buyer_tax_code: string | null; buyer_name: string | null; currency: Generated<string>; fx_rate: Numeric | null; total_before_tax: Numeric; total_tax: Numeric; total: Numeric; cqt_code: string | null;
+  seller_sig: ColumnType<unknown, string | null | undefined, string | null>; cqt_sig: ColumnType<unknown, string | null | undefined, string | null>; buyer_matches: boolean | null;
+  tax_code_check: ColumnType<unknown, string | null | undefined, string | null>; warnings: ColumnType<unknown, string | undefined, string>;
+  status: Generated<string>; duplicate_of: number | null; voucher_id: string | null; party_id: string | null;
+}
+export interface InboundInvoiceLineTable {
+  id: Generated<number>; tenant_id: string; invoice_id: number; line_no: number; kind: string; code: string | null; name: string; uom: string | null;
+  quantity: Numeric | null; unit_price: Numeric | null; discount_amount: Numeric | null; amount: Numeric; tax_rate: string | null;
+}
+
 export interface EinvoiceTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; series_id: number; provider_id: number; relation: Generated<string>; original_id: number | null; adjust_kind: string | null;
   status: string; transaction_uuid: string; invoice_no: string | null; issued_at: Timestamp | null; issue_date: DateOnly | null; cqt_code: string | null; cqt_status: Generated<string>;
@@ -459,6 +472,8 @@ export interface Database {
   data_check_rule: DataCheckRuleTable;
   einvoice_provider: EinvoiceProviderTable;
   signing_profile: SigningProfileTable;
+  inbound_invoice: InboundInvoiceTable;
+  inbound_invoice_line: InboundInvoiceLineTable;
   signing_session: SigningSessionTable;
   einvoice_series: EinvoiceSeriesTable;
   einvoice: EinvoiceTable;

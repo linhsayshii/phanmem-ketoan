@@ -6,10 +6,10 @@ import path from 'node:path';
 
 // Khóa RSA + chứng thư tự ký sinh bằng openssl (chỉ cho kiểm thử).
 export interface TestKey { keyPem: string; certPem: string; certDer: Buffer; cn: string; dir: string; keyFile: string; certFile: string }
-export function makeKey(cn: string, days = 3650): TestKey {
+export function makeKey(cn: string, days = 3650, uid?: string): TestKey {
   const dir = mkdtempSync(path.join(tmpdir(), 'kt-sign-'));
   const keyFile = path.join(dir, 'k.pem'); const certFile = path.join(dir, 'c.pem');
-  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyFile, '-out', certFile, '-subj', `/C=VN/O=Cong ty ${cn}/CN=${cn}`, '-days', String(days)], { stdio: 'pipe' });
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyFile, '-out', certFile, '-subj', `/C=VN/O=Cong ty ${cn}/CN=${cn}${uid ? `/UID=${uid}` : ''}`, '-days', String(days)], { stdio: 'pipe' });
   const certPem = readFileSync(certFile, 'utf8');
   return { keyPem: readFileSync(keyFile, 'utf8'), certPem, certDer: new X509Certificate(certPem).raw, cn, dir, keyFile, certFile };
 }
