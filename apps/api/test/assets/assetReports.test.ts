@@ -57,7 +57,7 @@ describe('sổ, thẻ, bảng và báo cáo tài sản', () => {
     expect(m.totals).toMatchObject({ openingAccumulated: '4000000', increaseAccumulated: '2000000', decreaseAccumulated: '0', increaseCost: '0', decreaseCost: '0' });
   });
 
-  it('06-TSCĐ kỳ 3: tổng = Có 2141 của chứng từ KH kỳ 3; phần giảm có TS01 khi bị ghi giảm', async () => {
+  it('06-TSCĐ kỳ 3: tổng = Có 2141 của chứng từ KH kỳ 3 + khấu hao tháng ghi giảm trong chứng từ TS = Σ Có 2141 tháng 3; phần giảm có TS01 khi bị ghi giảm', async () => {
     const t = await tenant();
     const id = await t.card('fixed', 'TS01', '120000000', 60); await t.card('fixed', 'TS02', '36000000', 36);
     for (const p of [1, 2]) await t.run('depreciation', p);
@@ -67,9 +67,12 @@ describe('sổ, thẻ, bảng và báo cáo tài sản', () => {
     const v = await t.ok(t.call('GET', `/api/vouchers/${runs.find((x) => x.periodNo === 3 && x.status === 'active')!.voucherId}`));
     const credit = (v.lines as { accountCode: string; credit: string }[]).filter((l) => l.accountCode === '2141').reduce((s, l) => s.plus(l.credit), D(0));
     const s = await t.ok(t.call('GET', '/api/asset-reports/depreciation-sheet?fiscalYear=2026&periodNo=3'));
-    expect(s.total).toBe(credit.toFixed(0));
+    // TS01 ghi giảm 16/03: khấu hao 1–15/03 = 120.000.000 × 15/31 / 60 = 967.742 nằm trong chứng từ TS, không trong KH 3.
+    expect(s.total).toBe(credit.plus(967742).toFixed(0));
+    expect(s.total).toBe(D(await t.sum(['2141'], '2026-03-31', 'credit')).minus(await t.sum(['2141'], '2026-02-28', 'credit')).toFixed(0));
     expect(s.rows[3].depreciation).toBe(s.total);
-    expect(s.decreases.map((x: { assetCode: string }) => x.assetCode)).toContain('TS01');
+    expect(s.decreases).toContainEqual(expect.objectContaining({ assetCode: 'TS01', amount: '1032258' }));
+    expect(s.rows[2].cost).toBe('120000000');
     // I + II − III = IV
     const [prev, inc, dec, cur] = s.rows.map((x: { depreciation: string }) => D(x.depreciation));
     expect(prev.plus(inc).minus(dec).toFixed(0)).toBe(cur.toFixed(0));

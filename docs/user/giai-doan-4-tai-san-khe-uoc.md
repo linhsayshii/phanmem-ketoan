@@ -322,7 +322,7 @@ Menu: Tài sản > Báo cáo tài sản. Quyền xem "report.view"; "In PDF" và
 Ghi chú:
 - Số mẫu chỉ in cho chế độ TT99 và TT133; TT200 và TT58 không in dòng "Mẫu số". Bảng phân bổ CCDC, báo cáo tăng giảm và sổ CCDC, CPTT in bố cục quản trị, không có số mẫu.
 - Bảng khấu hao và bảng phân bổ chọn Năm, Kỳ (1 đến 12). Tab Thẻ chọn "Tính đến ngày" và tài sản ("Chọn tài sản để xem thẻ tài sản" nếu chưa chọn).
-- Mẫu 06-TSCĐ: I + II - III = IV; số tiền chia theo phân bổ chi phí hiệu lực.
+- Mẫu 06-TSCĐ: I + II - III = IV; số tiền chia theo phân bổ chi phí hiệu lực. Tài sản ghi giảm giữa tháng khi tính theo số ngày thực tế: khấu hao từ đầu tháng đến trước ngày ghi giảm nằm trong chứng từ TS và được cộng vào số khấu hao của tháng đó, nên IV khớp phát sinh Có 214 của tháng trên Sổ cái.
 - Cột Ghi chú của S10-DNN chưa có (để trống).
 
 ## 12. Kiểm kê tài sản và biên bản

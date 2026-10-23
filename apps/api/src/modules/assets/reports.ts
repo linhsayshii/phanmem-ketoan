@@ -148,6 +148,15 @@ async function runAmounts(trx: Trx, kind: string, fy: number, pn: number): Promi
     GROUP BY l.asset_id`.execute(trx);
   return new Map(r.rows.map((x) => [x.id, x.amt]));
 }
+// Số khấu hao TSCĐ của kỳ: chứng từ KH cộng khấu hao tháng ghi giảm (chế độ ngày) nằm trong chứng từ TS của ghi giảm còn hiệu lực có ngày trong kỳ (quy ước 7).
+async function depreciationAmounts(trx: Trx, fy: number, pn: number): Promise<Map<number, string>> {
+  const m = await runAmounts(trx, 'depreciation', fy, pn);
+  const r = await sql<{ id: number; amt: string }>`SELECT e.asset_id::int AS id, sum((e.data->>'partialDepreciation')::numeric)::text AS amt
+    FROM asset_event e JOIN fiscal_period p ON p.tenant_id = e.tenant_id AND p.fiscal_year = ${fy} AND p.period_no = ${pn} AND e.event_date BETWEEN p.date_from AND p.date_to
+    WHERE e.kind = 'decrease' AND e.state = 'active' AND coalesce((e.data->>'partialDepreciation')::numeric, 0) <> 0 GROUP BY e.asset_id`.execute(trx);
+  for (const x of r.rows) m.set(x.id, D(m.get(x.id) ?? '0').plus(x.amt).toString());
+  return m;
+}
 interface Part { assetId: number; account: string; departmentCode: string | null; departmentName: string | null; amount: string }
 // Chia số tiền từng tài sản theo phân bổ chi phí hiệu lực ở kỳ (cùng hàm allocateByRatio với chứng từ KH/PB nên khớp từng đồng).
 async function distribute(trx: Trx, amounts: Map<number, string>, fy: number, pn: number): Promise<Part[]> {
@@ -169,13 +178,14 @@ const obj = (m: Map<string, string>) => Object.fromEntries([...m.entries()].sort
 // Bảng tính và phân bổ khấu hao TSCĐ (06-TSCĐ): I kỳ trước, II tăng, III giảm, IV kỳ này (= I + II - III). Tăng/giảm tính theo từng (tài sản, TK chi phí, bộ phận): chênh lệch dương là tăng, âm là giảm.
 export async function depreciationSheet(trx: Trx, tenantId: string, q: { fiscalYear: number; periodNo: number }) {
   const span = await periodOf(trx, q.fiscalYear, q.periodNo);
-  const curAmt = await runAmounts(trx, 'depreciation', q.fiscalYear, q.periodNo);
-  const prevAmt = span.prev ? await runAmounts(trx, 'depreciation', span.prev.fiscalYear, span.prev.periodNo) : new Map<number, string>();
+  const curAmt = await depreciationAmounts(trx, q.fiscalYear, q.periodNo);
+  const prevAmt = span.prev ? await depreciationAmounts(trx, span.prev.fiscalYear, span.prev.periodNo) : new Map<number, string>();
   const cur = await distribute(trx, curAmt, q.fiscalYear, q.periodNo); const prev = span.prev ? await distribute(trx, prevAmt, span.prev.fiscalYear, span.prev.periodNo) : [];
   const ids = [...new Set([...curAmt.keys(), ...prevAmt.keys()])];
   const as = (await assetsOf(trx, ['fixed'])).filter((a) => ids.includes(a.id) || (a.decreaseDate && a.decreaseDate >= span.from && a.decreaseDate <= span.to));
   const costNow = await assetValues(trx, tenantId, span.to, [], as.map((a) => a.id)); const costPrev = span.prev ? await assetValues(trx, tenantId, span.prev.to, [], as.map((a) => a.id)) : new Map();
   const pos = (id: number, m: Map<number, string>) => D(m.get(id) ?? '0').gt(0);
+  const decIn = (id: number) => { const d = as.find((a) => a.id === id)?.decreaseDate; return !!d && d >= span.from && d <= span.to; };
   // Chênh lệch theo (tài sản, TK, bộ phận).
   const k = (p: Part) => `${p.assetId}|${p.account}|${p.departmentCode ?? ''}`;
   const delta = new Map<string, Part>();
@@ -186,7 +196,7 @@ export async function depreciationSheet(trx: Trx, tenantId: string, q: { fiscalY
   const mk = (label: string, key: string, parts: Part[], cost: string) => ({ key, label, cost, depreciation: parts.reduce((t, p) => t.plus(p.amount), ZERO).toString(), byAccount: obj(sumBy(parts, (p) => p.account)), byDepartment: obj(sumBy(parts, (p) => p.departmentCode ?? '')) });
   const rows = [mk('I. Số khấu hao trích tháng trước', 'prev', prev, costOf(costPrev, (id) => pos(id, prevAmt))),
     mk('II. Số KH TSCĐ tăng trong tháng', 'increase', inc, costOf(costNow, (id) => pos(id, curAmt) && !pos(id, prevAmt))),
-    mk('III. Số KH TSCĐ giảm trong tháng', 'decrease', dec, costOf(costPrev, (id) => pos(id, prevAmt) && !pos(id, curAmt))),
+    mk('III. Số KH TSCĐ giảm trong tháng', 'decrease', dec, costOf(costPrev, (id) => pos(id, prevAmt) && (!pos(id, curAmt) || decIn(id)))),
     mk('IV. Số KH trích tháng này (I + II - III)', 'current', cur, costOf(costNow, (id) => pos(id, curAmt)))];
   const name = new Map(cur.filter((p) => p.departmentCode).map((p) => [p.departmentCode!, p.departmentName!]));
   const detail = (parts: Part[]) => parts.map((p) => ({ assetCode: as.find((a) => a.id === p.assetId)?.code ?? '', account: p.account, departmentCode: p.departmentCode, amount: p.amount }));
