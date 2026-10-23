@@ -16,6 +16,8 @@ test('báo cáo tài sản: sổ TSCĐ, thẻ TSCĐ, tăng giảm', async ({ pag
   const code = `TSBC${Date.now().toString().slice(-9)}`;
   const a = await request.post('/api/assets', { data: { code, name: `Máy báo cáo ${code}`, kind: 'fixed', assetAccountCode: '2111', depreciationAccountCode: '2141', lifeUnits: 60, depreciationStartDate: '2026-01-01' } });
   expect(a.ok(), await a.text()).toBeTruthy();
+  // Phân bổ chi phí từ kỳ 1: thẻ có nguyên giá mà thiếu phân bổ làm chạy khấu hao kỳ 1 (quy trình cuối kỳ) của CSDL e2e dùng chung báo ASSET_ALLOCATION_MISSING.
+  expect((await request.put(`/api/assets/${(await a.json()).id}/allocations`, { data: { validFromYear: 2026, validFromPeriod: 1, lines: [{ expenseAccountCode: '6422', ratio: '100' }] } })).ok()).toBeTruthy();
   const v = await request.post('/api/vouchers', { data: { voucherType: 'PKT', postingDate: '2026-01-01', documentDate: '2026-01-01', description: 'E2E báo cáo tài sản', autoPost: true,
     lines: [{ accountCode: '2111', debit: '120000000', credit: '0', assetCode: code }, { accountCode: '331', debit: '0', credit: '120000000', partyCode: 'NCC-E2E' }] } });
   expect(v.ok(), await v.text()).toBeTruthy();

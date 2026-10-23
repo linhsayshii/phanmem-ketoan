@@ -59,7 +59,7 @@ export async function assertAssetAccounts(trx: Trx, kind: string, assetAccountCo
 export async function lockTenant(trx: Trx, tenantId: string) { await sql`SELECT pg_advisory_xact_lock(hashtext('asset_run'), hashtext(${tenantId}))`.execute(trx); }
 const hasLedger = async (trx: Trx, id: number) => !!(await trx.selectFrom('voucher_line').select('id').where('asset_id', '=', id).limit(1).executeTakeFirst())
   || !!(await trx.selectFrom('voucher_item_line').select('id').where('asset_id', '=', id).limit(1).executeTakeFirst());
-const hasRun = async (trx: Trx, id: number) => !!(await trx.selectFrom('asset_schedule_line as l').innerJoin('asset_schedule as s', 's.id', 'l.schedule_id').innerJoin('period_run as r', 'r.id', 'l.run_id')
+export const hasRun = async (trx: Trx, id: number) => !!(await trx.selectFrom('asset_schedule_line as l').innerJoin('asset_schedule as s', 's.id', 'l.schedule_id').innerJoin('period_run as r', 'r.id', 'l.run_id')
   .select('l.id').where('s.asset_id', '=', id).where('r.status', '=', 'active').limit(1).executeTakeFirst());
 export async function idOf(trx: Trx, table: 'department' | 'project' | 'cost_item' | 'asset_category', code: string | null | undefined, label: string): Promise<number | null> {
   if (!code) return null;

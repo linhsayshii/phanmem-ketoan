@@ -17,7 +17,10 @@ test('Quy trình cuối kỳ: chạy bước, bỏ qua bước tùy chọn, F9 c
   // Không phụ thuộc trạng thái DB: kỳ 1 của năm đầu không có kỳ trước nên không vướng PERIOD_RUN_GAP; chạy lại là luồng chính.
   const years = await (await request.get('/api/fiscal-years')).json() as { fiscalYear: number }[];
   const year = years[0]!.fiscalYear, period = 1;
-  type St = { nextStep: string | null; steps: { key: string; status: string }[] };
+  // CSDL e2e dùng chung: thẻ của spec khác còn thiếu phân bổ chi phí làm bước khấu hao, phân bổ (chạy lại mỗi khi giá vốn đổi) báo ASSET_ALLOCATION_MISSING → bổ sung từ kỳ 1.
+  for (const c of await (await request.get('/api/assets')).json() as { id: number; allocationFrom: unknown }[])
+    if (!c.allocationFrom) expect((await request.put(`/api/assets/${c.id}/allocations`, { data: { validFromYear: year, validFromPeriod: 1, lines: [{ expenseAccountCode: '6422', ratio: '100' }] } })).ok()).toBeTruthy();
+  type St = { nextStep: string | null; steps: { key: string; name: string; status: string }[] };
   const status = async () => await (await request.get(`/api/period-close/${year}/${period}`)).json() as St;
   await page.goto('/so-cai/cuoi-ky');
   await expect(page.getByRole('heading', { name: 'Quy trình cuối kỳ' })).toBeVisible();
@@ -43,6 +46,8 @@ test('Quy trình cuối kỳ: chạy bước, bỏ qua bước tùy chọn, F9 c
   for (let i = 0; i < 12; i++) {
     const before = await status();
     if (!before.nextStep) break;
+    // Chờ màn hình làm mới xong (nút F9 nêu đúng bước kế tiếp) rồi mới bấm: bấm sớm thì chạy lại bước vừa xong.
+    await expect(page.getByRole('button', { name: `Chạy bước tiếp theo (F9): ${before.steps.find((x) => x.key === before.nextStep)!.name}` })).toBeEnabled();
     await page.keyboard.press('F9');
     await expect.poll(async () => { const s = await status(); return s.nextStep !== before.nextStep || s.steps.find((x) => x.key === before.nextStep)!.status; }, { timeout: 60000 }).not.toBe(before.steps.find((x) => x.key === before.nextStep)!.status);
   }

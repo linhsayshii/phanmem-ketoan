@@ -7,7 +7,7 @@ import { AppError } from '../../plugins/errors.js';
 import { getSettings } from '../core/settings.js';
 import * as S from '../ledger/vouchers.service.js';
 import { dateIso } from '../ledger/vouchers.service.js';
-import { allocationInput, idOf, lockTenant, saveAsset, setAllocations } from './assets.js';
+import { allocationInput, hasRun, idOf, lockTenant, saveAsset, setAllocations } from './assets.js';
 import { assertNoGap, buildLines, refreshRuns, runIdsOf, type Ctx, type RunKind } from './periodRun.js';
 import { assetValues, scheduleFor } from './schedule.js';
 
@@ -235,10 +235,13 @@ export async function revalueAsset(trx: Trx, ctx: Ctx, id: number, b: z.infer<ty
   return { eventId, voucherId };
 }
 
-/** Phân bổ chi phí của thẻ (PUT): thay bộ dòng hiệu lực từ (năm, kỳ) rồi chạy lại các lần chạy hiện có từ kỳ đó như điều chuyển, để KH/PB và 06-TSCĐ cùng phân bổ. */
+/**
+ * Phân bổ chi phí của thẻ (PUT): thay bộ dòng hiệu lực từ (năm, kỳ); thẻ đã vào lần chạy hiệu lực thì chạy lại các lần chạy từ kỳ đó như điều chuyển, để KH/PB và 06-TSCĐ cùng phân bổ.
+ * Thẻ chưa vào lần chạy nào: chứng từ đã ghi không chứa thẻ nên không chạy lại (thẻ mới khác còn thiếu phân bổ không chặn việc nhập phân bổ từng thẻ).
+ */
 export async function updateAllocations(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof allocationInput>) {
   const out = await setAllocations(trx, ctx.tenantId, id, b);
-  await refreshRuns(trx, ctx, RUN_KIND[out.kind]!, b.validFromYear, b.validFromPeriod);
+  if (await hasRun(trx, id)) await refreshRuns(trx, ctx, RUN_KIND[out.kind]!, b.validFromYear, b.validFromPeriod);
   return out;
 }
 

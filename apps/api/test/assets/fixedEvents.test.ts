@@ -238,6 +238,11 @@ describe('biến động TSCĐ', () => {
       expect(err(r)).toEqual([409, 'ASSET_SCHEDULE_LOCKED']);
       expect(r.json().error.message).toContain('Điều chỉnh thời gian sử dụng');
     }
+    // Hai thẻ mới bắt đầu kỳ 1 có nguyên giá, chưa có phân bổ: nhập phân bổ từng thẻ được (thẻ chưa vào lần chạy nên không chạy lại, không vấp thẻ kia).
+    const n1 = await t.ok(t.call('POST', '/api/assets', { ...body, code: 'TS05', name: 'TS05' }), 201); const n2 = await t.ok(t.call('POST', '/api/assets', { ...body, code: 'TS06', name: 'TS06' }), 201);
+    await t.pkt('2026-01-01', [nợ('2111', '12000000', { assetCode: 'TS05' }), nợ('2111', '12000000', { assetCode: 'TS06' }), có('331', '24000000', { partyCode: 'NCC001' })]);
+    await t.ok(t.call('PUT', `/api/assets/${n1.id}/allocations`, { validFromYear: 2026, validFromPeriod: 1, lines: [{ expenseAccountCode: '6422', ratio: '100' }] }));
+    await t.ok(t.call('PUT', `/api/assets/${n2.id}/allocations`, { validFromYear: 2026, validFromPeriod: 1, lines: [{ expenseAccountCode: '6422', ratio: '100' }] }));
   });
 
   it('hủy ghi giảm: đảo TS, tài sản active, KH các kỳ sau chạy lại có lại tài sản', async () => {
