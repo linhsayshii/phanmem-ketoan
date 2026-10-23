@@ -9,6 +9,8 @@ import { assertBalanceSheet } from '../invariants/helpers.js';
 // Kỳ vọng tính tay (trường calc ghi phép tính), không sinh từ mã đang kiểm.
 const gd2 = JSON.parse(readFileSync(new URL('../../../../packages/db/src/seed/expected-gd2-abc.json', import.meta.url), 'utf8'));
 const gd3 = JSON.parse(readFileSync(new URL('../../../../packages/db/src/seed/expected-gd3-abc.json', import.meta.url), 'utf8'));
+// GĐ4 (tài sản, CCDC, khế ước) cộng thêm vào số dư các tài khoản, thay KTT quý 1 và thêm chứng từ MH, PXK, BN.
+const gd4 = JSON.parse(readFileSync(new URL('../../../../packages/db/src/seed/expected-gd4-abc.json', import.meta.url), 'utf8'));
 
 let ctx: TestApp; let cookie: string; let tenantId: string;
 beforeAll(async () => {
@@ -27,7 +29,7 @@ describe('Bộ dữ liệu mẫu ABC có kho (GĐ3): bốn phương pháp giá v
     const by: Record<string, bigint> = {};
     for (const x of (await get('/api/balances?asOf=2026-12-31')).rows as { accountCode: string; debit: string; credit: string }[]) by[x.accountCode] = (by[x.accountCode] ?? 0n) + BigInt(x.debit) - BigInt(x.credit);
     for (const [code, d] of Object.entries(gd3.chenhLechSoDuCuoiNam as Record<string, string>))
-      expect((by[code] ?? 0n).toString(), code).toBe((BigInt(gd2.soDuCuoiNam[code] ?? '0') + BigInt(d)).toString());
+      expect((by[code] ?? 0n).toString(), code).toBe((BigInt(gd2.soDuCuoiNam[code] ?? '0') + BigInt(d) + BigInt(gd4.chenhLechSoDuCuoiNam[code] ?? '0')).toString());
   });
 
   it('nhập xuất tồn cả năm từng cặp hàng, kho (bình quân cuối kỳ, bình quân tức thời, FIFO, đích danh)', async () => {
@@ -49,8 +51,8 @@ describe('Bộ dữ liệu mẫu ABC có kho (GĐ3): bốn phương pháp giá v
 
   it('thuế GTGT quý 1: KTT 31/03 theo tính tay; 1331 và 33311 cuối năm về 0 như GĐ2', async () => {
     const rows = (await sql<{ code: string; debit: string; credit: string }>`SELECT a.code, l.debit::text, l.credit::text FROM voucher v JOIN voucher_line l ON l.voucher_id = v.id AND l.posting_date = v.posting_date
-      JOIN account a ON a.id = l.account_id WHERE v.tenant_id = ${tenantId}::uuid AND v.voucher_type = 'KTT' AND v.posting_date = ${gd3.ktt31Thang3.date}::date AND v.state = 'posted'`.execute(ctx.t.admin)).rows;
-    expect(rows.map((r) => [r.code, '', r.debit, r.credit]).sort()).toEqual([...gd3.ktt31Thang3.lines].sort());
+      JOIN account a ON a.id = l.account_id WHERE v.tenant_id = ${tenantId}::uuid AND v.voucher_type = 'KTT' AND v.posting_date = ${gd4.ktt31Thang3.date}::date AND v.state = 'posted'`.execute(ctx.t.admin)).rows;
+    expect(rows.map((r) => [r.code, '', r.debit, r.credit]).sort()).toEqual([...gd4.ktt31Thang3.lines].sort());
   });
 
   it('Σ giá trị lớp giá còn lại của từng kho = số dư TK kho trên sổ cái; chứng từ GV: đúng một bản bị đảo sau khi chạy lại tháng 3', async () => {
@@ -66,7 +68,7 @@ describe('Bộ dữ liệu mẫu ABC có kho (GĐ3): bốn phương pháp giá v
 
   it('số chứng từ kho theo loại; bất biến cân đối cuối quý 1 và cuối năm', async () => {
     const byType = Object.fromEntries((await sql<{ t: string; n: number }>`SELECT voucher_type AS t, count(*)::int AS n FROM voucher WHERE tenant_id = ${tenantId}::uuid AND voucher_type = ANY(${Object.keys(gd3.soChungTuThem.counts)}::text[]) GROUP BY 1`.execute(ctx.t.admin)).rows.map((x) => [x.t, x.n]));
-    for (const [t, n] of Object.entries(gd3.soChungTuThem.counts as Record<string, number>)) expect(byType[t], t).toBe((gd2.soChungTu.counts[t] ?? 0) + n);
+    for (const [t, n] of Object.entries(gd3.soChungTuThem.counts as Record<string, number>)) expect(byType[t], t).toBe((gd2.soChungTu.counts[t] ?? 0) + n + (gd4.soChungTuThem.counts[t] ?? 0));
     for (const d of ['2026-01-31', '2026-02-28', '2026-03-31', '2026-06-30', '2026-12-31']) await assertBalanceSheet(ctx, cookie, d);
   });
 });

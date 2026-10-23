@@ -3,12 +3,21 @@
 // Seed nằm ở apps/api vì packages/db không import được dịch vụ của API; dựng lại bút toán bằng SQL sẽ chép logic nghiệp vụ. Dùng: pnpm db:seed:abc
 // Số kỳ vọng tính tay của năm này: packages/db/src/seed/expected-gd2-abc.json (kiểm ở test/sample-abc.test.ts).
 // Phần kho (GĐ3): hàng HANG-A..D ở bốn kho theo bốn phương pháp giá vốn, tính tay ở expected-gd3-abc.json (kiểm ở test/inventory/sample-abc-kho.test.ts).
+// Phần tài sản (GĐ4): 4 TSCĐ (2 đầu kỳ, 1 mua bằng HĐ, 1 XDCB; đánh giá lại tháng 6, thanh lý tháng 9), 2 CCDC (1 xuất kho, 1 mua dùng ngay, ghi giảm một phần), 1 chi phí trả trước,
+// 1 khế ước vay VND đổi lãi suất giữa năm; các bước tài sản và lãi vay chạy mỗi cuối tháng theo thứ tự Quy trình cuối kỳ. Tính tay ở expected-gd4-abc.json (kiểm ở test/assets/sample-abc-tai-san.test.ts).
 import '../src/env.js';
 import pg from 'pg';
 import { sql, type Transaction } from 'kysely';
 import { createDb, type Database } from '@kt/db';
 import { SENSITIVE_FLAGS } from '@kt/domain';
 import { seedAbcTx } from '@kt/db/seed/demo-abc';
+import { allocationInput, assetInput, categoryInput, saveAsset, saveCategory, setAllocations } from '../src/modules/assets/assets.js';
+import { decreaseAsset, decreaseInput, decreaseTool, increaseAsset, increaseInput, revalueAsset, revalueInput, toolDecreaseInput } from '../src/modules/assets/events.js';
+import { openingAssetRow, replaceOpeningAssets } from '../src/modules/assets/openingAssets.js';
+import { runAssetPeriod } from '../src/modules/assets/periodRun.js';
+import { disburse, disburseInput, loanInput, repay, repayInput, saveLoan } from '../src/modules/loans/loans.js';
+import { runLoanInterest } from '../src/modules/loans/interest.js';
+import { logCloseStep, runSummary } from '../src/modules/ledger/periodClose.js';
 import { postWithCashCheck } from '../src/modules/cash/books.js';
 import { adjustInput, runOutflowAdjust } from '../src/modules/cash/fx.js';
 import { revaluationInput, runRevaluation } from '../src/modules/cash/revaluation.js';
@@ -58,11 +67,15 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
   for (const [code, name, kind, tracking, invAcc] of [['HANG-A', 'Hàng A (đa ĐVT: thùng = 12 cái)', 'goods', 'none', null], ['HANG-B', 'Hàng B (theo lô, hạn dùng)', 'goods', 'lot_expiry', null],
     ['HANG-C', 'Hàng C (đích danh theo lô)', 'goods', 'lot', null], ['HANG-D', 'Hàng D (thành phẩm)', 'finished', 'none', '155']] as const)
     await c.query(`INSERT INTO item(tenant_id, code, name, kind, base_uom_id, tracking, inventory_account_id, revenue_account_id) VALUES ($1, $2, $3, $4, ${uomId('CAI')}, $5, ${invAcc ? acc(invAcc) : 'NULL'}, ${acc('5111')})`, [tenantId, code, name, kind, tracking]);
+  await c.query(`INSERT INTO item(tenant_id, code, name, kind, base_uom_id, tracking, revenue_account_id) VALUES ($1, 'CCDC-01', 'Bàn làm việc CCDC-01 (công cụ dụng cụ)', 'tool', ${uomId('CAI')}, 'none', ${acc('5111')})`, [tenantId]);
   await c.query(`INSERT INTO item_uom(tenant_id, item_id, uom_id, factor, is_purchase, is_sale) VALUES ($1, (SELECT id FROM item WHERE tenant_id = $1 AND code = 'HANG-A'), ${uomId('THUNG')}, 12, true, true)`, [tenantId]);
   for (const [code, name, method, invAcc, kind] of [['KHO1', 'Kho 1 (bình quân cuối kỳ)', 'avg_period', '156', 'normal'], ['KHO2', 'Kho 2 (FIFO, TK kho theo hàng)', 'fifo', null, 'normal'], ['KHO3', 'Kho 3 (bình quân tức thời)', 'avg_moving', '156', 'normal'],
-    ['KHO4', 'Kho 4 (đích danh)', 'specific', '156', 'normal'], ['KHOGB', 'Kho hàng gửi bán', 'avg_moving', '157', 'consignment_out']] as const)
+    ['KHO4', 'Kho 4 (đích danh)', 'specific', '156', 'normal'], ['KHOGB', 'Kho hàng gửi bán', 'avg_moving', '157', 'consignment_out'],
+    ['KHO5', 'Kho 5 (công cụ dụng cụ, bình quân tức thời)', 'avg_moving', '153', 'normal']] as const)
     await c.query(`INSERT INTO warehouse(tenant_id, code, name, costing_method, inventory_account_id, kind) VALUES ($1, $2, $3, $4, ${invAcc ? acc(invAcc) : 'NULL'}, $5)`, [tenantId, code, name, method, kind]);
-  for (const [code, name, cust] of [['NCC011', 'Công ty TNHH Thương mại Hàng hóa Sáu', false], ['NCCNN02', 'Asia Trading Co., Ltd (nhập khẩu)', false], ['VC001', 'Công ty Cổ phần Vận tải Một', false], ['KH021', 'Công ty TNHH Bán lẻ Sáu', true]] as const)
+  for (const [code, name, cust] of [['NCC011', 'Công ty TNHH Thương mại Hàng hóa Sáu', false], ['NCCNN02', 'Asia Trading Co., Ltd (nhập khẩu)', false], ['VC001', 'Công ty Cổ phần Vận tải Một', false], ['KH021', 'Công ty TNHH Bán lẻ Sáu', true],
+    // GĐ4: bên bán TSCĐ, bên bán CCDC, ngân hàng cho vay (công nợ không thanh toán trong năm, kiểm ở expected-gd4-abc.json congNoThem)
+    ['NCC012', 'Công ty TNHH Thiết bị Công nghiệp Mười Hai', false], ['NCC013', 'Công ty TNHH Dụng cụ Văn phòng Mười Ba', false], ['NHVAY', 'Ngân hàng cho vay (khế ước vay mẫu)', false]] as const)
     await c.query(`INSERT INTO party(tenant_id, code, name, is_customer, is_vendor, default_account_code) VALUES ($1, $2, $3, $4, $5, $6)`, [tenantId, code, name, cust, !cust, cust ? '131' : '331']);
   const vcb = (await c.query(`SELECT id FROM bank WHERE tenant_id = $1 AND code = 'VCB'`, [tenantId])).rows[0].id;
   const bidv = (await c.query(`INSERT INTO bank(tenant_id, code, name, short_name) VALUES ($1, 'BIDV', 'Ngân hàng TMCP Đầu tư và Phát triển Việt Nam', 'BIDV') RETURNING id`, [tenantId])).rows[0].id;
@@ -70,6 +83,11 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
     ($1,$4,$5,'CONG TY TNHH THUONG MAI ABC','Chi nhánh Hoàn Kiếm','VND','1121')`, [tenantId, vcb, VCB_USD, bidv, BIDV]);
   for (const [d, r] of [['2026-02-10', 25600], ['2026-03-12', 25650], ['2026-08-05', 25800], ['2026-10-20', 25900], ['2026-11-16', 26100], ['2026-12-31', 26200]])
     await c.query(`INSERT INTO exchange_rate(tenant_id, currency_code, rate_date, rate_type, rate) VALUES ($1, 'USD', $2, 'transfer_avg', $3)`, [tenantId, d, r]);
+
+  // ---- Loại tài sản (GĐ4): TSCĐ hữu hình, công cụ dụng cụ, chi phí trả trước ----
+  for (const b of [{ code: 'MMTB', name: 'Máy móc, thiết bị', kind: 'fixed', assetAccountCode: '2111', depreciationAccountCode: '2141', defaultLifeUnits: 60 },
+    { code: 'CCDC', name: 'Công cụ, dụng cụ', kind: 'tool', assetAccountCode: '242', defaultLifeUnits: 12 }, { code: 'CPTT', name: 'Chi phí trả trước', kind: 'prepaid', assetAccountCode: '242', defaultLifeUnits: 12 }])
+    await saveCategory(trx, tenantId, null, categoryInput.parse(b));
 
   // ---- Số dư đầu kỳ theo hóa đơn (màn hình Số dư đầu kỳ: nhập rồi ghi sổ) ----
   await replaceOpening(trx, tenantId, FY, [
@@ -82,7 +100,8 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
     { accountCode: '331', partyCode: 'NCC001', credit: M(66), docNo: '0000501', docDate: '2025-12-05', dueDate: '2025-12-20' },
     { accountCode: '331', partyCode: 'NCC002', credit: M(33), docNo: '0000777', docDate: '2025-12-28', dueDate: '2026-01-12' },
     { accountCode: '156', debit: '5500000' }, { accountCode: '155', debit: '3000000' }, // tồn kho đầu năm (khớp bảng tồn bên dưới), nguồn vốn cộng vào 4111
-    { accountCode: '4111', credit: '1008500000' },
+    { accountCode: '2111', debit: M(270) }, { accountCode: '2141', credit: M(29) }, // hai TSCĐ đầu kỳ (thẻ ở replaceOpeningAssets): nguồn vốn 4111 tăng 270 − 29 = 241 triệu
+    { accountCode: '4111', credit: '1249500000' },
     { accountCode: '4211', credit: M(416) },
   ].map((r) => openingRow.parse(r)));
   await replaceOpeningStock(trx, tenantId, FY, [
@@ -91,7 +110,18 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
     { warehouseCode: 'KHO4', itemCode: 'HANG-C', quantity: '5', value: '2500000', lotNo: 'C-L1' },
     { warehouseCode: 'KHO2', itemCode: 'HANG-D', quantity: '10', value: '3000000' },
   ].map((r) => stockRow.parse(r)));
+  await replaceOpeningAssets(trx, tenantId, FY, [
+    { code: 'TS-001', name: 'Máy chủ Dell PowerEdge (đã dùng 24 tháng)', categoryCode: 'MMTB', openingCost: M(120), openingAccumulated: M(29), openingRemainingUnits: '36' },
+    { code: 'TS-002', name: 'Máy in khổ lớn HP DesignJet (mới mua cuối 2025)', categoryCode: 'MMTB', openingCost: M(150), openingAccumulated: '0', openingRemainingUnits: '36' },
+  ].map((r) => openingAssetRow.parse(r)));
   const dk = await postOpening(trx, ctx, FY);
+  // Thẻ mới: phân bổ chi phí 100% một bộ phận từ kỳ 1 (thẻ không có phân bổ thì kỳ chạy báo ASSET_ALLOCATION_MISSING).
+  const allocate = async (id: number, expenseAccountCode: string, departmentCode: string) =>
+    setAllocations(trx, tenantId, id, allocationInput.parse({ validFromYear: FY, validFromPeriod: 1, lines: [{ expenseAccountCode, departmentCode, ratio: '100' }] }));
+  const idOf = async (code: string) => Number((await sql<{ id: string }>`SELECT id::text FROM asset WHERE code = ${code}`.execute(trx)).rows[0]!.id);
+  await allocate(await idOf('TS-001'), '6422', 'HC');
+  await allocate(await idOf('TS-002'), '6421', 'KD');
+  const newCard = async (b: object, expenseAccountCode: string, departmentCode: string) => { const a = await saveAsset(trx, tenantId, null, assetInput.parse(b)); await allocate(a.id, expenseAccountCode, departmentCode); return a.id; };
 
   // ---- Công cụ ghi chứng từ qua dịch vụ ----
   const post = (id: string) => postWithCashCheck(trx, tenantId, id);
@@ -166,7 +196,8 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
   // Quý 2
   at(day(4, 10), async () => { ref['HDM-CN001'] = await purchase('CN001', day(4, 10), 'Dịch vụ dịch thuật hồ sơ thầu (cá nhân, khấu trừ thuế TNCN)', '', 'BK-0410', '6422', M(15), ['TNCN_KT'], '05'); });
   at(day(4, 15), async () => payment('PC', 'CN001', day(4, 15), M(13.5), await item(ref['HDM-CN001']!), 'Trả tiền dịch thuật ông Phạm Văn Hùng (đã khấu trừ thuế TNCN)'));
-  at(day(4, 20), () => taxPayment(day(4, 20), '33311', M(26), 'Nộp thuế GTGT quý 1/2026'));
+  // 26 triệu của GĐ2 trừ 8.490.000 VAT đầu vào mới (TSCĐ, CCDC) được khấu trừ ở quý 1.
+  at(day(4, 20), () => taxPayment(day(4, 20), '33311', '17510000', 'Nộp thuế GTGT quý 1/2026'));
   at(day(5, 12), async () => { ref['HDB-KH002-V8a'] = await sale('KH002', day(5, 12), 'Dịch vụ tổ chức hội nghị khách hàng', [{ amount: M(50), tax: 'V8' }]); });
   at(day(5, 20), () => taxPayment(day(5, 20), '3335', M(1.5), 'Nộp thuế TNCN khấu trừ tháng 4/2026'));
   at(day(6, 10), async () => receipt('PT', 'KH002', day(6, 10), M(42), await item(ref['HDB-KH002-V5']!), 'Thu tiền dịch vụ thiết kế tài liệu đào tạo'));
@@ -282,9 +313,57 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
     await adjustStocktake(trx, { tenantId, userId, auth: { sensitive: auth.sensitive } }, k.id);
   });
 
+  // ---- Tài sản cố định, công cụ dụng cụ, chi phí trả trước, khế ước vay (GĐ4): thẻ lập đúng ngày phát sinh, biến động trước bước cuối tháng của tháng đó ----
+  const hdmAsset = (party: string, date: string, desc: string, no: string, account: string, amount: string, assetCode: string) =>
+    invoice({ voucherType: 'HDM', postingDate: date, documentDate: date, partyCode: party, description: desc, invoice: { serial: 'C26TTS', invoiceNo: no, invoiceGroupCode: '01' },
+      items: [{ description: desc, accountCode: account, amountCurrency: amount, taxCodes: ['V10'], assetCode }] });
+  let loanId = 0;
+  at(day(1, 12), async () => { await goodsBuy('NCC013', day(1, 12), 'Mua 4 bàn làm việc CCDC-01 nhập KHO5', [gl('CCDC-01', 'KHO5', '4', '1625000', '6500000')]); });
+  at(day(2, 3), async () => { // CC-001: xuất cả 4 cái từ kho cho phòng kinh doanh, phân bổ 6 kỳ từ tháng 2
+    await newCard({ code: 'CC-001', name: 'Bàn làm việc phòng kinh doanh (xuất kho)', kind: 'tool', categoryCode: 'CCDC', useDate: day(2, 3), depreciationStartDate: day(2, 3), lifeUnits: 6, quantity: '4', uom: 'Cái' }, '6421', 'KD');
+    await stockDoc({ voucherType: 'PXK', stockKind: 'use', postingDate: day(2, 3), warehouseCode: 'KHO5', description: 'Xuất 4 bàn làm việc cho phòng kinh doanh',
+      items: [{ itemCode: 'CCDC-01', uomCode: 'CAI', quantity: '4', debitAccountCode: '242', assetCode: 'CC-001' }] });
+  });
+  at(day(2, 17), async () => { // TS-003: mua bằng hóa đơn, thuế GTGT 10%, tính khấu hao theo ngày từ 17/02 (60 tháng)
+    await newCard({ code: 'TS-003', name: 'Máy cắt CNC (mua tháng 2)', kind: 'fixed', categoryCode: 'MMTB', useDate: day(2, 17), depreciationStartDate: day(2, 17), lifeUnits: 60 }, '6422', 'HC');
+    await hdmAsset('NCC012', day(2, 17), 'Mua máy cắt CNC', '0000051', '2111', M(66), 'TS-003');
+  });
+  at(day(3, 1), async () => { // khế ước vay 400 triệu, lãi 9%/năm rồi 10,5%/năm từ 16/07, trả gốc 4 kỳ (kỳ 4 sang năm sau)
+    const l = await saveLoan(trx, tenantId, null, loanInput.parse({ code: 'KU-2026-01', name: 'Vay bổ sung vốn lưu động Vietcombank', partyCode: 'NHVAY', value: M(400), signedDate: day(3, 1), validTo: '2027-03-31', status: 'active',
+      dayBasis: 365, rates: [{ validFrom: day(3, 1), annualRate: '9' }, { validFrom: day(7, 16), annualRate: '10.5' }],
+      installments: [day(6, 30), day(9, 30), day(12, 31), '2027-03-31'].map((dueDate) => ({ dueDate, principal: M(100) })) }));
+    loanId = l.id;
+    await disburse(trx, ctx, loanId, disburseInput.parse({ date: day(3, 1), amount: M(400), bankAccountNo: VCB }));
+  });
+  at(day(3, 8), async () => { // CC-002: mua dùng ngay, 7 cái, phân bổ 12 kỳ từ tháng 3
+    await newCard({ code: 'CC-002', name: 'Ghế công thái học (mua dùng ngay)', kind: 'tool', categoryCode: 'CCDC', useDate: day(3, 8), depreciationStartDate: day(3, 8), lifeUnits: 12, quantity: '7', uom: 'Cái' }, '6422', 'HC');
+    await hdmAsset('NCC013', day(3, 8), 'Mua 7 ghế công thái học', '0000052', '242', M(12.4), 'CC-002');
+  });
+  at(day(4, 10), () => voucher({ voucherType: 'BN', postingDate: day(4, 10), documentDate: day(4, 10), description: 'Chi xây dựng cơ bản dở dang lắp đặt hệ thống máy', bankAccountNo: VCB,
+    lines: [L('2412', M(90), '0'), L('1121', '0', M(90))] }));
+  at(day(4, 20), async () => { // TS-004: nghiệm thu, ghi tăng từ XDCB; khấu hao từ 01/05 (84 tháng)
+    const id = await newCard({ code: 'TS-004', name: 'Hệ thống máy lắp đặt (XDCB)', kind: 'fixed', categoryCode: 'MMTB', useDate: day(4, 20), depreciationStartDate: day(5, 1), lifeUnits: 84 }, '6422', 'HC');
+    await increaseAsset(trx, ctx, id, increaseInput.parse({ date: day(4, 20), reason: 'construction', counterAccountCode: '2412', amount: M(90) }));
+  });
+  at(day(5, 2), async () => { // CPTT-01: tiền thuê kho 12 tháng trả trước, phân bổ từ tháng 5
+    await newCard({ code: 'CPTT-01', name: 'Tiền thuê kho 12 tháng (05/2026-04/2027)', kind: 'prepaid', categoryCode: 'CPTT', useDate: day(5, 2), depreciationStartDate: day(5, 1), lifeUnits: 12 }, '6422', 'HC');
+    await voucher({ voucherType: 'BN', postingDate: day(5, 2), documentDate: day(5, 2), description: 'Trả trước tiền thuê kho 12 tháng', bankAccountNo: VCB, lines: [L('242', M(25), '0', { assetCode: 'CPTT-01' }), L('1121', '0', M(25))] });
+  });
+  at(day(6, 15), async () => { // đánh giá lại TS-001 (TT133 không có TK 412: chênh lệch vào 4118)
+    await revalueAsset(trx, ctx, await idOf('TS-001'), revalueInput.parse({ date: day(6, 15), newCost: M(150), newAccumulated: M(48), remainingUnits: '31', counterAccountCode: '4118' }));
+  });
+  for (const [date, principal] of [[day(6, 30), M(100)], [day(9, 30), M(100)], [day(12, 31), M(100)]] as const)
+    at(date, async () => { await repay(trx, ctx, loanId, repayInput.parse({ date, principal, bankAccountNo: VCB })); }); // chỉ trả gốc; lãi dồn vào 335 đến hết năm
+  at(day(7, 20), async () => { await decreaseTool(trx, ctx, await idOf('CC-002'), toolDecreaseInput.parse({ date: day(7, 20), quantity: '1', counterAccountCode: '811', reason: 'Hỏng 1 ghế, không sửa được' })); });
+  at(day(9, 15), async () => { await decreaseAsset(trx, ctx, await idOf('TS-002'), decreaseInput.parse({ date: day(9, 15), reason: 'liquidation', counterAccountCode: '811' })); });
+
   // Cuối tháng: phân bổ doanh thu nhận trước, tính lại tỷ giá xuất quỹ, (tháng 12) đối trừ tự động và đánh giá lại, cuối quý khấu trừ thuế và (quý 3, 4) lập, chốt tờ khai.
   for (let m = 1; m <= 12; m++) {
     events.push({ key: `${lastDay(m)}~`, run: async () => {
+      // Quy trình cuối kỳ theo thứ tự cố định (CLOSE_STEPS): CCDC, chi phí trả trước, khấu hao, lãi vay rồi các bước còn lại; mỗi lần chạy ghi nhật ký như route.
+      for (const kind of ['tool', 'prepaid', 'depreciation'] as const)
+        await logCloseStep(trx, ctx, { fiscalYear: FY, periodNo: m, step: kind, ok: true, summary: runSummary(await runAssetPeriod(trx, ctx, { kind, fiscalYear: FY, periodNo: m })) });
+      await logCloseStep(trx, ctx, { fiscalYear: FY, periodNo: m, step: 'loan_interest', ok: true, summary: runSummary(await runLoanInterest(trx, ctx, { fiscalYear: FY, periodNo: m })) });
       await costing(day(m, 1), lastDay(m)); // giá vốn kho từng tháng (GV chỉ lập khi giá tính khác giá ghi tạm)
       if (m >= 7) await runAmortization(trx, ctx, runInput.parse({ fiscalYear: FY, periodNo: m }));
       if (m === 12) await autoSettle(trx, auth, autoInput.parse({ accountCode: '131', partyCode: 'KH001', date: lastDay(m) }));

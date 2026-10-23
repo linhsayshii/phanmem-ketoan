@@ -12,8 +12,13 @@ const expected = JSON.parse(readFileSync(new URL('../../../packages/db/src/seed/
 const kho = JSON.parse(readFileSync(new URL('../../../packages/db/src/seed/expected-gd3-abc.json', import.meta.url), 'utf8'));
 for (const [code, d] of Object.entries(kho.chenhLechSoDuCuoiNam as Record<string, string>)) expected.soDuCuoiNam[code] = (BigInt(expected.soDuCuoiNam[code] ?? '0') + BigInt(d)).toString();
 for (const asOf of ['2026-06-30', '2026-12-31']) { const more = { ...kho.congNoThem }; delete more.calc; Object.assign(expected.congNo[asOf], more); } // KH021, NCC011... chưa thu, chưa trả cả năm
-expected.chungTuTuDong.KTT.find((v: { date: string }) => v.date === kho.ktt31Thang3.date).lines = kho.ktt31Thang3.lines;
-for (const [t, n] of Object.entries(kho.soChungTuThem.counts as Record<string, number>)) expected.soChungTu.counts[t] = (expected.soChungTu.counts[t] ?? 0) + n;
+// Phần tài sản, CCDC, khế ước (GĐ4): cộng chênh lệch số dư (VAT đầu vào mới làm đổi KTT quý 1 và khoản nộp thuế tháng 4), công nợ NCC012, NCC013, thêm chứng từ.
+const ts = JSON.parse(readFileSync(new URL('../../../packages/db/src/seed/expected-gd4-abc.json', import.meta.url), 'utf8'));
+for (const [code, d] of Object.entries(ts.chenhLechSoDuCuoiNam as Record<string, string>)) expected.soDuCuoiNam[code] = (BigInt(expected.soDuCuoiNam[code] ?? '0') + BigInt(d)).toString();
+for (const asOf of ['2026-06-30', '2026-12-31']) { const more = { ...ts.congNoThem }; delete more.calc; Object.assign(expected.congNo[asOf], more); }
+expected.chungTuTuDong.KTT.find((v: { date: string }) => v.date === kho.ktt31Thang3.date).lines = ts.ktt31Thang3.lines;
+for (const [t, n] of Object.entries({ ...kho.soChungTuThem.counts } as Record<string, number>)) expected.soChungTu.counts[t] = (expected.soChungTu.counts[t] ?? 0) + n;
+for (const [t, n] of Object.entries(ts.soChungTuThem.counts as Record<string, number>)) expected.soChungTu.counts[t] = (expected.soChungTu.counts[t] ?? 0) + n;
 const totalVouchers = (Object.values(expected.soChungTu.counts) as number[]).reduce((a, b) => a + b, 0) + kho.soChungTuThem.gv.total;
 type AutoVoucher = { date: string; lines: [string, string, string, string][] };
 
@@ -78,7 +83,7 @@ describe('Bộ dữ liệu mẫu ABC năm 2026 (GĐ2)', () => {
     const rows = (await sql<{ type: string; date: string; id: string; code: string; party: string | null; debit: string; credit: string }>`
       SELECT v.voucher_type AS type, v.posting_date AS date, v.id, a.code, p.code AS party, l.debit::text AS debit, l.credit::text AS credit
       FROM voucher v JOIN voucher_line l ON l.voucher_id = v.id AND l.posting_date = v.posting_date JOIN account a ON a.id = l.account_id LEFT JOIN party p ON p.id = l.party_id
-      WHERE v.tenant_id = ${tenantId}::uuid AND v.voucher_type IN ('CL', 'XQ', 'DG', 'KTT', 'PB') AND v.state = 'posted' ORDER BY v.posting_date, v.seq_no, l.line_no`.execute(ctx.t.admin)).rows;
+      WHERE v.tenant_id = ${tenantId}::uuid AND v.voucher_type IN ('CL', 'XQ', 'DG', 'KTT', 'PB') AND v.state = 'posted' AND v.source_doc_type IS DISTINCT FROM 'asset_run' ORDER BY v.posting_date, v.seq_no, l.line_no`.execute(ctx.t.admin)).rows;
     for (const type of ['CL', 'XQ', 'DG', 'KTT', 'PB']) {
       const ids = [...new Set(rows.filter((r) => r.type === type).map((r) => r.id))];
       const got: AutoVoucher[] = ids.map((id) => ({ date: rows.find((r) => r.id === id)!.date,
@@ -94,7 +99,7 @@ describe('Bộ dữ liệu mẫu ABC năm 2026 (GĐ2)', () => {
     for (let m = 1; m <= 12; m++) await assertBalanceSheet(ctx, cookie, new Date(Date.UTC(2026, m, 0)).toISOString().slice(0, 10));
     const { totals } = await get('/api/reports/ledgers/trial-balance?from=2026-01-01&to=2026-12-31') as { totals: Record<'opening' | 'period' | 'closing', { debit: string; credit: string }> };
     for (const k of ['opening', 'period', 'closing'] as const) expect(totals[k].debit, k).toBe(totals[k].credit);
-    expect(totals.opening.debit).toBe('1523500000'); // 1.515.000.000 của GĐ2 + tồn kho đầu năm 8.500.000
+    expect(totals.opening.debit).toBe('1793500000'); // 1.515.000.000 của GĐ2 + tồn kho đầu năm 8.500.000 + TSCĐ đầu kỳ 270.000.000 (nguyên giá 2111; hao mòn 2141 ghi Có không vào cột Nợ)
   });
 
   it('seed chạy lần hai không tạo thêm; lỗi giữa chừng hoàn tác hết', async () => {
