@@ -1,4 +1,4 @@
--- GĐ4 Task 15: sáu quy tắc soát lỗi tài sản và khế ước vay (không cờ nhạy cảm: chỉ báo mã tài sản, mã khế ước và số tiền, không chi tiết công nợ theo bên cho vay).
+-- GĐ4 Task 15: sáu quy tắc soát lỗi tài sản và khế ước vay (quy tắc tài sản không cờ; hai quy tắc khế ước vay in dư nợ gốc nên cần view_payable như các API khế ước).
 -- Định nghĩa lại seed_data_check_rules từ thân hiện hành (qua 0064–0067): chèn các dòng mới trước ON CONFLICT như 0064.
 DO $mig$
 DECLARE d text; n text;
@@ -57,7 +57,7 @@ BEGIN
           OR EXISTS (SELECT 1 FROM voucher k WHERE k.is_closing AND k.state = 'posted' AND k.reversal_of_id IS NULL AND k.fiscal_year = p.fiscal_year AND k.period_no = p.period_no))
         AND NOT EXISTS (SELECT 1 FROM period_run r WHERE r.kind = 'loan_interest' AND r.status = 'active' AND r.fiscal_year = p.fiscal_year AND r.period_no = p.period_no)
       ORDER BY p.fiscal_year, p.period_no, c.code$q$,
-   'Kỳ đã kết chuyển nhưng khế ước còn dư nợ chưa được tính lãi vay', 'Chạy tính lãi vay của kỳ (cần mở lại kỳ hoặc ghi lùi), rồi kết chuyển lại', true, '{}'),
+   'Kỳ đã kết chuyển nhưng khế ước còn dư nợ chưa được tính lãi vay', 'Chạy tính lãi vay của kỳ (cần mở lại kỳ hoặc ghi lùi), rồi kết chuyển lại', true, '{view_payable}'),
   -- Khế ước vay: kỳ trả gốc đến hạn trước $2 còn phần chưa trả. Số đã trả phân bổ vào kỳ sớm nhất trước như loanLongTermPart; số đã trả = Nợ nguyên tệ trên TK gốc của chứng từ còn hiệu lực,
   -- cộng phần lịch đã trả trước ngày bắt đầu dùng phần mềm nếu dư đầu kỳ (quyết định 446, loans/stats.ts).
   (p_tenant, 'KU_QUA_HAN', 'Khế ước vay quá hạn trả gốc', 'warning',
@@ -75,7 +75,7 @@ BEGIN
       FROM s JOIN d ON d.contract_id = s.id JOIN t ON t.contract_id = s.id
       WHERE s.out_vnd > 0 AND d.due_date < $2 AND least(d.p, greatest(0, d.cum - (s.repaid + CASE WHEN s.has_opening AND t.total - s.drawn > 0 THEN t.total - s.drawn ELSE 0 END))) > 0
       ORDER BY s.code, d.due_date$q$,
-   'Kỳ trả gốc đã đến hạn mà chưa trả đủ theo lịch', 'Kiểm tra lịch trả gốc của khế ước; lập chứng từ trả nợ vay hoặc điều chỉnh lịch', true, '{}')
+   'Kỳ trả gốc đã đến hạn mà chưa trả đủ theo lịch', 'Kiểm tra lịch trả gốc của khế ước; lập chứng từ trả nợ vay hoặc điều chỉnh lịch', true, '{view_payable}')
   $new$;
   d := replace(d, E'\n  ON CONFLICT DO NOTHING', n || E'\n  ON CONFLICT DO NOTHING');
   IF position('KU_QUA_HAN' IN d) = 0 THEN RAISE EXCEPTION 'không chèn được quy tắc GĐ4 (khuôn ON CONFLICT khác dự kiến)'; END IF;

@@ -124,7 +124,7 @@ Kế hoạch: `2026-10-23-giai-doan-4-chi-tiet.md`. Đánh số tiếp GĐ3 (k�
 
 487. Migration soát lỗi GĐ4 là 0076_soat_loi_gd4.sql (0077 trong kế hoạch bị dời vì 0075 là số cuối) — số liệu bám thứ tự thực tế — đổi tên nếu có migration chen vào. (T15)
 
-488. Sáu quy tắc TS_*/KU_* không có cờ nhạy cảm: chỉ in mã tài sản, mã khế ước và số tiền, không in bên cho vay hay công nợ theo đối tượng (khác CN_* của GĐ2 có view_receivable/view_payable) — theo kế hoạch — thêm `view_payable` vào flags nếu sau này in tên bên cho vay. (T15)
+488. Bốn quy tắc TS_* không có cờ nhạy cảm (chỉ in mã tài sản và số liệu tài sản); KU_CHUA_TINH_LAI và KU_QUA_HAN khai báo cờ `view_payable` vì in dư nợ gốc, số quá hạn theo khế ước và các API khế ước vay đòi view_payable (Task 11) — dữ liệu vay là công nợ phải trả; người thiếu cờ bị bỏ qua có lý do, như CN_*. Kiểm thử cờ ở dataCheckGd2.test.ts. Bỏ cờ nếu coi vay không thuộc công nợ. (T15)
 
 489. TS_KHAU_HAO_CAN_CHAY_LAI cài bằng SQL tương đương assetRunStale (so dấu vân tay `id:nguyên giá:hao mòn` đã làm tròn của tài sản thuộc lần chạy với `result.basis`, cộng điều kiện kỳ trước được chạy lại sau lần kiểm cuối); kiểm thử so khớp tập (loại, kỳ) với hàm TypeScript — tránh hai nơi lệch nhau — nếu assetRunStale đổi, sửa cả quy tắc (migration mới). (T15)
 

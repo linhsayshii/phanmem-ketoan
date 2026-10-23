@@ -5,6 +5,7 @@ import { withTenant } from '@kt/db';
 import { createTestApp, type TestApp } from '../helpers.js';
 import { setupLedgerTenant } from '../invariants/helpers.js';
 import { assetRunStale } from '../../src/modules/assets/periodRun.js';
+import { loanStats } from '../../src/modules/loans/stats.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 60_000 });
 let ctx: TestApp; let n = 0;
@@ -158,5 +159,24 @@ describe('soát lỗi GĐ4: khế ước vay', () => {
     expect(D(outstanding).minus(loanLongTermPart(outstanding, '100000000', inst, '2025-07-31', '2026-12-31')).toString()).toBe(total.toString());
     await t.ok(t.call('POST', `/api/loans/${t.id}/repay`, { date: '2026-07-10', principal: '400000000', bankAccountNo: '0011001' }), 201);
     expect(await t.run('KU_QUA_HAN', q('2026-07-31'))).toEqual([]);
+  });
+
+  it('KU_QUA_HAN: khế ước mang sang bằng số dư đầu kỳ (lịch 900tr, dư đầu 600tr) tính phần đã trả trước ngày dùng phần mềm như loanStats + loanLongTermPart', async () => {
+    const t = await tenant('TT99');
+    const dues = ['2025-06-30', '2025-12-31', '2026-06-30', '2026-12-31', '2027-06-30', '2027-12-31'];
+    await t.ok(t.call('POST', '/api/loans', { code: 'VAY04', name: 'Vay 04', partyCode: 'NCC001', value: '0', signedDate: '2024-01-01',
+      rates: [{ validFrom: '2024-01-01', annualRate: '9.5' }], installments: dues.map((dueDate) => ({ dueDate, principal: '150000000' })) }), 201);
+    const row = (accountCode: string, debit: string, credit: string, more: object = {}) => ({ accountCode, partyCode: null, currencyCode: 'VND', debit, credit, debitCurrency: '0', creditCurrency: '0', ...more });
+    await t.ok(t.call('PUT', '/api/opening-balance/2026', { rows: [row('111', '600000000', '0'), row('3411', '0', '600000000', { contractCode: 'VAY04' })] }));
+    await t.ok(t.call('POST', '/api/opening-balance/2026/post'));
+    const hits = await t.run('KU_QUA_HAN', { from: '2026-01-01', to: '2026-09-30' });
+    expect(hits.map((x) => [x.ref, x.detail])).toEqual([['VAY04', 'Kỳ trả 30/06/2026 còn 150000000']]); // 300tr lịch đã trả trước ngày dùng phần mềm phủ hai kỳ 2025
+    const [s] = await t.db((trx) => loanStats(trx, '2026-09-30'));
+    const gap = D(dues.length * 150_000_000).minus(s!.drawnCur);
+    expect(s!.hasOpening).toBe(true);
+    const long = loanLongTermPart(s!.outstandingCur, D(s!.repaidCur).plus(gap).toString(), dues.map((dueDate) => ({ dueDate, principal: '150000000' })), '2025-09-30', null);
+    expect(D(s!.outstandingCur).minus(long).toString()).toBe('150000000'); // mốc ngắn hạn = 30/09/2026
+    await t.ok(t.call('POST', '/api/loans', { code: 'VAY05', name: 'Vay 05', partyCode: 'NCC001', value: '0', signedDate: '2024-01-01', rates: [{ validFrom: '2024-01-01', annualRate: '9.5' }] }), 201);
+    expect((await t.run('KU_QUA_HAN', { from: '2026-01-01', to: '2026-09-30' })).map((x) => x.ref)).toEqual(['VAY04']); // khế ước không lịch không bị báo
   });
 });
