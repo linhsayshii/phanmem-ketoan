@@ -177,6 +177,17 @@ export interface AssetAllocationTable {
   id: Generated<number>; tenant_id: string; asset_id: number; valid_from_year: number; valid_from_period: number; expense_account_code: string;
   department_id: number | null; project_id: number | null; cost_item_id: number | null; ratio: Numeric;
 }
+export interface PeriodRunTable {
+  id: Generated<string>; tenant_id: string; kind: string; fiscal_year: number; period_no: number; voucher_id: string | null; status: Generated<string>;
+  result: ColumnType<unknown, string | undefined, string>; created_by: string | null; created_at: Generated<string>; checked_at: Timestamp | null;
+}
+export interface AssetScheduleTable {
+  id: Generated<number>; tenant_id: string; asset_id: number; version: number; eff_year: number; eff_period: number;
+  basis_cost: Numeric; basis_acc: Numeric; units: Numeric; reason: string; superseded_at: Timestamp | null; created_at: Generated<string>;
+}
+export interface AssetScheduleLineTable {
+  id: Generated<number>; tenant_id: string; schedule_id: number; fiscal_year: number; period_no: number; units: Numeric; amount: Numeric; accumulated: Numeric; run_id: string | null;
+}
 export interface VoucherLineTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; line_no: number; account_id: number; posting_date: DateOnly;
   currency_code: Generated<string>; fx_rate: Numeric | null; amount_currency: NumericDefault;
@@ -357,6 +368,9 @@ export interface Database {
   asset_category: AssetCategoryTable;
   asset: AssetTable;
   asset_allocation: AssetAllocationTable;
+  period_run: PeriodRunTable;
+  asset_schedule: AssetScheduleTable;
+  asset_schedule_line: AssetScheduleLineTable;
   voucher_counter: VoucherCounterTable;
   voucher_line_history: VoucherLineHistoryTable;
   voucher_attachment: VoucherAttachmentTable;

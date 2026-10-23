@@ -1,10 +1,14 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
+import { notifyRecompute } from '../ledger/notifyRecompute.js';
+import { listRuns, runAssetPeriod } from './periodRun.js';
+import { previewSchedule } from './schedule.js';
 import { allocationInput, assetInput, categoryInput, deleteAsset, deleteCategory, getAsset, listAssets, listCategories, lookupAssets, saveAsset, saveCategory, setAllocations } from './assets.js';
 
 const numId = z.object({ id: z.coerce.number().int().positive() });
 const kindQ = z.enum(['fixed', 'tool', 'prepaid']);
+const runKind = z.enum(['depreciation', 'tool', 'prepaid']);
 
 // Thẻ tài sản: TSCĐ, công cụ dụng cụ, chi phí trả trước. Số tiền (nguyên giá, hao mòn) lấy từ sổ cái, thẻ không có trường tiền tự do.
 const routes: FastifyPluginAsyncZod = async (app) => {
@@ -22,6 +26,17 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.put('/api/assets/:id', { preHandler: app.requirePermission('asset.update'), schema: { params: numId, body: assetInput } }, async (req) => app.withTenant(req, (trx) => saveAsset(trx, tid(req), req.params.id, req.body)));
   app.delete('/api/assets/:id', { preHandler: app.requirePermission('asset.delete'), schema: { params: numId } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteAsset(trx, tid(req), req.params.id)); return reply.status(204).send(); });
   app.put('/api/assets/:id/allocations', { preHandler: app.requirePermission('asset.update'), schema: { params: numId, body: allocationInput } }, async (req) => app.withTenant(req, (trx) => setAllocations(trx, tid(req), req.params.id, req.body)));
+  app.get('/api/assets/:id/schedule', { preHandler: app.requirePermission('asset.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => previewSchedule(trx, req.params.id), READ_SNAPSHOT));
+
+  // Chạy khấu hao (KH) / phân bổ CCDC, chi phí trả trước (PB) kỳ; kỳ khóa sổ cần quyền ghi lùi.
+  app.get('/api/asset-runs', { preHandler: app.requirePermission('asset.view'), schema: { querystring: z.object({ kind: runKind.optional(), year: z.coerce.number().int().optional() }) } },
+    async (req) => app.withTenant(req, (trx) => listRuns(trx, req.query.kind, req.query.year), READ_SNAPSHOT));
+  app.post('/api/asset-runs', { preHandler: app.requirePermission('asset.run'), schema: { body: z.object({ kind: runKind, fiscalYear: z.number().int(), periodNo: z.number().int().min(1).max(15) }) } }, async (req) => {
+    const auth = req.auth!;
+    const out = await app.withOverride(req, (trx) => runAssetPeriod(trx, { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') }, req.body));
+    if (!out.unchanged) notifyRecompute(app, auth.tenantId!);
+    return out;
+  });
 
   app.get('/api/lookups/assets', { preHandler: app.requirePermission('asset.view'), schema: { querystring: z.object({ q: z.string().default(''), kind: kindQ.optional(), size: z.coerce.number().int().min(1).max(200).default(50) }) } },
     async (req) => app.withTenant(req, (trx) => lookupAssets(trx, req.query.q, req.query.kind, req.query.size), READ_SNAPSHOT));

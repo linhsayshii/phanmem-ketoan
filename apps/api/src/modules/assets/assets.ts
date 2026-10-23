@@ -56,7 +56,7 @@ export async function assertAssetAccounts(trx: Trx, kind: string, assetAccountCo
     if (d.is_group || d.subledger_kind !== 'fixed_asset' || !depreciationAccountCode!.startsWith('214')) throw bad(`Tài khoản ${depreciationAccountCode} không phải tài khoản hao mòn tài sản cố định (214x)`);
   } else if (!assetAccountCode.startsWith('242')) throw bad(`Công cụ dụng cụ, chi phí trả trước ghi trên tài khoản 242, không phải ${assetAccountCode}`);
 }
-async function lockTenant(trx: Trx, tenantId: string) { await sql`SELECT pg_advisory_xact_lock(hashtext('asset_run'), hashtext(${tenantId}))`.execute(trx); }
+export async function lockTenant(trx: Trx, tenantId: string) { await sql`SELECT pg_advisory_xact_lock(hashtext('asset_run'), hashtext(${tenantId}))`.execute(trx); }
 const hasLedger = async (trx: Trx, id: number) => !!(await trx.selectFrom('voucher_line').select('id').where('asset_id', '=', id).limit(1).executeTakeFirst())
   || !!(await trx.selectFrom('voucher_item_line').select('id').where('asset_id', '=', id).limit(1).executeTakeFirst());
 async function idOf(trx: Trx, table: 'department' | 'project' | 'cost_item' | 'asset_category', code: string | null | undefined, label: string): Promise<number | null> {
