@@ -17,7 +17,7 @@ const ts = JSON.parse(readFileSync(new URL('../../../packages/db/src/seed/expect
 for (const [code, d] of Object.entries(ts.chenhLechSoDuCuoiNam as Record<string, string>)) expected.soDuCuoiNam[code] = (BigInt(expected.soDuCuoiNam[code] ?? '0') + BigInt(d)).toString();
 for (const asOf of ['2026-06-30', '2026-12-31']) { const more = { ...ts.congNoThem }; delete more.calc; Object.assign(expected.congNo[asOf], more); }
 expected.chungTuTuDong.KTT.find((v: { date: string }) => v.date === kho.ktt31Thang3.date).lines = ts.ktt31Thang3.lines;
-for (const [t, n] of Object.entries({ ...kho.soChungTuThem.counts } as Record<string, number>)) expected.soChungTu.counts[t] = (expected.soChungTu.counts[t] ?? 0) + n;
+for (const [t, n] of Object.entries(kho.soChungTuThem.counts as Record<string, number>)) expected.soChungTu.counts[t] = (expected.soChungTu.counts[t] ?? 0) + n;
 for (const [t, n] of Object.entries(ts.soChungTuThem.counts as Record<string, number>)) expected.soChungTu.counts[t] = (expected.soChungTu.counts[t] ?? 0) + n;
 const totalVouchers = (Object.values(expected.soChungTu.counts) as number[]).reduce((a, b) => a + b, 0) + kho.soChungTuThem.gv.total;
 type AutoVoucher = { date: string; lines: [string, string, string, string][] };

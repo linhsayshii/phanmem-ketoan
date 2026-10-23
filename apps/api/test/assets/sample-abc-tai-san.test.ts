@@ -76,14 +76,18 @@ describe('Bộ dữ liệu mẫu ABC có tài sản, công cụ dụng cụ, kh�
     const r = (await get('/api/reports/financial/B01?from=2026-01-01&to=2026-12-31')).rows as { lineCode: string; current: string }[];
     const line = (c: string) => r.find((x) => x.lineCode === c)!.current;
     expect(line('151')).toBe(gd4.b01['151']);
-    expect(line('152').replace('-', '')).toBe(gd4.b01['152']); // chỉ tiêu hao mòn trình bày số âm
+    expect(line('152')).toBe(gd4.b01['152']); // số dương (dư Có), chỉ tiêu 150 = [151] - [152]
+    expect(line('150')).toBe((BigInt(gd4.b01['151']) - BigInt(gd4.b01['152'])).toString());
     expect(r.find((x) => x.lineCode === '141')!.current).toBe(gd3.bangCanDoiKho.B01_141); // 153 về 0, hàng tồn kho GĐ3 không đổi
   });
 
-  it('quy trình cuối kỳ tháng 1-12: các bước tài sản, lãi vay đều xong (hoặc bỏ qua vì không có phát sinh), không bước nào phải chạy lại; bảng cân đối cân cuối tháng', async () => {
+  it('quy trình cuối kỳ tháng 1-12: mọi bước seed đã chạy đều xong, bước không chạy còn chưa chạy; bảng cân đối cân cuối tháng', async () => {
     for (let m = 1; m <= 12; m++) {
       const st = (await get(`/api/period-close/2026/${m}`)).steps as { key: string; status: string }[];
-      for (const k of ['tool', 'prepaid', 'depreciation', 'loan_interest']) expect(['done', 'skipped_empty'], `${m}/${k}`).toContain(st.find((s) => s.key === k)!.status);
+      const status = Object.fromEntries(st.map((s) => [s.key, s.status]));
+      const want: Record<string, string> = { tool: 'done', prepaid: 'done', depreciation: 'done', loan_interest: 'done', amortization: 'done', costing: 'done', fx_outflow: 'done',
+        fx_revaluation: m === 12 ? 'done' : 'skipped_empty', vat_offset: m % 3 === 0 ? 'done' : 'pending', closing: 'pending' };
+      expect(status, `tháng ${m}`).toEqual(want);
       await assertBalanceSheet(ctx, cookie, new Date(Date.UTC(2026, m, 0)).toISOString().slice(0, 10));
     }
   });

@@ -68,7 +68,7 @@
     "7": "4166667",
     "8": "4166666"
    },
-   "calc": "Đầu kỳ 150.000.000, chưa hao mòn, còn 36 tháng: B = 150.000.000, T(c) = làm tròn(150.000.000 × c / 36) = 4.166.666,67 × c: kỳ 1-8 = 4.166.667 / 4.166.666 / 4.166.667 / 4.166.667 / 4.166.666 / 4.166.667 / 4.166.667 / 4.166.666 (T8 = 33.333.333). Thanh lý 15/09: kỳ 9 chỉ khấu hao dở dang trong chứng từ TS (xem thanhLy), không có dòng trong KH tháng 9 và không có dòng từ tháng 10"
+   "calc": "Đầu kỳ 150.000.000, chưa hao mòn, còn 36 tháng: B = 150.000.000, T(c) = làm tròn(150.000.000 × c / 36) = 4.166.666,67 × c: kỳ 1-8 = 4.166.667 / 4.166.666 / 4.166.667 / 4.166.667 / 4.166.666 / 4.166.667 / 4.166.667 / 4.166.666 (T8 = 33.333.333). Thanh lý 15/09: kỳ 9 chỉ khấu hao dở dang trong chứng từ TS (xem thanhLy), không có dòng trong KH tháng 9 và không có dòng từ tháng 10. Theo quy ước 5(c), kỳ 9 có số đơn vị 14/30 khác dòng khấu hao 1 đơn vị nên tạo phiên bản mới: B' = 150.000.000 − 33.333.333 = 116.666.667, U' = 36 − 8 = 28, khấu hao dở dang = làm tròn(116.666.667 × (14/30) / 28) = 1.944.444 (tính cộng dồn trên phiên bản cũ sẽ ra 1.944.445, không dùng)"
   },
   "TS-003": {
    "theoKy": {

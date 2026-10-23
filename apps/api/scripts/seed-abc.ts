@@ -17,7 +17,7 @@ import { openingAssetRow, replaceOpeningAssets } from '../src/modules/assets/ope
 import { runAssetPeriod } from '../src/modules/assets/periodRun.js';
 import { disburse, disburseInput, loanInput, repay, repayInput, saveLoan } from '../src/modules/loans/loans.js';
 import { runLoanInterest } from '../src/modules/loans/interest.js';
-import { logCloseStep, runSummary } from '../src/modules/ledger/periodClose.js';
+import { logCloseStep, runSummary, type CloseStepKey } from '../src/modules/ledger/periodClose.js';
 import { postWithCashCheck } from '../src/modules/cash/books.js';
 import { adjustInput, runOutflowAdjust } from '../src/modules/cash/fx.js';
 import { revaluationInput, runRevaluation } from '../src/modules/cash/revaluation.js';
@@ -111,14 +111,14 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
     { warehouseCode: 'KHO2', itemCode: 'HANG-D', quantity: '10', value: '3000000' },
   ].map((r) => stockRow.parse(r)));
   await replaceOpeningAssets(trx, tenantId, FY, [
-    { code: 'TS-001', name: 'Máy chủ Dell PowerEdge (đã dùng 24 tháng)', categoryCode: 'MMTB', openingCost: M(120), openingAccumulated: M(29), openingRemainingUnits: '36' },
+    { code: 'TS-001', name: 'Máy chủ Dell PowerEdge (đã khấu hao một phần, còn 36 tháng)', categoryCode: 'MMTB', openingCost: M(120), openingAccumulated: M(29), openingRemainingUnits: '36' },
     { code: 'TS-002', name: 'Máy in khổ lớn HP DesignJet (mới mua cuối 2025)', categoryCode: 'MMTB', openingCost: M(150), openingAccumulated: '0', openingRemainingUnits: '36' },
   ].map((r) => openingAssetRow.parse(r)));
   const dk = await postOpening(trx, ctx, FY);
   // Thẻ mới: phân bổ chi phí 100% một bộ phận từ kỳ 1 (thẻ không có phân bổ thì kỳ chạy báo ASSET_ALLOCATION_MISSING).
   const allocate = async (id: number, expenseAccountCode: string, departmentCode: string) =>
     setAllocations(trx, tenantId, id, allocationInput.parse({ validFromYear: FY, validFromPeriod: 1, lines: [{ expenseAccountCode, departmentCode, ratio: '100' }] }));
-  const idOf = async (code: string) => Number((await sql<{ id: string }>`SELECT id::text FROM asset WHERE code = ${code}`.execute(trx)).rows[0]!.id);
+  const idOf = async (code: string) => Number((await sql<{ id: string }>`SELECT id::text FROM asset WHERE code = ${code} AND tenant_id = ${tenantId}::uuid`.execute(trx)).rows[0]!.id);
   await allocate(await idOf('TS-001'), '6422', 'HC');
   await allocate(await idOf('TS-002'), '6421', 'KD');
   const newCard = async (b: object, expenseAccountCode: string, departmentCode: string) => { const a = await saveAsset(trx, tenantId, null, assetInput.parse(b)); await allocate(a.id, expenseAccountCode, departmentCode); return a.id; };
@@ -364,12 +364,17 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
       for (const kind of ['tool', 'prepaid', 'depreciation'] as const)
         await logCloseStep(trx, ctx, { fiscalYear: FY, periodNo: m, step: kind, ok: true, summary: runSummary(await runAssetPeriod(trx, ctx, { kind, fiscalYear: FY, periodNo: m })) });
       await logCloseStep(trx, ctx, { fiscalYear: FY, periodNo: m, step: 'loan_interest', ok: true, summary: runSummary(await runLoanInterest(trx, ctx, { fiscalYear: FY, periodNo: m })) });
-      await costing(day(m, 1), lastDay(m)); // giá vốn kho từng tháng (GV chỉ lập khi giá tính khác giá ghi tạm)
-      if (m >= 7) await runAmortization(trx, ctx, runInput.parse({ fiscalYear: FY, periodNo: m }));
+      const log = (step: CloseStepKey, summary: Record<string, unknown>, ok = true) => logCloseStep(trx, ctx, { fiscalYear: FY, periodNo: m, step, ok, summary });
+      const am = await runAmortization(trx, ctx, runInput.parse({ fiscalYear: FY, periodNo: m }));
+      await log('amortization', { ...runSummary({ voucherIds: am.created.map((x) => x.voucherId), reversedVoucherIds: am.reversedVoucherIds, unchanged: !am.created.length && am.unchanged > 0 }), skippedSchedules: am.skipped.length });
+      const co = await costing(day(m, 1), lastDay(m)); // giá vốn kho từng tháng (GV chỉ lập khi giá tính khác giá ghi tạm)
+      await log('costing', { ...runSummary(co), errors: co.summary.errors.length }, !co.summary.errors.length);
       if (m === 12) await autoSettle(trx, auth, autoInput.parse({ accountCode: '131', partyCode: 'KH001', date: lastDay(m) }));
-      await runOutflowAdjust(trx, ctx, adjustInput.parse({ fiscalYear: FY, periodNo: m }));
-      if (m === 12) await runRevaluation(trx, ctx, revaluationInput.parse({ date: lastDay(m) }));
-      if (m % 3 === 0) await runVatOffset(trx, ctx, offsetInput.parse({ date: lastDay(m) }));
+      await log('fx_outflow', runSummary(await runOutflowAdjust(trx, ctx, adjustInput.parse({ fiscalYear: FY, periodNo: m }))));
+      if (m === 12) await log('fx_revaluation', runSummary(await runRevaluation(trx, ctx, revaluationInput.parse({ date: lastDay(m) }))));
+      else await log('fx_revaluation', { skipped: true }); // chỉ đánh giá lại cuối năm
+      // Khấu trừ GTGT chỉ cuối quý; tháng khác và bước kết chuyển không chạy trong dữ liệu mẫu nên còn "chưa chạy".
+      if (m % 3 === 0) await log('vat_offset', runSummary(await runVatOffset(trx, ctx, offsetInput.parse({ date: lastDay(m) }))));
       if (m === 9 || m === 12) { // quý 1, 2 thuộc mẫu TT 80/2021 chưa có (01GTGT_TT80 = false): không lập
         const r = await createReturn(trx, ctx, returnInput.parse({ year: FY, periodKind: 'quarter', period: m / 3 }));
         await finalizeReturn(trx, ctx, r.id);
