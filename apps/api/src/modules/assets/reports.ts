@@ -75,17 +75,35 @@ export async function assetRegister(trx: Trx, tenantId: string, q: { from: strin
 }
 
 export async function assetsByLocation(trx: Trx, tenantId: string, q: { from: string; to: string; departmentId?: number | undefined }) {
-  const held = (await heldAssets(trx, tenantId, ['fixed', 'tool'], q.from, q.to)).filter((h) => q.departmentId === undefined || h.a.departmentId === q.departmentId);
+  const held = await heldAssets(trx, tenantId, ['fixed', 'tool'], q.from, q.to);
+  const trs = group(await eventsOf(trx, held.map((h) => h.a.id), ['transfer'], '9999-12-31'), (e) => e.assetId);
+  const depts = new Map((await sql<{ id: number; code: string; name: string }>`SELECT id::int AS id, code, name FROM department`.execute(trx)).rows.map((d) => [d.id, d]));
   const groups = new Map<string, { departmentCode: string; departmentName: string; rows: Row[]; totalIncrease: string; totalDecrease: string }>();
+  const add = (deptId: number | null, row: Row, inc: unknown, dec: unknown) => {
+    if (q.departmentId !== undefined && deptId !== q.departmentId) return;
+    const d = deptId === null ? undefined : depts.get(deptId); const key = d?.code ?? '';
+    const g = groups.get(key) ?? groups.set(key, { departmentCode: key, departmentName: d?.name ?? '(Chưa gán bộ phận)', rows: [], totalIncrease: '0', totalDecrease: '0' }).get(key)!;
+    g.rows.push(row);
+    if (inc !== undefined) g.totalIncrease = D(g.totalIncrease).plus(String(inc)).toString();
+    if (dec !== undefined) g.totalDecrease = D(g.totalDecrease).plus(String(dec)).toString();
+  };
   for (const h of held) {
-    const a = h.a; const key = a.departmentCode ?? '';
-    const g = groups.get(key) ?? groups.set(key, { departmentCode: key, departmentName: a.departmentName ?? '(Chưa gán bộ phận)', rows: [], totalIncrease: '0', totalDecrease: '0' }).get(key)!;
+    const a = h.a; const ts = trs.get(a.id) ?? [];
+    const beforeOf = (t: Ev) => ((t.data['before'] as Row | undefined)?.['departmentId'] as number | null | undefined) ?? null;
+    // Bộ phận tại ngày d: bộ phận cũ của lần điều chuyển đầu tiên từ ngày d trở đi (đã sau d thì tài sản còn ở bộ phận cũ); không còn lần nào thì bộ phận hiện tại.
+    const deptFrom = (d: string, after = false) => { const t = ts.find((x) => (after ? x.date > d : x.date >= d)); return t ? beforeOf(t) : a.departmentId; };
     const qty0 = a.kind === 'fixed' ? '1' : h.grossQty; const unit = D(qty0).isZero() ? '0' : D(h.cost).div(qty0).toDecimalPlaces(0).toString();
     const base = { assetCode: a.code, name: a.name, uom: a.uom };
-    const decs = h.decs.filter((e) => e.date >= q.from);
-    g.rows.push({ ...base, incVoucherNo: h.inc.voucherNo, incDate: h.inc.date, incQty: qty0, unitPrice: unit, incAmount: h.cost, ...(decs[0] ? decRow(a, decs[0]) : {}) });
-    g.totalIncrease = D(g.totalIncrease).plus(h.cost).toString(); if (decs[0]) g.totalDecrease = D(g.totalDecrease).plus(String(decRow(a, decs[0]).decAmount)).toString();
-    for (const e of decs.slice(1)) { g.rows.push({ ...base, ...decRow(a, e) }); g.totalDecrease = D(g.totalDecrease).plus(String(decRow(a, e).decAmount)).toString(); }
+    const primary = deptFrom(q.from); const decs = h.decs.filter((e) => e.date >= q.from);
+    const first = decs[0] && deptFrom(decs[0].date, true) === primary ? decs[0] : undefined; // lần giảm đầu cùng bộ phận ghi chung dòng với dòng tăng
+    add(primary, { ...base, incVoucherNo: h.inc.voucherNo, incDate: h.inc.date, incQty: qty0, unitPrice: unit, incAmount: h.cost, ...(first ? decRow(a, first) : {}) }, h.cost, first ? decRow(a, first).decAmount : undefined);
+    for (const e of decs) if (e !== first) add(deptFrom(e.date, true), { ...base, ...decRow(a, e) }, undefined, decRow(a, e).decAmount);
+    // Điều chuyển trong kỳ: giảm ở bộ phận cũ, tăng ở bộ phận mới (không chứng từ).
+    ts.forEach((t, i) => {
+      if (t.date < q.from || t.date > q.to) return;
+      add(beforeOf(t), { ...base, decDate: t.date, decReason: 'Điều chuyển', decQty: qty0, decAmount: h.cost }, undefined, h.cost);
+      add(ts[i + 1] ? beforeOf(ts[i + 1]!) : a.departmentId, { ...base, incDate: t.date, incQty: qty0, unitPrice: unit, incAmount: h.cost }, h.cost, undefined);
+    });
   }
   return { from: q.from, to: q.to, groups: [...groups.values()] };
 }
@@ -228,7 +246,7 @@ export async function toolRegister(trx: Trx, tenantId: string, q: { kind: 'tool'
     const ls = (lines.get(a.id) ?? []).filter((l) => l.account === a.assetAccount); const run = ls.filter((l) => l.sourceType === 'asset_run');
     const initial = ls.reduce((t, l) => t.plus(l.debit), ZERO); const allocated = run.reduce((t, l) => t.plus(l.credit).minus(l.debit), ZERO);
     const period = run.filter((l) => l.date >= q.from).reduce((t, l) => t.plus(l.credit).minus(l.debit), ZERO);
-    const decreased = ls.filter((l) => l.sourceType !== 'asset_run').reduce((t, l) => t.plus(l.credit).minus(l.debit), ZERO);
+    const decreased = ls.filter((l) => l.sourceType !== 'asset_run').reduce((t, l) => t.plus(l.credit), ZERO); // ghi giảm = phát sinh Có ngoài lần phân bổ
     return { a, first: ls.find((l) => !D(l.debit).isZero()), initial, allocated, period, decreased, cost: vals.get(a.id)?.cost ?? '0' };
   }).filter((x) => x.first);
   const remaining = await remainingUnitsOf(trx, base.map((x) => ({ id: x.a.id, isDepreciable: x.a.isDepreciable, lifeUnits: x.a.lifeUnits, openingRemainingUnits: x.a.openingRemaining, status: x.a.status, cost: x.cost })));

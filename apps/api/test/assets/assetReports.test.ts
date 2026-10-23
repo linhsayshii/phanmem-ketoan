@@ -16,8 +16,8 @@ async function tenant(regime: 'TT133' | 'TT99' | 'TT200' = 'TT133') {
   const { cookie, tenantId } = await setupLedgerTenant(ctx, `BC${Date.now()}${n++}`, regime);
   const call = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object): Promise<Res> => ctx.app.inject({ method, url, headers: { cookie }, ...(payload ? { payload } : {}) }) as unknown as Promise<Res>;
   const ok = async (r: Promise<Res>, code = 200) => { const x = await r; expect(x.statusCode, x.body).toBe(code); return x.json(); };
-  const card = async (kind: 'fixed' | 'tool' | 'prepaid', code: string, cost: string, lifeUnits: number, acct = '2111', quantity = '1') => {
-    const a = await ok(call('POST', '/api/assets', { code, name: `Tài sản ${code}`, kind, assetAccountCode: acct, ...(kind === 'fixed' ? { depreciationAccountCode: '2141' } : { quantity }), depreciationStartDate: '2026-01-01', lifeUnits }), 201);
+  const card = async (kind: 'fixed' | 'tool' | 'prepaid', code: string, cost: string, lifeUnits: number, acct = '2111', quantity = '1', more: object = {}) => {
+    const a = await ok(call('POST', '/api/assets', { code, name: `Tài sản ${code}`, kind, assetAccountCode: acct, ...(kind === 'fixed' ? { depreciationAccountCode: '2141' } : { quantity }), depreciationStartDate: '2026-01-01', lifeUnits, ...more }), 201);
     await ok(call('PUT', `/api/assets/${a.id}/allocations`, { validFromYear: 2026, validFromPeriod: 1, lines: [{ expenseAccountCode: kind === 'fixed' ? '6422' : '6273', ratio: '100' }] }));
     await ok(call('POST', '/api/vouchers', { ...pkt, lines: [{ accountCode: acct, debit: cost, credit: '0', assetCode: code }, { accountCode: '331', debit: '0', credit: cost, partyCode: 'NCC001' }] }), 201);
     return a.id as number;
@@ -27,7 +27,7 @@ async function tenant(regime: 'TT133' | 'TT99' | 'TT200' = 'TT133') {
     SELECT COALESCE(sum(l.${sql.raw(side)}), 0)::text AS s FROM voucher_line l JOIN voucher v ON v.tenant_id = l.tenant_id AND v.id = l.voucher_id
     JOIN account a ON a.tenant_id = l.tenant_id AND a.id = l.account_id
     WHERE l.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND v.posting_date <= ${to}::date AND a.code IN (${sql.join(accounts)}) AND (${onlyAsset} = false OR l.asset_id IS NOT NULL)`.execute(ctx.t.admin)).rows[0]!.s;
-  return { call, ok, card, run, sum, tenantId };
+  return { call, ok, card, run, sum, tenantId, cookie };
 }
 
 describe('sổ, thẻ, bảng và báo cáo tài sản', () => {
@@ -100,5 +100,49 @@ describe('sổ, thẻ, bảng và báo cáo tài sản', () => {
     expect(c.asset.code).toBe('TS01');
     const h = await t.call('GET', `/api/asset-reports/card/${id}?to=2026-03-31&format=html`);
     expect(h.body).toContain('Mẫu số S11-DNN');
+  });
+  it('sổ theo nơi sử dụng: điều chuyển sau kỳ → bộ phận cũ; trong kỳ → giảm ở bộ phận cũ, tăng ở bộ phận mới; trước kỳ → bộ phận mới', async () => {
+    const t = await tenant();
+    for (const code of ['PB1', 'PB2']) await t.ok(t.call('POST', '/api/catalogs/department', { code, name: `Bộ phận ${code}` }), 201);
+    const id = await t.card('fixed', 'TS01', '120000000', 60, '2111', '1', { departmentCode: 'PB1' });
+    await t.ok(t.call('POST', `/api/assets/${id}/transfer`, { date: '2026-05-10', departmentCode: 'PB2', allocations: [{ expenseAccountCode: '6422', departmentCode: 'PB2', ratio: '100' }] }));
+    const loc = async (from: string, to: string) => ((await t.ok(t.call('GET', `/api/asset-reports/by-location?from=${from}&to=${to}`))).groups as { departmentCode: string; rows: Record<string, unknown>[]; totalIncrease: string; totalDecrease: string }[]);
+    const before = await loc('2026-01-01', '2026-03-31'); // điều chuyển sau `to`
+    expect(before.map((g) => g.departmentCode)).toEqual(['PB1']);
+    expect(before[0]!.rows).toHaveLength(1);
+    const within = await loc('2026-01-01', '2026-06-30');
+    const pb1 = within.find((g) => g.departmentCode === 'PB1')!; const pb2 = within.find((g) => g.departmentCode === 'PB2')!;
+    expect(pb1.rows.find((r) => r['decReason'] === 'Điều chuyển')).toMatchObject({ decDate: '2026-05-10', decAmount: '120000000' });
+    expect(pb1.totalIncrease).toBe('120000000'); expect(pb1.totalDecrease).toBe('120000000');
+    expect(pb2.rows).toMatchObject([{ incDate: '2026-05-10', incAmount: '120000000' }]);
+    const after = await loc('2026-06-01', '2026-06-30'); // điều chuyển trước `from`
+    expect(after.map((g) => g.departmentCode)).toEqual(['PB2']);
+  });
+
+  it('CCDC giảm từng phần: SL 10, giảm 4 → dòng tăng SL 10, dòng giảm SL 4 và số tiền = giá trị phần giảm', async () => {
+    const t = await tenant('TT200');
+    const id = await t.card('tool', 'CC01', '12000000', 12, '242', '10');
+    for (const p of [1, 2, 3]) await t.run('tool', p); // còn lại 9.000.000 → giảm 4/10 = 3.600.000
+    await t.ok(t.call('POST', `/api/assets/${id}/decrease-tool`, { date: '2026-04-10', quantity: '4', counterAccountCode: '811' }));
+    const g = (await t.ok(t.call('GET', '/api/asset-reports/by-location?from=2026-01-01&to=2026-06-30'))).groups[0];
+    expect(D(g.rows[0].incQty).toString()).toBe('10');
+    expect(D(g.rows[0].decQty).toString()).toBe('4');
+    expect(g.rows[0].incAmount).toBe('12000000');
+    expect(g.rows[0].decAmount).toBe('3600000');
+    const r = await t.ok(t.call('GET', '/api/asset-reports/tool-register?kind=tool&from=2026-01-01&to=2026-06-30'));
+    expect(r.rows[0]).toMatchObject({ assetCode: 'CC01', decreased: '3600000' });
+  });
+
+  it('chỉ report.view: JSON được, html/pdf/xlsx 403', async () => {
+    const t = await tenant();
+    const roles = (await t.ok(t.call('GET', '/api/roles'))) as { id: string; code: string }[];
+    await t.ok(t.call('PUT', `/api/roles/${roles.find((x) => x.code === 'xem')!.id}/permissions`, { permissions: ['report.view'] }));
+    const username = `xa_${Date.now()}_${n++}`;
+    await t.ok(t.call('POST', '/api/users', { username, fullName: 'Chỉ xem', password: 'Matkhau1!', roleCode: 'xem' }), 201);
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+    const headers = { cookie: `sid=${login.cookies.find((c) => c.name === 'sid')!.value}` };
+    const u = '/api/asset-reports/register?kind=fixed&from=2026-01-01&to=2026-12-31';
+    expect((await ctx.app.inject({ method: 'GET', url: u, headers })).statusCode).toBe(200);
+    for (const f of ['html', 'pdf', 'xlsx']) expect((await ctx.app.inject({ method: 'GET', url: `${u}&format=${f}`, headers })).statusCode, f).toBe(403);
   });
 });

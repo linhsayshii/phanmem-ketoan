@@ -28,7 +28,7 @@ export async function locationDocs(trx: Trx, tenantId: string, regime: string, r
   const h = await head(trx, tenantId, regime, 'asset-location');
   const base = { ...h, title: 'Sổ theo dõi TSCĐ và công cụ, dụng cụ tại nơi sử dụng', subtitle: periodSubtitle(r.from, r.to), landscape: true,
     columns: [txt('incVoucherNo', 'Ghi tăng - Số hiệu chứng từ'), date('incDate', 'Ghi tăng - Ngày, tháng'), txt('name', 'Tên, nhãn hiệu, quy cách TSCĐ và công cụ, dụng cụ'), txt('uom', 'Đơn vị tính'), num('incQty', 'Số lượng', 4), num('unitPrice', 'Đơn giá'), num('incAmount', 'Số tiền'),
-      txt('decVoucherNo', 'Ghi giảm - Số hiệu chứng từ'), date('decDate', 'Ghi giảm - Ngày, tháng'), txt('decReason', 'Lý do'), num('decQty', 'Số lượng', 4), num('decAmount', 'Số tiền')] satisfies ReportColumn[] };
+      txt('decVoucherNo', 'Ghi giảm - Số hiệu chứng từ'), date('decDate', 'Ghi giảm - Ngày, tháng'), txt('decReason', 'Lý do'), num('decQty', 'Số lượng', 4), num('decAmount', 'Số tiền'), ...(regime === 'TT133' ? [txt('note', 'Ghi chú')] : [])] satisfies ReportColumn[] };
   if (!r.groups.length) return [{ ...base, sheetName: 'Nơi sử dụng', intro: ['Tên đơn vị (phòng, ban hoặc người sử dụng): (không có)'], rows: [] }];
   return r.groups.map((g) => ({ ...base, sheetName: `Nơi sử dụng ${g.departmentCode}`.trim().slice(0, 31), intro: [`Tên đơn vị (phòng, ban hoặc người sử dụng): ${g.departmentName}`], rows: g.rows, footer: { name: 'Cộng', incAmount: g.totalIncrease, decAmount: g.totalDecrease } }));
 }
@@ -39,6 +39,7 @@ export async function cardDoc(trx: Trx, tenantId: string, regime: string, c: Awa
   const rows: Row[] = Array.from({ length: n }, (_, i) => ({ ...(c.costLines[i] ?? {}), ...(c.wear[i] ?? {}) }));
   const intro = [`Số: ${a.cardNo ?? a.code}    Mã tài sản: ${a.code}`, `Tên, ký mã hiệu, quy cách (cấp hạng) TSCĐ: ${[a.name, a.spec].filter(Boolean).join(', ')}`,
     `Nước sản xuất (xây dựng): ${a.country ?? ''}    Năm sản xuất: ${a.yearMade ?? ''}`, `Bộ phận quản lý, sử dụng: ${a.departmentName ?? ''}    Ngày đưa vào sử dụng: ${a.useDate ? vn(a.useDate) : ''}`,
+    'Công suất (diện tích thiết kế): ', 'Căn cứ lập thẻ (biên bản giao nhận TSCĐ số ... ngày ...): ',
     c.suspended ? `Đình chỉ sử dụng TSCĐ ngày ${vn(c.suspended.date)}. Lý do đình chỉ: ${c.suspended.reason}` : 'Đình chỉ sử dụng TSCĐ: không'];
   return { ...h, title: 'Thẻ tài sản cố định', subtitle: `Tính đến ngày ${vn(c.to)}`, sheetName: `Thẻ ${a.code}`.slice(0, 31), intro,
     outro: ['Dụng cụ phụ tùng kèm theo: (không có)', c.decrease ? `Ghi giảm TSCĐ chứng từ số ${c.decrease.voucherNo ?? ''} ngày ${vn(c.decrease.date)}. Lý do giảm: ${c.decrease.reason}` : 'Ghi giảm TSCĐ: chưa có'],
