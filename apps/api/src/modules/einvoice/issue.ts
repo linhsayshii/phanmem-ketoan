@@ -3,7 +3,7 @@ import { withTenant, type Database, type TenantCtx } from '@kt/db';
 import { todayVn } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { buildEInvoiceDoc } from './doc.js';
-import { providerFor, ProviderError, withProviderCtx, type EInvoiceDoc, type EInvoiceProvider, type IssueResult, type OriginalRef, type ProviderRow } from './providers/index.js';
+import { makeProviderCtx, providerFor, ProviderError, RETRY_GUARD_SEC, withProviderCtx, type EInvoiceDoc, type EInvoiceProvider, type IssueResult, type OriginalRef, type ProviderRow } from './providers/index.js';
 
 // Phát hành hóa đơn điện tử hai pha (quy ước 3): pha 1 giao dịch đặt `sending` + lưu payload; pha 2 gọi nhà cung cấp ngoài giao dịch (withProviderCtx);
 // pha 3 giao dịch ghi kết quả. Lỗi mạng giữ `sending`; thử lại/worker tra theo transaction_uuid trước khi gửi lại cùng uuid, cùng payload.
@@ -50,7 +50,8 @@ async function prepare(trx: Trx, ctx: EInvoiceCtx, voucherId: string, issueDateI
   if (live && live.status !== 'draft') throw new AppError('EINVOICE_EXISTS', live.status === 'sending' ? 'Hóa đơn điện tử của chứng từ đang được gửi: dùng "Thử lại" hoặc chờ đối soát' : `Chứng từ đã có hóa đơn điện tử${live.invoice_no ? ` số ${live.invoice_no}` : ''}`, 409);
   const vi = await trx.selectFrom('voucher_invoice').select('einvoice_series_id').where('voucher_id', '=', voucherId).where('einvoice_pending', '=', true).where('einvoice_series_id', 'is not', null).executeTakeFirst();
   if (!vi) throw new AppError('EINVOICE_NOT_PENDING', 'Chứng từ không chọn ký hiệu hóa đơn điện tử (hoặc đã có số hóa đơn)', 409);
-  const series = await trx.selectFrom('einvoice_series').select(['id', 'provider_id', 'year']).where('id', '=', vi.einvoice_series_id!).executeTakeFirstOrThrow();
+  const series = await trx.selectFrom('einvoice_series').select(['id', 'provider_id', 'year', 'serial', 'is_active']).where('id', '=', vi.einvoice_series_id!).executeTakeFirstOrThrow();
+  if (!series.is_active) throw new AppError('SERIES_INACTIVE', `Ký hiệu hóa đơn ${series.serial} đã ngừng sử dụng: bật lại ký hiệu trong cấu hình hóa đơn điện tử hoặc lập lại chứng từ với ký hiệu khác`, 400);
   const provider = await providerRow(trx, series.provider_id);
   factory(provider); // nhà cung cấp chưa hỗ trợ: báo ngay, trước khi đặt `sending`
 
@@ -87,10 +88,14 @@ async function send(db: Db, ctx: EInvoiceCtx, p: Omit<Prepared, 'warnings'>, fac
 
 // Pha 3. Khóa dòng và chỉ ghi khi còn `sending`: hai lần kết thúc song song (người dùng thử lại + worker) thì một bên thắng, bên kia không làm gì.
 export async function finalizeIssue(db: Db, ctx: EInvoiceCtx, einvoiceId: number, outcome: Outcome): Promise<EInvoiceDto> {
-  return withTenant(db, tctx(ctx), async (trx) => {
-    const e = await trx.selectFrom('einvoice').select(['id', 'status', 'voucher_id', 'series_id']).where('id', '=', einvoiceId).forUpdate().executeTakeFirst();
+  const r = await withTenant(db, tctx(ctx), async (trx): Promise<{ dto: EInvoiceDto } | { orphan: { providerId: number; status: string } }> => {
+    const e = await trx.selectFrom('einvoice').select(['id', 'status', 'voucher_id', 'series_id', 'provider_id', 'invoice_no']).where('id', '=', einvoiceId).forUpdate().executeTakeFirst();
     if (!e) throw notFound();
-    if (e.status !== 'sending') return loadDto(trx, e.id);
+    if (e.status !== 'sending') {
+      // Bên kia đã ghi đúng số này: không làm gì. Nhà cung cấp cấp số cho hàng đã chốt khác (lỗi, đã bỏ…): hóa đơn mồ côi, phải báo.
+      if (outcome.kind !== 'ok' || (e.status === 'issued' && e.invoice_no === outcome.result.invoiceNo)) return { dto: await loadDto(trx, e.id) };
+      return { orphan: { providerId: e.provider_id, status: e.status } };
+    }
     const attempt = { attempts: sql<number>`attempts + 1`, last_attempt_at: sql<string>`now()` };
     if (outcome.kind === 'ok') {
       const r = outcome.result;
@@ -103,8 +108,15 @@ export async function finalizeIssue(db: Db, ctx: EInvoiceCtx, einvoiceId: number
     } else {
       await trx.updateTable('einvoice').set({ ...attempt, error_code: 'PENDING', error_message: outcome.message }).where('id', '=', e.id).execute();
     }
-    return loadDto(trx, e.id);
+    return { dto: await loadDto(trx, e.id) };
   });
+  if ('dto' in r) return r.dto;
+  // Nhật ký ở giao dịch riêng (lỗi ném ra không cuốn theo), rồi báo cho người gọi: cần hủy hóa đơn ở nhà cung cấp hoặc xử lý tay.
+  const res = (outcome as Extract<Outcome, { kind: 'ok' }>).result;
+  const msg = `Nhà cung cấp đã cấp hóa đơn số ${res.invoiceNo} ngày ${res.issueDate} nhưng hóa đơn điện tử trong phần mềm đã ở trạng thái ${r.orphan.status}: kiểm tra và hủy hóa đơn này ở nhà cung cấp`;
+  await withTenant(db, tctx(ctx), (trx) => makeProviderCtx(trx, { tenantId: ctx.tenantId, providerId: r.orphan.providerId, einvoiceId, userId: ctx.userId ?? null })
+    .log({ action: 'orphan_issued', request: null, response: res, httpStatus: null, ok: false, error: msg, ms: 0 }));
+  throw new AppError('EINVOICE_ORPHAN_ISSUED', msg, 409);
 }
 
 export async function issueEInvoice(db: Db, ctx: EInvoiceCtx, voucherId: string, opts: { issueDate?: string | undefined }, factory: ProviderFactory = providerFor): Promise<EInvoiceDto> {
@@ -116,9 +128,11 @@ export async function issueEInvoice(db: Db, ctx: EInvoiceCtx, voucherId: string,
 // Thử lại hàng `sending` với đúng payload đã lưu (không dựng lại từ chứng từ): cùng uuid, cùng nội dung.
 export async function retryEInvoice(db: Db, ctx: EInvoiceCtx, id: number, factory: ProviderFactory = providerFor): Promise<EInvoiceDto> {
   const p = await withTenant(db, tctx(ctx), async (trx) => {
-    const e = await trx.selectFrom('einvoice').select(['id', 'status', 'payload', 'provider_id']).where('id', '=', id).forUpdate().executeTakeFirst();
+    const e = await trx.selectFrom('einvoice').select(['id', 'status', 'payload', 'provider_id',
+      sql<boolean>`coalesce(last_attempt_at > now() - make_interval(secs => ${RETRY_GUARD_SEC}::int), false)`.as('recent')]).where('id', '=', id).forUpdate().executeTakeFirst();
     if (!e) throw notFound();
     if (e.status !== 'sending' || !e.payload) throw new AppError('EINVOICE_NOT_SENDING', 'Chỉ thử lại hóa đơn điện tử đang gửi (chưa nhận được kết quả)', 409);
+    if (e.recent) throw new AppError('EINVOICE_BUSY', `Hóa đơn điện tử đang được gửi tới nhà cung cấp: thử lại sau ${RETRY_GUARD_SEC} giây kể từ lần gửi trước`, 409);
     await trx.updateTable('einvoice').set({ last_attempt_at: sql<string>`now()` }).where('id', '=', id).execute(); // worker không nhặt lại lần thử đang chạy
     return { id: e.id, doc: e.payload as EInvoiceDoc, provider: await providerRow(trx, e.provider_id) };
   });

@@ -25,6 +25,12 @@ export interface IssueResult { invoiceNo: string; issueDate: string; cqtCode: st
 // Thông báo hóa đơn điện tử có sai sót (Task 8 bổ sung trường nếu nhà cung cấp cần).
 export interface ErrorNoticeDoc { original: OriginalRef; kind: 'cancel' | 'adjust' | 'replace' | 'explain'; reason: string; noticeDate: string }
 
+// Thời gian chờ tối đa một lời gọi nhà cung cấp (SInvoice 60 giây theo tài liệu): adapter thật đặt timeout bằng hằng này.
+export const PROVIDER_TIMEOUT_SEC = 60;
+// Một lần thử lại gồm tối đa hai lời gọi (findByTransaction + create) và hai giao dịch ngắn: trong khoảng này kể từ lần gửi trước,
+// thử lại bị chặn (EINVOICE_BUSY) và worker không nhặt hàng, để hai lần gửi không chồng nhau.
+export const RETRY_GUARD_SEC = 2 * PROVIDER_TIMEOUT_SEC + 30;
+
 export class ProviderError extends Error {
   constructor(public code: string, message: string, public retriable: boolean) { super(message); }
 }

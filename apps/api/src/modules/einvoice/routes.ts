@@ -4,11 +4,11 @@ import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
 import { makeProviderCtx, providerFor } from './providers/index.js';
+import { dateIso as isoDate } from '../master/catalogs.js';
 import { deleteProvider, deleteSeries, listProviders, listSeries, providerInput, saveProvider, saveSeries, seriesInput } from './config.js';
 import { discardFailed, einvoiceDto, einvoiceFile, einvoiceQuery, issueEInvoice, refreshEInvoice, retryEInvoice } from './issue.js';
 
 const numId = z.object({ id: z.coerce.number().int().positive() });
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const listQuery = z.object({ status: z.enum(['draft', 'sending', 'issued', 'failed', 'replaced', 'cancelled']).optional(), from: isoDate.optional(), to: isoDate.optional(), q: z.string().trim().max(100).optional() });
 
 // Cấu hình nhà cung cấp hóa đơn điện tử và dải ký hiệu.

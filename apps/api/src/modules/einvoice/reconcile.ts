@@ -1,14 +1,19 @@
 import { sql, type Kysely } from 'kysely';
 import { withTenant, type Database } from '@kt/db';
+import { AppError } from '../../plugins/errors.js';
 import { providerFor } from './providers/index.js';
+
+export { RETRY_GUARD_SEC } from './providers/index.js';
 import { refreshEInvoice, retryEInvoice, type ProviderFactory } from './issue.js';
 
 // Đối soát nền (worker): hàng `sending` lâu không có kết quả thì thử lại theo transaction_uuid; hóa đơn ký hiệu C chờ mã thì tra mã của cơ quan thuế.
 // Danh sách công ty lấy qua hàm SECURITY DEFINER (chỉ tenant_id), mọi thao tác sau đó chạy dưới RLS của từng công ty.
-// Một hóa đơn lỗi không chặn các hóa đơn khác: lỗi được đếm vào `errors`, lần chạy sau thử lại.
+// Một hóa đơn lỗi không chặn các hóa đơn khác: lỗi được đếm vào `errors` và kê chi tiết (tối đa MAX_ERROR_DETAILS) cho worker ghi log; lần chạy sau thử lại.
+const MAX_ERROR_DETAILS = 50;
+export interface ReconcileError { tenantId: string; einvoiceId: number; code: string | null; message: string }
 export async function reconcilePending(db: Kysely<Database>, providerFactory: ProviderFactory = providerFor, opts: { olderThanSec: number; limit: number }):
-  Promise<{ checked: number; issued: number; failed: number; errors: number }> {
-  const out = { checked: 0, issued: 0, failed: 0, errors: 0 };
+  Promise<{ checked: number; issued: number; failed: number; errors: number; errorDetails: ReconcileError[] }> {
+  const out = { checked: 0, issued: 0, failed: 0, errors: 0, errorDetails: [] as ReconcileError[] };
   const tenants = (await sql<{ tenant_id: string }>`SELECT tenant_id FROM fn_einvoice_pending_tenants(${opts.olderThanSec}::int)`.execute(db)).rows;
   for (const { tenant_id: tenantId } of tenants) {
     if (out.checked >= opts.limit) break;
@@ -24,8 +29,9 @@ export async function reconcilePending(db: Kysely<Database>, providerFactory: Pr
           if (dto.status === 'issued') out.issued++;
           else if (dto.status === 'failed') out.failed++;
         } else await refreshEInvoice(db, { tenantId }, r.id, providerFactory);
-      } catch {
+      } catch (e) {
         out.errors++;
+        if (out.errorDetails.length < MAX_ERROR_DETAILS) out.errorDetails.push({ tenantId, einvoiceId: r.id, code: e instanceof AppError ? e.code : null, message: e instanceof Error ? e.message : String(e) });
       }
     }
   }

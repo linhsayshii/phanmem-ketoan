@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { sql } from 'kysely';
 import { createTestApp, type TestApp } from '../helpers.js';
 import { setupLedgerTenant } from '../invariants/helpers.js';
-import { retryEInvoice } from '../../src/modules/einvoice/issue.js';
+import { finalizeIssue, retryEInvoice } from '../../src/modules/einvoice/issue.js';
 import { reconcilePending } from '../../src/modules/einvoice/reconcile.js';
-import { providerFor, type EInvoiceProvider, type ProviderRow } from '../../src/modules/einvoice/providers/index.js';
+import { providerFor, RETRY_GUARD_SEC, type EInvoiceProvider, type ProviderRow } from '../../src/modules/einvoice/providers/index.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 let ctx: TestApp; let n = 0;
@@ -31,8 +31,10 @@ async function tenant() {
   const issue = (voucherId: string, issueDate = '2026-03-10') => call('POST', '/api/einvoices', { voucherId, issueDate });
   const row = async (id: number) => (await sql<{ status: string; transaction_uuid: string; attempts: number; invoice_no: string | null; xml: string | null; discarded_at: string | null; cqt_status: string }>`
     SELECT status, transaction_uuid::text, attempts, invoice_no, xml, discarded_at::text, cqt_status FROM einvoice WHERE id = ${id}`.execute(admin)).rows[0]!;
+  // lần gửi trước đã quá khoảng chặn thử lại chồng (RETRY_GUARD_SEC)
+  const age = (id: number) => sql`UPDATE einvoice SET last_attempt_at = now() - make_interval(secs => ${RETRY_GUARD_SEC + 10}) WHERE id = ${id}`.execute(admin);
   const store = async () => (await sql<{ n: number }>`SELECT count(*)::int AS n FROM einvoice_fake_store WHERE tenant_id = ${tenantId}::uuid`.execute(admin)).rows[0]!.n;
-  return { cookie, tenantId, userId, admin, call, providerId, seriesId, mode, sale, issue, row, store };
+  return { cookie, tenantId, userId, admin, call, providerId, seriesId, mode, sale, issue, row, age, store };
 }
 
 // Bọc nhà cung cấp để đếm lời gọi.
@@ -108,6 +110,11 @@ describe('phát hành hóa đơn điện tử', () => {
     expect(err(await t.call('POST', `/api/vouchers/${v.id}/unpost`))).toEqual([409, 'EINVOICE_ISSUED']); // đang gửi cũng khóa
     expect(err(await t.issue(v.id))).toEqual([409, 'EINVOICE_EXISTS']);
     await t.mode({});
+    // vừa gửi xong: thử lại ngay bị chặn (lần gửi trước có thể còn đang chạy)
+    const busy = await t.call('POST', `/api/einvoices/${e.id}/retry`);
+    expect(err(busy)).toEqual([409, 'EINVOICE_BUSY']);
+    expect(busy.json().error.message).toContain('đang được gửi');
+    await t.age(e.id);
     const { calls, factory } = counting();
     const done = await retryEInvoice(ctx.t.db, { tenantId: t.tenantId, userId: t.userId }, e.id, factory);
     expect(calls).toEqual({ create: 0, findByTransaction: 1 });
@@ -125,6 +132,7 @@ describe('phát hành hóa đơn điện tử', () => {
     expect(await t.store()).toBe(0);
     await sql`UPDATE einvoice SET payload = jsonb_set(payload, '{issueDate}', '"2026-03-11"') WHERE id = ${e.id}`.execute(t.admin); // payload lưu là thứ được gửi lại
     await t.mode({});
+    await t.age(e.id);
     const { calls, factory } = counting();
     const done = await retryEInvoice(ctx.t.db, { tenantId: t.tenantId, userId: t.userId }, e.id, factory);
     expect(calls).toEqual({ create: 1, findByTransaction: 1 });
@@ -180,14 +188,14 @@ describe('phát hành hóa đơn điện tử', () => {
     expect(err(await t.call('POST', `/api/einvoices/${c.id}/discard`))).toEqual([409, 'EINVOICE_NOT_FAILED']);
   });
 
-  it('reconcilePending với hai công ty: chỉ đụng hàng sending cũ hơn 120 giây, mỗi công ty dưới RLS của nó', async () => {
+  it('reconcilePending với hai công ty: chỉ đụng hàng sending cũ hơn ngưỡng, mỗi công ty dưới RLS của nó', async () => {
     const a = await tenant(); const b = await tenant();
     await a.mode({ mode: 'timeout_after_create' }); await b.mode({ mode: 'timeout_after_create' });
     const aOld = (await a.issue((await a.sale()).id)).json(); const aNew = (await a.issue((await a.sale()).id)).json(); const bOld = (await b.issue((await b.sale()).id)).json();
     expect([aOld.status, aNew.status, bOld.status]).toEqual(['sending', 'sending', 'sending']);
     await a.mode({}); await b.mode({});
-    await sql`UPDATE einvoice SET last_attempt_at = now() - interval '5 minutes' WHERE id IN (${aOld.id}, ${bOld.id})`.execute(ctx.t.admin);
-    const r = await reconcilePending(ctx.t.db, providerFor, { olderThanSec: 120, limit: 1000 });
+    await a.age(aOld.id); await b.age(bOld.id);
+    const r = await reconcilePending(ctx.t.db, providerFor, { olderThanSec: RETRY_GUARD_SEC, limit: 1000 });
     expect(r.issued).toBeGreaterThanOrEqual(2);
     expect(await a.row(aOld.id)).toMatchObject({ status: 'issued', invoice_no: '0000001', attempts: 2 });
     expect(await a.row(aNew.id)).toMatchObject({ status: 'sending', invoice_no: null, attempts: 1 });
@@ -247,5 +255,43 @@ describe('phát hành hóa đơn điện tử', () => {
     const f = (await t.issue((await t.sale()).id)).json();
     expect(err(await t.call('GET', `/api/einvoices/${f.id}/file?kind=pdf`))).toEqual([409, 'EINVOICE_NOT_ISSUED']);
     expect(err(await t.call('GET', '/api/einvoices/999999'))).toEqual([404, 'EINVOICE_NOT_FOUND']);
+  });
+  it('reconcilePending: lỗi khi thử lại một hóa đơn được trả về kèm công ty, mã hóa đơn, thông báo', async () => {
+    const t = await tenant();
+    await t.mode({ mode: 'timeout_before' });
+    const e = (await t.issue((await t.sale()).id)).json();
+    await t.age(e.id);
+    const broken = (): EInvoiceProvider => { throw new Error('Adapter hỏng'); };
+    const r = await reconcilePending(ctx.t.db, broken, { olderThanSec: RETRY_GUARD_SEC, limit: 1000 });
+    expect(r.errors).toBeGreaterThanOrEqual(1);
+    expect(r.errorDetails).toContainEqual({ tenantId: t.tenantId, einvoiceId: e.id, code: null, message: 'Adapter hỏng' });
+  });
+
+  it('pha 3 nhận số cho hàng không còn sending: ghi einvoice_log orphan_issued rồi báo 409; cùng số trên hàng issued thì bỏ qua', async () => {
+    const t = await tenant();
+    await t.mode({ mode: 'reject' });
+    const f = (await t.issue((await t.sale()).id)).json();
+    expect(f.status).toBe('failed');
+    const ok = { kind: 'ok' as const, result: { invoiceNo: '0000099', issueDate: '2026-03-10', cqtCode: null, cqtStatus: 'none' as const, providerRef: { x: 1 } } };
+    await expect(finalizeIssue(ctx.t.db, { tenantId: t.tenantId, userId: t.userId }, f.id, ok)).rejects.toMatchObject({ code: 'EINVOICE_ORPHAN_ISSUED', status: 409 });
+    const logs = (await sql<{ action: string; ok: boolean; response: { invoiceNo: string } }>`SELECT action, ok, response FROM einvoice_log WHERE einvoice_id = ${f.id} AND action = 'orphan_issued'`.execute(t.admin)).rows;
+    expect(logs).toMatchObject([{ action: 'orphan_issued', ok: false, response: { invoiceNo: '0000099', providerRef: { x: 1 } } }]);
+    expect((await t.row(f.id)).status).toBe('failed');
+    await t.mode({});
+    const i = (await t.issue((await t.sale()).id)).json();
+    const same = { kind: 'ok' as const, result: { ...ok.result, invoiceNo: i.invoiceNo } };
+    expect(await finalizeIssue(ctx.t.db, { tenantId: t.tenantId, userId: t.userId }, i.id, same)).toMatchObject({ status: 'issued', invoiceNo: i.invoiceNo });
+  });
+
+  it('ngày không hợp lệ → 400 VALIDATION (không 500); ký hiệu ngừng dùng → 400 SERIES_INACTIVE', async () => {
+    const t = await tenant();
+    const v = await t.sale();
+    expect(err(await t.issue(v.id, '2026-13-45'))).toEqual([400, 'VALIDATION']);
+    expect(err(await t.issue(v.id, '2026-02-30'))).toEqual([400, 'VALIDATION']);
+    expect(err(await t.call('GET', '/api/einvoices?from=2026-02-30'))).toEqual([400, 'VALIDATION']);
+    await sql`UPDATE einvoice_series SET is_active = false WHERE id = ${t.seriesId}`.execute(t.admin);
+    const r = await t.issue(v.id);
+    expect(err(r)).toEqual([400, 'SERIES_INACTIVE']);
+    expect(r.json().error.message).toContain('ngừng sử dụng');
   });
 });

@@ -18,19 +18,23 @@ async function sending(tenantId: string, providerId: number, seriesId: number, a
 }
 
 describe('job đối soát hóa đơn điện tử', () => {
-  it('chỉ thử lại hàng sending quá 120 giây, chạy dưới RLS từng công ty; lỗi nghiệp vụ → failed', async () => {
+  it('chỉ thử lại hàng sending quá ngưỡng chặn thử lại chồng (150 giây), chạy dưới RLS từng công ty; lỗi nghiệp vụ → failed', async () => {
     const tenantId = await createTestTenant(t.admin, { code: `WE${Date.now()}`, name: 'Worker HĐĐT' });
     await sql`INSERT INTO fiscal_period(tenant_id, fiscal_year, period_no, date_from, date_to, regime) VALUES (${tenantId}::uuid, 2026, 3, '2026-03-01', '2026-03-31', 'TT133')`.execute(t.admin);
     const providerId = (await sql<{ id: number }>`INSERT INTO einvoice_provider (tenant_id, code, name, options) VALUES (${tenantId}::uuid, 'fake', 'Giả lập', '{"mode":"reject"}') RETURNING id::int`.execute(t.admin)).rows[0]!.id;
     const seriesId = (await sql<{ id: number }>`INSERT INTO einvoice_series (tenant_id, provider_id, form_no, serial, year) VALUES (${tenantId}::uuid, ${providerId}, '1', 'C26TAA', 2026) RETURNING id::int`.execute(t.admin)).rows[0]!.id;
     const old = await sending(tenantId, providerId, seriesId, 300);
-    const fresh = await sending(tenantId, providerId, seriesId, 10);
+    const fresh = await sending(tenantId, providerId, seriesId, 130); // cũ hơn 120 giây nhưng chưa quá 150: lần gửi có thể còn chạy
 
-    expect(await runEInvoiceReconcile(t.db)).toEqual({ checked: 1, issued: 0, failed: 1, errors: 0 });
+    expect(await runEInvoiceReconcile(t.db)).toEqual({ checked: 1, issued: 0, failed: 1, errors: 0, errorDetails: [] });
     const rows = (await sql<{ id: number; status: string; error_code: string | null }>`SELECT id::int, status, error_code FROM einvoice WHERE tenant_id = ${tenantId}::uuid ORDER BY id`.execute(t.admin)).rows;
     expect(rows).toEqual([{ id: old, status: 'failed', error_code: 'FAKE_REJECT' }, { id: fresh, status: 'sending', error_code: null }]);
     // nhật ký gọi nhà cung cấp ghi dưới công ty của hóa đơn
     expect((await sql`SELECT 1 FROM einvoice_log WHERE tenant_id = ${tenantId}::uuid AND einvoice_id = ${old} AND action = 'create'`.execute(t.admin)).rows).toHaveLength(1);
-    expect(await runEInvoiceReconcile(t.db)).toEqual({ checked: 0, issued: 0, failed: 0, errors: 0 });
+    // hàm SECURITY DEFINER chỉ cấp cho app_user, không cho PUBLIC
+    const acl = (await sql<{ acl: string }>`SELECT proacl::text AS acl FROM pg_proc WHERE proname = 'fn_einvoice_pending_tenants'`.execute(t.admin)).rows[0]!.acl;
+    expect(acl).toContain('app_user=X/');
+    expect(acl).not.toMatch(/[{,]=X\//);
+    expect(await runEInvoiceReconcile(t.db)).toEqual({ checked: 0, issued: 0, failed: 0, errors: 0, errorDetails: [] });
   });
 });

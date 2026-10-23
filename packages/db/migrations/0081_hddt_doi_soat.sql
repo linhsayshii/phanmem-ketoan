@@ -12,3 +12,5 @@ CREATE FUNCTION fn_einvoice_pending_tenants(p_older_than_sec int) RETURNS TABLE 
   SELECT DISTINCT e.tenant_id FROM einvoice e
    WHERE (e.status = 'sending' OR (e.status = 'issued' AND e.cqt_status = 'waiting'))
      AND coalesce(e.last_attempt_at, e.created_at) < now() - make_interval(secs => p_older_than_sec) $$;
+REVOKE ALL ON FUNCTION fn_einvoice_pending_tenants(int) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_einvoice_pending_tenants(int) TO app_user;
