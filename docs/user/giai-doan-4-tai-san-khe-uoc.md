@@ -209,16 +209,18 @@ Nhập Excel: bấm "Tải mẫu Excel", điền sheet "Du_lieu", bấm "Nhập 
 Menu: Sổ cái > Quy trình cuối kỳ. Quyền xem: "period_close.view". Chọn Năm tài chính và Kỳ (Tháng N).
 
 Thứ tự cố định các bước:
-1. Phân bổ công cụ dụng cụ ("asset.run")
-2. Phân bổ chi phí trả trước ("asset.run")
-3. Khấu hao TSCĐ ("asset.run")
-4. Lãi vay ("loan.run")
-5. Phân bổ doanh thu nhận trước ("amortization.run")
-6. Tính giá vốn ("costing.run")
+1. Tính giá vốn ("costing.run")
+2. Phân bổ công cụ dụng cụ ("asset.run")
+3. Phân bổ chi phí trả trước ("asset.run")
+4. Khấu hao TSCĐ ("asset.run")
+5. Lãi vay ("loan.run")
+6. Phân bổ doanh thu nhận trước ("amortization.run")
 7. Tỷ giá xuất quỹ ("fx.run")
 8. Đánh giá lại ngoại tệ ("fx.run"), bước tùy chọn
 9. Khấu trừ thuế GTGT ("tax.offset")
 10. Kết chuyển ("closing.run")
+
+Tính giá vốn đứng đầu vì TSCĐ, CCDC xuất từ kho trong kỳ (Phiếu xuất kho có mã tài sản) nhận nguyên giá theo giá vốn; khấu hao, phân bổ chạy sau nên không phải chạy lại.
 
 Mỗi dòng có Thứ tự, Bước, Trạng thái, Lần chạy cuối (ngày giờ, người), Chứng từ (liên kết) và nút "Chạy" hoặc "Chạy lại".
 

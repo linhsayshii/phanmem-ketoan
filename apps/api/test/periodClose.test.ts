@@ -30,18 +30,18 @@ async function tenant(regime: 'TT133' | 'TT99' = 'TT133') {
 }
 
 describe('quy trình cuối kỳ có thứ tự', () => {
-  it('kỳ mới: nextStep = tool; chạy tool, prepaid, depreciation → ba bước done', async () => {
+  it('kỳ mới: nextStep = costing (giá vốn đứng đầu); chạy tool, prepaid, depreciation → ba bước done', async () => {
     const t = await tenant(); await t.asset();
-    const s0 = await t.status(); expect(s0.nextStep).toBe('tool');
-    expect(s0.steps.map((s) => s.key)).toEqual(['tool', 'prepaid', 'depreciation', 'loan_interest', 'amortization', 'costing', 'fx_outflow', 'fx_revaluation', 'vat_offset', 'closing']);
+    const s0 = await t.status(); expect(s0.nextStep).toBe('costing');
+    expect(s0.steps.map((s) => s.key)).toEqual(['costing', 'tool', 'prepaid', 'depreciation', 'loan_interest', 'amortization', 'fx_outflow', 'fx_revaluation', 'vat_offset', 'closing']);
     for (const k of ['tool', 'prepaid', 'depreciation']) { const r = await t.run(k); expect(r.statusCode, r.body).toBe(200); }
     const s1 = await t.status();
-    expect(s1.steps.slice(0, 3).map((s) => s.status)).toEqual(['done', 'done', 'done']);
-    expect(s1.nextStep).toBe('loan_interest');
-    const dep = (await t.status()).steps[2]!;
+    expect(s1.steps.slice(1, 4).map((s) => s.status)).toEqual(['done', 'done', 'done']);
+    expect(s1.nextStep).toBe('costing');
+    const dep = (await t.status()).steps[3]!;
     expect(dep.lastRunAt).not.toBeNull();
     const r = (await t.run('depreciation')).json();
-    expect(r.steps[2].vouchers).toHaveLength(1); // chứng từ khấu hao để mở từ màn hình
+    expect(r.steps[3].vouchers).toHaveLength(1); // chứng từ khấu hao để mở từ màn hình
   });
 
   it('chạy lại tool sau depreciation → depreciation có status rerun, reason nêu bước trước chạy sau', async () => {
@@ -55,7 +55,7 @@ describe('quy trình cuối kỳ có thứ tự', () => {
     const dep = t.step(r, 'depreciation');
     expect(dep.status).toBe('rerun'); expect(dep.reason).toContain('Phân bổ công cụ dụng cụ');
     expect(t.step(r, 'tool').status).toBe('done');
-    expect(r.json().nextStep).toBe('prepaid');
+    expect(r.json().nextStep).toBe('costing');
   });
 
   it('ghi lùi chứng từ Nợ 2111 tài sản vào kỳ sau khi khấu hao → depreciation rerun', async () => {
@@ -64,7 +64,7 @@ describe('quy trình cuối kỳ có thứ tự', () => {
     await t.ok(t.call('POST', '/api/asset-runs', { kind: 'depreciation', fiscalYear: 2026, periodNo: 1 }));
     expect(t.step(await (async () => ({ steps: (await t.status()).steps }))(), 'depreciation').status).toBe('done');
     await t.pkt('2026-01-20', [{ accountCode: '2111', debit: '60000000', credit: '0', assetCode: 'TS01' }, { accountCode: '331', debit: '0', credit: '60000000', partyCode: 'NCC001' }]);
-    const dep = (await t.status()).steps[2]!;
+    const dep = (await t.status()).steps[3]!;
     expect(dep.status).toBe('rerun'); expect(dep.reason).toContain('Số liệu tài sản');
   });
 
@@ -102,7 +102,7 @@ describe('quy trình cuối kỳ có thứ tự', () => {
     for (const k of ['tool', 'prepaid', 'depreciation']) await t.run(k);
     const r = await t.run('tool'); expect(r.statusCode, r.body).toBe(200);
     expect(t.step(r, 'depreciation').status).toBe('done'); expect(t.step(r, 'prepaid').status).toBe('done');
-    expect(r.json().nextStep).toBe('loan_interest');
+    expect(r.json().nextStep).toBe('costing');
   });
 
   it('giá vốn: nhập ghi lùi sau khi tính → costing rerun (stock_cost_state.stale_from)', async () => {
@@ -115,7 +115,7 @@ describe('quy trình cuối kỳ có thứ tự', () => {
     const r = await t.run('costing'); expect(r.statusCode, r.body).toBe(200);
     expect(t.step(r, 'costing').status).toBe('done');
     await pnk('2026-01-05');
-    const c = (await t.status()).steps[5]!;
+    const c = (await t.status()).steps[0]!;
     expect(c.status).toBe('rerun'); expect(c.reason).toContain('giá vốn');
   });
 
@@ -124,11 +124,11 @@ describe('quy trình cuối kỳ có thứ tự', () => {
     await t.logRaw('costing', true, { voucherIds: [], unchanged: false });
     expect((await t.run('fx_outflow')).statusCode).toBe(200);
     let st = await t.status();
-    expect(st.steps[5]).toMatchObject({ status: 'done', failed: false }); expect(st.steps[6]!.status).toBe('done');
+    expect(st.steps[0]).toMatchObject({ status: 'done', failed: false }); expect(st.steps[6]!.status).toBe('done');
     await t.logRaw('costing', false, { voucherIds: [], unchanged: false, errors: 2 }); // lỗi sau lần thành công, có thể đã ghi một phần
     st = await t.status();
-    expect(st.steps[5]).toMatchObject({ status: 'rerun', failed: true }); expect(st.steps[5]!.reason).toContain('lỗi (2 mục)');
-    expect(st.steps[6]).toMatchObject({ status: 'rerun' }); expect(st.nextStep).toBe('tool'); // bước đầu chưa chạy
+    expect(st.steps[0]).toMatchObject({ status: 'rerun', failed: true }); expect(st.steps[0]!.reason).toContain('lỗi (2 mục)');
+    expect(st.steps[6]).toMatchObject({ status: 'rerun' }); expect(st.nextStep).toBe('costing'); // bước đầu (giá vốn) lỗi nên chưa xong
     // lỗi không đổi gì (unchanged) thì bước sau giữ nguyên
     const u = await tenant();
     await u.logRaw('costing', true, { voucherIds: [] }); await u.run('fx_outflow');
@@ -145,6 +145,6 @@ describe('quy trình cuối kỳ có thứ tự', () => {
     const r = await t.run('loan_interest'); expect(r.statusCode, r.body).toBe(200);
     expect(t.step(r, 'loan_interest').status).toBe('done');
     await t.ok(t.call('POST', `/api/loans/${loan.id}/disburse`, { date: '2026-01-25', amount: '100000000', bankAccountNo: '0011001' }), 201);
-    expect((await t.status()).steps[3]!).toMatchObject({ key: 'loan_interest', status: 'rerun' });
+    expect((await t.status()).steps[4]!).toMatchObject({ key: 'loan_interest', status: 'rerun' });
   });
 });

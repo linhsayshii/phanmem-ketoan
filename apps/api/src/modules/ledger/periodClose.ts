@@ -6,13 +6,14 @@ import { loanInterestStale } from '../loans/interest.js';
 
 // Quy trình cuối kỳ: thứ tự cố định; trạng thái từng bước suy ra từ nhật ký period_close_log (mỗi lần chạy thành công một dòng).
 type Trx = Transaction<Database>;
+// Giá vốn đứng đầu: tài sản, CCDC xuất từ kho trong kỳ nhận giá vốn từ bước này, nên khấu hao, phân bổ chạy sau không phải chạy lại mỗi tháng.
 export const CLOSE_STEPS = [
+  { key: 'costing', name: 'Tính giá vốn', permission: 'costing.run' },
   { key: 'tool', name: 'Phân bổ công cụ dụng cụ', permission: 'asset.run' },
   { key: 'prepaid', name: 'Phân bổ chi phí trả trước', permission: 'asset.run' },
   { key: 'depreciation', name: 'Khấu hao TSCĐ', permission: 'asset.run' },
   { key: 'loan_interest', name: 'Lãi vay', permission: 'loan.run' },
   { key: 'amortization', name: 'Phân bổ doanh thu nhận trước', permission: 'amortization.run' },
-  { key: 'costing', name: 'Tính giá vốn', permission: 'costing.run' },
   { key: 'fx_outflow', name: 'Tỷ giá xuất quỹ', permission: 'fx.run' },
   { key: 'fx_revaluation', name: 'Đánh giá lại ngoại tệ', permission: 'fx.run', optional: true },
   { key: 'vat_offset', name: 'Khấu trừ thuế GTGT', permission: 'tax.offset' },
