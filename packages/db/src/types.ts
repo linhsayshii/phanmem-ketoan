@@ -329,6 +329,15 @@ export interface DataCheckRuleTable {
   is_system: Generated<boolean>; is_enabled: Generated<boolean>; flags: Generated<string[]>;
 }
 
+export interface EinvoiceProviderTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; base_url: Generated<string>; username: Generated<string>; secret: Buffer | null;
+  seller_tax_code: Generated<string>; options: JSONColumnType<unknown>; is_active: Generated<boolean>; created_at: Generated<Timestamp>;
+}
+export interface EinvoiceSeriesTable {
+  id: Generated<number>; tenant_id: string; provider_id: number; form_no: string; serial: string; year: number; kind: Generated<string>;
+  provider_template: string | null; is_active: Generated<boolean>; note: string | null;
+}
+
 export interface Database {
   tenant: TenantTable;
   app_user: AppUserTable;
@@ -414,4 +423,6 @@ export interface Database {
   report_def: ReportDefTable;
   report_line: ReportLineTable;
   data_check_rule: DataCheckRuleTable;
+  einvoice_provider: EinvoiceProviderTable;
+  einvoice_series: EinvoiceSeriesTable;
 }
