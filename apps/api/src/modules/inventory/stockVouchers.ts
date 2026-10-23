@@ -148,6 +148,16 @@ async function build(trx: Trx, input: StockVoucherInput, auth?: Auth, selfId?: s
   const accs = new Map((await trx.selectFrom('account').select(['id', 'code', 'name', 'subledger_kind']).where('regime', '=', regime).where('code', 'in', codes).execute()).map((a) => [a.code, a]));
   for (const c of codes) if (!accs.has(c)) throw new AppError('ACCOUNT_NOT_FOUND', `Không có tài khoản "${c}" trong hệ thống tài khoản`, 404);
   if (auth) for (const c of codes) assertSensitive(auth, accs.get(c)!); // phiếu kho ghi giá trị tồn kho (cần view_cost)
+  // Mã tài sản chỉ trên dòng ghi Nợ TK của thẻ (như dòng chứng từ thường): kiểm cả dòng giá 0 không thành dòng sổ cái nhưng vẫn lưu asset_id ở dòng hàng.
+  const assetCodes = [...new Set(lines.flatMap((l) => (l.it.assetCode ? [l.it.assetCode] : [])))];
+  const assets = new Map((assetCodes.length ? await trx.selectFrom('asset').select(['code', 'kind', 'asset_account_code', 'depreciation_account_code']).where('code', 'in', assetCodes).execute() : []).map((a) => [a.code, a]));
+  for (const l of lines) {
+    if (!l.it.assetCode) continue;
+    const a = assets.get(l.it.assetCode);
+    if (!a) throw new AppError('ASSET_NOT_FOUND', `Không có thẻ tài sản mã "${l.it.assetCode}"`, 404);
+    if (l.debit !== a.asset_account_code && !(a.kind === 'fixed' && l.debit === a.depreciation_account_code))
+      throw new AppError('ASSET_ACCOUNT_MISMATCH', `Dòng ${l.n}: tài sản ${l.it.assetCode} chỉ ghi trên tài khoản ${a.asset_account_code}${a.kind === 'fixed' ? ` hoặc ${a.depreciation_account_code}` : ''}`, 400);
+  }
 
   // Nhóm dòng sổ cái theo (bên, tài khoản, hàng, kho); bỏ dòng 0 đồng (dòng sổ cái không được rỗng).
   const groups = new Map<string, S.LineInput>(); const sums = new Map<string, Decimal>();

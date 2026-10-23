@@ -173,6 +173,25 @@ describe('tính giá vốn', () => {
     expect((await t.runOk()).unchanged).toBe(true);
   }, 60_000);
 
+  it('mã tài sản trên dòng phiếu kho không ghi Nợ TK của thẻ (PXK Nợ 6422, CK, PNK) → 400 ASSET_ACCOUNT_MISMATCH', async () => {
+    const t = await tenant();
+    await t.wh('K1', 'avg_period', '153'); await t.wh('K2', 'avg_period', '153'); await t.item('H1'); await t.item('H2');
+    expect((await t.call('POST', '/api/assets', { code: 'CC01', name: 'Công cụ 1', kind: 'tool', assetAccountCode: '242' })).statusCode).toBe(201);
+    await t.pnk('2026-01-02', 'K1', [{ itemCode: 'H1', quantity: '100', unitPrice: '10' }, { itemCode: 'H2', quantity: '10', unitPrice: '0' }]);
+    const line = { itemCode: 'H1', uomCode: 'CAI', quantity: '1', assetCode: 'CC01' };
+    for (const body of [
+      // dòng giá 0 không thành dòng sổ cái: trước đây lọt kiểm tra tài khoản của thẻ
+      { voucherType: 'PXK', stockKind: 'sale', postingDate: '2026-01-10', warehouseCode: 'K1', items: [{ itemCode: 'H1', uomCode: 'CAI', quantity: '1' }, { ...line, itemCode: 'H2', debitAccountCode: '6422' }] },
+      { voucherType: 'PXK', stockKind: 'sale', postingDate: '2026-01-10', warehouseCode: 'K1', items: [{ ...line, debitAccountCode: '6422' }] },
+      { voucherType: 'CK', stockKind: 'transfer', postingDate: '2026-01-10', warehouseCode: 'K1', destWarehouseCode: 'K2', items: [line] },
+      { voucherType: 'PNK', stockKind: 'purchase', postingDate: '2026-01-10', warehouseCode: 'K1', partyCode: 'NCC1', items: [{ ...line, unitPrice: '10' }] },
+    ]) {
+      const r = await t.call('POST', '/api/stock-vouchers', { description: 'Phiếu kho', ...body });
+      expect([r.statusCode, r.json().error?.code], r.body).toEqual([400, 'ASSET_ACCOUNT_MISMATCH']);
+    }
+    expect((await t.call('POST', '/api/stock-vouchers', { description: 'Phiếu kho', voucherType: 'PXK', stockKind: 'sale', postingDate: '2026-01-10', warehouseCode: 'K1', items: [{ ...line, debitAccountCode: '242' }] })).statusCode).toBe(201);
+  });
+
   it('xuất kho CCDC Nợ 242 assetCode CC01: dòng GV chênh giá tạm tính trên 242 giữ asset_id', async () => {
     const t = await tenant();
     await t.wh('K1', 'avg_period', '153'); await t.item('H1');

@@ -90,7 +90,7 @@ Trên dòng chứng từ (hóa đơn mua, phiếu kế toán, phiếu chi...), t
 
 ### 3.2. Từ kho
 
-Xuất kho Nợ 242 để đưa công cụ dụng cụ vào sử dụng: chọn mã tài sản trên dòng phiếu xuất kho (PXK). Chứng từ giá vốn (GV) giữ mã tài sản nên thẻ vẫn gắn đúng.
+Xuất kho Nợ 242 để đưa công cụ dụng cụ vào sử dụng: chọn mã tài sản trên dòng phiếu xuất kho (PXK). Chứng từ giá vốn (GV) giữ mã tài sản nên thẻ vẫn gắn đúng. Mã tài sản chỉ đặt trên dòng có TK Nợ là tài khoản của thẻ; dòng khác (Nợ chi phí, phiếu nhập, chuyển kho), kể cả dòng chưa có giá vốn, bị từ chối "ASSET_ACCOUNT_MISMATCH" (400).
 
 ### 3.3. Ghi tăng trực tiếp
 
