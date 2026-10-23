@@ -86,3 +86,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-23 09:54 | GĐ4 | T7 màn hình TSCĐ, CCDC, CPTT; cột Tài sản trên chứng từ | 7388968..79cdd33 | api 855, web 215, e2e tai-san/ccdc xanh, rà soát sạch (2 vòng sửa)
 2026-10-23 10:18 | GĐ4 | T8 số dư đầu kỳ tài sản/CCDC/CPTT, nhập Excel, DK tách theo thẻ | 1704c38..667c9e5 | api 861, e2e tai-san-dau-ky xanh, rà soát sạch
 2026-10-23 10:59 | GĐ4 | T9 khế ước vay, giải ngân, trả nợ, tất toán, số dư đầu kỳ theo khế ước, B01 ngắn/dài hạn theo lịch trả (0073) | d9a0be0..04b8c67 | api 868, rà soát sạch (opus, 1 vòng sửa)
+2026-10-23 11:38 | GĐ4 | T10 lãi vay tự động LV theo kỳ, chênh lệch tỷ giá trả nợ vay ngoại tệ, đánh giá lại khế ước | c282ebc..0da815b | api 878, rà soát sạch (opus, 1 vòng sửa)
