@@ -25,3 +25,18 @@ export function loanLongTermPart(outstanding: string, repaidTotal: string, insta
   const long = out.minus(short);
   return long.gt(0) ? long.toString() : '0';
 }
+
+/**
+ * Lãi kỳ [from, to] (quy ước 8): Σ ngày d của dư nợ gốc cuối ngày d × lãi suất năm hiệu lực ngày d / 100 / dayBasis, làm tròn một lần (`decimals`).
+ * `balances`: các bậc dư nợ cuối ngày (bậc có ngày lớn nhất ≤ d áp cho d; chưa có bậc nào thì 0); `rates` tương tự theo `validFrom` (chưa hiệu lực thì 0).
+ */
+export function periodInterest(a: { from: string; to: string; balances: { date: string; balance: string }[]; rates: { validFrom: string; annualRate: string }[]; dayBasis: 360 | 365; decimals: 0 | 2 }): string {
+  const at = <T>(xs: T[], key: (x: T) => string, d: string) => xs.reduce<T | undefined>((best, x) => (key(x) <= d && (!best || key(x) >= key(best)) ? x : best), undefined);
+  let sum = ZERO; // Σ dư nợ × lãi suất theo ngày, chia một lần ở cuối để không trôi số
+  for (let t = Date.parse(`${a.from}T00:00:00Z`), end = Date.parse(`${a.to}T00:00:00Z`); t <= end; t += 86_400_000) {
+    const d = new Date(t).toISOString().slice(0, 10);
+    const b = at(a.balances, (x) => x.date, d); const r = at(a.rates, (x) => x.validFrom, d);
+    if (b && r) sum = sum.plus(D(b.balance).times(r.annualRate));
+  }
+  return sum.div(100 * a.dayBasis).toDecimalPlaces(a.decimals).toFixed(a.decimals);
+}

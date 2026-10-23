@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Database } from '@kt/db';
 import { D, formatVnNumber, VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
+import { fxRulesFor } from '../cash/fx.js';
 import { createVoucher, dateIso, postVoucher, type LineInput } from '../ledger/vouchers.service.js';
 import { likePattern } from '../master/crud.js';
 import { loanStats, type LoanStat } from './stats.js';
@@ -61,7 +62,7 @@ export async function getLoan(trx: Trx, id: number): Promise<LoanDto> {
   return { ...dto(c, (await loanStats(trx, AT_END, id))[0]), rates, installments };
 }
 
-async function lockLoans(trx: Trx, tenantId: string) { await sql`SELECT pg_advisory_xact_lock(hashtext('loan_run'), hashtext(${tenantId}))`.execute(trx); }
+export async function lockLoans(trx: Trx, tenantId: string) { await sql`SELECT pg_advisory_xact_lock(hashtext('loan_run'), hashtext(${tenantId}))`.execute(trx); }
 async function latestRegime(trx: Trx): Promise<string> {
   const r = await trx.selectFrom('fiscal_period').select('regime').orderBy('fiscal_year', 'desc').orderBy('period_no', 'desc').limit(1).executeTakeFirst();
   if (!r) throw new AppError('PERIOD_NOT_FOUND', 'Công ty chưa có năm tài chính nào', 404);
@@ -171,19 +172,45 @@ export async function disburse(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof
   return postVoucher(trx, v.id);
 }
 
+// Dư Có (VND, nguyên tệ) của khế ước trên một tài khoản đến hết ngày: tỷ giá ghi sổ bình quân của khoản vay (gốc, lãi phải trả).
+async function bookBalance(trx: Trx, id: number, account: string, date: string) {
+  return (await sql<{ vnd: string; cur: string }>`SELECT coalesce(sum(l.credit - l.debit), 0)::text AS vnd, coalesce(-sum(l.amount_currency), 0)::text AS cur
+    FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id AND v.state IN ('posted','reversed') JOIN account a ON a.id = l.account_id
+    WHERE l.contract_id = ${id}::bigint AND a.code = ${account} AND l.posting_date <= ${date}::date`.execute(trx)).rows[0]!;
+}
+
+// Trả nợ: Nợ TK gốc, TK lãi phải trả (khế ước) / Có tiền gửi. Khế ước ngoại tệ: bên Nợ theo tỷ giá ghi sổ bình quân của khế ước trên từng tài khoản (trả hết thì đúng số dư VND),
+// bên Có tiền theo tỷ giá thanh toán nhập vào; chênh lệch vào lãi (Có) / lỗ (Nợ) tỷ giá của chế độ (fx_rule).
 export async function repay(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof repayInput>) {
   const { c, stat } = await activeLoan(trx, ctx.tenantId, id);
   if (D(b.principal).gt(stat.outstandingCur)) throw new AppError('LOAN_OVERPAY', `Trả gốc ${formatVnNumber(b.principal)} vượt dư nợ gốc ${formatVnNumber(stat.outstandingCur)} của khế ước ${c.code}`, 409);
   const gl = await bankGl(trx, b.bankAccountNo);
   const lender = c.partyCode;
   const part = (amt: string) => money(c.currency, amt, b.fxRate);
-  const lines: LineInput[] = []; let total = D(0); let totalCur = D(0);
+  const lines: (LineInput & { currencyCode?: string })[] = []; let total = D(0); let book = D(0); let totalCur = D(0);
   for (const [acc, amt] of [[stat.principalAccount, b.principal], [stat.interestPayableAccount, b.interest]] as const) {
     if (D(amt).isZero()) continue;
     const m = part(amt); total = total.plus(m.vnd); totalCur = totalCur.plus(amt);
-    lines.push({ accountCode: acc, debit: m.vnd, credit: '0', ...(m.amountCurrency ? { amountCurrency: m.amountCurrency, fxRate: m.fxRate } : {}), partyCode: lender, contractCode: c.code });
+    let vnd = m.vnd; let fxRate = m.fxRate;
+    if (m.amountCurrency) {
+      const bb = await bookBalance(trx, id, acc, b.date);
+      if (D(bb.cur).gt(0) && D(bb.vnd).gt(0)) {
+        vnd = D(amt).eq(bb.cur) ? D(bb.vnd).toFixed(0) : D(amt).times(bb.vnd).div(bb.cur).toDecimalPlaces(0).toFixed(0);
+        fxRate = D(vnd).div(amt).toDecimalPlaces(10).toString();
+      }
+    }
+    book = book.plus(vnd);
+    lines.push({ accountCode: acc, debit: vnd, credit: '0', ...(m.amountCurrency ? { amountCurrency: m.amountCurrency, fxRate } : {}), partyCode: lender, contractCode: c.code });
   }
   lines.push({ accountCode: gl, debit: '0', credit: total.toString(), ...(c.currency !== 'VND' ? { amountCurrency: totalCur.neg().toString(), fxRate: b.fxRate! } : {}), bankAccountNo: b.bankAccountNo });
+  const diff = total.minus(book);
+  if (!diff.isZero()) {
+    const p = await trx.selectFrom('fiscal_period').select('regime').where('date_from', '<=', b.date).where('date_to', '>=', b.date).limit(1).executeTakeFirst();
+    if (!p) throw new AppError('PERIOD_NOT_FOUND', `Không có kỳ kế toán chứa ngày ${b.date}`, 404);
+    const rules = await fxRulesFor(trx, p.regime);
+    lines.push({ accountCode: diff.gt(0) ? rules.lossAccount : rules.gainAccount, debit: diff.gt(0) ? diff.toFixed(0) : '0', credit: diff.gt(0) ? '0' : diff.neg().toFixed(0), currencyCode: 'VND',
+      description: `Chênh lệch tỷ giá trả nợ khế ước vay ${c.code}` });
+  }
   const v = await createVoucher(trx, ctx, {
     voucherType: 'BN', postingDate: b.date, documentDate: b.date, description: b.description ?? `Trả nợ khế ước vay ${c.code}`, partyCode: lender, currencyCode: c.currency,
     ...(c.currency !== 'VND' && { fxRate: b.fxRate }), bankAccountNo: b.bankAccountNo, lines,

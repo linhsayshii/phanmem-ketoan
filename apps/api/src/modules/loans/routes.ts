@@ -3,11 +3,12 @@ import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
 import { dateIso } from '../ledger/vouchers.service.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
+import { interestPreview, runLoanInterest } from './interest.js';
 import { deleteLoan, disburse, disburseInput, getLoan, listLoans, lookupContracts, loanInput, repay, repayInput, saveLoan, settleLoan } from './loans.js';
 
 const numId = z.object({ id: z.coerce.number().int().positive() });
 
-// Khế ước vay: hợp đồng, lãi suất theo hiệu lực, lịch trả gốc; giải ngân, trả nợ, tất toán. Tính lãi vay ở Task 10.
+// Khế ước vay: hợp đồng, lãi suất theo hiệu lực, lịch trả gốc; giải ngân, trả nợ, tất toán; tính lãi vay kỳ (LV).
 const routes: FastifyPluginAsyncZod = async (app) => {
   const tid = (req: { auth: { tenantId: string | null } | null }) => req.auth!.tenantId!;
   const ctx = (req: { auth: { tenantId: string | null; userId: string } | null }) => ({ tenantId: req.auth!.tenantId!, userId: req.auth!.userId });
@@ -26,6 +27,16 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     const out = await app.withOverride(req, (trx) => repay(trx, ctx(req), req.params.id, req.body)); notifyRecompute(app, tid(req)); return reply.status(201).send(out);
   });
   app.post('/api/loans/:id/settle', { preHandler: app.requirePermission('loan.update'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => settleLoan(trx, tid(req), req.params.id)));
+
+  // Lãi dự tính theo tháng theo lịch trả (màn hình khế ước); tính lãi vay kỳ thành chứng từ LV, kỳ khóa sổ cần quyền ghi lùi.
+  app.get('/api/loans/:id/interest-preview', { preHandler: app.requirePermission('loan.view'), schema: { params: numId, querystring: z.object({ from: dateIso, to: dateIso }).refine((q) => q.from <= q.to, 'Từ ngày phải trước hoặc bằng đến ngày') } },
+    async (req) => app.withTenant(req, (trx) => interestPreview(trx, req.params.id, req.query.from, req.query.to), READ_SNAPSHOT));
+  app.post('/api/loan-runs', { preHandler: app.requirePermission('loan.run'), schema: { body: z.object({ fiscalYear: z.number().int(), periodNo: z.number().int().min(1).max(15) }) } }, async (req) => {
+    const auth = req.auth!;
+    const out = await app.withOverride(req, (trx) => runLoanInterest(trx, { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') }, req.body));
+    if (!out.unchanged) notifyRecompute(app, auth.tenantId!);
+    return out;
+  });
 
   // Tra cứu F4 cột Khế ước của dòng chứng từ.
   app.get('/api/lookups/contracts', { preHandler: app.requirePermission('voucher.view'), schema: { querystring: z.object({ q: z.string().default(''), kind: z.enum(['sale', 'purchase', 'loan']).optional(), size: z.coerce.number().int().min(1).max(200).default(50) }) } },

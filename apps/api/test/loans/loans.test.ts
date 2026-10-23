@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { sql } from 'kysely';
+import { D } from '@kt/domain';
 import { createTestApp, type TestApp } from '../helpers.js';
 import { setupLedgerTenant } from '../invariants/helpers.js';
 
@@ -117,5 +118,26 @@ describe('khế ước vay', () => {
     const rp = await call('POST', `/api/loans/${id}/repay`, { date: '2026-09-01', principal: '10000', fxRate: '25100', bankAccountNo: '0011001' });
     expect(rp.statusCode, rp.body).toBe(201);
     expect((await call('GET', `/api/loans/${id}`)).json().outstanding).toBe('90000');
+  });
+
+  it('trả nợ khế ước USD: Nợ 3411/335 theo tỷ giá ghi sổ bình quân, Có 112 theo tỷ giá trả, chênh lệch 635/515; trả hết thì 3411 của khế ước về 0 cả VND và nguyên tệ', async () => {
+    const c = await call('POST', '/api/loans', loan('USD02', { currencyCode: 'USD', value: '0', installments: [] })); expect(c.statusCode, c.body).toBe(201); const id = c.json().id as number;
+    for (const [date, amount, fxRate] of [['2026-08-01', '60000', '25000'], ['2026-08-05', '40000', '25500']]) // bình quân 2.520.000.000 / 100.000 = 25.200
+      expect((await call('POST', `/api/loans/${id}/disburse`, { date, amount, fxRate, bankAccountNo: '0011001' })).statusCode).toBe(201);
+    const accr = await call('POST', '/api/vouchers', { voucherType: 'PKT', postingDate: '2026-08-31', documentDate: '2026-08-31', description: 'trích lãi USD', currencyCode: 'USD', fxRate: '25000', autoPost: true,
+      lines: [{ accountCode: '635', debit: '12500000', credit: '0', amountCurrency: '500' }, { accountCode: '335', debit: '0', credit: '12500000', amountCurrency: '-500', partyCode: 'NCC001', contractCode: 'USD02' }] });
+    expect(accr.statusCode, accr.body).toBe(201);
+    // trả 30.000 gốc + 500 lãi theo 25.300: tiền 771.650.000; ghi sổ 756.000.000 + 12.500.000; lỗ 3.150.000
+    const r1 = await call('POST', `/api/loans/${id}/repay`, { date: '2026-09-10', principal: '30000', interest: '500', fxRate: '25300', bankAccountNo: '0011001' });
+    expect(r1.statusCode, r1.body).toBe(201);
+    expect(await lines(r1.json().id)).toMatchObject([{ code: '3411', debit: '756000000' }, { code: '335', debit: '12500000' }, { code: '112', credit: '771650000' }, { code: '635', debit: '3150000' }]);
+    // trả nốt 70.000 theo 25.100: tiền 1.757.000.000; ghi sổ 1.764.000.000; lãi 7.000.000
+    const r2 = await call('POST', `/api/loans/${id}/repay`, { date: '2026-09-20', principal: '70000', fxRate: '25100', bankAccountNo: '0011001' });
+    expect(r2.statusCode, r2.body).toBe(201);
+    expect(await lines(r2.json().id)).toMatchObject([{ code: '3411', debit: '1764000000' }, { code: '112', credit: '1757000000' }, { code: '515', credit: '7000000' }]);
+    const left = await sql<{ vnd: string; cur: string }>`SELECT sum(l.credit - l.debit)::text AS vnd, sum(l.amount_currency)::text AS cur FROM voucher_line l JOIN account a ON a.id = l.account_id
+      JOIN contract k ON k.id = l.contract_id WHERE k.code = 'USD02' AND k.tenant_id = ${tenantId}::uuid AND a.code IN ('3411', '335')`.execute(ctx.t.admin);
+    expect(D(left.rows[0]!.vnd).isZero() && D(left.rows[0]!.cur).isZero()).toBe(true);
+    expect((await call('POST', `/api/loans/${id}/settle`)).statusCode).toBe(200);
   });
 });
