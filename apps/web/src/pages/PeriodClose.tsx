@@ -8,7 +8,7 @@ import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
 type Status = 'done' | 'rerun' | 'pending' | 'skipped_empty';
-interface Step { key: string; name: string; permission: string; optional: boolean; status: Status; lastRunAt: string | null; reason: string | null; lastUser: string | null;
+interface Step { failed: boolean; key: string; name: string; permission: string; optional: boolean; status: Status; lastRunAt: string | null; reason: string | null; lastUser: string | null;
   vouchers: { id: string; voucherNo: string | null; voucherType: string | null }[] }
 interface CloseState { steps: Step[]; nextStep: string | null }
 
@@ -33,7 +33,7 @@ export default function PeriodClosePage() {
     onSettled: () => { void qc.invalidateQueries({ queryKey: ['period-close'] }); },
     onSuccess: (r, a) => {
       const s = r.steps.find((x) => x.key === a.step);
-      if (!a.skip && s?.status === 'pending' && s.reason) void message.warning(`Bước chạy chưa hoàn tất: ${s.reason}`); // lần chạy lỗi không được tính là xong
+      if (!a.skip && s?.failed) void message.warning(`Bước chạy chưa hoàn tất: ${s.reason}`); // lần chạy lỗi không được tính là xong
       else void message.success(a.skip ? 'Đã bỏ qua bước' : 'Đã chạy bước');
     },
   });

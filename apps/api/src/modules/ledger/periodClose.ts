@@ -46,7 +46,8 @@ export async function closeStatus(trx: Trx, fiscalYear: number, periodNo: number
   // lần bỏ qua hoặc chạy lại không đổi gì không làm các bước sau phải chạy lại; lần chạy lỗi (ok = false) không tính là xong
   const last = new Map<string, Log>(); const lastReal = new Map<string, Log>(); const failed = new Map<string, Log>();
   for (const l of logs) {
-    if (!l.ok) { failed.set(l.step, l); continue; }
+    // lần chạy lỗi có thể đã ghi một phần (giá vốn): tính như lần chạy thật để các bước sau chạy lại, trừ khi không đổi gì
+    if (!l.ok) { failed.set(l.step, l); if (!l.summary.unchanged) lastReal.set(l.step, l); continue; }
     failed.delete(l.step); last.set(l.step, l);
     if (!l.summary.skipped && !l.summary.unchanged) lastReal.set(l.step, l);
   }
@@ -71,7 +72,8 @@ export async function closeStatus(trx: Trx, fiscalYear: number, periodNo: number
         else if (def.key === 'costing' && staleCosting) { status = 'rerun'; reason = 'Kho còn phát sinh chưa cập nhật giá vốn trong kỳ'; }
       }
     }
-    steps.push({ key: def.key, name: def.name, permission: def.permission, optional: 'optional' in def, status, lastRunAt: l ? new Date(l.ran_at).toISOString() : null, reason, lastUser: l?.user ?? null,
+    if (f) { status = l ? 'rerun' : 'pending'; reason = `Lần chạy gần nhất lỗi (${f.summary.errors ?? 0} mục), chưa tính là xong`; }
+    steps.push({ key: def.key, name: def.name, failed: !!f, permission: def.permission, optional: 'optional' in def, status, lastRunAt: l ? new Date(l.ran_at).toISOString() : null, reason, lastUser: l?.user ?? null,
       vouchers: (l?.summary.voucherIds ?? []).map((id) => ({ id, voucherNo: nos.get(id)?.voucher_no ?? null, voucherType: nos.get(id)?.voucher_type ?? null })) });
   }
   return { steps, nextStep: steps.find((s) => s.status !== 'done' && s.status !== 'skipped_empty')?.key ?? null };

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { sql } from 'kysely';
 import { createTestApp, type TestApp } from './helpers.js';
 import { setupLedgerTenant } from './invariants/helpers.js';
 
@@ -8,11 +9,11 @@ beforeAll(async () => { ctx = await createTestApp(); });
 afterAll(async () => { await ctx.close(); });
 
 type Res = { statusCode: number; body: string; json: () => any }; // eslint-disable-line @typescript-eslint/no-explicit-any
-type Step = { key: string; status: string; reason: string | null; lastRunAt: string | null };
+type Step = { failed: boolean; key: string; status: string; reason: string | null; lastRunAt: string | null };
 
 // Năm 2026 TT133 (12 kỳ tháng); một TSCĐ TS01 nguyên giá 120.000.000, 60 tháng từ 01/01/2026.
 async function tenant(regime: 'TT133' | 'TT99' = 'TT133') {
-  const { cookie } = await setupLedgerTenant(ctx, `CK${Date.now()}${n++}`, regime);
+  const { cookie, tenantId } = await setupLedgerTenant(ctx, `CK${Date.now()}${n++}`, regime);
   const call = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object, c = cookie): Promise<Res> => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload ? { payload } : {}) });
   const ok = async (r: Promise<Res>, code = 200) => { const x = await r; expect(x.statusCode, x.body).toBe(code); return x.json(); };
   const pkt = (date: string, lines: object[]) => ok(call('POST', '/api/vouchers', { voucherType: 'PKT', postingDate: date, documentDate: date, description: 'mua tài sản', autoPost: true, lines }), 201);
@@ -24,7 +25,8 @@ async function tenant(regime: 'TT133' | 'TT99' = 'TT133') {
   const step = (r: Res | { steps: Step[] }, key: string) => ('steps' in r ? r.steps : r.json().steps as Step[]).find((s) => s.key === key)!;
   const run = (stepKey: string, periodNo = 1, extra: object = {}) => call('POST', '/api/period-close/run', { fiscalYear: 2026, periodNo, step: stepKey, ...extra });
   const status = (periodNo = 1) => ok(call('GET', `/api/period-close/2026/${periodNo}`)) as Promise<{ steps: Step[]; nextStep: string | null }>;
-  return { cookie, call, ok, pkt, asset, step, run, status };
+  const logRaw = (step: string, ok: boolean, summary: object) => sql`INSERT INTO period_close_log(tenant_id, fiscal_year, period_no, step, ran_at, ok, summary) VALUES (${tenantId}::uuid, 2026, 1, ${step}, clock_timestamp(), ${ok}, ${JSON.stringify(summary)}::jsonb)`.execute(ctx.t.admin);
+  return { logRaw, cookie, call, ok, pkt, asset, step, run, status };
 }
 
 describe('quy trình cuối kỳ có thứ tự', () => {
@@ -115,6 +117,23 @@ describe('quy trình cuối kỳ có thứ tự', () => {
     await pnk('2026-01-05');
     const c = (await t.status()).steps[5]!;
     expect(c.status).toBe('rerun'); expect(c.reason).toContain('giá vốn');
+  });
+
+  it('giá vốn lỗi (ok=false): không tính là xong, hiện lý do, các bước sau chạy lại; lỗi sau lần thành công vẫn hiện lỗi', async () => {
+    const t = await tenant();
+    await t.logRaw('costing', true, { voucherIds: [], unchanged: false });
+    expect((await t.run('fx_outflow')).statusCode).toBe(200);
+    let st = await t.status();
+    expect(st.steps[5]).toMatchObject({ status: 'done', failed: false }); expect(st.steps[6]!.status).toBe('done');
+    await t.logRaw('costing', false, { voucherIds: [], unchanged: false, errors: 2 }); // lỗi sau lần thành công, có thể đã ghi một phần
+    st = await t.status();
+    expect(st.steps[5]).toMatchObject({ status: 'rerun', failed: true }); expect(st.steps[5]!.reason).toContain('lỗi (2 mục)');
+    expect(st.steps[6]).toMatchObject({ status: 'rerun' }); expect(st.nextStep).toBe('tool'); // bước đầu chưa chạy
+    // lỗi không đổi gì (unchanged) thì bước sau giữ nguyên
+    const u = await tenant();
+    await u.logRaw('costing', true, { voucherIds: [] }); await u.run('fx_outflow');
+    await u.logRaw('costing', false, { voucherIds: [], unchanged: true, errors: 1 });
+    expect((await u.status()).steps[6]!.status).toBe('done');
   });
 
   it('lãi vay: giải ngân ghi lùi sau khi tính lãi → loan_interest rerun', async () => {

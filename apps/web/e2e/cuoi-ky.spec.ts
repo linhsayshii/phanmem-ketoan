@@ -11,40 +11,41 @@ async function signIn(page: Page, request: APIRequestContext) {
   await expect(page).not.toHaveURL(/dang-nhap/);
 }
 
-test('Quy trình cuối kỳ: chạy bước, bỏ qua bước tùy chọn, F9 chạy bước kế tiếp', async ({ page, request }) => {
+test('Quy trình cuối kỳ: chạy bước, bỏ qua bước tùy chọn, F9 chạy tới hết', async ({ page, request }) => {
+  test.setTimeout(180000); // bước kết chuyển trên cơ sở dữ liệu e2e lâu năm có thể chạy lâu
   await signIn(page, request);
-  // Chọn kỳ chưa có nhật ký (mỗi lần chạy dùng một kỳ của năm cuối); hết kỳ trống thì bỏ qua có ghi chú, không chạy rỗng.
+  // Không phụ thuộc trạng thái DB: kỳ 1 của năm đầu không có kỳ trước nên không vướng PERIOD_RUN_GAP; chạy lại là luồng chính.
   const years = await (await request.get('/api/fiscal-years')).json() as { fiscalYear: number }[];
-  const year = years.at(-1)!.fiscalYear;
-  let period = 0;
-  for (let p = 1; p <= 12 && !period; p++) {
-    const st = await (await request.get(`/api/period-close/${year}/${p}`)).json() as { steps: { key: string; status: string }[] };
-    if (st.steps.every((x) => x.status === 'pending')) period = p;
-  }
-  test.skip(!period, 'Mọi kỳ của năm cuối đã có nhật ký: cần cơ sở dữ liệu e2e mới');
+  const year = years[0]!.fiscalYear, period = 1;
+  type St = { nextStep: string | null; steps: { key: string; status: string }[] };
+  const status = async () => await (await request.get(`/api/period-close/${year}/${period}`)).json() as St;
   await page.goto('/so-cai/cuoi-ky');
   await expect(page.getByRole('heading', { name: 'Quy trình cuối kỳ' })).toBeVisible();
   await page.locator('.ant-select', { has: page.getByRole('combobox', { name: 'Chọn kỳ' }) }).click();
   await page.getByTitle(`Tháng ${period}`, { exact: true }).click();
   const rows = page.getByTestId('close-steps');
   await expect(rows.locator('tbody tr')).toHaveCount(10);
-  const tool = rows.locator('tr', { hasText: 'Phân bổ công cụ dụng cụ' });
-  await expect(tool).toContainText('Chưa chạy');
-  await expect(page.getByRole('button', { name: /Chạy bước tiếp theo.*Phân bổ công cụ dụng cụ/ })).toBeVisible();
 
-  // Chạy riêng bước đầu: dòng chuyển sang "Đã chạy"
-  await tool.getByRole('button', { name: 'Chạy', exact: true }).click();
+  // Chạy riêng bước đầu: dòng thành "Đã chạy" (lần đầu "Chạy", các lần sau "Chạy lại")
+  const tool = rows.locator('tr', { hasText: 'Phân bổ công cụ dụng cụ' });
+  await tool.getByRole('button', { name: /^Chạy/ }).click();
   await expect(tool).toContainText('Đã chạy');
 
-  // Đánh giá lại ngoại tệ là bước tùy chọn, chưa chạy: bỏ qua được
+  // Đánh giá lại ngoại tệ là bước tùy chọn: chỉ bỏ qua khi lúc này còn "chưa chạy"
   const fx = rows.locator('tr', { hasText: 'Đánh giá lại ngoại tệ' });
-  await fx.getByRole('button', { name: 'Bỏ qua' }).click();
-  await page.locator('.ant-popover').getByRole('button', { name: 'Bỏ qua' }).click();
-  await expect(fx).toContainText('Đã bỏ qua');
+  if ((await status()).steps.find((x) => x.key === 'fx_revaluation')!.status === 'pending') {
+    await fx.getByRole('button', { name: 'Bỏ qua' }).click();
+    await page.locator('.ant-popover').getByRole('button', { name: 'Bỏ qua' }).click();
+    await expect(fx).toContainText('Đã bỏ qua');
+  }
 
-  // F9 chạy bước kế tiếp: Chi phí trả trước
-  const prepaid = rows.locator('tr', { hasText: 'Phân bổ chi phí trả trước' });
-  await expect(prepaid).toContainText('Chưa chạy');
-  await page.keyboard.press('F9');
-  await expect(prepaid).toContainText('Đã chạy');
+  // F9 chạy bước kế tiếp cho tới hết
+  for (let i = 0; i < 12; i++) {
+    const before = await status();
+    if (!before.nextStep) break;
+    await page.keyboard.press('F9');
+    await expect.poll(async () => { const s = await status(); return s.nextStep !== before.nextStep || s.steps.find((x) => x.key === before.nextStep)!.status; }, { timeout: 60000 }).not.toBe(before.steps.find((x) => x.key === before.nextStep)!.status);
+  }
+  expect((await status()).nextStep).toBeNull();
+  for (const r of await rows.locator('tbody tr').all()) await expect(r).toContainText(/Đã chạy|Đã bỏ qua/);
 });
