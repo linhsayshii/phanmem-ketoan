@@ -5,13 +5,20 @@ import { createTestApp } from './helpers.js';
 
 const base = { DATABASE_URL: 'postgres://x', SESSION_SECRET: 'test-secret-123' };
 
+const GOOD_KEY = Buffer.alloc(32, 1).toString('base64');
+
 describe('cấu hình', () => {
+  it('DATA_ENCRYPTION_KEY: khóa 32 byte base64 hợp lệ; sai độ dài hoặc ký tự lạ thì dừng (mọi NODE_ENV)', () => {
+    expect(loadConfig({ ...base, DATA_ENCRYPTION_KEY: GOOD_KEY }).DATA_ENCRYPTION_KEY).toBe(GOOD_KEY);
+    for (const bad of [Buffer.alloc(16).toString('base64'), Buffer.alloc(33).toString('base64'), 'k', GOOD_KEY.slice(0, -2) + '!!', `${GOOD_KEY}\n`])
+      expect(() => loadConfig({ ...base, DATA_ENCRYPTION_KEY: bad }), bad).toThrow(/DATA_ENCRYPTION_KEY/);
+  });
   it('production thiếu COOKIE_SECURE hoặc SESSION_SECRET ngắn thì dừng', () => {
     expect(() => loadConfig({ ...base, NODE_ENV: 'production', COOKIE_SECURE: 'true' })).toThrow(/SESSION_SECRET/);
     expect(() => loadConfig({ ...base, NODE_ENV: 'production', SESSION_SECRET: 'doi-chuoi-nay-khi-trien-khai', COOKIE_SECURE: 'true' })).toThrow(/SESSION_SECRET/);
     expect(() => loadConfig({ ...base, NODE_ENV: 'production', SESSION_SECRET: 'a'.repeat(32) })).toThrow(/COOKIE_SECURE/);
     expect(() => loadConfig({ ...base, NODE_ENV: 'production', SESSION_SECRET: 'a'.repeat(32), COOKIE_SECURE: 'true' })).toThrow(/DATA_ENCRYPTION_KEY/);
-    expect(loadConfig({ ...base, NODE_ENV: 'production', SESSION_SECRET: 'a'.repeat(32), COOKIE_SECURE: 'true', DATA_ENCRYPTION_KEY: 'k' }).COOKIE_SECURE).toBe('true');
+    expect(loadConfig({ ...base, NODE_ENV: 'production', SESSION_SECRET: 'a'.repeat(32), COOKIE_SECURE: 'true', DATA_ENCRYPTION_KEY: GOOD_KEY }).COOKIE_SECURE).toBe('true');
   });
   it('TRUST_PROXY: mặc định false, nhận true, số bước, danh sách IP', () => {
     expect(loadConfig(base).TRUST_PROXY).toBe(false);

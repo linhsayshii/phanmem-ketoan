@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { isValidEncryptionKey } from './lib/secretBox.js';
 
 // ATTACHMENT_DIR tương đối tính từ gốc repo (như BACKUP_DIR), để API, kiểm thử và công cụ dòng lệnh (cwd khác nhau) cùng nhìn một thư mục
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
@@ -32,6 +33,7 @@ const schema = z.object({
     return /^\d+$/.test(t) ? Number(t) : t;
   }),
 }).superRefine((c, ctx) => {
+  if (c.DATA_ENCRYPTION_KEY && !isValidEncryptionKey(c.DATA_ENCRYPTION_KEY)) ctx.addIssue({ code: 'custom', path: ['DATA_ENCRYPTION_KEY'], message: 'DATA_ENCRYPTION_KEY phải là base64 chuẩn của đúng 32 byte (openssl rand -base64 32)' });
   if (c.NODE_ENV !== 'production') return;
   if (c.SESSION_SECRET.length < 32 || c.SESSION_SECRET === 'doi-chuoi-nay-khi-trien-khai') ctx.addIssue({ code: 'custom', path: ['SESSION_SECRET'], message: 'SESSION_SECRET phải dài ít nhất 32 ký tự và khác giá trị mẫu khi chạy production' });
   if (!c.DATA_ENCRYPTION_KEY) ctx.addIssue({ code: 'custom', path: ['DATA_ENCRYPTION_KEY'], message: 'DATA_ENCRYPTION_KEY là bắt buộc khi chạy production' });
