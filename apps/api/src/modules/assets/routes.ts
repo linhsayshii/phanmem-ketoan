@@ -1,7 +1,13 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { Transaction } from 'kysely';
 import { z } from 'zod';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { READ_SNAPSHOT, type Database } from '@kt/db';
+import { assertPrint, isoDate, ordered, orderedMsg, respondReport } from '../reporting/routes.js';
+import { regimeOf } from '../reporting/ledgers.js';
+import type { ReportDoc } from '../reporting/print/html.js';
+import { allocationDoc, bookDocs, cardDoc, depreciationDoc, locationDocs, movementDoc, toolRegisterDoc } from '../reporting/print/assetForms.js';
+import { allocationSheet, assetCard, assetRegister, assetsByLocation, depreciationSheet, movementReport, toolRegister } from './reports.js';
 import { getSettings } from '../core/settings.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { logCloseStep, runSummary } from '../ledger/periodClose.js';
@@ -83,5 +89,30 @@ const routes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/api/lookups/assets', { preHandler: app.requirePermission('asset.view'), schema: { querystring: z.object({ q: z.string().default(''), kind: kindQ.optional(), size: z.coerce.number().int().min(1).max(200).default(50) }) } },
     async (req) => app.withTenant(req, (trx) => lookupAssets(trx, req.query.q, req.query.kind, req.query.size), READ_SNAPSHOT));
+  // ---- Sổ, thẻ và báo cáo tài sản: đọc trong giao dịch REPEATABLE READ READ ONLY; JSON cho màn hình, html/pdf/xlsx cần thêm quyền report.print ----
+  const view = app.requirePermission('report.view');
+  const fmt = z.enum(['json', 'html', 'pdf', 'xlsx']).default('json');
+  const range = z.object({ from: isoDate, to: isoDate, format: fmt });
+  const period = z.object({ fiscalYear: z.coerce.number().int(), periodNo: z.coerce.number().int().min(1).max(12), format: fmt });
+  const serve = async <T>(req: FastifyRequest, reply: FastifyReply, f: 'json' | 'html' | 'pdf' | 'xlsx', name: string, fetch: (trx: Transaction<Database>) => Promise<T>,
+    span: (d: T) => { from: string; to: string }, docs: (trx: Transaction<Database>, regime: string, d: T) => Promise<ReportDoc[]>) => {
+    if (f !== 'json') assertPrint(req.auth!);
+    const out = await app.withTenant(req, async (trx) => { const d = await fetch(trx); return { d, docs: f === 'json' ? [] : await docs(trx, await regimeOf(trx, span(d)), d) }; }, READ_SNAPSHOT);
+    return f === 'json' ? out.d : respondReport(reply, out.docs, f, name);
+  };
+  app.get('/api/asset-reports/register', { preHandler: view, schema: { querystring: range.extend({ kind: z.literal('fixed').default('fixed') }).refine(ordered, orderedMsg) } }, async (req, reply) =>
+    serve(req, reply, req.query.format, `so-tscd-${req.query.from}-${req.query.to}`, (trx) => assetRegister(trx, tid(req), req.query), () => req.query, (trx, regime, d) => bookDocs(trx, tid(req), regime, d)));
+  app.get('/api/asset-reports/card/:id', { preHandler: view, schema: { params: numId, querystring: z.object({ to: isoDate, format: fmt }) } }, async (req, reply) =>
+    serve(req, reply, req.query.format, `the-tscd-${req.params.id}-${req.query.to}`, (trx) => assetCard(trx, tid(req), req.params.id, req.query.to), (d) => ({ from: d.to, to: d.to }), async (trx, regime, d) => [await cardDoc(trx, tid(req), regime, d)]));
+  app.get('/api/asset-reports/by-location', { preHandler: view, schema: { querystring: range.extend({ departmentId: z.coerce.number().int().positive().optional() }).refine(ordered, orderedMsg) } }, async (req, reply) =>
+    serve(req, reply, req.query.format, `so-noi-su-dung-${req.query.from}-${req.query.to}`, (trx) => assetsByLocation(trx, tid(req), req.query), () => req.query, (trx, regime, d) => locationDocs(trx, tid(req), regime, d)));
+  app.get('/api/asset-reports/depreciation-sheet', { preHandler: view, schema: { querystring: period } }, async (req, reply) =>
+    serve(req, reply, req.query.format, `khau-hao-${req.query.fiscalYear}-${req.query.periodNo}`, (trx) => depreciationSheet(trx, tid(req), req.query), (d) => d, async (trx, regime, d) => [await depreciationDoc(trx, tid(req), regime, d)]));
+  app.get('/api/asset-reports/allocation-sheet', { preHandler: view, schema: { querystring: period } }, async (req, reply) =>
+    serve(req, reply, req.query.format, `phan-bo-ccdc-${req.query.fiscalYear}-${req.query.periodNo}`, (trx) => allocationSheet(trx, req.query), (d) => d, async (trx, regime, d) => [await allocationDoc(trx, tid(req), regime, d)]));
+  app.get('/api/asset-reports/movement', { preHandler: view, schema: { querystring: range.extend({ kind: kindQ.default('fixed') }).refine(ordered, orderedMsg) } }, async (req, reply) =>
+    serve(req, reply, req.query.format, `tang-giam-tai-san-${req.query.from}-${req.query.to}`, (trx) => movementReport(trx, tid(req), req.query), () => req.query, async (trx, regime, d) => [await movementDoc(trx, tid(req), regime, d)]));
+  app.get('/api/asset-reports/tool-register', { preHandler: view, schema: { querystring: range.extend({ kind: z.enum(['tool', 'prepaid']).default('tool') }).refine(ordered, orderedMsg) } }, async (req, reply) =>
+    serve(req, reply, req.query.format, `so-${req.query.kind === 'tool' ? 'ccdc' : 'cptt'}-${req.query.from}-${req.query.to}`, (trx) => toolRegister(trx, tid(req), req.query), () => req.query, async (trx, regime, d) => [await toolRegisterDoc(trx, tid(req), regime, d)]));
 };
 export default routes;

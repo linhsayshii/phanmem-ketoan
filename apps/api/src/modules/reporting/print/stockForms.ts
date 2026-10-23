@@ -15,7 +15,7 @@ const num = (key: string, label: string, scale = 0, width?: string): ReportColum
 const note = (b: Banners) => b.messages;
 
 // formKey null hoặc chế độ chưa có văn bản gốc: không in "Mẫu số".
-async function head(trx: Trx, tenantId: string, regime: string, formKey: string | null) {
+export async function head(trx: Trx, tenantId: string, regime: string, formKey: string | null) {
   const c = await companyInfo(trx, tenantId, regime, null); const f = formKey ? bookFormFor(regime, formKey) : null;
   return { company: { ...c, formNo: f?.formNo ?? '', issuedBy: f?.issuedBy ?? '' }, formNo: f?.formNo ?? '', issuedBy: f?.issuedBy ?? '', ...(f && regime === 'TT133' ? { signers: SIGNERS_TT133 } : {}) };
 }
