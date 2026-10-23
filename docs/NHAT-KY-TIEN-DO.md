@@ -80,3 +80,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-23 06:24 | GĐ4 | kế hoạch chi tiết, sổ quyết định; T1 quyền GĐ4, loại chứng từ TS/KH/LV, fa_proration, 2141–2143 theo dõi tài sản (0069) | 9dcd81e..4b3cc1d | api 821, rà soát sạch
 2026-10-23 06:44 | GĐ4 | T2 loại tài sản, thẻ tài sản, phân bổ chi phí, mã tài sản/khế ước trên dòng chứng từ, GV giữ tài sản (0070) | 74c2707..c021c6b | api 827, rà soát sạch
 2026-10-23 06:51 | GĐ4 | T3 động cơ khấu hao/phân bổ thuần (lũy kế mục tiêu, đơn vị theo ngày/tháng/kỳ) | 124af7a..1973348 | domain 197, rà soát sạch
+2026-10-23 07:35 | GĐ4 | T4 lịch khấu hao theo phiên bản, chứng từ KH/PB kỳ, chạy lại không trùng, cần chạy lại (0071) | b2c877e..ee13df7 | api 838, rà soát sạch (opus, 1 vòng sửa)
