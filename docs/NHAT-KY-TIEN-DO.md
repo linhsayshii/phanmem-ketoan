@@ -89,3 +89,4 @@ Mỗi dòng: `thời điểm | giai đoạn | việc | commit | kết quả ki�
 2026-10-23 11:38 | GĐ4 | T10 lãi vay tự động LV theo kỳ, chênh lệch tỷ giá trả nợ vay ngoại tệ, đánh giá lại khế ước | c282ebc..0da815b | api 878, rà soát sạch (opus, 1 vòng sửa)
 2026-10-23 12:12 | GĐ4 | T11 màn hình khế ước vay, sổ theo dõi khế ước, cột Khế ước trên chứng từ | 93fa3ea..b62f101 | api 880+, e2e khe-uoc xanh, rà soát sạch (1 vòng sửa)
 2026-10-23 12:59 | GĐ4 | T12 quy trình cuối kỳ có thứ tự, nhật ký và trạng thái từng bước (0074) | 8f1cdd9..a2de454 | api 892, e2e cuoi-ky xanh, rà soát sạch (2 vòng sửa)
+2026-10-23 14:04 | GĐ4 | T13 sổ/thẻ TSCĐ, sổ theo nơi sử dụng, 06-TSCĐ, tăng giảm, 07-VT CCDC, sổ CCDC/CPTT | bedecfe..461f2be | api 900, e2e bao-cao-tai-san xanh, rà soát sạch (2 vòng sửa)
