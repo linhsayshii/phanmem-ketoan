@@ -87,7 +87,7 @@ export function reportData(trx: Trx, tenantId: string, regime: string, p: { from
       JOIN account a ON a.id = x.id LEFT JOIN party pt ON pt.id = x.party_id WHERE a.regime = ${regime} AND x.n <> 0`.execute(trx)).rows, ...await loanLongRows(trx, p.to, regime)];
       const key = (r: { code: string; partyCode: string | null }) => `${r.code}|${r.partyCode ?? ''}`;
       const rows = new Map(base.map((r) => [key(r), { r, n: D(r.net), l: ZERO }]));
-      for (const r of long) { const k = key(r); const x = rows.get(k); if (x) x.l = D(r.net); else rows.set(k, { r, n: ZERO, l: D(r.net) }); }
+      for (const r of long) { const k = key(r); const x = rows.get(k); if (x) x.l = x.l.plus(r.net); else rows.set(k, { r, n: ZERO, l: D(r.net) }); }
       return [...rows.values()].flatMap(({ r, n, l }) => {
         const lt = r.kind === 'receivable' || r.kind === 'payable' ? l : clampLong(n, l);
         return [unitOf(r, n.minus(lt), false), ...(lt.isZero() ? [] : [unitOf(r, lt, true)])];

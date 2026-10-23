@@ -61,17 +61,18 @@ export async function getLoan(trx: Trx, id: number): Promise<LoanDto> {
   return { ...dto(c, (await loanStats(trx, AT_END, id))[0]), rates, installments };
 }
 
-async function lockLoans(trx: Trx, tenantId: string) { await sql`SELECT pg_advisory_xact_lock(hashtext('loan'), hashtext(${tenantId}))`.execute(trx); }
+async function lockLoans(trx: Trx, tenantId: string) { await sql`SELECT pg_advisory_xact_lock(hashtext('loan_run'), hashtext(${tenantId}))`.execute(trx); }
 async function latestRegime(trx: Trx): Promise<string> {
   const r = await trx.selectFrom('fiscal_period').select('regime').orderBy('fiscal_year', 'desc').orderBy('period_no', 'desc').limit(1).executeTakeFirst();
   if (!r) throw new AppError('PERIOD_NOT_FOUND', 'Công ty chưa có năm tài chính nào', 404);
   return r.regime;
 }
-async function assertAccount(trx: Trx, regime: string, code: string, prefix: string, what: string) {
+async function assertAccount(trx: Trx, regime: string, code: string, prefix: string | string[], what: string) {
+  const prefixes = [prefix].flat();
   const a = await trx.selectFrom('account').select(['is_group', 'is_active']).where('regime', '=', regime).where('code', '=', code).executeTakeFirst();
   const bad = (m: string) => new AppError('LOAN_ACCOUNT_INVALID', m, 400);
   if (!a) throw bad(`Không có tài khoản ${what} "${code}" trong hệ thống tài khoản`);
-  if (!code.startsWith(prefix)) throw bad(`Tài khoản ${what} phải thuộc nhóm ${prefix}, không phải ${code}`);
+  if (!prefixes.some((x) => code.startsWith(x))) throw bad(`Tài khoản ${what} phải thuộc nhóm ${prefixes.join(', ')}, không phải ${code}`);
   if (a.is_group) throw bad(`Tài khoản ${what} ${code} là tài khoản tổng hợp, chọn tài khoản chi tiết`);
 }
 const hasLedger = async (trx: Trx, id: number) => !!(await trx.selectFrom('voucher_line').select('id').where('contract_id', '=', id).limit(1).executeTakeFirst())
@@ -81,12 +82,16 @@ export async function saveLoan(trx: Trx, tenantId: string, id: number | null, b:
   await lockLoans(trx, tenantId);
   const regime = await latestRegime(trx);
   await assertAccount(trx, regime, b.principalAccountCode, '341', 'gốc vay');
-  await assertAccount(trx, regime, b.interestExpenseAccountCode, '635', 'chi phí lãi vay');
+  await assertAccount(trx, regime, b.interestExpenseAccountCode, ['635', '241', '627'], 'chi phí lãi vay');
   await assertAccount(trx, regime, b.interestPayableAccountCode, '335', 'lãi vay phải trả');
   if (b.validTo && b.signedDate && b.validTo < b.signedDate) throw new AppError('VALIDATION', 'Ngày đáo hạn trước ngày ký', 400);
   if (new Set(b.rates.map((r) => r.validFrom)).size !== b.rates.length) throw new AppError('VALIDATION', 'Mỗi ngày hiệu lực chỉ có một lãi suất', 400);
   const cur = await trx.selectFrom('currency').select('code').where('code', '=', b.currencyCode).executeTakeFirst();
   if (!cur) throw new AppError('LOOKUP_NOT_FOUND', `Không có loại tiền ${b.currencyCode}`, 404);
+  if (b.currencyCode !== 'VND') {
+    const tc = await trx.selectFrom('account').select('track_currency').where('regime', '=', regime).where('code', '=', b.principalAccountCode).executeTakeFirst();
+    if (!tc?.track_currency) throw new AppError('LOAN_CURRENCY_NOT_TRACKED', `Tài khoản ${b.principalAccountCode} chưa bật "theo dõi ngoại tệ": bật theo dõi ngoại tệ cho tài khoản trước khi lập khế ước vay bằng ${b.currencyCode}`, 400);
+  }
   const party = b.partyCode ? (await trx.selectFrom('party').select('id').where('code', '=', b.partyCode).executeTakeFirst())?.id : null;
   if (party === undefined) throw new AppError('LOOKUP_NOT_FOUND', `Không có đối tượng ${b.partyCode}`, 404);
   let cid = id;
@@ -148,6 +153,7 @@ async function bankGl(trx: Trx, no: string): Promise<string> {
 type Ctx = { tenantId: string; userId: string };
 export async function disburse(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof disburseInput>) {
   const { c, stat } = await activeLoan(trx, ctx.tenantId, id);
+  if (c.status === 'draft') throw new AppError('LOAN_DRAFT', `Khế ước ${c.code} còn ở trạng thái nháp: chuyển sang đang hiệu lực trước khi giải ngân`, 409);
   const limit = D(c.value);
   if (limit.gt(0) && D(stat.drawnCur).plus(b.amount).gt(limit))
     throw new AppError('LOAN_LIMIT', `Giải ngân ${formatVnNumber(b.amount)} cộng đã rút ${formatVnNumber(stat.drawnCur)} vượt hạn mức ${formatVnNumber(c.value)} của khế ước ${c.code}`, 409);
@@ -159,7 +165,7 @@ export async function disburse(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof
     ...(c.currency !== 'VND' && { fxRate: b.fxRate }), ...(b.bankAccountNo && { bankAccountNo: b.bankAccountNo }),
     lines: [
       { accountCode: bank ?? b.counterAccountCode!, debit: m.vnd, credit: '0', ...fx, ...(bank ? { bankAccountNo: b.bankAccountNo! } : { partyCode: b.partyCode ?? null }) },
-      { accountCode: stat.principalAccount, debit: '0', credit: m.vnd, ...fx, partyCode: lender, contractCode: c.code },
+      { accountCode: stat.principalAccount, debit: '0', credit: m.vnd, ...(m.amountCurrency ? { amountCurrency: `-${m.amountCurrency}`, fxRate: m.fxRate } : {}), partyCode: lender, contractCode: c.code },
     ],
   });
   return postVoucher(trx, v.id);
@@ -177,7 +183,7 @@ export async function repay(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof re
     const m = part(amt); total = total.plus(m.vnd); totalCur = totalCur.plus(amt);
     lines.push({ accountCode: acc, debit: m.vnd, credit: '0', ...(m.amountCurrency ? { amountCurrency: m.amountCurrency, fxRate: m.fxRate } : {}), partyCode: lender, contractCode: c.code });
   }
-  lines.push({ accountCode: gl, debit: '0', credit: total.toString(), ...(c.currency !== 'VND' ? { amountCurrency: totalCur.toString(), fxRate: b.fxRate! } : {}), bankAccountNo: b.bankAccountNo });
+  lines.push({ accountCode: gl, debit: '0', credit: total.toString(), ...(c.currency !== 'VND' ? { amountCurrency: totalCur.neg().toString(), fxRate: b.fxRate! } : {}), bankAccountNo: b.bankAccountNo });
   const v = await createVoucher(trx, ctx, {
     voucherType: 'BN', postingDate: b.date, documentDate: b.date, description: b.description ?? `Trả nợ khế ước vay ${c.code}`, partyCode: lender, currencyCode: c.currency,
     ...(c.currency !== 'VND' && { fxRate: b.fxRate }), bankAccountNo: b.bankAccountNo, lines,
