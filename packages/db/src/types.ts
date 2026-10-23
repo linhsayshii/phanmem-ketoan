@@ -352,14 +352,14 @@ export interface SigningSessionTable {
 export interface InboundInvoiceTable {
   id: Generated<number>; tenant_id: string; source: string; received_at: Generated<string>; received_by: string | null; api_key_id: string | null; xml: string; xml_sha256: string;
   form_no: string; serial: string; invoice_no: string; issue_date: DateOnly; seller_tax_code: string | null; seller_name: string; seller_address: string | null;
-  buyer_tax_code: string | null; buyer_name: string | null; currency: Generated<string>; fx_rate: Numeric | null; total_before_tax: Numeric; total_tax: Numeric; total: Numeric; cqt_code: string | null;
-  seller_sig: ColumnType<unknown, string | null | undefined, string | null>; cqt_sig: ColumnType<unknown, string | null | undefined, string | null>; buyer_matches: boolean | null;
+  buyer_tax_code: string | null; buyer_name: string | null; currency: Generated<string>; fx_rate: Numeric | null; total_before_tax: Numeric | null; total_tax: Numeric | null; total: Numeric | null; cqt_code: string | null;
+  seller_sig: ColumnType<unknown, string | null | undefined, string | null>; cqt_sig: ColumnType<unknown, string | null | undefined, string | null>; buyer_matches: boolean | null; blocked: Generated<boolean>;
   tax_code_check: ColumnType<unknown, string | null | undefined, string | null>; warnings: ColumnType<unknown, string | undefined, string>;
   status: Generated<string>; duplicate_of: number | null; voucher_id: string | null; party_id: string | null;
 }
 export interface InboundInvoiceLineTable {
   id: Generated<number>; tenant_id: string; invoice_id: number; line_no: number; kind: string; code: string | null; name: string; uom: string | null;
-  quantity: Numeric | null; unit_price: Numeric | null; discount_amount: Numeric | null; amount: Numeric; tax_rate: string | null;
+  quantity: Numeric | null; unit_price: Numeric | null; discount_amount: Numeric | null; amount: Numeric | null; tax_rate: string | null;
 }
 
 export interface EinvoiceTable {

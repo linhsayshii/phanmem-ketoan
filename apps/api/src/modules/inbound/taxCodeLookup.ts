@@ -15,7 +15,8 @@ export class VietQrBusinessLookup implements TaxCodeLookup {
     if (r.status >= 500 || r.status === 429) throw new Error(`Dịch vụ tra MST trả HTTP ${r.status}`);
     const d = r.body?.data;
     if (r.status !== 200 || r.body?.code !== '00' || !d) return miss;
-    return { found: true, name: d.name ?? null, address: d.address ?? null, status: d.status ?? null, source: 'vietqr', checkedAt };
+    const str = (v: unknown) => (typeof v === 'string' ? v : null);
+    return { found: true, name: str(d.name), address: str(d.address), status: str(d.status), source: 'vietqr', checkedAt };
   }
 }
 
@@ -27,6 +28,14 @@ export class FakeLookup implements TaxCodeLookup {
     const e = this.table[taxCode];
     return { found: !!e, name: e?.name ?? null, address: e?.address ?? null, status: e?.status ?? null, source: 'fake', checkedAt: new Date().toISOString() };
   }
+}
+
+// Kiểm kiểu phản hồi của dịch vụ ngoài (có thể là bản thay thế/lỗi): sai kiểu thì coi là tra lỗi.
+export function validateLookup(r: unknown): TaxLookupResult {
+  const o = r as Partial<Record<keyof TaxLookupResult, unknown>> | null;
+  const s = (v: unknown) => v === null || typeof v === 'string';
+  if (!o || typeof o.found !== 'boolean' || !s(o.name) || !s(o.address) || !s(o.status) || typeof o.source !== 'string' || typeof o.checkedAt !== 'string') throw new Error('Phản hồi tra MST không đúng dạng');
+  return o as TaxLookupResult;
 }
 
 let override: TaxCodeLookup | null = null;

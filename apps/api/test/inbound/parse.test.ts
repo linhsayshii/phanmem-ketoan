@@ -37,7 +37,7 @@ describe('parseInvoiceXml', () => {
     expect(code(() => parseInvoiceXml(`<HDon>${' '.repeat(2 * 1024 * 1024 + 1)}</HDon>`))).toEqual(['XML_TOO_LARGE', 400]);
   });
 
-  it('thuế suất KCT, KKKNT, 8%, KHAC chuẩn hóa; số "1000000.50" giữ chuỗi; dạng lạ → NUMBER_FORMAT', () => {
+  it('thuế suất KCT, KKKNT, 8%, KHAC chuẩn hóa; số "1000000.50" hợp lệ giữ nguyên; dạng lạ thành null; dạng lạ → NUMBER_FORMAT', () => {
     let x = fixture('vn-einvoice-vat.xml');
     x = x.replace('<TSuat>10%</TSuat>', '<TSuat>KCT</TSuat>').replace('<TSuat>10%</TSuat>', '<TSuat>KHAC:5.26%</TSuat>').replace('<ThTien>1000000</ThTien>', '<ThTien>1000000.50</ThTien>');
     const p = parseInvoiceXml(x);
@@ -46,7 +46,7 @@ describe('parseInvoiceXml', () => {
     expect(codes(p)).not.toContain('NUMBER_FORMAT');
     expect(parseInvoiceXml(x.replace('<TSuat>KCT</TSuat>', '<TSuat>KKKNT</TSuat>')).lines[0]!.taxRate).toBe('KKKNT');
     const q = parseInvoiceXml(x.replace('<SLuong>20</SLuong>', '<SLuong>1,5</SLuong>'));
-    expect(q.lines[0]!.quantity).toBe('1,5');
+    expect(q.lines[0]!.quantity).toBeNull();
     expect(codes(q)).toContain('NUMBER_FORMAT');
   });
 

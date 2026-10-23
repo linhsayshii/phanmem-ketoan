@@ -54,8 +54,8 @@ describe('hóa đơn đầu vào: lưu và chống trùng', () => {
     const t = await tenant();
     const a = await t.one(VAT());
     const d = (await t.call('GET', `/api/inbound-invoices/${a.id}`)).json();
-    expect(d).toMatchObject({ serial: 'C26TAA', invoiceNo: '00000123', issueDate: '2026-01-15', sellerTaxCode: '0100000001', buyerMatches: true, totalBeforeTax: '1300000.000000', totalTax: '130000.000000', total: '1430000.000000', sellerSig: null, status: 'new', source: 'upload' });
-    expect(d.lines).toHaveLength(2); expect(d.lines[0]).toMatchObject({ lineNo: 1, code: 'SP001', amount: '1000000.000000', taxRate: '10' });
+    expect(d).toMatchObject({ serial: 'C26TAA', invoiceNo: '00000123', issueDate: '2026-01-15', sellerTaxCode: '0100000001', buyerMatches: true, totalBeforeTax: '1300000.0000', totalTax: '130000.0000', total: '1430000.0000', sellerSig: null, status: 'new', source: 'upload' });
+    expect(d.lines).toHaveLength(2); expect(d.lines[0]).toMatchObject({ lineNo: 1, code: 'SP001', amount: '1000000.0000', taxRate: '10' });
     expect(d.warnings.map((w: { code: string }) => w.code)).toContain('UNSIGNED');
     const c = await t.one(CASH());
     expect((await t.call('GET', `/api/inbound-invoices/${c.id}`)).json().buyerMatches).toBeNull();
@@ -84,18 +84,19 @@ describe('hóa đơn đầu vào: lưu và chống trùng', () => {
     expect(d.partyId).toBeTruthy(); // đối tượng NCC001 khớp theo MST người bán
   });
 
-  it('tệp zip 3 XML + tệp không phải XML + thư mục → 3 kết quả; XML có DOCTYPE chỉ hỏng dòng của nó', async () => {
+  it('tệp zip 3 XML + tệp không phải XML + thư mục → 3 nhận, 1 lỗi, tệp lạ báo skipped; XML có DOCTYPE chỉ hỏng dòng của nó', async () => {
     const t = await tenant();
     const zip = new JSZip();
     zip.file('../../etc/a.xml', VAT()); zip.file('b.XML', CASH()); zip.file('thu-muc/c.xml', withNo(VAT(), '00000777'));
-    zip.file('doc.txt', 'bo qua'); zip.folder('rong');
+    zip.file('doc.txt', 'bo qua'); zip.file('trong.zip', 'PK'); zip.folder('rong');
     zip.file('xxe.xml', '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a SYSTEM "file:///etc/passwd">]><HDon>&a;</HDon>');
     const r = await t.upload([{ name: 'goi.zip', data: await zip.generateAsync({ type: 'nodebuffer' }) }]);
     expect(r.statusCode, r.body).toBe(200);
     const res = r.json().results as { file: string; status: string; error?: { code: string } }[];
     expect(res.filter((x) => x.status === 'new')).toHaveLength(3);
     expect(res.filter((x) => x.status === 'error')).toEqual([expect.objectContaining({ file: 'goi.zip/xxe.xml', error: expect.objectContaining({ code: 'XML_UNSAFE' }) })]);
-    expect(res).toHaveLength(4);
+    expect(res.filter((x) => x.status === 'skipped').map((x) => x.file).sort()).toEqual(['goi.zip/doc.txt', 'goi.zip/trong.zip']);
+    expect(res).toHaveLength(6);
   });
 
   it('zip quá nhiều tệp hoặc giải nén vượt giới hạn → dòng lỗi ZIP_TOO_LARGE, không nhận gì', async () => {
@@ -145,5 +146,49 @@ describe('hóa đơn đầu vào: lưu và chống trùng', () => {
     setTaxCodeLookupForTest(new FakeLookup({}, true));
     const c = await t.one(withNo(CASH(), '00000457')); expect(c.status).toBe('new');
     expect((await t.call('GET', `/api/inbound-invoices/${c.id}`)).json().warnings.map((w: { code: string }) => w.code)).toContain('TAXCODE_LOOKUP_FAILED');
+  });
+
+  it('quá 50 tệp: xử lý 50 tệp đầu, thêm dòng lỗi TOO_MANY_FILES cho phần còn lại', async () => {
+    const t = await tenant();
+    const r = await t.upload(Array.from({ length: 51 }, (_, i) => ({ name: `f${i}.xml`, data: '<a/>' })));
+    expect(r.statusCode, r.body).toBe(200);
+    const res = r.json().results as { file: string; error?: { code: string } }[];
+    expect(res).toHaveLength(51); expect(res[50]!.error!.code).toBe('TOO_MANY_FILES');
+    expect(res.slice(0, 50).every((x) => x.error?.code === 'XML_INVALID')).toBe(true);
+  });
+
+  it('XML > 2 MB: dòng lỗi XML_TOO_LARGE của riêng nó, tệp hợp lệ cùng lượt vẫn nhận', async () => {
+    const t = await tenant();
+    const r = await t.upload([{ name: 'to.xml', data: Buffer.alloc(3 * 1024 * 1024, 32) }, { name: 'ok.xml', data: VAT() }]);
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().results).toEqual([expect.objectContaining({ file: 'to.xml', status: 'error', error: expect.objectContaining({ code: 'XML_TOO_LARGE' }) }), expect.objectContaining({ file: 'ok.xml', status: 'new' })]);
+  });
+
+  it('một tệp độc (lồng sâu, ký tự điều khiển) chỉ hỏng dòng của nó', async () => {
+    const t = await tenant();
+    const r = await t.upload([{ name: 'sau.xml', data: `<HDon>${'<x>'.repeat(6000)}${'</x>'.repeat(6000)}</HDon>` }, { name: 'dk.xml', data: VAT().replace('Giấy in A4', 'Giấy&#1;in') }, { name: 'ok.xml', data: VAT() }]);
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().results.map((x: { status: string; error?: { code: string } }) => x.error?.code ?? x.status)).toEqual(['XML_INVALID', 'XML_INVALID', 'new']);
+  });
+
+  it('số hỏng lưu NULL + blocked, không thành 0; BOM được bỏ khỏi bản lưu', async () => {
+    const t = await tenant();
+    const a = await t.one(`\uFEFF${VAT().replace('<ThTien>1000000</ThTien>', '<ThTien>12345678901234567</ThTien>')}`);
+    expect(a.status).toBe('new');
+    const d = (await t.call('GET', `/api/inbound-invoices/${a.id}`)).json();
+    expect(d.blocked).toBe(true); expect(d.lines[0].amount).toBeNull(); expect(d.warnings.map((w: { code: string }) => w.code)).toContain('NUMBER_FORMAT');
+    expect((await t.call('GET', `/api/inbound-invoices/${a.id}/xml`)).body.charCodeAt(0)).toBe('<'.charCodeAt(0));
+    const ok = await t.one(`\uFEFF${withNo(VAT(), '00000555')}`);
+    expect((await t.call('GET', `/api/inbound-invoices/${ok.id}`)).json().blocked).toBe(false);
+  });
+
+  it('tra MST: tải lại cùng tệp không gọi dịch vụ ngoài; phản hồi sai kiểu không làm hỏng tải lên', async () => {
+    const t = await tenant();
+    expect((await t.call('PUT', '/api/settings', { tax_code_lookup: 'vietqr' })).statusCode).toBe(200);
+    let calls = 0;
+    setTaxCodeLookupForTest({ lookup: async () => { calls++; return { found: true, name: 123, address: {}, status: null, source: 'x', checkedAt: 'now' } as never; } });
+    const a = await t.one(VAT()); expect(a.status).toBe('new'); expect(calls).toBe(1);
+    expect((await t.call('GET', `/api/inbound-invoices/${a.id}`)).json().warnings.map((w: { code: string }) => w.code)).toContain('TAXCODE_LOOKUP_FAILED');
+    expect((await t.one(VAT())).status).toBe('duplicate'); expect(calls).toBe(1);
   });
 });

@@ -1,21 +1,23 @@
 import { createHash } from 'node:crypto';
 import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
-import { parseInvoiceXml, type InvoiceWarning, type ParsedInvoice } from './parseXml.js';
+import { MONEY_RE, parseInvoiceXml, stripBom, type InvoiceWarning, type ParsedInvoice } from './parseXml.js';
 import { taxCheckWarnings, type TaxLookupResult } from './taxCodeLookup.js';
 import { normTaxCode } from './verify.js';
 
 export interface StoreMeta { receivedBy?: string | null; apiKeyId?: string | null; parsed?: ParsedInvoice; taxCheck?: TaxLookupResult | { error: string } | null }
 export interface StoreResult { id: number; status: 'new' | 'duplicate'; existing?: number }
 
-const NUM_RE = /^-?\d{1,21}(\.\d{1,6})?$/;
-const numOrNull = (s: string | null): string | null => (s !== null && NUM_RE.test(s) ? s : null);
-const numOr0 = (s: string | null): string => numOrNull(s) ?? '0';
+// Parser đã loại số sai dạng/quá cột (null + blocked); ở đây chỉ đề phòng thêm, không bao giờ đổi số hỏng thành 0.
+const QTY_RE = /^-?\d{1,16}(\.\d{1,6})?$/;
+const FX_RE = /^\d{1,10}(\.\d{1,10})?$/;
+const pick = (s: string | null, re: RegExp): string | null => (s !== null && re.test(s) ? s : null);
+export const sha256Of = (xml: string): string => createHash('sha256').update(stripBom(xml), 'utf8').digest('hex');
 
 // Lưu hóa đơn đầu vào. Trùng băm SHA-256 của XML → trả bản cũ, không chèn. Trùng (MST người bán, ký hiệu, số) với hóa đơn đầu vào khác → chèn với status 'duplicate'.
 // Trùng với hóa đơn mua đã nhập thành chứng từ → vẫn nhận, kèm cảnh báo VOUCHER_EXISTS. Không MST người bán thì không so khóa (dễ trùng nhầm), chỉ so băm.
-export async function storeInbound(trx: Transaction<Database>, ctx: { tenantId: string }, xml: string, source: 'upload' | 'api' | 'email', meta: StoreMeta = {}): Promise<StoreResult> {
-  const sha = createHash('sha256').update(xml, 'utf8').digest('hex');
+export async function storeInbound(trx: Transaction<Database>, ctx: { tenantId: string }, rawXml: string, source: 'upload' | 'api' | 'email', meta: StoreMeta = {}): Promise<StoreResult> {
+  const xml = stripBom(rawXml); const sha = sha256Of(xml);
   await sql`SELECT pg_advisory_xact_lock(hashtext('inbound_invoice'), hashtext(${ctx.tenantId}))`.execute(trx);
   const same = await trx.selectFrom('inbound_invoice').select('id').where('xml_sha256', '=', sha).executeTakeFirst();
   if (same) return { id: same.id, status: 'duplicate', existing: same.id };
@@ -50,16 +52,16 @@ export async function storeInbound(trx: Transaction<Database>, ctx: { tenantId: 
   const row = await trx.insertInto('inbound_invoice').values({
     tenant_id: ctx.tenantId, source, received_by: meta.receivedBy ?? null, api_key_id: meta.apiKeyId ?? null, xml, xml_sha256: sha,
     form_no: p.formNo, serial: p.serial, invoice_no: p.invoiceNo, issue_date: p.issueDate, seller_tax_code: mst, seller_name: p.seller.name, seller_address: p.seller.address,
-    buyer_tax_code: p.buyer.taxCode, buyer_name: p.buyer.name, currency: p.currency, fx_rate: numOrNull(p.fxRate),
-    total_before_tax: numOr0(p.totals.beforeTax), total_tax: numOr0(p.totals.tax), total: numOr0(p.totals.total), cqt_code: p.cqtCode,
+    buyer_tax_code: p.buyer.taxCode, buyer_name: p.buyer.name, currency: p.currency, fx_rate: pick(p.fxRate, FX_RE),
+    total_before_tax: pick(p.totals.beforeTax, MONEY_RE), total_tax: pick(p.totals.tax, MONEY_RE), total: pick(p.totals.total, MONEY_RE), cqt_code: p.cqtCode,
     seller_sig: p.signatures.seller ? JSON.stringify(p.signatures.seller) : null, cqt_sig: p.signatures.cqt ? JSON.stringify(p.signatures.cqt) : null,
-    buyer_matches: buyerMatches, tax_code_check: meta.taxCheck ? JSON.stringify(meta.taxCheck) : null, warnings: JSON.stringify(warnings),
+    buyer_matches: buyerMatches, blocked: p.blocked, tax_code_check: meta.taxCheck ? JSON.stringify(meta.taxCheck) : null, warnings: JSON.stringify(warnings),
     status: duplicateOf ? 'duplicate' : 'new', duplicate_of: duplicateOf, party_id: partyId,
   }).returning('id').executeTakeFirstOrThrow();
   if (p.lines.length) {
     await trx.insertInto('inbound_invoice_line').values(p.lines.map((l) => ({
       tenant_id: ctx.tenantId, invoice_id: row.id, line_no: l.lineNo, kind: l.kind, code: l.code, name: l.name || '(không tên)', uom: l.uom,
-      quantity: numOrNull(l.quantity), unit_price: numOrNull(l.unitPrice), discount_amount: numOrNull(l.discountAmount), amount: numOr0(l.amount), tax_rate: l.taxRate,
+      quantity: pick(l.quantity, QTY_RE), unit_price: pick(l.unitPrice, QTY_RE), discount_amount: pick(l.discountAmount, MONEY_RE), amount: pick(l.amount, MONEY_RE), tax_rate: l.taxRate,
     }))).execute();
   }
   return duplicateOf ? { id: row.id, status: 'duplicate', existing: duplicateOf } : { id: row.id, status: 'new' };
