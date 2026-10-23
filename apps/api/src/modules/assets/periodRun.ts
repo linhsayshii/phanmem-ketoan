@@ -176,7 +176,8 @@ export async function assetRunStale(trx: Trx, kind: RunKind, fiscalYear: number,
 export async function listRuns(trx: Trx, kind?: RunKind, year?: number) {
   return (await trx.selectFrom('period_run as r').leftJoin('voucher as v', 'v.id', 'r.voucher_id')
     .select(['r.id', 'r.kind', 'r.fiscal_year', 'r.period_no', 'r.status', 'r.voucher_id', 'v.voucher_no', 'r.result', 'r.created_at', 'r.checked_at'])
-    .$if(!!kind, (q) => q.where('r.kind', '=', kind!)).$if(year !== undefined, (q) => q.where('r.fiscal_year', '=', year!))
+    .where('r.kind', 'in', kind ? [kind] : ['depreciation', 'tool', 'prepaid']) // không trả lần chạy lãi vay (kết quả có lãi từng khế ước, cần view_payable)
+    .$if(year !== undefined, (q) => q.where('r.fiscal_year', '=', year!))
     .orderBy('r.fiscal_year').orderBy('r.period_no').orderBy('r.created_at').execute())
     .map((r) => ({ id: r.id, kind: r.kind, fiscalYear: r.fiscal_year, periodNo: r.period_no, status: r.status, voucherId: r.voucher_id, voucherNo: r.voucher_no, result: r.result, createdAt: r.created_at, checkedAt: r.checked_at }));
 }

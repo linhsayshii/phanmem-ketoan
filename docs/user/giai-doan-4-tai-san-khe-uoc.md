@@ -241,7 +241,7 @@ Lưu ý:
 
 Menu: Khế ước vay. Quyền: xem "loan.view", tạo "loan.create", sửa "loan.update", xóa "loan.delete", chạy lãi "loan.run".
 
-Khế ước vay cần cờ "view_payable": không có thì mọi màn khế ước đều bị chặn 403 "Không có quyền xem công nợ phải trả".
+Khế ước vay cần cờ "view_payable": không có thì mọi màn khế ước đều bị chặn 403 "Không có quyền xem công nợ phải trả". Người có quyền thao tác (tạo, sửa, giải ngân, trả nợ, tất toán, tính lãi vay) mà thiếu cờ vẫn gọi được các thao tác đó, nhưng phản hồi không kèm dư nợ, lãi phải trả, đã rút, lãi từng khế ước (để trống), và thông báo lỗi vượt hạn mức, trả vượt dư nợ, chưa tất toán được không nêu số tiền.
 
 ### 10.1. Danh sách và điều khoản
 
@@ -269,11 +269,11 @@ Lịch trả gốc dùng để tách nợ ngắn hạn, dài hạn trên Bảng 
 
 ### 10.4. Giải ngân
 
-Nút "Giải ngân" (cần cả "loan.update" và "voucher.create"). Nhập Ngày, Số tiền giải ngân, Tài khoản ngân hàng (F4), Diễn giải. Khế ước ngoại tệ nhập thêm Tỷ giá. Phần mềm lập Giấy báo có (BC) và ghi sổ ngay, hiện "Đã lập … và ghi sổ" kèm liên kết "Xem chứng từ". Giải ngân không qua ngân hàng thì lập Phiếu kế toán (PKT) và chọn khế ước ở cột "Khế ước (F4)" (mục 10.9).
+Nút "Giải ngân" (cần "loan.update", "voucher.create" và "voucher.post"). Nhập Ngày, Số tiền giải ngân, Tài khoản ngân hàng (F4), Diễn giải. Khế ước ngoại tệ nhập thêm Tỷ giá. Phần mềm lập Giấy báo có (BC) và ghi sổ ngay, hiện "Đã lập … và ghi sổ" kèm liên kết "Xem chứng từ". Giải ngân không qua ngân hàng thì lập Phiếu kế toán (PKT) và chọn khế ước ở cột "Khế ước (F4)" (mục 10.9).
 
 ### 10.5. Trả nợ
 
-Nút "Trả nợ". Nhập Ngày, Trả gốc, Trả lãi, Tài khoản ngân hàng (F4), Diễn giải; ngoại tệ có thêm Tỷ giá. Phần mềm lập Giấy báo nợ (BN) và ghi sổ.
+Nút "Trả nợ" (cần "loan.update", "voucher.create" và "voucher.post"). Nhập Ngày, Trả gốc, Trả lãi, Tài khoản ngân hàng (F4), Diễn giải; ngoại tệ có thêm Tỷ giá. Phần mềm lập Giấy báo nợ (BN) và ghi sổ.
 
 Khế ước ngoại tệ: phần gốc được ghi theo tỷ giá ghi sổ bình quân của khế ước; chênh lệch so với tỷ giá trả nợ thành một dòng VND vào tài khoản lãi hoặc lỗ tỷ giá theo quy tắc tỷ giá của hệ thống.
 
@@ -369,7 +369,7 @@ Hai quy tắc KU_* chỉ hiện với người có cờ "view_payable". Bốn qu
 ## 14. Phân quyền
 
 - Tài sản: "asset.view", "asset.create", "asset.update", "asset.delete"; chạy khấu hao, phân bổ: "asset.run".
-- Khế ước: "loan.view", "loan.create", "loan.update", "loan.delete", "loan.run"; giải ngân, trả nợ còn cần "voucher.create"; cờ "view_payable" bắt buộc cho mọi thao tác đọc khế ước.
+- Khế ước: "loan.view", "loan.create", "loan.update", "loan.delete", "loan.run"; giải ngân, trả nợ còn cần "voucher.create" và "voucher.post" (chứng từ ghi sổ ngay); cờ "view_payable" bắt buộc cho mọi thao tác đọc khế ước, thiếu cờ thì phản hồi của thao tác ghi không kèm số liệu khế ước.
 - Quy trình cuối kỳ: "period_close.view" để xem, thêm quyền của từng bước để chạy.
 - Báo cáo: "report.view"; in, xuất tệp: "report.print".
 - Số dư đầu kỳ tài sản: "opening_balance.view", "opening_balance.update".

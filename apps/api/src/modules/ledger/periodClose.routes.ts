@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
 import { periodSpan, runAssetPeriod } from '../assets/periodRun.js';
-import { runLoanInterest } from '../loans/interest.js';
+import { redactLoanRun, runLoanInterest } from '../loans/interest.js';
 import { runAmortization } from '../invoices/amortization.js';
 import { runCosting } from '../inventory/costingRun.js';
 import { runOutflowAdjust } from '../cash/fx.js';
@@ -45,7 +45,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       let result: object; let summary: Record<string, unknown>; let ok = true;
       switch (step) {
         case 'tool': case 'prepaid': case 'depreciation': { const r = await runAssetPeriod(trx, ctx, { kind: step, fiscalYear: fy, periodNo: pn }); result = r; summary = runSummary(r); break; }
-        case 'loan_interest': { const r = await runLoanInterest(trx, ctx, { fiscalYear: fy, periodNo: pn }); result = r; summary = runSummary(r); break; }
+        case 'loan_interest': { const r = await runLoanInterest(trx, ctx, { fiscalYear: fy, periodNo: pn }); result = redactLoanRun(r, !auth.sensitive.has('view_payable')); summary = runSummary(r); break; } // lãi từng khế ước: cần view_payable
         case 'amortization': {
           const r = await runAmortization(trx, ctx, { fiscalYear: fy, periodNo: pn }); result = r;
           summary = { ...runSummary({ voucherIds: r.created.map((c) => c.voucherId), reversedVoucherIds: r.reversedVoucherIds, unchanged: !r.created.length && r.unchanged > 0 }), skippedSchedules: r.skipped.length }; break;

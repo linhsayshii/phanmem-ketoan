@@ -60,6 +60,9 @@ type VLine = S.LineInput & { currencyCode: string };
 const lineKey = (l: { accountCode: string; debit: string; credit: string; currencyCode: string; amountCurrency?: string | null | undefined; partyCode?: string | null | undefined; contractCode?: string | null | undefined }) =>
   [l.accountCode, D(l.debit).toFixed(0), D(l.credit).toFixed(0), l.currencyCode, l.currencyCode === 'VND' ? '' : D(l.amountCurrency ?? 0).toFixed(4), l.partyCode ?? '', l.contractCode ?? ''].join('|');
 
+// Người thiếu cờ view_payable: kết quả chạy lãi vay không kèm lãi từng khế ước (lines = null).
+export const redactLoanRun = <T extends { lines: unknown }>(r: T, hide: boolean) => (hide ? { ...r, lines: null } : r);
+
 export async function runLoanInterest(trx: Trx, ctx: Ctx, input: { fiscalYear: number; periodNo: number }) {
   await lockLoans(trx, ctx.tenantId);
   const { fiscalYear: fy, periodNo: pn } = input;

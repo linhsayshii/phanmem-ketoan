@@ -43,6 +43,8 @@ export interface LoanDto {
   outstanding: string; interestPayable: string; drawn: string;
   rates?: { id: number; validFrom: string; annualRate: string }[]; installments?: { id: number; dueDate: string; principal: string; note: string | null }[];
 }
+// Người thiếu cờ view_payable (tạo, sửa, tất toán khế ước): bỏ dư nợ, lãi phải trả, đã rút khỏi phản hồi (như giá vốn bỏ chênh lệch khi thiếu view_cost).
+export const redactLoan = (d: LoanDto, hide: boolean) => (hide ? { ...d, outstanding: null, interestPayable: null, drawn: null } : d);
 const dto = (c: Record<string, string | number | null>, s?: LoanStat): LoanDto => ({ ...(c as unknown as LoanDto), outstanding: D(s?.outstandingCur ?? 0).toFixed(), interestPayable: D(s?.interestPayable ?? 0).toFixed(), drawn: D(s?.drawnCur ?? 0).toFixed() });
 const SELECT_LOAN = sql`SELECT c.id::int AS id, c.code, c.name, p.code AS "partyCode", p.name AS "partyName", c.currency_code AS "currencyCode", c.value::text AS value, c.signed_date::text AS "signedDate",
     c.valid_to::text AS "validTo", c.status, c.note, lt.principal_account_code AS "principalAccountCode", lt.interest_expense_account_code AS "interestExpenseAccountCode",
@@ -151,13 +153,14 @@ async function bankGl(trx: Trx, no: string): Promise<string> {
   return b.gl_account_code;
 }
 
-type Ctx = { tenantId: string; userId: string };
+// hideAmounts: người thiếu cờ view_payable thao tác được nhưng thông báo lỗi không nêu dư nợ, hạn mức, đã rút của khế ước.
+type Ctx = { tenantId: string; userId: string; hideAmounts?: boolean };
 export async function disburse(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof disburseInput>) {
   const { c, stat } = await activeLoan(trx, ctx.tenantId, id);
   if (c.status === 'draft') throw new AppError('LOAN_DRAFT', `Khế ước ${c.code} còn ở trạng thái nháp: chuyển sang đang hiệu lực trước khi giải ngân`, 409);
   const limit = D(c.value);
   if (limit.gt(0) && D(stat.drawnCur).plus(b.amount).gt(limit))
-    throw new AppError('LOAN_LIMIT', `Giải ngân ${formatVnNumber(b.amount)} cộng đã rút ${formatVnNumber(stat.drawnCur)} vượt hạn mức ${formatVnNumber(c.value)} của khế ước ${c.code}`, 409);
+    throw new AppError('LOAN_LIMIT', ctx.hideAmounts ? `Giải ngân vượt hạn mức của khế ước ${c.code}` : `Giải ngân ${formatVnNumber(b.amount)} cộng đã rút ${formatVnNumber(stat.drawnCur)} vượt hạn mức ${formatVnNumber(c.value)} của khế ước ${c.code}`, 409);
   const m = money(c.currency, b.amount, b.fxRate); const fx = { ...(m.amountCurrency ? { amountCurrency: m.amountCurrency, fxRate: m.fxRate } : {}) };
   const lender = c.partyCode;
   const bank = b.bankAccountNo ? await bankGl(trx, b.bankAccountNo) : null;
@@ -195,7 +198,7 @@ export async function repay(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof re
   const room = later !== null && D(later).lt(at.outstandingCur) ? D(later) : D(at.outstandingCur);
   if (D(b.principal).gt(room)) {
     const vnd = c.currency === 'VND' || !room.eq(at.outstandingCur) ? '' : ` (${formatVnNumber(at.outstandingVnd)} đồng)`;
-    throw new AppError('LOAN_OVERPAY', `Trả gốc ${formatVnNumber(b.principal)} ${c.currency} vượt dư nợ gốc tối đa trả được ${formatVnNumber(room.toString())} ${c.currency}${vnd} của khế ước ${c.code} tại ngày ${b.date} (tính cả các khoản gốc ghi sổ sau ngày này)`, 409);
+    throw new AppError('LOAN_OVERPAY', ctx.hideAmounts ? `Trả gốc vượt dư nợ gốc tối đa trả được của khế ước ${c.code} tại ngày ${b.date} (tính cả các khoản gốc ghi sổ sau ngày này)` : `Trả gốc ${formatVnNumber(b.principal)} ${c.currency} vượt dư nợ gốc tối đa trả được ${formatVnNumber(room.toString())} ${c.currency}${vnd} của khế ước ${c.code} tại ngày ${b.date} (tính cả các khoản gốc ghi sổ sau ngày này)`, 409);
   }
   const gl = await bankGl(trx, b.bankAccountNo);
   const lender = c.partyCode;
@@ -232,10 +235,10 @@ export async function repay(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof re
 }
 
 // Tất toán: dư nợ gốc và lãi phải trả (theo khế ước) đều bằng 0 mới đóng khế ước.
-export async function settleLoan(trx: Trx, tenantId: string, id: number): Promise<LoanDto> {
+export async function settleLoan(trx: Trx, tenantId: string, id: number, hideAmounts = false): Promise<LoanDto> {
   const { c, stat } = await activeLoan(trx, tenantId, id);
   if (!D(stat.outstandingVnd).isZero() || !D(stat.outstandingCur).isZero() || !D(stat.interestPayable).isZero())
-    throw new AppError('LOAN_OUTSTANDING', `Khế ước ${c.code} còn dư nợ gốc ${formatVnNumber(stat.outstandingVnd)}, lãi phải trả ${formatVnNumber(stat.interestPayable)}: chưa tất toán được`, 409);
+    throw new AppError('LOAN_OUTSTANDING', hideAmounts ? `Khế ước ${c.code} còn dư nợ gốc hoặc lãi phải trả: chưa tất toán được` : `Khế ước ${c.code} còn dư nợ gốc ${formatVnNumber(stat.outstandingVnd)}, lãi phải trả ${formatVnNumber(stat.interestPayable)}: chưa tất toán được`, 409);
   await sql`UPDATE contract SET status = 'terminated' WHERE id = ${id}::bigint`.execute(trx);
   return getLoan(trx, id);
 }

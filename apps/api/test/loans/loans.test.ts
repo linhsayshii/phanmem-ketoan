@@ -156,4 +156,44 @@ describe('khế ước vay', () => {
     expect(all.some((l) => l.code === '635' && D(l.debit).gte(40000000))).toBe(true);
     const again = await call('POST', '/api/fx/revaluation', { date: '2026-12-31', rates: { USD: '25400' } }); expect(again.json().unchanged).toBe(true);
   });
+
+  it('người thiếu view_payable: GET khế ước 403; tạo, sửa, tất toán, chạy lãi, quy trình cuối kỳ không trả số liệu khế ước; thông báo lỗi không nêu số; giải ngân, trả nợ cần voucher.post', async () => {
+    const t = await setupLedgerTenant(ctx, `LP${Date.now()}`, 'TT99');
+    const as = (c: string) => (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object) => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload && { payload }) });
+    const admin = as(t.cookie);
+    for (const [name, payload] of [['bank', { code: 'VCB', name: 'Vietcombank' }], ['bank_account', { bank_code: 'VCB', account_no: '0011001', gl_account_code: '112' }]] as const)
+      expect((await admin('POST', `/api/catalogs/${name}`, payload)).statusCode).toBe(201);
+    const user = async (roleCode: string) => {
+      const username = `lp_${roleCode}_${Date.now()}`;
+      expect((await admin('POST', '/api/users', { username, fullName: 'X', password: 'Matkhau1!', roleCode, sensitiveFlags: [] })).statusCode).toBe(201);
+      const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+      return as(`sid=${login.cookies.find((x) => x.name === 'sid')!.value}`);
+    };
+    const kt = await user('ketoan_truong');
+    const c = await kt('POST', '/api/loans', loan('VAYS', { value: '500000000' })); expect(c.statusCode, c.body).toBe(201);
+    expect(c.json()).toMatchObject({ code: 'VAYS', outstanding: null, interestPayable: null, drawn: null });
+    const id = c.json().id as number;
+    expect((await kt('GET', `/api/loans/${id}`)).statusCode).toBe(403);
+    expect((await kt('POST', `/api/loans/${id}/disburse`, { date: '2026-01-11', amount: '400000000', bankAccountNo: '0011001' })).statusCode).toBe(201);
+    const lim = await kt('POST', `/api/loans/${id}/disburse`, { date: '2026-01-12', amount: '200000000', bankAccountNo: '0011001' });
+    expect(lim.json().error).toMatchObject({ code: 'LOAN_LIMIT', message: 'Giải ngân vượt hạn mức của khế ước VAYS' });
+    const over = await kt('POST', `/api/loans/${id}/repay`, { date: '2026-01-20', principal: '500000000', bankAccountNo: '0011001' });
+    expect(over.json().error.code).toBe('LOAN_OVERPAY'); expect(over.json().error.message).not.toMatch(/\d{3}\.\d{3}/);
+    const st = await kt('POST', `/api/loans/${id}/settle`); expect(st.json().error.code).toBe('LOAN_OUTSTANDING'); expect(st.json().error.message).not.toMatch(/\d{3}\.\d{3}/);
+    const up = await kt('PUT', `/api/loans/${id}`, loan('VAYS', { value: '500000000', name: 'Vay S' })); expect(up.statusCode, up.body).toBe(200);
+    expect(up.json()).toMatchObject({ name: 'Vay S', outstanding: null });
+    const run = await kt('POST', '/api/loan-runs', { fiscalYear: 2026, periodNo: 1 }); expect(run.statusCode, run.body).toBe(200);
+    expect(run.json()).toMatchObject({ lines: null, unchanged: false });
+    const pc = await kt('POST', '/api/period-close/run', { fiscalYear: 2026, periodNo: 1, step: 'loan_interest' }); expect(pc.statusCode, pc.body).toBe(200);
+    expect(pc.json().result).toMatchObject({ lines: null, unchanged: true });
+    expect((await kt('GET', '/api/asset-runs?year=2026')).json()).toEqual([]);
+    // Có view_payable: thấy lãi từng khế ước.
+    expect((await admin('POST', '/api/loan-runs', { fiscalYear: 2026, periodNo: 1 })).json().lines).toEqual([{ loanCode: 'VAYS', interest: expect.any(String), interestVnd: expect.any(String) }]);
+    // Thiếu voucher.post: giải ngân, trả nợ 403.
+    await ctx.t.admin.deleteFrom('role_permission').where('tenant_id', '=', t.tenantId).where('permission_code', '=', 'voucher.post')
+      .where('role_id', '=', (eb) => eb.selectFrom('role').select('id').where('tenant_id', '=', t.tenantId).where('code', '=', 'ketoan_truong')).execute();
+    const kt2 = await user('ketoan_truong');
+    expect((await kt2('POST', `/api/loans/${id}/disburse`, { date: '2026-02-01', amount: '1', bankAccountNo: '0011001' })).statusCode).toBe(403);
+    expect((await kt2('POST', `/api/loans/${id}/repay`, { date: '2026-02-01', principal: '1', bankAccountNo: '0011001' })).statusCode).toBe(403);
+  });
 });
