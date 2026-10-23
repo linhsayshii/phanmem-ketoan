@@ -5,6 +5,7 @@ import { D, Decimal } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { dateIso } from '../ledger/vouchers.service.js';
 import { idOf } from './assets.js';
+import { departmentAt } from './reports.js';
 import { assetValues } from './schedule.js';
 
 // Kiểm kê TSCĐ, công cụ dụng cụ (05 - TSCĐ): số sổ sách là ảnh chụp tại ngày kiểm kê (fill), số kiểm kê chỉ nhập số lượng, nguyên giá và giá trị còn lại theo kiểm kê tính tỷ lệ.
@@ -29,17 +30,28 @@ export interface CountDto { id: number; kind: string; countDate: string; departm
 // Theo kiểm kê = số sổ × số kiểm kê / số lượng sổ (làm tròn nửa lên): thẻ một đơn vị thiếu → 0, CCDC giảm một phần → tỷ lệ.
 const prorate = (v: string, actual: Decimal, book: string) => D(v).times(actual).div(book).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
 
-export async function loadCount(trx: Trx, id: number, lock = false): Promise<CountDto> {
+// Điều chuyển hiệu lực theo từng thẻ, sắp theo ngày: để dựng bộ phận tại ngày kiểm kê.
+async function transfersOf(trx: Trx, ids: number[]) {
+  const m = new Map<number, { date: string; data: Record<string, unknown> }[]>();
+  if (!ids.length) return m;
+  const es = await trx.selectFrom('asset_event').select(['asset_id', 'event_date', 'data']).where('asset_id', 'in', ids).where('kind', '=', 'transfer').where('state', '=', 'active').orderBy('event_date').orderBy('created_at').execute();
+  for (const e of es) (m.get(Number(e.asset_id)) ?? m.set(Number(e.asset_id), []).get(Number(e.asset_id))!).push({ date: e.event_date, data: e.data as Record<string, unknown> });
+  return m;
+}
+
+export async function loadCount(trx: Trx, id: number, lock = false, withLines = true): Promise<CountDto> {
   const c = await (lock ? trx.selectFrom('asset_count as c').forUpdate('c') : trx.selectFrom('asset_count as c')).leftJoin('department as d', 'd.id', 'c.department_id')
     .select(['c.id', 'c.kind', 'c.count_date', 'c.members', 'c.note', 'c.status', 'd.code as dept', 'd.name as dept_name']).where('c.id', '=', id).executeTakeFirst();
   if (!c) throw new AppError('ASSET_COUNT_NOT_FOUND', 'Không tìm thấy biên bản kiểm kê tài sản', 404);
-  const ls = await trx.selectFrom('asset_count_line as l').innerJoin('asset as a', 'a.id', 'l.asset_id').leftJoin('department as d', 'd.id', 'a.department_id')
-    .select(['a.id as asset_id', 'a.code', 'a.name', 'a.uom', 'd.code as dept', 'l.book_quantity', 'l.actual_quantity', 'l.book_cost', 'l.book_nbv', 'l.condition', 'l.note']).where('l.count_id', '=', id).orderBy('a.code').execute();
+  const ls = withLines ? await trx.selectFrom('asset_count_line as l').innerJoin('asset as a', 'a.id', 'l.asset_id')
+    .select(['a.id as asset_id', 'a.code', 'a.name', 'a.uom', 'a.department_id as dept_id', 'l.book_quantity', 'l.actual_quantity', 'l.book_cost', 'l.book_nbv', 'l.condition', 'l.note']).where('l.count_id', '=', id).orderBy('a.code').execute() : [];
+  const trs = await transfersOf(trx, ls.map((l) => Number(l.asset_id)));
+  const codes = new Map((await trx.selectFrom('department').select(['id', 'code']).execute()).map((d) => [Number(d.id), d.code]));
   const lines = ls.map((l): CountLine => {
     const act = l.actual_quantity === null ? null : D(l.actual_quantity);
     const ac = act && D(l.book_quantity).gt(0) ? prorate(l.book_cost, act, l.book_quantity) : null; const an = act && D(l.book_quantity).gt(0) ? prorate(l.book_nbv, act, l.book_quantity) : null;
     const diff = act ? act.minus(l.book_quantity) : null;
-    return { assetId: Number(l.asset_id), code: l.code, name: l.name, uom: l.uom, departmentCode: l.dept, bookQuantity: D(l.book_quantity).toFixed(4), actualQuantity: act?.toFixed(4) ?? null, diffQuantity: diff?.toFixed(4) ?? null,
+    return { assetId: Number(l.asset_id), code: l.code, name: l.name, uom: l.uom, departmentCode: codes.get(departmentAt(trs.get(Number(l.asset_id)) ?? [], c.count_date, l.dept_id === null ? null : Number(l.dept_id), true) ?? -1) ?? null, bookQuantity: D(l.book_quantity).toFixed(4), actualQuantity: act?.toFixed(4) ?? null, diffQuantity: diff?.toFixed(4) ?? null,
       bookCost: D(l.book_cost).toFixed(0), bookNbv: D(l.book_nbv).toFixed(0), actualCost: ac?.toFixed(0) ?? null, actualNbv: an?.toFixed(0) ?? null,
       diffCost: ac ? ac.minus(l.book_cost).toFixed(0) : null, diffNbv: an ? an.minus(l.book_nbv).toFixed(0) : null, condition: l.condition, note: l.note,
       suggestion: diff && !diff.isZero() ? (diff.lt(0) ? 'decrease' : 'increase') : null };
@@ -47,9 +59,11 @@ export async function loadCount(trx: Trx, id: number, lock = false): Promise<Cou
   return { id: Number(c.id), kind: c.kind, countDate: c.count_date, departmentCode: c.dept, departmentName: c.dept_name, members: c.members as CountDto['members'], note: c.note, status: c.status, lines };
 }
 
+// Danh sách chỉ có đầu biên bản và số dòng; mở một biên bản mới tải đủ dòng.
 export async function listCounts(trx: Trx) { // shortcut: 200 biên bản gần nhất, thêm phân trang khi cần
   const ids = await trx.selectFrom('asset_count').select('id').orderBy('count_date', 'desc').orderBy('id', 'desc').limit(200).execute();
-  return Promise.all(ids.map((i) => loadCount(trx, Number(i.id))));
+  const n = new Map((await trx.selectFrom('asset_count_line').select(['count_id', (eb) => eb.fn.countAll().as('n')]).groupBy('count_id').execute()).map((r) => [Number(r.count_id), Number(r.n)]));
+  return Promise.all(ids.map(async (i) => ({ ...(await loadCount(trx, Number(i.id), false, false)), lineCount: n.get(Number(i.id)) ?? 0 })));
 }
 
 export async function createCount(trx: Trx, ctx: { tenantId: string; userId: string }, b: z.infer<typeof countInput>): Promise<CountDto> {
@@ -81,16 +95,16 @@ export async function deleteCount(trx: Trx, id: number): Promise<void> {
 }
 
 /**
- * Điền số sổ sách tại ngày kiểm kê: thẻ cùng loại (và bộ phận hiện tại nếu chọn) đã có nguyên giá đến ngày đó và chưa ghi giảm trước hoặc trong ngày.
+ * Điền số sổ sách tại ngày kiểm kê: thẻ cùng loại (và bộ phận tại ngày kiểm kê nếu chọn, dựng từ biến động điều chuyển) đã có nguyên giá đến ngày đó và chưa ghi giảm trước hoặc trong ngày.
  * Số lượng tại ngày = số lượng thẻ + phần ghi giảm một phần sau ngày đó (biến động hiệu lực). Làm lại được: giữ số kiểm kê đã nhập, bỏ dòng thẻ không còn thuộc phạm vi.
- * shortcut: bộ phận lọc theo bộ phận hiện tại của thẻ, không dựng lại bộ phận tại ngày từ biến động điều chuyển; nâng cấp nếu cần kiểm kê lùi ngày sau điều chuyển.
  */
 export async function fillCount(trx: Trx, ctx: { tenantId: string }, id: number): Promise<CountDto> {
   const c = await draftOf(trx, id);
   const dept = c.departmentCode ? await idOf(trx, 'department', c.departmentCode, 'bộ phận') : null;
-  let q = trx.selectFrom('asset').select(['id', 'quantity', 'status', 'decrease_date']).where('kind', '=', c.kind);
-  if (dept !== null) q = q.where('department_id', '=', dept);
-  const assets = (await q.execute()).filter((a) => !(a.status === 'decreased' && a.decrease_date !== null && a.decrease_date <= c.countDate));
+  const all = await trx.selectFrom('asset').select(['id', 'quantity', 'status', 'decrease_date', 'department_id']).where('kind', '=', c.kind).execute();
+  const trs = await transfersOf(trx, all.map((a) => a.id));
+  const inScope = (a: { id: number; department_id: number | null }) => dept === null || departmentAt(trs.get(a.id) ?? [], c.countDate, a.department_id === null ? null : Number(a.department_id), true) === dept;
+  const assets = all.filter(inScope).filter((a) => !(a.status === 'decreased' && a.decrease_date !== null && a.decrease_date <= c.countDate));
   const ids = assets.map((a) => a.id);
   const vals = await assetValues(trx, ctx.tenantId, c.countDate, [], ids);
   const later = ids.length ? await trx.selectFrom('asset_event').select(['asset_id', 'data']).where('asset_id', 'in', ids).where('kind', '=', 'decrease').where('state', '=', 'active').where('event_date', '>', c.countDate).execute() : [];

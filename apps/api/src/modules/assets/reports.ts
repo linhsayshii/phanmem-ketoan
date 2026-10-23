@@ -74,6 +74,12 @@ export async function assetRegister(trx: Trx, tenantId: string, q: { from: strin
   return { from: q.from, to: q.to, groups: [...groups.values()] };
 }
 
+// Bộ phận tại ngày d: bộ phận cũ của lần điều chuyển (đã sắp theo ngày) đầu tiên từ ngày d trở đi (đã sau d thì tài sản còn ở bộ phận cũ); không còn lần nào thì bộ phận hiện tại.
+export function departmentAt(transfers: { date: string; data: Record<string, unknown> }[], date: string, current: number | null, after = false): number | null {
+  const t = transfers.find((x) => (after ? x.date > date : x.date >= date));
+  return t ? ((t.data['before'] as { departmentId?: number | null } | undefined)?.departmentId ?? null) : current;
+}
+
 export async function assetsByLocation(trx: Trx, tenantId: string, q: { from: string; to: string; departmentId?: number | undefined }) {
   const held = await heldAssets(trx, tenantId, ['fixed', 'tool'], q.from, q.to);
   const trs = group(await eventsOf(trx, held.map((h) => h.a.id), ['transfer'], '9999-12-31'), (e) => e.assetId);
@@ -90,8 +96,7 @@ export async function assetsByLocation(trx: Trx, tenantId: string, q: { from: st
   for (const h of held) {
     const a = h.a; const ts = trs.get(a.id) ?? [];
     const beforeOf = (t: Ev) => ((t.data['before'] as Row | undefined)?.['departmentId'] as number | null | undefined) ?? null;
-    // Bộ phận tại ngày d: bộ phận cũ của lần điều chuyển đầu tiên từ ngày d trở đi (đã sau d thì tài sản còn ở bộ phận cũ); không còn lần nào thì bộ phận hiện tại.
-    const deptFrom = (d: string, after = false) => { const t = ts.find((x) => (after ? x.date > d : x.date >= d)); return t ? beforeOf(t) : a.departmentId; };
+    const deptFrom = (d: string, after = false) => departmentAt(ts, d, a.departmentId, after);
     const qty0 = a.kind === 'fixed' ? '1' : h.grossQty; const unit = D(qty0).isZero() ? '0' : D(h.cost).div(qty0).toDecimalPlaces(0).toString();
     const base = { assetCode: a.code, name: a.name, uom: a.uom };
     const primary = deptFrom(q.from); const decs = h.decs.filter((e) => e.date >= q.from);

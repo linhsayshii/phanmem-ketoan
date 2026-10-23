@@ -112,7 +112,7 @@ Kế hoạch: `2026-10-23-giai-doan-4-chi-tiet.md`. Đánh số tiếp GĐ3 (k�
 
 481. Điền số sổ sách lấy thẻ cùng loại có nguyên giá > 0 tại ngày kiểm kê, bỏ thẻ đã ghi giảm trước hoặc trong ngày; số lượng tại ngày = số lượng thẻ + phần ghi giảm một phần xảy ra sau ngày. Làm lại giữ số kiểm kê đã nhập, bỏ dòng thẻ ra khỏi phạm vi. Hoàn thành yêu cầu có ít nhất một dòng và nhập đủ số kiểm kê; biên bản done không sửa, không xóa (409) — giá nếu sai: hạn chế đã biết dưới đây. (T14)
 
-482. shortcut: lọc bộ phận theo bộ phận hiện tại của thẻ, không dựng lại bộ phận tại ngày từ biến động điều chuyển — kiểm kê thường ở ngày gần hiện tại; nâng cấp nếu cần kiểm kê lùi ngày sau điều chuyển. (T14)
+482. Bộ phận trong kiểm kê tính tại ngày kiểm kê bằng `departmentAt` (xuất từ `reports.ts`, dùng chung với sổ theo nơi sử dụng của T13): bộ phận cũ của lần điều chuyển hiệu lực đầu tiên sau ngày kiểm kê, không có thì bộ phận hiện tại; dùng cho bộ lọc khi điền số sổ sách và cột "Nơi sử dụng" khi tải và in — một quy tắc cho cả hai nơi, kiểm kê lùi ngày không lệch bộ phận sau điều chuyển; giá nếu sai: sửa `departmentAt`. Danh sách biên bản chỉ trả đầu biên bản và `lineCount`, mở biên bản mới tải dòng; in biên bản cần `report.print` như các in tài sản khác. (T14 vòng 1)
 
 483. Biên bản in từ biến động: 01-TSCĐ từ `increase`, 02-TSCĐ từ `decrease` có `data.reason = liquidation`, 04-TSCĐ từ `revaluation`, chỉ cho thẻ TSCĐ; mẫu không khớp biến động trả 400, biến động đã hủy trả 409. 02-TSCĐ lấy nguyên giá, hao mòn lũy kế, giá trị còn lại từ `data` của biến động (đã tính lúc ghi giảm), không tính lại — một nguồn số với bút toán đã ghi sổ; giá nếu sai: dữ liệu biến động cũ thiếu `data` thì in trống. (T14)
 

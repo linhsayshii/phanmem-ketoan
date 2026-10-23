@@ -107,10 +107,14 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   const printFmt = z.enum(['html', 'pdf']).default('html');
   const sendForm = async (reply: FastifyReply, f: 'html' | 'pdf', r: { html: string; name: string }) => f === 'html' ? reply.type('text/html; charset=utf-8').send(r.html)
     : reply.type('application/pdf').header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(r.name)}.pdf`).send(await renderPdf(r.html));
-  app.get('/api/print/asset-event/:eventId', { preHandler: app.requirePermission('asset.view'), schema: { params: z.object({ eventId: z.string().uuid() }), querystring: z.object({ form: z.enum(['01-TSCD', '02-TSCD', '04-TSCD']).optional(), format: printFmt }) } }, async (req, reply) =>
-    sendForm(reply, req.query.format, await app.withTenant(req, (trx) => eventFormHtml(trx, tid(req), req.params.eventId, req.query.form), READ_SNAPSHOT)));
-  app.get('/api/print/asset-count/:id', { preHandler: app.requirePermission('asset.view'), schema: { params: countId, querystring: z.object({ format: printFmt }) } }, async (req, reply) =>
-    sendForm(reply, req.query.format, await app.withTenant(req, async (trx) => assetCountHtml(trx, tid(req), await loadCount(trx, req.params.id)), READ_SNAPSHOT)));
+  app.get('/api/print/asset-event/:eventId', { preHandler: app.requirePermission('asset.view'), schema: { params: z.object({ eventId: z.string().uuid() }), querystring: z.object({ form: z.enum(['01-TSCD', '02-TSCD', '04-TSCD']).optional(), format: printFmt }) } }, async (req, reply) => {
+    assertPrint(req.auth!);
+    return sendForm(reply, req.query.format, await app.withTenant(req, (trx) => eventFormHtml(trx, tid(req), req.params.eventId, req.query.form), READ_SNAPSHOT));
+  });
+  app.get('/api/print/asset-count/:id', { preHandler: app.requirePermission('asset.view'), schema: { params: countId, querystring: z.object({ format: printFmt }) } }, async (req, reply) => {
+    assertPrint(req.auth!);
+    return sendForm(reply, req.query.format, await app.withTenant(req, async (trx) => assetCountHtml(trx, tid(req), await loadCount(trx, req.params.id)), READ_SNAPSHOT));
+  });
 
   // ---- Sổ, thẻ và báo cáo tài sản: đọc trong giao dịch REPEATABLE READ READ ONLY; JSON cho màn hình, html/pdf/xlsx cần thêm quyền report.print ----
   const view = app.requirePermission('report.view');

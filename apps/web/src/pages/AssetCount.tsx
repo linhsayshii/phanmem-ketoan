@@ -14,7 +14,7 @@ import { QTY_RE } from './stockCalc.js';
 // Chênh lệch không tự ghi sổ: dòng thiếu gợi ý Ghi giảm, dòng thừa gợi ý Ghi tăng (mở hộp thoại biến động của thẻ).
 interface Line { assetId: number; code: string; name: string; uom: string | null; departmentCode: string | null; bookQuantity: string; actualQuantity: string | null; diffQuantity: string | null;
   bookCost: string; bookNbv: string; actualCost: string | null; actualNbv: string | null; diffCost: string | null; diffNbv: string | null; condition: string | null; note: string | null; suggestion: 'decrease' | 'increase' | null }
-interface Doc { id: number; kind: 'fixed' | 'tool'; countDate: string; departmentCode: string | null; departmentName: string | null; note: string | null; status: 'draft' | 'done'; lines: Line[] }
+interface Doc { id: number; kind: 'fixed' | 'tool'; countDate: string; departmentCode: string | null; departmentName: string | null; note: string | null; status: 'draft' | 'done'; lines: Line[]; lineCount?: number }
 interface Row { assetId: number; code: string; name: string; bookQuantity: string; actualQuantity: string; bookCost: string; bookNbv: string; condition: string; note: string }
 interface Card extends DialogAsset { kind: string }
 
@@ -136,10 +136,10 @@ export default function AssetCountPage() {
         </>
       )}
       <Table<Doc> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 10, hideOnSinglePage: true }} title={() => <b>Các biên bản kiểm kê gần đây</b>}
-        rowClassName={(d) => (d.id === current?.id ? 'ant-table-row-selected' : '')} onRow={(d) => ({ onClick: () => open(d), style: { cursor: 'pointer' } })}
+        rowClassName={(d) => (d.id === current?.id ? 'ant-table-row-selected' : '')} onRow={(d) => ({ onClick: () => { api<Doc>(base(d.id)).then(open, fail); }, style: { cursor: 'pointer' } })}
         columns={[
           { title: 'Số', dataIndex: 'id', width: 70 }, { title: 'Đối tượng', dataIndex: 'kind', render: (k: Doc['kind']) => KIND[k] }, { title: 'Ngày kiểm kê', dataIndex: 'countDate', width: 130, render: (d: string) => formatVnDate(d) },
-          { title: 'Số dòng', width: 90, align: 'right', render: (_, d) => d.lines.length }, { title: 'Trạng thái', render: (_, d) => <Tag color={STATUS[d.status].color}>{STATUS[d.status].label}</Tag> },
+          { title: 'Số dòng', width: 90, align: 'right', render: (_, d) => d.lineCount ?? d.lines.length }, { title: 'Trạng thái', render: (_, d) => <Tag color={STATUS[d.status].color}>{STATUS[d.status].label}</Tag> },
         ]} />
     </Space>
   );

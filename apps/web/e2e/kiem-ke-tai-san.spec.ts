@@ -22,14 +22,14 @@ test('kiểm kê tài sản: điền số sổ sách, nhập số kiểm kê, l�
   const v = await request.post('/api/vouchers', { data: { voucherType: 'PKT', postingDate: '2026-01-01', documentDate: '2026-01-01', description: 'E2E kiểm kê tài sản', autoPost: true,
     lines: [{ accountCode: '2111', debit: '120000000', credit: '0', assetCode: code }, { accountCode: '331', debit: '0', credit: '120000000', partyCode: 'NCC-E2E' }] } });
   expect(v.ok(), await v.text()).toBeTruthy();
-  const c = await request.post('/api/asset-counts', { data: { kind: 'fixed', countDate: '2026-01-31', departmentCode: dept } });
-  expect(c.ok(), await c.text()).toBeTruthy();
-  const count = await c.json();
-
   await page.goto('/tai-san/kiem-ke');
   await expect(page.getByRole('heading', { name: 'Kiểm kê tài sản' })).toBeVisible();
-  await page.locator('.ant-table-row', { hasText: 'Nháp' }).filter({ has: page.getByText('31/01/2026') }).first().click();
-  await expect(page.getByText(`Biên bản số ${count.id}`)).toBeVisible();
+  await page.getByLabel('Ngày kiểm kê').fill('31/01/2026'); await page.keyboard.press('Enter');
+  await page.getByRole('combobox', { name: /Bộ phận/ }).focus(); await page.keyboard.press('F4'); await page.keyboard.type(dept);
+  await page.locator('.ant-select-item-option', { hasText: dept }).first().click();
+  await page.getByRole('button', { name: 'Lập biên bản kiểm kê' }).click();
+  await expect(page.getByText(/Biên bản số \d+/)).toBeVisible();
+  const count = { id: Number((await page.getByText(/Biên bản số \d+/).textContent())!.match(/\d+/)![0]) };
   await page.getByRole('button', { name: 'Điền số sổ sách' }).click();
   const row = page.locator('.ag-center-cols-container .ag-row', { hasText: code });
   await expect(row).toContainText('120.000.000');
