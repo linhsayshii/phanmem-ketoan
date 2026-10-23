@@ -74,3 +74,23 @@ Dữ liệu: DB tạm, 100 hàng × 5 kho, cả năm 2026, 540 phiếu kho ghi s
 Đạt tiêu chí nên không tối ưu mã giá vốn (`costingRun.ts` giữ nguyên). Theo dõi từng giai đoạn của lần đầu (khoảng 19 giây): tải phát sinh và dựng phạm vi khoảng 2 giây, tính giá bằng `computeCosting` cùng truy vấn lớp giá điều chỉnh khoảng 9 giây, ghi gán giá và lập chứng từ GV khoảng 3 giây, ghi lớp giá khoảng 1,5 giây, cập nhật trạng thái tính lại khoảng 2,5 giây.
 
 Bẫy khi đo: nếu hủy giao dịch của phương pháp trước rồi không dọn, lần chạy lại của phương pháp sau mất khoảng 210 giây (kế hoạch truy vấn lệch do dòng chết và thống kê cũ; lần đầu vẫn nhanh). Script chạy `ANALYZE` trước lần chạy lại và `VACUUM ANALYZE` sau mỗi phương pháp, như autovacuum trên hệ thống thật. Số liệu trên ở trạng thái đã dọn.
+
+## Khấu hao 5.000 thẻ (GĐ4, `pnpm -F @kt/api perf:assets`)
+
+Dữ liệu: DB tạm, 3.000 TSCĐ + 1.500 CCDC + 500 chi phí trả trước, mỗi thẻ 2 dòng phân bổ (6422 70%, 6421 30%), thẻ sinh bằng API và ghi nguyên giá bằng phiếu kế toán (100 thẻ mỗi phiếu), thời gian sử dụng 6-84 tháng, ngày bắt đầu rải trong tháng 1. Chạy lần lượt 12 kỳ cho cả ba loại, mỗi kỳ chạy lại ngay (phải `unchanged`). Tiêu chí: mỗi lần chạy kỳ dưới 15 giây, chạy lại không đổi dưới 10 giây. Sinh dữ liệu khoảng 110 giây. Biến môi trường `PERF_FIXED`, `PERF_TOOLS`, `PERF_PREPAID` đổi số thẻ.
+
+Trước tối ưu (đo ở 600 TSCĐ, 300 CCDC, 100 trả trước; tuyến tính khoảng 20 ms mỗi thẻ nên 3.000 TSCĐ ước tính 60 giây): khấu hao kỳ lớn nhất 12,4 giây, trung bình 9,1 giây, chạy lại 11,4 giây; CCDC 7,5 giây; trả trước 2,7 giây.
+
+Sau tối ưu, đủ 5.000 thẻ (giây):
+
+| Loại | Chạy kỳ lớn nhất | Chạy kỳ trung bình | Chạy lại lớn nhất | Dòng phát sinh (12 kỳ) |
+|---|---|---|---|---|
+| Khấu hao TSCĐ | 13,2 | 5,2 | 1,3 | 36.000 |
+| Phân bổ CCDC | 3,0 | 2,0 | 0,4 | 15.750 |
+| Phân bổ trả trước | 1,0 | 0,8 | 0,2 | 6.000 |
+
+Ba thay đổi:
+
+1. **`scheduleForMany`** (`schedule.ts`): `computeAmounts` nạp thẻ, biến động dừng/tiếp tục, phiên bản lịch hiện hành và dòng lịch bằng vài truy vấn theo lô, gọi `fn_asset_values_at` một lần cho cả kỳ (không còn một lần mỗi thẻ), quyết định trong bộ nhớ (hàm `decide` dùng chung với `scheduleFor` một thẻ) rồi chèn phiên bản mới và dòng lịch theo lô (`unnest`). Chạy kỳ không đổi từ 11,4 giây xuống 0,3 giây ở 600 thẻ. Kỳ đầu của mỗi thẻ vẫn phải dựng và lưu lịch cả đời thẻ (khoảng 180.000 dòng cho 3.000 thẻ: dựng khoảng 4 giây, chèn khoảng 4,5 giây).
+2. **Migration `0077_ghep_cap_tuyen_tinh.sql`**: `fn_build_pairs` nhánh n-n nối Nợ với Có bằng điều kiện giao đoạn nên so từng cặp (6.000 x 3.000 cặp); chứng từ KH 9.000 dòng mất khoảng 8,3 giây ở `post_voucher`. Bản mới cắt trục tại mọi điểm cuối đoạn rồi nối bằng số thứ tự đoạn: 0,3 giây, kết quả ghép và thứ tự không đổi.
+3. Bước còn lại đáng kể ở kỳ thường: tạo chứng từ 9.000 dòng khoảng 3 giây (`insertVoucher`, tra cứu và quy tắc từng dòng), chưa tối ưu.

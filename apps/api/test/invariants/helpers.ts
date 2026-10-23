@@ -143,3 +143,40 @@ export const arbStockOps: fc.Arbitrary<StockOp> = fc.oneof(
   { weight: 2, arbitrary: fc.record({ kind: fc.constant('lr' as const), mode: fc.constantFrom('assembly' as const, 'disassembly' as const), a: fc.integer({ min: 1, max: 5 }), b: fc.integer({ min: 1, max: 5 }), s: fc.integer({ min: 1, max: 3 }), extra: fc.integer({ min: 0, max: 20 }), date: arbDate2026, lot: arbLot }) },
   { weight: 2, arbitrary: fc.record({ kind: fc.constant('reverse' as const), pick: fc.nat() }) },
   { weight: 4, arbitrary: fc.record({ kind: fc.constant('run' as const), to: arbMonthEnd }) });
+
+// Bất biến 8: chuỗi nghiệp vụ tài sản. slot 0,1 = TSCĐ, 2 = CCDC, 3 = chi phí trả trước; k 0 = khấu hao, 1 = phân bổ CCDC, 2 = phân bổ trả trước.
+// `probe` là ngày ngẫu nhiên để kiểm đối chiếu sổ cái sau thao tác.
+export type AssetOp =
+  | { kind: 'buy'; slot: number; date: string; amount: string; life: number; probe: string }
+  | { kind: 'increase'; slot: number; date: string; amount: string; probe: string }
+  | { kind: 'run'; k: number; period: number; probe: string }
+  | { kind: 'rerun'; k: number; period: number; probe: string }
+  | { kind: 'decrease'; slot: number; date: string; partial: boolean; probe: string }
+  | { kind: 'cancel'; pick: number; probe: string }
+  | { kind: 'revalue'; slot: number; date: string; add: number; keepPct: number; probe: string }
+  | { kind: 'suspend'; slot: number; date: string; probe: string }
+  | { kind: 'resume'; slot: number; date: string; probe: string }
+  | { kind: 'life'; slot: number; date: string; remaining: number; probe: string }
+  | { kind: 'unpost'; pick: number; probe: string };
+const arbSlot = fc.integer({ min: 0, max: 3 });
+const arbFixedSlot = fc.integer({ min: 0, max: 1 });
+const arbCost = fc.integer({ min: 100_000, max: 500_000_000 }).map(String);
+const arbLife = fc.integer({ min: 3, max: 24 });
+const arbMonthStart = fc.integer({ min: 1, max: 12 }).map((m) => `2026-${String(m).padStart(2, '0')}-01`);
+const buyOf = (slot: fc.Arbitrary<number>, date: fc.Arbitrary<string>) => fc.record({ kind: fc.constant('buy' as const), slot, date, amount: arbCost, life: arbLife, probe: arbDate2026 });
+export const arbAssetOps: fc.Arbitrary<AssetOp> = fc.oneof(
+  { weight: 3, arbitrary: buyOf(arbSlot, arbDate2026) },
+  { weight: 2, arbitrary: buyOf(arbSlot, arbMonthStart) },
+  { weight: 3, arbitrary: fc.record({ kind: fc.constant('increase' as const), slot: arbSlot, date: arbDate2026, amount: arbCost, probe: arbDate2026 }) },
+  { weight: 5, arbitrary: fc.record({ kind: fc.constant('run' as const), k: fc.integer({ min: 0, max: 2 }), period: fc.integer({ min: 1, max: 12 }), probe: arbDate2026 }) },
+  { weight: 3, arbitrary: fc.record({ kind: fc.constant('rerun' as const), k: fc.integer({ min: 0, max: 2 }), period: fc.integer({ min: 1, max: 12 }), probe: arbDate2026 }) },
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant('decrease' as const), slot: arbSlot, date: arbDate2026, partial: fc.boolean(), probe: arbDate2026 }) },
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant('cancel' as const), pick: fc.nat(), probe: arbDate2026 }) },
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant('revalue' as const), slot: arbFixedSlot, date: arbDate2026, add: fc.integer({ min: 0, max: 5_000_000 }), keepPct: fc.integer({ min: 0, max: 100 }), probe: arbDate2026 }) },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant('suspend' as const), slot: arbSlot, date: arbDate2026, probe: arbDate2026 }) },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant('resume' as const), slot: arbSlot, date: arbDate2026, probe: arbDate2026 }) },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant('life' as const), slot: arbSlot, date: arbDate2026, remaining: fc.integer({ min: 1, max: 24 }), probe: arbDate2026 }) },
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant('unpost' as const), pick: fc.nat(), probe: arbDate2026 }) });
+// Ba thẻ mở đầu (TSCĐ, CCDC, chi phí trả trước) rồi các thao tác ngẫu nhiên.
+export const arbAssetChain: fc.Arbitrary<AssetOp[]> = fc.tuple(buyOf(arbFixedSlot, arbDate2026), buyOf(fc.constant(2), arbDate2026), buyOf(fc.constant(3), arbDate2026), fc.array(arbAssetOps, { minLength: 3, maxLength: 12 }))
+  .map(([a, b, c, rest]) => [a, b, c, ...rest]);

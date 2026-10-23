@@ -16,6 +16,11 @@ export async function windowOf(trx: Trx, assetId: number, a: { depreciation_star
   if (!a.depreciation_start_date) return null;
   const evs = await trx.selectFrom('asset_event').select(['kind', 'event_date']).where('asset_id', '=', assetId).where('state', '=', 'active')
     .where('kind', 'in', ['suspend', 'resume']).orderBy('event_date').orderBy('created_at').execute();
+  return windowFrom(a, evs);
+}
+// Dựng cửa sổ từ biến động dừng/tiếp tục đã sắp theo (ngày, thời điểm tạo); windowOf đọc một thẻ, scheduleForMany đọc cả lô bằng một truy vấn.
+function windowFrom(a: { depreciation_start_date: string | null; decrease_date: string | null }, evs: { kind: string; event_date: string }[]): ActiveWindow | null {
+  if (!a.depreciation_start_date) return null;
   const pauses: ActiveWindow['pauses'] = [];
   for (const e of evs) {
     const open = pauses.at(-1);
@@ -64,23 +69,34 @@ type Plan = { values: { cost: string; accumulated: string }; cur: Cur | undefine
  * (V không có dòng P thì units(P) = 0 hoặc V đã tiêu thụ hết đơn vị). Sai một điều kiện: trả phiên bản mới eff = P (chưa lưu).
  * Ngày đọc sổ cái là P.to khi chạy kỳ; lịch xem trước đọc toàn bộ sổ cái.
  */
-async function plan(trx: Trx, assetId: number, a: Asset, span: PeriodSpan, o: { proration: Proration; runIdsOfPeriod: string[]; valuesAt: string; known: PeriodSpan[]; lifeChange?: string | undefined }): Promise<Plan> {
-  const w = await windowOf(trx, assetId, a); const unit = unitOf(a.kind, o.proration);
-  const u = w ? periodUnits(span, w, unit) : '0';
+type PlanState = { prior: { amt: Decimal; used: Decimal }; line: { units: string; amount: string; accumulated: string; fiscal_year: number; period_no: number } | undefined };
+type PlanOpts = { proration: Proration; known: PeriodSpan[]; lifeChange?: string | undefined; periodsOf?: typeof futurePeriods | undefined }; // periodsOf: futurePeriods có nhớ, dùng khi quyết định cả lô
+async function plan(trx: Trx, assetId: number, a: Asset, span: PeriodSpan, o: PlanOpts & { runIdsOfPeriod: string[]; valuesAt: string }): Promise<Plan> {
+  const w = await windowOf(trx, assetId, a);
   const values = (await assetValues(trx, a.tenant_id, o.valuesAt, o.runIdsOfPeriod, [assetId])).get(assetId)!;
+  const cur = await trx.selectFrom('asset_schedule').select(['id', 'version', 'eff_year', 'eff_period', 'basis_cost', 'basis_acc', 'units', 'reason']).where('asset_id', '=', assetId).where('superseded_at', 'is', null)
+    .where(sql<boolean>`(eff_year, eff_period) <= (${span.fiscalYear}, ${span.periodNo})`).orderBy('eff_year', 'desc').orderBy('eff_period', 'desc').orderBy('version', 'desc').limit(1).executeTakeFirst();
+  const P = key(span.fiscalYear, span.periodNo);
+  let state: PlanState | undefined;
+  if (cur && o.lifeChange === undefined) {
+    const lines = await linesOf(trx, [cur.id]);
+    const prior = lines.filter((l) => key(l.fiscal_year, l.period_no) < P);
+    state = { prior: { amt: prior.reduce((s, l) => s.plus(l.amount), ZERO), used: prior.reduce((s, l) => s.plus(l.units), ZERO) }, line: lines.find((l) => key(l.fiscal_year, l.period_no) === P) };
+  }
+  return decide(a, span, o, { w, values, cur, state });
+}
+
+// Quyết định phiên bản lịch cho kỳ P từ dữ liệu đã nạp (không truy vấn): dùng chung cho một thẻ (plan) và cả lô (scheduleForMany).
+function decide(a: Asset, span: PeriodSpan, o: PlanOpts, d: { w: ActiveWindow | null; values: { cost: string; accumulated: string }; cur: Cur | undefined; state: PlanState | undefined }): Plan {
+  const { w, values, cur } = d; const unit = unitOf(a.kind, o.proration); const fp = o.periodsOf ?? futurePeriods;
+  const u = w ? periodUnits(span, w, unit) : '0';
   const fixed = a.kind === 'fixed';
   const cost = D(values.cost); const acc = fixed ? D(values.accumulated) : ZERO;
   const P = key(span.fiscalYear, span.periodNo);
-
-  const cur = await trx.selectFrom('asset_schedule').select(['id', 'version', 'eff_year', 'eff_period', 'basis_cost', 'basis_acc', 'units', 'reason']).where('asset_id', '=', assetId).where('superseded_at', 'is', null)
-    .where(sql<boolean>`(eff_year, eff_period) <= (${span.fiscalYear}, ${span.periodNo})`).orderBy('eff_year', 'desc').orderBy('eff_period', 'desc').orderBy('version', 'desc').limit(1).executeTakeFirst();
   let units = ZERO; let reason = 'initial';
   if (o.lifeChange !== undefined) { units = D(o.lifeChange); reason = 'life_change'; } // điều chỉnh thời gian: phiên bản mới eff = P, U = số đơn vị còn lại người dùng nhập
   else if (cur) {
-    const lines = await linesOf(trx, [cur.id]);
-    const prior = lines.filter((l) => key(l.fiscal_year, l.period_no) < P);
-    const amt = prior.reduce((s, l) => s.plus(l.amount), ZERO); const used = prior.reduce((s, l) => s.plus(l.units), ZERO);
-    const line = lines.find((l) => key(l.fiscal_year, l.period_no) === P);
+    const { prior, line } = d.state!; const amt = prior.amt; const used = prior.used;
     const ledgerOk = fixed ? cost.eq(cur.basis_cost) && acc.eq(D(cur.basis_acc).plus(amt)) : cost.plus(amt).eq(cur.basis_cost);
     const unitsOk = line ? D(line.units).eq(u) : D(u).isZero() || used.gte(cur.units);
     if (ledgerOk && unitsOk) return { values, cur, line: line ? lineOut(line) : null, ok: true };
@@ -94,11 +110,11 @@ async function plan(trx: Trx, assetId: number, a: Asset, span: PeriodSpan, o: { 
     let elapsed = ZERO;
     if (w) {
       const y0 = a.opening_remaining_units !== null && a.opening_year !== null ? a.opening_year : startYear(o.known, w.start);
-      for (const p of y0 <= span.fiscalYear ? futurePeriods(o.known, y0, 1, (span.fiscalYear - y0 + 1) * 12) : []) if (key(p.fiscalYear, p.periodNo) < P) elapsed = elapsed.plus(periodUnits(p, w, unit));
+      for (const p of y0 <= span.fiscalYear ? fp(o.known, y0, 1, (span.fiscalYear - y0 + 1) * 12) : []) if (key(p.fiscalYear, p.periodNo) < P) elapsed = elapsed.plus(periodUnits(p, w, unit));
     }
     units = Decimal.max(ZERO, D(life).minus(elapsed));
   }
-  const periods = futurePeriods(o.known, span.fiscalYear, span.periodNo, units.ceil().toNumber() + 12); // +12: kỳ đầu/cuối tiêu thụ lẻ đơn vị
+  const periods = fp(o.known, span.fiscalYear, span.periodNo, units.ceil().toNumber() + 12); // +12: kỳ đầu/cuối tiêu thụ lẻ đơn vị
   const lines = w ? buildSchedule({ basisValue: Decimal.max(ZERO, cost.minus(acc)).toFixed(0), basisAcc: acc.toFixed(0), units: units.toString(), periods, window: w, unit }) : [];
   return { values, cur, line: lines.find((l) => key(l.fiscalYear, l.periodNo) === P) ?? null, ok: false,
     next: { basisCost: cost.toFixed(0), basisAcc: acc.toFixed(0), units: units.toString(), reason, lines } };
@@ -118,6 +134,62 @@ export async function scheduleFor(trx: Trx, assetId: number, span: PeriodSpan, o
     basis_cost: n.basisCost, basis_acc: n.basisAcc, units: n.units, reason: n.reason }).returning(['id', 'version', 'eff_year', 'eff_period', 'basis_cost', 'basis_acc', 'units', 'reason']).executeTakeFirstOrThrow();
   if (n.lines.length) await trx.insertInto('asset_schedule_line').values(n.lines.map((l) => ({ tenant_id: a.tenant_id, schedule_id: s.id, fiscal_year: l.fiscalYear, period_no: l.periodNo, units: l.units, amount: l.amount, accumulated: l.accumulated }))).execute();
   return { schedule: scheduleOut(s), line: r.line, created: true, values: r.values };
+}
+
+/**
+ * scheduleFor cho cả lô thẻ cùng kỳ (chạy kỳ): nạp thẻ, biến động dừng/tiếp tục, số sổ cái (một lần gọi fn_asset_values_at), phiên bản hiện hành và dòng lịch
+ * bằng vài truy vấn theo lô, quyết định trong bộ nhớ như scheduleFor, rồi ghi phiên bản mới và dòng lịch theo lô. Kết quả cùng thứ tự `ids`.
+ */
+export async function scheduleForMany(trx: Trx, ids: number[], span: PeriodSpan, opts: { proration: Proration; runIdsOfPeriod: string[] }): Promise<Map<number, { schedule: AssetSchedule; line: ScheduleLine | null; values: { cost: string; accumulated: string } }>> {
+  const out = new Map<number, { schedule: AssetSchedule; line: ScheduleLine | null; values: { cost: string; accumulated: string } }>();
+  if (!ids.length) return out;
+  const assets = new Map((await trx.selectFrom('asset').select(['id', 'code', 'tenant_id', 'kind', 'is_depreciable', 'life_units', 'opening_year', 'opening_remaining_units', 'depreciation_start_date', 'decrease_date']).where('id', 'in', ids).execute()).map((a) => [a.id, a]));
+  const evs = await trx.selectFrom('asset_event').select(['asset_id', 'kind', 'event_date']).where('asset_id', 'in', ids).where('state', '=', 'active').where('kind', 'in', ['suspend', 'resume']).orderBy('event_date').orderBy('created_at').execute();
+  const evOf = new Map<number, { kind: string; event_date: string }[]>();
+  for (const e of evs) (evOf.get(e.asset_id) ?? evOf.set(e.asset_id, []).get(e.asset_id)!).push(e);
+  const tenantId = assets.get(ids[0]!)!.tenant_id;
+  const values = await assetValues(trx, tenantId, span.to, opts.runIdsOfPeriod, ids);
+  const P = key(span.fiscalYear, span.periodNo);
+  const curs = await trx.selectFrom('asset_schedule').select(['id', 'asset_id', 'version', 'eff_year', 'eff_period', 'basis_cost', 'basis_acc', 'units', 'reason']).where('asset_id', 'in', ids).where('superseded_at', 'is', null)
+    .where(sql<boolean>`(eff_year, eff_period) <= (${span.fiscalYear}, ${span.periodNo})`).orderBy('eff_year', 'desc').orderBy('eff_period', 'desc').orderBy('version', 'desc').execute();
+  const curOf = new Map<number, Cur>(); for (const c of curs) if (!curOf.has(c.asset_id)) curOf.set(c.asset_id, c); // dòng đầu mỗi thẻ là phiên bản muộn nhất
+  const lines = curOf.size ? await trx.selectFrom('asset_schedule_line').select(['schedule_id', 'fiscal_year', 'period_no', 'units', 'amount', 'accumulated']).where('schedule_id', 'in', [...curOf.values()].map((c) => c.id)).execute() : [];
+  const lineOf = new Map<number, typeof lines>(); for (const l of lines) (lineOf.get(l.schedule_id) ?? lineOf.set(l.schedule_id, []).get(l.schedule_id)!).push(l);
+  const known = await knownPeriods(trx);
+  const memo = new Map<string, PeriodSpan[]>();
+  const periodsOf: typeof futurePeriods = (k, y, p, n) => { const id = `${y}:${p}:${n}`; return memo.get(id) ?? memo.set(id, futurePeriods(k, y, p, n)).get(id)!; };
+
+  const fresh: { id: number; a: Asset; r: Extract<Plan, { ok: false }> }[] = [];
+  for (const id of ids) {
+    const a = assets.get(id)!; const cur = curOf.get(id);
+    let state: PlanState | undefined;
+    if (cur) {
+      const ls = lineOf.get(cur.id) ?? []; const prior = ls.filter((l) => key(l.fiscal_year, l.period_no) < P);
+      state = { prior: { amt: prior.reduce((s, l) => s.plus(l.amount), ZERO), used: prior.reduce((s, l) => s.plus(l.units), ZERO) }, line: ls.find((l) => key(l.fiscal_year, l.period_no) === P) };
+    }
+    const r = decide(a, span, { proration: opts.proration, known, periodsOf }, { w: windowFrom(a, evOf.get(id) ?? []), values: values.get(id)!, cur, state });
+    if (r.ok) out.set(id, { schedule: scheduleOut(r.cur!), line: r.line, values: r.values });
+    else fresh.push({ id, a, r });
+  }
+  if (!fresh.length) return out;
+
+  const freshIds = fresh.map((f) => f.id);
+  await trx.updateTable('asset_schedule').set({ superseded_at: sql`now()` }).where('asset_id', 'in', freshIds).where('superseded_at', 'is', null)
+    .where(sql<boolean>`(eff_year, eff_period) >= (${span.fiscalYear}, ${span.periodNo})`).execute();
+  const maxV = new Map((await trx.selectFrom('asset_schedule').select(['asset_id', (eb) => eb.fn.max('version').as('v')]).where('asset_id', 'in', freshIds).groupBy('asset_id').execute()).map((x) => [x.asset_id, x.v ?? 0]));
+  const inserted = await trx.insertInto('asset_schedule').values(fresh.map((f) => ({ tenant_id: f.a.tenant_id, asset_id: f.id, version: (maxV.get(f.id) ?? 0) + 1, eff_year: span.fiscalYear, eff_period: span.periodNo,
+    basis_cost: f.r.next.basisCost, basis_acc: f.r.next.basisAcc, units: f.r.next.units, reason: f.r.next.reason }))).returning(['id', 'asset_id', 'version', 'eff_year', 'eff_period', 'basis_cost', 'basis_acc', 'units', 'reason']).execute();
+  const sOf = new Map(inserted.map((s) => [s.asset_id, s]));
+  const rows = fresh.flatMap((f) => f.r.next.lines.map((l) => ({ tenant_id: f.a.tenant_id, schedule_id: sOf.get(f.id)!.id, fiscal_year: l.fiscalYear, period_no: l.periodNo, units: l.units, amount: l.amount, accumulated: l.accumulated })));
+  // unnest theo cột: một câu lệnh có 8 tham số mảng thay vì 7 tham số mỗi dòng (phân tích câu lệnh chiếm phần lớn thời gian chèn hàng trăm nghìn dòng)
+  for (let i = 0; i < rows.length; i += 20000) {
+    const c = rows.slice(i, i + 20000);
+    await sql`INSERT INTO asset_schedule_line (tenant_id, schedule_id, fiscal_year, period_no, units, amount, accumulated)
+      SELECT * FROM unnest(${c.map((r) => r.tenant_id)}::uuid[], ${c.map((r) => r.schedule_id)}::bigint[], ${c.map((r) => r.fiscal_year)}::int[], ${c.map((r) => r.period_no)}::int[],
+        ${c.map((r) => r.units)}::numeric[], ${c.map((r) => r.amount)}::numeric[], ${c.map((r) => r.accumulated)}::numeric[])`.execute(trx);
+  }
+  for (const f of fresh) out.set(f.id, { schedule: scheduleOut(sOf.get(f.id)!), line: f.r.line, values: f.r.values });
+  return out;
 }
 
 /**

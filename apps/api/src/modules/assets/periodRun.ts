@@ -5,7 +5,7 @@ import { AppError } from '../../plugins/errors.js';
 import { getSettings } from '../core/settings.js';
 import * as S from '../ledger/vouchers.service.js';
 import { lockTenant } from './assets.js';
-import { assetValues, scheduleFor } from './schedule.js';
+import { assetValues, scheduleForMany } from './schedule.js';
 
 // Chạy khấu hao TSCĐ (KH) và phân bổ CCDC/chi phí trả trước (PB) theo kỳ: một lần chạy hiệu lực mỗi (loại, kỳ), một chứng từ ngày cuối kỳ.
 // Chạy lại: chứng từ khớp thì giữ (chỉ cập nhật checked_at), lệch thì đảo cũ ngày cuối kỳ rồi sinh lần chạy và chứng từ mới (chứng từ hệ thống không bỏ ghi sổ được).
@@ -39,12 +39,8 @@ const fingerprint = (xs: { assetId: number; cost: string; accumulated: string }[
 async function computeAmounts(trx: Trx, kind: RunKind, span: PeriodSpan, proration: Proration) {
   const assets = await selectAssets(trx, kind, span);
   const runIdsOfPeriod = await runIdsOf(trx, kind, span.fiscalYear, span.periodNo);
-  const out = [];
-  for (const a of assets) {
-    const r = await scheduleFor(trx, a.id, span, { proration, runIdsOfPeriod });
-    out.push({ ...a, scheduleId: r.schedule.id, amount: r.line?.amount ?? '0', cost: r.values.cost, accumulated: r.values.accumulated });
-  }
-  return out;
+  const rs = await scheduleForMany(trx, assets.map((a) => a.id), span, { proration, runIdsOfPeriod });
+  return assets.map((a) => { const r = rs.get(a.id)!; return { ...a, scheduleId: r.schedule.id, amount: r.line?.amount ?? '0', cost: r.values.cost, accumulated: r.values.accumulated }; });
 }
 type Amount = Pick<Awaited<ReturnType<typeof computeAmounts>>[number], 'id' | 'code' | 'amount' | 'asset_account_code' | 'depreciation_account_code'>;
 
