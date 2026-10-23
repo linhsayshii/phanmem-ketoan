@@ -10,7 +10,7 @@ import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { staleText } from './CostingRun.js';
 import { STATE_LABEL } from './VoucherList.js';
-import { ASSET_ACCOUNT_RE, accountFetcherFor, assetFetcher } from '../lookups.js';
+import { assetPick, isAssetAccount, accountFetcherFor } from '../lookups.js';
 import { PickDialog, iso, quickAdd, reportError, text } from './voucherCommon.js';
 import { dateCell, emptyStockRow, itemsBody, kindLabel, kindsOf, QTY_RE, rowAmount, type StockRow } from './stockCalc.js';
 
@@ -32,7 +32,7 @@ const numCol = (field: keyof StockRow, headerName: string, width = 110): ColDef<
   valueParser: (p) => { const t = String(p.newValue ?? '').trim(); if (t === '') return ''; const n = parseVnNumber(t); return n !== null && QTY_RE.test(n) ? n : p.oldValue; } });
 const dateCol = (field: keyof StockRow, headerName: string): ColDef<StockRow> => ({ field, headerName, width: 110, headerTooltip: 'Ngày/tháng/năm' });
 
-const assetPick = assetFetcher();
+
 export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: string }) {
   const type = def.code as StockVoucherType;
   const isNew = id === 'moi';
@@ -171,11 +171,11 @@ export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: str
     { field: 'lotNo', headerName: 'Số lô', width: 100 }, dateCol('mfgDate', 'Ngày sản xuất'), dateCol('expiryDate', 'Hạn dùng'),
     // Xuất kho cho tài sản: TK Nợ là TK tài sản (hoặc 242) thì chọn thẻ tài sản.
     ...(type === 'PXK' ? [{ field: 'debitAccountCode', headerName: 'TK Nợ (F4)', width: 110, headerTooltip: 'Để trống: theo mục đích xuất kho' } satisfies ColDef<StockRow>,
-      { field: 'assetCode', headerName: 'Tài sản (F4)', width: 130, editable: (p) => ASSET_ACCOUNT_RE.test(p.data?.debitAccountCode ?? '') } satisfies ColDef<StockRow>] : []),
+      { field: 'assetCode', headerName: 'Tài sản (F4)', width: 130, editable: (p) => isAssetAccount(p.data?.debitAccountCode ?? '') } satisfies ColDef<StockRow>] : []),
   ], [withPrice, editable, type]);
   const total = rows.reduce((s, r) => s.plus(withPrice ? rowAmount(r) || '0' : '0'), D(0)).toFixed();
   const savedTotal = Object.values(serverCost).reduce((s, k) => s.plus(k.amount), D(0)).toFixed();
-  const onLookup = useCallback((col: string, row: number) => { if (editable && (col === 'itemCode' || col === 'uomCode' || col === 'debitAccountCode' || (col === 'assetCode' && ASSET_ACCOUNT_RE.test(rowsRef.current[row]?.debitAccountCode ?? '')))) setLookupRow(row); }, [editable]);
+  const onLookup = useCallback((col: string, row: number) => { if (editable && (col === 'itemCode' || col === 'uomCode' || col === 'debitAccountCode' || (col === 'assetCode' && isAssetAccount(rowsRef.current[row]?.debitAccountCode ?? '')))) setLookupRow(row); }, [editable]);
   const lookupCol = useRef('itemCode');
   // shortcut: tra TK Nợ theo chế độ của năm cuối, không theo ngày chứng từ; đổi khi một công ty giữ nhiều chế độ cùng lúc.
   const accountPick = useMemo(() => accountFetcherFor(), []);

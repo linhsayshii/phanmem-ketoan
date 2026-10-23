@@ -5,7 +5,7 @@ import { READ_SNAPSHOT, type Database } from '@kt/db';
 import { getSettings } from '../core/settings.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { listRuns, runAssetPeriod } from './periodRun.js';
-import { assetValues, previewSchedule } from './schedule.js';
+import { assetValues, scheduleView } from './schedule.js';
 import { dateIso } from '../ledger/vouchers.service.js';
 import { adjustToolValue, cancelEvent, changeLife, decreaseAsset, decreaseInput, increaseAsset, increaseInput, lifeInput, listEvents, resumeAsset, resumeInput, revalueAsset, revalueInput, suspendAsset, suspendInput, toolAdjustInput, toolDecreaseInput, decreaseTool, transferAsset, transferInput } from './events.js';
 import { allocationInput, assetInput, categoryInput, deleteAsset, deleteCategory, getAsset, listAssets, listCategories, lookupAssets, saveAsset, saveCategory, setAllocations } from './assets.js';
@@ -28,7 +28,10 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     app.withTenant(req, async (trx) => {
       const rows = await listAssets(trx, req.query.kind, req.query.q);
       const vals = await assetValues(trx, tid(req), req.query.at ?? '9999-12-31', [], rows.map((r) => r.id));
-      return rows.map((r) => ({ ...r, cost: vals.get(r.id)?.cost ?? '0', accumulated: vals.get(r.id)?.accumulated ?? '0' }));
+      // shortcut: số kỳ còn lại tính từng thẻ bằng scheduleView (N lần dựng lịch), đổi sang một truy vấn gộp khi danh sách vượt vài trăm thẻ.
+      const proration = (await getSettings(trx, tid(req))).fa_proration;
+      return Promise.all(rows.map(async (r) => ({ ...r, cost: vals.get(r.id)?.cost ?? '0', accumulated: vals.get(r.id)?.accumulated ?? '0',
+        remainingUnits: r.status === 'active' ? (await scheduleView(trx, r.id, proration)).remainingUnits : '0' })));
     }, READ_SNAPSHOT));
   app.get('/api/assets/:id', { preHandler: app.requirePermission('asset.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => getAsset(trx, req.params.id), READ_SNAPSHOT));
   app.post('/api/assets', { preHandler: app.requirePermission('asset.create'), schema: { body: assetInput } }, async (req, reply) =>
@@ -36,7 +39,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.put('/api/assets/:id', { preHandler: app.requirePermission('asset.update'), schema: { params: numId, body: assetInput } }, async (req) => app.withTenant(req, (trx) => saveAsset(trx, tid(req), req.params.id, req.body)));
   app.delete('/api/assets/:id', { preHandler: app.requirePermission('asset.delete'), schema: { params: numId } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteAsset(trx, tid(req), req.params.id)); return reply.status(204).send(); });
   app.put('/api/assets/:id/allocations', { preHandler: app.requirePermission('asset.update'), schema: { params: numId, body: allocationInput } }, async (req) => app.withTenant(req, (trx) => setAllocations(trx, tid(req), req.params.id, req.body)));
-  app.get('/api/assets/:id/schedule', { preHandler: app.requirePermission('asset.view'), schema: { params: numId } }, async (req) => app.withTenant(req, async (trx) => previewSchedule(trx, req.params.id, (await getSettings(trx, tid(req))).fa_proration), READ_SNAPSHOT));
+  app.get('/api/assets/:id/schedule', { preHandler: app.requirePermission('asset.view'), schema: { params: numId } }, async (req) => app.withTenant(req, async (trx) => (await scheduleView(trx, req.params.id, (await getSettings(trx, tid(req))).fa_proration)).lines, READ_SNAPSHOT));
 
   // Chạy khấu hao (KH) / phân bổ CCDC, chi phí trả trước (PB) kỳ; kỳ khóa sổ cần quyền ghi lùi.
   app.get('/api/asset-runs', { preHandler: app.requirePermission('asset.view'), schema: { querystring: z.object({ kind: runKind.optional(), year: z.coerce.number().int().optional() }) } },

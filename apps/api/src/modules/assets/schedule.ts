@@ -149,3 +149,15 @@ export async function previewSchedule(trx: Trx, assetId: number, proration: Pror
   if (r.ok) return composed;
   return [...composed.filter((l) => key(l.fiscalYear, l.periodNo) < N), ...r.next.lines];
 }
+
+export type ScheduleViewLine = ScheduleLine & { ran: boolean; voucherId: string | null; voucherNo: string | null };
+/** Lịch cho màn hình: previewSchedule kèm lần chạy hiệu lực của từng kỳ (số chứng từ) và số đơn vị còn lại (Σ đơn vị các kỳ chưa chạy). */
+export async function scheduleView(trx: Trx, assetId: number, proration: Proration): Promise<{ lines: ScheduleViewLine[]; remainingUnits: string }> {
+  const lines = await previewSchedule(trx, assetId, proration);
+  const runs = lines.length ? await trx.selectFrom('asset_schedule_line as l').innerJoin('asset_schedule as s', 's.id', 'l.schedule_id')
+    .innerJoin('period_run as r', 'r.id', 'l.run_id').leftJoin('voucher as v', 'v.id', 'r.voucher_id')
+    .select(['l.fiscal_year', 'l.period_no', 'v.id as voucher_id', 'v.voucher_no']).where('s.asset_id', '=', assetId).where('r.status', '=', 'active').execute() : [];
+  const byKey = new Map(runs.map((r) => [key(r.fiscal_year, r.period_no), r]));
+  const out = lines.map((l) => { const r = byKey.get(key(l.fiscalYear, l.periodNo)); return { ...l, ran: !!r, voucherId: r?.voucher_id ?? null, voucherNo: r?.voucher_no ?? null }; });
+  return { lines: out, remainingUnits: out.filter((l) => !l.ran).reduce((s, l) => s.plus(l.units), ZERO).toString() };
+}

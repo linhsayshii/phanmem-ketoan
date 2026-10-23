@@ -149,11 +149,13 @@ export async function saveAsset(trx: Trx, tenantId: string, id: number | null, b
     opening_accumulated: b.openingAccumulated ?? null, opening_remaining_units: b.openingRemainingUnits ?? null, note: b.note ?? null,
   };
   if (id === null) return getAsset(trx, (await trx.insertInto('asset').values({ tenant_id: tenantId, ...v }).returning('id').executeTakeFirstOrThrow()).id);
-  const cur = await trx.selectFrom('asset').select(['kind', 'asset_account_code', 'depreciation_account_code']).where('id', '=', id).forUpdate().executeTakeFirst();
+  const cur = await trx.selectFrom('asset').select(['kind', 'asset_account_code', 'depreciation_account_code', 'quantity', 'department_id']).where('id', '=', id).forUpdate().executeTakeFirst();
   if (!cur) throw new AppError('ASSET_NOT_FOUND', 'Không tìm thấy thẻ tài sản', 404);
   if ((cur.kind !== v.kind || cur.asset_account_code !== v.asset_account_code || cur.depreciation_account_code !== v.depreciation_account_code) && await hasLedger(trx, id))
     throw new AppError('ASSET_ACCOUNT_LOCKED', 'Tài sản đã có bút toán trên sổ cái, không đổi được loại, tài khoản tài sản và tài khoản hao mòn', 409);
-  await trx.updateTable('asset').set(v).where('id', '=', id).execute();
+  // Thẻ đã có biến động hoặc bút toán: số lượng và bộ phận chỉ đổi qua biến động (ghi giảm, điều chuyển), PUT không ghi đè.
+  const touched = await hasLedger(trx, id) || !!(await trx.selectFrom('asset_event').select('id').where('asset_id', '=', id).limit(1).executeTakeFirst());
+  await trx.updateTable('asset').set(touched ? { ...v, quantity: cur.quantity, department_id: cur.department_id } : v).where('id', '=', id).execute();
   return getAsset(trx, id);
 }
 export async function deleteAsset(trx: Trx, tenantId: string, id: number): Promise<void> {

@@ -9,7 +9,7 @@ import { canTransition, CASH_PURPOSES, D, decideEdit, formatVnDate, formatVnNumb
 import { KeyboardGrid, LookupSelect, VnNumberInput, useUnsavedChanges } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
-import { ASSET_ACCOUNT_RE, accountFetcherFor, assetFetcher, bankAccountFetcher, cashFlowFetcherFor, regimeFor, type FiscalYearRef } from '../lookups.js';
+import { assetPick, isAssetAccount, accountFetcherFor, bankAccountFetcher, cashFlowFetcherFor, regimeFor, type FiscalYearRef } from '../lookups.js';
 import { STATE_LABEL, typeLabel } from './VoucherList.js';
 import { SettleDialog, type SettleEntry, type SettleTarget } from './settleCommon.js';
 import { Attachments, iso, quickAdd, reportError, text } from './voucherCommon.js';
@@ -54,7 +54,7 @@ export function mirrorCashAmount(rows: Line[], side: 'debit' | 'credit', last: s
 // Chứng từ đã ghi sổ chỉ sửa được diễn giải, các chiều phân tích, hạn và mã luồng tiền của dòng (không đổi số tiền, tài khoản, số dòng).
 const META_COLS = ['description', 'departmentCode', 'projectCode', 'costItemCode', 'dueDate', 'cashFlowCode'];
 const LOOKUP_CATALOG: Record<string, string> = { accountCode: 'account', partyCode: 'party', departmentCode: 'department', projectCode: 'project', costItemCode: 'cost_item', bankAccountNo: 'bank_account', cashFlowCode: 'cash_flow', assetCode: 'asset' };
-const assetPick = assetFetcher();
+
 // Ô Nợ/Có: để trống (Backspace + Enter, Delete) là 0; chỉ nhận số nguyên không âm (tiền VND), chữ/số âm/số lẻ bị từ chối: giữ giá trị cũ.
 export function parseAmount(newValue: unknown, oldValue: unknown): string {
   const t = String(newValue ?? '').trim();
@@ -286,7 +286,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
 
   // Cột Tài sản hiện khi có dòng ở TK tài sản hoặc 242 (hoặc đã có mã tài sản).
   // shortcut: chưa có cột Khế ước (TK 341x/335) vì chưa có API tra cứu khế ước; Task 11 thêm cùng phân hệ vay.
-  const showAsset = lines.some((l) => ASSET_ACCOUNT_RE.test(l.accountCode) || !!l.assetCode);
+  const showAsset = lines.some((l) => isAssetAccount(l.accountCode) || !!l.assetCode);
   const columns = useMemo<ColDef<Line>[]>(() => ([
     { field: 'accountCode', headerName: 'TK (F4)', width: 110 }, { field: 'description', headerName: 'Diễn giải', flex: 1 },
     numCol('debit', 'Nợ'), numCol('credit', 'Có'),
@@ -294,12 +294,12 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     { field: 'partyCode', headerName: 'Đối tượng (F4)', width: 130 }, { field: 'departmentCode', headerName: 'Bộ phận', width: 100 },
     { field: 'projectCode', headerName: 'Vụ việc', width: 100 }, { field: 'costItemCode', headerName: 'Khoản mục', width: 110 },
     ...(eff.moneyKind === 'bank' ? [{ field: 'bankAccountNo', headerName: 'TK ngân hàng (F4)', width: 150, headerTooltip: 'Để trống là lấy theo tài khoản ngân hàng ở tiêu đề' } satisfies ColDef<Line>] : []),
-    ...(showAsset ? [{ field: 'assetCode', headerName: 'Tài sản (F4)', width: 130, headerTooltip: 'Chỉ ở dòng TK tài sản cố định, hao mòn, 242', editable: (p) => ASSET_ACCOUNT_RE.test(p.data?.accountCode ?? '') } satisfies ColDef<Line>] : []),
+    ...(showAsset ? [{ field: 'assetCode', headerName: 'Tài sản (F4)', width: 130, headerTooltip: 'Chỉ ở dòng TK tài sản cố định, hao mòn, 242', editable: (p) => isAssetAccount(p.data?.accountCode ?? '') } satisfies ColDef<Line>] : []),
     dueCol, { field: 'cashFlowCode', headerName: 'Mã luồng tiền (F4)', width: 140, headerTooltip: 'Chỉ ở dòng tiền mặt, tiền gửi: mã chỉ tiêu của Báo cáo lưu chuyển tiền tệ; để trống thì xếp theo tài khoản đối ứng' },
   ] satisfies ColDef<Line>[]).map((c) => (c.field === 'assetCode' ? (editable ? c : { ...c, editable: false }) : { ...c, editable: editable || (metaOnly && META_COLS.includes(c.field as string)) })), [editable, metaOnly, currency, eff.moneyKind, showAsset]);
   // Chứng từ đã ghi sổ: không thêm/xóa dòng (lineNo của máy chủ phải khớp).
   const onRowsChange = useCallback((rows: Line[]) => { if (editable || rows.length === linesRef.current.length) changeRows(rows); }, [editable, changeRows]);
-  const onLookup = useCallback((col: string, row: number) => { if (col in LOOKUP_CATALOG && (col !== 'assetCode' || ASSET_ACCOUNT_RE.test(linesRef.current[row]?.accountCode ?? '')) && (editable || (metaOnly && META_COLS.includes(col)))) setLookup({ col, row }); }, [editable, metaOnly]);
+  const onLookup = useCallback((col: string, row: number) => { if (col in LOOKUP_CATALOG && (col !== 'assetCode' || isAssetAccount(linesRef.current[row]?.accountCode ?? '')) && (editable || (metaOnly && META_COLS.includes(col)))) setLookup({ col, row }); }, [editable, metaOnly]);
 
   // Chọn mục đích: điền tài khoản đối ứng mặc định của chế độ vào dòng 2 (nếu còn trống hoặc là do lần chọn mục đích trước điền), kèm đối tượng của tiêu đề khi mục đích bắt buộc đối tượng.
   const applyPurpose = (code: string | null | undefined, party: string | null | undefined) => {

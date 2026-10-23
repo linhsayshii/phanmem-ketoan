@@ -13,9 +13,9 @@ import { iso, text } from './voucherCommon.js';
 interface Alloc { expenseAccountCode: string; departmentCode: string | null; projectCode: string | null; costItemCode: string | null; ratio: string }
 interface AssetRow { id: number; code: string; name: string; kind: AssetKind; categoryCode: string | null; assetAccountCode: string; depreciationAccountCode: string | null; departmentCode: string | null;
   useDate: string | null; depreciationStartDate: string | null; lifeUnits: number | null; isDepreciable: boolean; quantity: string; uom: string | null; status: string; decreaseDate: string | null; note: string | null;
-  allocations: Alloc[]; cost: string; accumulated: string }
+  allocations: Alloc[]; cost: string; accumulated: string; remainingUnits: string }
 interface Category { id: number; code: string; name: string; kind: AssetKind; assetAccountCode: string; depreciationAccountCode: string | null; defaultLifeUnits: number | null; isActive: boolean }
-interface ScheduleRow { fiscalYear: number; periodNo: number; units: string; amount: string; accumulated: string }
+interface ScheduleRow { fiscalYear: number; periodNo: number; units: string; amount: string; accumulated: string; voucherId: string | null; voucherNo: string | null }
 interface EventRow { id: string; kind: string; eventDate: string; voucherId: string | null; voucherNo: string | null; state: 'active' | 'cancelled' }
 const money = (s: string) => formatVnNumber(s, 0);
 const EVENT_KIND_LABEL: Record<string, string> = { increase: 'Ghi tăng', decrease: 'Ghi giảm', value_adjust: 'Điều chỉnh giá trị', revaluation: 'Đánh giá lại', transfer: 'Điều chuyển', suspend: 'Dừng khấu hao', resume: 'Tiếp tục khấu hao', life_change: 'Điều chỉnh thời gian sử dụng' };
@@ -46,7 +46,7 @@ function AssetDrawer({ kind, asset, onClose }: { kind: AssetKind; asset: AssetRo
     if (!a) { if (isNew) form.setFieldsValue({ quantity: '1', isDepreciable: true }); return; }
     form.setFieldsValue({ code: a.code, name: a.name, categoryCode: a.categoryCode, departmentCode: a.departmentCode, useDate: a.useDate ? dayjs(a.useDate) : null,
       depreciationStartDate: a.depreciationStartDate ? dayjs(a.depreciationStartDate) : null, lifeUnits: a.lifeUnits, quantity: a.quantity, uom: a.uom ?? '', isDepreciable: a.isDepreciable, note: a.note ?? '' });
-  }, [a?.id, a?.status]);
+  }, [a?.id, a?.status, detail.dataUpdatedAt]);
 
   const save = useMutation({
     mutationFn: (v: InfoValues) => {
@@ -106,7 +106,8 @@ function AssetDrawer({ kind, asset, onClose }: { kind: AssetKind; asset: AssetRo
     <Table<ScheduleRow> size="small" rowKey={(r) => `${r.fiscalYear}-${r.periodNo}`} loading={schedule.isLoading} dataSource={schedule.data ?? []} pagination={{ pageSize: 24, hideOnSinglePage: true }} data-testid="schedule-table"
       locale={{ emptyText: 'Chưa có lịch: thẻ chưa có nguyên giá hoặc chưa nhập ngày bắt đầu' }}
       columns={[{ title: 'Kỳ', render: (_, r) => `${String(r.periodNo).padStart(2, '0')}/${r.fiscalYear}` }, { title: 'Số kỳ', dataIndex: 'units', align: 'right' },
-        { title: kind === 'fixed' ? 'Khấu hao' : 'Phân bổ', dataIndex: 'amount', align: 'right', render: money }, { title: 'Lũy kế', dataIndex: 'accumulated', align: 'right', render: money }]} />);
+        { title: kind === 'fixed' ? 'Khấu hao' : 'Phân bổ', dataIndex: 'amount', align: 'right', render: money }, { title: 'Lũy kế', dataIndex: 'accumulated', align: 'right', render: money },
+        { title: 'Chứng từ', render: (_, r) => (r.voucherId ? <a href={`/chung-tu/${kind === 'fixed' ? 'KH' : 'PB'}/${r.voucherId}`}>{r.voucherNo ?? 'Xem'}</a> : '') }]} />);
   const eventsTab = id === null ? needCard : (<>
     {a && canEdit && <Space wrap style={{ marginBottom: 8 }}>{actionsOf(kind, suspended).map((k) => <Button key={k} onClick={() => setEvent(k)}>{EVENT_TITLE[k]}</Button>)}</Space>}
     <Table<EventRow> size="small" rowKey="id" loading={events.isLoading} dataSource={events.data ?? []} pagination={false} data-testid="events-table"
@@ -148,13 +149,13 @@ export function AssetsPage({ kind }: { kind: AssetKind }) {
         {can('asset.create') && <Button type="primary" onClick={() => setOpen('new')}>Thêm (Insert)</Button>}
       </Space>
       <Table<AssetRow> size="small" rowKey="id" loading={list.isLoading} dataSource={rows} pagination={{ pageSize: 50, hideOnSinglePage: true }} data-testid="assets-table"
-        onRow={(r) => ({ onClick: () => setOpen(r), style: { cursor: 'pointer' } })} locale={{ emptyText: 'Chưa có thẻ nào' }}
+        onRow={(r) => ({ onClick: () => setOpen(r), tabIndex: 0, onKeyDown: (e) => { if (e.key === 'Enter') setOpen(r); }, style: { cursor: 'pointer' } })} locale={{ emptyText: 'Chưa có thẻ nào' }}
         columns={[{ title: 'Mã', dataIndex: 'code' }, { title: 'Tên', dataIndex: 'name' }, { title: 'Loại', dataIndex: 'categoryCode' }, { title: 'Bộ phận', dataIndex: 'departmentCode' },
           { title: 'Ngày sử dụng', dataIndex: 'useDate', render: (d: string | null) => (d ? formatVnDate(d) : '') },
           { title: 'Nguyên giá', dataIndex: 'cost', align: 'right', render: money }, { title: 'Hao mòn lũy kế', dataIndex: 'accumulated', align: 'right', render: money },
           { title: 'Giá trị còn lại', align: 'right', render: (_, r) => money(D(r.cost).minus(r.accumulated).toString()) },
-          // shortcut: API chưa trả số kỳ còn lại; hiện số kỳ sử dụng, đổi khi API thêm trường này.
-          { title: 'Số kỳ sử dụng', dataIndex: 'lifeUnits', align: 'right' }, { title: 'Trạng thái', dataIndex: 'status', render: (s: string) => STATUS_LABEL[s] ?? s }]} />
+
+          { title: 'Số kỳ còn lại', dataIndex: 'remainingUnits', align: 'right' }, { title: 'Trạng thái', dataIndex: 'status', render: (s: string) => STATUS_LABEL[s] ?? s }]} />
       {open && <AssetDrawer kind={kind} asset={open} onClose={() => setOpen(null)} />}
     </div>);
 }

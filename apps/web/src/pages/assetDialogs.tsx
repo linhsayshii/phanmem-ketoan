@@ -3,7 +3,7 @@ import { Alert, DatePicker, Form, Input, Modal, Select, Space, Tag } from 'antd'
 import { useMutation } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs, { type Dayjs } from 'dayjs';
-import { D, formatVnDate, isImeComposing, parseVnNumber, todayVn } from '@kt/domain';
+import { D, formatVnDate, formatVnNumber, isImeComposing, parseVnNumber, todayVn } from '@kt/domain';
 import { KeyboardGrid, LookupSelect, VnNumberInput } from '@kt/ui';
 import { api } from '../api/client.js';
 import { accountFetcherFor } from '../lookups.js';
@@ -71,7 +71,6 @@ export function EventDialog({ asset, kind, onClose, onDone }: { asset: DialogAss
   const date = Form.useWatch('date', form) as Dayjs | undefined; const reason = Form.useWatch('reason', form) as string | undefined;
   const dateIso = date ? iso(date) : undefined;
   const fetcher = useMemo(() => accountFetcherFor(dateIso), [dateIso]);
-  const reasonOf = kind === 'increase' || kind === 'decrease';
   const money = (name: keyof Values, label: string, required = true) => <Form.Item label={label} name={name} rules={required ? [{ required: true, message: `Nhập ${label.toLowerCase()}` }] : []}><VnNumberInput aria-label={label} /></Form.Item>;
   const account = (name: keyof Values, label: string, required = true) => <Form.Item label={label} name={name} rules={required ? [{ required: true, message: `Chọn ${label.toLowerCase()}` }] : []}><LookupSelect catalog="account" fetcher={fetcher} allowClear /></Form.Item>;
 
@@ -145,7 +144,7 @@ export function EventDialog({ asset, kind, onClose, onDone }: { asset: DialogAss
         {result ? (
           <Alert type="success" showIcon data-testid="event-result" message={`Đã ghi nhận ${EVENT_TITLE[kind].toLowerCase()}`} description={<>
             {result.voucherId && <div>Chứng từ: <a href={`/chung-tu/TS/${result.voucherId}`}>mở chứng từ tài sản</a></div>}
-            {result.value && <div>Giá trị ghi giảm: {D(result.value).toFixed(0)}</div>}
+            {result.value && <div>Giá trị ghi giảm: {formatVnNumber(D(result.value).toFixed(0), 0)}</div>}
             <div>Các kỳ đã chạy từ kỳ chứa ngày {formatVnDate(dateIso ?? todayVn())} đã được chạy lại (chứng từ cũ được đảo, chứng từ mới được lập).</div></>} />
         ) : (<>
           <Alert type="info" showIcon style={{ marginBottom: 12 }} message={`Các kỳ ${kind && asset.kind === 'fixed' ? 'khấu hao' : 'phân bổ'} đã chạy từ kỳ chứa ngày nghiệp vụ sẽ được chạy lại khi lưu: chứng từ cũ được đảo, chứng từ mới được lập.`} />
@@ -156,7 +155,6 @@ export function EventDialog({ asset, kind, onClose, onDone }: { asset: DialogAss
           {needAlloc && <AllocationGrid rows={alloc} onChange={setAlloc} date={dateIso} />}
           {err && <Alert type="error" showIcon style={{ marginTop: 12 }} message={err} />}
         </>)}
-        {reasonOf && null}
       </div>}
     </Modal>
   );

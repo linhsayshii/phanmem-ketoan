@@ -41,7 +41,7 @@ test('Công cụ dụng cụ: ghi tăng rồi ghi giảm một phần số lư�
   await ev.getByLabel('TK đối ứng (F4)').fill('811'); await page.locator('.ant-select-item-option', { hasText: /^811/ }).first().click();
   await ev.getByLabel('Số lượng ghi giảm').fill('4');
   await ev.getByRole('button', { name: /Lưu/ }).click();
-  await expect(ev.getByTestId('event-result')).toContainText('Đã ghi nhận ghi giảm');
+  await expect(ev.getByTestId('event-result')).toContainText('Đã ghi nhận ghi giảm'); await expect(ev.getByTestId('event-result')).toContainText('Giá trị ghi giảm: 4.800.000');
   await ev.getByRole('button', { name: 'Đóng' }).click();
   await expect(dr.getByTestId('events-table')).toContainText('Ghi giảm');
 
@@ -51,5 +51,5 @@ test('Công cụ dụng cụ: ghi tăng rồi ghi giảm một phần số lư�
   await ev.getByLabel('TK đối ứng (F4)').fill('811'); await page.locator('.ant-select-item-option', { hasText: /^811/ }).first().click();
   await ev.getByLabel('Số lượng ghi giảm').fill('7');
   await ev.getByRole('button', { name: /Lưu/ }).click();
-  await expect(ev.locator('.ant-alert-error')).toBeVisible();
+  await expect(ev.locator('.ant-alert-error')).toContainText('lớn hơn số lượng còn lại');
 });

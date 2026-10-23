@@ -43,6 +43,14 @@ describe('biến động CCDC, chi phí trả trước', () => {
     const sch = await t.sched(id);
     expect(sch.slice(0, 3).map((l) => l.amount)).toEqual(['1000000', '1000000', '1000000']);
     expect(sch.slice(3).map((l) => l.amount)).toEqual(Array(9).fill('600000'));
+    // Lịch có số chứng từ ở kỳ đã chạy; danh sách có số kỳ còn lại (kỳ 5 đến 12 = 8).
+    const full = (await t.ok(t.call('GET', `/api/assets/${id}/schedule`))) as { periodNo: number; ran: boolean; voucherNo: string | null; voucherId: string | null }[];
+    expect(full.slice(0, 4).every((l) => l.ran && l.voucherNo && l.voucherId)).toBe(true);
+    expect(full[4]).toMatchObject({ ran: false, voucherNo: null, voucherId: null });
+    expect((await t.ok(t.call('GET', '/api/assets?kind=tool')))[0]).toMatchObject({ remainingUnits: '8' });
+    // PUT thẻ với số lượng cũ không ghi đè số lượng đã đổi bằng biến động.
+    await t.ok(t.call('PUT', `/api/assets/${id}`, { code: 'CC01', name: 'CC01', kind: 'tool', assetAccountCode: '242', depreciationStartDate: '2026-01-01', lifeUnits: 12, quantity: '10' }));
+    expect(await t.ok(t.call('GET', `/api/assets/${id}`))).toMatchObject({ quantity: '6.0000' });
     // Hủy: số lượng về 10; kỳ 4 chạy lại 1.000.000.
     await t.ok(t.call('POST', `/api/asset-events/${r.eventId}/cancel`));
     expect(await t.ok(t.call('GET', `/api/assets/${id}`))).toMatchObject({ quantity: '10.0000' });
