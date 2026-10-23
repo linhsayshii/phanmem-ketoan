@@ -35,8 +35,8 @@ export const decreaseInput = z.object({
   toolCard: z.object({ code: z.string().trim().min(1).max(30), name: z.string().trim().min(1).max(200), periods: z.number().int().min(1).max(1200), allocations: allocLines, depreciationStartDate: dateIso.optional() }).optional(),
 });
 export const revalueInput = z.object({ date: dateIso, newCost: vnd, newAccumulated: vnd, remainingUnits: units.optional(), counterAccountCode: z.string().min(1).default('412') });
-export const toolDecreaseInput = z.object({ date: dateIso, quantity: z.string().regex(/^\d{1,16}(\.\d{1,4})?$/, 'Số lượng không hợp lệ').optional(), counterAccountCode: z.string().min(1), reason: z.string().max(500).nullable().optional() });
-export const toolAdjustInput = z.object({ date: dateIso, delta: z.string().regex(/^-?\d{1,16}$/, VND_AMOUNT_MSG).refine((s) => !D(s).isZero(), 'Số tiền điều chỉnh phải khác 0'), counterAccountCode: z.string().min(1) });
+export const toolDecreaseInput = z.object({ date: dateIso, quantity: z.string().regex(/^\d{1,16}(\.\d{1,4})?$/, 'Số lượng không hợp lệ').refine((s) => D(s).gt(0), 'Số lượng ghi giảm phải lớn hơn 0').optional(), counterAccountCode: z.string().min(1), reason: z.string().max(500).nullable().optional() });
+export const toolAdjustInput = z.object({ date: dateIso, delta: z.string().regex(/^-?\d{1,16}$/, VND_AMOUNT_MSG).refine((s) => !D(s).isZero(), 'Số tiền điều chỉnh phải khác 0'), counterAccountCode: z.string().min(1), partyCode: z.string().nullable().optional() });
 export const transferInput = z.object({ date: dateIso, departmentCode: z.string().nullable(), allocations: allocLines });
 export const suspendInput = z.object({ date: dateIso, reason: z.string().trim().min(1).max(500) });
 export const resumeInput = z.object({ date: dateIso });
@@ -157,7 +157,7 @@ export async function decreaseTool(trx: Trx, ctx: Ctx, id: number, b: z.infer<ty
   if (a.kind === 'fixed') throw new AppError('VALIDATION', 'Tài sản cố định ghi giảm bằng nghiệp vụ ghi giảm tài sản', 400);
   if (a.kind === 'prepaid' && b.quantity !== undefined) throw new AppError('VALIDATION', 'Chi phí trả trước không có số lượng, không ghi giảm một phần', 400);
   const q = b.quantity !== undefined ? D(b.quantity) : D(a.quantity);
-  if (!q.gt(0) || q.gt(a.quantity)) throw new AppError('ASSET_QUANTITY', `Số lượng ghi giảm ${q.toString()} lớn hơn số lượng còn lại ${D(a.quantity).toString()}`, 400);
+  if (q.gt(a.quantity)) throw new AppError('ASSET_QUANTITY', `Số lượng ghi giảm ${q.toString()} lớn hơn số lượng còn lại ${D(a.quantity).toString()}`, 400);
   await assertNoGap(trx, RUN_KIND[a.kind]!, span, (await getSettings(trx, ctx.tenantId)).fa_proration);
   const nbv = D((await assetValues(trx, ctx.tenantId, b.date, await runIdsOf(trx, RUN_KIND[a.kind]!, span.fiscalYear, span.periodNo), [id])).get(id)!.cost);
   const all = q.eq(a.quantity);
@@ -177,11 +177,18 @@ export async function decreaseTool(trx: Trx, ctx: Ctx, id: number, b: z.infer<ty
 export async function adjustToolValue(trx: Trx, ctx: Ctx, id: number, b: z.infer<typeof toolAdjustInput>) {
   const { a, span } = await begin(trx, ctx, id, b.date);
   if (a.kind === 'fixed') throw new AppError('VALIDATION', 'Tài sản cố định điều chỉnh bằng nghiệp vụ đánh giá lại', 400);
+  await assertNoGap(trx, RUN_KIND[a.kind]!, span, (await getSettings(trx, ctx.tenantId)).fa_proration);
   const nbv = D((await assetValues(trx, ctx.tenantId, b.date, await runIdsOf(trx, RUN_KIND[a.kind]!, span.fiscalYear, span.periodNo), [id])).get(id)!.cost);
+  if (D(b.delta).gt(0)) { // lịch đã phân bổ hết số kỳ: phần tăng thêm không còn kỳ nào để chia (động cơ cho U = 0) → từ chối
+    const cur = await trx.selectFrom('asset_schedule').select(['id', 'units']).where('asset_id', '=', id).where('superseded_at', 'is', null)
+      .where(sql<boolean>`(eff_year, eff_period) <= (${span.fiscalYear}, ${span.periodNo})`).orderBy('eff_year', 'desc').orderBy('eff_period', 'desc').orderBy('version', 'desc').limit(1).executeTakeFirst();
+    const used = cur ? (await trx.selectFrom('asset_schedule_line').select('units').where('schedule_id', '=', cur.id).where(sql<boolean>`(fiscal_year, period_no) < (${span.fiscalYear}, ${span.periodNo})`).execute()).reduce((x, l) => x.plus(l.units), D(0)) : D(0);
+    if (cur && used.gte(cur.units)) throw new AppError('ASSET_SCHEDULE_ENDED', `${a.code} đã phân bổ hết số kỳ: tăng giá trị cần điều chỉnh thời gian sử dụng trước`, 400);
+  }
   if (nbv.plus(b.delta).isNegative()) throw new AppError('VALIDATION', `Giảm giá trị ${D(b.delta).abs().toFixed(0)} làm giá trị thấp hơn số đã phân bổ (giá trị còn lại ${nbv.toFixed(0)})`, 400);
   const eventId = randomUUID();
   const voucherId = await tsVoucher(trx, ctx, eventId, b.date, `Điều chỉnh giá trị ${a.code}`, [
-    signed(a.asset_account_code, D(b.delta), 'debit', { assetCode: a.code }), signed(b.counterAccountCode, D(b.delta), 'credit')]);
+    signed(a.asset_account_code, D(b.delta), 'debit', { assetCode: a.code }), signed(b.counterAccountCode, D(b.delta), 'credit', { partyCode: b.partyCode ?? null })]);
   await record(trx, ctx, { id: eventId, assetId: id, kind: 'value_adjust', date: b.date, voucherId, data: { delta: b.delta, counterAccountCode: b.counterAccountCode, nbv: nbv.toFixed(0) } });
   await refresh(trx, ctx, a.kind, span);
   return { eventId, voucherId };
@@ -274,7 +281,7 @@ export async function cancelEvent(trx: Trx, ctx: Ctx, eventId: string) {
   const d = e.data as EventData;
   if (e.kind === 'decrease' && d.toolAssetId) { // thẻ CCDC sinh ra còn biến động hoặc đã phân bổ thì không hủy được (đảo 242 sẽ làm âm giá trị)
     const used = await trx.selectFrom('asset_event').select('id').where('asset_id', '=', d.toolAssetId).where('state', '=', 'active').limit(1).executeTakeFirst()
-      ?? await trx.selectFrom('voucher_line as l').innerJoin('voucher as v', 'v.id', 'l.voucher_id').select('l.id').where('l.asset_id', '=', d.toolAssetId).where('v.voucher_type', '=', 'PB').where('v.state', '=', 'posted').where('l.credit', '>', '0').limit(1).executeTakeFirst();
+      ?? await trx.selectFrom('voucher_line as l').innerJoin('voucher as v', 'v.id', 'l.voucher_id').select('l.id').where('l.asset_id', '=', d.toolAssetId).where('l.posting_date', '>=', e.event_date).where('v.voucher_type', '=', 'PB').where('v.state', '=', 'posted').where('l.credit', '>', '0').limit(1).executeTakeFirst();
     if (used) throw new AppError('ASSET_EVENT_ORDER', 'Thẻ công cụ dụng cụ sinh ra từ ghi giảm này đã có biến động hoặc phân bổ: xử lý trước', 409);
   }
   if (e.voucher_id) await S.reverseVoucher(trx, e.voucher_id, { postingDate: e.event_date, description: `Hủy biến động tài sản ${a.code}` });
