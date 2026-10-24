@@ -28,7 +28,7 @@ const txn = async (o: { valueDate: string; amountIn?: string; amountOut?: string
   expect(r.statusCode, r.body).toBe(201);
   return r.json() as { id: number };
 };
-const getTxn = async (id: number) => (await sql<{ status: string; voucher_id: string | null }>`SELECT status, voucher_id FROM bank_transaction WHERE id = ${id}`.execute(ctx.t.admin)).rows[0]!;
+const getTxn = async (id: number) => (await sql<{ status: string; voucher_id: string | null; matched_by: string | null }>`SELECT status, voucher_id, matched_by FROM bank_transaction WHERE id = ${id}`.execute(ctx.t.admin)).rows[0]!;
 const bc = (amount: string, date: string, partyCode = 'KH002') => voucher({ voucherType: 'BC', postingDate: date, documentDate: date, bankAccountNo: a.accountNo, partyCode, lines: [L('1121', amount, '0', { bankAccountNo: a.accountNo }), L('131', '0', amount, { partyCode })] });
 
 describe('đối chiếu giao dịch ngân hàng', () => {
@@ -105,7 +105,7 @@ describe('đối chiếu giao dịch ngân hàng', () => {
     expect(d.statusCode, d.body).toBe(201);
     expect(await getTxn(t2.id)).toMatchObject({ status: 'new', voucher_id: d.json().voucher.id });
     expect((await ctx.app.inject({ method: 'DELETE', url: `/api/vouchers/${d.json().voucher.id}`, headers: { cookie: a.cookie } })).statusCode).toBe(204);
-    expect(await getTxn(t2.id)).toMatchObject({ status: 'new', voucher_id: null });
+    expect(await getTxn(t2.id)).toMatchObject({ status: 'new', voucher_id: null, matched_by: null });
   });
 
   const limited = async (flags: string[]) => {

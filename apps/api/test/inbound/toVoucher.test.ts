@@ -19,7 +19,7 @@ const BODY = { voucherType: 'HDM', postingDate: '2026-01-20', invoiceGroupCode: 
 async function tenant() {
   const { cookie, tenantId } = await setupLedgerTenant(ctx, `TV${Date.now()}${n++}`);
   await sql`UPDATE tenant SET tax_code = '0300000002' WHERE id = ${tenantId}::uuid`.execute(ctx.t.admin);
-  const as = (c: string) => (method: 'GET' | 'POST', url: string, payload?: object) => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload ? { payload } : {}) }) as unknown as Promise<Res>;
+  const as = (c: string) => (method: 'GET' | 'POST' | 'DELETE', url: string, payload?: object) => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload ? { payload } : {}) }) as unknown as Promise<Res>;
   const call = as(cookie);
   const one = async (xml: string) => {
     const fd = new FormData(); fd.append('file', Buffer.from(xml), { filename: 'a.xml', contentType: 'application/xml' });
@@ -44,6 +44,24 @@ describe('lập chứng từ mua từ hóa đơn đầu vào', () => {
     const r = await t.call('GET', `/api/inbound-invoices/${a.id}/proposal`);
     expect(r.statusCode, r.body).toBe(200);
     expect(r.json()).toMatchObject({ partyCode: 'NCC001', voucherType: 'HDM', lines: [{ lineNo: 1, itemCode: null, accountCode: null, taxCode: 'V10', source: 'guess' }, { lineNo: 2, taxCode: 'V10' }] });
+  });
+
+  it('xóa nháp hoặc hủy chứng từ đã lập → hóa đơn về new, lập lại được (201)', async () => {
+    const t = await tenant(); await t.setVendorMst();
+    const a = await t.one(VAT());
+    const status = async () => (await t.call('GET', `/api/inbound-invoices/${a.id}`)).json();
+    const v1 = await t.call('POST', `/api/inbound-invoices/${a.id}/voucher`, BODY);
+    expect(v1.statusCode, v1.body).toBe(201);
+    expect((await t.call('DELETE', `/api/vouchers/${v1.json().voucherId}`)).statusCode).toBe(204);
+    expect(await status()).toMatchObject({ status: 'new', voucherId: null });
+    const v2 = await t.call('POST', `/api/inbound-invoices/${a.id}/voucher`, BODY);
+    expect(v2.statusCode, v2.body).toBe(201);
+    const d = await t.call('POST', `/api/vouchers/${v2.json().voucherId}/discard`);
+    expect(d.statusCode, d.body).toBe(200);
+    expect(await status()).toMatchObject({ status: 'new', voucherId: null });
+    const v3 = await t.call('POST', `/api/inbound-invoices/${a.id}/voucher`, BODY);
+    expect(v3.statusCode, v3.body).toBe(201);
+    expect(await status()).toMatchObject({ status: 'voucher_created', voucherId: v3.json().voucherId });
   });
 
   it('lập HDM từ hóa đơn dịch vụ: chứng từ nháp, số/ký hiệu/ngày đúng hóa đơn, thuế = TgTThue', async () => {
