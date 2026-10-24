@@ -38,7 +38,7 @@ function needPeriod(q: { month?: number | undefined; quarter?: number | undefine
 const periodLabel = (q: { year: number; month?: number | undefined; quarter?: number | undefined }) => (q.quarter ? `Quý ${q.quarter}/${q.year}` : q.month ? `Tháng ${mmyyyy(q.year, q.month)}` : `Năm ${q.year}`);
 
 // ---- Đọc dữ liệu ----
-interface LineRec {
+export interface LineRec {
   lineId: number; runId: number; month: number; posted: boolean; employeeId: number; code: string; name: string; taxCode: string | null; idNumber: string | null; siNo: string | null;
   departmentId: number | null; departmentCode: string | null; departmentName: string | null; defaultProject: { code: string; name: string } | null;
   flags: { si: boolean; hi: boolean; ui: boolean; occ: boolean } | null; startDate: string | null; endDate: string | null;
@@ -48,13 +48,13 @@ export interface RunInfo { id: number; name: string; year: number; month: number
 interface Loaded { lines: LineRec[]; runs: RunInfo[] }
 const BASES = new Set(['si_base', 'ui_base']); // mức lương đóng: nhiều bảng cùng tháng lấy mức lớn nhất, không cộng
 
-async function load(trx: Trx, s: { year: number; months: number[]; runId?: number | undefined; departmentId?: number | undefined; employeeId?: number | undefined }, codes: string[] | 'all'): Promise<Loaded> {
+export async function load(trx: Trx, s: { year: number; months: number[]; runId?: number | undefined; departmentId?: number | undefined; employeeId?: number | undefined; postedOnly?: boolean }, codes: string[] | 'all'): Promise<Loaded> {
   const rows = await trx.selectFrom('payroll_line as l').innerJoin('payroll_run as r', 'r.id', 'l.run_id').innerJoin('employee as e', 'e.id', 'l.employee_id')
     .leftJoin('department as d', 'd.id', 'e.department_id').leftJoin('employee_payroll as p', 'p.employee_id', 'e.id').leftJoin('project as pr', 'pr.id', 'p.default_project_id')
     .select(['l.id as lineId', 'l.run_id as runId', 'l.month', 'l.run_status', 'r.name as runName', 'r.kind', 'r.voucher_id as voucherId', 'e.id as employeeId', 'e.code', 'e.name', 'e.tax_code', 'e.id_number', 'p.si_no',
       'e.department_id', 'd.code as deptCode', 'd.name as deptName', 'pr.code as projectCode', 'pr.name as projectName', 'p.start_date', 'p.end_date',
       'p.si_participates', 'p.hi_participates', 'p.ui_participates', 'p.occupational_participates', 'l.gross', 'l.si_emp', 'l.si_er', 'l.pit', 'l.net'])
-    .where('l.year', '=', s.year).where('l.month', 'in', s.months).where('l.run_status', 'in', ['calculated', 'posted'])
+    .where('l.year', '=', s.year).where('l.month', 'in', s.months).where('l.run_status', 'in', s.postedOnly ? ['posted'] : ['calculated', 'posted'])
     .$if(s.runId !== undefined, (q) => q.where('l.run_id', '=', s.runId!)).$if(s.departmentId !== undefined, (q) => q.where('e.department_id', '=', s.departmentId!))
     .$if(s.employeeId !== undefined, (q) => q.where('l.employee_id', '=', s.employeeId!)).orderBy('e.code').orderBy('l.month').orderBy('l.run_id').execute();
   const vals = new Map<number, Record<string, Decimal>>();
@@ -128,7 +128,7 @@ async function reconcile(trx: Trx, l: Loaded, checks: (posted: LineRec[]) => Che
 const cr = (t: LuTotals, code: string) => t.net.get(code) ?? D(0); // dư Có phát sinh trên tài khoản trong LU
 
 // Dòng chữ "Dữ liệu minh họa" khi công ty còn dùng tham số lương ghi nguồn minh họa (D15): số liệu không có giá trị pháp lý.
-async function banner(trx: Trx): Promise<string[]> {
+export async function banner(trx: Trx): Promise<string[]> {
   const ex = await trx.selectFrom('payroll_param').select('id').where('source', 'like', 'Dữ liệu minh họa%').limit(1).executeTakeFirst();
   return ex ? ['Dữ liệu minh họa: bảng lương dùng tham số ghi nguồn "Dữ liệu minh họa", không phải văn bản pháp lý. Kiểm tra tham số lương trước khi sử dụng.'] : [];
 }

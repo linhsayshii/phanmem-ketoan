@@ -6,6 +6,7 @@ import { AppError } from '../../plugins/errors.js';
 import { openSecret, sealSecret } from '../../lib/secretBox.js';
 import { renderReturnXml } from '../tax/vatXml.js';
 import { renderCitXml } from '../tax/citReturn.js';
+import { assertTncnTemplate, formOfDocKind } from '../payroll/tncnReturn.js';
 import { FAKE_CERT_DER } from './providers/fake.js';
 import { assertFakeAllowed, assertSmartcaUrl, type SigningPolicy } from './providers/policy.js';
 import { describeCertificate, LOCAL_AGENT_URL } from './providers/localAgent.js';
@@ -25,7 +26,7 @@ export const profileInput = z.discriminatedUnion('kind', [
     userId: text(50).min(1), serial: text(100).optional(), isDefault: z.boolean().default(false) }),
 ]);
 export type ProfileInput = z.infer<typeof profileInput>;
-export const sessionInput = z.object({ docKind: z.enum(['vat_return', 'cit_return', 'error_notice']), docRef: text(50).min(1), profileId: z.number().int().positive().optional() });
+export const sessionInput = z.object({ docKind: z.enum(['vat_return', 'cit_return', 'error_notice', '05kk_tncn', '05qtt_tncn']), docRef: text(50).min(1), profileId: z.number().int().positive().optional() });
 
 type ProfileRow = Selectable<Database['signing_profile']>;
 export const profileDto = (r: ProfileRow) => ({ id: r.id, kind: r.kind as SigningKind, label: r.label, certSubject: r.cert_subject, certSerial: r.cert_serial, certNotAfter: new Date(r.cert_not_after).toISOString(),
@@ -94,6 +95,7 @@ export const sessionDto = (s: SessionRow, kind: SigningKind) => ({ id: s.id, sta
   expiresAt: new Date(s.expires_at).toISOString(), ...(kind === 'local_agent' && { agentUrl: LOCAL_AGENT_URL }), ...(s.error_message && { error: s.error_message }) });
 
 export async function createSession(trx: Trx, ctx: SessionCtx, pol: SigningPolicy, b: z.infer<typeof sessionInput>) {
+  const tncn = formOfDocKind(b.docKind); if (tncn) assertTncnTemplate(tncn); // tờ khai TNCN chưa có mẫu: 409 trước mọi bước ký
   const q = trx.selectFrom('signing_profile').selectAll().where('user_id', '=', ctx.userId);
   const profile = await (b.profileId ? q.where('id', '=', b.profileId) : q.where('is_default', '=', true)).executeTakeFirst();
   if (!profile) { if (b.profileId) throw profileNotFound(); throw new AppError('SIGNING_PROFILE_MISSING', 'Chưa có hồ sơ ký số: thêm chứng thư ở Cài đặt ký số', 409); }
