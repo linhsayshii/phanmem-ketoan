@@ -43,6 +43,8 @@ export const invoiceInput = z.object({
   items: z.array(invoiceItemInput).min(1).max(500, 'Tối đa 500 dòng mỗi hóa đơn'), invoice: invoiceHeaderInput, idempotencyKey: z.string().max(100).optional(),
   stockMode: z.enum(['through_stock', 'goods_first', 'invoice_first']).optional(), receiptVoucherIds: z.array(z.string().uuid()).max(100).optional(), // chỉ MH: cách nhận hàng
   exportMode: z.boolean().optional(), // chỉ BH, TLB: hóa đơn xuất khẩu, thuế GTGT 0%
+  // Chiều hợp đồng (Task 13a): ghi lên mọi dòng sổ cái của hóa đơn (doanh thu/chi phí, công nợ, thuế, giá vốn); hợp đồng cùng chiều mua/bán và cùng đối tượng (nếu hợp đồng có đối tượng).
+  contractCode: z.string().min(1).max(50).nullable().optional(),
 });
 export type InvoiceInput = z.infer<typeof invoiceInput>;
 
@@ -52,7 +54,7 @@ export interface ItemLineDto {
   id: number; assetCode: string | null; itemCode: string | null; warehouseCode: string | null; lotNo: string | null; mfgDate: string | null; expiryDate: string | null; receiptVoucherId: string | null; linkLineId: number | null;
   importMode: boolean; importTax: string | null; specialConsumptionTax: string | null; vatImport: string | null; vatImportCode: string | null; vatImportBase: string | null;
 }
-export type InvoiceDto = VoucherDto & { items: ItemLineDto[]; receiptState: string | null; warnings?: { code: string; message: string; lineNo?: number }[] };
+export type InvoiceDto = VoucherDto & { items: ItemLineDto[]; receiptState: string | null; contractCode: string | null; warnings?: { code: string; message: string; lineNo?: number }[] };
 
 const NOT_DRAFT = 'chứng từ không còn là nháp, hãy bỏ ghi sổ (nếu đã ghi sổ) để sửa hóa đơn';
 const addDays = (iso: string, days: number): string => new Date(Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)) + days)).toISOString().slice(0, 10);
@@ -77,7 +79,7 @@ export async function getInvoice(trx: Trx, id: string): Promise<InvoiceDto> {
   const v = await getVoucher(trx, id);
   if (!voucherTypeDef(v.voucherType)?.hasItems) throw new AppError('INVOICE_NOT_FOUND', 'Không tìm thấy hóa đơn', 404);
   const rs = await trx.selectFrom('voucher').select('receipt_state').where('id', '=', id).executeTakeFirstOrThrow();
-  return { ...v, items: await itemsOf(trx, id), receiptState: rs.receipt_state };
+  return { ...v, items: await itemsOf(trx, id), receiptState: rs.receipt_state, contractCode: v.lines.find((l) => l.contractCode)?.contractCode ?? null };
 }
 
 // Mã thuế và phân bổ của chúng, dạng động cơ thuế dùng. Mã không có trong danh mục để động cơ báo TAX_CODE_UNKNOWN. scopes: phạm vi dùng của mã (sale, purchase, both).
@@ -147,6 +149,12 @@ async function buildInvoice(trx: Trx, tenantId: string, input0: InvoiceInput, op
 
   const party = await trx.selectFrom('party').select(['id', 'payment_term_days', 'default_account_code']).where('code', '=', input.partyCode).executeTakeFirst();
   if (!party) throw new AppError('LOOKUP_NOT_FOUND', `Không có đối tượng mã "${input.partyCode}"`, 404);
+  if (input.contractCode) {
+    const c = await trx.selectFrom('contract').select(['kind', 'party_id']).where('code', '=', input.contractCode).executeTakeFirst();
+    if (!c) throw new AppError('LOOKUP_NOT_FOUND', `Không có hợp đồng mã "${input.contractCode}"`, 404);
+    if (c.kind !== scope) throw new AppError('CONTRACT_KIND_MISMATCH', `Hợp đồng ${input.contractCode} không phải hợp đồng ${scope === 'sale' ? 'bán' : 'mua'}: ${def.name} chỉ gắn hợp đồng ${scope === 'sale' ? 'bán' : 'mua'}`, 400);
+    if (c.party_id && c.party_id !== party.id) throw new AppError('CONTRACT_PARTY_MISMATCH', `Hợp đồng ${input.contractCode} là của đối tượng khác`, 400);
+  }
   // Công nợ mặc định theo chiều: tài khoản mặc định của đối tượng chỉ được dùng khi đúng nhóm 131 (bán) / 331 (mua); đối tượng vừa là khách vừa là nhà cung cấp có thể mang tài khoản của chiều kia.
   const fallback = scope === 'sale' ? '131' : '331';
   const counterAccountCode = input.counterAccountCode ?? (party.default_account_code?.startsWith(fallback) ? party.default_account_code : fallback);
@@ -226,6 +234,7 @@ async function buildInvoice(trx: Trx, tenantId: string, input0: InvoiceInput, op
       { accountCode: pl.accountCode, debit: '0', credit: pl.landedOut, itemCode: pl.itemCode, warehouseCode: pl.warehouseCode!, description: 'Chi phí mua hàng của hàng trả lại' });
   }
   if (sale) for (const k of input.items.keys()) lines.push(...sale.costLines[k]!); // giá vốn tạm tính của dòng bán, nhập lại của dòng trả
+  if (input.contractCode) for (const l of lines) l.contractCode = input.contractCode;
   const voucher: VoucherInput = { voucherType: input.voucherType, postingDate: input.postingDate, documentDate: input.documentDate, description: input.description ?? null, partyCode: input.partyCode,
     currencyCode: input.currencyCode, ...(rate && { fxRate: rate }), ...(dueDate && { dueDate }), ...(input.idempotencyKey && { idempotencyKey: input.idempotencyKey }), lines,
     ...(purchase.receiptState && { receiptState: purchase.receiptState }) };

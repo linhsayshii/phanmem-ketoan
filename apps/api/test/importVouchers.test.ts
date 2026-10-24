@@ -291,4 +291,18 @@ describe('nhập bảng kê hóa đơn', () => {
     const bad = await t.upload('bang-ke-ban', await t.book('bang-ke-ban', [bk('S2', { ...sale, invoiceNo: '77', invoiceGroupCode: '01' })]), 'commit');
     expect(bad.json()).toMatchObject({ created: 0, errors: [{ row: 4, column: 'invoiceGroupCode' }] });
   });
+
+  it('cột mã hợp đồng: phiếu thu ghi lên hai dòng, bảng kê bán ghi lên mọi dòng; mã không có báo đúng ô', async () => {
+    const t = await tenant();
+    expect((await t.call('POST', '/api/contracts', { code: 'HDX', name: 'Hợp đồng X', kind: 'sale', partyCode: 'KH001', value: '0' })).statusCode).toBe(201);
+    const sale = { partyCode: 'KH001', accountCode: '5113', counterAccountCode: '131', invoiceGroupCode: '10', contractCode: 'HDX' };
+    expect((await t.upload('thu-chi', await t.book('thu-chi', [pt('A', { contractCode: 'HDX' })]), 'commit')).json()).toMatchObject({ created: 1, errors: [] });
+    expect((await t.upload('bang-ke-ban', await t.book('bang-ke-ban', [bk('S1', sale)]), 'commit')).json()).toMatchObject({ created: 1, errors: [] });
+    const rows = (await sql<{ t: string; c: string | null }>`SELECT v.voucher_type AS t, ct.code AS c FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id LEFT JOIN contract ct ON ct.id = l.contract_id
+      WHERE v.tenant_id = ${t.tenantId}::uuid AND v.idempotency_key LIKE 'import:%'`.execute(ctx.t.admin)).rows;
+    expect(rows.length).toBe(5); // PT 2 dòng, HDB 131/5113/33311
+    expect(rows.every((r) => r.c === 'HDX')).toBe(true);
+    const bad = await t.upload('thu-chi', await t.book('thu-chi', [pt('B', { contractCode: 'KHONGCO' })]), 'commit');
+    expect(bad.json()).toMatchObject({ created: 0, errors: [{ row: 4, column: 'contractCode' }] });
+  });
 });
