@@ -16,7 +16,7 @@ async function tenant(code: 'fake' | 'sinvoice' = 'fake') {
   const { cookie, tenantId } = await setupLedgerTenant(ctx, `EN${Date.now()}${n++}`);
   const admin = ctx.t.admin;
   const call = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, payload?: object): Promise<Res> => ctx.app.inject({ method, url, headers: { cookie }, ...(payload ? { payload } : {}) }) as unknown as Promise<Res>;
-  const providerId = (await sql<{ id: number }>`INSERT INTO einvoice_provider (tenant_id, code, name, secret, options) VALUES (${tenantId}::uuid, ${code}, 'NCC', ${code === 'sinvoice' ? sealSecret('x') : null}, ${JSON.stringify({ withCode: true })}::jsonb) RETURNING id::int`.execute(admin)).rows[0]!.id;
+  const providerId = (await sql<{ id: number }>`INSERT INTO einvoice_provider (tenant_id, code, name, base_url, secret, options) VALUES (${tenantId}::uuid, ${code}, 'NCC', 'https://api.example.test', ${code === 'sinvoice' ? sealSecret('x') : null}, ${JSON.stringify({ withCode: true })}::jsonb) RETURNING id::int`.execute(admin)).rows[0]!.id;
   const seriesId = (await sql<{ id: number }>`INSERT INTO einvoice_series (tenant_id, provider_id, form_no, serial, year) VALUES (${tenantId}::uuid, ${providerId}, '1', 'C26TAA', 2026) RETURNING id::int`.execute(admin)).rows[0]!.id;
   // Hóa đơn đã phát hành (fake) hoặc hàng issued chèn tay (sinvoice).
   const issued = async () => {
