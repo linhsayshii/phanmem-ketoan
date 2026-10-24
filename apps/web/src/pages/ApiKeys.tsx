@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useHotkeys } from '@kt/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Checkbox, DatePicker, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { api } from '../api/client.js';
@@ -40,12 +41,14 @@ export default function ApiKeysPage() {
   const submit = (v: { name: string; scopes: string[]; defaultWarehouseCode?: string; postSales?: boolean; expiresAt?: { endOf: (u: string) => { toISOString: () => string } } }) =>
     create.mutate({ name: v.name, scopes: v.scopes, postSales: !!v.postSales, ...(v.defaultWarehouseCode && { defaultWarehouseCode: v.defaultWarehouseCode }), ...(v.expiresAt && { expiresAt: v.expiresAt.endOf('day').toISOString() }) });
 
+  const openAdd = () => { form.setFieldsValue({ scopes: ['items.read', 'stock.read'], postSales: false }); setAdding(true); };
+  useHotkeys({ Insert: () => { if (can('api_key.manage') && !adding && !created) openAdd(); } });
   if (!can('api_key.manage')) return <Alert type="warning" showIcon message="Bạn không có quyền quản lý khóa API" />;
   return (
     <div>
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
         <h2 style={{ margin: 0 }}>Khóa API</h2>
-        <Button type="primary" onClick={() => { form.setFieldsValue({ scopes: ['items.read', 'stock.read'], postSales: false }); setAdding(true); }}>Tạo khóa API</Button>
+        <Button type="primary" onClick={openAdd}>Tạo khóa API (Insert)</Button>
       </Space>
       <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Khóa API cho phép phần mềm bán hàng gọi /api/ext/v1 với quyền của người tạo, thu hẹp theo phạm vi đã chọn. Khóa đầy đủ chỉ hiện một lần; mất khóa thì thu hồi và tạo khóa mới." />
       <Table<ApiKey> rowKey="id" size="small" loading={keys.isLoading} dataSource={keys.data ?? []} pagination={false} locale={{ emptyText: 'Chưa có khóa API nào' }}
@@ -65,7 +68,7 @@ export default function ApiKeysPage() {
         ]} />
 
       <Modal title="Tạo khóa API" open={adding} okText="Tạo khóa" cancelText="Hủy" confirmLoading={create.isPending} destroyOnHidden onCancel={() => setAdding(false)} onOk={() => form.submit()}>
-        <Form form={form} layout="vertical" onFinish={submit}>
+        <Form form={form} layout="vertical" onFinish={submit} onKeyDown={(e: React.KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); form.submit(); } }}>
           <Form.Item label="Tên khóa" name="name" rules={[{ required: true, whitespace: true, message: 'Nhập tên khóa' }]}><Input maxLength={100} placeholder="Ví dụ: POS quầy 1" /></Form.Item>
           <Form.Item label="Phạm vi" name="scopes" rules={[{ required: true, type: 'array', min: 1, message: 'Chọn ít nhất một phạm vi' }]}>
             <Checkbox.Group style={{ display: 'grid', gap: 4 }} options={Object.entries(SCOPE_LABEL).map(([value, label]) => ({ value, label }))} />

@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
-import { Button, Card, Form, Input, Select, Table, Tabs, message } from 'antd';
+import { Button, Card, Form, Input, Select, Switch, Table, Tabs, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
 interface Company { code: string; name: string; taxCode: string | null; address: string | null; legalRep: string | null; chiefAccountant: string | null; phone: string | null; email: string | null }
-interface Settings { book_form: string; costing_method: string; base_currency: string; fx_rate_type: string; cash_negative: 'warn' | 'block'; fx_outflow_method: 'moving_average' | 'specific'; vat_period: 'month' | 'quarter'; fa_proration: 'day' | 'month'; hidden_modules: string[]; extra_dims: { key: string; label: string }[] }
+interface Settings { book_form: string; costing_method: string; base_currency: string; fx_rate_type: string; cash_negative: 'warn' | 'block'; fx_outflow_method: 'moving_average' | 'specific'; vat_period: 'month' | 'quarter'; fa_proration: 'day' | 'month'; hidden_modules: string[]; tax_code_lookup: 'off' | 'vietqr'; extra_dims: { key: string; label: string }[] }
 
 interface BackupFile { name: string; bytes: number; mtime: string }
 
@@ -72,6 +72,8 @@ export default function CompanyPage() {
             { value: 'day', label: 'Theo số ngày thực tế' }, { value: 'month', label: 'Tròn tháng' }]} /></Form.Item>
           <Form.Item label="Khi ghi sổ làm tồn quỹ hoặc số dư tiền gửi âm" name="cash_negative"><Select options={[
             { value: 'warn', label: 'Cảnh báo nhưng vẫn ghi sổ' }, { value: 'block', label: 'Không cho ghi sổ' }]} /></Form.Item>
+          <Form.Item label="Tra cứu MST người bán khi nhận hóa đơn đầu vào" name="tax_code_lookup" valuePropName="checked" getValueProps={(v: string) => ({ checked: v === 'vietqr' })} getValueFromEvent={(c: boolean) => (c ? 'vietqr' : 'off')}
+            extra="Bật thì mã số thuế người bán được gửi tới dịch vụ tra cứu bên thứ ba (VietQR) để lấy tên, địa chỉ. Mặc định tắt."><Switch /></Form.Item>
           <Form.Item label="Ẩn phân hệ" name="hidden_modules"><Select mode="multiple" options={['inventory', 'assets', 'payroll', 'costing'].map((m) => ({ value: m, label: m }))} /></Form.Item>
           <Form.List name="extra_dims">{(fields, { add, remove }) => (<>
             <div style={{ marginBottom: 8 }}>Trường mở rộng (chiều phân tích thêm)</div>

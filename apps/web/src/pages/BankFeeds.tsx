@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Descriptions, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { formatVnDate } from '@kt/domain';
+import { useHotkeys } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { useBankAccounts } from './BankTransactions.js';
@@ -49,6 +50,8 @@ export default function BankFeedsPage() {
   const delFmt = useMutation({ mutationFn: (id: number) => api(`/api/bank-statement-formats/${id}`, { method: 'DELETE' }), onError: fail, onSuccess: refresh });
 
   const canUpdate = can('bank_feed.update');
+  const openAdd = () => { form.setFieldsValue({ provider: 'sepay', authKind: 'hmac' }); setAdding(true); };
+  useHotkeys({ Insert: () => { if (can('bank_feed.create') && !adding && !fmt && !secret) openAdd(); } });
   const openFmt = (f: Partial<Format>) => { fmtForm.resetFields(); fmtForm.setFieldsValue({ headerRow: 1, sheetIndex: 0, dateFormat: 'dd/MM/yyyy', ...f }); setFmt(f); };
   const submitFmt = (v: Record<string, unknown>) => saveFmt.mutate(Object.fromEntries(Object.entries(v).map(([k, x]) => [k, x === '' ? null : x])));
 
@@ -56,7 +59,7 @@ export default function BankFeedsPage() {
     <div>
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
         <h2 style={{ margin: 0 }}>Kết nối ngân hàng</h2>
-        {can('bank_feed.create') && <Button type="primary" onClick={() => { form.setFieldsValue({ provider: 'sepay', authKind: 'hmac' }); setAdding(true); }}>Thêm kết nối</Button>}
+        {can('bank_feed.create') && <Button type="primary" onClick={openAdd}>Thêm kết nối (Insert)</Button>}
       </Space>
       <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Dán địa chỉ webhook và khóa vào trang cấu hình SePay hoặc Casso. Khóa chỉ hiện một lần khi tạo hoặc đổi mã; mất khóa thì đổi mã mới." />
       <Table<Feed> rowKey="id" size="small" loading={feeds.isLoading} dataSource={feeds.data ?? []} pagination={false} locale={{ emptyText: 'Chưa có kết nối nào' }}
@@ -89,7 +92,7 @@ export default function BankFeedsPage() {
         ]} />
 
       <Modal title="Thêm kết nối ngân hàng" open={adding} okText="Tạo kết nối" cancelText="Hủy" confirmLoading={create.isPending} destroyOnHidden onCancel={() => setAdding(false)} onOk={() => form.submit()}>
-        <Form form={form} layout="vertical" onFinish={(v: Record<string, unknown>) => create.mutate(Object.fromEntries(Object.entries(v).filter(([, x]) => x !== '' && x !== undefined)))}>
+        <Form form={form} layout="vertical" onKeyDown={(e: React.KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); form.submit(); } }} onFinish={(v: Record<string, unknown>) => create.mutate(Object.fromEntries(Object.entries(v).filter(([, x]) => x !== '' && x !== undefined)))}>
           <Form.Item label="Tài khoản ngân hàng" name="bankAccountId" rules={[{ required: true, message: 'Chọn tài khoản ngân hàng' }]}>
             <Select showSearch optionFilterProp="label" options={(accounts.data ?? []).map((a) => ({ value: a.id, label: `${a.account_no}${a.account_name ? ` – ${a.account_name}` : ''}` }))} />
           </Form.Item>
@@ -112,7 +115,7 @@ export default function BankFeedsPage() {
       </Modal>
 
       <Modal title={fmt?.id ? 'Sửa mẫu cột sao kê' : 'Thêm mẫu cột sao kê'} open={!!fmt} okText="Lưu" cancelText="Hủy" confirmLoading={saveFmt.isPending} destroyOnHidden onCancel={() => setFmt(null)} onOk={() => fmtForm.submit()}>
-        <Form form={fmtForm} layout="vertical" onFinish={submitFmt}>
+        <Form form={fmtForm} layout="vertical" onFinish={submitFmt} onKeyDown={(e: React.KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); fmtForm.submit(); } }}>
           <Form.Item label="Tên mẫu" name="name" rules={[{ required: true, whitespace: true, message: 'Nhập tên mẫu' }]}><Input maxLength={100} /></Form.Item>
           <Space align="start" wrap>
             <Form.Item label="Mã ngân hàng" name="bankCode"><Input maxLength={20} style={{ width: 120 }} /></Form.Item>
