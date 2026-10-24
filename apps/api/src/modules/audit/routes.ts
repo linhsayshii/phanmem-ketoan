@@ -4,6 +4,7 @@ import { sql } from 'kysely';
 import { vnDayEnd, vnDayStart } from '../core/vnTime.js';
 import { AppError } from '../../plugins/errors.js';
 import { SALARY_AUDIT_ENTITIES } from '../payroll/profiles.js';
+import { salaryAccountIds } from '../payroll/accounts.js';
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const paging = { page: z.coerce.number().int().min(1).default(1), size: z.coerce.number().int().min(1).max(500).default(50) };
@@ -19,6 +20,13 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       if (!req.auth!.sensitive.has('view_salary')) {
         if (q.entity && SALARY_AUDIT_ENTITIES.includes(q.entity)) throw new AppError('SALARY_FORBIDDEN', 'Không có quyền xem lương', 403);
         base = base.where('a.entity', 'not in', SALARY_AUDIT_ENTITIES);
+        // Ảnh chụp trước/sau của dòng chứng từ đã ghi sổ (sửa diễn giải, chiều) mang số tiền: bỏ mọi dòng của chứng từ có dòng trên tài khoản lương, BH, TNCN (dòng tiền đối ứng
+        // bằng đúng số lương). Dòng số dư đầu kỳ: bỏ dòng thuộc tài khoản lương.
+        const ids = (await salaryAccountIds(trx)).map(String);
+        if (ids.length) base = base.where(sql<boolean>`NOT (
+          (a.entity = 'voucher_line' AND EXISTS (SELECT 1 FROM voucher_line sl WHERE sl.voucher_id = (coalesce(a.after, a.before)->>'voucher_id')::uuid AND sl.posting_date = (coalesce(a.after, a.before)->>'posting_date')::date
+            AND sl.account_id::text = ANY(${ids}::text[])))
+          OR (a.entity = 'opening_balance' AND coalesce(a.after->>'account_id', a.before->>'account_id') = ANY(${ids}::text[])))`);
       }
       if (q.entity) base = base.where('a.entity', '=', q.entity);
       if (q.entityId) base = base.where('a.entity_id', '=', q.entityId);

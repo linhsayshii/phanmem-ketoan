@@ -4,6 +4,7 @@ import { D, formatVnDate, formatVnNumber, ZERO, type Decimal } from '@kt/domain'
 import { AppError } from '../../plugins/errors.js';
 import { getSettings } from '../core/settings.js';
 import * as S from '../ledger/vouchers.service.js';
+import { isSalaryCode, salaryAccountIds } from '../payroll/accounts.js';
 import { accountsUnder, dayBefore, regimeOf } from '../reporting/ledgers.js';
 import { companyInfo } from '../reporting/print/bookSet.js';
 import { bookFormFor } from '../reporting/print/forms.js';
@@ -74,7 +75,8 @@ export interface Book {
 }
 interface LineRow { voucherId: string; voucherType: string; voucherNo: string | null; postingDate: string; documentDate: string; vDesc: string | null; lDesc: string | null; debit: string; credit: string; cur: string; counters: string[]; isReversal: boolean }
 
-export async function cashBook(trx: Trx, p: { kind: 'cash' | 'bank'; accountCode?: string | undefined; bankAccountNo?: string | undefined; currency?: string | undefined; from: string; to: string }): Promise<Book> {
+export async function cashBook(trx: Trx, p: { kind: 'cash' | 'bank'; accountCode?: string | undefined; bankAccountNo?: string | undefined; currency?: string | undefined; from: string; to: string;
+  hideSalary?: boolean | undefined }): Promise<Book> {
   const regime = await regimeOf(trx, p);
   const bank = p.kind === 'bank' && p.bankAccountNo ? await findBank(trx, p.bankAccountNo) : undefined;
   const accountCode = bank ? bank.glAccountCode : p.accountCode;
@@ -112,6 +114,15 @@ export async function cashBook(trx: Trx, p: { kind: 'cash' | 'bank'; accountCode
   // Trong cùng một ngày chứng từ thu (Thu > Chi) xếp trước chứng từ chi (sổ giấy của thủ quỹ không để tồn quỹ âm vì thứ tự lập phiếu); sắp xếp ổn định nên còn lại theo loại, số.
   const ordered = [...byVoucher.values()].sort((x, y) => x.meta.postingDate.localeCompare(y.meta.postingDate) || Number(y.in.gt(y.out)) - Number(x.in.gt(x.out)));
 
+  // Thiếu view_salary: chứng từ chi lương, nộp bảo hiểm, nộp TNCN (có dòng trên tài khoản lương) mất tên tài khoản đối ứng lương và diễn giải (có thể ghi tên nhân viên);
+  // số thu/chi giữ nguyên vì là dòng tiền của quỹ và cần cho số dư lũy kế, chi tiết từng nhân viên chỉ có ở chứng từ và sổ chi tiết 334 (đã che theo cờ).
+  const hidden = new Set<string>();
+  if (p.hideSalary && ordered.length) {
+    const ids = await salaryAccountIds(trx);
+    if (ids.length) for (const r of await trx.selectFrom('voucher_line').select('voucher_id').distinct().where('voucher_id', 'in', ordered.map((a) => a.meta.voucherId)).where('account_id', 'in', ids)
+      .where('posting_date', '>=', p.from).where('posting_date', '<=', p.to).execute()) hidden.add(r.voucher_id);
+  }
+  const SALARY_HIDDEN = 'Đã ẩn do thiếu quyền xem lương';
   let run = opening.net; let runCur = opening.cur; let totalIn = ZERO; let totalOut = ZERO; let totalInCur = ZERO; let totalOutCur = ZERO;
   const rows: BookRow[] = ordered.map((a) => {
     run = run.plus(a.in).minus(a.out); runCur = runCur.plus(a.inCur).minus(a.outCur);
@@ -121,7 +132,8 @@ export async function cashBook(trx: Trx, p: { kind: 'cash' | 'bank'; accountCode
     const byType = (t === 'PT' || t === 'PC') && !m.isReversal && !(a.in.gt(0) && a.out.gt(0));
     const receipt = byType ? t === 'PT' : a.in.gt(0); const payment = byType ? t === 'PC' : a.out.gt(0);
     return { date: m.postingDate, documentDate: m.documentDate, voucherId: m.voucherId, voucherType: t, voucherNo: m.voucherNo, receiptNo: receipt ? m.voucherNo : null, paymentNo: payment ? m.voucherNo : null,
-      description: a.desc, counterAccounts: [...a.counters].join(', '), in: vnd(a.in), out: vnd(a.out), balance: vnd(run),
+      description: hidden.has(m.voucherId) ? SALARY_HIDDEN : a.desc,
+      counterAccounts: hidden.has(m.voucherId) ? [...new Set([...a.counters].map((c) => (isSalaryCode(regime, c) ? SALARY_HIDDEN : c)))].join(', ') : [...a.counters].join(', '), in: vnd(a.in), out: vnd(a.out), balance: vnd(run),
       inCurrency: fx ? foreign(a.inCur) : null, outCurrency: fx ? foreign(a.outCur) : null, balanceCurrency: fx ? foreign(runCur) : null };
   });
   return { kind: p.kind, accountCode, accountName: acc?.name ?? '', bankAccountNo: bank?.accountNo ?? null, bankName: bank?.bankName ?? null, branch: bank?.branch ?? null,

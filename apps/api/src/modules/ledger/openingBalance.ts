@@ -10,6 +10,7 @@ import { assertZipSafe } from '../master/excelSheet.js';
 import { isoDate } from '../reporting/routes.js';
 import { stockGroups, stockIssues, type StockGroup } from '../inventory/openingStock.js';
 import { assetIssues, openingCards, type OpeningCard } from '../assets/openingAssets.js';
+import { isSalaryCode, salaryAccountIds } from '../payroll/accounts.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { getVoucher, postVoucher, type VoucherDto } from './vouchers.service.js';
 
@@ -367,25 +368,35 @@ async function guardInventory(trx: Trx, auth: { sensitive: Set<string> }, year: 
   if (incoming) throw new AppError('FORBIDDEN', 'Cần cờ xem giá vốn (view_cost) để xem hoặc sửa số dư tài khoản kho và tồn kho đầu kỳ', 403);
 }
 
+// Số dư đầu kỳ của tài khoản lương (334 theo nhân viên, BHXH, BHYT, BHTN, KPCĐ, TNCN theo ánh xạ payrollAccounts) là số lương: thiếu view_salary không xem hay sửa được khi năm đó có số dư loại này
+// (hoặc dòng đang nhập thuộc tài khoản lương). Không che từng dòng vì lưu số dư thay cả bộ dòng: bản che sẽ ghi đè số lương bằng 0.
+async function guardSalary(trx: Trx, auth: { sensitive: Set<string> }, year: number, codes: string[] = []) {
+  if (auth.sensitive.has('view_salary')) return;
+  const { regime } = await openingPeriod(trx, year);
+  const ids = await salaryAccountIds(trx);
+  const book = ids.length ? await trx.selectFrom('opening_balance').select('id').where('fiscal_year', '=', year).where('account_id', 'in', ids).limit(1).executeTakeFirst() : undefined;
+  if (book || codes.some((c) => isSalaryCode(regime, c))) throw new AppError('SALARY_FORBIDDEN', 'Cần cờ xem lương (view_salary) để xem hoặc sửa số dư tài khoản lương, bảo hiểm và thuế TNCN', 403);
+}
+
 const routes: FastifyPluginAsyncZod = async (app) => {
   const yearParam = z.object({ year: z.coerce.number().int().min(2000).max(2100) });
   app.get('/api/opening-balance/template.xlsx', { preHandler: app.requirePermission('opening_balance.view') }, async (_req, reply) =>
     reply.header('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').header('content-disposition', 'attachment; filename="mau_so_du_dau_ky.xlsx"').send(await openingTemplate()));
   app.get('/api/opening-balance/:year', { preHandler: app.requirePermission('opening_balance.view'), schema: { params: yearParam } }, async (req) =>
-    app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); return listOpening(trx, req.params.year); }));
+    app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); await guardSalary(trx, req.auth!, req.params.year); return listOpening(trx, req.params.year); }));
   app.put('/api/opening-balance/:year', { preHandler: app.requirePermission('opening_balance.update'), schema: { params: yearParam, body: z.object({ rows: z.array(openingRow) }) } }, async (req) =>
-    ({ count: await app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year, req.body.rows.map((r) => r.accountCode)); return replaceOpening(trx, req.auth!.tenantId!, req.params.year, req.body.rows); }) }));
+    ({ count: await app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year, req.body.rows.map((r) => r.accountCode)); await guardSalary(trx, req.auth!, req.params.year, req.body.rows.map((r) => r.accountCode)); return replaceOpening(trx, req.auth!.tenantId!, req.params.year, req.body.rows); }) }));
   // Trả cả cảnh báo (phần tử có warning: true, không chặn ghi sổ): mảng không còn phần tử lỗi mới là hợp lệ.
   app.get('/api/opening-balance/:year/check', { preHandler: app.requirePermission('opening_balance.view'), schema: { params: yearParam } }, async (req) =>
-    app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); return checkOpening(trx, req.params.year); }));
+    app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); await guardSalary(trx, req.auth!, req.params.year); return checkOpening(trx, req.params.year); }));
   app.post('/api/opening-balance/:year/post', { preHandler: app.requirePermission('opening_balance.update'), schema: { params: yearParam } }, async (req) => {
-    const dto = await app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); return postOpening(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.params.year); });
+    const dto = await app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); await guardSalary(trx, req.auth!, req.params.year); return postOpening(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.params.year); });
     notifyRecompute(app, req.auth!.tenantId!);
     return dto;
   });
   // Cần cả quyền sửa số dư đầu kỳ lẫn quyền bỏ ghi sổ chứng từ.
   app.post('/api/opening-balance/:year/unpost', { preHandler: [app.requirePermission('opening_balance.update'), app.requirePermission('voucher.unpost')], schema: { params: yearParam } }, async (req) => {
-    const dto = await app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); return unpostOpening(trx, req.auth!.tenantId!, req.params.year); });
+    const dto = await app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); await guardSalary(trx, req.auth!, req.params.year); return unpostOpening(trx, req.auth!.tenantId!, req.params.year); });
     notifyRecompute(app, req.auth!.tenantId!);
     return dto;
   });
@@ -400,6 +411,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       const report = (inserted: number) => ({ total, inserted, errors: errors.slice(0, MAX_ERRORS), errorCount: errors.length });
       if (req.query.mode === 'validate' || errors.length) return report(0);
       await guardInventory(trx, req.auth!, req.params.year, rows.map((r) => r.accountCode));
+      await guardSalary(trx, req.auth!, req.params.year, rows.map((r) => r.accountCode));
       return report(await replaceOpening(trx, req.auth!.tenantId!, req.params.year, rows));
     });
   });
