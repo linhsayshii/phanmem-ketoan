@@ -22,7 +22,12 @@ for (const [t, n] of Object.entries(ts.soChungTuThem.counts as Record<string, nu
 // Phần hóa đơn điện tử, hóa đơn đầu vào, ngân hàng (GĐ5): số liệu báo cáo không đổi; chỉ thêm chứng từ thay thế, chứng từ đảo và HDM nháp.
 const hd = JSON.parse(readFileSync(new URL('../../../packages/db/src/seed/expected-gd5-abc.json', import.meta.url), 'utf8'));
 for (const [t, n] of Object.entries(hd.soChungTuThem as Record<string, number>)) expected.soChungTu.counts[t] = (expected.soChungTu.counts[t] ?? 0) + n;
-const totalVouchers = (Object.values(expected.soChungTu.counts) as number[]).reduce((a, b) => a + b, 0) + kho.soChungTuThem.gv.total;
+// Phần lương, giá thành, hợp đồng, phân bổ vụ việc (GĐ6): chênh lệch số dư, chứng từ LU, PB, PNK, HDB, BC, BN, GV thêm; PB phân bổ vụ việc lập trước PB doanh thu nhận trước cùng ngày 31/10.
+const g6 = JSON.parse(readFileSync(new URL('./expected-gd6-abc.json', import.meta.url), 'utf8'));
+for (const [code, d] of Object.entries(g6.chenhLechSoDuCuoiNam as Record<string, string>)) if (code !== 'calc') expected.soDuCuoiNam[code] = (BigInt(expected.soDuCuoiNam[code] ?? '0') + BigInt(d)).toString();
+for (const [t, n] of Object.entries(g6.soChungTuThem.counts as Record<string, number>)) expected.soChungTu.counts[t] = (expected.soChungTu.counts[t] ?? 0) + n;
+expected.chungTuTuDong.PB.splice(expected.chungTuTuDong.PB.findIndex((v: { date: string }) => v.date === g6.chungTuTuDong.PB[0].date), 0, ...g6.chungTuTuDong.PB.map(({ date, lines }: { date: string; lines: unknown }) => ({ date, lines })));
+const totalVouchers = (Object.values(expected.soChungTu.counts) as number[]).reduce((a, b) => a + b, 0) + kho.soChungTuThem.gv.total + g6.soChungTuThem.gv.total;
 type AutoVoucher = { date: string; lines: [string, string, string, string][] };
 
 let ctx: TestApp; let cookie: string; let tenantId: string;
