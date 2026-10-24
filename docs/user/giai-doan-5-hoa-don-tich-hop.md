@@ -118,12 +118,13 @@ Bấm "Chi tiết" để mở ngăn bên phải: chứng từ, loại, khách h�
 
 - "Xem PDF", "Tải XML": khi hóa đơn đã phát hành, bị thay thế hoặc đã hủy. Phần mềm lưu XML; PDF lấy từ nhà cung cấp mỗi lần xem. Tệp nhà cung cấp trả về không phải PDF thật được tải xuống (không mở trực tiếp trên trình duyệt).
 
-Chứng từ bán hàng đã có lịch sử hóa đơn điện tử không xóa được khi còn nháp: phần mềm báo ("EINVOICE_HISTORY", 409) "Chứng từ đã có lịch sử hóa đơn điện tử, không xóa được; dùng Hủy chứng từ".
 - "Thử lại": hóa đơn "Đang gửi". Thông báo "Đã gửi lại". Gọi lại cùng mã giao dịch nên không phát hành trùng. Chỉ thử lại được sau 150 giây kể từ lần gửi gần nhất, sớm hơn báo ("EINVOICE_BUSY"). Hóa đơn không ở trạng thái đang gửi thì báo ("EINVOICE_NOT_SENDING", "Chỉ thử lại hóa đơn điện tử đang gửi (chưa nhận được kết quả)").
 - "Bỏ hóa đơn lỗi": hóa đơn "Lỗi". Hỏi "Bỏ hóa đơn lỗi này?" "Chứng từ gốc được mở khóa để phát hành lại." Thông báo "Đã bỏ hóa đơn lỗi". Bản ghi lỗi chỉ bị đánh dấu bỏ, không xóa khỏi nhật ký.
 - "Tra mã CQT": hóa đơn ký hiệu C đã phát hành chưa có mã của cơ quan thuế. Thông báo "Đã tra cứu mã của cơ quan thuế".
 - "Đánh dấu đã thanh toán", "Bỏ đánh dấu đã thanh toán".
 - "Lập điều chỉnh", "Lập thay thế", "Hủy", "Đảo chứng từ gốc", "Lập 04/SS": xem mục 3 và 4.
+
+Chứng từ bán hàng đã có lịch sử hóa đơn điện tử không xóa được khi còn nháp: phần mềm báo ("EINVOICE_HISTORY", 409) "Chứng từ đã có lịch sử hóa đơn điện tử, không xóa được; dùng Hủy chứng từ".
 
 Hóa đơn "Lỗi" không khóa chứng từ gốc; chứng từ chỉ bị khóa "Bỏ ghi sổ" khi hóa đơn đang gửi, đã phát hành, bị thay thế, đã hủy hoặc còn cần đảo.
 

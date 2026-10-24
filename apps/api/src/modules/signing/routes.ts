@@ -96,7 +96,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.get('/api/signing/sessions/:id/result', { preHandler: use, schema: { params: uuidId } }, async (req, reply) => {
     const { session } = await app.withTenant(req, (trx) => loadSession(trx, req.auth!.userId, req.params.id), READ_SNAPSHOT);
     if (session.status !== 'signed' || !session.signed_xml) throw new AppError('SIGNING_NOT_COMPLETE', 'Phiên ký số chưa hoàn tất', 409);
-    return reply.type('application/xml; charset=utf-8').header('content-disposition', `attachment; filename="${session.doc_kind}-${session.doc_ref}-signed.xml"`).send(session.signed_xml);
+    return reply.type('application/xml; charset=utf-8').header('x-content-type-options', 'nosniff').header('content-disposition', `attachment; filename="${session.doc_kind}-${session.doc_ref}-signed.xml"`).send(session.signed_xml);
   });
 };
 export default routes;

@@ -46,7 +46,7 @@ describe('lập chứng từ mua từ hóa đơn đầu vào', () => {
     expect(r.json()).toMatchObject({ partyCode: 'NCC001', voucherType: 'HDM', lines: [{ lineNo: 1, itemCode: null, accountCode: null, taxCode: 'V10', source: 'guess' }, { lineNo: 2, taxCode: 'V10' }] });
   });
 
-  it('xóa nháp hoặc hủy chứng từ đã lập → hóa đơn về new, lập lại được (201)', async () => {
+  it('xóa nháp, hủy hoặc đảo chứng từ đã lập → hóa đơn về new, lập lại được (201)', async () => {
     const t = await tenant(); await t.setVendorMst();
     const a = await t.one(VAT());
     const status = async () => (await t.call('GET', `/api/inbound-invoices/${a.id}`)).json();
@@ -62,6 +62,10 @@ describe('lập chứng từ mua từ hóa đơn đầu vào', () => {
     const v3 = await t.call('POST', `/api/inbound-invoices/${a.id}/voucher`, BODY);
     expect(v3.statusCode, v3.body).toBe(201);
     expect(await status()).toMatchObject({ status: 'voucher_created', voucherId: v3.json().voucherId });
+    expect((await t.call('POST', `/api/vouchers/${v3.json().voucherId}/post`)).statusCode).toBe(200);
+    const r = await t.call('POST', `/api/vouchers/${v3.json().voucherId}/reverse`, { postingDate: '2026-01-20' });
+    expect(r.statusCode, r.body).toBe(201);
+    expect(await status()).toMatchObject({ status: 'new', voucherId: null }); // chứng từ mua bị đảo: lập lại được
   });
 
   it('lập HDM từ hóa đơn dịch vụ: chứng từ nháp, số/ký hiệu/ngày đúng hóa đơn, thuế = TgTThue', async () => {
