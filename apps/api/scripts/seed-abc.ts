@@ -7,7 +7,7 @@
 // 1 khế ước vay VND đổi lãi suất giữa năm; các bước tài sản và lãi vay chạy mỗi cuối tháng theo thứ tự Quy trình cuối kỳ. Tính tay ở expected-gd4-abc.json (kiểm ở test/assets/sample-abc-tai-san.test.ts).
 import '../src/env.js';
 import pg from 'pg';
-import { sql, type Transaction } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import { createDb, type Database } from '@kt/db';
 import { SENSITIVE_FLAGS } from '@kt/domain';
 import { seedAbcTx } from '@kt/db/seed/demo-abc';
@@ -30,6 +30,14 @@ import { createStockVoucher, stockVoucherInput } from '../src/modules/inventory/
 import { adjustStocktake, createStocktake, updateStocktake } from '../src/modules/inventory/stocktake.js';
 import { createSchedule, runAmortization, runInput, scheduleInput } from '../src/modules/invoices/amortization.js';
 import { openingRow, postOpening, replaceOpening } from '../src/modules/ledger/openingBalance.js';
+import { readFileSync } from 'node:fs';
+import { issueEInvoice } from '../src/modules/einvoice/issue.js';
+import { adjustInput as einvAdjustInput, issueAdjustment, issueReplacement, replaceInput } from '../src/modules/einvoice/lifecycle.js';
+import { createVoucherFromInbound, voucherBody } from '../src/modules/inbound/toVoucher.js';
+import { storeInbound } from '../src/modules/inbound/store.js';
+import { createFeed, feedInput } from '../src/modules/bank/feeds.js';
+import { mapSepay } from '../src/modules/bank/webhook.js';
+import { matchToVoucher } from '../src/modules/bank/match.js';
 import { createVoucher, voucherInput } from '../src/modules/ledger/vouchers.service.js';
 import { offsetInput, runVatOffset } from '../src/modules/tax/vatOffset.js';
 import { createReturn, finalizeReturn, returnInput } from '../src/modules/tax/vatReturn.js';
@@ -84,6 +92,10 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
   for (const [d, r] of [['2026-02-10', 25600], ['2026-03-12', 25650], ['2026-08-05', 25800], ['2026-10-20', 25900], ['2026-11-16', 26100], ['2026-12-31', 26200]])
     await c.query(`INSERT INTO exchange_rate(tenant_id, currency_code, rate_date, rate_type, rate) VALUES ($1, 'USD', $2, 'transfer_avg', $3)`, [tenantId, d, r]);
 
+  // ---- Hóa đơn điện tử (GĐ5): nhà cung cấp giả lập (cấp mã cơ quan thuế), ký hiệu 1C26TAA ----
+  const provId = (await c.query(`INSERT INTO einvoice_provider(tenant_id, code, name, options) VALUES ($1, 'fake', 'Nhà cung cấp giả lập (dữ liệu mẫu)', '{"withCode": true}') RETURNING id`, [tenantId])).rows[0].id;
+  const einvSeries = Number((await c.query(`INSERT INTO einvoice_series(tenant_id, provider_id, form_no, serial, year) VALUES ($1, $2, '1', 'C26TAA', 2026) RETURNING id`, [tenantId, provId])).rows[0].id);
+
   // ---- Loại tài sản (GĐ4): TSCĐ hữu hình, công cụ dụng cụ, chi phí trả trước ----
   for (const b of [{ code: 'MMTB', name: 'Máy móc, thiết bị', kind: 'fixed', assetAccountCode: '2111', depreciationAccountCode: '2141', defaultLifeUnits: 60 },
     { code: 'CCDC', name: 'Công cụ, dụng cụ', kind: 'tool', assetAccountCode: '242', defaultLifeUnits: 12 }, { code: 'CPTT', name: 'Chi phí trả trước', kind: 'prepaid', assetAccountCode: '242', defaultLifeUnits: 12 }])
@@ -129,7 +141,9 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
   let saleNo = 0;
   const invoice = async (b: Record<string, unknown> & { invoice: Record<string, unknown> }) => {
     const sale = b['voucherType'] === 'HDB' || b['voucherType'] === 'GGB';
-    const head = { formNo: '1', ...(sale && { serial: 'C26TAB', invoiceNo: String(++saleNo).padStart(7, '0') }), invoiceDate: b['documentDate'], ...b.invoice };
+    const einv = b.invoice['einvoiceSeriesId'] !== undefined; // hóa đơn điện tử: số và ký hiệu do nhà cung cấp cấp khi phát hành
+    const no = sale ? ++saleNo : 0; // vẫn đếm để các số hóa đơn tay khác giữ nguyên
+    const head = { ...(!einv && { formNo: '1' }), ...(sale && !einv && { serial: 'C26TAB', invoiceNo: String(no).padStart(7, '0') }), invoiceDate: b['documentDate'], ...b.invoice };
     const v = await createInvoice(trx, ctx, invoiceInput.parse({ ...b, invoice: head }));
     await post(v.id);
     return v.id;
@@ -140,8 +154,21 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
   const invoiceRow = async (voucherId: string) => (await sql<{ id: number }>`SELECT id FROM voucher_invoice WHERE voucher_id = ${voucherId}::uuid ORDER BY id LIMIT 1`.execute(trx)).rows[0]!.id;
   const L = (accountCode: string, debit: string, credit: string, o: Record<string, unknown> = {}) => ({ accountCode, debit, credit, ...o });
   const sale = (party: string, date: string, desc: string, items: { account?: string; amount: string; tax: string }[], o: Record<string, unknown> = {}) =>
-    invoice({ voucherType: 'HDB', postingDate: date, documentDate: date, partyCode: party, description: desc, invoice: { invoiceGroupCode: o['group'] ?? groupOf(items[0]!.tax) },
+    invoice({ voucherType: 'HDB', postingDate: date, documentDate: date, partyCode: party, description: desc, invoice: { invoiceGroupCode: o['group'] ?? groupOf(items[0]!.tax), ...(o['einv'] ? { einvoiceSeriesId: einvSeries } : {}) },
       items: items.map((i) => ({ description: desc, accountCode: i.account ?? '5113', amountCurrency: i.amount, taxCodes: [i.tax] })), ...(o['usd'] ? { currencyCode: 'USD', fxRate: o['usd'] } : {}) });
+  // Hóa đơn điện tử (GĐ5): chứng từ bán chọn ký hiệu 1C26TAA, ghi sổ rồi phát hành ngay qua nhà cung cấp giả lập. Các dịch vụ HĐĐT mở giao dịch riêng bằng db.transaction(),
+  // không dùng được trên kết nối của seed (BEGIN lồng làm COMMIT giao dịch ngoài): đưa vào bộ thực thi trả lại chính giao dịch này.
+  const edb = new Proxy(trx, { get(t, p) {
+    if (p === 'transaction') return () => ({ setIsolationLevel() { return this; }, execute: (fn: (x: unknown) => unknown) => fn(trx) });
+    const v = Reflect.get(t, p, t); return typeof v === 'function' ? v.bind(t) : v;
+  } }) as unknown as Kysely<Database>;
+  const ectx = { tenantId, userId, canBackdate: false };
+  const einvOf = async (voucherId: string) => (await sql<{ id: number }>`SELECT id::int FROM einvoice WHERE voucher_id = ${voucherId}::uuid AND status = 'issued'`.execute(trx)).rows[0]!.id;
+  const saleEinv = async (party: string, date: string, desc: string, items: { amount: string; tax: string }[]) => {
+    const id = await sale(party, date, desc, items, { einv: true });
+    await issueEInvoice(edb, ectx, id, { issueDate: date });
+    return id;
+  };
   const purchase = (party: string, date: string, desc: string, serial: string, no: string, account: string, amount: string, taxCodes: string[], group = '01') =>
     invoice({ voucherType: 'HDM', postingDate: date, documentDate: date, partyCode: party, description: desc, invoice: { serial, invoiceNo: no, invoiceGroupCode: group },
       items: [{ description: desc, accountCode: account, amountCurrency: amount, taxCodes }] });
@@ -170,7 +197,7 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
 
   for (let m = 1; m <= 12; m++) {
     // Dịch vụ tư vấn hằng tháng cho KH001 (10%), thuê văn phòng của NCC001 (10%), thu và trả trong tháng (tiền thuê tháng 6 trả ngày 03/7, tháng 10 thu 99 triệu sau giảm giá).
-    at(day(m, 5), async () => { ref[`HDB-KH001-${m}`] = await sale('KH001', day(m, 5), `Dịch vụ tư vấn quản trị tháng ${m}/${FY}`, [{ amount: M(100), tax: 'V10' }]); });
+    at(day(m, 5), async () => { ref[`HDB-KH001-${m}`] = await (m >= 10 ? saleEinv : sale)('KH001', day(m, 5), `Dịch vụ tư vấn quản trị tháng ${m}/${FY}`, [{ amount: M(100), tax: 'V10' }]); });
     at(day(m, 10), async () => { ref[`HDM-NCC001-${m}`] = await purchase('NCC001', day(m, 10), `Thuê văn phòng tháng ${m}/${FY}`, 'C26TNA', String(1000 + m), '6422', M(20), ['V10']); });
     if (m !== 12) at(day(m, 25), async () => receipt('BC', 'KH001', day(m, 25), m === 10 ? M(99) : M(110), await item(ref[`HDB-KH001-${m}`]!), `Thu tiền dịch vụ tư vấn tháng ${m}`));
     const payDate = m === 6 ? day(7, 3) : day(m, 25);
@@ -209,12 +236,19 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
   at(day(6, 28), async () => receipt('BC', 'KH003', day(6, 28), M(66), await item(ref['HDB-KH003']!), 'Thu trước tiền bảo trì hệ thống 6 tháng'));
   // Quý 3
   at(day(7, 10), async () => receipt('BC', 'KH002', day(7, 10), M(54), await item(ref['HDB-KH002-V8a']!), 'Thu tiền dịch vụ tổ chức hội nghị'));
-  at(day(7, 15), async () => { ref['HDB-KH004'] = await sale('KH004', day(7, 15), 'Dịch vụ đào tạo nghề kế toán (không chịu thuế GTGT)', [{ amount: M(30), tax: 'KCT' }]); });
+  at(day(7, 15), async () => { ref['HDB-KH004'] = await saleEinv('KH004', day(7, 15), 'Dịch vụ đào tạo nghề kế toán (không chịu thuế GTGT)', [{ amount: M(30), tax: 'KCT' }]); });
   at(day(7, 20), () => taxPayment(day(7, 20), '33311', M(34), 'Nộp thuế GTGT quý 2/2026'));
   at(day(7, 22), async () => { ref['HDM-NCC003'] = await purchase('NCC003', day(7, 22), 'Dịch vụ in tài liệu đào tạo', 'C26TIN', '0000315', '6422', M(10), ['V5']); });
   at(day(7, 28), async () => payment('BN', 'NCC003', day(7, 28), M(10.5), await item(ref['HDM-NCC003']!), 'Trả tiền in tài liệu đào tạo'));
   at(day(8, 5), async () => { ref['HDB-KHNN01'] = await sale('KHNN01', day(8, 5), 'Software consulting service (export, VAT 0%)', [{ amount: '4000', tax: 'V0' }], { usd: '25800' }); });
-  at(day(8, 12), async () => { ref['HDB-KH005'] = await sale('KH005', day(8, 12), 'Dịch vụ biên soạn tài liệu kỹ thuật', [{ amount: M(20), tax: 'V5' }]); });
+  at(day(8, 12), async () => { ref['HDB-KH005'] = await saleEinv('KH005', day(8, 12), 'Dịch vụ biên soạn tài liệu kỹ thuật', [{ amount: M(20), tax: 'V5' }]); });
+  // Hóa đơn thay thế: nội dung giống hệt (thay thế vì sai thông tin ngoài số tiền), cùng ngày nên chứng từ đảo triệt tiêu chứng từ gốc ngay trong kỳ; số liệu báo cáo không đổi.
+  at(day(8, 12), async () => {
+    const orig = ref['HDB-KH005']!;
+    const repl = await sale('KH005', day(8, 12), 'Dịch vụ biên soạn tài liệu kỹ thuật (thay thế)', [{ amount: M(20), tax: 'V5' }], { einv: true });
+    await issueReplacement(edb, ectx, await einvOf(orig), replaceInput.parse({ voucherId: repl, reason: 'Sai thông tin hàng hóa trên hóa đơn gốc', issueDate: day(8, 12) }));
+    ref['HDB-KH005'] = repl;
+  });
   at(day(8, 15), async () => receipt('BC', 'KH004', day(8, 15), M(30), await item(ref['HDB-KH004']!), 'Thu tiền dịch vụ đào tạo'));
   at(day(8, 20), async () => { ref['HDM-NCC002'] = await purchase('NCC002', day(8, 20), 'Dịch vụ triển khai hệ thống quản trị', 'C26TDV', '0002468', '6422', M(400), ['V10']); });
   at(day(9, 5), async () => { ref['HDM-NCC004'] = await purchase('NCC004', day(9, 5), 'Dịch vụ quảng cáo trực tuyến', 'C26TQC', '0000908', '6421', M(25), ['V8']); });
@@ -228,7 +262,8 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
   at(day(10, 20), async () => {
     const orig = ref['HDB-KH001-10']!;
     const ggb = await invoice({ voucherType: 'GGB', postingDate: day(10, 20), documentDate: day(10, 20), partyCode: 'KH001', description: 'Giảm giá dịch vụ tư vấn tháng 10 do chậm tiến độ',
-      invoice: { invoiceGroupCode: '10', adjustsInvoiceId: await invoiceRow(orig) }, items: [{ description: 'Giảm giá dịch vụ tư vấn tháng 10', accountCode: '5113', amountCurrency: M(10), taxCodes: ['V10'] }] });
+      invoice: { invoiceGroupCode: '10', adjustsInvoiceId: await invoiceRow(orig), einvoiceSeriesId: einvSeries }, items: [{ description: 'Giảm giá dịch vụ tư vấn tháng 10', accountCode: '5113', amountCurrency: M(10), taxCodes: ['V10'] }] });
+    await issueAdjustment(edb, ectx, await einvOf(orig), einvAdjustInput.parse({ voucherId: ggb, adjust: 'decrease', reason: 'Giảm giá do chậm tiến độ', issueDate: day(10, 20) }));
     await settle(trx, auth, settleInput.parse({ debitItemId: await item(orig), creditItemId: await item(ggb), amount: M(11), date: day(10, 20) }));
   });
   at(day(10, 20), async () => {
@@ -381,6 +416,36 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
       }
     } });
   }
+  // Hóa đơn đầu vào (GĐ5): 3 hóa đơn từ mẫu XML, 1 lập chứng từ mua (nháp: chứng từ ghi sổ sẽ làm đổi số liệu báo cáo).
+  // Kết nối ngân hàng SePay: 5 giao dịch nhận như webhook, 3 đối chiếu với chứng từ BC/BN đã ghi sổ (số liệu không đổi), 2 chưa đối chiếu.
+  events.push({ key: `${lastDay(12)}~~`, run: async () => {
+    const xmlDir = new URL('../test/fixtures/xml/', import.meta.url);
+    const vat = readFileSync(new URL('vn-einvoice-vat.xml', xmlDir), 'utf8');
+    const xmls = [vat, readFileSync(new URL('vn-einvoice-cashreg.xml', xmlDir), 'utf8'), vat.replace(/<SHDon>\d+<\/SHDon>/, '<SHDon>00000124</SHDon>')];
+    const stored: number[] = [];
+    for (const x of xmls) stored.push((await storeInbound(trx, { tenantId }, x, 'upload')).id);
+    await createVoucherFromInbound(trx, { tenantId, userId, auth }, stored[0]!, voucherBody.parse({ voucherType: 'HDM', postingDate: day(1, 20), createParty: true, invoiceGroupCode: '01',
+      lines: [{ lineNo: 1, accountCode: '6422', taxCode: 'V10' }, { lineNo: 2, accountCode: '6422', taxCode: 'V10' }] }));
+
+    const bankAccountId = Number((await sql<{ id: string }>`SELECT id::text FROM bank_account WHERE account_no = ${VCB}`.execute(trx)).rows[0]!.id);
+    await createFeed(trx, tenantId, 'https://ketoan.example.vn', feedInput.parse({ bankAccountId, provider: 'sepay', authKind: 'apikey' })); // khóa API chỉ trả một lần, dữ liệu mẫu không giữ
+    const feedId = Number((await sql<{ id: string }>`SELECT id::text FROM bank_feed WHERE bank_account_id = ${bankAccountId}`.execute(trx)).rows[0]!.id);
+    const body = (id: number, date: string, type: 'in' | 'out', amount: number, content: string) => ({ id, gateway: 'Vietcombank', transactionDate: `${date} 09:30:00`, accountNumber: VCB, code: null,
+      content, transferType: type, transferAmount: amount, accumulated: 0, referenceCode: `FT26${id}` });
+    const feed = [body(710001, day(1, 8), 'in', 110_000_000, 'KH001 thanh toan hoa don 0000101'), body(710002, day(2, 25), 'out', 22_000_000, 'Thanh toan tien thue van phong thang 2'),
+      body(710003, day(3, 25), 'in', 110_000_000, 'KH001 thanh toan tien dich vu tu van thang 3'), body(710004, day(12, 28), 'in', 7_350_000, 'Khach le chuyen khoan dat coc'),
+      body(710005, day(12, 29), 'out', 1_200_000, 'Phi dich vu ngan hang quy 4')];
+    for (const p of feed) for (const m of mapSepay(p)) // cùng đường chèn với webhook (webhook.ts): khóa trùng (tenant, source, external_id) bỏ qua lần gửi lại
+      await trx.insertInto('bank_transaction').values({ tenant_id: tenantId, bank_account_id: bankAccountId, feed_id: feedId, source: 'sepay', external_id: m.externalId, txn_time: m.txnTime, value_date: m.valueDate,
+        amount_in: m.amountIn, amount_out: m.amountOut, balance_after: m.balanceAfter, description: m.description, reference: m.reference, counter_account: m.counterAccount, counter_name: m.counterName,
+        payment_code: m.paymentCode, raw: JSON.stringify(m.raw) }).onConflict((oc) => oc.columns(['tenant_id', 'source', 'external_id']).doNothing()).execute();
+    const vch = async (type: string, date: string) => (await sql<{ id: string }>`SELECT v.id FROM voucher v WHERE v.voucher_type = ${type} AND v.posting_date = ${date}::date AND v.state = 'posted'
+      AND EXISTS (SELECT 1 FROM voucher_line l WHERE l.voucher_id = v.id AND l.bank_account_id = ${bankAccountId}) ORDER BY v.created_at LIMIT 1`.execute(trx)).rows[0]!.id;
+    for (const [ext, type, date] of [['710001', 'BC', day(1, 8)], ['710002', 'BN', day(2, 25)], ['710003', 'BC', day(3, 25)]] as const) {
+      const t = await sql<{ id: string }>`SELECT id::text FROM bank_transaction WHERE source = 'sepay' AND external_id = ${ext}`.execute(trx);
+      await matchToVoucher(trx, ctx, Number(t.rows[0]!.id), await vch(type, date));
+    }
+  } });
   events.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)); // Array.sort ổn định: cùng ngày giữ thứ tự thêm
   for (const e of events) await e.run();
 

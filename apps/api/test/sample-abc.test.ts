@@ -19,6 +19,9 @@ for (const asOf of ['2026-06-30', '2026-12-31']) { const more = { ...ts.congNoTh
 expected.chungTuTuDong.KTT.find((v: { date: string }) => v.date === kho.ktt31Thang3.date).lines = ts.ktt31Thang3.lines;
 for (const [t, n] of Object.entries(kho.soChungTuThem.counts as Record<string, number>)) expected.soChungTu.counts[t] = (expected.soChungTu.counts[t] ?? 0) + n;
 for (const [t, n] of Object.entries(ts.soChungTuThem.counts as Record<string, number>)) expected.soChungTu.counts[t] = (expected.soChungTu.counts[t] ?? 0) + n;
+// Phần hóa đơn điện tử, hóa đơn đầu vào, ngân hàng (GĐ5): số liệu báo cáo không đổi; chỉ thêm chứng từ thay thế, chứng từ đảo và HDM nháp.
+const hd = JSON.parse(readFileSync(new URL('../../../packages/db/src/seed/expected-gd5-abc.json', import.meta.url), 'utf8'));
+for (const [t, n] of Object.entries(hd.soChungTuThem as Record<string, number>)) expected.soChungTu.counts[t] = (expected.soChungTu.counts[t] ?? 0) + n;
 const totalVouchers = (Object.values(expected.soChungTu.counts) as number[]).reduce((a, b) => a + b, 0) + kho.soChungTuThem.gv.total;
 type AutoVoucher = { date: string; lines: [string, string, string, string][] };
 
@@ -91,8 +94,10 @@ describe('Bộ dữ liệu mẫu ABC năm 2026 (GĐ2)', () => {
       expect(got, type).toEqual((expected.chungTuTuDong[type] as AutoVoucher[]).map((v) => ({ date: v.date, lines: [...v.lines].sort() })));
     }
     const byType = await sql<{ t: string; s: string; n: number }>`SELECT voucher_type AS t, state AS s, count(*)::int AS n FROM voucher WHERE tenant_id = ${tenantId}::uuid GROUP BY 1, 2 ORDER BY 1`.execute(ctx.t.admin);
-    expect(byType.rows.every((x) => x.s === 'posted' || (x.t === 'GV' && x.s === 'reversed'))).toBe(true); // GV tháng 3 bị đảo khi chạy lại giá vốn
-    expect(Object.fromEntries(byType.rows.filter((x) => x.t !== 'GV').map((x) => [x.t, x.n]))).toEqual(expected.soChungTu.counts);
+    expect(byType.rows.every((x) => x.s === 'posted' || (x.t === 'GV' && x.s === 'reversed') || (x.t === 'HDB' && x.s === 'reversed') || (x.t === 'HDM' && x.s === 'draft'))).toBe(true); // GV tháng 3 bị đảo khi chạy lại giá vốn; HDB gốc KH005 bị đảo khi thay thế; HDM nháp từ hóa đơn đầu vào (GĐ5)
+    const counted: Record<string, number> = {};
+    for (const x of byType.rows) if (x.t !== 'GV') counted[x.t] = (counted[x.t] ?? 0) + x.n;
+    expect(counted).toEqual(expected.soChungTu.counts);
   });
 
   it('Bất biến 4 vẫn đúng mọi cuối tháng; bảng cân đối số phát sinh cân', async () => {

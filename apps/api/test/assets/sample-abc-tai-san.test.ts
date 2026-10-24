@@ -7,7 +7,7 @@ import { assertBalanceSheet } from '../invariants/helpers.js';
 
 // Kỳ vọng tính tay (trường calc ghi phép tính), không sinh từ mã đang kiểm.
 const read = (f: string) => JSON.parse(readFileSync(new URL(`../../../../packages/db/src/seed/${f}`, import.meta.url), 'utf8'));
-const gd2 = read('expected-gd2-abc.json'); const gd3 = read('expected-gd3-abc.json'); const gd4 = read('expected-gd4-abc.json');
+const gd2 = read('expected-gd2-abc.json'); const gd3 = read('expected-gd3-abc.json'); const gd4 = read('expected-gd4-abc.json'); const gd5 = read('expected-gd5-abc.json');
 
 let ctx: TestApp; let cookie: string; let tenantId: string;
 beforeAll(async () => {
@@ -95,6 +95,6 @@ describe('Bộ dữ liệu mẫu ABC có tài sản, công cụ dụng cụ, kh�
   it('số chứng từ GĐ4 theo loại', async () => {
     const by = Object.fromEntries((await q<{ t: string; n: number }>(sql`SELECT voucher_type AS t, count(*)::int AS n FROM voucher WHERE tenant_id = ${tenantId}::uuid AND voucher_type = ANY(${Object.keys(gd4.soChungTuThem.counts)}::text[]) GROUP BY 1`)).map((x) => [x.t, x.n]));
     for (const [t, n] of Object.entries(gd4.soChungTuThem.counts as Record<string, number>))
-      expect(by[t], t).toBe((gd2.soChungTu.counts[t] ?? 0) + (gd3.soChungTuThem.counts[t] ?? 0) + n);
+      expect(by[t], t).toBe((gd2.soChungTu.counts[t] ?? 0) + (gd3.soChungTuThem.counts[t] ?? 0) + (gd5.soChungTuThem[t] ?? 0) + n);
   });
 });

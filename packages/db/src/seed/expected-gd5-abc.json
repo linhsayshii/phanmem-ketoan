@@ -1,0 +1,13 @@
+{
+  "calc": "GĐ5 không làm đổi số liệu báo cáo năm: hóa đơn điện tử phát hành trên chứng từ bán có sẵn (HDB-KH001 tháng 10-12, KH004, KH005) và GGB tháng 10 (giảm giá, hóa đơn điều chỉnh giảm) không sinh bút toán. Thay thế KH005: chứng từ bán mới cùng ngày 12/08, cùng số tiền 20.000.000 + VAT 5%; chứng từ gốc bị đảo cùng ngày: gốc + đảo + mới = gốc (đảo triệt tiêu gốc, bản mới thay đúng số cũ). Hóa đơn đầu vào: 3 bản ghi, 1 chứng từ HDM nháp (không ghi sổ). Ngân hàng: 5 giao dịch SePay, 3 đã đối chiếu với BC/BN đã ghi sổ.",
+  "chenhLechSoDuCuoiNam": {},
+  "soChungTuThem": { "HDB": 2, "HDM": 1 },
+  "soChungTuThemGhiChu": "HDB: 1 chứng từ thay thế + 1 chứng từ đảo chứng từ gốc KH005; HDM: 1 nháp từ hóa đơn đầu vào",
+  "hoaDonDienTu": {
+    "soHoaDon": ["0000001", "0000002", "0000003", "0000004", "0000005", "0000006", "0000007"],
+    "trangThai": { "issued": 6, "replaced": 1 },
+    "calc": "ký hiệu 1C26TAA, số liên tục từ 1: KH004 tháng 7 (1), KH005 tháng 8 (2, bị thay thế), hóa đơn thay thế (3), HDB-KH001 tháng 10 (4), điều chỉnh giảm GGB tháng 10 (5), KH001 tháng 11 (6), tháng 12 (7)"
+  },
+  "hoaDonDauVao": { "tong": 3, "chungTuNhap": 1 },
+  "nganHang": { "giaoDich": 5, "daDoiChieu": 3, "moi": 2 }
+}
