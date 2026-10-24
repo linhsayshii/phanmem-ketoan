@@ -117,9 +117,10 @@ export async function getProfile(trx: Trx, employeeId: number) {
     trx.selectFrom('employee_cost_split as s').innerJoin('project as j', 'j.id', 's.project_id').select(['s.project_id', 's.pct', 'j.code', 'j.name']).where('s.employee_id', '=', employeeId).orderBy('j.code').execute(),
   ]);
   const today = todayVn();
+  const project = p?.default_project_id ? await trx.selectFrom('project').select('code').where('id', '=', p.default_project_id).executeTakeFirst() : undefined;
   return {
     employee: { id: e.id, code: e.code, name: e.name, taxCode: e.tax_code, idNumber: e.id_number, position: e.position, departmentName: e.department_name },
-    profile: p ? profileDto(p) : null,
+    profile: p ? { ...profileDto(p), defaultProjectCode: project?.code ?? null } : null,
     allowances: allowances.map((r) => allowanceDto(r)), dependents: dependents.map((r) => dependentDto(r)),
     salaryHistory: history.map((r) => salaryDto(r)), currentSalary: history.find((h) => h.valid_from <= today)?.monthly_salary ?? null,
     costSplit: split.map((r) => ({ projectId: r.project_id, projectCode: r.code, projectName: r.name, pct: r.pct })),
