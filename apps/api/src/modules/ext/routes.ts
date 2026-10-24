@@ -124,8 +124,11 @@ async function createSale(trx: Trx, ctx: { tenantId: string; userId: string; aut
       ...(b.customer.name && { partyName: b.customer.name }), ...(b.customer.address && { partyAddress: b.customer.address }), ...(b.customer.taxCode && !b.customer.code && { partyTaxCode: b.customer.taxCode }) },
   };
   const inv = await createInvoice(trx, ctx, input);
-  if (inv.state !== 'draft' || inv.version !== 1) return { created: false };
-  await trx.updateTable('voucher').set({ ext_fingerprint: saleFingerprint(b, partyCode, warehouseCode) }).where('id', '=', inv.id).execute();
+  // Thua cuộc đua cùng externalId: createInvoice trả chứng từ của bên thắng; người gọi so dấu vân tay rồi mới trả 200 hoặc 409.
+  const fingerprint = saleFingerprint(b, partyCode, goods ? warehouseCode : undefined);
+  if (inv.state !== 'draft' || inv.version !== 1) return { created: false, fingerprint };
+  const stamped = await trx.updateTable('voucher').set({ ext_fingerprint: fingerprint }).where('id', '=', inv.id).where('ext_fingerprint', 'is', null).executeTakeFirst();
+  if (!Number(stamped.numUpdatedRows)) return { created: false, fingerprint };
   if (wantsPost) await postWithCashCheck(trx, ctx.tenantId, inv.id);
 
   if (b.payment) {
@@ -146,7 +149,7 @@ async function createSale(trx: Trx, ctx: { tenantId: string; userId: string; aut
     } as Parameters<typeof createVoucher>[2]);
     await postWithCashCheck(trx, ctx.tenantId, pay.id);
   }
-  return { created: true, posted: wantsPost };
+  return { created: true, posted: wantsPost, fingerprint };
 }
 
 const extRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -208,15 +211,19 @@ const extRoutes: FastifyPluginAsyncZod = async (app) => {
     const tenantId = req.auth!.tenantId!;
     const key = req.apiKey!;
     const out = await app.withOverride(req, async (trx) => {
+      const conflict = () => new AppError('EXTERNAL_ID_CONFLICT', `externalId "${req.body.externalId}" đã dùng cho đơn có nội dung khác; hãy dùng externalId mới cho đơn mới`, 409);
       const prior = await saleRow(trx, req.body.externalId);
       if (prior) {
         const partyCode = await resolveParty(trx, tenantId, req.body.customer);
-        const wh = req.body.warehouseCode ?? key.defaultWarehouseCode ?? undefined;
-        if (prior.fingerprint !== saleFingerprint(req.body, partyCode, wh)) throw new AppError('EXTERNAL_ID_CONFLICT', `externalId "${req.body.externalId}" đã dùng cho đơn có nội dung khác; hãy dùng externalId mới cho đơn mới`, 409);
+        const kinds = await trx.selectFrom('item').select('kind').where('code', 'in', req.body.lines.map((l) => l.itemCode)).execute();
+        const wh = kinds.some((k) => k.kind !== 'service') ? (req.body.warehouseCode ?? key.defaultWarehouseCode ?? undefined) : undefined;
+        if (prior.fingerprint !== saleFingerprint(req.body, partyCode, wh)) throw conflict();
         return { status: 200, body: prior.result, posted: false };
       }
       const r = await createSale(trx, { tenantId, userId: req.auth!.userId, auth: req.auth! }, key, req.body);
-      return { status: r.created ? 201 : 200, body: (await saleResult(trx, req.body.externalId))!, posted: !!r.created && !!r.posted };
+      const row = (await saleRow(trx, req.body.externalId))!;
+      if (!r.created && row.fingerprint !== r.fingerprint) throw conflict();
+      return { status: r.created ? 201 : 200, body: row.result, posted: !!r.created && !!r.posted };
     });
     if (out.posted) notifyRecompute(app, tenantId);
     return reply.status(out.status).send(out.body);

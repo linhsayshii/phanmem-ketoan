@@ -211,4 +211,33 @@ describe('API ngoài /api/ext/v1', () => {
     expect(r.statusCode).toBe(200);
     expect(r.json()).not.toHaveProperty('truncated');
   });
+
+  it('hai yêu cầu song song cùng externalId: giống hệt → một chứng từ, cùng voucherId; khác nội dung → một thành công, một 409', async () => {
+    const { key } = await createKey(t);
+    const count = async (id: string) => Number((await sql<{ n: string }>`SELECT count(*)::text AS n FROM voucher WHERE idempotency_key = ${'ext:' + id}`.execute(ctx.t.admin)).rows[0]!.n);
+    const same = sale();
+    const [a, b] = await Promise.all([ext(key, 'POST', '/sales', same), ext(key, 'POST', '/sales', same)]);
+    expect([a.statusCode, b.statusCode].sort(), a.body + b.body).toEqual([200, 201]);
+    expect(a.json().voucherId).toBe(b.json().voucherId);
+    expect(await count(same.externalId)).toBe(1);
+    const base = sale();
+    const other = { ...base, lines: [{ itemCode: 'SP1', quantity: '5', unitPrice: '100' }] };
+    const [c, d] = await Promise.all([ext(key, 'POST', '/sales', base), ext(key, 'POST', '/sales', { ...other, externalId: base.externalId })]);
+    expect([c.statusCode, d.statusCode].sort(), c.body + d.body).toEqual([201, 409]);
+    expect(await count(base.externalId)).toBe(1);
+  });
+
+  it('externalId đã bị chứng từ khác chiếm qua route thường → 409; "1" và "1.0" coi là bằng nhau; khác ngày → 409', async () => {
+    const { key } = await createKey(t);
+    const id = `PRE-${Date.now()}`;
+    const pre = await t.call('POST', '/api/invoices', { voucherType: 'HDB', postingDate: '2026-03-10', documentDate: '2026-03-10', partyCode: 'KH001', idempotencyKey: `ext:${id}`,
+      items: [{ description: 'DV', accountCode: '5113', amountCurrency: '100', taxCodes: ['V10'] }], invoice: { serial: 'C26TPR', invoiceNo: id.slice(-8), invoiceDate: '2026-03-10', invoiceGroupCode: '10' } });
+    expect(pre.statusCode, pre.body).toBe(201);
+    expect((await ext(key, 'POST', '/sales', sale({ externalId: id }))).statusCode).toBe(409);
+    const body = sale({ lines: [{ itemCode: 'SP1', quantity: '1', unitPrice: '100' }] });
+    expect((await ext(key, 'POST', '/sales', body)).statusCode).toBe(201);
+    const eq = await ext(key, 'POST', '/sales', { ...body, lines: [{ itemCode: 'SP1', quantity: '1.0', unitPrice: '100.00' }] });
+    expect(eq.statusCode, eq.body).toBe(200);
+    expect((await ext(key, 'POST', '/sales', { ...body, date: '2026-03-11' })).statusCode).toBe(409);
+  });
 });

@@ -76,7 +76,7 @@ curl -s -X POST -H "Authorization: Bearer $KT_KEY" -H "Content-Type: application
 { "voucherId": "…", "voucherNo": "BH000001", "state": "posted", "paymentVoucherId": "…", "paymentVoucherNo": "PT000001" }
 ```
 
-- `externalId`: tối đa 30 ký tự gồm chữ, số, `.`, `_`, `-`, `/`; trở thành số hóa đơn của chứng từ. Phải duy nhất trong cả công ty trên mọi máy POS (khóa chống trùng theo công ty, để hai khóa xoay vòng của cùng máy vẫn chống trùng): nên thêm tiền tố máy, ví dụ `POS1-000123`. Gửi lại cùng `externalId` với nội dung khác (ngày, khách, kho, dòng hàng, thanh toán) trả 409 `EXTERNAL_ID_CONFLICT`.
+- `externalId`: tối đa 30 ký tự gồm chữ, số, `.`, `_`, `-`, `/`; trở thành số hóa đơn của chứng từ. Phải duy nhất trong cả công ty trên mọi máy POS (khóa chống trùng theo công ty, để hai khóa xoay vòng của cùng máy vẫn chống trùng): nên thêm tiền tố máy, ví dụ `POS1-000123`. Gửi lại cùng `externalId` luôn phân giải lại khách (khách đã ngừng hoạt động thì trả 404 `PARTY_NOT_FOUND` dù đơn đã tạo trước đó). Gửi lại cùng `externalId` với nội dung khác (ngày, khách, kho, dòng hàng, thanh toán) trả 409 `EXTERNAL_ID_CONFLICT`.
 - `customer`: `code` (mã khách) hoặc `taxCode`; không có cả hai thì dùng khách lẻ `KHACHLE`. Mã không tồn tại trả 404.
 - Có mặt hàng hàng hóa thì lập Hóa đơn bán hàng (BH, xuất kho) và cần kho (`warehouseCode` hoặc kho mặc định của khóa). Chỉ có dịch vụ thì lập Hóa đơn bán dịch vụ (HDB).
 - `lines[].taxCode`, `uomCode`, `discount` (VND, số nguyên) tùy chọn; không truyền thuế thì lấy thuế mặc định của mặt hàng.
