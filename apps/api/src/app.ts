@@ -47,6 +47,7 @@ import arapRoutes from './modules/arap/routes.js';
 import taxRoutes from './modules/tax/routes.js';
 import invoiceRoutes from './modules/invoices/routes.js';
 import orderRoutes from './modules/orders/routes.js';
+import contractRoutes from './modules/contracts/routes.js';
 import assetRoutes from './modules/assets/routes.js';
 import loanRoutes from './modules/loans/routes.js';
 import einvoiceRoutes from './modules/einvoice/routes.js';
@@ -120,6 +121,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(taxRoutes);
   await app.register(invoiceRoutes);
   await app.register(orderRoutes);
+  await app.register(contractRoutes);
   await app.register(assetRoutes);
   await app.register(loanRoutes);
   await app.register(einvoiceRoutes);
