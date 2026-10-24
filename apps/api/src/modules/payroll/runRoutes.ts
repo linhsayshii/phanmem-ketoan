@@ -9,16 +9,17 @@ import { AppError } from '../../plugins/errors.js';
 import { calculateRun, cancelRun, createRun, deleteRun, getRun, getRunLines, listRuns, previewInput, previewLine, runCreateInput, setManualValues, valuesInput } from './runs.js';
 import { costAccountsInput, listCostAccounts, saveCostAccounts } from './costAccounts.js';
 import { postRun, repostRun, unpostRun } from './post.js';
+import { createPayVoucher, listPayVouchers, payVoucherInput, type PayKind } from './payments.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { cloneInput, cloneStructure, createStructure, deleteStructure, getStructure, listStructures, structureInput, updateStructure } from './structures.js';
 
 // Cấu trúc bảng lương và bảng lương: quyền payroll.* VÀ cờ view_salary trên mọi route (403 SALARY_FORBIDDEN), như hồ sơ lương.
 const routes: FastifyPluginAsyncZod = async (app) => {
-  const guard = (perm: 'payroll.view' | 'payroll.create' | 'payroll.update' | 'payroll.delete' | 'payroll.post') => ({ preHandler: async (req: FastifyRequest, reply: FastifyReply) => {
+  const guard = (perm: 'payroll.view' | 'payroll.create' | 'payroll.update' | 'payroll.delete' | 'payroll.post' | 'payroll.pay') => ({ preHandler: async (req: FastifyRequest, reply: FastifyReply) => {
     await app.requirePermission(perm)(req, reply);
     if (!req.auth!.sensitive.has('view_salary')) throw new AppError('SALARY_FORBIDDEN', 'Không có quyền xem lương', 403);
   } });
-  const view = guard('payroll.view'), create = guard('payroll.create'), update = guard('payroll.update'), del = guard('payroll.delete'), post = guard('payroll.post');
+  const view = guard('payroll.view'), create = guard('payroll.create'), update = guard('payroll.update'), del = guard('payroll.delete'), post = guard('payroll.post'), pay = guard('payroll.pay');
   const pid = z.object({ id: z.coerce.number().int().positive() });
   const S = '/api/payroll/structures', R = '/api/payroll/runs';
   const tid = (req: FastifyRequest) => req.auth!.tenantId!;
@@ -54,6 +55,12 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       if (!out.unchanged) void notifyRecompute(app, tid(req));
       return out;
     });
+
+  // Chứng từ chi lương, nộp bảo hiểm, nộp thuế TNCN (nháp PC/BN từ LU hiện hành) và danh sách chứng từ liên kết.
+  for (const [path, kind] of [['pay-voucher', 'pay'], ['insurance-voucher', 'insurance'], ['pit-voucher', 'pit']] as [string, PayKind][])
+    app.post(`${R}/:id/${path}`, { ...pay, schema: { params: pid, body: payVoucherInput } }, async (req, reply) =>
+      reply.status(201).send(await app.withTenant(req, (trx) => createPayVoucher(trx, { tenantId: tid(req), userId: req.auth!.userId }, req.params.id, kind, req.body))));
+  app.get(`${R}/:id/vouchers`, { ...view, schema: { params: pid } }, async (req) => app.withTenant(req, (trx) => listPayVouchers(trx, req.params.id), READ_SNAPSHOT));
 
   // Tài khoản chi phí lương theo bộ phận (vai trò hoặc tài khoản; khoản mục, đối tượng tập hợp chi phí).
   app.get('/api/payroll/cost-accounts', view, async (req) => app.withTenant(req, (trx) => listCostAccounts(trx, tid(req)), READ_SNAPSHOT));
