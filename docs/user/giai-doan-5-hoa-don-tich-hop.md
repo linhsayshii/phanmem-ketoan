@@ -47,7 +47,9 @@ Màn hình có hai phần: "Nhà cung cấp hóa đơn điện tử" và "Ký hi
 
 Mật khẩu được mã hóa khi lưu và không hiển thị lại. Khi sửa, để trống ô Mật khẩu thì giữ mật khẩu cũ. Cột "Mật khẩu" chỉ ghi "Đã đặt" hoặc "Chưa đặt".
 
-Nhà cung cấp "Giả lập (kiểm thử)" cấp số ngay trong phần mềm, dùng để tập luyện và kiểm thử, không có giá trị pháp lý.
+Nhà cung cấp "Giả lập (kiểm thử)" cấp số ngay trong phần mềm, dùng để tập luyện và kiểm thử, không có giá trị pháp lý. Khi hệ thống chạy ở chế độ production, nhà cung cấp giả lập bị chặn: không lưu, không dùng được ("EINVOICE_FAKE_DISABLED", 400).
+
+"Địa chỉ máy chủ (URL)" của SInvoice chỉ nhận địa chỉ https, không kèm tên đăng nhập, cổng, dấu "?" hoặc "#", và máy chủ phải nằm trong danh sách cho phép: mặc định chỉ `api-vinvoice.viettel.vn`. Địa chỉ khác bị từ chối ("EINVOICE_URL_NOT_ALLOWED", 400). Quản trị hệ thống mở thêm máy chủ bằng biến môi trường `EINVOICE_ALLOWED_HOSTS` (cách nhau dấu phẩy). Chuyển hướng (redirect) từ máy chủ nhà cung cấp không được theo.
 
 Xóa nhà cung cấp: nếu còn ký hiệu hóa đơn thuộc nhà cung cấp, phần mềm báo ("PROVIDER_IN_USE", 409) "Nhà cung cấp còn ký hiệu hóa đơn, xóa ký hiệu trước".
 
@@ -114,7 +116,9 @@ Bấm "Chi tiết" để mở ngăn bên phải: chứng từ, loại, khách h�
 
 ### Các nút trong chi tiết hóa đơn
 
-- "Xem PDF", "Tải XML": khi hóa đơn đã phát hành, bị thay thế hoặc đã hủy. Phần mềm lưu XML; PDF lấy từ nhà cung cấp mỗi lần xem.
+- "Xem PDF", "Tải XML": khi hóa đơn đã phát hành, bị thay thế hoặc đã hủy. Phần mềm lưu XML; PDF lấy từ nhà cung cấp mỗi lần xem. Tệp nhà cung cấp trả về không phải PDF thật được tải xuống (không mở trực tiếp trên trình duyệt).
+
+Chứng từ bán hàng đã có lịch sử hóa đơn điện tử không xóa được khi còn nháp: phần mềm báo ("EINVOICE_HISTORY", 409) "Chứng từ đã có lịch sử hóa đơn điện tử, không xóa được; dùng Hủy chứng từ".
 - "Thử lại": hóa đơn "Đang gửi". Thông báo "Đã gửi lại". Gọi lại cùng mã giao dịch nên không phát hành trùng. Chỉ thử lại được sau 150 giây kể từ lần gửi gần nhất, sớm hơn báo ("EINVOICE_BUSY"). Hóa đơn không ở trạng thái đang gửi thì báo ("EINVOICE_NOT_SENDING", "Chỉ thử lại hóa đơn điện tử đang gửi (chưa nhận được kết quả)").
 - "Bỏ hóa đơn lỗi": hóa đơn "Lỗi". Hỏi "Bỏ hóa đơn lỗi này?" "Chứng từ gốc được mở khóa để phát hành lại." Thông báo "Đã bỏ hóa đơn lỗi". Bản ghi lỗi chỉ bị đánh dấu bỏ, không xóa khỏi nhật ký.
 - "Tra mã CQT": hóa đơn ký hiệu C đã phát hành chưa có mã của cơ quan thuế. Thông báo "Đã tra cứu mã của cơ quan thuế".
@@ -265,7 +269,7 @@ Hóa đơn chữ ký sai hoặc thiếu vẫn lưu, kèm cảnh báo, để kế
 
 ### Tra cứu mã số thuế người bán
 
-Tính năng tra MST người bán (dịch vụ api.vietqr.io) mặc định tắt vì nó gửi MST người bán tới dịch vụ bên thứ ba. Khi tắt, gọi tra cứu báo ("TAXCODE_LOOKUP_OFF": "Tra cứu mã số thuế đang tắt: bật ở Cài đặt (gửi MST người bán tới dịch vụ bên thứ ba)"). Khi bật, phần mềm tự tra lúc tải lên và ghi cảnh báo nếu tra không được ("TAXCODE_LOOKUP_FAILED"), không thấy ("TAXCODE_NOT_FOUND") hoặc tên khác hóa đơn ("TAXCODE_NAME_MISMATCH"). Hiện chưa có ô bật tính năng này trên giao diện: cài đặt "tax_code_lookup" chỉ đặt được qua API cài đặt, và chưa có nút "Tra MST" trên màn hình Hóa đơn đầu vào.
+Tính năng tra MST người bán (dịch vụ api.vietqr.io) mặc định tắt vì nó gửi MST người bán tới dịch vụ bên thứ ba. Khi tắt, gọi tra cứu báo ("TAXCODE_LOOKUP_OFF": "Tra cứu mã số thuế đang tắt: bật ở Cài đặt (gửi MST người bán tới dịch vụ bên thứ ba)"). Khi bật, phần mềm tự tra lúc tải lên và ghi cảnh báo nếu tra không được ("TAXCODE_LOOKUP_FAILED"), không thấy ("TAXCODE_NOT_FOUND") hoặc tên khác hóa đơn ("TAXCODE_NAME_MISMATCH"). Bật tại Công ty > Tùy chọn hệ thống, công tắc "Tra cứu MST người bán khi nhận hóa đơn đầu vào", rồi bấm "Lưu". Chưa có nút "Tra MST" riêng trên màn hình Hóa đơn đầu vào.
 
 ### Hóa đơn bị chặn
 
@@ -290,6 +294,8 @@ Lỗi thường gặp khi lập:
 - "Thuế suất X đang ánh xạ nhiều mã thuế: chọn cùng một mã cho các dòng cùng thuế suất".
 - "TAX_DECLARED_MISMATCH" (400): thuế kê khai lệch quá mức làm tròn so với hóa đơn.
 - "FORBIDDEN": thiếu "catalog.create" để tạo đối tượng mới.
+
+Nếu chứng từ đã lập bị xóa (khi còn nháp) hoặc bị hủy, hóa đơn đầu vào tự quay về trạng thái "Mới" và lập lại chứng từ được.
 
 "Bỏ qua" trên ngăn chi tiết chuyển hóa đơn sang "Đã bỏ qua". Bộ lọc: Trạng thái (Mới, Đã lập chứng từ, Đã bỏ qua, Trùng), khoảng ngày, tìm "Người bán, MST, số hóa đơn".
 
@@ -578,7 +584,7 @@ Cách xử lý:
 - Đảo chứng từ gốc không tự chạy lại khi thử lại hoặc đối soát nền (mục 3); phải có người bấm nếu việc đảo tự động không thành.
 - Hóa đơn đầu vào có dòng chiết khấu thương mại phải nhập chứng từ tay.
 - Hình thức thanh toán gửi lên cố định "TM/CK"; không có dòng khuyến mại.
-- Tính năng tra MST người bán (mục 6) chưa có nút và ô bật trên giao diện.
+- Tính năng tra MST người bán (mục 6) chưa có nút "Tra MST" riêng trên màn hình Hóa đơn đầu vào (công tắc bật đã có ở Công ty > Tùy chọn hệ thống).
 
 ### Ngân hàng và QR
 

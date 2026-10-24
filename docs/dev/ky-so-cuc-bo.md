@@ -20,7 +20,7 @@ node tools/signer-agent/index.mjs --key khoa.pem --cert chungthu.pem --origin ht
 ```
 
 - Lắng nghe `127.0.0.1:18765`. Từ chối `Host` khác `127.0.0.1`/`localhost` (chống DNS rebinding).
-- CORS chỉ cho đúng `--origin` (mặc định `WEB_ORIGIN`), có `Access-Control-Allow-Private-Network`. Nguồn lạ bị 403.
+- CORS chỉ cho đúng `--origin` (mặc định `WEB_ORIGIN`), có `Access-Control-Allow-Private-Network`. Yêu cầu preflight (OPTIONS) và `POST /v1/sign` từ nguồn lạ bị 403. `GET /v1/certificates` không kiểm nguồn nhưng không có `Access-Control-Allow-Origin` cho nguồn lạ nên trang lạ không đọc được kết quả.
 - `GET /v1/certificates` trả `[{serial, subject, notAfter, certB64}]`.
 - `POST /v1/sign` `{certSerial, digestB64, algorithm:'RSA-SHA256'}` trả `{signatureB64}`. Mỗi lần ký hỏi y/n ở cửa sổ dòng lệnh; `--yes` bỏ hỏi (chỉ để kiểm thử). Từ chối trả `USER_DECLINED`.
 - Chữ ký là RSASSA-PKCS1-v1_5 trên DigestInfo SHA-256 (tiền tố `3031300d060960864801650304020105000420` + băm).
