@@ -499,6 +499,7 @@ export async function duplicateVoucher(trx: Trx, ctx: { tenantId: string; userId
 }
 export async function deleteDraft(trx: Trx, id: string): Promise<void> {
   await assertNotSystemGenerated(trx, id);
+  if (await trx.selectFrom('einvoice').select('id').where('voucher_id', '=', id).limit(1).executeTakeFirst()) throw new AppError('EINVOICE_HISTORY', 'Chứng từ đã có lịch sử hóa đơn điện tử, không xóa được; dùng Hủy chứng từ', 409);
   await releaseOrderLinks(trx, id);
   await trx.deleteFrom('voucher_line').where('voucher_id', '=', id).execute(); // chứng từ đã ghi sổ: trigger dòng chặn (LINE_IMMUTABLE); nháp đã có số: trigger chứng từ chặn
   if (!(await trx.deleteFrom('voucher').where('id', '=', id).returning('id').executeTakeFirst())) throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy chứng từ', 404);

@@ -113,7 +113,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   }, READ_SNAPSHOT));
   app.get('/api/einvoices/:id/file', { preHandler: view, schema: { params: numId, querystring: z.object({ kind: z.enum(['pdf', 'xml']) }) } }, async (req, reply) => {
     const f = await einvoiceFile(app.db, ectx(req), req.params.id, req.query.kind);
-    return reply.type(f.contentType).header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(f.fileName)}`).send(f.body);
+    return reply.type(f.contentType).header('x-content-type-options', 'nosniff').header('content-disposition', `${f.inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.fileName)}`).send(f.body);
   });
   // Hóa đơn điện tử hiện hành của chứng từ (bỏ hàng lỗi đã bỏ); chưa có thì { einvoice: null }.
   app.get('/api/vouchers/:id/einvoice', { preHandler: view, schema: { params: z.object({ id: z.string().uuid() }) } }, async (req) => app.withTenant(req, async (trx) => {

@@ -191,16 +191,16 @@ export async function refreshEInvoice(db: Db, ctx: EInvoiceCtx, id: number, fact
 }
 
 // Tệp hóa đơn từ nhà cung cấp. XML (bản pháp lý có chữ ký, mã CQT) lưu vào einvoice.xml lần đầu lấy được, lần sau đọc từ DB.
-export async function einvoiceFile(db: Db, ctx: EInvoiceCtx, id: number, kind: 'pdf' | 'xml', factory: ProviderFactory = providerFor): Promise<{ body: Buffer; contentType: string; fileName: string }> {
+export async function einvoiceFile(db: Db, ctx: EInvoiceCtx, id: number, kind: 'pdf' | 'xml', factory: ProviderFactory = providerFor): Promise<{ body: Buffer; contentType: string; fileName: string; inline: boolean }> {
   const { e, ref, provider } = await withTenant(db, tctx(ctx), (trx) => loadIssued(trx, id));
   const name = `${ref.serial}_${e.invoice_no}`;
-  if (kind === 'xml' && e.xml) return { body: Buffer.from(e.xml, 'utf8'), contentType: 'application/xml; charset=utf-8', fileName: `${name}.xml` };
+  if (kind === 'xml' && e.xml) return { body: Buffer.from(e.xml, 'utf8'), contentType: 'application/xml; charset=utf-8', fileName: `${name}.xml`, inline: false };
   const body = await withProviderCtx(db, { tenantId: ctx.tenantId, userId: ctx.userId ?? null, providerId: provider.id, einvoiceId: id }, (c) => factory(provider).getFile(c, ref, kind));
   if (kind === 'xml') {
     await withTenant(db, tctx(ctx), (trx) => trx.updateTable('einvoice').set({ xml: body.toString('utf8') }).where('id', '=', id).where('xml', 'is', null).execute());
-    return { body, contentType: 'application/xml; charset=utf-8', fileName: `${name}.xml` };
+    return { body, contentType: 'application/xml; charset=utf-8', fileName: `${name}.xml`, inline: false };
   }
-  // Nhà cung cấp giả lập trả HTML thay PDF.
-  const isPdf = body.subarray(0, 4).toString('latin1') === '%PDF';
-  return { body, contentType: isPdf ? 'application/pdf' : 'text/html; charset=utf-8', fileName: `${name}.${isPdf ? 'pdf' : 'html'}` };
+  // Nội dung do nhà cung cấp trả: chỉ PDF thật (magic %PDF-) mới xem trực tiếp; còn lại tải về dạng nhị phân, không bao giờ text/html (chống XSS cùng origin).
+  const isPdf = body.subarray(0, 5).toString('latin1') === '%PDF-';
+  return isPdf ? { body, contentType: 'application/pdf', fileName: `${name}.pdf`, inline: true } : { body, contentType: 'application/octet-stream', fileName: `${name}.bin`, inline: false };
 }

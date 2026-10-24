@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { sql } from 'kysely';
 import { createTestApp, type TestApp } from '../helpers.js';
 import { setupLedgerTenant } from '../invariants/helpers.js';
-import { finalizeIssue, retryEInvoice } from '../../src/modules/einvoice/issue.js';
+import { einvoiceFile, finalizeIssue, retryEInvoice } from '../../src/modules/einvoice/issue.js';
 import { reconcilePending } from '../../src/modules/einvoice/reconcile.js';
 import { providerFor, RETRY_GUARD_SEC, type EInvoiceProvider, type ProviderRow } from '../../src/modules/einvoice/providers/index.js';
 
@@ -165,6 +165,18 @@ describe('phát hành hóa đơn điện tử', () => {
     else { expect(err(i)).toEqual([409, 'VOUCHER_NOT_POSTED']); expect(u.statusCode).toBe(200); expect(state).toBe('draft'); }
   });
 
+  it('xóa nháp có hóa đơn điện tử lỗi/đã bỏ → 409 EINVOICE_HISTORY (không phải REFERENCED)', async () => {
+    const t = await tenant();
+    const v = await t.sale();
+    await t.mode({ mode: 'reject' });
+    const a = (await t.issue(v.id)).json();
+    await t.call('POST', `/api/einvoices/${a.id}/discard`);
+    expect((await t.call('POST', `/api/vouchers/${v.id}/unpost`)).statusCode).toBe(200);
+    const del = await t.call('DELETE', `/api/vouchers/${v.id}`);
+    expect(err(del)).toEqual([409, 'EINVOICE_HISTORY']);
+    expect(del.json().error.message).toContain('Hủy chứng từ');
+  });
+
   it('reject → failed, chứng từ bỏ ghi sổ được sau discard; phát hành lại dùng transaction_uuid mới', async () => {
     const t = await tenant();
     const v = await t.sale();
@@ -238,6 +250,8 @@ describe('phát hành hóa đơn điện tử', () => {
     const x = await t.call('GET', `/api/einvoices/${e.id}/file?kind=xml`, undefined, viewer);
     expect(x.statusCode, x.body).toBe(200);
     expect(x.headers['content-type']).toContain('application/xml');
+    expect(x.headers['content-disposition']).toMatch(/^attachment/);
+    expect(x.headers['x-content-type-options']).toBe('nosniff');
     expect(x.body).toContain('<SHDon>1</SHDon>');
     expect((await t.row(e.id)).xml).toBe(x.body);
     // lần sau đọc từ DB: nhà cung cấp mất hóa đơn vẫn tải được
@@ -252,12 +266,25 @@ describe('phát hành hóa đơn điện tử', () => {
     expect(err(await t.call('POST', '/api/einvoices', { voucherId: e.voucherId }, none))).toEqual([403, 'FORBIDDEN']);
   });
 
+  it('tệp từ nhà cung cấp: chỉ %PDF- thật mới inline, còn lại không bao giờ text/html', async () => {
+    const t = await tenant();
+    const e = (await t.issue((await t.sale()).id)).json();
+    const as = (bytes: string) => (r: ProviderRow): EInvoiceProvider => ({ ...providerFor(r), getFile: async () => Buffer.from(bytes, 'latin1') });
+    const get = (bytes: string) => einvoiceFile(ctx.t.db, { tenantId: t.tenantId, userId: t.userId }, e.id, 'pdf', as(bytes));
+    expect(await get('%PDF-1.7 x')).toMatchObject({ contentType: 'application/pdf', inline: true });
+    for (const bad of ['%PDF', '<html><script>alert(1)</script></html>', '<?xml version="1.0"?><x/>']) expect(await get(bad)).toMatchObject({ contentType: 'application/octet-stream', inline: false });
+  });
+
   it('GET file pdf: nhà cung cấp giả lập trả HTML; hóa đơn chưa phát hành → 409', async () => {
     const t = await tenant();
     const e = (await t.issue((await t.sale()).id)).json();
     const p = await t.call('GET', `/api/einvoices/${e.id}/file?kind=pdf`);
     expect(p.statusCode, p.body).toBe(200);
     expect(p.body).toContain('Hóa đơn giả lập C26TAA/0000001');
+    // không phải %PDF-: tải về, không bao giờ render text/html cùng origin
+    expect(p.headers['content-type']).toContain('application/octet-stream');
+    expect(p.headers['content-disposition']).toMatch(/^attachment/);
+    expect(p.headers['x-content-type-options']).toBe('nosniff');
     await t.mode({ mode: 'reject' });
     const f = (await t.issue((await t.sale()).id)).json();
     expect(err(await t.call('GET', `/api/einvoices/${f.id}/file?kind=pdf`))).toEqual([409, 'EINVOICE_NOT_ISSUED']);
