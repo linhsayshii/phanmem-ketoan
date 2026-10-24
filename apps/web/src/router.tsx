@@ -50,6 +50,7 @@ import SettlementPage from './pages/Settlement.js';
 import FxToolsPage from './pages/FxTools.js';
 import AmortizationPage from './pages/Amortization.js';
 import LoansPage from './pages/Loans.js';
+import ContractsPage from './pages/Contracts.js';
 import PayrollProfilesPage from './pages/PayrollProfiles.js';
 import AttendancePage from './pages/Attendance.js';
 import PayrollRunsPage from './pages/PayrollRuns.js';
@@ -162,6 +163,7 @@ export const MENU: MenuItem[] = [
     { key: 'asset-reports', label: 'Báo cáo tài sản', to: '/tai-san/bao-cao', permission: 'report.view' },
   ] },
   { key: 'khe-uoc', label: 'Khế ước vay', to: '/khe-uoc', permission: 'loan.view' },
+  { key: 'hop-dong', label: 'Hợp đồng', to: '/hop-dong', permission: 'order.view' },
   { key: 'luong', label: 'Lương', to: '/luong', children: [
     { key: 'ho-so-luong', label: 'Hồ sơ lương', to: '/luong/ho-so', permission: 'payroll.view', flag: 'view_salary' },
     { key: 'cham-cong', label: 'Chấm công', to: '/luong/cham-cong', permission: 'attendance.view' },
@@ -231,6 +233,7 @@ const payrollPaymentFormatsRoute = createRoute({ getParentRoute: () => appRoute,
 const payrollParamsRoute = createRoute({ getParentRoute: () => appRoute, path: '/luong/tham-so', component: PayrollParamsPage });
 const tncnReturnsRoute = createRoute({ getParentRoute: () => appRoute, path: '/luong/thue-tncn', component: TncnReturnsPage });
 const loansRoute = createRoute({ getParentRoute: () => appRoute, path: '/khe-uoc', component: LoansPage });
+const contractsRoute = createRoute({ getParentRoute: () => appRoute, path: '/hop-dong', component: ContractsPage });
 const assetCatRoute = createRoute({ getParentRoute: () => appRoute, path: '/tai-san/loai', component: AssetCategoriesPage });
 const cashCountRoute = createRoute({ getParentRoute: () => appRoute, path: '/quy/kiem-ke', component: CashCountPage });
 const financialRoute = createRoute({ getParentRoute: () => appRoute, path: '/bao-cao/bao-cao-tai-chinh', component: FinancialPage });
@@ -268,6 +271,6 @@ const apiKeysRoute = createRoute({ getParentRoute: () => appRoute, path: '/he-th
 const inboundInvoicesRoute = createRoute({ getParentRoute: () => appRoute, path: '/hoa-don-dau-vao', component: InboundInvoicesPage });
 const einvoiceNoticeRoute = createRoute({ getParentRoute: () => appRoute, path: '/hoa-don-dien-tu/thong-bao-sai-sot', component: EInvoiceErrorNoticePage });
 const einvoiceConfigRoute = createRoute({ getParentRoute: () => appRoute, path: '/hoa-don-dien-tu/cau-hinh', component: EInvoiceConfigPage });
-export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, bankTransactionsRoute, bankFeedsRoute, apiKeysRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, openingAssetsRoute, periodCloseRoute, closingRoute, amortizationRoute, tscdRoute, ccdcRoute, cpttRoute, assetCatRoute, loansRoute, payrollProfilesRoute, attendanceRoute, payrollRunsRoute, payrollReportsRoute, payrollStructuresRoute, payrollPaymentFormatsRoute, payrollParamsRoute, tncnReturnsRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, citEstimateRoute, citReturnRoute, signingRoute, einvoicesRoute, inboundInvoicesRoute, einvoiceNoticeRoute, einvoiceConfigRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, stocktakeRoute, stockReportsRoute, assetReportsRoute, assetCountRoute, salesReportsRoute, purchaseReportsRoute, costingRoute, costObjectsRoute, costNormsRoute, costRunsRoute, catalogRoute])]);
+export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, bankTransactionsRoute, bankFeedsRoute, apiKeysRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, openingAssetsRoute, periodCloseRoute, closingRoute, amortizationRoute, tscdRoute, ccdcRoute, cpttRoute, assetCatRoute, loansRoute, contractsRoute, payrollProfilesRoute, attendanceRoute, payrollRunsRoute, payrollReportsRoute, payrollStructuresRoute, payrollPaymentFormatsRoute, payrollParamsRoute, tncnReturnsRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, citEstimateRoute, citReturnRoute, signingRoute, einvoicesRoute, inboundInvoicesRoute, einvoiceNoticeRoute, einvoiceConfigRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, stocktakeRoute, stockReportsRoute, assetReportsRoute, assetCountRoute, salesReportsRoute, purchaseReportsRoute, costingRoute, costObjectsRoute, costNormsRoute, costRunsRoute, catalogRoute])]);
 export const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }

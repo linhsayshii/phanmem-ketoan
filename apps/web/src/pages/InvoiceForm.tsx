@@ -9,7 +9,7 @@ import { KeyboardGrid, LookupSelect, VnNumberInput, VietQr, useUnsavedChanges, t
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { StatusTags, isLive, reportEInvoiceError, showWarnings, type EInvoice, type Series } from './einvoiceCommon.js';
-import { assetPick, isAssetAccount, accountFetcherFor } from '../lookups.js';
+import { assetPick, contractFetcher, isAssetAccount, accountFetcherFor } from '../lookups.js';
 import { STATE_LABEL, typeLabel } from './VoucherList.js';
 import { Attachments, PickDialog, groupFetcher, iso, quickAdd, reportError, taxFetcher, text, useInvoiceGroups, useTaxDefs } from './voucherCommon.js';
 import { codesOf, defaultGroup, deriveRow, emptyInvRow, importLedger, isBlankRow, NO_PREVIEW, NUM_RE, previewInvoice, snapOf, type InvRow, type RowSnap } from './invoiceCalc.js';
@@ -23,8 +23,8 @@ interface ItemDto { lineNo: number; description: string | null; quantity: string
 interface InvoiceRef { id: number; formNo: string | null; serial: string | null; invoiceNo: string | null; einvoicePending?: boolean; einvoiceSeriesId?: number | null; invoiceDate: string; partyName: string | null; partyTaxCode: string | null; partyAddress: string | null;
   invoiceGroupCode: string | null; headerGroupCode?: string | null; taxCode: string | null; taxAmount: string; adjustsInvoiceId: number | null }
 interface InvoiceDoc { id: string; voucherType: string; voucherNo: string | null; state: string; postingDate: string; documentDate: string; description: string | null; partyCode: string | null; partyName: string | null;
-  dueDate: string | null; currencyCode: string; fxRate: string | null; version: number; periodStatus: 'open' | 'soft_locked' | 'hard_locked'; hashed: boolean; receiptState?: StockMode | null; invoices: InvoiceRef[]; items: ItemDto[]; lines?: { employeeCode?: string | null }[]; warnings?: { code: string; message: string }[] }
-interface FormValues { employeeCode?: string | null; postingDate: Dayjs; documentDate: Dayjs; partyCode?: string | null; currencyCode?: string; fxRate?: string | null; dueDate?: Dayjs | null; description?: string | null;
+  dueDate: string | null; currencyCode: string; fxRate: string | null; version: number; periodStatus: 'open' | 'soft_locked' | 'hard_locked'; hashed: boolean; receiptState?: StockMode | null; invoices: InvoiceRef[]; items: ItemDto[]; lines?: { employeeCode?: string | null }[]; contractCode?: string | null; warnings?: { code: string; message: string }[] }
+interface FormValues { employeeCode?: string | null; contractCode?: string | null; postingDate: Dayjs; documentDate: Dayjs; partyCode?: string | null; currencyCode?: string; fxRate?: string | null; dueDate?: Dayjs | null; description?: string | null;
   formNo?: string | null; serial?: string | null; invoiceNo?: string; einvoiceSeriesId?: number | null; invoiceDate: Dayjs; invoiceGroupCode?: string }
 // Đối tượng đã chọn: tên, mã số thuế, địa chỉ lấy từ danh mục (máy chủ cũng chụp ba trường này lúc lưu). defaultAccount: undefined là chưa biết (chứng từ vừa tải), null là đối tượng không đặt tài khoản công nợ.
 type StockMode = 'through_stock' | 'goods_first' | 'invoice_first';
@@ -111,7 +111,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
     const d = v.data; if (!d) return;
     const inv = d.invoices[0]; const headerGroup = inv?.headerGroupCode ?? inv?.invoiceGroupCode; // nhóm đầu hóa đơn đã lưu; hóa đơn cũ không có thì nhóm dòng đầu
     form.setFieldsValue({ postingDate: dayjs(d.postingDate), documentDate: dayjs(d.documentDate), partyCode: d.partyCode, currencyCode: d.currencyCode, fxRate: d.fxRate, dueDate: d.dueDate ? dayjs(d.dueDate) : null, description: d.description,
-      formNo: inv?.formNo ?? '', serial: inv?.serial ?? '', invoiceNo: inv?.invoiceNo ?? '', einvoiceSeriesId: inv?.einvoiceSeriesId ?? null, invoiceDate: dayjs(inv?.invoiceDate ?? d.documentDate), ...(headerGroup ? { invoiceGroupCode: headerGroup } : {}), employeeCode: d.lines?.find((l) => l.employeeCode)?.employeeCode ?? null });
+      formNo: inv?.formNo ?? '', serial: inv?.serial ?? '', invoiceNo: inv?.invoiceNo ?? '', einvoiceSeriesId: inv?.einvoiceSeriesId ?? null, invoiceDate: dayjs(inv?.invoiceDate ?? d.documentDate), ...(headerGroup ? { invoiceGroupCode: headerGroup } : {}), employeeCode: d.lines?.find((l) => l.employeeCode)?.employeeCode ?? null, contractCode: d.contractCode ?? null });
     const loaded = d.items.map(rowOf); for (const r of loaded) snaps.current.set(r, snapOf(r));
     setAll(d.state === 'draft' ? [...loaded, emptyInvRow()] : loaded);
     setParty(d.partyCode ? { code: d.partyCode, name: inv?.partyName ?? d.partyName ?? '', taxCode: inv?.partyTaxCode ?? '', address: inv?.partyAddress ?? '', defaultAccount: undefined } : null);
@@ -166,6 +166,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
   const taxes = useMemo(() => taxFetcher(defsQ.data ?? [], scope), [defsQ.data, scope]);
   const vatTaxes = useMemo(() => taxFetcher(defsQ.data ?? [], 'purchase', true), [defsQ.data]);
   const groupsOf = useMemo(() => groupFetcher(groupsQ.data ?? [], scope), [groupsQ.data, scope]);
+  const contracts = useMemo(() => contractFetcher(scope), [scope]); // hợp đồng cùng chiều mua/bán
 
   const invalidate = (voucherId = id) => Promise.all([qc.invalidateQueries({ queryKey: ['invoice', voucherId] }), qc.invalidateQueries({ queryKey: ['voucher', voucherId] }), qc.invalidateQueries({ queryKey: ['vouchers'] })]);
   const conflict = useRef<{ destroy(): void } | null>(null);
@@ -208,7 +209,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
     for (const [c, s] of Object.entries(declaredTax)) if (!VND_AMOUNT_RE.test(s)) throw new Error(`Thuế ghi trên hóa đơn ${c}: nhập số tiền nguyên đồng`);
     return { voucherType: eff.code, postingDate: iso(f.postingDate), documentDate: iso(f.documentDate), partyCode: f.partyCode ?? '', currencyCode: f.currencyCode ?? 'VND',
       ...(isSaleGoods && exportMode ? { exportMode: true } : {}), ...(isMH ? { stockMode, ...(stockMode === 'goods_first' ? { receiptVoucherIds: receiptIds } : {}) } : {}),
-      ...((f.currencyCode ?? 'VND') !== 'VND' && f.fxRate ? { fxRate: f.fxRate } : {}), ...(f.dueDate ? { dueDate: iso(f.dueDate) } : {}), description: text(f.description), items,
+      ...((f.currencyCode ?? 'VND') !== 'VND' && f.fxRate ? { fxRate: f.fxRate } : {}), ...(f.dueDate ? { dueDate: iso(f.dueDate) } : {}), description: text(f.description), contractCode: f.contractCode || null, items,
       invoice: { ...(live.current.party ? { partyTaxCode: live.current.party.taxCode.trim(), partyName: live.current.party.name.trim(), partyAddress: live.current.party.address.trim() } : {}), formNo: text(f.formNo), serial: text(f.serial), ...(f.einvoiceSeriesId ? { einvoiceSeriesId: f.einvoiceSeriesId } : { invoiceNo: (f.invoiceNo ?? '').trim() }), invoiceDate: iso(f.invoiceDate), invoiceGroupCode: f.invoiceGroupCode ?? '', ...(f.employeeCode ? { employeeCode: f.employeeCode } : {}),
         ...(refund ? { adjustsInvoiceId: live.current.adjusts } : {}), ...(Object.keys(declaredTax).length ? { declaredTax } : {}) } };
   };
@@ -424,7 +425,8 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
           <Col span={4}><Form.Item label="Loại tiền" name="currencyCode"><LookupSelect catalog="currency" /></Form.Item></Col>
           {!isVnd && <Col span={4}><Form.Item label="Tỷ giá" name="fxRate" rules={[{ required: true, message: 'Nhập tỷ giá' }]}><VnNumberInput scale={10} /></Form.Item></Col>}
           <Col span={4}><Form.Item label="Hạn thanh toán" name="dueDate"><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={24}><Form.Item label="Diễn giải" name="description"><Input /></Form.Item></Col>
+          <Col span={6}><Form.Item label="Hợp đồng (F4)" name="contractCode"><LookupSelect catalog="contract" fetcher={contracts} allowClear /></Form.Item></Col>
+          <Col span={18}><Form.Item label="Diễn giải" name="description"><Input /></Form.Item></Col>
         </Row>
         <Tabs size="small" items={[
           { key: 'goods', label: 'Hàng tiền', forceRender: true, children: goodsTab }, { key: 'tax', label: 'Thuế', forceRender: true, children: taxTab },
