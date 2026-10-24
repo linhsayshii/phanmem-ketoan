@@ -6,7 +6,7 @@ import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
 interface Company { code: string; name: string; taxCode: string | null; address: string | null; legalRep: string | null; chiefAccountant: string | null; phone: string | null; email: string | null }
-interface Settings { book_form: string; costing_method: string; base_currency: string; fx_rate_type: string; cash_negative: 'warn' | 'block'; fx_outflow_method: 'moving_average' | 'specific'; vat_period: 'month' | 'quarter'; fa_proration: 'day' | 'month'; hidden_modules: string[]; tax_code_lookup: 'off' | 'vietqr'; extra_dims: { key: string; label: string }[] }
+interface Settings { book_form: string; costing_method: string; base_currency: string; fx_rate_type: string; cash_negative: 'warn' | 'block'; fx_outflow_method: 'moving_average' | 'specific'; vat_period: 'month' | 'quarter'; fa_proration: 'day' | 'month'; payroll_standard_hours_per_day: string | null; payroll_standard_days_per_month: string | null; hidden_modules: string[]; tax_code_lookup: 'off' | 'vietqr'; extra_dims: { key: string; label: string }[] }
 
 interface BackupFile { name: string; bytes: number; mtime: string }
 
@@ -42,7 +42,7 @@ export default function CompanyPage() {
   const onError = (e: unknown) => { void message.error((e as Error).message); };
   // ô nhập để trống gửi chuỗi rỗng: API từ chối (mã số thuế, email) hoặc lưu '' thay vì xóa trường
   const saveCompany = useMutation({ mutationFn: (v: Partial<Company>) => api('/api/company', { method: 'PUT', json: { ...v, ...Object.fromEntries(NULLABLE.map((k) => [k, v[k] === '' ? null : v[k]])) } }), onError, onSuccess: () => { void qc.invalidateQueries({ queryKey: ['company'] }); void message.success('Đã lưu'); } });
-  const saveSettings = useMutation({ mutationFn: (v: Partial<Settings>) => api('/api/settings', { method: 'PUT', json: v }), onError, onSuccess: () => { void qc.invalidateQueries({ queryKey: ['settings'] }); void message.success('Đã lưu'); } });
+  const saveSettings = useMutation({ mutationFn: (v: Partial<Settings>) => api('/api/settings', { method: 'PUT', json: { ...v, payroll_standard_hours_per_day: v.payroll_standard_hours_per_day?.trim() || null, payroll_standard_days_per_month: v.payroll_standard_days_per_month?.trim() || null } }), onError, onSuccess: () => { void qc.invalidateQueries({ queryKey: ['settings'] }); void message.success('Đã lưu'); } });
   if (!company.data || !settings.data) return null;
   return (
     <Tabs items={[
@@ -74,6 +74,8 @@ export default function CompanyPage() {
             { value: 'warn', label: 'Cảnh báo nhưng vẫn ghi sổ' }, { value: 'block', label: 'Không cho ghi sổ' }]} /></Form.Item>
           <Form.Item label="Tra cứu MST người bán khi nhận hóa đơn đầu vào" name="tax_code_lookup" valuePropName="checked" getValueProps={(v: string) => ({ checked: v === 'vietqr' })} getValueFromEvent={(c: boolean) => (c ? 'vietqr' : 'off')}
             extra="Bật thì mã số thuế người bán được gửi tới dịch vụ tra cứu bên thứ ba (VietQR) để lấy tên, địa chỉ. Mặc định tắt."><Switch /></Form.Item>
+          <Form.Item label="Số giờ làm việc chuẩn mỗi ngày" name="payroll_standard_hours_per_day" extra="Để trống nếu chưa khai: chấm công theo giờ sẽ báo lỗi. Quy đổi giờ làm việc ra ngày công."><Input style={{ width: 120 }} inputMode="decimal" /></Form.Item>
+          <Form.Item label="Số ngày công chuẩn của tháng" name="payroll_standard_days_per_month" extra="Để trống nếu chưa khai: bảng lương báo lỗi khi cần tới."><Input style={{ width: 120 }} inputMode="decimal" /></Form.Item>
           <Form.Item label="Ẩn phân hệ" name="hidden_modules"><Select mode="multiple" options={['inventory', 'assets', 'payroll', 'costing'].map((m) => ({ value: m, label: m }))} /></Form.Item>
           <Form.List name="extra_dims">{(fields, { add, remove }) => (<>
             <div style={{ marginBottom: 8 }}>Trường mở rộng (chiều phân tích thêm)</div>
