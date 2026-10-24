@@ -49,7 +49,14 @@ test('Quy trình cuối kỳ: chạy bước, bỏ qua bước tùy chọn, F9 c
     await page.locator('.ant-popover').getByRole('button', { name: 'Bỏ qua' }).click();
     await expect(payroll).toContainText('Đã bỏ qua');
   }
-  await expect(rows.locator('tr', { hasText: 'Giá thành sản phẩm' })).toContainText('Chưa hỗ trợ');
+  // Bước giá thành đã có bộ chạy (Task 11c): có nút chạy. CSDL e2e dùng chung có thể còn chi phí 154 chưa phân loại của spec khác (chạy bước báo 409): bước tùy chọn nên bỏ qua bằng nút.
+  const cost = rows.locator('tr', { hasText: 'Giá thành sản phẩm' });
+  await expect(cost.getByRole('button', { name: /^Chạy/ })).toBeVisible();
+  if ((await status()).steps.find((x) => x.key === 'product_cost')!.status === 'pending') {
+    await cost.getByRole('button', { name: 'Bỏ qua' }).click();
+    await page.locator('.ant-popover').getByRole('button', { name: 'Bỏ qua' }).click();
+    await expect(cost).toContainText('Đã bỏ qua');
+  }
 
   // F9 chạy bước kế tiếp cho tới hết
   for (let i = 0; i < 12; i++) {
@@ -61,5 +68,5 @@ test('Quy trình cuối kỳ: chạy bước, bỏ qua bước tùy chọn, F9 c
     await expect.poll(async () => { const s = await status(); return s.nextStep !== before.nextStep || s.steps.find((x) => x.key === before.nextStep)!.status; }, { timeout: 60000 }).not.toBe(before.steps.find((x) => x.key === before.nextStep)!.status);
   }
   expect((await status()).nextStep).toBeNull();
-  for (const r of await rows.locator('tbody tr').all()) await expect(r).toContainText(/Đã chạy|Đã bỏ qua|Chưa hỗ trợ/);
+  for (const r of await rows.locator('tbody tr').all()) await expect(r).toContainText(/Đã chạy|Đã bỏ qua/);
 });
