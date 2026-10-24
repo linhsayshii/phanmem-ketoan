@@ -1,20 +1,19 @@
 export const SENSITIVE_FLAGS = ['view_cost', 'view_receivable', 'view_payable', 'view_salary'] as const;
 export type SensitiveFlag = (typeof SENSITIVE_FLAGS)[number];
-// Ba cờ bảo vệ số liệu công nợ/giá vốn: sổ tổng hợp (Nhật ký chung, Bảng cân đối số phát sinh), bộ sổ năm và gói xuất cho cơ quan thẩm quyền cần đủ cả ba.
-export const SENSITIVE_FLAGS_ALL = ['view_receivable', 'view_payable', 'view_cost'] as const;
+// Bốn cờ bảo vệ số liệu công nợ, giá vốn, lương: sổ tổng hợp (Nhật ký chung, Bảng cân đối số phát sinh), bộ sổ năm và gói xuất cho cơ quan thẩm quyền cần đủ cả bốn (dòng phải trả người lao động nằm trong các sổ này).
+export const SENSITIVE_FLAGS_ALL = ['view_receivable', 'view_payable', 'view_cost', 'view_salary'] as const;
 
 // Cờ cần để xem tài khoản theo loại sổ chi tiết; tài khoản giá vốn (632*) cần view_cost. Dùng chung cho sổ sách, số dư và các màn công nợ ở API.
 export const SENSITIVE_BY_SUBLEDGER = { receivable: 'view_receivable', payable: 'view_payable', inventory: 'view_cost' } as const;
-type SensitiveAccount = { subledger_kind: string | null; code: string };
+// salary: tài khoản thuộc nhóm lương của chế độ kế toán (isSalaryAccount với ánh xạ coa-data/payroll/accounts.json); người gọi tính theo chế độ của tài khoản, vì mã như 3385, 3386 đổi nghĩa giữa các chế độ.
+type SensitiveAccount = { subledger_kind: string | null; code: string; salary?: boolean };
 const DENIAL: Record<'view_receivable' | 'view_payable' | 'view_cost' | 'view_salary', string> = {
   view_receivable: 'Không có quyền xem công nợ phải thu', view_payable: 'Không có quyền xem công nợ phải trả', view_cost: 'Không có quyền xem giá vốn', view_salary: 'Không có quyền xem lương',
 };
-// Tài khoản lương và các khoản trích theo lương (334, 3382–3386) nhận diện theo mã như 632*, không thêm loại sổ chi tiết (quyết định #605).
-const SALARY_ACCOUNT = /^(334|338[2-6])/;
 const flagsOf = (acc: SensitiveAccount): (keyof typeof DENIAL)[] => [
   ...(acc.subledger_kind && acc.subledger_kind in SENSITIVE_BY_SUBLEDGER ? [SENSITIVE_BY_SUBLEDGER[acc.subledger_kind as keyof typeof SENSITIVE_BY_SUBLEDGER]] : []),
   ...(acc.code.startsWith('632') ? ['view_cost' as const] : []),
-  ...(SALARY_ACCOUNT.test(acc.code) ? ['view_salary' as const] : []),
+  ...(acc.salary ? ['view_salary' as const] : []),
 ].filter((f, i, a) => a.indexOf(f) === i);
 // Lý do cờ nhạy cảm che tài khoản này với người dùng; null là được xem.
 export function sensitiveDenial(auth: { sensitive: Set<string> }, acc: SensitiveAccount): string | null {

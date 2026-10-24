@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseCoaCsv, splitCsvLine, type CoaTemplateRow, type Regime, type Side, type Source } from '@kt/domain';
+import { parseCoaCsv, splitCsvLine, type CoaTemplateRow, type PayrollAccountMap, type Regime, type Side, type Source } from '@kt/domain';
 
 const dataDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
 export const COA_REGIMES: Regime[] = ['TT133', 'TT200', 'TT99'];
@@ -118,3 +118,8 @@ export function loadTaxXmlFormat(id: string): TaxXmlFormatData { return JSON.par
 // Danh sách BIN ngân hàng công khai của VietQR (tải 2026-10-23), không phải văn bản NAPAS chính thức; xem data/banks/napas-bins.status.json.
 export interface NapasBin { bin: string; code: string; shortName: string; name: string }
 export function loadNapasBins(): NapasBin[] { return JSON.parse(readFileSync(dataPath('banks', 'napas-bins.json'), 'utf8')) as NapasBin[]; }
+
+// Tài khoản lương, bảo hiểm, thuế TNCN theo chế độ (data/payroll/accounts.json, đối chiếu data/coa/*.csv); chế độ chưa có trong tệp thì undefined.
+export function loadPayrollAccounts(regime: Regime): PayrollAccountMap | undefined {
+  return (JSON.parse(readFileSync(dataPath('payroll', 'accounts.json'), 'utf8')) as Partial<Record<string, PayrollAccountMap>>)[regime.toLowerCase()];
+}
