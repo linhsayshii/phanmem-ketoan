@@ -6,6 +6,9 @@ import { READ_SNAPSHOT } from '@kt/db';
 import { D } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { dateIso } from '../master/catalogs.js';
+import { notifyRecompute } from '../ledger/notifyRecompute.js';
+import { createFromTxnInput, createVoucherFromTxn, matchToVoucher, suggestMatches, unmatch } from './match.js';
+import { bankReconciliation, reconXlsx } from './reconReport.js';
 import { createFeed, deleteFeed, feedInput, feedUpdate, listFeeds, rotateFeed, updateFeed } from './feeds.js';
 import { deleteFormat, formatInput, importStatement, listFormats, MAX_IMPORT_BYTES, saveFormat } from './statementImport.js';
 
@@ -63,6 +66,31 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
   app.post('/api/bank-transactions/:id/ignore', { preHandler: match, schema: { params: numId } }, flip('new', 'ignored'));
   app.post('/api/bank-transactions/:id/unignore', { preHandler: match, schema: { params: numId } }, flip('ignored', 'new'));
+
+  const reload = async (trx: Parameters<typeof matchToVoucher>[0], id: number) => txnDto(await trx.selectFrom('bank_transaction').select(cols).where('id', '=', id).executeTakeFirstOrThrow());
+  app.post('/api/bank-transactions/:id/suggestions', { preHandler: match, schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => suggestMatches(trx, req.auth!, req.params.id), READ_SNAPSHOT));
+  app.post('/api/bank-transactions/:id/match', { preHandler: match, schema: { params: numId, body: z.object({ voucherId: z.string().uuid() }) } }, async (req) => app.withTenant(req, async (trx) => {
+    await matchToVoucher(trx, req.auth!, req.params.id, req.body.voucherId); return reload(trx, req.params.id);
+  }));
+  app.post('/api/bank-transactions/:id/unmatch', { preHandler: match, schema: { params: numId } }, async (req) => app.withTenant(req, async (trx) => { await unmatch(trx, req.params.id); return reload(trx, req.params.id); }));
+  app.post('/api/bank-transactions/:id/create-voucher', { preHandler: match, schema: { params: numId, body: createFromTxnInput } }, async (req, reply) => {
+    const auth = req.auth!;
+    if (!auth.permissions.has('voucher.create') || (req.body.post && !auth.permissions.has('voucher.post'))) throw new AppError('FORBIDDEN', `Thiếu quyền ${auth.permissions.has('voucher.create') ? 'voucher.post' : 'voucher.create'}`, 403);
+    const out = await app.withOverride(req, async (trx) => {
+      const voucher = await createVoucherFromTxn(trx, { tenantId: tid(req), userId: auth.userId, auth }, req.params.id, req.body);
+      return { voucher, transaction: await reload(trx, req.params.id) };
+    });
+    if (out.voucher.state === 'posted') notifyRecompute(app, tid(req));
+    return reply.status(201).send(out);
+  });
+
+  app.get('/api/bank-reconciliation', { preHandler: view, schema: { querystring: z.object({ bankAccountId: z.coerce.number().int().positive(), from: dateIso, to: dateIso, format: z.enum(['json', 'xlsx']).default('json') })
+    .refine((q) => q.from <= q.to, { message: 'Từ ngày phải trước hoặc bằng đến ngày' }) } }, async (req, reply) => {
+    const r = await app.withTenant(req, (trx) => bankReconciliation(trx, req.query), READ_SNAPSHOT);
+    if (req.query.format === 'json') return r;
+    return reply.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`doi-chieu-ngan-hang-${r.accountNo}-${r.from}-${r.to}`)}.xlsx`).send(await reconXlsx(r));
+  });
 
   app.post('/api/bank-transactions', { preHandler: create, schema: { body: manualInput } }, async (req, reply) => {
     const b = req.body;
