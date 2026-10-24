@@ -26,7 +26,11 @@ describe('job đối soát hóa đơn điện tử', () => {
     const old = await sending(tenantId, providerId, seriesId, 300);
     const fresh = await sending(tenantId, providerId, seriesId, 130); // cũ hơn 120 giây nhưng chưa quá 150: lần gửi có thể còn chạy
 
-    expect(await runEInvoiceReconcile(t.db)).toEqual({ checked: 1, issued: 0, failed: 1, errors: 0, errorDetails: [], notices: [] });
+    // `pnpm test` ở gốc dùng chung DB tạm với kiểm thử API: hàng `sending` của công ty khác cũng được đối soát, nên chỉ xét công ty này
+    const mine = (r: Awaited<ReturnType<typeof runEInvoiceReconcile>>) => [...r.errorDetails, ...r.notices].filter((d) => d.tenantId === tenantId);
+    const first = await runEInvoiceReconcile(t.db);
+    expect(first.failed).toBeGreaterThanOrEqual(1);
+    expect(mine(first)).toEqual([]);
     const rows = (await sql<{ id: number; status: string; error_code: string | null }>`SELECT id::int, status, error_code FROM einvoice WHERE tenant_id = ${tenantId}::uuid ORDER BY id`.execute(t.admin)).rows;
     expect(rows).toEqual([{ id: old, status: 'failed', error_code: 'FAKE_REJECT' }, { id: fresh, status: 'sending', error_code: null }]);
     // nhật ký gọi nhà cung cấp ghi dưới công ty của hóa đơn
@@ -35,6 +39,11 @@ describe('job đối soát hóa đơn điện tử', () => {
     const acl = (await sql<{ acl: string }>`SELECT proacl::text AS acl FROM pg_proc WHERE proname = 'fn_einvoice_pending_tenants'`.execute(t.admin)).rows[0]!.acl;
     expect(acl).toContain('app_user=X/');
     expect(acl).not.toMatch(/[{,]=X\//);
-    expect(await runEInvoiceReconcile(t.db)).toEqual({ checked: 0, issued: 0, failed: 0, errors: 0, errorDetails: [], notices: [] });
+    // lần chạy sau không gọi lại nhà cung cấp cho hóa đơn đã failed, không đụng hàng chưa quá ngưỡng
+    const logs = async () => (await sql`SELECT 1 FROM einvoice_log WHERE tenant_id = ${tenantId}::uuid`.execute(t.admin)).rows.length;
+    const before = await logs();
+    expect(mine(await runEInvoiceReconcile(t.db))).toEqual([]);
+    expect(await logs()).toBe(before);
+    expect((await sql<{ status: string }>`SELECT status FROM einvoice WHERE id = ${fresh}`.execute(t.admin)).rows[0]!.status).toBe('sending');
   });
 });
