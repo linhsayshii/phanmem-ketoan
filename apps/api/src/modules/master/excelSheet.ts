@@ -8,7 +8,8 @@ import type { ColumnDef } from './catalogs.js';
 
 // Đọc bảng tính Excel dùng chung cho mọi lối nhập: ánh xạ cột theo dòng khóa kỹ thuật, đọc ô theo kiểu cột, lỗi tiếng Việt theo dòng/cột.
 export interface ImportError { row: number; column: string; message: string }
-export interface SheetOptions { sheet: string; keyRow: number; firstDataRow: number; maxRows: number; columns: ColumnDef[]; strictKeys?: boolean }
+// optional: sheet vắng thì trả không có dòng (mặc định lấy sheet đầu tiên khi không thấy tên sheet).
+export interface SheetOptions { sheet: string; keyRow: number; firstDataRow: number; maxRows: number; columns: ColumnDef[]; strictKeys?: boolean; optional?: boolean }
 
 const UNREADABLE = 'Ô không đọc được';
 const BAD_DATE = 'Ngày không hợp lệ';
@@ -103,7 +104,8 @@ export async function readSheet(buf: Buffer, opts: SheetOptions): Promise<{ rows
   await assertZipSafe(buf);
   const wb = new ExcelJS.Workbook();
   try { await wb.xlsx.load(buf as unknown as ArrayBuffer); } catch { throw new AppError('IMPORT_BAD_FILE', 'Không đọc được file Excel', 400); }
-  const ws = wb.getWorksheet(opts.sheet) ?? wb.worksheets[0];
+  const ws = wb.getWorksheet(opts.sheet) ?? (opts.optional ? undefined : wb.worksheets[0]);
+  if (!ws && opts.optional) return { rows: [], errors: [] };
   if (!ws) throw new AppError('IMPORT_NO_SHEET', `Không tìm thấy sheet ${opts.sheet}`, 400);
   const dataRows = ws.actualRowCount - (opts.firstDataRow - 1);
   if (dataRows > opts.maxRows) throw new AppError('IMPORT_TOO_MANY_ROWS', `Tệp có ${group(dataRows)} dòng, tối đa ${group(opts.maxRows)}`, 400);
@@ -145,15 +147,17 @@ export function zodIssueVi(issue: ZodIssue, label: string): string {
 }
 
 // Mẫu nhập: dòng 1 nhãn (cột bắt buộc có (*)), dòng 2 khóa kỹ thuật (ẩn), dòng 3 ví dụ (luôn bị bỏ qua); sheet Huong_dan giữ các dòng hướng dẫn.
-export async function buildSheetTemplate(o: { sheet: string; columns: ColumnDef[]; example: (c: ColumnDef) => ExcelJS.CellValue; keyRow: number; help: string[][] }): Promise<Buffer> {
+export async function buildSheetTemplate(o: { sheet: string; columns: ColumnDef[]; example: (c: ColumnDef) => ExcelJS.CellValue; keyRow: number; help: string[][]; extra?: { sheet: string; columns: ColumnDef[] }[] }): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet(o.sheet);
-  ws.addRow(o.columns.map((c) => c.label + (c.required ? ' (*)' : '')));
-  ws.addRow(o.columns.map((c) => c.key)); ws.getRow(o.keyRow).hidden = true;
-  ws.addRow(o.columns.map(o.example));
-  ws.getRow(1).font = { bold: true }; ws.columns.forEach((col) => { col.width = 22; });
-  // Cột chữ định dạng văn bản (@) để Excel giữ số 0 đầu (điện thoại, MST, số tài khoản).
-  o.columns.forEach((c, i) => { if (c.type === 'text' || c.type === 'select') ws.getColumn(i + 1).numFmt = '@'; });
+  for (const { sheet, columns } of [{ sheet: o.sheet, columns: o.columns }, ...(o.extra ?? [])]) {
+    const ws = wb.addWorksheet(sheet);
+    ws.addRow(columns.map((c) => c.label + (c.required ? ' (*)' : '')));
+    ws.addRow(columns.map((c) => c.key)); ws.getRow(o.keyRow).hidden = true;
+    ws.addRow(columns.map(o.example));
+    ws.getRow(1).font = { bold: true }; ws.columns.forEach((col) => { col.width = 22; });
+    // Cột chữ định dạng văn bản (@) để Excel giữ số 0 đầu (điện thoại, MST, số tài khoản).
+    columns.forEach((c, i) => { if (c.type === 'text' || c.type === 'select') ws.getColumn(i + 1).numFmt = '@'; });
+  }
   const hd = wb.addWorksheet('Huong_dan');
   for (const r of o.help) hd.addRow(r);
   return Buffer.from(await wb.xlsx.writeBuffer());

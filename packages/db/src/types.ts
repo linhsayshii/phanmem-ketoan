@@ -366,6 +366,26 @@ export interface PayrollParamTable {
   id: Generated<number>; tenant_id: string; code: string; valid_from: DateOnly; valid_to: DateOnly | null; value: JSONColumnType<unknown>; source: string;
   created_at: Generated<Timestamp>; updated_at: Generated<Timestamp>;
 }
+export interface EmployeePayrollTable {
+  id: Generated<number>; tenant_id: string; employee_id: number; pay_method: Generated<string>;
+  bank_code: string | null; bank_name: string | null; bank_account_no: string | null; bank_account_name: string | null;
+  tax_residency: Generated<string>; contract_type: Generated<string>; start_date: DateOnly | null; end_date: DateOnly | null; region: string | null; si_no: string | null;
+  si_participates: Generated<boolean>; hi_participates: Generated<boolean>; ui_participates: Generated<boolean>; occupational_participates: Generated<boolean>;
+  si_salary: Numeric | null; union_employer: Generated<boolean>; union_member: Generated<boolean>; pit_authorized: Generated<boolean>;
+  default_project_id: number | null; note: string | null; created_at: Generated<Timestamp>; updated_at: Generated<Timestamp>;
+}
+export interface EmployeeAllowanceTable {
+  id: Generated<number>; tenant_id: string; employee_id: number; code: string; name: string; amount: Numeric;
+  taxable: Generated<boolean>; si_base: Generated<boolean>; valid_from: DateOnly | null; valid_to: DateOnly | null;
+}
+export interface EmployeeSalaryHistoryTable {
+  id: Generated<number>; tenant_id: string; employee_id: number; valid_from: DateOnly; monthly_salary: Numeric; note: string | null; created_at: Generated<Timestamp>;
+}
+export interface EmployeeDependentTable {
+  id: Generated<number>; tenant_id: string; employee_id: number; name: string; relationship: string; tax_code: string | null; id_number: string | null;
+  birth_date: DateOnly | null; from_month: string; to_month: string | null; note: string | null;
+}
+export interface EmployeeCostSplitTable { id: Generated<number>; tenant_id: string; employee_id: number; project_id: number; pct: Numeric }
 export interface ApiKeyTable {
   id: Generated<string>; tenant_id: string; user_id: string; name: string; prefix: string; key_hash: string; scopes: string[]; default_warehouse_id: number | null;
   post_sales: Generated<boolean>; expires_at: Timestamp | null; revoked_at: Timestamp | null; last_used_at: Timestamp | null; created_at: Generated<Timestamp>;
@@ -507,6 +527,11 @@ export interface Database {
   inbound_item_map: InboundItemMapTable;
   api_key: ApiKeyTable;
   payroll_param: PayrollParamTable;
+  employee_payroll: EmployeePayrollTable;
+  employee_allowance: EmployeeAllowanceTable;
+  employee_salary_history: EmployeeSalaryHistoryTable;
+  employee_dependent: EmployeeDependentTable;
+  employee_cost_split: EmployeeCostSplitTable;
   bank_feed: BankFeedTable;
   bank_transaction: BankTransactionTable;
   bank_webhook_log: BankWebhookLogTable;

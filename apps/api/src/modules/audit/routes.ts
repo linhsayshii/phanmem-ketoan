@@ -2,6 +2,8 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { sql } from 'kysely';
 import { vnDayEnd, vnDayStart } from '../core/vnTime.js';
+import { AppError } from '../../plugins/errors.js';
+import { SALARY_AUDIT_ENTITIES } from '../payroll/profiles.js';
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const paging = { page: z.coerce.number().int().min(1).default(1), size: z.coerce.number().int().min(1).max(500).default(50) };
@@ -13,6 +15,11 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     app.withTenant(req, async (trx) => {
       const q = req.query;
       let base = trx.selectFrom('audit_event as a').leftJoin('app_user as u', 'u.id', 'a.user_id');
+      // Nhật ký của hồ sơ lương chứa số lương trước/sau: thiếu view_salary thì hỏi thẳng là 403, còn xem chung thì bỏ các dòng này.
+      if (!req.auth!.sensitive.has('view_salary')) {
+        if (q.entity && SALARY_AUDIT_ENTITIES.includes(q.entity)) throw new AppError('SALARY_FORBIDDEN', 'Không có quyền xem lương', 403);
+        base = base.where('a.entity', 'not in', SALARY_AUDIT_ENTITIES);
+      }
       if (q.entity) base = base.where('a.entity', '=', q.entity);
       if (q.entityId) base = base.where('a.entity_id', '=', q.entityId);
       if (q.userId) base = base.where('a.user_id', '=', q.userId);
