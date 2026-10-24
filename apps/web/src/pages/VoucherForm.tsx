@@ -9,7 +9,7 @@ import { canTransition, CASH_PURPOSES, D, decideEdit, formatVnDate, formatVnNumb
 import { KeyboardGrid, LookupSelect, VnNumberInput, useUnsavedChanges } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
-import { assetPick, contractPick, isAssetAccount, isContractAccount, accountFetcherFor, bankAccountFetcher, cashFlowFetcherFor, regimeFor, type FiscalYearRef } from '../lookups.js';
+import { assetPick, contractPick, costObjectPick, isAssetAccount, isContractAccount, isCostAccount, accountFetcherFor, bankAccountFetcher, cashFlowFetcherFor, regimeFor, type FiscalYearRef } from '../lookups.js';
 import { STATE_LABEL, typeLabel } from './VoucherList.js';
 import { SettleDialog, type SettleEntry, type SettleTarget } from './settleCommon.js';
 import { Attachments, iso, quickAdd, reportError, text } from './voucherCommon.js';
@@ -23,7 +23,7 @@ import { DECLARING_TYPES, DeclaredInvoices, clearPartySnapshot, declaredBody, de
 // amountCurrency (nguyên tệ, có dấu), fxRate, bankAccountNo (tài khoản ngân hàng ghi đè của dòng) và settle (kế hoạch đối trừ công nợ) chỉ gửi khi có ý nghĩa, xem `linesBody`.
 export interface Line { lineNo?: number; accountCode: string; accountName?: string; partyName?: string | null; description: string | null; debit: string; credit: string;
   amountCurrency?: string | undefined; fxRate?: string | undefined; bankAccountNo?: string | null | undefined; settle?: SettleEntry[] | undefined; settleSig?: string | undefined; partyCode: string | null; departmentCode: string | null; projectCode: string | null; costItemCode: string | null;
-  dueDate?: string | null | undefined; cashFlowCode?: string | null | undefined; assetCode?: string | null | undefined; contractCode?: string | null | undefined }
+  dueDate?: string | null | undefined; cashFlowCode?: string | null | undefined; assetCode?: string | null | undefined; contractCode?: string | null | undefined; costObjectCode?: string | null | undefined }
 interface Voucher { id: string; voucherType: string; voucherNo: string | null; postingDate: string; documentDate: string; state: string; description: string | null; partyCode: string | null;
   personName?: string | null; personAddress?: string | null; attachmentsCount?: number | null; bankAccountNo?: string | null; counterBankAccountNo?: string | null; partyBankAccountNo?: string | null;
   dueDate?: string | null; purpose?: string | null; invoices?: Parameters<typeof declRowsOf>[0]; periodStatus: 'open' | 'soft_locked' | 'hard_locked'; hashed: boolean;
@@ -52,8 +52,8 @@ export function mirrorCashAmount(rows: Line[], side: 'debit' | 'credit', last: s
 }
 
 // Chứng từ đã ghi sổ chỉ sửa được diễn giải, các chiều phân tích, hạn và mã luồng tiền của dòng (không đổi số tiền, tài khoản, số dòng).
-const META_COLS = ['description', 'departmentCode', 'projectCode', 'costItemCode', 'dueDate', 'cashFlowCode'];
-const LOOKUP_CATALOG: Record<string, string> = { accountCode: 'account', partyCode: 'party', departmentCode: 'department', projectCode: 'project', costItemCode: 'cost_item', bankAccountNo: 'bank_account', cashFlowCode: 'cash_flow', assetCode: 'asset', contractCode: 'contract' };
+const META_COLS = ['description', 'departmentCode', 'projectCode', 'costItemCode', 'costObjectCode', 'dueDate', 'cashFlowCode'];
+const LOOKUP_CATALOG: Record<string, string> = { accountCode: 'account', partyCode: 'party', departmentCode: 'department', projectCode: 'project', costItemCode: 'cost_item', bankAccountNo: 'bank_account', cashFlowCode: 'cash_flow', assetCode: 'asset', contractCode: 'contract', costObjectCode: 'cost_object' };
 
 // Ô Nợ/Có: để trống (Backspace + Enter, Delete) là 0; chỉ nhận số nguyên không âm (tiền VND), chữ/số âm/số lẻ bị từ chối: giữ giá trị cũ.
 export function parseAmount(newValue: unknown, oldValue: unknown): string {
@@ -239,7 +239,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     }
     if (isNew) return api<Voucher>('/api/vouchers', { method: 'POST', json: { ...body(f), idempotencyKey, ...(postAfter ? { autoPost: true } : {}) } });
     // sửa chứng từ đã ghi sổ: định vị dòng theo lineNo của máy chủ, không theo vị trí trên lưới
-    const meta = linesRef.current.filter((l) => l.lineNo !== undefined).map((l) => ({ lineNo: l.lineNo!, description: l.description, departmentCode: l.departmentCode, projectCode: l.projectCode, costItemCode: l.costItemCode,
+    const meta = linesRef.current.filter((l) => l.lineNo !== undefined).map((l) => ({ lineNo: l.lineNo!, description: l.description, departmentCode: l.departmentCode, projectCode: l.projectCode, costItemCode: l.costItemCode, costObjectCode: l.costObjectCode ?? null,
       dueDate: l.dueDate ?? null, cashFlowCode: l.cashFlowCode || null }));
     const saved = await api<Voucher>(`/api/vouchers/${id}`, { method: 'PUT', json: editable ? { ...body(f), version: v.data!.version } : { version: v.data!.version, description: f.description ?? null, lines: meta } });
     if (!postAfter) return saved;
@@ -287,17 +287,20 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   // Cột Tài sản hiện khi có dòng ở TK tài sản hoặc 242 (hoặc đã có mã tài sản).
   const showAsset = lines.some((l) => isAssetAccount(l.accountCode) || !!l.assetCode);
   const showContract = lines.some((l) => isContractAccount(l.accountCode) || !!l.contractCode);
+  const costingOn = useQuery({ queryKey: ['settings'], queryFn: () => api<{ costing_enabled?: boolean }>('/api/settings') }).data?.costing_enabled === true;
+  const showCostObject = costingOn || lines.some((l) => isCostAccount(l.accountCode) || !!l.costObjectCode);
   const columns = useMemo<ColDef<Line>[]>(() => ([
     { field: 'accountCode', headerName: 'TK (F4)', width: 110 }, { field: 'description', headerName: 'Diễn giải', flex: 1 },
     numCol('debit', 'Nợ'), numCol('credit', 'Có'),
     ...(currency !== 'VND' ? [foreignCol] : []),
     { field: 'partyCode', headerName: 'Đối tượng (F4)', width: 130 }, { field: 'departmentCode', headerName: 'Bộ phận', width: 100 },
     { field: 'projectCode', headerName: 'Vụ việc', width: 100 }, { field: 'costItemCode', headerName: 'Khoản mục', width: 110 },
+    ...(showCostObject ? [{ field: 'costObjectCode', headerName: 'Đối tượng THCP (F4)', width: 150, headerTooltip: 'Đối tượng tập hợp chi phí (giá thành): dòng TK 621, 622, 627, 154' } satisfies ColDef<Line>] : []),
     ...(eff.moneyKind === 'bank' ? [{ field: 'bankAccountNo', headerName: 'TK ngân hàng (F4)', width: 150, headerTooltip: 'Để trống là lấy theo tài khoản ngân hàng ở tiêu đề' } satisfies ColDef<Line>] : []),
     ...(showAsset ? [{ field: 'assetCode', headerName: 'Tài sản (F4)', width: 130, headerTooltip: 'Chỉ ở dòng TK tài sản cố định, hao mòn, 242', editable: (p) => isAssetAccount(p.data?.accountCode ?? '') } satisfies ColDef<Line>] : []),
     ...(showContract ? [{ field: 'contractCode', headerName: 'Khế ước (F4)', width: 130, headerTooltip: 'Chỉ ở dòng TK vay 341x, lãi vay phải trả 335', editable: (p) => isContractAccount(p.data?.accountCode ?? '') } satisfies ColDef<Line>] : []),
     dueCol, { field: 'cashFlowCode', headerName: 'Mã luồng tiền (F4)', width: 140, headerTooltip: 'Chỉ ở dòng tiền mặt, tiền gửi: mã chỉ tiêu của Báo cáo lưu chuyển tiền tệ; để trống thì xếp theo tài khoản đối ứng' },
-  ] satisfies ColDef<Line>[]).map((c) => (c.field === 'assetCode' || c.field === 'contractCode' ? (editable ? c : { ...c, editable: false }) : { ...c, editable: editable || (metaOnly && META_COLS.includes(c.field as string)) })), [editable, metaOnly, currency, eff.moneyKind, showAsset, showContract]);
+  ] satisfies ColDef<Line>[]).map((c) => (c.field === 'assetCode' || c.field === 'contractCode' ? (editable ? c : { ...c, editable: false }) : { ...c, editable: editable || (metaOnly && META_COLS.includes(c.field as string)) })), [editable, metaOnly, currency, eff.moneyKind, showAsset, showContract, showCostObject]);
   // Chứng từ đã ghi sổ: không thêm/xóa dòng (lineNo của máy chủ phải khớp).
   const onRowsChange = useCallback((rows: Line[]) => { if (editable || rows.length === linesRef.current.length) changeRows(rows); }, [editable, changeRows]);
   const onLookup = useCallback((col: string, row: number) => { if (col in LOOKUP_CATALOG && (col !== 'assetCode' || isAssetAccount(linesRef.current[row]?.accountCode ?? '')) && (col !== 'contractCode' || isContractAccount(linesRef.current[row]?.accountCode ?? '')) && (editable || (metaOnly && META_COLS.includes(col)))) setLookup({ col, row }); }, [editable, metaOnly]);
@@ -400,7 +403,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
       {!isNew && <Attachments voucherId={id} canEdit={can('voucher.update')} />}
       <Modal open={!!lookup} onCancel={() => setLookup(null)} footer={null} title="Chọn từ danh mục" destroyOnHidden afterOpenChange={(o) => { if (o) lookupBox.current?.querySelector('input')?.focus(); }}>
         {lookup && <div ref={lookupBox}><LookupSelect catalog={LOOKUP_CATALOG[lookup.col]!} style={{ width: '100%' }}
-          {...(lookup.col === 'accountCode' ? { fetcher: accountFetcher } : lookup.col === 'bankAccountNo' ? { fetcher: bankAccountFetcher } : lookup.col === 'cashFlowCode' ? { fetcher: cashFlowFetcher } : lookup.col === 'assetCode' ? { fetcher: assetPick } : lookup.col === 'contractCode' ? { fetcher: contractPick } : { quickAddFields: quickAdd })}
+          {...(lookup.col === 'accountCode' ? { fetcher: accountFetcher } : lookup.col === 'bankAccountNo' ? { fetcher: bankAccountFetcher } : lookup.col === 'cashFlowCode' ? { fetcher: cashFlowFetcher } : lookup.col === 'assetCode' ? { fetcher: assetPick } : lookup.col === 'contractCode' ? { fetcher: contractPick } : lookup.col === 'costObjectCode' ? { fetcher: costObjectPick } : { quickAddFields: quickAdd })}
           onChange={(code) => { if (code !== null) { const copy = [...linesRef.current]; copy[lookup.row] = { ...copy[lookup.row]!, [lookup.col]: code }; changeRows(copy); } setLookup(null); }} /></div>}
       </Modal>
       {maySettle && <SettleDialog open={settleOpen} targets={settleList} currency={currency} asOf={postingIso} onClose={() => setSettleOpen(false)}

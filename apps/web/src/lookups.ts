@@ -74,6 +74,13 @@ export const contractPick = async (q: string, signal: AbortSignal): Promise<Look
   const r = await fetch(`/api/lookups/contracts?q=${encodeURIComponent(q)}&size=50&kind=loan`, { credentials: 'include', signal });
   return r.ok ? ((await r.json()) as LookupRow[]).map(({ id, code, name }) => ({ id, code, name })) : [];
 };
+// Cột "Đối tượng THCP" (đối tượng tập hợp chi phí, giá thành) của dòng chứng từ: hiện ở dòng TK chi phí sản xuất 621/622/627 và 154 (TT133 ghi thẳng 154),
+// hoặc mọi dòng khi công ty bật cài đặt costing_enabled. F4 tra đối tượng đang dùng (/api/lookups/cost-objects, quyền voucher.view).
+export const isCostAccount = (code: string | undefined | null): boolean => /^(62[127]|154)/.test(code ?? '');
+export const costObjectPick = async (q: string, signal: AbortSignal): Promise<LookupRow[]> => {
+  const r = await fetch(`/api/lookups/cost-objects?q=${encodeURIComponent(q)}&size=50`, { credentials: 'include', signal });
+  return r.ok ? ((await r.json()) as LookupRow[]).map(({ id, code, name }) => ({ id, code, name })) : [];
+};
 // Loại tài sản của phân hệ tài sản cho F4.
 export const assetCategoryFetcher = (kind: 'fixed' | 'tool' | 'prepaid') => async (q: string, signal: AbortSignal): Promise<LookupRow[]> => {
   const r = await fetch(`/api/asset-categories?kind=${kind}`, { credentials: 'include', signal });
