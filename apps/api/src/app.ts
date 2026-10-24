@@ -52,6 +52,8 @@ import einvoiceRoutes from './modules/einvoice/routes.js';
 import signingRoutes from './modules/signing/routes.js';
 import inboundRoutes from './modules/inbound/routes.js';
 import openingAssetRoutes from './modules/assets/openingAssets.js';
+import bankRoutes from './modules/bank/routes.js';
+import bankWebhookRoutes from './modules/bank/webhook.js';
 
 declare module 'fastify' { interface FastifyInstance { config: Config; boss: PgBoss | null } }
 
@@ -110,6 +112,8 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(signingRoutes);
   await app.register(inboundRoutes);
   await app.register(openingAssetRoutes);
+  await app.register(bankRoutes);
+  await app.register(bankWebhookRoutes); // công khai, có parser thân thô riêng
   app.get('/api/health', async () => ({ ok: true }));
   return app;
 }

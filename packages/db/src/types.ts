@@ -362,6 +362,24 @@ export interface InboundInvoiceLineTable {
   quantity: Numeric | null; unit_price: Numeric | null; discount_amount: Numeric | null; amount: Numeric | null; tax_rate: string | null;
 }
 
+export interface BankFeedTable {
+  id: Generated<number>; tenant_id: string; bank_account_id: number; provider: string; token_hash: string; auth_kind: string; secret: Buffer | null; apikey_hash: string | null;
+  is_active: Generated<boolean>; last_received_at: Timestamp | null; created_at: Generated<Timestamp>;
+}
+export interface BankTransactionTable {
+  id: Generated<number>; tenant_id: string; bank_account_id: number; feed_id: number | null; source: string; external_id: string; txn_time: Timestamp | null; value_date: DateOnly;
+  amount_in: NumericDefault; amount_out: NumericDefault; balance_after: Numeric | null; description: string | null; reference: string | null; counter_account: string | null;
+  counter_name: string | null; payment_code: string | null; raw: ColumnType<unknown, string | null | undefined, string | null>; status: Generated<string>; voucher_id: string | null;
+  matched_by: string | null; matched_at: Timestamp | null; created_at: Generated<Timestamp>;
+}
+export interface BankWebhookLogTable {
+  id: Generated<number>; tenant_id: string; feed_id: number; received_at: Generated<Timestamp>; ok: boolean; http_status: number; error: string | null; body_sha256: string | null;
+}
+export interface BankStatementFormatTable {
+  id: Generated<number>; tenant_id: string; name: string; bank_code: string | null; header_row: Generated<number>; sheet_index: Generated<number>; date_col: string; date_format: string;
+  description_col: string; amount_in_col: string | null; amount_out_col: string | null; signed_amount_col: string | null; reference_col: string | null; balance_col: string | null;
+}
+
 export interface InboundItemMapTable {
   id: Generated<number>; tenant_id: string; seller_tax_code: string; name_key: string; item_id: number | null; account_id: number | null; tax_code_id: number | null; updated_at: Generated<string>;
 }
@@ -479,6 +497,10 @@ export interface Database {
   inbound_invoice: InboundInvoiceTable;
   inbound_invoice_line: InboundInvoiceLineTable;
   inbound_item_map: InboundItemMapTable;
+  bank_feed: BankFeedTable;
+  bank_transaction: BankTransactionTable;
+  bank_webhook_log: BankWebhookLogTable;
+  bank_statement_format: BankStatementFormatTable;
   signing_session: SigningSessionTable;
   einvoice_series: EinvoiceSeriesTable;
   einvoice: EinvoiceTable;
