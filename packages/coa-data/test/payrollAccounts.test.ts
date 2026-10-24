@@ -30,6 +30,17 @@ describe('tài khoản lương theo chế độ (data/payroll/accounts.json)', (
     expect([name('TT133', '6421'), name('TT133', '6422'), name('TT133', '622')]).toEqual([expect.stringMatching(/bán hàng/i), expect.stringMatching(/quản lý doanh nghiệp/i), undefined]);
     for (const r of COA_REGIMES) expect(name(r, loadPayrollAccounts(r)!.withholding!)).toMatch(/phải trả, phải nộp khác/i);
   });
+  it('nhóm tài khoản lãi lỗ hợp đồng/vụ việc (Task 13b): mã có trong hệ thống tài khoản, đúng nghĩa theo chế độ', () => {
+    const name = (r: (typeof COA_REGIMES)[number], c: string) => loadCoaTemplate(r).find((x) => x.code === c)?.name;
+    for (const r of COA_REGIMES) {
+      const g = loadPayrollAccounts(r)!.pnl!;
+      for (const c of Object.values(g).flat()) expect(name(r, c), `${r}: không có TK ${c}`).toBeDefined();
+      expect([name(r, g.revenue[0]!), name(r, g.cogs[0]!)]).toEqual([expect.stringMatching(/^doanh thu bán hàng/i), expect.stringMatching(/giá vốn/i)]);
+      expect(name(r, g.selling[0]!)).toMatch(/chi phí bán hàng/i);
+    }
+    expect(loadPayrollAccounts('TT133')!.pnl).toMatchObject({ deduction: [], production: ['154'], selling: ['6421'], admin: ['6422'] });
+    for (const r of ['TT99', 'TT200'] as const) expect(loadPayrollAccounts(r)!.pnl).toMatchObject({ deduction: ['521'], production: ['621', '622', '623', '627'], selling: ['641'], admin: ['642'] });
+  });
   it('isSalaryAccount theo chế độ: 3385/3386 đổi nghĩa, 334 tổng hợp của TT200 và 3335 không thuộc nhóm', () => {
     const t133 = loadPayrollAccounts('TT133')!; const t200 = loadPayrollAccounts('TT200')!; const t99 = loadPayrollAccounts('TT99')!;
     expect(isSalaryAccount(t133, '3385')).toBe(true); expect(isSalaryAccount(t133, '3386')).toBe(false);

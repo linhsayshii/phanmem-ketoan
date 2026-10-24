@@ -40,10 +40,45 @@ async function milestonesOf(trx: Trx, contractId: number): Promise<MilestoneDto[
     FROM contract_milestone m LEFT JOIN voucher v ON v.tenant_id = m.tenant_id AND v.id = m.voucher_id WHERE m.contract_id = ${contractId}::bigint ORDER BY m.seq`.execute(trx)).rows;
 }
 
+export interface AmendmentDto { id: number; seq: number; amendmentNo: string | null; signedDate: string; description: string; valueChange: string; note: string | null }
+const amendmentsOf = async (trx: Trx, contractId: number): Promise<AmendmentDto[]> => (await sql<AmendmentDto>`SELECT id::int, seq, amendment_no AS "amendmentNo", signed_date::text AS "signedDate",
+    description, value_change::text AS "valueChange", note FROM contract_amendment WHERE contract_id = ${contractId}::bigint ORDER BY seq`.execute(trx)).rows;
+
 export async function getContract(trx: Trx, id: number) {
   const c = (await listContracts(trx)).find((x) => (x as { id: number }).id === id);
   if (!c) throw notFound();
-  return { ...c, milestones: await milestonesOf(trx, id) };
+  return { ...c, milestones: await milestonesOf(trx, id), amendments: await amendmentsOf(trx, id) };
+}
+
+// Phụ lục hợp đồng (Task 13b): thay cả danh sách như đợt (có id sửa, không có thêm, thiếu thì xóa). Giá trị tăng/giảm là số nguyên theo loại tiền hợp đồng;
+// giá trị sau mọi phụ lục không được âm.
+export const amendmentsInput = z.object({
+  amendments: z.array(z.object({
+    id: z.number().int().positive().optional(), seq: z.number().int().positive(), amendmentNo: z.string().trim().min(1).max(50).nullable().optional(), signedDate: dateIso,
+    description: z.string().trim().min(1, 'Nhập nội dung phụ lục').max(500), valueChange: z.string().regex(/^-?\d{1,16}$/, 'Giá trị điều chỉnh phải là số nguyên'), note: z.string().max(1000).nullable().optional(),
+  })).max(200, 'Tối đa 200 phụ lục mỗi hợp đồng').refine((a) => new Set(a.map((m) => m.seq)).size === a.length, 'STT phụ lục bị trùng'),
+});
+export async function saveAmendments(trx: Trx, tenantId: string, contractId: number, b: z.infer<typeof amendmentsInput>) {
+  const c = (await sql<{ value: string }>`SELECT value::text FROM contract WHERE id = ${contractId}::bigint AND kind <> 'loan' FOR UPDATE`.execute(trx)).rows[0];
+  if (!c) throw notFound();
+  const after = b.amendments.reduce((s, a) => s.plus(a.valueChange), D(c.value));
+  if (after.lt(0)) throw new AppError('VALIDATION', `Giá trị hợp đồng sau phụ lục âm (${after.toFixed(0)})`, 400);
+  const old = new Set((await sql<{ id: number }>`SELECT id::int FROM contract_amendment WHERE contract_id = ${contractId}::bigint`.execute(trx)).rows.map((r) => r.id));
+  const keep = new Set<number>();
+  for (const a of b.amendments) {
+    if (a.id === undefined) {
+      await sql`INSERT INTO contract_amendment(tenant_id, contract_id, seq, amendment_no, signed_date, description, value_change, note)
+        VALUES (${tenantId}::uuid, ${contractId}::bigint, ${a.seq}, ${a.amendmentNo ?? null}, ${a.signedDate}::date, ${a.description}, ${a.valueChange}::numeric, ${a.note ?? null})`.execute(trx);
+      continue;
+    }
+    if (!old.has(a.id)) throw new AppError('NOT_FOUND', `Phụ lục ${a.seq}: không có trong hợp đồng`, 404);
+    keep.add(a.id);
+    await sql`UPDATE contract_amendment SET seq = ${a.seq}, amendment_no = ${a.amendmentNo ?? null}, signed_date = ${a.signedDate}::date, description = ${a.description},
+      value_change = ${a.valueChange}::numeric, note = ${a.note ?? null} WHERE id = ${a.id}::bigint`.execute(trx);
+  }
+  const drop = [...old].filter((x) => !keep.has(x));
+  if (drop.length) await sql`DELETE FROM contract_amendment WHERE id = ANY(${drop}::bigint[])`.execute(trx);
+  return getContract(trx, contractId);
 }
 
 // Thay cả danh sách đợt: có id thì sửa, không có thì thêm, đợt cũ không còn trong danh sách thì xóa. Đợt đã lập hóa đơn không xóa được, không đổi
