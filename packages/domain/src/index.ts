@@ -24,3 +24,5 @@ export * from './loanInterest.js';
 export * from './invoiceSymbol.js';
 export * from './vietqr.js';
 export * from './cit.js';
+export * from './payrollFormula.js';
+export * from './payroll.js';
