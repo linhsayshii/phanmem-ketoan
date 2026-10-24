@@ -2,6 +2,7 @@ import type { Kysely } from 'kysely';
 import { withTenant, type Database } from '@kt/db';
 import { AppError } from '../../../plugins/errors.js';
 import { openSecret } from '../../../lib/secretBox.js';
+import { assertEInvoiceFakeAllowed, assertEInvoiceUrl } from './policy.js';
 import { fakeProvider } from './fake.js';
 import { SInvoiceProvider } from './sinvoice.js';
 import type { EInvoiceProvider, ProviderCtx, ProviderRow } from './types.js';
@@ -9,9 +10,10 @@ import type { EInvoiceProvider, ProviderCtx, ProviderRow } from './types.js';
 export * from './types.js';
 
 export function providerFor(row: ProviderRow): EInvoiceProvider {
-  if (row.code === 'fake') return fakeProvider(row.options);
+  if (row.code === 'fake') { assertEInvoiceFakeAllowed(); return fakeProvider(row.options); }
   if (row.code === 'sinvoice') {
     if (!row.secret) throw new AppError('EINVOICE_PROVIDER_NO_SECRET', 'Nhà cung cấp SInvoice chưa có mật khẩu: nhập mật khẩu trong cài đặt nhà cung cấp hóa đơn điện tử', 409);
+    assertEInvoiceUrl(row.base_url);
     return new SInvoiceProvider({ baseUrl: row.base_url.replace(/\/+$/, ''), username: row.username, password: openSecret(row.secret), sellerTaxCode: row.seller_tax_code });
   }
   throw new AppError('EINVOICE_PROVIDER_UNSUPPORTED', `Chưa hỗ trợ nhà cung cấp hóa đơn điện tử "${row.code}"`, 409);

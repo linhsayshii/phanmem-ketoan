@@ -236,7 +236,7 @@ describe('SInvoice qua providerFor + withProviderCtx (DB thật)', () => {
     mock.s.hangCreateMs = 400;
     const during = run((c) => p.create(c, doc()));
     await new Promise((r) => setTimeout(r, 200));
-    const open = (await sql<{ n: string }>`SELECT count(*) AS n FROM pg_stat_activity WHERE state = 'idle in transaction' AND usename = 'app_user'`.execute(app.t.admin)).rows[0]!.n;
+    const open = (await sql<{ n: string }>`SELECT count(*) AS n FROM pg_stat_activity WHERE state = 'idle in transaction' AND usename = 'app_user' AND datname = current_database()`.execute(app.t.admin)).rows[0]!.n;
     expect(Number(open)).toBe(0);
     await during;
     mock.s.hangCreateMs = 0;

@@ -4,6 +4,7 @@
 import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
 import { D } from '@kt/domain';
+import { assertZipSafe } from '../../master/excelSheet.js';
 import { httpJson, redact } from '../../../lib/http.js';
 import { ProviderError, PROVIDER_TIMEOUT_SEC, type EInvoiceDoc, type EInvoiceLine, type EInvoiceProvider, type IssueResult, type OriginalRef, type ProviderCtx } from './types.js';
 
@@ -15,6 +16,8 @@ const TOKEN_MARGIN_MS = 30_000; // §1: trừ biên an toàn khi tính hạn tok
 const tokens = new Map<string, { token: string; exp: number }>(); // cache theo (baseUrl, username, mật khẩu): cùng nhà cung cấp dùng chung giữa các lời gọi
 
 const fail = (code: string, message: string, retriable = false) => new ProviderError(code, message, retriable);
+// Mã lỗi từ máy chủ ngoài chỉ được đi tiếp khi trông như mã (không chứa nội dung tùy ý).
+const safeCode = (v: unknown) => (/^[A-Za-z0-9_.:-]{1,60}$/.test(String(v)) ? String(v) : 'SINVOICE_ERROR');
 const unsupported = (message: string) => fail('SINVOICE_UNSUPPORTED', message);
 
 // §2: ngày là mili-giây epoch. Ngày 'YYYY-MM-DD' lấy 00:00 giờ Việt Nam (+07); nguồn không nói múi giờ (rủi ro đã ghi trong tài liệu).
@@ -50,13 +53,13 @@ export class SInvoiceProvider implements EInvoiceProvider {
     const t0 = Date.now();
     const brief = (b: unknown) => (b && typeof b === 'object' && 'fileToBytes' in b ? { ...b, fileToBytes: `[${String((b as { fileToBytes: unknown }).fileToBytes ?? '').length} ký tự base64]` } : b);
     let r;
-    try { r = await httpJson<T>(url, { method: 'POST', ...init, timeoutMs: this.timeoutMs }); } catch (e) {
+    try { r = await httpJson<T>(url, { method: 'POST', ...init, timeoutMs: this.timeoutMs, redirect: 'error' }); } catch (e) {
       // Ghi nhật ký lỗi không được che lỗi HTTP gốc.
       await ctx.log({ action, request: redact(logRequest, SECRET_KEYS), response: null, httpStatus: null, ok: false, error: e instanceof Error ? e.message : String(e), ms: Date.now() - t0 }).catch(() => undefined);
       throw e;
     }
     const err = this.errorOf(r.status, r.body);
-    await ctx.log({ action, request: redact(logRequest, SECRET_KEYS), response: redact(brief(r.body ?? r.raw.slice(0, 500)), SECRET_KEYS), httpStatus: r.status, ok: !err, ...(err && { error: err.message }), ms: Date.now() - t0 });
+    await ctx.log({ action, request: redact(logRequest, SECRET_KEYS), response: err ? { httpStatus: r.status, code: err.code } : redact(brief(r.body), SECRET_KEYS), httpStatus: r.status, ok: !err, ...(err && { error: err.message }), ms: Date.now() - t0 });
     return { ...r, err };
   }
 
@@ -66,9 +69,9 @@ export class SInvoiceProvider implements EInvoiceProvider {
     if (status >= 500 || status === 429) return fail(`SINVOICE_HTTP_${status}`, `SInvoice tạm thời lỗi (HTTP ${status})`, true);
     if (body === null || typeof body !== 'object') return fail('SINVOICE_BAD_RESPONSE', `SInvoice trả nội dung không phải JSON (HTTP ${status})`, true);
     const b = body as Record<string, unknown>;
-    if (b.code !== undefined || b.error !== undefined) return fail(String(b.code ?? b.error), String(b.data ?? b.error ?? b.description ?? 'Lỗi SInvoice'));
+    if (b.code !== undefined || b.error !== undefined) { const c = safeCode(b.code ?? b.error); return fail(c, `SInvoice báo lỗi ${c} (HTTP ${status})`); }
     if (status >= 400) return fail(`SINVOICE_HTTP_${status}`, `SInvoice từ chối yêu cầu (HTTP ${status})`);
-    if (b.errorCode !== undefined && b.errorCode !== null && b.errorCode !== '' && b.errorCode !== 0 && b.errorCode !== '0') return fail(String(b.errorCode), String(b.description ?? b.errorCode));
+    if (b.errorCode !== undefined && b.errorCode !== null && b.errorCode !== '' && b.errorCode !== 0 && b.errorCode !== '0') { const c = safeCode(b.errorCode); return fail(c, `SInvoice báo lỗi ${c}`); }
     return null;
   }
 
@@ -196,7 +199,7 @@ export class SInvoiceProvider implements EInvoiceProvider {
     if (!r.fileToBytes) throw fail('SINVOICE_FILE_NOT_READY', 'SInvoice chưa tạo xong tệp hóa đơn, thử lại sau', true); // §4.3
     const bytes = Buffer.from(r.fileToBytes, 'base64');
     if (kind === 'pdf') return bytes;
-    const xml = await findXml(await JSZip.loadAsync(bytes));
+    const xml = await findXml(bytes, 0);
     if (!xml) throw fail('SINVOICE_NO_XML', 'Gói ZIP của SInvoice không chứa tệp XML');
     return xml;
   }
@@ -230,11 +233,15 @@ export class SInvoiceProvider implements EInvoiceProvider {
   }
 }
 
-// §4.3: duyệt gói ngoài tìm *.xml, không có thì mở từng *.zip bên trong.
-async function findXml(zip: JSZip): Promise<Buffer | null> {
+// §4.3: duyệt gói ngoài tìm *.xml, không có thì mở từng *.zip bên trong (tối đa một cấp lồng). Gói do máy chủ ngoài gửi nên kiểm bom nén trước khi giải nén.
+const ZIP_CAPS = { entries: 200, entry: 20 * 1024 * 1024, total: 50 * 1024 * 1024 };
+async function findXml(bytes: Buffer, depth: number): Promise<Buffer | null> {
+  try { await assertZipSafe(bytes, ZIP_CAPS); } catch { throw fail('SINVOICE_BAD_ZIP', 'Gói ZIP của SInvoice không hợp lệ hoặc quá lớn'); }
+  const zip = await JSZip.loadAsync(bytes);
   const files = Object.values(zip.files).filter((f) => !f.dir);
   const xml = files.find((f) => /\.xml$/i.test(f.name));
   if (xml) return xml.async('nodebuffer');
-  for (const f of files.filter((x) => /\.zip$/i.test(x.name))) { const r = await findXml(await JSZip.loadAsync(await f.async('nodebuffer'))); if (r) return r; }
+  if (depth >= 1) return null;
+  for (const f of files.filter((x) => /\.zip$/i.test(x.name))) { const r = await findXml(await f.async('nodebuffer'), depth + 1); if (r) return r; }
   return null;
 }

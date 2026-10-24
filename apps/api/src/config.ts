@@ -18,7 +18,7 @@ const schema = z.object({
   // Khóa AES-256 (base64 của 32 byte, ví dụ `openssl rand -base64 32`) mã hóa mật khẩu nhà cung cấp hóa đơn, khóa API ngân hàng; production bắt buộc.
   DATA_ENCRYPTION_KEY: z.string().optional(),
   // Địa chỉ công khai của hệ thống, dùng in URL webhook cho người dùng cấu hình bên nhà cung cấp.
-  PUBLIC_BASE_URL: z.string().url().optional(),
+  PUBLIC_BASE_URL: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()), // compose truyền chuỗi rỗng khi chưa đặt
   PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: z.string().optional(),
   LOGIN_MAX_FAILS_USER: z.coerce.number().int().positive().default(5),
   LOGIN_MAX_FAILS_USER_ALL: z.coerce.number().int().positive().default(50),
@@ -29,6 +29,10 @@ const schema = z.object({
   SMARTCA_ALLOWED_HOSTS: z.string().default('rmgateway.vnptit.vn,gwsca.vnpt.vn'),
   // Chỉ để kiểm thử (máy giả SmartCA chạy http): cho phép http tới các máy trong SMARTCA_ALLOWED_HOSTS. Bị từ chối khi chạy production.
   SMARTCA_ALLOW_HTTP: z.enum(['true', 'false']).default('false'),
+  // Máy chủ hóa đơn điện tử (SInvoice) được phép gọi, cách nhau dấu phẩy; rỗng = chỉ api-vinvoice.viettel.vn. Chống SSRF qua baseUrl do người dùng nhập.
+  EINVOICE_ALLOWED_HOSTS: z.string().default(''),
+  // Chỉ để kiểm thử (máy giả chạy http, cổng khác): bị từ chối khi chạy production.
+  EINVOICE_ALLOW_HTTP: z.enum(['true', 'false']).default('false'),
   // Mặc định không tin X-Forwarded-For (tránh giả IP ghi vào nhật ký đăng nhập); sau reverse proxy đặt số bước proxy hoặc danh sách IP/CIDR của proxy; không đặt 'true' (người gọi giả được IP)
   TRUST_PROXY: z.string().default('false').transform((v): boolean | number | string => {
     const t = v.trim();
@@ -39,6 +43,7 @@ const schema = z.object({
 }).superRefine((c, ctx) => {
   if (c.DATA_ENCRYPTION_KEY && !isValidEncryptionKey(c.DATA_ENCRYPTION_KEY)) ctx.addIssue({ code: 'custom', path: ['DATA_ENCRYPTION_KEY'], message: 'DATA_ENCRYPTION_KEY phải là base64 chuẩn của đúng 32 byte (openssl rand -base64 32)' });
   if (c.NODE_ENV === 'production' && c.SMARTCA_ALLOW_HTTP === 'true') ctx.addIssue({ code: 'custom', path: ['SMARTCA_ALLOW_HTTP'], message: 'SMARTCA_ALLOW_HTTP chỉ để kiểm thử, không đặt true khi chạy production' });
+  if (c.NODE_ENV === 'production' && c.EINVOICE_ALLOW_HTTP === 'true') ctx.addIssue({ code: 'custom', path: ['EINVOICE_ALLOW_HTTP'], message: 'EINVOICE_ALLOW_HTTP chỉ để kiểm thử, không đặt true khi chạy production' });
   if (c.NODE_ENV !== 'production') return;
   if (c.SESSION_SECRET.length < 32 || c.SESSION_SECRET === 'doi-chuoi-nay-khi-trien-khai') ctx.addIssue({ code: 'custom', path: ['SESSION_SECRET'], message: 'SESSION_SECRET phải dài ít nhất 32 ký tự và khác giá trị mẫu khi chạy production' });
   if (!c.DATA_ENCRYPTION_KEY) ctx.addIssue({ code: 'custom', path: ['DATA_ENCRYPTION_KEY'], message: 'DATA_ENCRYPTION_KEY là bắt buộc khi chạy production' });

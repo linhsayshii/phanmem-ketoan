@@ -4,6 +4,7 @@ import type { Database } from '@kt/db';
 import { parseInvoiceSymbol } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { sealSecret } from '../../lib/secretBox.js';
+import { assertEInvoiceFakeAllowed, assertEInvoiceUrl } from './providers/policy.js';
 
 // Cấu hình hóa đơn điện tử: nhà cung cấp (mật khẩu mã hóa, không bao giờ trả về) và dải ký hiệu mẫu số/ký hiệu hóa đơn (TT 91/2026 Phụ lục I).
 type Trx = Transaction<Database>;
@@ -29,7 +30,9 @@ const providerDto = (r: ProviderRow) => ({ id: r.id, code: r.code, name: r.name,
 export const listProviders = async (trx: Trx) => (await trx.selectFrom('einvoice_provider').selectAll().orderBy('id').execute()).map(providerDto);
 
 export async function saveProvider(trx: Trx, tenantId: string, id: number | null, b: z.infer<typeof providerInput>) {
-  const v = { code: b.code, name: b.name, base_url: b.baseUrl, username: b.username, seller_tax_code: b.sellerTaxCode, options: JSON.stringify(b.options), is_active: b.isActive,
+  if (b.code === 'fake') assertEInvoiceFakeAllowed();
+  else assertEInvoiceUrl(b.baseUrl);
+  const v ={ code: b.code, name: b.name, base_url: b.baseUrl, username: b.username, seller_tax_code: b.sellerTaxCode, options: JSON.stringify(b.options), is_active: b.isActive,
     ...(b.password ? { secret: sealSecret(b.password) } : {}) };
   if (id === null) return providerDto(await trx.insertInto('einvoice_provider').values({ tenant_id: tenantId, ...v }).returningAll().executeTakeFirstOrThrow());
   const r = await trx.updateTable('einvoice_provider').set(v).where('id', '=', id).returningAll().executeTakeFirst();
