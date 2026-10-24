@@ -4,6 +4,7 @@ import { D, Decimal, sensitiveDenial, toBaseQty, toVnd } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { resolvePrice } from '../inventory/priceLists.js';
 import { resolveRegime } from '../ledger/closing.js';
+import { redactSalary } from '../payroll/redact.js';
 import type { LineInput } from '../ledger/vouchers.service.js';
 import type { InvoiceInput } from './service.js';
 import type { PurchaseLine } from './purchase.js';
@@ -173,7 +174,11 @@ export async function resolveSale(trx: Trx, a: { input: InvoiceInput; counterAcc
 }
 
 // Chứng từ mang giá trị giá vốn, tồn kho: người thiếu view_cost vẫn thao tác. Hóa đơn bán (BH, TLB): che các dòng trên tài khoản giá vốn, tồn kho (632, 15x...), còn lại hiện. Loại khác (PNK, PXK, CK, LR, GV...): GET chặn nên mọi dòng và tổng tiền bị che.
-export async function redactCost<T extends { id: string; voucherType: string; totalDebit: string; lines: { accountCode: string; debit: string }[] }>(trx: Trx, auth: { sensitive: Set<string> }, dto: T): Promise<T> {
+// Mọi đường trả chứng từ cho người dùng (tạo, sửa, ghi sổ, bỏ ghi sổ, đảo, hủy, nhân bản, hóa đơn) đi qua đây: che dòng giá vốn/tồn kho khi thiếu view_cost, rồi che số tiền dòng lương khi thiếu view_salary.
+export async function redactCost<T extends { id: string; voucherType: string; totalDebit: string; lines: { accountCode: string; debit: string; credit: string }[] }>(trx: Trx, auth: { sensitive: Set<string> }, dto: T): Promise<T> {
+  return redactSalary(trx, auth, await redactCostLines(trx, auth, dto));
+}
+async function redactCostLines<T extends { id: string; voucherType: string; totalDebit: string; lines: { accountCode: string; debit: string }[] }>(trx: Trx, auth: { sensitive: Set<string> }, dto: T): Promise<T> {
   if (auth.sensitive.has('view_cost') || !dto.lines.length) return dto;
   const { regime } = await trx.selectFrom('voucher as v').innerJoin('fiscal_period as p', 'p.fiscal_year', 'v.fiscal_year').select('p.regime').where('v.id', '=', dto.id).limit(1).executeTakeFirstOrThrow();
   const accs = await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', regime).where('code', 'in', [...new Set(dto.lines.map((l) => l.accountCode))]).execute();
