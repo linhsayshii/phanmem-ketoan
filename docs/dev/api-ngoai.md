@@ -55,7 +55,7 @@ curl -s -H "Authorization: Bearer $KT_KEY" "https://ketoan.example/api/ext/v1/st
 { "date": "2026-10-24", "items": [ { "itemCode": "SP1", "warehouseCode": "K1", "quantity": "96", "value": "960" } ] }
 ```
 
-`value` chỉ có khi người dùng của khóa có quyền xem giá vốn (`view_cost`) và không truyền `date`. Giá trị lấy từ các lớp giá vốn theo lần tính giá vốn gần nhất, nên có thể chưa phản ánh xuất kho mới.
+Tối đa 5000 dòng; chạm giới hạn thì thêm `"truncated": true`, hãy lọc theo `warehouseCode` hoặc `itemCode`. `value` chỉ có khi người dùng của khóa có quyền xem giá vốn (`view_cost`) và không truyền `date`. Giá trị lấy từ các lớp giá vốn theo lần tính giá vốn gần nhất, nên có thể chưa phản ánh xuất kho mới.
 
 ### POST /sales
 
@@ -76,7 +76,7 @@ curl -s -X POST -H "Authorization: Bearer $KT_KEY" -H "Content-Type: application
 { "voucherId": "…", "voucherNo": "BH000001", "state": "posted", "paymentVoucherId": "…", "paymentVoucherNo": "PT000001" }
 ```
 
-- `externalId`: tối đa 30 ký tự gồm chữ, số, `.`, `_`, `-`, `/`; trở thành số hóa đơn của chứng từ.
+- `externalId`: tối đa 30 ký tự gồm chữ, số, `.`, `_`, `-`, `/`; trở thành số hóa đơn của chứng từ. Phải duy nhất trong cả công ty trên mọi máy POS (khóa chống trùng theo công ty, để hai khóa xoay vòng của cùng máy vẫn chống trùng): nên thêm tiền tố máy, ví dụ `POS1-000123`. Gửi lại cùng `externalId` với nội dung khác (ngày, khách, kho, dòng hàng, thanh toán) trả 409 `EXTERNAL_ID_CONFLICT`.
 - `customer`: `code` (mã khách) hoặc `taxCode`; không có cả hai thì dùng khách lẻ `KHACHLE`. Mã không tồn tại trả 404.
 - Có mặt hàng hàng hóa thì lập Hóa đơn bán hàng (BH, xuất kho) và cần kho (`warehouseCode` hoặc kho mặc định của khóa). Chỉ có dịch vụ thì lập Hóa đơn bán dịch vụ (HDB).
 - `lines[].taxCode`, `uomCode`, `discount` (VND, số nguyên) tùy chọn; không truyền thuế thì lấy thuế mặc định của mặt hàng.
@@ -118,7 +118,9 @@ Thân lỗi dạng `{ "error": { "code": "...", "message": "..." } }`.
 | 400 | `PAYMENT_NEEDS_POST` | Có `payment` nhưng khóa không tự ghi sổ. |
 | 400 | `PAYMENT_EXCEEDS` | Số tiền thanh toán vượt giá trị hóa đơn. |
 | 400 | `NO_RECEIVABLE` | Hóa đơn không phát sinh công nợ để đối trừ. |
-| 404 | `PARTY_NOT_FOUND` | Không có khách theo `code` hoặc `taxCode`. |
+| 404 | `PARTY_NOT_FOUND` | Không có khách hàng đang hoạt động theo `code` hoặc `taxCode`. |
+| 404 | `NOT_FOUND` | Đường dẫn không tồn tại dưới `/api/ext/v1` (cần khóa hợp lệ, không thì 401). |
+| 409 | `EXTERNAL_ID_CONFLICT` | `externalId` đã dùng cho đơn có nội dung khác. |
 | 404 | `ITEM_NOT_FOUND` | Không có mặt hàng theo mã. |
 | 404 | `BANK_ACCOUNT_NOT_FOUND` | Không có tài khoản ngân hàng theo `bankAccountCode`. |
 | 404 | `SALE_NOT_FOUND` | Không có đơn với `externalId`. |

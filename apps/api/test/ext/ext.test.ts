@@ -167,4 +167,45 @@ describe('API ngoài /api/ext/v1', () => {
     const no = await ctx.app.inject({ method: 'POST', url: '/api/ext/v1/inbound-invoices', headers: { ...bearer(items.key), 'content-type': 'application/xml' }, payload: fixture('vn-einvoice-vat.xml') });
     expect(no.statusCode).toBe(403);
   });
+
+  it('externalId gửi lại với nội dung khác → 409 EXTERNAL_ID_CONFLICT; giống hệt → 200 cùng voucherId', async () => {
+    const { key } = await createKey(t);
+    const body = sale();
+    const r1 = await ext(key, 'POST', '/sales', body);
+    expect(r1.statusCode, r1.body).toBe(201);
+    const same = await ext(key, 'POST', '/sales', body);
+    expect(same.statusCode).toBe(200);
+    expect(same.json()).toEqual(r1.json());
+    expect(same.json()).not.toHaveProperty('description');
+    const diff = await ext(key, 'POST', '/sales', { ...body, lines: [{ itemCode: 'SP1', quantity: '3', unitPrice: '100' }, body.lines[1]] });
+    expect(diff.statusCode, diff.body).toBe(409);
+    expect(diff.json().error.code).toBe('EXTERNAL_ID_CONFLICT');
+    const otherParty = await ext(key, 'POST', '/sales', { ...body, customer: { code: 'KH002' } });
+    expect(otherParty.statusCode).toBe(409);
+  });
+
+  it('đường dẫn lạ dưới /api/ext/v1: không khóa 401, có khóa 404', async () => {
+    const anon = await ctx.app.inject({ method: 'GET', url: '/api/ext/v1/khong-co' });
+    expect(anon.statusCode).toBe(401);
+    const { key } = await createKey(t);
+    expect((await ext(key, 'GET', '/khong-co')).statusCode).toBe(404);
+  });
+
+  it('khách theo mã phải đang hoạt động và là khách hàng', async () => {
+    const { key } = await createKey(t);
+    expect((await t.call('POST', '/api/catalogs/party', { code: 'CHINCC', name: 'Chỉ nhà cung cấp', is_customer: false, is_vendor: true })).statusCode).toBe(201);
+    const a = await ext(key, 'POST', '/sales', sale({ customer: { code: 'CHINCC' } }));
+    expect(a.statusCode, a.body).toBe(404);
+    expect(a.json().error.code).toBe('PARTY_NOT_FOUND');
+    await sql`UPDATE party SET is_active = false WHERE code = 'KH002' AND tenant_id = ${t.tenantId}::uuid`.execute(ctx.t.admin);
+    const b = await ext(key, 'POST', '/sales', sale({ customer: { code: 'KH002' } }));
+    expect(b.statusCode, b.body).toBe(404);
+  });
+
+  it('/stock báo truncated khi chạm giới hạn (không chạm thì không có trường)', async () => {
+    const { key } = await createKey(t, { scopes: ['stock.read'] });
+    const r = await ext(key, 'GET', '/stock?warehouseCode=K1');
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).not.toHaveProperty('truncated');
+  });
 });
