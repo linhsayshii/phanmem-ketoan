@@ -135,7 +135,7 @@ const webhookRoutes: FastifyPluginAsync = async (app) => {
         if (!m.accountNo || normAcc(m.accountNo) !== normAcc(feed.account_no)) { mismatch = true; continue; } // bỏ qua nhưng vẫn báo thành công để bên gửi không gửi lại vô hạn
         await trx.insertInto('bank_transaction').values({ tenant_id: hit.tenant_id, bank_account_id: feed.bank_account_id, feed_id: feed.id, source: feed.provider, external_id: m.externalId,
           txn_time: m.txnTime, value_date: m.valueDate, amount_in: m.amountIn, amount_out: m.amountOut, balance_after: m.balanceAfter, description: m.description, reference: m.reference,
-          counter_account: m.counterAccount, counter_name: m.counterName, payment_code: m.paymentCode, raw: JSON.stringify(m.raw).replaceAll('\\u0000', '') })
+          counter_account: m.counterAccount, counter_name: m.counterName, payment_code: m.paymentCode, raw: JSON.stringify(m.raw).replace(/(?<!\\)((?:\\\\)*)\\u0000/g, '$1') }) // jsonb không nhận \u0000; giữ chẵn lẻ dấu \
           .onConflict((oc) => oc.columns(['tenant_id', 'source', 'external_id']).doNothing()).execute();
       }
       await logRow(trx, hit.tenant_id, feed.id, true, 200, mismatch ? 'ACCOUNT_MISMATCH' : null, sha);

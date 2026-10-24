@@ -158,9 +158,11 @@ describe('webhook ngân hàng', () => {
     const f = await createFeed(t, { provider: 'sepay', authKind: 'hmac', secret: 'khoa-chuan-hoa' });
     const countAudit = async () => Number((await sql<{ n: string }>`SELECT count(*)::text n FROM audit_event WHERE tenant_id = ${t.tenantId}::uuid AND entity = 'bank_feed'`.execute(ctx.t.admin)).rows[0]!.n);
     const before = await countAudit();
-    const body = sepayBody({ accountNumber: '0071000123456', content: 'noi dung\u0000co nul' });
+    const body = sepayBody({ accountNumber: '0071000123456', content: 'noi dung\u0000co nul \\u0000 giu nguyen' });
     for (let i = 0; i < 3; i++) { const r = await hook(f, sepaySign('khoa-chuan-hoa', body), body); expect(r.statusCode, r.body).toBe(200); }
     expect(await txns(t)).toHaveLength(1);
+    const st = (await sql<{ description: string; c: string }>`SELECT description, raw->>'content' c FROM bank_transaction WHERE tenant_id = ${t.tenantId}::uuid`.execute(ctx.t.admin)).rows[0]!;
+    expect(st).toEqual({ description: 'noi dungco nul \\u0000 giu nguyen', c: 'noi dungco nul \\u0000 giu nguyen' });
     expect(await countAudit()).toBe(before);
     const list = await ctx.app.inject({ method: 'GET', url: '/api/bank-feeds', headers: { cookie: t.cookie } });
     expect(list.json()[0].lastReceivedAt).toBeTruthy();
