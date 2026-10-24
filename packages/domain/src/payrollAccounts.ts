@@ -8,6 +8,8 @@ export interface PayrollAccountMap {
   cost?: Record<CostRole, string>;
   // Lãi lỗ theo hợp đồng/vụ việc (GĐ6 Task 13b): tiền tố tài khoản từng nhóm (doanh thu, giảm trừ, giá vốn, chi phí sản xuất, bán hàng, quản lý doanh nghiệp).
   pnl?: Record<PnlGroup, string[]>;
+  // Chi phí sản xuất kinh doanh dở dang (GĐ6 Task 13c): số dư 154 theo vụ việc/hợp đồng, kết chuyển giá vốn vụ việc Nợ 632 / Có 154.
+  wip?: string;
 }
 export type PnlGroup = 'revenue' | 'deduction' | 'cogs' | 'production' | 'selling' | 'admin';
 // Vai trò bộ phận cho tài khoản chi phí lương mặc định: sản xuất trực tiếp, quản lý phân xưởng, bán hàng, quản lý doanh nghiệp.

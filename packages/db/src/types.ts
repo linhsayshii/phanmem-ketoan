@@ -178,6 +178,11 @@ export interface CostRunTable {
   id: Generated<number>; tenant_id: string; year: number; month: number; status: string; regime: string; params: ColumnType<unknown, string, string>; input_hash: string;
   voucher_id: string | null; warnings: ColumnType<unknown, string | undefined, string>; run_by: Generated<string | null>; run_at: Timestamp;
 }
+// 0108: phân bổ chi phí chung vào vụ việc (alloc, PB) và kết chuyển giá vốn vụ việc 154 → 632 (cogs, GT).
+export interface ProjectAllocRunTable {
+  id: Generated<number>; tenant_id: string; kind: string; year: number; month: number; status: string; regime: string; params: ColumnType<unknown, string, string>; input_hash: string;
+  result: ColumnType<unknown, string | undefined, string>; voucher_id: string | null; warnings: ColumnType<unknown, string | undefined, string>; run_by: Generated<string | null>; run_at: Timestamp;
+}
 export interface CostRunObjectTable {
   id: Generated<number>; tenant_id: string; run_id: number; cost_object_id: number; method: string; wip_method: string;
   completion_material: Numeric | null; completion_labor: Numeric | null; completion_overhead: Numeric | null; completed: boolean | null;
@@ -257,7 +262,8 @@ export interface OpeningBalanceTable {
   id: Generated<number>; tenant_id: string; fiscal_year: number; account_id: number; party_id: string | null; bank_account_id: number | null; currency_code: Generated<string>;
   debit: NumericDefault; credit: NumericDefault; debit_currency: NumericDefault; credit_currency: NumericDefault;
   doc_no: string | null; doc_date: DateOnly | null; due_date: DateOnly | null; // số dư công nợ theo từng hóa đơn
-  contract_id: number | null; // khế ước vay (TK 341x, 335)
+  contract_id: number | null; // khế ước vay (TK 341x, 335); hợp đồng bán/mua (0108)
+  project_id: number | null; // vụ việc (0108)
 }
 export interface OpeningStockTable {
   id: Generated<number>; tenant_id: string; fiscal_year: number; item_id: number; warehouse_id: number; lot_no: Generated<string>; expiry_date: DateOnly | null; quantity: Numeric; value: NumericDefault;
@@ -608,6 +614,7 @@ export interface Database {
   cost_run: CostRunTable;
   cost_run_object: CostRunObjectTable;
   cost_run_output: CostRunOutputTable;
+  project_alloc_run: ProjectAllocRunTable;
   bank_feed: BankFeedTable;
   bank_transaction: BankTransactionTable;
   bank_webhook_log: BankWebhookLogTable;

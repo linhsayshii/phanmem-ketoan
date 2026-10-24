@@ -37,6 +37,7 @@ describe('tài khoản lương theo chế độ (data/payroll/accounts.json)', (
       for (const c of Object.values(g).flat()) expect(name(r, c), `${r}: không có TK ${c}`).toBeDefined();
       expect([name(r, g.revenue[0]!), name(r, g.cogs[0]!)]).toEqual([expect.stringMatching(/^doanh thu bán hàng/i), expect.stringMatching(/giá vốn/i)]);
       expect(name(r, g.selling[0]!)).toMatch(/chi phí bán hàng/i);
+      expect(name(r, loadPayrollAccounts(r)!.wip!)).toMatch(/dở dang/i); // Task 13c: số dư 154 theo vụ việc, kết chuyển giá vốn vụ việc
     }
     expect(loadPayrollAccounts('TT133')!.pnl).toMatchObject({ deduction: [], production: ['154'], selling: ['6421'], admin: ['6422'] });
     for (const r of ['TT99', 'TT200'] as const) expect(loadPayrollAccounts(r)!.pnl).toMatchObject({ deduction: ['521'], production: ['621', '622', '623', '627'], selling: ['641'], admin: ['642'] });
