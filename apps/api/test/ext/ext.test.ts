@@ -177,6 +177,9 @@ describe('API ngoài /api/ext/v1', () => {
     expect(same.statusCode).toBe(200);
     expect(same.json()).toEqual(r1.json());
     expect(same.json()).not.toHaveProperty('description');
+    const v = await sql<{ description: string; ext_fingerprint: string }>`SELECT description, ext_fingerprint FROM voucher WHERE id = ${r1.json().voucherId}::uuid`.execute(ctx.t.admin);
+    expect(v.rows[0]!.description).toBe(`Bán hàng POS ${body.externalId}`);
+    expect(v.rows[0]!.ext_fingerprint).toMatch(/^[0-9a-f]{16}$/);
     const diff = await ext(key, 'POST', '/sales', { ...body, lines: [{ itemCode: 'SP1', quantity: '3', unitPrice: '100' }, body.lines[1]] });
     expect(diff.statusCode, diff.body).toBe(409);
     expect(diff.json().error.code).toBe('EXTERNAL_ID_CONFLICT');

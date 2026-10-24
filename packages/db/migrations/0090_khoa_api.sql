@@ -31,3 +31,6 @@ CREATE FUNCTION fn_api_key_lookup(p_prefix text) RETURNS TABLE (id uuid, tenant_
   SELECT k.id, k.tenant_id, k.user_id, k.key_hash, k.scopes, k.revoked_at, k.expires_at FROM api_key k WHERE k.prefix = p_prefix $$;
 REVOKE ALL ON FUNCTION fn_api_key_lookup(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION fn_api_key_lookup(text) TO app_user;
+
+-- Dấu vân tay nội dung đơn bán qua API ngoài (phát hiện gửi lại externalId với thân khác). Không hiện cho người dùng; route chứng từ chung không ghi cột này.
+ALTER TABLE voucher ADD COLUMN ext_fingerprint text CHECK (ext_fingerprint ~ '^[0-9a-f]{16,64}$');

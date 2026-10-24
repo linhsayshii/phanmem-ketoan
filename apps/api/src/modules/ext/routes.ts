@@ -50,22 +50,22 @@ const salesBody = z.object({
 type SalesBody = z.infer<typeof salesBody>;
 
 async function saleRow(trx: Trx, externalId: string) {
-  const rows = await trx.selectFrom('voucher').select(['id', 'voucher_no', 'state', 'idempotency_key', 'description']).where('idempotency_key', 'in', [`ext:${externalId}`, `ext:${externalId}:pay`]).execute();
+  const rows = await trx.selectFrom('voucher').select(['id', 'voucher_no', 'state', 'idempotency_key', 'ext_fingerprint']).where('idempotency_key', 'in', [`ext:${externalId}`, `ext:${externalId}:pay`]).execute();
   const main = rows.find((r) => r.idempotency_key === `ext:${externalId}`);
   if (!main) return null;
   const pay = rows.find((r) => r.idempotency_key === `ext:${externalId}:pay`);
-  return { description: main.description, result: { voucherId: main.id, voucherNo: main.voucher_no, state: main.state, ...(pay && { paymentVoucherId: pay.id, paymentVoucherNo: pay.voucher_no }) } };
+  return { fingerprint: main.ext_fingerprint, result: { voucherId: main.id, voucherNo: main.voucher_no, state: main.state, ...(pay && { paymentVoucherId: pay.id, paymentVoucherNo: pay.voucher_no }) } };
 }
 async function saleResult(trx: Trx, externalId: string) {
   return (await saleRow(trx, externalId))?.result ?? null;
 }
 
-// Dấu vân tay nội dung đơn (ngày, khách đã phân giải, kho, dòng hàng, thanh toán) ghi vào diễn giải chứng từ để phát hiện gửi lại externalId với thân khác.
+// Dấu vân tay nội dung đơn (ngày, khách đã phân giải, kho, dòng hàng, thanh toán) ghi vào voucher.ext_fingerprint để phát hiện gửi lại externalId với thân khác.
 const saleFingerprint = (b: SalesBody, partyCode: string, warehouseCode: string | undefined) => createHash('sha256').update(JSON.stringify([
   b.date, partyCode, warehouseCode ?? null, b.lines.map((l) => [l.itemCode, D(l.quantity).toString(), D(l.unitPrice).toString(), l.uomCode ?? null, l.taxCode ?? null, l.discount ?? '0']),
   b.payment ? [b.payment.method, b.payment.bankAccountCode ?? null, b.payment.amount] : null,
 ])).digest('hex').slice(0, 16);
-const saleDescription = (b: SalesBody, fp: string) => `Bán hàng POS ${b.externalId} [${fp}]`;
+const saleDescription = (b: SalesBody) => `Bán hàng POS ${b.externalId}`;
 
 async function resolveParty(trx: Trx, tenantId: string, c: SalesBody['customer']): Promise<string> {
   if (c.code) {
@@ -119,12 +119,13 @@ async function createSale(trx: Trx, ctx: { tenantId: string; userId: string; aut
   if (!group) throw new AppError('INVOICE_GROUP_MISMATCH', 'Không có nhóm hóa đơn bán ra khớp thuế suất của dòng hàng đầu tiên', 400);
 
   const input: InvoiceInput = {
-    voucherType, postingDate: b.date, documentDate: b.date, partyCode, currencyCode: 'VND', description: saleDescription(b, saleFingerprint(b, partyCode, warehouseCode)), items: rows as InvoiceInput['items'], idempotencyKey: `ext:${b.externalId}`,
+    voucherType, postingDate: b.date, documentDate: b.date, partyCode, currencyCode: 'VND', description: saleDescription(b), items: rows as InvoiceInput['items'], idempotencyKey: `ext:${b.externalId}`,
     invoice: { invoiceDate: b.date, invoiceGroupCode: group.code, ...(b.einvoiceSeriesId ? { einvoiceSeriesId: b.einvoiceSeriesId } : { invoiceNo: b.externalId }),
       ...(b.customer.name && { partyName: b.customer.name }), ...(b.customer.address && { partyAddress: b.customer.address }), ...(b.customer.taxCode && !b.customer.code && { partyTaxCode: b.customer.taxCode }) },
   };
   const inv = await createInvoice(trx, ctx, input);
   if (inv.state !== 'draft' || inv.version !== 1) return { created: false };
+  await trx.updateTable('voucher').set({ ext_fingerprint: saleFingerprint(b, partyCode, warehouseCode) }).where('id', '=', inv.id).execute();
   if (wantsPost) await postWithCashCheck(trx, ctx.tenantId, inv.id);
 
   if (b.payment) {
@@ -211,7 +212,7 @@ const extRoutes: FastifyPluginAsyncZod = async (app) => {
       if (prior) {
         const partyCode = await resolveParty(trx, tenantId, req.body.customer);
         const wh = req.body.warehouseCode ?? key.defaultWarehouseCode ?? undefined;
-        if (prior.description !== saleDescription(req.body, saleFingerprint(req.body, partyCode, wh))) throw new AppError('EXTERNAL_ID_CONFLICT', `externalId "${req.body.externalId}" đã dùng cho đơn có nội dung khác; hãy dùng externalId mới cho đơn mới`, 409);
+        if (prior.fingerprint !== saleFingerprint(req.body, partyCode, wh)) throw new AppError('EXTERNAL_ID_CONFLICT', `externalId "${req.body.externalId}" đã dùng cho đơn có nội dung khác; hãy dùng externalId mới cho đơn mới`, 409);
         return { status: 200, body: prior.result, posted: false };
       }
       const r = await createSale(trx, { tenantId, userId: req.auth!.userId, auth: req.auth! }, key, req.body);
