@@ -173,6 +173,23 @@ export interface CostNormTable {
   created_at: Generated<string>; updated_at: Generated<string>;
 }
 export interface CostNormLineTable { id: Generated<number>; tenant_id: string; norm_id: number; line_no: number; item_id: number; quantity: Numeric; loss_percent: NumericDefault; note: string | null }
+export interface CostRunTable {
+  id: Generated<number>; tenant_id: string; year: number; month: number; status: string; regime: string; params: ColumnType<unknown, string, string>; input_hash: string;
+  voucher_id: string | null; warnings: ColumnType<unknown, string | undefined, string>; run_by: Generated<string | null>; run_at: Timestamp;
+}
+export interface CostRunObjectTable {
+  id: Generated<number>; tenant_id: string; run_id: number; cost_object_id: number; method: string; wip_method: string;
+  completion_material: Numeric | null; completion_labor: Numeric | null; completion_overhead: Numeric | null; completed: boolean | null;
+  overhead_basis: NumericDefault; allocated_overhead: NumericDefault;
+  opening_material: Numeric; opening_labor: Numeric; opening_overhead: Numeric; incurred_material: Numeric; incurred_labor: Numeric; incurred_overhead: Numeric;
+  closing_material: Numeric; closing_labor: Numeric; closing_overhead: Numeric; cost_material: Numeric; cost_labor: Numeric; cost_overhead: Numeric; total_cost: Numeric;
+  completed_qty: NumericDefault; wip_qty: NumericDefault; unit_cost: Numeric | null;
+}
+export interface CostRunOutputTable {
+  id: Generated<number>; tenant_id: string; run_id: number; run_object_id: number; line_no: number; item_id: number | null; qty: Numeric; wip_qty: NumericDefault; coefficient: Numeric | null;
+  standard_material: Numeric | null; standard_labor: Numeric | null; standard_overhead: Numeric | null;
+  cost_material: Numeric; cost_labor: Numeric; cost_overhead: Numeric; total: Numeric; unit_cost: Numeric;
+}
 export interface ContractTable { id: Generated<number>; tenant_id: string; code: string; name: string; party_id: string | null; kind: string }
 export interface AssetCategoryTable {
   id: Generated<number>; tenant_id: string; code: string; name: string; kind: string; asset_account_code: string; depreciation_account_code: string | null;
@@ -587,6 +604,9 @@ export interface Database {
   cost_object: CostObjectTable;
   cost_norm: CostNormTable;
   cost_norm_line: CostNormLineTable;
+  cost_run: CostRunTable;
+  cost_run_object: CostRunObjectTable;
+  cost_run_output: CostRunOutputTable;
   bank_feed: BankFeedTable;
   bank_transaction: BankTransactionTable;
   bank_webhook_log: BankWebhookLogTable;

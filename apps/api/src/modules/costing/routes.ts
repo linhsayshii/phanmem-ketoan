@@ -2,7 +2,10 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
+import type { FastifyRequest } from 'fastify';
+import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { collectCosts } from './collect.js';
+import { costRunInput, getCostRun, isStale, listCostRuns, previewCostRun, runCostRun } from './costRun.js';
 import { costNormInput, createCostNorm, deleteCostNorm, getCostNorm, listCostNorms, updateCostNorm } from './norms.js';
 import { COST_OBJECT_KINDS, costObjectInput, createCostObject, deleteCostObject, getCostObject, listCostObjects, lookupCostObjects, updateCostObject } from './objects.js';
 
@@ -38,6 +41,26 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     month: z.coerce.number().int().min(1).max(12), objectId: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional() }) } }, async (req) => {
     if (!req.auth!.sensitive.has('view_cost')) throw new AppError('FORBIDDEN', 'Không có quyền xem giá vốn', 403);
     return app.withTenant(req, (trx) => collectCosts(trx, req.query), READ_SNAPSHOT);
+  });
+  // Chạy giá thành kỳ (Task 11a): mọi route cần cờ view_cost (giá thành là dữ liệu giá vốn). Xem trước chỉ đọc; Chạy/chạy lại ghi GT (kỳ khóa sổ cần quyền ghi lùi).
+  const viewCost = (req: FastifyRequest) => { if (!req.auth!.sensitive.has('view_cost')) throw new AppError('FORBIDDEN', 'Không có quyền xem giá vốn', 403); };
+  const period = z.object({ year: z.coerce.number().int().min(2000).max(2100), month: z.coerce.number().int().min(1).max(12) });
+  app.get('/api/costing/runs', { preHandler: app.requirePermission('cost_run.view'), schema: { querystring: period.pick({ year: true }) } }, async (req) => {
+    viewCost(req); return app.withTenant(req, (trx) => listCostRuns(trx, req.query.year), READ_SNAPSHOT);
+  });
+  app.get('/api/costing/runs/:year/:month', { preHandler: app.requirePermission('cost_run.view'), schema: { params: period } }, async (req) => {
+    viewCost(req);
+    return app.withTenant(req, async (trx) => { const r = await getCostRun(trx, req.params.year, req.params.month); return { ...r, stale: await isStale(trx, r) }; }, READ_SNAPSHOT);
+  });
+  app.post('/api/costing/runs/preview', { preHandler: app.requirePermission('cost_run.view'), schema: { body: costRunInput } }, async (req) => {
+    viewCost(req); return app.withTenant(req, (trx) => previewCostRun(trx, req.body.year, req.body.month, req.body.params), READ_SNAPSHOT);
+  });
+  app.post('/api/costing/runs', { preHandler: app.requirePermission('cost_run.run'), schema: { body: costRunInput } }, async (req) => {
+    viewCost(req);
+    const ctx = { tenantId: req.auth!.tenantId!, userId: req.auth!.userId, canBackdate: req.auth!.permissions.has('voucher.backdate_locked') };
+    const out = await app.withOverride(req, (trx) => runCostRun(trx, ctx, req.body.year, req.body.month, req.body.params));
+    if (!out.unchanged) void notifyRecompute(app, ctx.tenantId);
+    return out;
   });
   // F4 trên lưới chứng từ: ai lập được chứng từ là tra được (như khế ước, tài sản).
   app.get('/api/lookups/cost-objects', { preHandler: app.requirePermission('voucher.view'), schema: { querystring: z.object({ q: z.string().default(''), size: z.coerce.number().int().min(1).max(200).default(50) }) } },
