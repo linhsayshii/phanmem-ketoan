@@ -14,8 +14,8 @@ let ctx: TestApp; let n = 0;
 beforeAll(async () => { ctx = await createTestApp(); });
 afterAll(async () => { await ctx.close(); });
 
-async function tenant() {
-  const { cookie, tenantId } = await setupLedgerTenant(ctx, `G6${Date.now()}${n++}`, 'TT99');
+async function tenant(regime: 'TT99' | 'TT133' = 'TT99') {
+  const { cookie, tenantId } = await setupLedgerTenant(ctx, `G6${Date.now()}${n++}`, regime);
   const call = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object, c = cookie) => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload ? { payload } : {}) });
   const ok = async (method: 'GET' | 'POST' | 'PUT', url: string, payload?: object, c = cookie): Promise<Json> => {
     const r = await call(method, url, payload, c); expect(r.statusCode, `${method} ${url}: ${r.body}`).toBeLessThan(300); return r.json();
@@ -39,7 +39,7 @@ async function tenant() {
 const L = (accountCode: string, debit: string, credit: string, more: object = {}) => ({ accountCode, debit, credit, ...more });
 
 const SALARY = ['LUONG_THIEU_MST', 'LUONG_THIEU_TK_NH', 'LUONG_NV_NGHI_VAN_TINH', 'LUONG_CAN_TINH_LAI', 'LUONG_LECH_SO_CAI', 'LUONG_BH_VUOT_TRAN'];
-const COST = ['GIA_THANH_CAN_CHAY_LAI', 'GIA_THANH_154_CON_DU', 'GIA_THANH_THIEU_DINH_MUC', 'GIA_THANH_621_622_627_CON_DU', 'GIA_THANH_DAU_RA_KHONG_MA_HANG'];
+const COST = ['VU_VIEC_CHI_PHI_CHUNG_CHUA_PHAN_BO', 'GIA_THANH_CAN_CHAY_LAI', 'GIA_THANH_154_CON_DU', 'GIA_THANH_THIEU_DINH_MUC', 'GIA_THANH_621_622_627_CON_DU', 'GIA_THANH_DAU_RA_KHONG_MA_HANG'];
 const CONTRACT = ['HOP_DONG_QUA_HAN_DOT', 'HOP_DONG_VUOT_GIA_TRI'];
 
 describe('cờ nhạy cảm của quy tắc GĐ6', () => {
@@ -238,6 +238,55 @@ describe('soát lỗi giá thành', () => {
     expect(hits[0]).toMatchObject({ ref: 'CT1', detail: 'Đã hoàn thành (kỳ 05/2026), TK 154 còn dư 200000' });
     await t.pkt('2026-05-31', [L('632', '200000', '0', { projectCode: 'P1' }), L('154', '0', '200000', { projectCode: 'P1' })]);
     expect(await t.run('GIA_THANH_DAU_RA_KHONG_MA_HANG', m(5))).toEqual([]);
+  });
+
+  it('GIA_THANH_DAU_RA_KHONG_MA_HANG: kết chuyển giá vốn bằng chứng từ GT của 13c (POST /api/projects/alloc, kind cogs) thì hết báo', async () => {
+    const jul = { from: '2026-07-01', to: '2026-07-31' };
+    await t.ok('POST', '/api/catalogs/project', { code: 'P2', name: 'Công trình 2' }); // vụ việc sạch: không dính dư 154 của ca tháng 5
+    await t.ok('POST', '/api/costing/objects', { code: 'CT2', name: 'Công trình 2', kind: 'project', projectCode: 'P2' });
+    await t.pkt('2026-07-10', [L('622', '300000', '0', { projectCode: 'P2', costObjectCode: 'CT2' }), L('111', '0', '300000')]);
+    await costRun(7, { objects: [{ objectCode: 'CT2', method: 'project', completed: true }] });
+    expect((await t.run('GIA_THANH_DAU_RA_KHONG_MA_HANG', jul)).map((x) => x.detail)).toEqual(['Đã hoàn thành (kỳ 07/2026), TK 154 còn dư 300000']);
+    const cogs = await t.ok('POST', '/api/projects/alloc', { kind: 'cogs', year: 2026, month: 7, params: { projectCodes: ['P2'] } });
+    expect(cogs.status).toBe('posted');
+    expect(await t.run('GIA_THANH_DAU_RA_KHONG_MA_HANG', jul)).toEqual([]);
+  });
+});
+
+describe('soát lỗi vụ việc', () => {
+  const sevenMar = { from: '2026-03-01', to: '2026-03-31' };
+  const setup = async (regime: 'TT99' | 'TT133', projects: string[]) => {
+    const t = await tenant(regime);
+    for (const code of projects) await t.ok('POST', '/api/catalogs/project', { code, name: `Công trình ${code}` });
+    return t;
+  };
+  const rev = (t: Awaited<ReturnType<typeof tenant>>) => t.pkt('2026-03-10', [L('111', '100000000', '0'), L('511', '0', '100000000', { projectCode: 'P1' })]);
+
+  it('TT99: chi phí 641/642 chưa gắn vụ việc bị báo khi có vụ việc đang hoạt động; phân bổ đủ thì hết; chi phí thêm sau phân bổ báo lại; tháng khác và tổng bằng 0 không báo', async () => {
+    const t = await setup('TT99', ['P1', 'P2']);
+    await rev(t);
+    await t.pkt('2026-03-20', [L('6411', '1000000', '0'), L('6421', '500000', '0'), L('111', '0', '1500000')]);
+    const hits = await t.run('VU_VIEC_CHI_PHI_CHUNG_CHUA_PHAN_BO', sevenMar);
+    expect(hits.map((x) => [x.ref, x.detail])).toEqual([['641', 'Kỳ 03/2026: chi phí bán hàng chưa phân bổ vào vụ việc 1000000 (2 vụ việc đang hoạt động)'], ['642', 'Kỳ 03/2026: chi phí quản lý doanh nghiệp chưa phân bổ vào vụ việc 500000 (2 vụ việc đang hoạt động)']]);
+    expect(await t.run('VU_VIEC_CHI_PHI_CHUNG_CHUA_PHAN_BO', { from: '2026-04-01', to: '2026-04-30' })).toEqual([]);
+    await t.ok('POST', '/api/projects/alloc', { kind: 'alloc', year: 2026, month: 3, params: { basis: 'revenue' } });
+    expect(await t.run('VU_VIEC_CHI_PHI_CHUNG_CHUA_PHAN_BO', sevenMar)).toEqual([]);
+    await t.pkt('2026-03-25', [L('6411', '200000', '0'), L('111', '0', '200000')]);
+    expect((await t.run('VU_VIEC_CHI_PHI_CHUNG_CHUA_PHAN_BO', sevenMar)).map((x) => x.detail)).toEqual(['Kỳ 03/2026: chi phí bán hàng chưa phân bổ vào vụ việc 200000 (2 vụ việc đang hoạt động)']);
+    // Khoảng nhiều tháng: mỗi tháng một dòng.
+    await t.pkt('2026-05-20', [L('6421', '300000', '0'), L('111', '0', '300000')]);
+    expect((await t.run('VU_VIEC_CHI_PHI_CHUNG_CHUA_PHAN_BO')).map((x) => x.detail?.slice(0, 10))).toEqual(['Kỳ 03/2026', 'Kỳ 05/2026']);
+  });
+
+  it('TT133: nhóm 6421/6422 theo chế độ; không vụ việc hoạt động (chưa có hoặc đã ngừng) thì không báo', async () => {
+    const none = await setup('TT133', []);
+    await none.pkt('2026-03-20', [L('6421', '700000', '0'), L('1111', '0', '700000')]);
+    expect(await none.run('VU_VIEC_CHI_PHI_CHUNG_CHUA_PHAN_BO', sevenMar)).toEqual([]);
+    const t = await setup('TT133', ['P1']);
+    await t.pkt('2026-03-20', [L('6421', '700000', '0'), L('6422', '100000', '0'), L('1111', '0', '800000')]);
+    expect((await t.run('VU_VIEC_CHI_PHI_CHUNG_CHUA_PHAN_BO', sevenMar)).map((x) => x.ref)).toEqual(['6421', '6422']);
+    await t.admin(sql`UPDATE project SET is_active = false WHERE tenant_id = ${t.tenantId}::uuid`);
+    expect(await t.run('VU_VIEC_CHI_PHI_CHUNG_CHUA_PHAN_BO', sevenMar)).toEqual([]);
   });
 });
 
