@@ -54,14 +54,14 @@ BEGIN
       ORDER BY i.issue_date, i.id$q$,
    'Đã lập chứng từ từ hóa đơn mà chữ ký số của người bán không hợp lệ', 'Kiểm tra lại hóa đơn với người bán; cân nhắc hủy chứng từ', true, '{}'),
   (p_tenant, 'NH_CHUA_DOI_CHIEU', 'Giao dịch ngân hàng chưa đối chiếu quá 3 ngày', 'warning',
-   $q$SELECT NULL::uuid, to_char(t.value_date, 'DD/MM/YYYY') || ' ' || b.account_no, CASE WHEN t.amount_in > 0 THEN 'Thu ' || t.amount_in ELSE 'Chi ' || t.amount_out END || coalesce(' - ' || t.description, '')
+   $q$SELECT t.voucher_id, to_char(t.value_date, 'DD/MM/YYYY') || ' ' || b.account_no, CASE WHEN t.amount_in > 0 THEN 'Thu ' || trim_scale(t.amount_in) ELSE 'Chi ' || trim_scale(t.amount_out) END || coalesce(' - ' || t.description, '')
       FROM bank_transaction t JOIN bank_account b ON b.tenant_id = t.tenant_id AND b.id = t.bank_account_id
       WHERE t.status = 'new' AND t.value_date BETWEEN $1 AND $2 AND (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date - t.value_date > 3
       ORDER BY t.value_date, t.id$q$,
    'Giao dịch ngân hàng chưa được đối chiếu với chứng từ quá 3 ngày', 'Đối chiếu hoặc bỏ qua giao dịch (Đối chiếu ngân hàng)', true, '{}'),
   -- Số tiền phía ngân hàng của chứng từ so với giao dịch: cùng phép so với fn_bank_txn_voucher_state (0088).
   (p_tenant, 'NH_LECH_SO_TIEN', 'Chứng từ gắn giao dịch ngân hàng lệch số tiền', 'error',
-   $q$SELECT t.voucher_id, coalesce(v.voucher_no, '(nháp)'), 'Giao dịch ' || (CASE WHEN t.amount_in > 0 THEN t.amount_in ELSE t.amount_out END) || ', chứng từ ' || s.amt
+   $q$SELECT t.voucher_id, coalesce(v.voucher_no, '(nháp)'), 'Giao dịch ' || trim_scale(CASE WHEN t.amount_in > 0 THEN t.amount_in ELSE t.amount_out END) || ', chứng từ ' || trim_scale(s.amt)
       FROM bank_transaction t JOIN bank_account b ON b.tenant_id = t.tenant_id AND b.id = t.bank_account_id
       JOIN voucher v ON v.id = t.voucher_id AND v.state <> 'cancelled'
       CROSS JOIN LATERAL (SELECT coalesce(sum(CASE WHEN b.currency_code = 'VND' THEN CASE WHEN t.amount_in > 0 THEN l.debit ELSE l.credit END ELSE abs(l.amount_currency) END), 0) AS amt

@@ -13,7 +13,7 @@ const setRule = (id: number, payload: object) => ctx.app.inject({ method: 'PUT',
 const ownerRule = (code: string, sqlText: string, isSystem = false) => ctx.t.admin.insertInto('data_check_rule')
   .values({ tenant_id: tenantId, code, name: code, severity: 'warning', sql: sqlText, message: 'm', is_system: isSystem }).execute();
 const disable = (...codes: string[]) => ctx.t.admin.updateTable('data_check_rule').set({ is_enabled: false }).where('tenant_id', '=', tenantId).where('code', 'in', codes).execute();
-const range = { from: '2026-01-01', to: '2026-12-31' };
+const range = { from: '2026-01-01', to: '2099-12-31' }; // gồm hôm nay: quy tắc HDDT_DANG_GUI dựng dòng theo now()
 const voucherCount = async () => Number((await sql<{ n: number }>`SELECT count(*)::int AS n FROM voucher WHERE tenant_id = ${tenantId}::uuid`.execute(ctx.t.admin)).rows[0]!.n);
 
 beforeAll(async () => {
@@ -311,7 +311,7 @@ describe('soát lỗi', () => {
     expect(of('HDDT_CAN_DAO_GOC').map((x) => x.voucherId)).toEqual([ids.revPos]);
     expect(of('HDDV_CHUA_LAP_CT').map((x) => x.ref)).toEqual(['IN1', 'IN5']);
     expect(of('HDDV_CHU_KY').map((x) => x.voucherId)).toEqual([ids.sigPos]);
-    expect(of('NH_CHUA_DOI_CHIEU').length).toBe(2); // T1 và T3 (nháp gắn, trạng thái new); T2 đã bỏ qua, T4 đã đối chiếu không bị báo
-    expect(of('NH_LECH_SO_TIEN').map((x) => ({ v: x.voucherId, d: x.detail }))).toEqual([{ v: ids.lechPos, d: 'Giao dịch 100.0000, chứng từ 90' }]);
+    expect(of('NH_CHUA_DOI_CHIEU').map((x) => x.voucherId)).toEqual([null, ids.lechPos]); // T1 và T3 (nháp gắn, trạng thái new); T2 đã bỏ qua, T4 đã đối chiếu không bị báo
+    expect(of('NH_LECH_SO_TIEN').map((x) => ({ v: x.voucherId, d: x.detail }))).toEqual([{ v: ids.lechPos, d: 'Giao dịch 100, chứng từ 90' }]);
   }, 30_000);
 });
