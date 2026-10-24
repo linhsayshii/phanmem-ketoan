@@ -9,6 +9,7 @@ import { runCosting } from '../inventory/costingRun.js';
 import { runOutflowAdjust } from '../cash/fx.js';
 import { runRevaluation } from '../cash/revaluation.js';
 import { runVatOffset } from '../tax/vatOffset.js';
+import { runPayrollStep } from '../payroll/periodStep.js';
 import { runAllClosing } from './closing.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { CLOSE_STEPS, closeStatus, logCloseStep, runSummary, stepDef, type CloseStepKey } from './periodClose.js';
@@ -18,32 +19,39 @@ const body = z.object({ fiscalYear: z.number().int(), periodNo: z.number().int()
 const routes: FastifyPluginAsyncZod = async (app) => {
   app.get('/api/period-close/:year/:period', { preHandler: app.requirePermission('period_close.view'),
     schema: { params: z.object({ year: z.coerce.number().int(), period: z.coerce.number().int().min(1).max(12) }) } }, async (req) =>
-    app.withTenant(req, (trx) => closeStatus(trx, req.params.year, req.params.period), READ_SNAPSHOT));
+    app.withTenant(req, (trx) => closeStatus(trx, req.auth!.tenantId!, req.params.year, req.params.period, req.auth!.sensitive.has('view_salary')), READ_SNAPSHOT));
 
   // Chạy một bước của quy trình (gọi hàm chạy của bước), ghi nhật ký, trả kết quả và trạng thái mới. Bước tùy chọn có thể bỏ qua (skip).
   app.post('/api/period-close/run', { preHandler: app.requirePermission('period_close.view'), schema: { body } }, async (req) => {
     const auth = req.auth!; const { fiscalYear: fy, periodNo: pn, step } = req.body;
     const def = stepDef(step);
+    if ('unavailable' in def) throw new AppError('STEP_UNAVAILABLE', `Bước "${def.name}" chưa hỗ trợ trong phiên bản này`, 409);
     if (!auth.permissions.has(def.permission)) throw new AppError('FORBIDDEN', `Thiếu quyền ${def.permission}`, 403);
     const ctx = { tenantId: auth.tenantId!, userId: auth.userId, canBackdate: auth.permissions.has('voucher.backdate_locked') };
+    const status = (trx: Parameters<typeof closeStatus>[0]) => closeStatus(trx, ctx.tenantId, fy, pn, auth.sensitive.has('view_salary'));
     if (req.body.skip) {
       if (!('optional' in def)) throw new AppError('STEP_NOT_OPTIONAL', `Bước "${def.name}" bắt buộc, không bỏ qua được`, 409);
       return app.withTenant(req, async (trx) => {
         await periodSpan(trx, fy, pn);
-        if ((await closeStatus(trx, fy, pn)).steps.find((x) => x.key === step)!.status !== 'pending') throw new AppError('STEP_NOT_PENDING', `Bước "${def.name}" đã có lần chạy, không bỏ qua được`, 409);
+        if ((await status(trx)).steps.find((x) => x.key === step)!.status !== 'pending') throw new AppError('STEP_NOT_PENDING', `Bước "${def.name}" đã có lần chạy, không bỏ qua được`, 409);
         await logCloseStep(trx, ctx, { fiscalYear: fy, periodNo: pn, step, ok: true, summary: { skipped: true } });
-        return { result: { skipped: true }, ...(await closeStatus(trx, fy, pn)) };
+        return { result: { skipped: true }, ...(await status(trx)) };
       });
     }
     if (step === 'closing') {
       const to = (await app.withTenant(req, (trx) => periodSpan(trx, fy, pn), READ_SNAPSHOT)).span.to;
       const result = await runAllClosing(app, req, to);
-      return { result, ...(await app.withTenant(req, (trx) => closeStatus(trx, fy, pn), READ_SNAPSHOT)) };
+      return { result, ...(await app.withTenant(req, (trx) => status(trx), READ_SNAPSHOT)) };
     }
     const out = await app.withOverride(req, async (trx) => {
       const { span } = await periodSpan(trx, fy, pn);
       let result: object; let summary: Record<string, unknown>; let ok = true;
       switch (step) {
+        case 'payroll': { // chi tiết (mã bảng lương, tên) cần view_salary; thiếu thì chỉ cờ chung
+          const r = await runPayrollStep(trx, ctx, span); ok = !r.needCalculation.length;
+          result = auth.sensitive.has('view_salary') ? r : { masked: true, skipped: r.skipped, unchanged: r.unchanged };
+          summary = { ...runSummary(r), ...(r.skipped ? { skipped: true } : {}), errors: r.needCalculation.length }; break;
+        }
         case 'tool': case 'prepaid': case 'depreciation': { const r = await runAssetPeriod(trx, ctx, { kind: step, fiscalYear: fy, periodNo: pn }); result = r; summary = runSummary(r); break; }
         case 'loan_interest': { const r = await runLoanInterest(trx, ctx, { fiscalYear: fy, periodNo: pn }); result = redactLoanRun(r, !auth.sensitive.has('view_payable')); summary = runSummary(r); break; } // lãi từng khế ước: cần view_payable
         case 'amortization': {
@@ -61,7 +69,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         default: throw new AppError('VALIDATION', 'Bước không chạy được ở đây', 400);
       }
       await logCloseStep(trx, ctx, { fiscalYear: fy, periodNo: pn, step, ok, summary });
-      return { changed: !summary.unchanged, body: { result, ...(await closeStatus(trx, fy, pn)) } };
+      return { changed: !summary.unchanged, body: { result, ...(await status(trx)) } };
     });
     if (out.changed) notifyRecompute(app, auth.tenantId!);
     return out.body;

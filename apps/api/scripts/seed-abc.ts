@@ -395,13 +395,14 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
   // Cuối tháng: phân bổ doanh thu nhận trước, tính lại tỷ giá xuất quỹ, (tháng 12) đối trừ tự động và đánh giá lại, cuối quý khấu trừ thuế và (quý 3, 4) lập, chốt tờ khai.
   for (let m = 1; m <= 12; m++) {
     events.push({ key: `${lastDay(m)}~`, run: async () => {
-      // Quy trình cuối kỳ theo thứ tự cố định (CLOSE_STEPS): giá vốn, CCDC, chi phí trả trước, khấu hao, lãi vay rồi các bước còn lại; mỗi lần chạy ghi nhật ký như route.
+      // Quy trình cuối kỳ theo thứ tự cố định (CLOSE_STEPS): lương, CCDC, chi phí trả trước, khấu hao, lãi vay, giá vốn rồi các bước còn lại; mỗi lần chạy ghi nhật ký như route.
       const log = (step: CloseStepKey, summary: Record<string, unknown>, ok = true) => logCloseStep(trx, ctx, { fiscalYear: FY, periodNo: m, step, ok, summary });
-      const co = await costing(day(m, 1), lastDay(m)); // giá vốn kho từng tháng (GV chỉ lập khi giá tính khác giá ghi tạm)
-      await log('costing', { ...runSummary(co), errors: co.summary.errors.length }, !co.summary.errors.length);
+      await log('payroll', { skipped: true }); // công ty mẫu chưa có bảng lương
       for (const kind of ['tool', 'prepaid', 'depreciation'] as const)
         await logCloseStep(trx, ctx, { fiscalYear: FY, periodNo: m, step: kind, ok: true, summary: runSummary(await runAssetPeriod(trx, ctx, { kind, fiscalYear: FY, periodNo: m })) });
       await logCloseStep(trx, ctx, { fiscalYear: FY, periodNo: m, step: 'loan_interest', ok: true, summary: runSummary(await runLoanInterest(trx, ctx, { fiscalYear: FY, periodNo: m })) });
+      const co = await costing(day(m, 1), lastDay(m)); // giá vốn kho từng tháng (GV chỉ lập khi giá tính khác giá ghi tạm)
+      await log('costing', { ...runSummary(co), errors: co.summary.errors.length }, !co.summary.errors.length);
       const am = await runAmortization(trx, ctx, runInput.parse({ fiscalYear: FY, periodNo: m }));
       await log('amortization', { ...runSummary({ voucherIds: am.created.map((x) => x.voucherId), reversedVoucherIds: am.reversedVoucherIds, unchanged: !am.created.length && am.unchanged > 0 }), skippedSchedules: am.skipped.length });
       if (m === 12) await autoSettle(trx, auth, autoInput.parse({ accountCode: '131', partyCode: 'KH001', date: lastDay(m) }));

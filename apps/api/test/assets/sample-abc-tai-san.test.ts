@@ -85,7 +85,7 @@ describe('Bộ dữ liệu mẫu ABC có tài sản, công cụ dụng cụ, kh�
     for (let m = 1; m <= 12; m++) {
       const st = (await get(`/api/period-close/2026/${m}`)).steps as { key: string; status: string }[];
       const status = Object.fromEntries(st.map((s) => [s.key, s.status]));
-      const want: Record<string, string> = { tool: 'done', prepaid: 'done', depreciation: 'done', loan_interest: 'done', amortization: 'done', costing: 'done', fx_outflow: 'done',
+      const want: Record<string, string> = { payroll: 'skipped_empty', product_cost: 'skipped_empty', tool: 'done', prepaid: 'done', depreciation: 'done', loan_interest: 'done', amortization: 'done', costing: 'done', fx_outflow: 'done',
         fx_revaluation: m === 12 ? 'done' : 'skipped_empty', vat_offset: m % 3 === 0 ? 'done' : 'pending', closing: 'pending' };
       expect(status, `tháng ${m}`).toEqual(want);
       await assertBalanceSheet(ctx, cookie, new Date(Date.UTC(2026, m, 0)).toISOString().slice(0, 10));

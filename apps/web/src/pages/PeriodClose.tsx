@@ -8,7 +8,7 @@ import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
 type Status = 'done' | 'rerun' | 'pending' | 'skipped_empty';
-interface Step { failed: boolean; key: string; name: string; permission: string; optional: boolean; status: Status; lastRunAt: string | null; reason: string | null; lastUser: string | null;
+interface Step { failed: boolean; key: string; name: string; permission: string; optional: boolean; unavailable: boolean; masked: boolean; status: Status; lastRunAt: string | null; reason: string | null; lastUser: string | null;
   vouchers: { id: string; voucherNo: string | null; voucherType: string | null }[] }
 interface CloseState { steps: Step[]; nextStep: string | null }
 
@@ -60,18 +60,20 @@ export default function PeriodClosePage() {
       <Table<Step> rowKey="key" size="small" pagination={false} loading={state.isFetching} dataSource={steps} data-testid="close-steps" columns={[
         { title: 'Thứ tự', width: 70, render: (_, __, i) => i + 1 },
         { title: 'Bước', render: (_, s) => <span>{s.name}{s.optional && <Tag style={{ marginLeft: 8 }}>Tùy chọn</Tag>}</span> },
-        { title: 'Trạng thái', width: 260, render: (_, s) => <span><Tag color={TAG[s.status].color}>{TAG[s.status].label}</Tag>{s.reason && <Typography.Text type="secondary">{s.reason}</Typography.Text>}</span> },
+        { title: 'Trạng thái', width: 260, render: (_, s) => (
+          <span><Tag color={s.unavailable ? 'default' : TAG[s.status].color}>{s.unavailable ? 'Chưa hỗ trợ' : TAG[s.status].label}</Tag>{s.reason && !s.unavailable && <Typography.Text type="secondary">{s.reason}</Typography.Text>}
+            {s.masked && <Typography.Text type="secondary"> (chi tiết lương cần quyền xem lương)</Typography.Text>}</span>) },
         { title: 'Lần chạy cuối', width: 190, render: (_, s) => (s.lastRunAt ? `${dayjs(s.lastRunAt).format('DD/MM/YYYY HH:mm')}${s.lastUser ? ` - ${s.lastUser}` : ''}` : '') },
         { title: 'Chứng từ', render: (_, s) => s.vouchers.map((v, i) => (
           <span key={v.id}>{i > 0 && ', '}{v.voucherType ? <Link to="/chung-tu/$type/$id" params={{ type: v.voucherType, id: v.id }}>{v.voucherNo ?? 'Xem'}</Link> : (v.voucherNo ?? '')}</span>)) },
-        { title: '', width: 190, render: (_, s) => (
+        { title: '', width: 190, render: (_, s) => (s.unavailable ? null : (
           <Space size={4}>
             <Button size="small" disabled={!mayRun(s) || run.isPending} onClick={() => run.mutate({ step: s.key })}>{s.status === 'pending' ? 'Chạy' : 'Chạy lại'}</Button>
             {s.optional && s.status === 'pending' && (
               <Popconfirm title="Bỏ qua bước này?" okText="Bỏ qua" cancelText="Hủy" onConfirm={() => run.mutate({ step: s.key, skip: true })}>
                 <Button size="small" disabled={!mayRun(s) || run.isPending}>Bỏ qua</Button>
               </Popconfirm>)}
-          </Space>) },
+          </Space>)) },
       ]} />
     </>
   );

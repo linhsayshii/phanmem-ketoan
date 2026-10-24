@@ -27,7 +27,7 @@ test('Quy trình cuối kỳ: chạy bước, bỏ qua bước tùy chọn, F9 c
   await page.locator('.ant-select', { has: page.getByRole('combobox', { name: 'Chọn kỳ' }) }).click();
   await page.getByTitle(`Tháng ${period}`, { exact: true }).click();
   const rows = page.getByTestId('close-steps');
-  await expect(rows.locator('tbody tr')).toHaveCount(10);
+  await expect(rows.locator('tbody tr')).toHaveCount(12);
 
   // Chạy riêng bước đầu: dòng thành "Đã chạy" (lần đầu "Chạy", các lần sau "Chạy lại")
   const tool = rows.locator('tr', { hasText: 'Phân bổ công cụ dụng cụ' });
@@ -42,6 +42,15 @@ test('Quy trình cuối kỳ: chạy bước, bỏ qua bước tùy chọn, F9 c
     await expect(fx).toContainText('Đã bỏ qua');
   }
 
+  // Bước lương: CSDL e2e dùng chung có thể còn bảng lương nháp ở kỳ này (spec bảng lương) làm bước chưa xong; chưa chạy thì bỏ qua như bước tùy chọn.
+  if ((await status()).steps.find((x) => x.key === 'payroll')!.status === 'pending') {
+    const payroll = rows.locator('tr', { hasText: 'Tính lương và hạch toán' });
+    await payroll.getByRole('button', { name: 'Bỏ qua' }).click();
+    await page.locator('.ant-popover').getByRole('button', { name: 'Bỏ qua' }).click();
+    await expect(payroll).toContainText('Đã bỏ qua');
+  }
+  await expect(rows.locator('tr', { hasText: 'Giá thành sản phẩm' })).toContainText('Chưa hỗ trợ');
+
   // F9 chạy bước kế tiếp cho tới hết
   for (let i = 0; i < 12; i++) {
     const before = await status();
@@ -52,5 +61,5 @@ test('Quy trình cuối kỳ: chạy bước, bỏ qua bước tùy chọn, F9 c
     await expect.poll(async () => { const s = await status(); return s.nextStep !== before.nextStep || s.steps.find((x) => x.key === before.nextStep)!.status; }, { timeout: 60000 }).not.toBe(before.steps.find((x) => x.key === before.nextStep)!.status);
   }
   expect((await status()).nextStep).toBeNull();
-  for (const r of await rows.locator('tbody tr').all()) await expect(r).toContainText(/Đã chạy|Đã bỏ qua/);
+  for (const r of await rows.locator('tbody tr').all()) await expect(r).toContainText(/Đã chạy|Đã bỏ qua|Chưa hỗ trợ/);
 });
