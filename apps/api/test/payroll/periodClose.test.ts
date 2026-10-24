@@ -7,7 +7,7 @@ import { setupLedgerTenant } from '../invariants/helpers.js';
 // GĐ6 Task 6c: bước "Tính lương và hạch toán" trong quy trình cuối kỳ (CLOSE_STEPS). Tham số là Dữ liệu minh họa (payroll-20.json).
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-type Step = { key: string; status: string; failed: boolean; reason: string | null; masked: boolean; unavailable: boolean; vouchers: { id: string; voucherNo: string | null }[] };
+type Step = { key: string; status: string; failed: boolean; reason: string | null; masked: boolean; vouchers: { id: string; voucherNo: string | null }[] };
 const fx = JSON.parse(readFileSync(new URL('../fixtures/payroll-20.json', import.meta.url), 'utf8')) as Json;
 let ctx: TestApp; let owner: string; let noFlag: string; let noPost: string; let tenantId: string; let empId: number;
 type M = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -46,13 +46,11 @@ beforeAll(async () => {
 afterAll(async () => { await ctx.close(); });
 
 describe('bước payroll trong quy trình cuối kỳ', () => {
-  it('thứ tự bước mới; kỳ mới nextStep = payroll; giá thành sản phẩm chưa hỗ trợ: hiện "bỏ qua", chạy 409, không chặn nextStep', async () => {
+  it('thứ tự bước mới; kỳ mới nextStep = payroll; giá thành sản phẩm có bộ chạy: chưa chạy, tùy chọn', async () => {
     const s = await status(5);
     expect(s.steps.map((x) => x.key)).toEqual(['payroll', 'tool', 'prepaid', 'depreciation', 'loan_interest', 'costing', 'product_cost', 'amortization', 'fx_outflow', 'fx_revaluation', 'vat_offset', 'closing']);
     expect(s.nextStep).toBe('payroll');
-    expect(s.steps.find((x) => x.key === 'product_cost')).toMatchObject({ status: 'skipped_empty', unavailable: true });
-    const r = await run('product_cost', 5); expect(r.statusCode).toBe(409); expect(r.json().error.code).toBe('STEP_UNAVAILABLE');
-    expect((await run('product_cost', 5, owner, { skip: true })).statusCode).toBe(409);
+    expect(s.steps.find((x) => x.key === 'product_cost')).toMatchObject({ status: 'pending', masked: false });
   });
 
   it('kỳ không có bảng lương: chạy → skipped_empty, không sinh LU, bước sau không phải chạy lại; bỏ qua tay được khi chưa chạy', async () => {
