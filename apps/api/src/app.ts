@@ -55,6 +55,7 @@ import inboundRoutes from './modules/inbound/routes.js';
 import openingAssetRoutes from './modules/assets/openingAssets.js';
 import bankRoutes from './modules/bank/routes.js';
 import bankWebhookRoutes from './modules/bank/webhook.js';
+import extRoutes from './modules/ext/routes.js';
 
 // Token webhook nằm trong URL: che trước khi ghi nhật ký.
 export const maskHookUrl = (url: string) => url.replace(/(\/api\/hooks\/bank\/)[^/?#]+/, '$1***');
@@ -119,6 +120,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(openingAssetRoutes);
   await app.register(bankRoutes);
   await app.register(bankWebhookRoutes); // công khai, có parser thân thô riêng
+  await app.register(extRoutes); // khóa API (phiên) và /api/ext/v1 (Bearer kt_…, parser XML riêng)
   app.get('/api/health', async () => ({ ok: true }));
   return app;
 }

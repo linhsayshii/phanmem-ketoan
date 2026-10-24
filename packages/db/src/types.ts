@@ -362,6 +362,10 @@ export interface InboundInvoiceLineTable {
   quantity: Numeric | null; unit_price: Numeric | null; discount_amount: Numeric | null; amount: Numeric | null; tax_rate: string | null;
 }
 
+export interface ApiKeyTable {
+  id: Generated<string>; tenant_id: string; user_id: string; name: string; prefix: string; key_hash: string; scopes: string[]; default_warehouse_id: number | null;
+  post_sales: Generated<boolean>; expires_at: Timestamp | null; revoked_at: Timestamp | null; last_used_at: Timestamp | null; created_at: Generated<Timestamp>;
+}
 export interface BankFeedTable {
   id: Generated<number>; tenant_id: string; bank_account_id: number; provider: string; token_hash: string; auth_kind: string; secret: Buffer | null; apikey_hash: string | null;
   is_active: Generated<boolean>; created_at: Generated<Timestamp>;
@@ -497,6 +501,7 @@ export interface Database {
   inbound_invoice: InboundInvoiceTable;
   inbound_invoice_line: InboundInvoiceLineTable;
   inbound_item_map: InboundItemMapTable;
+  api_key: ApiKeyTable;
   bank_feed: BankFeedTable;
   bank_transaction: BankTransactionTable;
   bank_webhook_log: BankWebhookLogTable;
