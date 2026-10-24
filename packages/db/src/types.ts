@@ -134,6 +134,7 @@ export interface StockMoveTable {
 export interface StockCostLayerTable {
   id: Generated<number>; tenant_id: string; move_id: number; item_id: number; warehouse_id: number; lot_no: string | null; kind: string; posting_date: DateOnly;
   qty: Numeric; unit_cost: Numeric; value: Numeric; remaining_qty: Numeric; remaining_value: Numeric; voucher_id: Generated<string | null>; landed: Generated<boolean>;
+  cost_run_id: Generated<number | null>; // lớp giá nhập thành phẩm do chạy giá thành sinh (0106)
 }
 // Chi phí mua hàng (CPM) phân bổ cho dòng nhập (dòng PNK, dòng MH nhập kho cùng hóa đơn).
 export interface LandedCostAllocTable { id: Generated<number>; tenant_id: string; voucher_id: string; receipt_line_id: number | null; receipt_voucher_id: string; receipt_line_no: number; amount: Numeric; basis: string }
