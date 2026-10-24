@@ -152,7 +152,7 @@ async function manualOf(trx: Trx, lineIds: { id: number; employee_id: number }[]
 }
 
 // Tính các dòng và ghi kết quả (giá trị tính lại thay hết, ô nhập tay giữ nguyên). Lỗi động cơ nêu nhân viên; thiếu tham số 409 nêu mã tham số và ngày.
-async function computeLines(trx: Trx, tenantId: string, run: RunRow, lines: { id: number; employee_id: number }[]) {
+export async function computeLines(trx: Trx, tenantId: string, run: RunRow, lines: { id: number; employee_id: number }[]) {
   const structure = await structureOf(trx, run.structure_id);
   const g = await gather(trx, tenantId, run, structure, lines.map((l) => l.employee_id), await manualOf(trx, lines));
   const { to } = monthRange(run.year, run.month);
@@ -189,12 +189,12 @@ async function computeLines(trx: Trx, tenantId: string, run: RunRow, lines: { id
 }
 
 // Chữ ký cả bảng = băm các chữ ký dòng (theo nhân viên); Task 6 so để biết bảng đã đổi từ lần hạch toán trước.
-async function refreshRunHash(trx: Trx, runId: number) {
+export async function refreshRunHash(trx: Trx, runId: number) {
   const ls = await trx.selectFrom('payroll_line').select(['employee_id', 'input_hash']).where('run_id', '=', runId).orderBy('employee_id').execute();
   await trx.updateTable('payroll_run').set({ input_hash: sha(ls.map((l) => [l.employee_id, l.input_hash])), updated_at: sql`now()` }).where('id', '=', runId).execute();
 }
 
-async function lockRun(trx: Trx, runId: number) {
+export async function lockRun(trx: Trx, runId: number) {
   const r = await trx.selectFrom('payroll_run').select(['id', 'year', 'month', 'kind', 'status', 'structure_id', 'name']).where('id', '=', runId).forUpdate().executeTakeFirst();
   if (!r) throw new AppError('PAYROLL_RUN_NOT_FOUND', 'Không tìm thấy bảng lương', 404);
   return r;
@@ -315,15 +315,15 @@ async function linesOf(trx: Trx, tenantId: string, run: RunRow, employeeIds?: nu
 }
 
 export async function getRun(trx: Trx, tenantId: string, runId: number) {
-  const r = await trx.selectFrom('payroll_run as r').innerJoin('payroll_structure as s', 's.id', 'r.structure_id').leftJoin('department as d', 'd.id', 'r.department_id')
-    .selectAll('r').select(['s.name as structure_name', 's.columns', 's.proration', 'd.name as department_name']).where('r.id', '=', runId).executeTakeFirst();
+  const r = await trx.selectFrom('payroll_run as r').innerJoin('payroll_structure as s', 's.id', 'r.structure_id').leftJoin('department as d', 'd.id', 'r.department_id').leftJoin('voucher as v', 'v.id', 'r.voucher_id')
+    .selectAll('r').select(['s.name as structure_name', 's.columns', 's.proration', 'd.name as department_name', 'v.voucher_no']).where('r.id', '=', runId).executeTakeFirst();
   if (!r) throw new AppError('PAYROLL_RUN_NOT_FOUND', 'Không tìm thấy bảng lương', 404);
   const { lines } = await linesOf(trx, tenantId, r);
   const totals: Record<string, string> = {};
   for (const l of lines) for (const [c, v] of Object.entries(l.values)) totals[c] = D(totals[c] ?? 0).plus(v).toString();
   return {
     id: r.id, year: r.year, month: r.month, kind: r.kind, status: r.status, name: r.name, departmentId: r.department_id, departmentName: r.department_name,
-    structureId: r.structure_id, structureName: r.structure_name, proration: r.proration, inputHash: r.input_hash, calculatedAt: r.calculated_at, voucherId: r.voucher_id,
+    structureId: r.structure_id, structureName: r.structure_name, proration: r.proration, inputHash: r.input_hash, calculatedAt: r.calculated_at, voucherId: r.voucher_id, voucherNo: r.voucher_no,
     note: r.note, createdAt: r.created_at, warnings: r.warnings as PayrollWarning[], stale: lines.some((l) => l.stale), employeeCount: lines.length,
     columns: r.columns as PayrollColumn[], lines, totals,
   };
