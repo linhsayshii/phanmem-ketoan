@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, DatePicker, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, message } from 'antd';
+import { Alert, Button, DatePicker, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, message, theme } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import type { ColDef, EditableCallbackParams } from 'ag-grid-community';
@@ -13,11 +13,17 @@ import type { Series } from './einvoiceCommon.js';
 import { groupFetcher, iso, PickDialog, taxFetcher, text, useInvoiceGroups, useTaxDefs } from './voucherCommon.js';
 
 // Hợp đồng bán/mua (GĐ6 Task 13a): thông tin hợp đồng, đợt thanh toán, lập hóa đơn nháp (HDB/HDM) từ đợt, theo dõi đã/chưa lập hóa đơn.
+// Task 13b: phụ lục điều chỉnh giá trị, thẻ Theo dõi (đã xuất hóa đơn, % thực hiện, công nợ, quá hạn).
 type Kind = 'sale' | 'purchase';
 interface Milestone { id: number; seq: number; description: string; dueDate: string | null; percent: string | null; amount: string; taxCode: string | null; status: 'planned' | 'cancelled' | 'invoiced'; note: string | null;
   voucherId: string | null; voucherType: string | null; voucherNo: string | null; voucherState: string | null }
 interface ContractRow { id: number; code: string; name: string; kind: Kind; partyCode: string | null; partyName: string | null; signedDate: string | null; validFrom: string | null; validTo: string | null; value: string; currencyCode: string;
-  status: string; note: string | null; accountCode: string | null; taxCode: string | null; milestoneTotal: string; milestoneCount: number; invoicedTotal: string; invoicedCount: number; milestones?: Milestone[] }
+  status: string; note: string | null; accountCode: string | null; taxCode: string | null; milestoneTotal: string; milestoneCount: number; invoicedTotal: string; invoicedCount: number; milestones?: Milestone[]; amendments?: Amendment[] }
+interface Amendment { id: number; seq: number; amendmentNo: string | null; signedDate: string; description: string; valueChange: string; note: string | null }
+type AmendRow = { id: string; seq: string; amendmentNo: string; signedDate: string; description: string; valueChange: string; note: string };
+const blankAmend = (): AmendRow => ({ id: '', seq: '', amendmentNo: '', signedDate: '', description: '', valueChange: '', note: '' });
+export interface Track { adjustedValue: string; amendmentTotal: string; invoiced: string; invoicedVnd: string; remainingValue: string; performedPct: string | null; milestoneTotal: string; milestoneInvoiced: string;
+  overdueMilestoneCount: number; overdueMilestoneAmount: string; nextDueDate: string | null; debtIncurred: string | null; settled: string | null; outstanding: string | null; overdueDebt: string | null; debtHidden: boolean }
 type GridRow = { id: string; seq: string; description: string; dueDate: string; percent: string; amount: string; taxCode: string; status: string; invoice: string; invoiced: string };
 
 const KIND_LABEL: Record<Kind, string> = { sale: 'Bán', purchase: 'Mua' };
@@ -81,11 +87,13 @@ interface TermValues { code: string; name: string; kind: Kind; partyCode: string
 const dateOrNull = (d: dayjs.Dayjs | null | undefined) => (d ? iso(d) : null);
 
 function ContractDrawer({ initial, onClose }: { initial: ContractRow | 'new'; onClose: () => void }) {
-  const qc = useQueryClient(); const { can } = useAuth();
+  const qc = useQueryClient(); const { can } = useAuth(); const { token } = theme.useToken();
   const [form] = Form.useForm<TermValues>();
   const [id, setId] = useState<number | null>(initial === 'new' ? null : initial.id);
   const [tab, setTab] = useState('terms'); const [err, setErr] = useState<string | null>(null);
   const [rows, setRows] = useState<GridRow[]>([blankRow()]); const rowsRef = useRef(rows); rowsRef.current = rows;
+  const [amends, setAmends] = useState<AmendRow[]>([blankAmend()]); const amendsRef = useRef(amends); amendsRef.current = amends;
+  const [asOf, setAsOf] = useState(todayVn());
   const [pick, setPick] = useState<number | null>(null); const [invoicing, setInvoicing] = useState<Milestone | null>(null);
   const detail = useQuery({ queryKey: ['contract', id], enabled: id !== null, queryFn: () => api<ContractRow>(`/api/contracts/${id}`) });
   const c = detail.data;
@@ -94,13 +102,18 @@ function ContractDrawer({ initial, onClose }: { initial: ContractRow | 'new'; on
   const currency = (Form.useWatch('currencyCode', form) as string | undefined) ?? 'VND'; const dp = currency === 'VND' ? 0 : 4;
   const taxDefs = useTaxDefs(); const taxes = useMemo(() => taxFetcher(taxDefs.data ?? [], kind, true), [taxDefs.data, kind]);
   const accounts = useMemo(() => accountFetcherFor(), []);
-  const refresh = () => { for (const k of ['contract', 'contracts']) void qc.invalidateQueries({ queryKey: [k] }); };
+  const refresh = () => { for (const k of ['contract', 'contracts', 'contract-track']) void qc.invalidateQueries({ queryKey: [k] }); };
+  const canTrack = can('contract_track.view');
+  const track = useQuery({ queryKey: ['contract-track', id, asOf], enabled: id !== null && canTrack && tab === 'track', retry: false,
+    queryFn: () => api<Track & { milestones: (Milestone & { overdue: boolean })[] }>(`/api/contracts/${id}/track?asOf=${asOf}`) });
 
   useEffect(() => {
     if (!c) { if (initial === 'new') form.setFieldsValue({ kind: 'sale', currencyCode: 'VND', status: 'active', value: '0' }); return; }
     form.setFieldsValue({ code: c.code, name: c.name, kind: c.kind, partyCode: c.partyCode, currencyCode: c.currencyCode, value: D(c.value).toFixed(0), signedDate: c.signedDate ? dayjs(c.signedDate) : null,
       validFrom: c.validFrom ? dayjs(c.validFrom) : null, validTo: c.validTo ? dayjs(c.validTo) : null, status: c.status, accountCode: c.accountCode, taxCode: c.taxCode, note: c.note ?? '' });
     setRows([...(c.milestones ?? []).map((m) => toGrid(m, c.currencyCode === 'VND' ? 0 : 4)), ...(canEdit ? [blankRow()] : [])]);
+    setAmends([...(c.amendments ?? []).map((a) => ({ id: String(a.id), seq: String(a.seq), amendmentNo: a.amendmentNo ?? '', signedDate: a.signedDate, description: a.description, valueChange: a.valueChange, note: a.note ?? '' })),
+      ...(canEdit ? [blankAmend()] : [])]);
   }, [c?.id, detail.dataUpdatedAt]);
 
   const save = useMutation({
@@ -112,6 +125,10 @@ function ContractDrawer({ initial, onClose }: { initial: ContractRow | 'new'; on
       ms.forEach((r, i) => { if (!r.description.trim()) throw new Error(`Đợt dòng ${i + 1}: nhập nội dung đợt`); if (!r.amount && !r.percent) throw new Error(`Đợt dòng ${i + 1}: nhập tỷ lệ hoặc số tiền`); });
       await api(`/api/contracts/${saved.id}/milestones`, { method: 'PUT', json: { milestones: ms.map((r, i) => ({ ...(r.id ? { id: Number(r.id) } : {}), seq: Number(r.seq) || i + 1, description: r.description.trim(),
         dueDate: r.dueDate || null, percent: r.percent || null, amount: r.amount || null, taxCode: r.taxCode.trim() || null, status: r.status === CANCELLED ? 'cancelled' : 'planned' })) } });
+      const am = amendsRef.current.filter((r) => r.id || r.description.trim() || r.valueChange || r.signedDate);
+      am.forEach((r, i) => { if (!r.description.trim() || !r.signedDate) throw new Error(`Phụ lục dòng ${i + 1}: nhập ngày ký và nội dung`); });
+      await api(`/api/contracts/${saved.id}/amendments`, { method: 'PUT', json: { amendments: am.map((r, i) => ({ ...(r.id ? { id: Number(r.id) } : {}), seq: Number(r.seq) || i + 1,
+        amendmentNo: r.amendmentNo.trim() || null, signedDate: r.signedDate, description: r.description.trim(), valueChange: r.valueChange || '0', note: r.note.trim() || null })) } });
       return saved;
     },
     onError: (e) => setErr((e as Error).message), onSuccess: (r) => { setErr(null); setId(r.id); void message.success('Đã lưu hợp đồng'); refresh(); } });
@@ -179,6 +196,40 @@ function ContractDrawer({ initial, onClose }: { initial: ContractRow | 'new'; on
           : <Space size={4}>{m.status === 'planned' && mayInvoice && <Button size="small" onClick={() => setInvoicing(m)}>Lập hóa đơn từ đợt</Button>}
             {canEdit && <Button size="small" type="link" onClick={() => toggleCancel(m.id)}>{m.status === 'cancelled' ? 'Khôi phục đợt' : 'Hủy đợt'}</Button>}</Space>) }]} />
   </>);
+  const amendCols = useMemo<ColDef<AmendRow>[]>(() => [
+    { field: 'seq', headerName: 'STT', width: 70, valueParser: numParser(/^\d{1,4}$/) },
+    { field: 'amendmentNo', headerName: 'Số phụ lục', width: 120 },
+    { field: 'signedDate', headerName: 'Ngày ký', width: 120, valueFormatter: (p) => (p.value ? formatVnDate(p.value as string) : ''),
+      valueParser: (p) => { const t = String(p.newValue ?? '').trim(); return t === '' ? '' : parseVnDate(t) ?? p.oldValue; } },
+    { field: 'description', headerName: 'Nội dung', flex: 1, minWidth: 200 },
+    { field: 'valueChange', headerName: `Tăng (+) / giảm (−) giá trị${currency !== 'VND' ? ` (${currency})` : ''}`, width: 200, cellClass: 'ag-right-aligned-cell',
+      valueFormatter: (p) => (p.value ? formatVnNumber(p.value as string) : ''), valueParser: numParser(/^-?\d{1,16}$/) },
+    { field: 'note', headerName: 'Ghi chú', width: 160 },
+  ], [currency]);
+  const adjusted = (c?.amendments ?? []).reduce((x, a) => x.plus(a.valueChange), D(c?.value ?? 0));
+  const amendmentsTab = (<>
+    <KeyboardGrid<AmendRow> rows={amends} columns={amendCols} onRowsChange={setAmends} addRowTemplate={blankAmend} readOnly={!canEdit} height={220} />
+    <div style={{ margin: '6px 0' }}>Phụ lục ghi phần giá trị tăng (số dương) hoặc giảm (số âm); phụ lục chỉ gia hạn để 0. Lưu (Ctrl+S) lưu cùng hợp đồng.</div>
+    {c && <div data-testid="amendment-summary">Giá trị ký: <b>{money(c.value)}</b> · Giá trị sau phụ lục: <b>{money(adjusted.toString())}</b></div>}
+  </>);
+  const t = track.data;
+  const stat = (label: string, v: string | null | undefined, d = 0) => <span key={label}>{label}: <b>{v === null || v === undefined ? '—' : money(v, d)}</b></span>;
+  const trackTab = (<Space direction="vertical" style={{ width: '100%' }} data-testid="contract-track">
+    <Space wrap><span>Tại ngày</span><DatePicker format="DD/MM/YYYY" allowClear={false} aria-label="Theo dõi tại ngày" value={dayjs(asOf)} onChange={(d) => d && setAsOf(d.format('YYYY-MM-DD'))} /></Space>
+    {track.error && <Alert type="error" showIcon message={(track.error as Error).message} />}
+    {t && <>
+      <Space size="large" wrap>{stat('Giá trị (gồm phụ lục)', t.adjustedValue)}{stat(c?.kind === 'purchase' ? 'Đã nhận hóa đơn' : 'Đã xuất hóa đơn', t.invoiced, dp)}{stat('Còn lại', t.remainingValue, dp)}
+        <span>Thực hiện: <b data-testid="track-pct">{t.performedPct === null ? '—' : `${formatVnNumber(t.performedPct, 2)}%`}</b></span></Space>
+      {t.debtHidden ? <Alert type="info" showIcon message="Không có quyền xem công nợ của hợp đồng này" />
+        : <Space size="large" wrap>{stat('Phát sinh công nợ', t.debtIncurred)}{stat(c?.kind === 'purchase' ? 'Đã trả' : 'Đã thu', t.settled)}
+          {stat(c?.kind === 'purchase' ? 'Còn phải trả' : 'Còn phải thu', t.outstanding)}<span>Quá hạn: <b data-testid="track-overdue" style={D(t.overdueDebt ?? 0).gt(0) ? { color: token.colorError } : undefined}>{money(t.overdueDebt)}</b></span></Space>}
+      {t.overdueMilestoneCount > 0 && <Alert type="warning" showIcon message={`${t.overdueMilestoneCount} đợt đã quá ngày dự kiến mà chưa có hóa đơn ghi sổ (${money(t.overdueMilestoneAmount, dp)} ${c?.currencyCode ?? ''})`} />}
+      <Table<Milestone & { overdue: boolean }> size="small" rowKey="id" dataSource={t.milestones} pagination={false}
+        columns={[{ title: 'STT', dataIndex: 'seq', width: 60 }, { title: 'Nội dung', dataIndex: 'description' }, { title: 'Ngày dự kiến', dataIndex: 'dueDate', width: 110, render: (d: string | null) => (d ? formatVnDate(d) : '') },
+          { title: 'Số tiền chưa thuế', dataIndex: 'amount', align: 'right', width: 150, render: (x: string) => money(x, dp) },
+          { title: 'Tình trạng', width: 160, render: (_, m) => (m.status === 'invoiced' ? <Tag color="green">Đã lập hóa đơn</Tag> : m.status === 'cancelled' ? <Tag>Hủy đợt</Tag> : m.overdue ? <Tag color="red">Quá hạn lập hóa đơn</Tag> : <Tag color="orange">Chưa đến hạn</Tag>) }]} />
+    </>}
+  </Space>);
   return (
     <Drawer open width={1000} title={id === null ? 'Thêm hợp đồng' : `Hợp đồng ${c?.code ?? ''}`} onClose={onClose} destroyOnHidden
       extra={<Space>{id !== null && can('order.delete') && <Popconfirm title="Xóa hợp đồng này?" okText="Xóa" cancelText="Không" onConfirm={() => remove.mutate()}><Button danger>Xóa</Button></Popconfirm>}
@@ -186,7 +237,8 @@ function ContractDrawer({ initial, onClose }: { initial: ContractRow | 'new'; on
       <div onKeyDown={onKey}>
         {c && <div style={{ marginBottom: 8 }}>{KIND_LABEL[c.kind]} · <Tag color={STATUS_COLOR[c.status] ?? 'default'}>{STATUS_LABEL[c.status] ?? c.status}</Tag></div>}
         {err && <Alert type="error" showIcon message={err} style={{ marginBottom: 12 }} />}
-        <Tabs activeKey={tab} onChange={setTab} items={[{ key: 'terms', label: 'Thông tin hợp đồng', children: terms }, { key: 'milestones', label: 'Đợt thanh toán', forceRender: true, children: milestonesTab }]} />
+        <Tabs activeKey={tab} onChange={setTab} items={[{ key: 'terms', label: 'Thông tin hợp đồng', children: terms }, { key: 'milestones', label: 'Đợt thanh toán', forceRender: true, children: milestonesTab },
+          { key: 'amendments', label: 'Phụ lục', forceRender: true, children: amendmentsTab }, ...(id !== null && canTrack ? [{ key: 'track', label: 'Theo dõi', children: trackTab }] : [])]} />
       </div>
       <PickDialog open={pick !== null} catalog="tax_code" fetcher={taxes} onClose={() => setPick(null)}
         onPick={(code) => setRows((rs) => rs.map((r, i) => (i === pick ? { ...r, taxCode: code } : r)))} />
