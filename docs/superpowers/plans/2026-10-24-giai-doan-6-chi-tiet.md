@@ -1,0 +1,274 @@
+# Kế hoạch thực hiện chi tiết: GĐ6 (Lương, giá thành, hợp đồng và vụ việc)
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Doanh nghiệp lập hồ sơ lương nhân viên, chấm công, tính bảng lương theo cấu trúc cấu hình (BHXH/BHYT/BHTN, TNCN lũy tiến, làm thêm giờ), hạch toán chi phí lương theo bộ phận/vụ việc, chi lương theo lô, lập bảng kê khấu trừ TNCN và (khi có mẫu gốc) tờ khai 05/KK-TNCN, 05/QTT-TNCN; tập hợp chi phí 621/622/627 theo đối tượng và tính giá thành (giản đơn, hệ số, tỷ lệ, vụ việc/công trình, đơn hàng) rồi nhập kho thành phẩm theo giá thành; theo dõi hợp đồng theo đợt thanh toán, lãi lỗ theo vụ việc/hợp đồng và phân bổ chi phí bán hàng/QLDN theo vụ việc.
+
+**Architecture:** Giữ modular monolith, thêm ba module API `payroll/`, `costing/`, `contracts/` (và `master/` mở rộng hồ sơ nhân viên). **Sổ cái vẫn là nguồn tiền duy nhất**: bảng lương, giá thành, phân bổ chỉ là *tính toán có phiên bản* sinh chứng từ hệ thống thật (`LU` hạch toán lương, `GT` kết chuyển giá thành, `PB` phân bổ theo vụ việc) có `source_doc_type/source_doc_id`, chạy lại = đảo chứng từ cũ + sinh mới (như `period_run` của GĐ4). Động cơ tính là hàm thuần trong `@kt/domain` (`payroll.ts`, `productCost.ts`) không đụng DB, kiểm thử bằng ví dụ tính tay và fast-check. Tham số pháp lý (tỷ lệ BH, trần/sàn, thuế suất TNCN, giảm trừ, lương tối thiểu vùng) là dữ liệu có ngày hiệu lực; **không có văn bản gốc trên môi trường này nên không có giá trị mặc định pháp lý** (Quy ước 1). Dữ liệu lương nhạy cảm (`view_salary`) chặn ở API mọi đường vào.
+
+---
+
+## Global Constraints
+
+- Mọi quy tắc trong `CLAUDE.md` mục "Quy tắc bất biến". Tiền VND `NUMERIC(20,0)`, nguyên tệ `NUMERIC(20,4)`, tỷ giá `NUMERIC(20,10)`; TypeScript tiền là chuỗi + `D()`; đầu vào tiền VND theo `VND_AMOUNT_RE`; tỷ lệ phần trăm `NUMERIC(7,4)`, số ngày công/giờ `NUMERIC(8,2)`, hệ số `NUMERIC(12,6)`. Không `number` cho tiền; công thức cột lương tính bằng `decimal.js`, làm tròn **một lần ở cuối mỗi cột tiền** theo quy tắc ghi trong cấu trúc (mặc định làm tròn đồng, nửa lên), không làm tròn trung gian.
+- Không `UPDATE`/`DELETE` dòng sổ cái đã ghi sổ. Bảng lương `posted` chỉ đổi qua "Hủy hạch toán" (kỳ mở, `unpost` chứng từ `LU`) hoặc "Chạy lại" (đảo `LU` cũ + sinh `LU` mới); kỳ khóa sổ dùng đảo; loại chứng từ hệ thống (`LU`, `GT`) không sửa/xóa qua route chung (thêm vào `SYSTEM_VOUCHER_TYPES`, trigger bảo vệ chứng từ hệ thống 0015/0030 áp dụng).
+- Bảng mới: `tenant_id uuid NOT NULL REFERENCES tenant(id)`, `SELECT rls_enable('<bảng>')`, `audit_enable` cho bảng người dùng thao tác (bảng dòng tính toán lớn `payroll_line_value`, `product_cost_line` không audit từng dòng, audit ở bảng cha), mọi `UNIQUE` có `tenant_id`, khóa ngoại tổng hợp `(tenant_id, x_id) REFERENCES cha (tenant_id, id)`, `ON DELETE SET NULL (x_id)`, bảng cha có `UNIQUE (tenant_id, id)`. Hàm `SECURITY DEFINER` có `SET search_path = public, pg_temp`.
+- Migration 0001–0093 đóng băng; GĐ6 bắt đầu ở **0094** (bảng "Thứ tự thực hiện"). Định nghĩa lại hàm lấy thân hiện hành bằng `SELECT pg_get_functiondef('<hàm>'::regprocedure)` trên DB đã migrate tới số trước, không chép từ migration cũ (đặc biệt `create_tenant`/`seed_tenant_defaults` khi thêm quyền, `fn_voucher_*` khi thêm cột `voucher_line`).
+- **Pháp lý (Quy ước 1)**: không nhập từ trí nhớ thuế suất TNCN, giảm trừ gia cảnh, tỷ lệ/trần/sàn BHXH-BHYT-BHTN, lương tối thiểu vùng; VPS không có `~/legal-docs` và không tải được văn bản (đã thử, bị chặn). Đặc tả mục 10 liệt kê giá trị *nghiên cứu sơ bộ* để **dữ liệu mẫu minh họa** (ABC/XYZ và kiểm thử) và để người dùng đối chiếu, **không** được nạp vào `legal-params.json` hay coi là đã đối chiếu. Cổng `status.json`: `payrollParams_*` = `false` đến khi người dùng cung cấp văn bản gốc. Mẫu tờ khai 05/KK-TNCN, 05/QTT-TNCN và phụ lục chỉ nhập từ ảnh trang TT 89/2026 Phụ lục I (không có trên máy này): cổng `05KK_TNCN_TT89`, `05QTT_TNCN_TT89` = `false`, API trả 409 `TNCN_TEMPLATE_UNAVAILABLE`, nhưng **phần số liệu nguồn và bảng kê khấu trừ làm đầy đủ** để khi có mẫu chỉ cần nhập JSON chỉ tiêu.
+- **Cờ nhạy cảm `view_salary`** (đã có trong `SENSITIVE_FLAGS`, chưa được dùng ở đâu): thiếu cờ thì API không trả và không nhận (403 `SALARY_FORBIDDEN`, thông báo "Không có quyền xem lương") với: mọi trường lương/phụ cấp/BH/tài khoản ngân hàng/người phụ thuộc của hồ sơ nhân viên, bảng lương và mọi báo cáo lương, tệp chi lương, 05/KK-TNCN, 05/QTT-TNCN và XML, soát lỗi lương (`skipped`), bước "Tính lương" của quy trình cuối kỳ (trạng thái ẩn số tiền), dòng sổ cái của tài khoản 334 và 3383–3386 (sổ chi tiết, sổ cái, BCĐPS theo đối tượng là nhân viên: thêm vào `flagsOf` trong `permissions.ts` kiểu `subledger_kind = 'employee'`, xem Task 1), phản hồi chứng từ `LU` (che số tiền dòng). Danh sách nhân viên (mã, tên, bộ phận) không nhạy cảm (đã dùng ở chứng từ).
+- Chi phí lương theo bộ phận/vụ việc ghi trên `voucher_line.department_id/project_id/cost_item_id/employee_id` (có sẵn từ 0004); đối tượng giá thành thêm cột `voucher_line.cost_object_id` (Task 10).
+- Báo cáo đọc trong `READ_SNAPSHOT`. Mã lỗi `_NOT_FOUND` 404; trạng thái không cho thao tác 409; đầu vào sai 400; thiếu tham số pháp lý 409 `PAYROLL_PARAM_MISSING` (nêu tên tham số, ngày).
+- Giao diện, thông báo lỗi, tài liệu: tiếng Việt kế toán chuẩn (Bảng chấm công, Bảng lương, Thực lĩnh, Tiền lương làm thêm giờ, Bảo hiểm xã hội, Thu nhập chịu thuế, Giảm trừ gia cảnh, Người phụ thuộc, Thu nhập tính thuế, Thuế thu nhập cá nhân khấu trừ, Đối tượng tập hợp chi phí, Định mức nguyên vật liệu, Chi phí sản xuất kinh doanh dở dang, Giá thành đơn vị, Thẻ tính giá thành, Hợp đồng, Đợt thanh toán). Mã, bảng, biến: tiếng Anh.
+- Màn hình mới: skill `evon:ui-ux` chế độ **dựng luôn** (nếu skill không có trong phiên thì áp dụng gu: bảng dày dữ liệu, lưới nhập bàn phím); dùng `KeyboardGrid`, `LookupSelect`, `VnNumberInput`, `useHotkeys`, `useRememberedFilter` của `@kt/ui`; mỗi màn hình ít nhất một spec Playwright trong `apps/web/e2e/` theo khuôn `phieu-thu.spec.ts` (`signIn`).
+- Kiểm thử tuần tự trên PostgreSQL thật (DB tạm theo lần chạy). Bộ API đầy đủ quá 18 phút: tác vụ chỉ chạy kiểm thử liên quan (`pnpm -F @kt/api test -- test/<file>.test.ts`) + `pnpm typecheck` + `pnpm lint`; bộ đầy đủ chạy nền ở Task 17 (`run_in_background`), không sửa mã khi đang chạy. Môi trường cloud: PostgreSQL 16 cục bộ đã chạy (`.env` đã tạo), không Docker.
+- Commit nhỏ Conventional Commits, mô tả tiếng Việt, scope `db|domain|api|worker|web|ui|coa|docs`; trailer `Co-Authored-By` của model viết commit và dòng `Claude-Session`. Làm và **push trên nhánh `claude/magical-ritchie-ijawwy`** sau mỗi tác vụ (không push main, không force-push). Quyết định ghi vào `docs/superpowers/plans/2026-10-24-giai-doan-6-quyet-dinh.md` (đánh số tiếp từ #599). Nhật ký tiến độ một dòng mỗi tác vụ vào `docs/NHAT-KY-TIEN-DO.md` (tạo nếu chưa có).
+
+## Quy ước thiết kế đã chốt
+
+1. **Tham số lương/thuế theo công ty, không mặc định pháp lý.** Bảng `payroll_param (tenant_id, code, valid_from, valid_to, value jsonb, source text NOT NULL)` do người dùng có `payroll.param` nhập (kèm nguồn: điều/khoản/văn bản); tra theo ngày kỳ lương: dòng công ty hiệu lực → nếu không có thì dòng `legal_param` cùng `code` (hiện chưa có) → nếu không có 409 `PAYROLL_PARAM_MISSING`. Mã: `pit_brackets` (`[{ upTo: '5000000'|null, rate: 5 }, …]` thu nhập tính thuế/tháng, năm lấy 12× cho quyết toán), `pit_deduction` (`{ self, dependent }`/tháng), `si_rates` (`{ employee: { si, hi, ui }, employer: { si, hi, ui, occupational } }`, BHXH chia quỹ hưu trí–tử tuất/ốm đau–thai sản/TNLĐ ở `parts` nếu cần hạch toán chi tiết), `si_ceiling` (`{ si_base_max, ui_base_max_multiple_of_min_wage }` hoặc số tiền, theo ngày), `si_floor`, `min_wage_region` (`{ I, II, III, IV }`), `ot_multipliers` (`{ weekday, weekly_rest, holiday }` hệ số số nhân, hiệu lực pháp lý do người dùng nhập, **mặc định cấu trúc là 1,5/2,0/3,0 chỉ khi người dùng nhập tham số**), `pit_non_resident_rate`, `pit_flat_rate_no_contract` (khấu trừ không hợp đồng/hợp đồng < 3 tháng: tỷ lệ nhập tay). Giá trị minh họa của dữ liệu mẫu ghi `source = 'Dữ liệu minh họa của dữ liệu mẫu — chưa đối chiếu văn bản gốc'`; tờ khai/báo cáo hiển thị cảnh báo khi `source` bắt đầu bằng 'Dữ liệu minh họa'.
+2. **Hồ sơ lương tách khỏi `employee`.** `employee` (GĐ0) giữ mã, tên, bộ phận, MST, CCCD. Bảng `employee_payroll` (1–1) giữ lương cơ bản, hình thức trả, phụ cấp (`employee_allowance` nhiều dòng: loại, số tiền, chịu thuế?, tính BH?), tài khoản ngân hàng nhận lương, cư trú thuế, loại hợp đồng lao động, ngày bắt đầu/nghỉ việc, mức lương đóng BH, vùng, có tham gia BHXH/BHYT/BHTN/TNLĐ. `employee_dependent` (người phụ thuộc: tên, quan hệ, MST/CCCD, từ tháng, đến tháng) — giảm trừ tính theo **tháng có hiệu lực**. Thông tin thay đổi theo thời gian (đổi lương) lưu theo `valid_from` (`employee_salary_history`), bảng lương lấy dòng hiệu lực ở cuối kỳ (hoặc ngày công tính theo đoạn: quyết định trong Task 3).
+3. **Chấm công theo kỳ lương (tháng).** `attendance_sheet (tenant, year, month, department_id NULL)` + `attendance_entry (sheet, employee_id, work_date, kind, qty)`; `kind` ∈ `work_day|half_day|hour|ot_weekday_hour|ot_rest_hour|ot_holiday_hour|paid_leave|sick_leave|unpaid_leave|holiday` — đơn vị ngày/buổi/giờ quy về ngày công = giờ ÷ giờ chuẩn/ngày (cài đặt công ty, mặc định nhập). Tổng hợp theo nhân viên cho cột bảng lương `work_days`, `ot_weekday`, `ot_rest`, `ot_holiday`, `paid_leave`…; sửa chấm công sau khi bảng lương `calculated` làm bảng lương "Cần tính lại" (so khớp chữ ký dữ liệu đầu vào).
+4. **Bảng lương cấu hình.** `payroll_structure` (phiên bản bất biến sau khi có bảng lương dùng) có danh sách cột `{ code, name, kind: 'input'|'formula'|'builtin', formula?, taxable?, si_base?, round }` và công thức viết bằng ngôn ngữ biểu thức hiện có của `reportFormula.ts` mở rộng (hàm `MIN`, `MAX`, `IF`, `ROUND`, `PIT(x)`, `SI_EMP`, `SI_ER`, tham chiếu cột theo mã, hằng `PARAM('code')`); không `eval`. Cột dựng sẵn (`builtin`): `work_days`, `base_salary`, `allowances`, `ot_pay`, `gross`, `si_base`, `si_emp_*`, `si_er_*`, `taxable_income`, `deduction_self`, `deduction_dependents`, `pit_base`, `pit`, `net`. Cấu trúc mặc định "Lương cơ bản" do hệ thống tạo; người dùng nhân bản và thêm cột/ sửa công thức. Mọi công thức kiểm tại lưu (vòng tham chiếu, cột không có) → 400.
+5. **Bảng lương là tính toán có phiên bản.** `payroll_run (year, month, department_id NULL, structure_id, status draft|calculated|posted|cancelled, input_hash)`; `payroll_line` mỗi nhân viên (tổng cột chính để truy vấn/báo cáo nhanh: gross, si_emp, si_er, pit, net) + `payroll_line_value (line_id, column_code, value)` đầy đủ cột. Tính lại khi `draft|calculated`; `posted` thì không tính lại (hủy hạch toán/ đảo trước). Một nhân viên chỉ ở một bảng lương `calculated|posted` mỗi kỳ (trừ đoạn bộ phận khác: ràng buộc partial unique `(tenant, year, month, employee)` trên dòng thuộc bảng không `cancelled`).
+6. **Hạch toán lương** (chứng từ `LU`, hệ thống): Nợ chi phí lương (622/6271/6411/6421 hoặc theo chế độ: tài khoản chi phí theo *bộ phận* qua `department_cost_account` hoặc theo vụ việc `project_id`; mặc định theo cấu hình bộ phận: sản xuất trực tiếp → 622, quản lý phân xưởng → 6271, bán hàng → 6411, quản lý DN → 6421; xây lắp → 622/ 623 theo vụ việc), Có 334 (gross); Nợ chi phí BH DN (cùng tài khoản chi phí) / Có 3382 3383 3384 3386 (theo `parts`; chế độ TT133/TT99 dùng đúng mã tài khoản của bảng tài khoản công ty, kiểm có tồn tại; thiếu → 400 `ACCOUNT_MISSING`); Nợ 334 / Có 3383-3384-3386 (phần NLĐ) ; Nợ 334 / Có 3335 (TNCN khấu trừ). Dòng chi phí mang `department_id`, `project_id`, `cost_item_id`, `employee_id` theo nhân viên; dòng 334/33xx mang `employee_id`. Tiền VND, một chứng từ `LU` mỗi bảng lương (nhiều dòng). Quyết định phân tách theo bộ phận/vụ việc: cột `project_id` có trong `employee_payroll.default_project_id` hoặc phân bổ theo tỷ lệ (`employee_cost_split (employee, project_id, pct)`).
+7. **Chi lương và nộp bảo hiểm là chứng từ thường.** Từ bảng lương `posted`: "Lập phiếu chi/Giấy báo Nợ chi lương" tạo **BN hoặc PC nháp** (người dùng sở hữu) Nợ 334 / Có 111/112, một dòng mỗi nhân viên có `employee_id` (đối trừ qua dòng 334, không cần `settlement`: 334 theo dõi theo nhân viên bằng chiều `employee_id`, số dư 334 theo nhân viên đọc từ sổ cái); "Nộp BH" tạo nháp Nợ 3383-3386 / Có 112 theo tổng; "Nộp thuế TNCN" nháp Nợ 3335 / Có 112 (tận dụng quy trình nộp thuế có sẵn). Chi lương theo lô: khung ánh xạ cột tệp (Quy ước 9).
+8. **Giá thành là phiên chạy theo kỳ + đối tượng.** `cost_object (kind product|project|order|contract, item_id|project_id|order_id|contract_id, code, name, method, unit)`; `cost_norm (object/ item, norm lines NVL: item_id, qty per unit, loss%)` ; `cost_run (year, month, method params, status, voucher ids)` ; `cost_run_object` (dở dang đầu, CP phát sinh theo khoản mục 621/622/627, dở dang cuối, tổng giá thành, sản lượng hoàn thành, giá thành đơn vị) ; `cost_run_output` (sản phẩm đầu ra, hệ số, tỷ lệ). Phương pháp: `simple` (giản đơn), `coefficient` (hệ số, quy đổi sản lượng), `ratio` (tỷ lệ: giá thành đơn vị tiêu chuẩn × tỷ lệ), `project` (vụ việc/công trình: dồn toàn bộ), `order` (theo đơn hàng/hợp đồng). Dở dang: `direct_material` (chỉ NVL trực tiếp), `equivalent_units` (sản lượng hoàn thành tương đương, tỷ lệ hoàn thành NVL/NC/SXC riêng), `none`. CP chung (627) phân bổ cho các đối tượng theo tiêu thức: `direct_labor|direct_material|machine_hours|revenue|manual` (tiêu thức nhập/đọc từ sổ cái).
+9. **Hạch toán giá thành** (chứng từ `GT`, hệ thống): kết chuyển 621/622/627 → 154 theo đối tượng (dòng 154 mang `cost_object_id`, `project_id`/`contract_id` nếu có); nhập kho thành phẩm: `PNK` nhập theo giá thành là **điều chỉnh giá nhập thành phẩm có sẵn của GĐ3** (xem `inventory/costingRun.ts`, `stock_move` loại nhập thành phẩm) — hợp đồng: cost run xác định giá thành đơn vị → ghi vào bảng giá nhập thành phẩm của kỳ (cấu hình giá nhập GĐ3) → `runCosting` GĐ3 sinh giá vốn; nhập kho ghi Nợ 155 / Có 154 nằm trong chứng từ `GT` (nhập kho thành phẩm *do phiếu nhập kho PNK của người dùng* đã ghi Nợ 155 / Có 154 theo giá tạm tính; `GT` chỉ ghi chênh lệch giữa giá tạm tính và giá thành thật cho đủ 154 = 0 sau khi trừ dở dang, như `GV` ở GĐ3). Task 11 chốt chi tiết sau khi đọc `costingRun.ts` và ghi quyết định.
+10. **Hợp đồng và vụ việc.** `contract` (GĐ3) được mở rộng: loại (bán/mua/thầu), giá trị, đợt thanh toán `contract_milestone (contract_id, seq, name, due_date, percent|amount, invoiced_voucher_id, paid_amount…)`, phụ lục điều chỉnh giá trị (`contract_amendment`), người phụ trách. Theo dõi: doanh số (HDB/BH có `contract_id`), thu (PT/BC có `contract_id` hoặc đối trừ hóa đơn thuộc hợp đồng), chi (MH/HDM/PC có `contract_id`), thực hiện = doanh thu ghi nhận ÷ giá trị hợp đồng, so với kế hoạch đợt. Sinh hóa đơn từ đợt: tạo HDB nháp (`createInvoice`) có `contract_id`, dòng từ đợt, gắn `invoiced_voucher_id` (gỡ liên kết khi chứng từ xóa/hủy/đảo/bỏ ghi sổ — trigger như bài học GĐ5). Lãi lỗ theo vụ việc/hợp đồng = doanh thu (511, 515 gắn dims) − giá vốn/chi phí gắn dims (621/622/627/632/641/642) từ sổ cái; **phân bổ chi phí bán hàng/QLDN (641/642) theo vụ việc** là chứng từ `PB` thường phân bổ chi phí chưa gắn vụ việc cho các vụ việc theo tiêu thức doanh thu/chi phí trực tiếp (dùng khung phân bổ GĐ1 `allocation`), chạy lại bằng đảo. **Chuyển số dư vụ việc sang năm sau**: số dư đầu năm là số dư cuối kỳ 12 của tài khoản cân đối (đã có), chiều `project_id`/`contract_id` giữ trên dòng `DK` của chứng từ kết chuyển năm — kiểm thử và bổ sung nếu số dư đầu năm mất chiều.
+11. **Chi lương theo lô = khung ánh xạ cột.** `payroll_payment_format (name, file_type csv|xlsx, header_rows, columns[{ field: 'account_no'|'account_name'|'bank_code'|'bank_name'|'amount'|'content'|'employee_code'|'seq', header, format }], delimiter, encoding, content_template)`; không có mẫu từng ngân hàng (chờ người dùng). `POST /api/payroll/runs/:id/payment-file { formatId, bankAccountId }` trả tệp; yêu cầu `view_salary`; nhân viên thiếu tài khoản ngân hàng bị liệt kê trong cảnh báo, không chặn.
+12. **Tờ khai TNCN: số liệu nguồn làm đầy đủ, mẫu chờ văn bản.** `tncn_return` dùng `tax_return` (`form_code` `05/KK-TNCN` kỳ quý `period_kind='quarter'`, `05/QTT-TNCN` kỳ `year`) với `values` = bảng kê từng cá nhân (MST, tên, thu nhập chịu thuế, giảm trừ, thu nhập tính thuế, thuế khấu trừ, cư trú, loại hợp đồng) + tổng; chỉ tiêu theo mẫu chỉ khi `05KK_TNCN_TT89` = `true`. Ký số và XML chỉ làm khi cổng `true` (không dựng cấu trúc XML từ trí nhớ).
+
+## Hợp đồng ghi sổ GĐ6 (ai ghi sổ cái giá trị nào)
+
+| Thao tác | Ai | Sổ cái | Ghi chú |
+|---|---|---|---|
+| Hạch toán bảng lương | `payroll/post.ts` | `LU` (hệ thống): chi phí / 334 / 3382–3386 / 3335 | chạy lại: đảo cũ + sinh mới; hủy hạch toán ở kỳ mở |
+| Lập chi lương / nộp BH / nộp TNCN | người dùng bấm "Lập chứng từ" | BN/PC nháp thường | `payroll_run.pay_voucher_ids`; nháp xóa được, không tự ghi sổ |
+| Tập hợp chi phí theo đối tượng | người dùng nhập dòng chứng từ có `cost_object_id` | chứng từ thường | không sinh chứng từ riêng |
+| Chạy giá thành kỳ | `costing/costRun.ts` | `GT` (hệ thống): 154 / 621 622 627 và chênh lệch giá nhập thành phẩm | chạy lại: đảo cũ + sinh mới |
+| Phân bổ CPBH/QLDN theo vụ việc | người dùng bấm "Phân bổ" | `PB` thường (có `source_doc_type = 'project_alloc'`) | chạy lại bằng đảo |
+| Sinh hóa đơn từ đợt thanh toán | `contracts/milestone.ts` → `createInvoice` | HDB nháp thường | gắn `contract_milestone.invoiced_voucher_id` |
+
+## Review Focus
+
+1. Thiếu cờ `view_salary`: mọi đường (hồ sơ, bảng lương, báo cáo, tệp chi lương, tờ khai, soát lỗi, quy trình cuối kỳ, sổ cái 334/3383–3386 theo nhân viên, `LU`, xuất dữ liệu cho cơ quan thẩm quyền, tìm kiếm chứng từ) trả 403 hoặc che; kiểm bằng một kiểm thử quét mọi route `/api/payroll*`, `/api/employees/*/payroll*` với người dùng thiếu cờ (Task 15).
+2. Bảng lương 20 nhân viên khớp **tính tay độc lập** (BHXH, TNCN) — tính tay trong `docs/dev/bang-luong-mau-20.md` bằng công thức viết lại từ tham số minh họa, không gọi hàm của mã; kiểm cả ranh giới bậc thuế, trần BH, người phụ thuộc đổi giữa năm, nhân viên vào/nghỉ giữa tháng, làm thêm giờ ngày thường/nghỉ/lễ (Task 2, 5).
+3. Hạch toán rồi chạy lại: tổng Nợ = Có, 334 sau hạch toán = Σ thực lĩnh + Σ đã khấu trừ chưa nộp; chạy lại không đổi dữ liệu → không sinh chứng từ mới (`unchanged`); hủy hạch toán ở kỳ khóa → 409 chỉ đảo (Task 6).
+4. Giá thành: tổng giá thành + dở dang cuối − dở dang đầu = tổng chi phí phát sinh kỳ (cân bằng 154); giản đơn và hệ số khớp ví dụ chuẩn của giáo trình (ví dụ viết tay trong kiểm thử); nhập kho thành phẩm theo giá thành rồi chạy giá vốn GĐ3 → 632 đúng; chạy lại giá thành → 154 về đúng (Task 10, 11).
+5. Hợp đồng: sinh hóa đơn từ đợt hai lần đồng thời → một HDB nháp; xóa/hủy/đảo HDB gỡ liên kết đợt; đảo `PB` phân bổ vụ việc trả 641/642 về đúng (Task 13).
+6. Liên kết giữa hai phân hệ (bảng lương ↔ chứng từ, giá thành ↔ chứng từ, đợt ↔ HDB) có trigger gỡ liên kết cho mọi đường đổi trạng thái (xóa nháp, hủy, đảo, bỏ ghi sổ) và kiểm thử cho từng đường.
+
+---
+
+## Cấu trúc file
+
+- `packages/domain/src/`: `payroll.ts` (TNCN lũy tiến, BH, làm thêm giờ, ngày công, cột công thức, kết quả một nhân viên), `payrollFormula.ts` (bộ phân tích công thức an toàn nếu `reportFormula.ts` không đủ), `productCost.ts` (giản đơn, hệ số, tỷ lệ, dở dang, phân bổ), `permissions.ts` (quyền GĐ6, cờ nhạy cảm nhân viên).
+- `packages/db/migrations/0094_quyen_gd6.sql` … (bảng "Thứ tự thực hiện").
+- `apps/api/src/modules/payroll/`: `params.ts`, `employeePayroll.ts`, `attendance.ts`, `structure.ts`, `runs.ts` (tính), `post.ts` (hạch toán), `payments.ts` (lập chứng từ chi), `paymentFile.ts`, `reports.ts`, `import.ts`, `tncnReturn.ts`, `dataCheck.ts`, `routes.ts`.
+- `apps/api/src/modules/costing/`: `objects.ts`, `norms.ts`, `collect.ts`, `costRun.ts`, `reports.ts`, `routes.ts`.
+- `apps/api/src/modules/contracts/`: `contracts.ts`, `milestone.ts`, `track.ts`, `projectPnl.ts`, `projectAlloc.ts`, `carryOver.ts`, `routes.ts`.
+- `apps/worker`: không thêm việc nền (tính lương, giá thành đồng bộ trong giao dịch; đo hiệu năng ở Task 16).
+- `packages/coa-data/data/payroll/`: `default-structure.json` (cấu trúc cột mặc định), `status.json` mục lương (hoặc thêm khóa vào `data/tax/status.json`: quyết định ở Task 1), `data/tax/05kk-tncn-tt89.json`, `05qtt-tncn-tt89.json` (**chưa tạo**: chờ mẫu).
+- `apps/web/src/pages/`: `Employees.tsx` (hồ sơ lương), `Attendance.tsx`, `PayrollStructures.tsx`, `PayrollRuns.tsx`, `PayrollReports.tsx`, `PayrollParams.tsx`, `PayrollPaymentFormats.tsx`, `TncnReturns.tsx`, `CostObjects.tsx`, `CostNorms.tsx`, `CostRuns.tsx`, `CostReports.tsx`, `Contracts.tsx`, `ProjectPnl.tsx`.
+- Kiểm thử: `packages/domain/test/{payroll,productCost}.test.ts`, `apps/api/test/payroll/*.test.ts`, `test/costing/*.test.ts`, `test/contracts/*.test.ts`, `test/invariants/inv10-luong-gia-thanh.test.ts`, `apps/api/test/fixtures/payroll-20.json`.
+- `docs/user/giai-doan-6-luong-gia-thanh-hop-dong.md`, `docs/dev/bang-luong-mau-20.md`, `docs/dev/gia-thanh-vi-du.md`.
+
+---
+
+## Các tác vụ
+
+Mỗi tác vụ: kiểm thử thất bại trước → viết mã → kiểm thử qua → `pnpm lint` + `pnpm typecheck` (gói liên quan) → commit → push → ghi quyết định vào sổ quyết định. Tác vụ ghi "Model: opus" là logic kế toán khó; còn lại sonnet.
+
+### Task 1: Quyền GĐ6, tham số lương theo công ty, cổng dữ liệu pháp lý, cờ `view_salary`
+Model: sonnet. Migration **0094_quyen_gd6.sql**.
+- Quyền (`packages/domain/src/permissions.ts`, đồng bộ vào `permission` và vai trò hệ thống như `0078_quyen_gd5.sql`): `payroll.view|create|update|delete`, `payroll.post`, `payroll.param`, `payroll.pay`, `payroll.export`, `attendance.view|create|update|delete`, `tncn_return.*` dùng `tax_return.*` có sẵn; `costing_obj.view|create|update|delete`, `cost_run.view|run`, `contract_track.view`, `contract_track.run`. Kế toán trưởng/kế toán viên: theo khuôn GĐ5 (kế toán viên không có `payroll.post`, `payroll.param`, `payroll.export`).
+- Bảng `payroll_param` (Quy ước 1), hàm `payrollParam(trx, code, date)` ở `apps/api/src/modules/payroll/params.ts` (tra công ty → `legal_param` → 409 `PAYROLL_PARAM_MISSING`), route `GET/PUT/DELETE /api/payroll/params` (`payroll.param`; lưu bắt buộc `source` không rỗng; kiểm lược đồ giá trị theo mã bằng zod; khoảng hiệu lực của cùng `code` không chồng nhau, 409 `PARAM_OVERLAP`), audit.
+- `flagsOf` trong `permissions.ts`: tài khoản có `subledger_kind = 'employee'` (kiểm `account_rules`/danh mục: nếu 334 chưa có loại sổ chi tiết `employee` thì thêm mã loại vào `subledger_kind` qua migration, **không** đổi dữ liệu cũ) cần `view_salary`; `DENIAL.view_salary = 'Không có quyền xem lương'`. Cập nhật mọi chỗ dùng `SENSITIVE_BY_SUBLEDGER`/`flagsOf` (`reporting/ledgers.ts`, `arap`, `tools/dataCheck.ts`).
+- `packages/coa-data/data/payroll/status.json` (hoặc khóa trong `tax/status.json`) cổng: `payrollParams_pit` , `payrollParams_si`, `payrollParams_minWage` = `false`, `05KK_TNCN_TT89`, `05QTT_TNCN_TT89` = `false`, kèm `note` nêu văn bản cần (Luật 109/2025/QH15, Luật BHXH 2024 và nghị định, NĐ lương tối thiểu vùng) và lý do chưa nhập. Kiểm thử coa-data giữ cổng khớp.
+- [ ] Kiểm thử: `permissions.test.ts` quyền mới có mặt và vai trò hệ thống; `payrollParam` thứ tự ưu tiên + thiếu tham số + chồng khoảng; thiếu `view_salary` trên route tham số không cần (tham số không nhạy cảm) nhưng sổ chi tiết 334 theo nhân viên 403; migration áp dụng lại trên DB sạch.
+- [ ] Commit `feat(db): quyền GĐ6, tham số lương theo công ty, cờ xem lương trên tài khoản 334`.
+
+### Task 2: Động cơ tính lương thuần (`@kt/domain`)
+Model: **opus**. Không migration.
+**Files:** `packages/domain/src/payroll.ts`, `payrollFormula.ts`, `packages/domain/test/payroll.test.ts`, `docs/dev/bang-luong-mau-20.md`, `apps/api/test/fixtures/payroll-20.json`.
+**Interfaces (chữ ký, thân do thực hiện):**
+- `pitProgressive(taxable: string, brackets: PitBracket[]): { tax: string; breakdown: { from: string; to: string | null; rate: string; amount: string; tax: string }[] }` (đồng, làm tròn đồng một lần ở cuối tổng, nửa lên; dùng cách tính từng bậc; thu nhập tính thuế ≤ 0 → 0).
+- `siContributions(base: string, p: { rates: SiRates; ceiling: string; floor?: string; uiCeiling?: string }, flags: { si: boolean; hi: boolean; ui: boolean; occupational: boolean }): { base: string; employee: Record<'si'|'hi'|'ui', string>; employer: Record<'si'|'hi'|'ui'|'occupational', string> }` (mức đóng = min(max(base, floor), ceiling); BHTN trần riêng; làm tròn đồng từng loại, nửa lên).
+- `overtimePay(hourlyRate: string, hours: { weekday: string; rest: string; holiday: string }, mult: OtMultipliers, mode: 'full'|'extra_only'): { pay: string; taxExempt: string }` (phần chênh lệch so với ngày thường không chịu thuế — **chỉ khi tham số pháp lý có cờ `ot_tax_exempt_extra` do người dùng nhập; mặc định không miễn**, quy ước 1).
+- `workDays(entries, standardHoursPerDay): { workDays: string; paidLeave: string; … }`; `prorate(monthlySalary, workDays, standardDays, mode: 'calendar'|'standard_26'|'standard_22'|'fixed')`.
+- `computePayrollLine(input: PayrollInput, structure: PayrollStructure, params: ResolvedParams): PayrollLineResult` — chạy các cột `builtin` rồi công thức người dùng theo thứ tự phụ thuộc (sắp xếp tô-pô, phát hiện vòng), trả `{ values: Record<code,string>, gross, siEmp, siEr, pit, net, warnings }`. Giảm trừ gia cảnh: `deduction_self + dependents × deduction_dependent` theo số người phụ thuộc có hiệu lực trong tháng; nhân viên không cư trú hoặc không hợp đồng: `pit_non_resident_rate`/`pit_flat_rate_no_contract` × thu nhập (nếu tham số có, không thì cảnh báo `PIT_RATE_MISSING`).
+- `payrollFormula.ts`: `parseFormula`, `evaluateFormula(ast, ctx)`; hàm cho phép `MIN MAX IF ROUND ABS SUM`, toán tử `+ - * / > < >= <= == && ||`, tham chiếu cột `[code]`, `PARAM('code')`; chia cho 0 → lỗi `FORMULA_DIV_ZERO` mang tên cột; số dùng `Decimal`.
+**Tính tay:** `docs/dev/bang-luong-mau-20.md` có 20 nhân viên (tên, mã, lương, phụ cấp, người phụ thuộc, ngày công, làm thêm giờ) và **mọi bước tính viết bằng tay trong tài liệu** (lấy tham số minh họa ở dòng đầu tài liệu, ghi rõ không phải văn bản pháp lý), kết quả `payroll-20.json` nhập từ tài liệu (không sinh từ mã). Có ca: đúng ranh giới mỗi bậc thuế, thu nhập ≤ giảm trừ, lương vượt trần BH, dưới sàn BH, người phụ thuộc có hiệu lực từ giữa tháng, nghỉ việc giữa tháng, làm thêm ngày nghỉ/lễ, không cư trú.
+- [ ] Kiểm thử thất bại: từng hàm bằng ví dụ tay + 20 nhân viên khớp từng cột; fast-check: thuế đơn điệu không giảm theo thu nhập, thực lĩnh = gross − BH NLĐ − TNCN, Σ breakdown.tax = tax, công thức vòng bị từ chối, công thức không đổi theo thứ tự khai báo cột.
+- [ ] Commit `feat(domain): động cơ tính lương (TNCN lũy tiến, BHXH, làm thêm giờ, cột công thức)`.
+
+### Task 3: Hồ sơ lương nhân viên, phụ cấp, người phụ thuộc, lịch sử lương
+Model: sonnet. Migration **0095_ho_so_luong.sql**.
+- Bảng `employee_payroll`, `employee_allowance`, `employee_salary_history`, `employee_dependent`, `employee_cost_split` (Quy ước 2, 6), khóa tổng hợp tới `employee`; RLS, audit (cột nhạy cảm vẫn ghi `audit_event` nhưng route đọc audit che các bảng này nếu thiếu `view_salary`: kiểm `audit` module). Thêm `employee.bank_account_no/bank_name` nếu chưa có (đã có `party_id`): hồ sơ lương lưu tài khoản nhận lương.
+- API `/api/employees/:id/payroll` GET/PUT (`payroll.view/update`, cờ `view_salary`), `/api/employees/:id/dependents` CRUD, `/api/employees/:id/allowances` CRUD, `/api/employees/:id/salary-history` thêm dòng (không sửa dòng đã được bảng lương `calculated|posted` dùng: 409 `SALARY_HISTORY_USED`). Danh sách `/api/employees` (có sẵn) **không** trả trường lương. Nhập Excel hồ sơ lương hàng loạt qua `master/importExcel.ts` (loại `employee_payroll`).
+- Màn hình `Employees.tsx`: tab Thông tin / Lương và phụ cấp / Người phụ thuộc / Lịch sử lương; ẩn tab lương khi thiếu `view_salary`; e2e `luong-ho-so.spec.ts`.
+- [ ] Kiểm thử: CRUD đủ, ràng buộc người phụ thuộc (đến tháng ≥ từ tháng), thiếu cờ → 403 mọi route, audit không rò rỉ khi thiếu cờ, nhập Excel mẫu 20 nhân viên (`payroll-20.json`) tạo đúng hồ sơ.
+- [ ] Commit `feat(api): hồ sơ lương, phụ cấp và người phụ thuộc của nhân viên`.
+
+### Task 4: Chấm công
+Model: sonnet. Migration **0096_cham_cong.sql**.
+- Bảng `attendance_sheet`, `attendance_entry` (Quy ước 3), cài đặt công ty `payroll_standard_hours_per_day`, `payroll_standard_days_per_month` (mặc định để trống: bảng lương báo lỗi nếu cần tới mà chưa có). API: `GET/PUT /api/attendance?year&month&departmentId` (lưới nhân viên × ngày), nhập nhanh theo nhân viên (ngày, nửa ngày, giờ, làm thêm), sao chép từ tháng trước, nhập Excel (mẫu cột: mã nhân viên, ngày, loại, số lượng), tổng hợp `GET /api/attendance/summary?year&month` (theo nhân viên, quy về ngày công/giờ làm thêm). Khóa chấm công theo bảng lương `posted` (409 `ATTENDANCE_LOCKED`) trừ khi hủy hạch toán. Chấm công không nhạy cảm tiền nhưng thuộc `attendance.*` (không `view_salary`).
+- Màn hình `Attendance.tsx` dùng `KeyboardGrid` (hàng nhân viên, cột ngày; phím tắt đặt X = 1 ngày, N = nửa ngày, số = giờ); e2e `cham-cong.spec.ts`.
+- [ ] Kiểm thử: quy đổi giờ/buổi → ngày công; làm thêm theo ba loại; nhập Excel lỗi dòng (báo dòng lỗi, không ghi nửa chừng); khóa sau hạch toán; chấm công nhân viên đã nghỉ việc → cảnh báo.
+- [ ] Commit `feat(api): bảng chấm công theo ngày, buổi, giờ và làm thêm giờ`.
+
+### Task 5: Cấu trúc bảng lương và bảng lương (tính)
+Model: **opus** (logic tính, tổ hợp). Migration **0097_bang_luong.sql**.
+- Bảng `payroll_structure` (+`payroll_structure_column`), `payroll_run`, `payroll_line`, `payroll_line_value` (Quy ước 4, 5), chữ ký dữ liệu đầu vào `input_hash` (hồ sơ, chấm công, tham số, cấu trúc), `payroll_run.stale` cờ tính lại (suy ra từ `input_hash` hiện tại ≠ đã lưu, tính khi đọc).
+- `runs.ts`: `createRun`, `calculate(runId)` (đọc hồ sơ hiệu lực theo `valid_from` ≤ cuối kỳ; vào/nghỉ việc giữa tháng; người phụ thuộc theo tháng; chấm công; tham số tại **ngày cuối kỳ** — nếu tham số đổi giữa kỳ (ví dụ trần BH đổi từ 01/07) áp dụng tham số của tháng theo ngày cuối tháng, ghi cảnh báo, quyết định ghi sổ), gọi `computePayrollLine` từng nhân viên, lưu; `recalculate`; API `/api/payroll/runs` CRUD, `/:id/calculate`, `/:id/lines`, sửa đầu vào tay một nhân viên (cột `input` nhập tay, ví dụ thưởng, khấu trừ khác) trên `payroll_line_value` đặt cờ `manual`; cấu trúc `/api/payroll/structures` CRUD (nhân bản, kiểm công thức, bất biến khi đã dùng).
+- Tính lương năm tính TNCN 12 tháng/ quyết toán: lưu `pit` đã khấu trừ từng tháng; số quyết toán ở Task 9.
+- Màn hình `PayrollRuns.tsx` (chọn kỳ, bảng lương dạng lưới nhiều cột cuộn ngang, ô nhập tay, nút Tính, tổng cuối, cảnh báo) và `PayrollStructures.tsx` (danh sách cột, soạn công thức có gợi ý tên cột, thử với một nhân viên) và `PayrollParams.tsx` (nhập tham số kèm nguồn); e2e `bang-luong.spec.ts`.
+- [ ] Kiểm thử: bảng lương 20 nhân viên khớp `payroll-20.json` từng cột qua API; cấu trúc tùy biến (thêm cột "Thưởng chuyên cần" công thức IF); thiếu tham số → 409 `PAYROLL_PARAM_MISSING`; hai bảng lương trùng nhân viên cùng kỳ → 409; sửa chấm công sau tính → `stale = true`; thiếu `view_salary` → 403.
+- [ ] Commit `feat(api): cấu trúc bảng lương cấu hình và tính bảng lương theo kỳ`.
+
+### Task 6: Hạch toán lương, chi lương, nộp bảo hiểm, nộp thuế TNCN
+Model: **opus**. Migration **0098_hach_toan_luong.sql**.
+- Loại chứng từ `LU` ("Chứng từ hạch toán lương", module `general`) và `GT` (đăng ký sớm cho Task 11) thêm vào `VOUCHER_TYPES`/`SYSTEM_VOUCHER_TYPES` và `voucher_type` của mọi công ty (seed như `0071`/`0073` đã làm cho `KH`/`LV`; công ty mới qua `seed_voucher_types`).
+- `department_cost_account (department_id, kind payroll|insurance, account_code)` hoặc cột trên `department` (quyết định ghi sổ): tài khoản chi phí lương theo bộ phận; thiếu → dùng cài đặt công ty mặc định `payroll_expense_account`, thiếu nữa → 400 `ACCOUNT_MISSING` kèm danh sách bộ phận.
+- `post.ts`: `postRun(runId)` sinh `LU` (Quy ước 6) theo dòng gom theo (tài khoản chi phí, bộ phận, vụ việc, khoản mục): gross → chi phí/334; BH DN → chi phí/33xx; BH NLĐ → 334/33xx; TNCN → 334/3335; mọi dòng 334/33xx mang `employee_id`. `LU` ghi sổ ngay (chứng từ hệ thống) ngày cuối kỳ; kỳ khóa → kiểm quyền; `payroll_run.voucher_id`; chạy lại = đảo cũ + sinh mới, so sánh nội dung (`unchanged`); `unpostRun` ở kỳ mở; trigger gỡ liên kết `payroll_run.voucher_id` khi `LU` bị đảo/bỏ ghi sổ ngoài luồng (và khóa chứng từ `LU` khỏi sửa qua route chung); sửa chấm công/hồ sơ làm `stale` đã đủ thông báo "Cần chạy lại".
+- `payments.ts`: `POST /api/payroll/runs/:id/pay-voucher { kind: 'bank'|'cash', bankAccountId?, date }` sinh BN/PC **nháp** Nợ 334 / Có 111/112, một dòng mỗi nhân viên (số = thực lĩnh còn phải trả = dư Có 334 của nhân viên trong bảng lương, không âm), `POST …/insurance-voucher` (nộp BH: Nợ 3383–3386 / Có 112, theo từng loại, số = tổng BH kỳ), `POST …/pit-voucher` (nộp TNCN Nợ 3335 / Có 112). Ghi liên kết `payroll_run_voucher (run_id, kind, voucher_id)` (một loại một chứng từ nháp còn hiệu lực; trigger gỡ liên kết khi chứng từ xóa/hủy/đảo).
+- Quy trình cuối kỳ: thêm bước `payroll` ("Tính lương và hạch toán") vào `CLOSE_STEPS` (`ledger/periodClose.ts`, quyền `payroll.post`, tùy chọn như `fx_revaluation`: bỏ qua khi không có bảng lương kỳ) đứng **trước** `costing` giá thành; `closeStatus` che chi tiết khi thiếu `view_salary`; `payrollRunStale` (như `assetRunStale`). Cập nhật `Closing`/`PeriodClose.tsx`.
+- [ ] Kiểm thử: `LU` cân bằng, 334 theo nhân viên đúng, TT99 và TT133 tài khoản; chạy lại không đổi → `unchanged`; đổi lương → đảo + sinh mới; hủy hạch toán kỳ mở/khóa; chi lương nháp đúng số, dư 334 về 0 sau ghi sổ phiếu chi; liên kết gỡ khi xóa nháp/hủy/đảo/bỏ ghi sổ (mỗi đường một kiểm thử); thiếu `view_salary` che `LU` và bước cuối kỳ.
+- [ ] Commit `feat(api): hạch toán chi phí lương, chi lương, nộp bảo hiểm và thuế TNCN`.
+
+### Task 7: Báo cáo lương, nhập bảng lương từ Excel, tệp BHXH, phiếu lương
+Model: sonnet. Không migration (hoặc nhỏ nếu cần).
+- Báo cáo (`payroll/reports.ts`, `READ_SNAPSHOT`, `view_salary`): Bảng thanh toán tiền lương (mẫu có sẵn trong TT 99/TT 133: **chỉ in "Mẫu số" khi đã đối chiếu văn bản gốc**; mặc định không in dòng mẫu số), Bảng tổng hợp bảo hiểm theo tháng/quý, Báo cáo chi phí lương theo bộ phận/vụ việc, Báo cáo thuế TNCN khấu trừ theo nhân viên/tháng, Phiếu lương cá nhân (HTML in được, một nhân viên một trang), Sổ chi tiết 334 theo nhân viên (qua sổ chi tiết có sẵn với `employee_id`), so sánh hai kỳ. Xuất Excel theo khuôn `reporting/export`.
+- Nhập bảng lương từ Excel: `POST /api/payroll/runs/:id/import` (cột: mã nhân viên + cột `input`; kiểm tra – nhập, như `importVouchers`: lượt Kiểm tra và Nhập, báo dòng lỗi).
+- Tệp kê khai BHXH (I-VAN): **không có đặc tả công khai** → xuất Excel/CSV "Danh sách tham gia BHXH, BHYT, BHTN" theo cột chung (mã số BHXH, họ tên, CCCD, lương đóng, phụ cấp, thời gian) và ghi hạn chế; không làm định dạng giả định mẫu D02-LT/TK1-TS.
+- [ ] Kiểm thử: báo cáo khớp bảng lương và `LU` (Σ khớp sổ cái), thiếu `view_salary` 403, phiếu lương đúng số, nhập Excel báo lỗi từng dòng.
+- [ ] Màn hình `PayrollReports.tsx` + e2e `bao-cao-luong.spec.ts`.
+- [ ] Commit `feat(api): báo cáo lương, phiếu lương, nhập bảng lương từ Excel`.
+
+### Task 8: Chi lương theo lô (tệp mẫu ngân hàng cấu hình)
+Model: sonnet. Migration **0099_chi_luong_lo.sql**.
+- Bảng `payroll_payment_format`, ghi nhận tệp đã xuất `payroll_payment_batch (run_id, format_id, bank_account_id, voucher_id NULL, file_name, total, count, created_by)`. Xuất CSV/XLSX theo ánh xạ cột (Quy ước 11), kiểm số tài khoản nhận (thiếu → cảnh báo, không đưa vào tệp), tổng tiền khớp chứng từ chi (nếu đã lập). Mẫu dựng sẵn: một bố cục chung "chung" (số tài khoản, tên, ngân hàng, số tiền, nội dung) — **không** gắn tên ngân hàng cụ thể khi chưa có mẫu thật.
+- Màn hình `PayrollPaymentFormats.tsx` (cấu hình cột, xem thử 5 dòng) và nút "Xuất tệp chi lương" trên bảng lương; e2e `chi-luong-lo.spec.ts`.
+- [ ] Kiểm thử: tệp đúng cột/thứ tự/mã hóa (UTF-8 BOM tùy chọn), số tiền không qua `number`, tiếng Việt có dấu, thiếu `view_salary` 403 (cả khi cố tải lại tệp cũ), thiếu `payroll.export`.
+- [ ] Commit `feat(api): chi lương theo lô bằng tệp ánh xạ cột do người dùng cấu hình`.
+
+### Task 9: Thuế TNCN: bảng kê khấu trừ, 05/KK-TNCN quý, quyết toán 05/QTT-TNCN
+Model: **opus**. Migration **0100_to_khai_tncn.sql** (nếu `tax_return` cần nới CHECK `form_code`; không nếu đã mở).
+- Số liệu nguồn (`payroll/tncnReturn.ts`): `GET /api/tncn/withholding?year&quarter` (hoặc tháng) → bảng kê từng cá nhân: MST, tên, cư trú/ loại hợp đồng, thu nhập chịu thuế, khoản miễn thuế, giảm trừ bản thân/phụ thuộc, bảo hiểm khấu trừ, thu nhập tính thuế, thuế khấu trừ, từ bảng lương `posted` (và khoản khấu trừ không phải lương từ `tax_distribution` TNCN_KT có sẵn nếu liên quan); quyết toán năm: tính lại thu nhập tính thuế cả năm, thuế phải nộp cả năm so với đã khấu trừ → còn phải nộp/hoàn (tổ chức quyết toán thay) với nhân viên chỉ làm ở công ty (ủy quyền quyết toán là thông tin hồ sơ `employee_payroll.pit_authorized`); người có ở nhiều nơi tự quyết toán (cờ loại trừ).
+- `tax_return` `form_code` `05/KK-TNCN` (`quarter`) và `05/QTT-TNCN` (`year`) tạo/chốt/bổ sung theo khuôn `citReturn.ts`; `values` = bảng kê + tổng; `GET …/xml` và ký số `docKind` `05kk_tncn`/`05qtt_tncn` **chỉ khi** cổng `true`, ngược lại 409 `TNCN_TEMPLATE_UNAVAILABLE` (như `CIT_TEMPLATE_UNAVAILABLE`). Bảng kê khấu trừ xuất Excel được ngay (không phụ thuộc mẫu), kèm cảnh báo tham số minh họa.
+- "Chứng từ khấu trừ thuế TNCN" (cấp cho cá nhân): in HTML tổng hợp theo cá nhân/năm, **không in số mẫu/ký hiệu** (chưa có văn bản gốc mẫu), ghi chú trong tài liệu.
+- Màn hình `TncnReturns.tsx` (chọn quý/năm, bảng kê, banner "Chưa có mẫu tờ khai theo TT 89/2026: xuất bảng kê Excel", chốt) + e2e `tncn.spec.ts`.
+- [ ] Kiểm thử: bảng kê khớp Σ `pit` của bảng lương `posted`; quyết toán 12 tháng với thu nhập thay đổi → chênh lệch đúng (có ca tính tay trong `bang-luong-mau-20.md`); cổng false → 409; chốt xong sửa → `TAX_RETURN_FINAL`; thiếu cờ 403; người làm hai nơi bị loại.
+- [ ] Commit `feat(api): bảng kê khấu trừ TNCN, 05/KK-TNCN và quyết toán 05/QTT-TNCN (số liệu nguồn; mẫu chờ văn bản gốc)`.
+
+### Task 10: Đối tượng tập hợp chi phí, định mức, tập hợp chi phí, động cơ giá thành thuần
+Model: **opus**. Migration **0101_doi_tuong_gia_thanh.sql**, **0102_chieu_doi_tuong_chi_phi.sql**.
+- `cost_object`, `cost_norm` (+`cost_norm_line`), `cost_object_cost_item` nếu cần; **thêm cột `voucher_line.cost_object_id`** (nullable, khóa tổng hợp tới `cost_object`) và mọi nơi liệt kê cột dòng chứng từ: hàm sao chép dòng (`0005` insert list), trigger bất biến dòng đã ghi sổ (`0004` danh sách cột sửa được: `cost_object_id` KHÔNG sửa được sau ghi sổ), `voucher_line_ledger`/view sổ chi tiết, `extra_dims`, import Excel chứng từ, API tạo/sửa chứng từ, khử trùng, in. Định nghĩa lại hàm bằng `pg_get_functiondef`.
+- `packages/domain/src/productCost.ts` (thuần): `wipDirectMaterial`, `wipEquivalentUnits`, `allocateOverhead(basis)`, `costSimple`, `costCoefficient`, `costRatio`, `costProject`, `costOrder` — mỗi hàm nhận số liệu kỳ (dở dang đầu, chi phí phát sinh theo khoản mục, sản lượng hoàn thành, dở dang cuối thông tin) và trả tổng giá thành, giá thành đơn vị, dở dang cuối, kiểm cân bằng `đầu + phát sinh = giá thành + cuối`; làm tròn đơn vị theo tiền VND: phần dư dồn vào đối tượng/ sản phẩm cuối (quy ước chốt trong Task, ghi quyết định).
+- `collect.ts`: `GET /api/costing/collect?year&month&objectId` — chi phí 621/622/627 phát sinh theo đối tượng (từ `voucher_line` đã ghi sổ có `cost_object_id`, hoặc `project_id` cho đối tượng loại vụ việc, `contract_id` cho hợp đồng, đơn hàng qua `doc_order` liên kết chứng từ), chi phí chung 627 chưa gắn đối tượng (để phân bổ theo tiêu thức Quy ước 8), theo khoản mục chi phí (`cost_item`).
+- Định mức NVL: `cost_norm` theo sản phẩm (item) hoặc đối tượng; so sánh thực tế/định mức ở Task 12.
+- Màn hình `CostObjects.tsx`, `CostNorms.tsx`; ô "Đối tượng chi phí" (F4) trên lưới chứng từ chung (cột tùy chọn, chỉ hiện khi công ty bật cài đặt `costing_enabled` hoặc dòng có tài khoản 621/622/627/154); e2e `doi-tuong-gia-thanh.spec.ts`.
+- [ ] Kiểm thử thất bại: ví dụ chuẩn giáo trình (viết trực tiếp trong test, số tay, có chú thích): (a) giản đơn một sản phẩm, dở dang theo NVL trực tiếp; (b) dở dang theo sản lượng hoàn thành tương đương 50% chế biến; (c) hệ số: ba sản phẩm hệ số 1,0/1,2/1,5, sản lượng 100/200/50; (d) tỷ lệ: giá thành định mức × tỷ lệ; (e) vụ việc: dồn toàn bộ; (f) phân bổ 627 theo nhân công trực tiếp. fast-check: cân bằng chi phí luôn khớp, Σ phân bổ = tổng chi phí chung.
+- [ ] Commit `feat(domain): động cơ giá thành` và `feat(api): đối tượng tập hợp chi phí, định mức và chiều đối tượng trên dòng chứng từ`.
+
+### Task 11: Chạy giá thành kỳ, chứng từ GT, nhập kho thành phẩm theo giá thành
+Model: **opus**. Migration **0103_chay_gia_thanh.sql**.
+- Bảng `cost_run`, `cost_run_object`, `cost_run_output` (Quy ước 8); `costRun.ts`: `previewCostRun`, `runCostRun(year, month, params)` — đọc chi phí kỳ (Task 10), dở dang đầu = dở dang cuối kỳ trước của `cost_run_object`, tính, **sinh `GT`** (Quy ước 9), lưu; chạy lại = đảo `GT` cũ + sinh mới + so sánh (`unchanged`); các kỳ sau phụ thuộc (dở dang đầu): chạy lại kỳ trước đánh dấu kỳ sau "Cần chạy lại". Đọc `inventory/costingRun.ts`, `inventory/assembly.ts` và bảng giá nhập thành phẩm GĐ3 trước, chốt phương án khớp 154 ↔ 155 ↔ 632 và ghi quyết định; đường nhập kho thành phẩm: giá thành đơn vị làm **giá nhập thành phẩm của kỳ** cho `runCosting` GĐ3 (điều chỉnh giá nhập đã có) hoặc `GT` ghi chênh lệch — phương án nào cũng phải cho: sau chạy giá thành rồi chạy giá vốn, 154 cuối kỳ = dở dang cuối, 155 = giá thành × tồn, 632 đúng.
+- Quy trình cuối kỳ: thêm bước `product_cost` ("Tính giá thành", quyền `cost_run.run`, tùy chọn khi công ty không dùng giá thành) vào `CLOSE_STEPS` **sau `payroll` và trước `costing`**; `costing` (giá vốn) báo "Cần chạy lại" khi giá thành chạy lại; cập nhật `closeStatus` và `PeriodClose.tsx`.
+- Màn hình `CostRuns.tsx` (chọn kỳ, đối tượng, phương pháp, tiêu thức phân bổ, dở dang cuối nhập sản lượng và tỷ lệ hoàn thành, xem trước, Chạy, kết quả, chạy lại); e2e `chay-gia-thanh.spec.ts`.
+- [ ] Kiểm thử: kịch bản đủ chuỗi (mua NVL → xuất NVL sản xuất 621 → chi phí nhân công 622 từ `LU` → 627 → chạy giá thành → nhập kho thành phẩm → bán → giá vốn) cân đối 154/155/632; dở dang chuyển kỳ; chạy lại sau sửa chi phí; xóa/hủy `GT` ngoài luồng → liên kết gỡ; thiếu `view_cost` → 403 mọi route giá thành (giá thành là dữ liệu giá vốn).
+- [ ] Commit `feat(api): chạy giá thành kỳ, chứng từ giá thành và nhập kho thành phẩm theo giá thành`.
+
+### Task 12: Báo cáo giá thành
+Model: sonnet. Không migration.
+- Thẻ tính giá thành (theo đối tượng/kỳ: dở dang đầu, phát sinh theo khoản mục, dở dang cuối, tổng giá thành, giá thành đơn vị — mẫu S37-DN/ thẻ tính giá thành của TT 99/TT 133 chỉ in số mẫu khi có văn bản gốc, mặc định không), sổ chi tiết tài khoản 154 (theo đối tượng, khớp sổ cái), bảng tổng hợp chi phí sản xuất theo khoản mục (yếu tố chi phí), báo cáo so sánh định mức (thực tế/định mức NVL, chênh lệch số lượng và giá), xuất Excel. Cờ `view_cost`; `READ_SNAPSHOT`.
+- Màn hình `CostReports.tsx` + e2e `bao-cao-gia-thanh.spec.ts`.
+- [ ] Kiểm thử: Σ báo cáo khớp sổ cái 154 và `GT`; so sánh định mức đúng ca tay; thiếu cờ 403.
+- [ ] Commit `feat(api): thẻ tính giá thành, sổ chi tiết 154 và báo cáo so sánh định mức`.
+
+### Task 13: Hợp đồng, đợt thanh toán, theo dõi thực hiện, lãi lỗ vụ việc, phân bổ CPBH/QLDN, chuyển số dư vụ việc
+Model: sonnet (đọc kỹ `orders/` và `allocation` trước). Migration **0104_hop_dong.sql**, **0105_phan_bo_vu_viec.sql**.
+- Mở rộng `contract` (cột mới, không phá bảng cũ), `contract_milestone`, `contract_amendment`; `milestone.ts`: `invoiceMilestone(id)` tạo HDB nháp qua `createInvoice` có `contract_id`, dòng từ đợt (mô tả, số tiền chưa thuế, thuế suất lấy từ hợp đồng/ cấu hình), khóa tư vấn chống đồng thời, `invoiced_voucher_id` + trigger gỡ liên kết cho xóa nháp/hủy/đảo/bỏ ghi sổ.
+- `track.ts`: `GET /api/contracts/:id/track` — giá trị hợp đồng (+phụ lục), doanh số (HDB/BH `contract_id`), đã thu (PT/BC thu từ hóa đơn thuộc hợp đồng qua đối trừ, hoặc dòng 131 `contract_id`), đã chi/ mua theo hợp đồng mua, thực hiện %, còn phải thu, đợt tới hạn/quá hạn; `GET /api/contracts/track` danh sách tổng hợp. Cờ: số công nợ cần `view_receivable`/`view_payable`, giá vốn/lãi lỗ cần `view_cost`.
+- `projectPnl.ts`: `GET /api/projects/pnl?year&from&to&projectId|contractId` — doanh thu (511/515 theo dims), chi phí trực tiếp (621/622/623/627/632/641/642 gắn dims), lãi gộp, lãi lỗ sau phân bổ; có cây vụ việc (`project.parent_id`, cộng dồn).
+- `projectAlloc.ts`: `POST /api/projects/allocate { year, month, accounts: ['641','642'], basis: 'revenue'|'direct_cost'|'manual', manual? }` tính phần 641/642 chưa gắn vụ việc trong kỳ và phân bổ cho các vụ việc (không dư: dồn vào vụ việc lớn nhất), sinh `PB` (Nợ 641/642 gắn `project_id` / Có 641/642 không gắn dims, **cùng tài khoản** để không đổi tổng chi phí) với `source_doc_type = 'project_alloc'`; chạy lại bằng đảo; xem trước. Quyền `contract_track.run`.
+- `carryOver.ts`: kiểm số dư đầu năm sau giữ `project_id/contract_id` trên các dòng `DK` sinh từ kết chuyển năm (đối chiếu `closing.ts`/`balances.ts`); thiếu chiều thì bổ sung chiều vào chứng từ `DK`/`KC` (migration + sửa mã) và có `GET /api/projects/balances?year` đối chiếu cuối năm trước = đầu năm sau theo vụ việc.
+- Màn hình `Contracts.tsx` (hợp đồng, đợt, theo dõi, nút "Lập hóa đơn từ đợt"), `ProjectPnl.tsx` (lãi lỗ, nút Phân bổ chi phí chung) + e2e `hop-dong.spec.ts`, `lai-lo-vu-viec.spec.ts`.
+- [ ] Kiểm thử: sinh HDB từ đợt (hai lần đồng thời → một nháp); gỡ liên kết cho từng đường; theo dõi khớp sổ cái; phân bổ 641/642: tổng giữ nguyên, đảo trả về đúng; lãi lỗ vụ việc cây cha cộng con; số dư vụ việc qua kết chuyển năm giữ chiều; cờ nhạy cảm.
+- [ ] Commit `feat(api): đợt thanh toán hợp đồng, theo dõi thực hiện, lãi lỗ và phân bổ chi phí chung theo vụ việc`.
+
+### Task 14: Soát lỗi GĐ6 và quét cờ nhạy cảm
+Model: sonnet. Migration **0106_soat_loi_gd6.sql**.
+- Quy tắc soát lỗi (khuôn `0076_soat_loi_gd4.sql`; cờ nhạy cảm: quy tắc lương cần `view_salary`, giá thành `view_cost`; thiếu cờ → `skipped`): `LUONG_THIEU_MST` (nhân viên có thu nhập chịu thuế mà thiếu MST), `LUONG_THIEU_TK_NH`, `LUONG_NV_NGHI_VAN_TINH` (nhân viên nghỉ việc còn trong bảng lương sau ngày nghỉ), `LUONG_CAN_TINH_LAI` (bảng lương `stale`), `LUONG_LECH_SO_CAI` (334 theo nhân viên lệch bảng lương), `LUONG_BH_VUOT_TRAN` (mức đóng vượt trần theo tham số), `GIA_THANH_CAN_CHAY_LAI`, `GIA_THANH_154_CON_DU` (154 còn dư mà không có dở dang), `GIA_THANH_THIEU_DINH_MUC`, `HOP_DONG_QUA_HAN_DOT`, `HOP_DONG_VUOT_GIA_TRI` (doanh số vượt giá trị hợp đồng + phụ lục), `VU_VIEC_CHI_PHI_CHUNG_CHUA_PHAN_BO`.
+- Kiểm thử quét: người dùng thiếu `view_salary` gọi mọi route của `payroll` (liệt kê route từ `app.printRoutes()` hoặc bảng khai báo) → không route nào trả số lương; người dùng thiếu `view_cost` với route giá thành; `/api/export/authority` (gói cơ quan thẩm quyền) khi thiếu cờ không chứa 334/3383+ theo nhân viên.
+- [ ] Commit `feat(db): soát lỗi lương, giá thành, hợp đồng` và `test(api): quét cờ nhạy cảm lương và giá thành`.
+
+### Task 15: Dữ liệu mẫu ABC/XYZ GĐ6 và bất biến 10
+Model: sonnet. Không migration.
+- Mở rộng `seed-abc.ts`/`seedAbcFull`: 20 nhân viên (từ `payroll-20.json`), chấm công tháng, cấu trúc mặc định, tham số minh họa (nguồn ghi "Dữ liệu minh họa…"), bảng lương 3 tháng đã hạch toán, chi lương, một đối tượng giá thành sản phẩm với định mức, chạy giá thành một kỳ, một hợp đồng bán 3 đợt (một đợt đã lập HDB), phân bổ chi phí chung theo 2 vụ việc; `expected-gd6-abc.json` kỳ vọng tính tay (không sinh từ mã), kiểm ở `apps/api/test/sample-abc-gd6.test.ts`. XYZ (dịch vụ): thêm bảng lương nhỏ nếu nhẹ.
+- Bất biến 10 (`test/invariants/inv10-luong-gia-thanh.test.ts`, khuôn `inv7-kho.test.ts`, `INVARIANTS=1`): (1) chuỗi ngẫu nhiên thao tác lương (đổi lương, người phụ thuộc, chấm công, tính, hạch toán, chạy lại, hủy) — `LU` luôn cân, 334 theo nhân viên = Σ thực lĩnh chưa trả, `LU` mới nhất khớp bảng lương; (2) chuỗi giá thành (ghi chi phí, chạy, chạy lại) — 154 cuối kỳ = dở dang cuối, đảo hết thì 154 về 0; (3) phân bổ vụ việc giữ tổng 641/642; (4) mọi chuỗi: cân bằng sổ cái và tổng Nợ = Có (kế thừa helpers).
+- [ ] Commit `test(api): dữ liệu mẫu GĐ6 và bất biến 10`.
+
+### Task 16: Đo hiệu năng, hạn chế đã biết, tài liệu người dùng
+Model: sonnet.
+- `pnpm -F @kt/api perf:payroll` (script `apps/api/scripts/perf-payroll.ts`): 2.000 nhân viên × tính + hạch toán 1 tháng (tiêu chí dưới 15 giây), giá thành 200 đối tượng × 10.000 dòng chi phí (dưới 15 giây); số đo vào `docs/dev/hieu-nang.md`.
+- `docs/user/giai-doan-6-luong-gia-thanh-hop-dong.md` (từng phân hệ: thiết lập tham số, hồ sơ, chấm công, bảng lương, hạch toán, chi lương, TNCN; giá thành; hợp đồng và vụ việc; **mục "Hạn chế đã biết" và "Việc người dùng cần cung cấp"**), cập nhật `docs/user/*` liên quan (cuối kỳ), `docs/dev/kiem-thu.md` (lệnh mới).
+- [ ] Commit `docs: tài liệu người dùng GĐ6, đo hiệu năng lương và giá thành`.
+
+### Task 17: Rà soát toàn nhánh, kết thúc GĐ6
+Model: opus/fable cho rà soát. 
+- Rà soát toàn nhánh một lượt (bảo mật `view_salary`/`view_cost` mọi đường; ghi sổ; liên kết; migration; mã lỗi tiếng Việt), một đợt sửa; chạy nền `pnpm lint && pnpm typecheck && pnpm test` + `INVARIANTS=1 pnpm -F @kt/api test -- test/invariants test/sample-xyz.test.ts test/sample-abc.test.ts`, e2e các spec mới nếu trình duyệt Playwright chạy được ở đây.
+- Cập nhật `docs/TIEP-THEO.md` (GĐ6 xong, hạn chế GĐ6, việc chờ người dùng: Luật TNCN, BHXH, lương tối thiểu vùng, mẫu 05/KK-TNCN và 05/QTT-TNCN TT 89/2026, mẫu tệp chi lương ngân hàng, mẫu chứng từ khấu trừ TNCN, mẫu I-VAN, TT133/TT99 mẫu thẻ tính giá thành/bảng thanh toán lương), `docs/superpowers/plans/…-giai-doan-6-quyet-dinh.md`, tag `gd6-hoan-tat` (nhánh `claude/magical-ritchie-ijawwy`), push nhánh và tag.
+
+---
+
+## Thứ tự thực hiện
+
+T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17.
+
+Phụ thuộc chính: T2 trước T5; T3, T4 trước T5; T5 trước T6–T9; T6 trước T11 (bước cuối kỳ, nhân công 622 từ `LU`); T10 trước T11, T12; T13 độc lập với lương/giá thành nhưng sau T10 (cột `cost_object_id` đã đổi `voucher_line`); T14 sau mọi tác vụ chức năng; T15 sau T14.
+
+| Migration | Tác vụ |
+|---|---|
+| 0094_quyen_gd6.sql | T1 |
+| 0095_ho_so_luong.sql | T3 |
+| 0096_cham_cong.sql | T4 |
+| 0097_bang_luong.sql | T5 |
+| 0098_hach_toan_luong.sql | T6 |
+| 0099_chi_luong_lo.sql | T8 |
+| 0100_to_khai_tncn.sql | T9 (nếu cần) |
+| 0101_doi_tuong_gia_thanh.sql, 0102_chieu_doi_tuong_chi_phi.sql | T10 |
+| 0103_chay_gia_thanh.sql | T11 |
+| 0104_hop_dong.sql, 0105_phan_bo_vu_viec.sql | T13 |
+| 0106_soat_loi_gd6.sql | T14 |
+
+Số có thể lệch khi thực hiện (migration đã đẩy là đóng băng; cần sửa thì thêm số kế tiếp và đánh số lại bảng này).
+
+## Đối chiếu lộ trình GĐ6
+
+| Mục lộ trình | Tác vụ |
+|---|---|
+| Hồ sơ nhân viên (lương, phụ cấp, người phụ thuộc, BHXH) | T3 |
+| Chấm công theo ngày/buổi/giờ; làm thêm giờ 150/200/300% | T4 (ba loại làm thêm), T2 (hệ số theo tham số công ty; giá trị 150/200/300% là tham số do người dùng nhập, quy ước 1) |
+| Cấu trúc bảng lương cấu hình (cột, công thức) | T2, T5 |
+| BHXH/BHYT/BHTN tỷ lệ/trần/sàn theo ngày hiệu lực; TNCN lũy tiến 5 bậc, giảm trừ kỳ 2026 | T1 (tham số), T2 (động cơ). **Giá trị chờ văn bản gốc** (mục 4 TIEP-THEO); dữ liệu mẫu dùng giá trị minh họa |
+| Hạch toán chi phí lương theo bộ phận/vụ việc; chứng từ chi lương và nộp bảo hiểm; chứng từ khấu trừ TNCN | T6, T9 (chứng từ khấu trừ: bản in không số mẫu) |
+| Nhập bảng lương từ Excel; báo cáo lương; file I-VAN | T7 (I-VAN: xuất danh sách chung, không có đặc tả công khai) |
+| Chi lương theo lô (chuyển từ GĐ5) | T8 |
+| 05/KK-TNCN, quyết toán TNCN (chuyển từ GĐ5) | T9 (số liệu nguồn; mẫu chờ TT 89/2026 Phụ lục I) |
+| Giá thành: đối tượng, định mức, tập hợp 621/622/627, dở dang, phân bổ, 5 phương pháp, nhập kho theo giá thành, sổ 154, thẻ giá thành, so sánh định mức | T10, T11, T12 |
+| Hợp đồng và vụ việc: thu/chi/doanh số/thực hiện, đợt thanh toán, sinh hóa đơn, lãi lỗ, chuyển số dư sang năm sau | T13 |
+| Phân bổ CPBH/QLDN theo vụ việc | T13 |
+| Lãi vay LV chưa có đối tượng chi phí (Hạn chế GĐ4) | T10 (chiều `cost_object_id` có thể gắn khi người dùng chỉnh dòng; LV tự sinh vẫn chưa gắn: ghi hạn chế) |
+| Tiêu chí: bảng lương mẫu 20 nhân viên khớp tính tay | T2, T5 |
+| Tiêu chí: giá thành giản đơn và hệ số khớp ví dụ chuẩn | T10, T11 |
+
+Ngoài phạm vi (ghi hạn chế): giá thành phân bước nhiều công đoạn (GĐ7 theo lộ trình); kế toán ngành xây lắp/vận tải/nhà hàng (GĐ7); lương hoa hồng (D); nghỉ phép năm/thai sản tự động; BHXH điện tử I-VAN thật; ký số tờ khai TNCN khi chưa có mẫu; mẫu tệp chi lương từng ngân hàng; dự phòng nợ khó đòi (Hạn chế GĐ2).
+
+## Self-Review (đã chạy)
+
+1. **Phủ đặc tả:** mục 9 Tiền lương (T1–T9), Giá thành (T10–T12), Hợp đồng – vụ việc (T13); mục 10 tham số (T1, quy ước 1); cờ `view_salary` (T1, T14); chuyển GĐ5 (T8, T9). Không còn mục lộ trình không có tác vụ, trừ mục "ngoài phạm vi" có lý do.
+2. **Trung thực pháp lý:** không tác vụ nào nhập giá trị pháp lý vào `legal-params.json`; mọi tác vụ dùng tham số công ty có `source`; tờ khai TNCN dừng ở số liệu nguồn.
+3. **Rủi ro lớn:** Task 10 đụng bảng `voucher_line` phân vùng (cột mới, trigger bất biến, hàm sao chép) — kiểm thử đầy đủ bộ `vouchers`, `closing`, `inventory` sau khi đổi; Task 11 phải khớp 154/155/632 với giá vốn GĐ3 — quyết định ghi sổ trước khi viết mã.
+4. **Review Focus:** 6 mục, mỗi mục có kiểm thử ở tác vụ sở hữu (T14/T15 cho 1, T2/T5 cho 2, T6 cho 3, T10/T11 cho 4, T13 cho 5, T6/T11/T13 cho 6).
+5. **Cân đối:** kế hoạch không chứa thân hàm; chỉ chữ ký, bảng, tên kiểm thử.
