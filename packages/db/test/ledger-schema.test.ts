@@ -56,7 +56,7 @@ describe('lược đồ sổ cái', () => {
 
   it('công ty mới có đủ loại chứng từ hệ thống; app_user không gọi được hàm seed và hàm tạo partition', async () => {
     const types = await sql<{ code: string }>`SELECT code FROM voucher_type WHERE tenant_id = ${tenantId}::uuid ORDER BY 1`.execute(t.admin);
-    expect(types.rows.map((x) => x.code)).toEqual(['BC', 'BH', 'BN', 'BT', 'CK', 'CL', 'CPM', 'CT', 'DG', 'DK', 'GGB', 'GGM', 'GV', 'HDB', 'HDM', 'KC', 'KH', 'KTT', 'LR', 'LV', 'MH', 'PB', 'PC', 'PKT', 'PNK', 'PT', 'PXK', 'QTU', 'TLB', 'TLM', 'TS', 'XQ']);
+    expect(types.rows.map((x) => x.code)).toEqual(['BC', 'BH', 'BN', 'BT', 'CK', 'CL', 'CPM', 'CT', 'DG', 'DK', 'GGB', 'GGM', 'GT', 'GV', 'HDB', 'HDM', 'KC', 'KH', 'KTT', 'LR', 'LU', 'LV', 'MH', 'PB', 'PC', 'PKT', 'PNK', 'PT', 'PXK', 'QTU', 'TLB', 'TLM', 'TS', 'XQ']);
     const p = await sql<{ a: boolean; b: boolean; c: boolean }>`SELECT has_function_privilege('app_user', 'seed_tenant_defaults(uuid)', 'EXECUTE') AS a,
       has_function_privilege('app_user', 'seed_voucher_types(uuid)', 'EXECUTE') AS b, has_function_privilege('app_user', 'ensure_line_partitions(date, date)', 'EXECUTE') AS c`.execute(t.admin);
     expect(p.rows[0]).toEqual({ a: false, b: false, c: false });
@@ -338,7 +338,7 @@ describe('GĐ2: loại chứng từ, cột tiêu đề và cân bằng ngoại t
     const r = await sql<{ code: string; module: string; prefix: string; is_system: boolean }>`SELECT code, module, prefix, is_system FROM voucher_type WHERE tenant_id = ${tenantId}::uuid`.execute(t.admin);
     expect(Object.fromEntries(r.rows.map((x) => [x.code, x.module]))).toEqual({
       PKT: 'general', DK: 'general', KC: 'general', PB: 'general', PT: 'cash', PC: 'cash', BC: 'bank', BN: 'bank', CT: 'bank', QTU: 'general', BT: 'arap',
-      HDB: 'arap', HDM: 'arap', GGB: 'arap', GGM: 'arap', CL: 'arap', DG: 'general', XQ: 'general', KTT: 'general', PNK: 'inventory', PXK: 'inventory', CK: 'inventory', GV: 'inventory', MH: 'arap', TLM: 'arap', CPM: 'arap', BH: 'arap', TLB: 'arap', LR: 'inventory', TS: 'assets', KH: 'assets', LV: 'general' });
+      HDB: 'arap', HDM: 'arap', GGB: 'arap', GGM: 'arap', CL: 'arap', DG: 'general', XQ: 'general', KTT: 'general', PNK: 'inventory', PXK: 'inventory', CK: 'inventory', GV: 'inventory', MH: 'arap', TLM: 'arap', CPM: 'arap', BH: 'arap', TLB: 'arap', LR: 'inventory', TS: 'assets', KH: 'assets', LV: 'general', LU: 'payroll', GT: 'inventory' });
     expect(r.rows.every((x) => x.prefix === x.code && x.is_system)).toBe(true);
   });
 

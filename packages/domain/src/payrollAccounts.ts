@@ -3,7 +3,13 @@ export interface PayrollAccountMap {
   payable: string; union: string; si: string; hi: string; ui: string; pit: string;
   // TT200: 334 là tài khoản tổng hợp, `payable` là tài khoản lá dùng để hạch toán; các lá còn lại liệt kê ở đây.
   payableLeaves?: string[];
+  // Hạch toán lương (LU): khấu trừ khác vào thực lĩnh (đoàn phí, tạm ứng, đóng góp...) ghi Có tài khoản này; tài khoản chi phí theo vai trò bộ phận.
+  withholding?: string;
+  cost?: Record<CostRole, string>;
 }
+// Vai trò bộ phận cho tài khoản chi phí lương mặc định: sản xuất trực tiếp, quản lý phân xưởng, bán hàng, quản lý doanh nghiệp.
+export const COST_ROLES = ['direct', 'workshop', 'selling', 'admin'] as const;
+export type CostRole = (typeof COST_ROLES)[number];
 const MIN_GROUP_LEN = 3;
 // Tài khoản thuộc nhóm lương nhạy cảm (view_salary): phải trả người lao động (và tài khoản con, kể cả tài khoản tổng hợp chứa các lá), kinh phí công đoàn, BHXH, BHYT, BHTN.
 // 3335 (thuế TNCN) không thuộc nhóm: tổng thuế phải nộp không nhạy cảm, số theo nhân viên nằm ở dòng phải trả người lao động.

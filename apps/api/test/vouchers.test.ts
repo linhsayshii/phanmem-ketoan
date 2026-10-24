@@ -58,21 +58,22 @@ describe('chứng từ', () => {
     expect((await create(pkt('2026-01-08', [L('6421', '10'), L('1111', '0', '10')], { voucherType: 'PB' }))).statusCode).toBe(201);
   });
 
-  it('GĐ4: lập tay chứng từ KH/TS/LV → 409 VOUCHER_TYPE_SYSTEM; dòng Có 2141 không có tài sản → LINE_ASSET_REQUIRED', async () => {
-    for (const t of ['KH', 'TS', 'LV']) {
+  it('GĐ4, GĐ6: lập tay chứng từ KH/TS/LV/LU/GT → 409 VOUCHER_TYPE_SYSTEM; dòng Có 2141 không có tài sản → LINE_ASSET_REQUIRED', async () => {
+    for (const t of ['KH', 'TS', 'LV', 'LU', 'GT']) {
       const r = await create(pkt('2026-01-09', [L('6422', '10'), L('1111', '0', '10')], { voucherType: t }));
       expect([t, r.statusCode, r.json().error.code]).toEqual([t, 409, 'VOUCHER_TYPE_SYSTEM']);
     }
     const r = await create(pkt('2026-01-09', [L('6422', '10'), L('2141', '0', '10')]));
     expect(r.statusCode, r.body).toBe(409); expect(r.json().error.code).toBe('LINE_ASSET_REQUIRED');
   });
-  it('GĐ4: bỏ ghi sổ chứng từ asset_run, asset_event, loan_interest → 409 VOUCHER_SYSTEM_GENERATED', async () => {
-    for (const src of ['asset_run', 'asset_event', 'loan_interest']) {
+  it('GĐ4, GĐ6: bỏ ghi sổ chứng từ asset_run, asset_event, loan_interest, payroll_run, cost_run, project_alloc → 409 VOUCHER_SYSTEM_GENERATED', async () => {
+    for (const src of ['asset_run', 'asset_event', 'loan_interest', 'payroll_run', 'cost_run', 'project_alloc']) {
       const v = (await create(pkt('2026-01-10', [L('6422', '3'), L('1111', '0', '3')]))).json();
       await sql`UPDATE voucher SET source_doc_type = ${src} WHERE id = ${v.id}::uuid`.execute(ctx.t.admin);
       expect((await post(v.id)).statusCode).toBe(200);
       const r = await ctx.app.inject({ method: 'POST', url: `/api/vouchers/${v.id}/unpost`, headers: { cookie } });
       expect([src, r.statusCode, r.json().error.code]).toEqual([src, 409, 'VOUCHER_SYSTEM_GENERATED']);
+      await expect(sql`SELECT unpost_voucher(${v.id}::uuid)`.execute(ctx.t.admin), src).rejects.toThrow(/VOUCHER_SYSTEM_GENERATED/); // chặn cả ở hàm SQL
     }
   });
   it('tối đa 5.000 dòng mỗi chứng từ: 5.001 dòng bị 400 kèm thông điệp', async () => {

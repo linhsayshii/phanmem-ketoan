@@ -391,6 +391,9 @@ export interface EmployeeDependentTable {
   birth_date: DateOnly | null; from_month: string; to_month: string | null; note: string | null;
 }
 export interface EmployeeCostSplitTable { id: Generated<number>; tenant_id: string; employee_id: number; project_id: number; pct: Numeric }
+export interface DepartmentCostAccountTable {
+  id: Generated<number>; tenant_id: string; department_id: number; kind: string; role: string | null; account_code: string | null; cost_item_id: number | null; cost_object_id: number | null;
+}
 export interface AttendanceSheetTable { id: Generated<number>; tenant_id: string; year: number; month: number; department_id: number | null; created_at: Generated<Timestamp> }
 export interface AttendanceEntryTable { id: Generated<number>; tenant_id: string; sheet_id: number; employee_id: number; work_date: DateOnly; kind: string; qty: Numeric }
 export interface PayrollStructureTable {
@@ -553,6 +556,7 @@ export interface Database {
   employee_salary_history: EmployeeSalaryHistoryTable;
   employee_dependent: EmployeeDependentTable;
   employee_cost_split: EmployeeCostSplitTable;
+  department_cost_account: DepartmentCostAccountTable;
   attendance_sheet: AttendanceSheetTable;
   attendance_entry: AttendanceEntryTable;
   payroll_structure: PayrollStructureTable;
