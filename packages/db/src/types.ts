@@ -108,6 +108,7 @@ export interface InvoiceGroupTable {
 }
 export interface CostItemTable {
   id: Generated<number>; tenant_id: string; code: string; name: string; parent_id: number | null; default_account_code: string | null; is_active: Generated<boolean>;
+  cost_element: 'material' | 'labor' | 'overhead' | null; // 0103
 }
 export interface ProjectTable {
   id: Generated<number>; tenant_id: string; code: string; name: string; parent_id: number | null; party_id: string | null;
@@ -166,6 +167,12 @@ export interface CostObjectTable {
   id: Generated<number>; tenant_id: string; code: string; name: string; kind: 'product' | 'project' | 'order' | 'contract';
   item_id: number | null; project_id: number | null; order_id: string | null; contract_id: number | null; method: string | null; unit: string | null; is_active: Generated<boolean>;
 }
+// 0103: định mức NVL theo sản phẩm (item_id) hoặc đối tượng tập hợp chi phí.
+export interface CostNormTable {
+  id: Generated<number>; tenant_id: string; item_id: number | null; cost_object_id: number | null; valid_from: DateOnly; valid_to: DateOnly | null; note: string | null;
+  created_at: Generated<string>; updated_at: Generated<string>;
+}
+export interface CostNormLineTable { id: Generated<number>; tenant_id: string; norm_id: number; line_no: number; item_id: number; quantity: Numeric; loss_percent: NumericDefault; note: string | null }
 export interface ContractTable { id: Generated<number>; tenant_id: string; code: string; name: string; party_id: string | null; kind: string }
 export interface AssetCategoryTable {
   id: Generated<number>; tenant_id: string; code: string; name: string; kind: string; asset_account_code: string; depreciation_account_code: string | null;
@@ -568,6 +575,8 @@ export interface Database {
   payroll_line_value: PayrollLineValueTable;
   payroll_run_voucher: PayrollRunVoucherTable;
   cost_object: CostObjectTable;
+  cost_norm: CostNormTable;
+  cost_norm_line: CostNormLineTable;
   bank_feed: BankFeedTable;
   bank_transaction: BankTransactionTable;
   bank_webhook_log: BankWebhookLogTable;
