@@ -12,14 +12,17 @@ const add = (x: Side, y: Side): Side => ({ debit: D(x.debit).plus(y.debit).toStr
 export const dayBefore = (iso: string) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
 const POSTED = sql`v.state IN ('posted','reversed')`;
 
-interface Filters { partyId?: string | undefined; costItemId?: number | undefined; projectId?: number | undefined; departmentId?: number | undefined; employeeId?: number | undefined }
+interface Filters { partyId?: string | undefined; costItemId?: number | undefined; projectId?: number | undefined; departmentId?: number | undefined; employeeId?: number | undefined;
+  contractId?: number | undefined; costObjectId?: number | undefined }
 // Điều kiện chiều phân tích trên dòng chứng từ gốc (bí danh `alias`); không có bộ lọc thì luôn đúng.
 const dimWhere = (alias: string, f: Filters) => sql.join([sql`true`,
   ...(f.partyId ? [sql`${sql.ref(`${alias}.party_id`)} = ${f.partyId}::uuid`] : []),
   ...(f.costItemId !== undefined ? [sql`${sql.ref(`${alias}.cost_item_id`)} = ${f.costItemId}`] : []),
   ...(f.projectId !== undefined ? [sql`${sql.ref(`${alias}.project_id`)} = ${f.projectId}`] : []),
   ...(f.departmentId !== undefined ? [sql`${sql.ref(`${alias}.department_id`)} = ${f.departmentId}`] : []),
-  ...(f.employeeId !== undefined ? [sql`${sql.ref(`${alias}.employee_id`)} = ${f.employeeId}`] : [])], sql` AND `);
+  ...(f.employeeId !== undefined ? [sql`${sql.ref(`${alias}.employee_id`)} = ${f.employeeId}`] : []),
+  ...(f.contractId !== undefined ? [sql`${sql.ref(`${alias}.contract_id`)} = ${f.contractId}`] : []),
+  ...(f.costObjectId !== undefined ? [sql`${sql.ref(`${alias}.cost_object_id`)} = ${f.costObjectId}`] : [])], sql` AND `);
 
 // Hệ tài khoản của khoảng ngày: kỳ chứa `from`, nếu không có thì kỳ chứa `to`, nếu không có thì kỳ bắt đầu gần nhất trước `to`.
 // Một công ty giữ nhiều hệ tài khoản (mã trùng nhau giữa các hệ), nên mọi tra cứu và so khớp tiền tố tài khoản phải gắn với một hệ.
@@ -124,11 +127,12 @@ export async function accountLedger(trx: Trx, tenantId: string, f: { accountCode
   return { ...base, rows: rows.map((r) => { run = run.plus(r.debit).minus(r.credit); return { ...r, running: side(run) }; }) };
 }
 
-export async function accountDetail(trx: Trx, tenantId: string, f: { accountCode: string; from: string; to: string; partyCode?: string | undefined; costItemCode?: string | undefined; projectCode?: string | undefined; departmentCode?: string | undefined; employeeCode?: string | undefined }) {
+export async function accountDetail(trx: Trx, tenantId: string, f: { accountCode: string; from: string; to: string; partyCode?: string | undefined; costItemCode?: string | undefined; projectCode?: string | undefined; departmentCode?: string | undefined; employeeCode?: string | undefined;
+  contractCode?: string | undefined; costObjectCode?: string | undefined }) {
   const regime = await regimeOf(trx, f);
   await accountsUnder(trx, regime, f.accountCode);
   // Mã lọc không có trong danh mục thì báo lỗi, không lặng lẽ bỏ bộ lọc (sẽ ra sổ của mọi đối tượng).
-  const id = async (table: 'party' | 'cost_item' | 'project' | 'department' | 'employee', code: string | undefined) => {
+  const id = async (table: 'party' | 'cost_item' | 'project' | 'department' | 'employee' | 'contract' | 'cost_object', code: string | undefined) => {
     if (!code) return undefined;
     const r = (await trx.selectFrom(table).select('id').where('code', '=', code).executeTakeFirst()) as { id: string | number } | undefined;
     if (!r) throw new AppError('LOOKUP_NOT_FOUND', `Không có mã "${code}" trong danh mục ${table}`, 404);
@@ -136,8 +140,9 @@ export async function accountDetail(trx: Trx, tenantId: string, f: { accountCode
   };
   const filters: Filters = { partyId: (await id('party', f.partyCode)) as string | undefined, costItemId: (await id('cost_item', f.costItemCode)) as number | undefined,
     projectId: (await id('project', f.projectCode)) as number | undefined, departmentId: (await id('department', f.departmentCode)) as number | undefined,
-    employeeId: (await id('employee', f.employeeCode)) as number | undefined };
-  const byDim = filters.costItemId !== undefined || filters.projectId !== undefined || filters.departmentId !== undefined || filters.employeeId !== undefined;
+    employeeId: (await id('employee', f.employeeCode)) as number | undefined, contractId: (await id('contract', f.contractCode)) as number | undefined,
+    costObjectId: (await id('cost_object', f.costObjectCode)) as number | undefined };
+  const byDim = [filters.costItemId, filters.projectId, filters.departmentId, filters.employeeId, filters.contractId, filters.costObjectId].some((x) => x !== undefined);
   const openNet = byDim ? await openingFromLines(trx, regime, f.accountCode, f.from, filters) : await openingNet(trx, tenantId, regime, f.accountCode, f.from, { partyId: filters.partyId });
   const rows = await pairRows(trx, regime, f.accountCode, f, filters);
   let run = openNet;

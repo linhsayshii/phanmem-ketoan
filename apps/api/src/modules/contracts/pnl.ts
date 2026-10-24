@@ -21,7 +21,7 @@ export interface PnlRow extends PnlAmounts { id: number; code: string; name: str
   currencyCode?: string; value?: string | null; valuePct?: string | null; budget?: string | null; costTotal?: string; budgetPct?: string | null }
 export interface PnlReport { by: 'contract' | 'project'; from: string; to: string; regime: string; rows: PnlRow[]; unassigned: PnlAmounts; totals: PnlAmounts }
 
-type Sums = Record<PnlGroup, Decimal>;
+export type Sums = Record<PnlGroup, Decimal>;
 const zero = (): Sums => Object.fromEntries(GROUPS.map((g) => [g, D(0)])) as Sums;
 const add = (a: Sums, b: Sums): Sums => Object.fromEntries(GROUPS.map((g) => [g, a[g].plus(b[g])])) as Sums;
 function amounts(s: Sums): PnlAmounts {
@@ -38,8 +38,8 @@ export function pnlGroups(regime: string): Record<PnlGroup, string[]> {
   return g;
 }
 
-// Phát sinh theo (chiều, nhóm) trong khoảng ngày, chiều null = không gắn.
-async function sums(trx: Trx, by: 'contract' | 'project', regime: string, from: string, to: string): Promise<Map<number | null, Sums>> {
+// Phát sinh theo (chiều, nhóm) trong khoảng ngày, chiều null = không gắn. excludeAlloc: bỏ chứng từ phân bổ chi phí chung PB (Task 13c) để lấy chi phí trực tiếp làm tiêu thức.
+export async function sums(trx: Trx, by: 'contract' | 'project', regime: string, from: string, to: string, excludeAlloc = false): Promise<Map<number | null, Sums>> {
   const g = pnlGroups(regime);
   const cases = GROUPS.flatMap((k) => g[k].map((p) => sql`WHEN starts_with(a.code, ${p}) THEN ${k}`));
   const dim = by === 'project' ? sql`l.project_id` : sql`CASE WHEN ct.kind <> 'loan' THEN l.contract_id END`;
@@ -50,6 +50,7 @@ async function sums(trx: Trx, by: 'contract' | 'project', regime: string, from: 
     CROSS JOIN LATERAL (SELECT CASE ${sql.join(cases, sql` `)} END AS grp) x
     WHERE v.state IN ('posted', 'reversed') AND NOT v.is_closing AND v.source_doc_type IS DISTINCT FROM 'opening_balance'
       AND l.posting_date BETWEEN ${from}::date AND ${to}::date AND a.regime = ${regime} AND x.grp IS NOT NULL
+      ${excludeAlloc ? sql`AND NOT (v.source_doc_type IS NOT DISTINCT FROM 'project_alloc' AND v.voucher_type = 'PB')` : sql``}
       AND NOT (x.grp = 'production' AND (v.source_doc_type IS NOT DISTINCT FROM 'cost_run' OR (${regime === 'TT133'}::boolean AND l.credit > 0 AND EXISTS (
         SELECT 1 FROM voucher_line y JOIN account ya ON ya.id = y.account_id WHERE y.voucher_id = l.voucher_id AND y.debit > 0
           AND (ya.code LIKE '155%' OR ya.code LIKE '157%' OR ya.code LIKE '632%')))))
