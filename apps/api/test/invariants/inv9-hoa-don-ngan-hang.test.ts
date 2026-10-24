@@ -157,7 +157,7 @@ async function run(ops: Op[]) {
   expect(bad, JSON.stringify(ops)).toEqual([]);
 }
 
-// Kịch bản cố định (cũng là ví dụ bắt buộc của fast-check): mỗi loại thao tác thành công ít nhất một lần.
+// Kịch bản cố định (chạy thành ca riêng, không đưa vào examples để khỏi chạy hai lần): mỗi loại thao tác thành công ít nhất một lần.
 const SCENARIO: Op[] = [{ k: 'sale' }, { k: 'issue', p: 0 }, { k: 'sale' }, { k: 'issue', p: 1 }, { k: 'sale' }, { k: 'issue', p: 2 }, { k: 'cancel', p: 2 }, { k: 'adjust', p: 0 }, { k: 'replace', p: 1 },
   { k: 'mode', m: 2 }, { k: 'sale' }, { k: 'issue', p: 6 }, { k: 'mode', m: 0 }, { k: 'retry', p: 0 }, { k: 'retry', p: 1 }, { k: 'retry', p: 2 }, { k: 'retry', p: 3 }, { k: 'retry', p: 4 }, { k: 'retry', p: 5 },
   { k: 'mode', m: 3 }, { k: 'sale' }, { k: 'issue', p: 5 }, { k: 'mode', m: 0 }, { k: 'reconcile' },
