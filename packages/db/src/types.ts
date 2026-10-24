@@ -409,6 +409,9 @@ export interface PayrollLineTable {
   id: Generated<number>; tenant_id: string; run_id: number; employee_id: number; year: Generated<number>; month: Generated<number>; kind: Generated<string>; run_status: Generated<string>; // chép từ payroll_run bằng trigger
   gross: NumericDefault; si_emp: NumericDefault; si_er: NumericDefault; pit: NumericDefault; net: NumericDefault; warnings: ColumnType<unknown, string | undefined, string>; input_hash: string | null;
 }
+export interface PayrollRunVoucherTable {
+  id: Generated<number>; tenant_id: string; run_id: number; kind: string; voucher_id: string; lu_voucher_id: string | null; created_by: Generated<string | null>; created_at: Generated<Timestamp>;
+}
 export interface PayrollLineValueTable { id: Generated<number>; tenant_id: string; line_id: number; column_code: string; value: string; manual: Generated<boolean> }
 export interface ApiKeyTable {
   id: Generated<string>; tenant_id: string; user_id: string; name: string; prefix: string; key_hash: string; scopes: string[]; default_warehouse_id: number | null;
@@ -563,6 +566,7 @@ export interface Database {
   payroll_run: PayrollRunTable;
   payroll_line: PayrollLineTable;
   payroll_line_value: PayrollLineValueTable;
+  payroll_run_voucher: PayrollRunVoucherTable;
   cost_object: CostObjectTable;
   bank_feed: BankFeedTable;
   bank_transaction: BankTransactionTable;
