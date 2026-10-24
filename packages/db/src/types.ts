@@ -362,6 +362,10 @@ export interface InboundInvoiceLineTable {
   quantity: Numeric | null; unit_price: Numeric | null; discount_amount: Numeric | null; amount: Numeric | null; tax_rate: string | null;
 }
 
+export interface InboundItemMapTable {
+  id: Generated<number>; tenant_id: string; seller_tax_code: string; name_key: string; item_id: number | null; account_id: number | null; tax_code_id: number | null; updated_at: Generated<string>;
+}
+
 export interface EinvoiceTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; series_id: number; provider_id: number; relation: Generated<string>; original_id: number | null; adjust_kind: string | null;
   status: string; transaction_uuid: string; invoice_no: string | null; issued_at: Timestamp | null; issue_date: DateOnly | null; cqt_code: string | null; cqt_status: Generated<string>;
@@ -474,6 +478,7 @@ export interface Database {
   signing_profile: SigningProfileTable;
   inbound_invoice: InboundInvoiceTable;
   inbound_invoice_line: InboundInvoiceLineTable;
+  inbound_item_map: InboundItemMapTable;
   signing_session: SigningSessionTable;
   einvoice_series: EinvoiceSeriesTable;
   einvoice: EinvoiceTable;
