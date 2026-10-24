@@ -91,6 +91,12 @@ describe('mẫu tệp chi lương', () => {
     await fail('PUT', `${F}/${c.id}`, 404, 'PAYMENT_FORMAT_NOT_FOUND', body);
   });
 
+  it('tên cột và giá trị cố định bắt đầu bằng = + - @ được thêm dấu nháy đơn (chống chèn công thức)', async () => {
+    const f = { name: 'P', fileType: 'csv', columns: [{ field: 'employee_name', header: '=Tên' }, { field: 'amount' }, { field: 'constant', header: 'L', value: '@SUM(A1)' }] };
+    const s = await ok('POST', `${F}/preview`, { format: f });
+    expect(s.rows[0]).toEqual(["'=Tên", 'Số tiền', 'L']); expect(s.rows[1]![2]).toBe("'@SUM(A1)"); expect(s.rows[1]![1]).toBe('12500000');
+  });
+
   it('xem thử tối đa 5 dòng: dòng minh họa khi không chọn bảng lương, dữ liệu thật khi chọn', async () => {
     const f = { name: 'P', fileType: 'csv', asciiOnly: true, columns: [{ field: 'employee_name', header: 'Ten' }, { field: 'amount' }, { field: 'constant', header: 'Loai', value: 'LUONG' }] };
     const s = await ok('POST', `${F}/preview`, { format: f });

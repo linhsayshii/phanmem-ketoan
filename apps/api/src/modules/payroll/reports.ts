@@ -4,6 +4,7 @@ import type { Database } from '@kt/db';
 import { allocateByRatio, D, formatVnDate, formatVnNumber, PAYROLL_BUILTIN_COLUMNS, type Decimal, type PayrollColumn } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { moneyCell } from '../reporting/print/excel.js';
+import { formulaSafe } from '../../lib/formulaSafe.js';
 import type { ReportColumn, ReportDoc } from '../reporting/print/html.js';
 import { companyInfo } from '../reporting/print/bookSet.js';
 import { regimeOf } from '../reporting/ledgers.js';
@@ -350,7 +351,7 @@ export async function toDoc(trx: Trx, tenantId: string, r: Report): Promise<Repo
 // CSV UTF-8 có BOM (Excel mở đúng tiếng Việt); tiền là số thuần không dấu phân cách, ngày dd/MM/yyyy.
 export function renderCsv(d: ReportDoc): Buffer {
   const q = (x: unknown) => { const t = String(x ?? ''); return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
-  const cell = (c: ReportColumn, x: unknown) => (c.type === 'number' ? moneyCell(x, c.scale) : c.type === 'date' && x ? formatVnDate(String(x)) : x);
-  const lines = [d.columns.map((c) => q(c.label)).join(','), ...[...d.rows, ...(d.footer ? [d.footer] : [])].map((r) => d.columns.map((c) => q(cell(c, r[c.key]))).join(','))];
+  const cell = (c: ReportColumn, x: unknown) => (c.type === 'number' ? moneyCell(x, c.scale) : c.type === 'date' && x ? formatVnDate(String(x)) : formulaSafe(x));
+  const lines = [d.columns.map((c) => q(formulaSafe(c.label))).join(','), ...[...d.rows, ...(d.footer ? [d.footer] : [])].map((r) => d.columns.map((c) => q(cell(c, r[c.key]))).join(','))];
   return Buffer.from(`\uFEFF${lines.join('\r\n')}\r\n`, 'utf8');
 }

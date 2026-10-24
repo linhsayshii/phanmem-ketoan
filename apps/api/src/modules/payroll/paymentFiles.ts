@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { formulaSafe } from '../../lib/formulaSafe.js';
 import { sql, type Selectable, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
@@ -82,7 +83,7 @@ async function loadRecipients(trx: Trx, runId: number) {
 const stripMarks = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
 // Ma trận chuỗi (dòng tiêu đề nếu có + dòng dữ liệu) theo mẫu; dùng chung cho tệp và xem thử.
 function matrix(f: FormatInput, rs: Recipient[], c: Ctx): string[][] {
-  const txt = (s: string) => (f.asciiOnly ? stripMarks(s) : s);
+  const txt = (s: string) => formulaSafe(f.asciiOnly ? stripMarks(s) : s);
   const head = f.hasHeader ? [f.columns.map((col) => txt(col.header || FIELD_LABEL[col.field]))] : [];
   const body = rs.map((r, i) => {
     const tok: Record<string, string> = { month: String(c.month), year: String(c.year), employee_name: r.employeeName, employee_code: r.employeeCode, run_name: c.runName };
