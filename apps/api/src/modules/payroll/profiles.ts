@@ -9,7 +9,7 @@ import { likePattern } from '../master/crud.js';
 type Trx = Kysely<Database> | Transaction<Database>;
 
 // Bảng hồ sơ lương: nhật ký kiểm toán của các bảng này che khi thiếu view_salary (audit/routes.ts). Task sau thêm bảng lương, chấm công... vào đây.
-export const SALARY_AUDIT_ENTITIES = ['employee_payroll', 'employee_allowance', 'employee_salary_history', 'employee_dependent', 'employee_cost_split'];
+export const SALARY_AUDIT_ENTITIES = ['employee_payroll', 'employee_allowance', 'employee_salary_history', 'employee_dependent', 'employee_cost_split', 'payroll_run', 'payroll_line_value'];
 
 const vnd = z.string().regex(VND_AMOUNT_RE, 'Số tiền VND phải là số nguyên không âm tối đa 16 chữ số');
 const opt = (max: number) => z.string().trim().max(max).nullish().transform((v) => v || null);
@@ -69,10 +69,12 @@ const samePerson = (a: Person, b: Person) =>
     : a.id_number && b.id_number ? a.id_number === b.id_number
       : norm(a.name) === norm(b.name) && a.relationship === b.relationship;
 
-// Móc cho Task 5: bảng lương calculated|posted đã dùng mức lương hiệu lực từ ngày này chưa. Có dòng bảng lương của nhân viên ở tháng từ tháng của validFrom trở đi thì thêm/xóa dòng lịch sử lương
-// làm đổi số đã tính nên bị chặn (409 SALARY_HISTORY_USED). Hiện chưa có bảng lương nên luôn false; Task 5 thay thân hàm bằng truy vấn payroll_line.
+// Bảng lương calculated|posted đã dùng mức lương hiệu lực từ ngày này chưa: có dòng bảng lương của nhân viên ở tháng từ tháng của validFrom trở đi thì thêm/xóa
+// dòng lịch sử lương làm đổi số đã tính nên bị chặn (409 SALARY_HISTORY_USED). Bảng nháp chưa coi là đã dùng (QĐ #660). Giữ dạng đối tượng để vi.spyOn được.
 export const salaryUse = {
-  used: async (_trx: Trx, _employeeId: number, _validFrom: string): Promise<boolean> => false,
+  used: async (trx: Trx, employeeId: number, validFrom: string): Promise<boolean> =>
+    !!(await trx.selectFrom('payroll_line').select('id').where('employee_id', '=', employeeId).where('run_status', 'in', ['calculated', 'posted'])
+      .where(sql<number>`year * 100 + month`, '>=', Number(validFrom.slice(0, 4)) * 100 + Number(validFrom.slice(5, 7))).executeTakeFirst()),
 };
 
 const notFound = (code: string, msg: string) => new AppError(code, msg, 404);

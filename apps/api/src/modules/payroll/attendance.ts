@@ -9,10 +9,12 @@ import { getSettings } from '../core/settings.js';
 
 type Trx = Kysely<Database> | Transaction<Database>;
 
-// Móc cho Task 5/6: chấm công của kỳ đã hạch toán lương thì khóa (409 ATTENDANCE_LOCKED); hủy hạch toán thì mở lại. Chưa có bảng lương nên luôn false.
-// Task 5/6 thay thân `locked` bằng truy vấn: có payroll_run posted của kỳ (year, month) chứa nhân viên (employeeId rỗng = chứa bất kỳ nhân viên nào).
+// Chấm công của kỳ đã hạch toán lương thì khóa (409 ATTENDANCE_LOCKED); hủy hạch toán thì mở lại: có dòng bảng lương posted của kỳ (year, month)
+// cho nhân viên (employeeId rỗng = bất kỳ nhân viên nào). Đọc run_status chép xuống payroll_line. Giữ dạng đối tượng để kiểm thử vi.spyOn được.
 export const attendanceGate = {
-  locked: async (_trx: Trx, _year: number, _month: number, _employeeId?: number): Promise<boolean> => false,
+  locked: async (trx: Trx, year: number, month: number, employeeId?: number): Promise<boolean> =>
+    !!(await trx.selectFrom('payroll_line').select('id').where('year', '=', year).where('month', '=', month).where('run_status', '=', 'posted')
+      .$if(employeeId !== undefined, (q) => q.where('employee_id', '=', employeeId!)).executeTakeFirst()),
 };
 export const attendanceLocked = (trx: Trx, year: number, month: number, employeeId?: number): Promise<boolean> => attendanceGate.locked(trx, year, month, employeeId);
 
@@ -70,7 +72,7 @@ export async function monthEmployees(trx: Trx, year: number, month: number, depa
   return q.execute() as Promise<EmpRow[]>;
 }
 
-async function monthEntries(trx: Trx, year: number, month: number, employeeIds?: number[]) {
+export async function monthEntries(trx: Trx, year: number, month: number, employeeIds?: number[]) {
   const { from, to } = monthRange(year, month);
   const out: { id: number; sheetId: number; employeeId: number; date: string; kind: AttendanceKind; qty: string }[] = [];
   for (const ids of employeeIds ? chunks(employeeIds, 5000) : [undefined]) {
@@ -216,6 +218,8 @@ export async function summary(trx: Trx, tenantId: string, year: number, month: n
 
 // Băm ổn định nội dung chấm công của một nhân viên trong tháng (không phụ thuộc thứ tự dòng, bảng chấm công hay mã dòng): Task 5 dùng làm một phần input_hash của bảng lương.
 export async function attendanceHash(trx: Trx, year: number, month: number, employeeId: number): Promise<string> {
-  const lines = (await monthEntries(trx, year, month, [employeeId])).map((e) => `${e.date}|${e.kind}|${D(e.qty).toFixed(2)}`).sort();
-  return createHash('sha256').update(lines.join('\n')).digest('hex');
+  return entriesHash(await monthEntries(trx, year, month, [employeeId]));
 }
+// Cùng công thức cho các dòng đã đọc sẵn (bảng lương đọc chấm công cả tháng một lần).
+export const entriesHash = (entries: { date: string; kind: string; qty: string }[]) =>
+  createHash('sha256').update(entries.map((e) => `${e.date}|${e.kind}|${D(e.qty).toFixed(2)}`).sort().join('\n')).digest('hex');

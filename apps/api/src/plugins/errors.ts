@@ -1,6 +1,6 @@
 import fp from 'fastify-plugin';
 import { ZodError } from 'zod';
-import { CitError, D, FormulaError, TaxError, type TaxErrorCode } from '@kt/domain';
+import { CitError, D, FormulaError, PayrollError, TaxError, type TaxErrorCode } from '@kt/domain';
 
 export class AppError extends Error {
   constructor(public code: string, message: string, public status = 400, public details?: unknown) { super(message); }
@@ -24,6 +24,8 @@ export default fp(async (app) => {
     if (err instanceof AppError) return reply.status(err.status).send({ error: { code: err.code, message: err.message, ...(err.details !== undefined && { details: err.details }) } });
     if (err instanceof TaxError) return reply.status(TAX_STATUS[err.code]).send({ error: { code: err.code, message: err.message } });
     if (err instanceof CitError) return reply.status(400).send({ error: { code: err.code, message: err.message } }); // thiếu thuế suất, số nhập sai: lỗi đầu vào
+    // Động cơ lương: thiếu tham số là trạng thái dữ liệu (409, nêu mã tham số); công thức/cấu trúc/đầu vào sai là 400.
+    if (err instanceof PayrollError) return reply.status(err.code === 'PAYROLL_PARAM_MISSING' ? 409 : 400).send({ error: { code: err.code, message: err.message, details: { column: err.column ?? null, param: err.param ?? null } } });
     if (err instanceof FormulaError) return reply.status(400).send({ error: { code: 'FORMULA_INVALID', message: err.message } });
     if (err instanceof ZodError) return reply.status(400).send({ error: { code: 'VALIDATION', message: 'Dữ liệu không hợp lệ', details: err.issues } });
     const e = err as PgError & { validation?: unknown; statusCode?: number };
