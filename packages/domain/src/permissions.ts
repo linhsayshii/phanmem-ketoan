@@ -6,12 +6,15 @@ export const SENSITIVE_FLAGS_ALL = ['view_receivable', 'view_payable', 'view_cos
 // Cờ cần để xem tài khoản theo loại sổ chi tiết; tài khoản giá vốn (632*) cần view_cost. Dùng chung cho sổ sách, số dư và các màn công nợ ở API.
 export const SENSITIVE_BY_SUBLEDGER = { receivable: 'view_receivable', payable: 'view_payable', inventory: 'view_cost' } as const;
 type SensitiveAccount = { subledger_kind: string | null; code: string };
-const DENIAL: Record<'view_receivable' | 'view_payable' | 'view_cost', string> = {
-  view_receivable: 'Không có quyền xem công nợ phải thu', view_payable: 'Không có quyền xem công nợ phải trả', view_cost: 'Không có quyền xem giá vốn',
+const DENIAL: Record<'view_receivable' | 'view_payable' | 'view_cost' | 'view_salary', string> = {
+  view_receivable: 'Không có quyền xem công nợ phải thu', view_payable: 'Không có quyền xem công nợ phải trả', view_cost: 'Không có quyền xem giá vốn', view_salary: 'Không có quyền xem lương',
 };
+// Tài khoản lương và các khoản trích theo lương (334, 3382–3386) nhận diện theo mã như 632*, không thêm loại sổ chi tiết (quyết định #605).
+const SALARY_ACCOUNT = /^(334|338[2-6])/;
 const flagsOf = (acc: SensitiveAccount): (keyof typeof DENIAL)[] => [
   ...(acc.subledger_kind && acc.subledger_kind in SENSITIVE_BY_SUBLEDGER ? [SENSITIVE_BY_SUBLEDGER[acc.subledger_kind as keyof typeof SENSITIVE_BY_SUBLEDGER]] : []),
   ...(acc.code.startsWith('632') ? ['view_cost' as const] : []),
+  ...(SALARY_ACCOUNT.test(acc.code) ? ['view_salary' as const] : []),
 ].filter((f, i, a) => a.indexOf(f) === i);
 // Lý do cờ nhạy cảm che tài khoản này với người dùng; null là được xem.
 export function sensitiveDenial(auth: { sensitive: Set<string> }, acc: SensitiveAccount): string | null {
@@ -81,5 +84,13 @@ export const PERMISSIONS: readonly { code: string; name: string; group: string }
   { code: 'api_key.manage', name: 'Quản lý khóa API', group: 'Hệ thống' },
   ...crud('cit', 'thuế TNDN', 'Thuế'),
   { code: 'signing.use', name: 'Ký số', group: 'Hệ thống' },
+  // GĐ6: lương, chấm công, giá thành, theo dõi hợp đồng (tờ khai TNCN dùng tax_return.*).
+  ...crud('payroll', 'bảng lương', 'Lương', [['post', 'Hạch toán'], ['param', 'Nhập tham số lương, thuế, bảo hiểm cho'], ['pay', 'Chi lương, nộp bảo hiểm, nộp thuế cho'], ['export', 'Xuất tệp chi lương, báo cáo lương cho']]),
+  ...crud('attendance', 'bảng chấm công', 'Lương'),
+  ...crud('costing_obj', 'đối tượng tập hợp chi phí, định mức', 'Giá thành'),
+  { code: 'cost_run.view', name: 'Xem kỳ tính giá thành', group: 'Giá thành' },
+  { code: 'cost_run.run', name: 'Chạy tính giá thành', group: 'Giá thành' },
+  { code: 'contract_track.view', name: 'Xem theo dõi hợp đồng, lãi lỗ vụ việc', group: 'Hợp đồng' },
+  { code: 'contract_track.run', name: 'Chạy phân bổ chi phí theo vụ việc, chuyển số dư vụ việc', group: 'Hợp đồng' },
 ];
 export const PERMISSION_CODES: readonly string[] = PERMISSIONS.map((p) => p.code);

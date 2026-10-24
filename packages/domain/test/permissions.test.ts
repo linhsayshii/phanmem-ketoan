@@ -71,3 +71,20 @@ describe('quyền GĐ5', () => {
     expect(new Set(PERMISSION_CODES).size).toBe(PERMISSION_CODES.length);
   });
 });
+
+describe('quyền GĐ6 và cờ view_salary', () => {
+  const GD6 = ['payroll.view', 'payroll.create', 'payroll.update', 'payroll.delete', 'payroll.post', 'payroll.param', 'payroll.pay', 'payroll.export',
+    'attendance.view', 'attendance.create', 'attendance.update', 'attendance.delete', 'costing_obj.view', 'costing_obj.create', 'costing_obj.update', 'costing_obj.delete',
+    'cost_run.view', 'cost_run.run', 'contract_track.view', 'contract_track.run'];
+  it('có đủ mã mới, không trùng', () => {
+    for (const c of GD6) expect(PERMISSION_CODES, c).toContain(c);
+    expect(new Set(PERMISSION_CODES).size).toBe(PERMISSION_CODES.length);
+  });
+  it('tài khoản 334, 3382–3386 cần view_salary; 3381, 3387 và tài khoản thường thì không', () => {
+    const none = { sensitive: new Set<string>() };
+    for (const code of ['334', '3341', '3382', '3383', '3384', '3385', '3386']) expect(sensitiveDenial(none, { subledger_kind: null, code }), code).toBe('Không có quyền xem lương');
+    for (const code of ['3381', '3387', '3335', '1111']) expect(sensitiveDenial(none, { subledger_kind: null, code }), code).toBeNull();
+    expect(sensitiveDenial({ sensitive: new Set(['view_salary']) }, { subledger_kind: null, code: '334' })).toBeNull();
+    expect(flagsForAccounts([{ subledger_kind: null, code: '3383' }, { subledger_kind: 'payable', code: '331' }])).toEqual(['view_salary', 'view_payable']);
+  });
+});
