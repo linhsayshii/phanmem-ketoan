@@ -8,7 +8,7 @@ export default defineConfig({
   use: { baseURL: process.env.E2E_BASE_URL ?? `http://localhost:${webPort}`, locale: 'vi-VN', trace: 'retain-on-failure' },
   // E2E_BASE_URL: chạy với máy chủ có sẵn; không thì tự dựng API và web
   ...(process.env.E2E_BASE_URL ? {} : { webServer: [
-    { command: 'pnpm -F @kt/api dev', port: Number(apiPort), env: { PORT: apiPort, WEB_ORIGIN: `http://localhost:${webPort}` }, reuseExistingServer: !process.env.CI, cwd: '../..' },
+    { command: 'pnpm -F @kt/api dev', port: Number(apiPort), env: { PORT: apiPort, WEB_ORIGIN: `http://localhost:${webPort}`, DATA_ENCRYPTION_KEY: process.env.DATA_ENCRYPTION_KEY || Buffer.alloc(32, 7).toString('base64') }, reuseExistingServer: !process.env.CI, cwd: '../..' },
     { command: 'pnpm -F @kt/web dev', port: Number(webPort), env: { WEB_PORT: webPort, API_URL: `http://localhost:${apiPort}` }, reuseExistingServer: !process.env.CI, cwd: '../..' },
   ] }),
 });
