@@ -41,7 +41,7 @@ async function setupEmployee(code: string, name: string, i: Json, bank: Json) {
   return id;
 }
 const file = async (batchId: number, cookie = owner) => { const r = await call('GET', `/api/payroll/payment-batches/${batchId}/file`, cookie); expect(r.statusCode, r.body).toBe(200); return r.rawPayload; };
-const csvRows = (b: Buffer) => b.toString('utf8').replace(/^﻿/, '').trimEnd().split('\r\n');
+const csvRows = (b: Buffer) => b.toString('utf8').replace(/^\uFEFF/, '').trimEnd().split('\r\n');
 
 let run: Json; let bank: number; let general: Json; const net: Record<string, string> = {};
 beforeAll(async () => {
@@ -118,7 +118,7 @@ describe('xuất tệp chi lương', () => {
       expect.objectContaining({ code: 'PAY_METHOD_CASH', employeeCode: 'NV09', amount: net.NV09 }),
     ]));
     expect(out.warnings).toHaveLength(2);
-    expect(out.total).toBe(D(net.NV01).plus(net.NV05).toFixed(0));
+    expect(out.total).toBe(D(net.NV01!).plus(net.NV05!).toFixed(0));
     expect(out.payableTotal).toBe(CODES.reduce((s, c) => s.plus(net[c]!), D(0)).toFixed(0));
     const buf = await file(out.batchId);
     expect(buf.subarray(0, 3).equals(BOM)).toBe(true);
@@ -147,7 +147,7 @@ describe('xuất tệp chi lương', () => {
     const f = await ok('POST', F, { name: 'Excel', fileType: 'xlsx', columns: [{ field: 'account_no', header: 'STK' }, { field: 'employee_name', header: 'Tên' }, { field: 'amount', header: 'Số tiền' }] });
     const out = await ok('POST', `${R}/${run.id}/payment-file`, { formatId: f.id });
     expect(out.fileName).toBe('chi_luong_2026_10.xlsx');
-    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(await file(out.batchId));
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load((await file(out.batchId)) as unknown as ArrayBuffer);
     const ws = wb.worksheets[0]!;
     expect(ws.getRow(1).values).toEqual([undefined, 'STK', 'Tên', 'Số tiền']);
     expect(ws.getRow(2).values).toEqual([undefined, '0011001234567', 'Nguyễn Văn An', Number(net.NV01)]);
@@ -159,8 +159,8 @@ describe('xuất tệp chi lương', () => {
     await sql`UPDATE payroll_line SET net = ${big}::numeric WHERE run_id = ${run.id} AND employee_id = ${emp.NV01}`.execute(ctx.t.admin);
     const out = await ok('POST', `${R}/${run.id}/payment-file`, { formatId: general.id });
     expect(csvRows(await file(out.batchId))[1]).toContain(`,${big},`);
-    expect(out.total).toBe(D(big).plus(net.NV05).toFixed(0));
-    await sql`UPDATE payroll_line SET net = ${net.NV01}::numeric WHERE run_id = ${run.id} AND employee_id = ${emp.NV01}`.execute(ctx.t.admin);
+    expect(out.total).toBe(D(big).plus(net.NV05!).toFixed(0));
+    await sql`UPDATE payroll_line SET net = ${net.NV01!}::numeric WHERE run_id = ${run.id} AND employee_id = ${emp.NV01}`.execute(ctx.t.admin);
   });
 
   it('phiếu chi lương: tổng cần chi (kể cả người không vào tệp) khớp phiếu thì xuất và gắn voucherId; lệch → 409; phiếu lạ → 409', async () => {
@@ -174,7 +174,7 @@ describe('xuất tệp chi lương', () => {
     await sql`UPDATE payroll_line SET net = net + 1 WHERE run_id = ${run.id} AND employee_id = ${emp.NV01}`.execute(ctx.t.admin);
     const e = await fail('POST', `${R}/${run.id}/payment-file`, 409, 'PAYMENT_TOTAL_MISMATCH', { formatId: general.id });
     expect(e.details).toMatchObject({ voucherId: pv.voucherId, voucherTotal: pv.amount });
-    await sql`UPDATE payroll_line SET net = ${net.NV01}::numeric WHERE run_id = ${run.id} AND employee_id = ${emp.NV01}`.execute(ctx.t.admin);
+    await sql`UPDATE payroll_line SET net = ${net.NV01!}::numeric WHERE run_id = ${run.id} AND employee_id = ${emp.NV01}`.execute(ctx.t.admin);
   });
 
   it('không ai đủ điều kiện vào tệp: 409 PAYMENT_FILE_EMPTY; mẫu không tồn tại: 404', async () => {
