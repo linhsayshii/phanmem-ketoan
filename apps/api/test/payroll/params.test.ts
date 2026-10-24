@@ -76,17 +76,47 @@ describe('tham số lương theo công ty', () => {
     const bad2 = await put({ code: 'pit_deduction', validFrom: '2025-06-01', validTo: '2026-02-01', value: { self: '1', dependent: '1' }, source: SRC });
     expect(bad2.statusCode).toBe(409); expect(bad2.json().error.code).toBe('PARAM_OVERLAP');
   });
-  it('payrollParam: tra theo ngày; công ty trước legal_param; thiếu thì 409 PAYROLL_PARAM_MISSING nêu tên và ngày', async () => {
-    const at = (code: string, d: string) => withTenant(ctx.t.db, { tenantId }, (trx) => payrollParam<{ self: string }>(trx, code, d));
-    expect(await at('pit_deduction', '2026-03-15')).toEqual({ self: '2000', dependent: '700' });
-    expect(await at('pit_deduction', '2026-07-01')).toEqual({ self: '3000', dependent: '900' });
+  it('payrollParam: tra theo ngày; legal_param thắng khi có (cảnh báo nếu lệch dòng công ty), payroll_param khi legal_param không có, thiếu cả hai thì 409 PAYROLL_PARAM_MISSING', async () => {
+    const at = (code: string, d: string) => withTenant(ctx.t.db, { tenantId }, (trx) => payrollParam<{ self?: string; x?: string }>(trx, code, d));
+    expect(await at('pit_deduction', '2026-03-15')).toEqual({ value: { self: '2000', dependent: '700' }, source: 'payroll_param' });
+    expect((await at('pit_deduction', '2026-07-01')).value).toEqual({ self: '3000', dependent: '900' });
+    // legal_param đã kiểm thắng; công ty chưa có dòng cùng mã thì không cảnh báo
     await sql`INSERT INTO legal_param(code, value, valid_from, source) VALUES ('payroll_probe', '{"x":"legal"}', '2026-01-01', 'probe')`.execute(ctx.t.admin);
-    expect(await at('payroll_probe', '2026-05-05')).toEqual({ x: 'legal' });
+    expect(await at('payroll_probe', '2026-05-05')).toEqual({ value: { x: 'legal' }, source: 'legal_param' });
+    // cả hai có, cùng giá trị: không cảnh báo; khác giá trị: dùng legal_param kèm warning
+    await sql`INSERT INTO payroll_param(tenant_id, code, valid_from, value, source) VALUES (${tenantId}::uuid, 'payroll_probe', '2026-01-01', '{"x":"legal"}', ${SRC})`.execute(ctx.t.admin);
+    expect(await at('payroll_probe', '2026-05-05')).toEqual({ value: { x: 'legal' }, source: 'legal_param' });
+    await sql`UPDATE payroll_param SET value = '{"x":"company"}' WHERE tenant_id = ${tenantId}::uuid AND code = 'payroll_probe'`.execute(ctx.t.admin);
+    const both = await at('payroll_probe', '2026-05-05');
+    expect(both.value).toEqual({ x: 'legal' }); expect(both.source).toBe('legal_param'); expect(both.warning).toContain('payroll_probe'); expect(both.warning).toContain('05/05/2026');
+    // ngoài khoảng hiệu lực của legal_param: dùng dòng công ty
+    await sql`UPDATE legal_param SET valid_to = '2026-03-31' WHERE code = 'payroll_probe'`.execute(ctx.t.admin);
+    expect(await at('payroll_probe', '2026-05-05')).toEqual({ value: { x: 'company' }, source: 'payroll_param' });
     expect((await put({ code: 'ot_multipliers', validFrom: '2024-01-01', validTo: '2024-12-31', value: { weekday: 1.5, weekly_rest: 2, holiday: 3 }, source: SRC })).statusCode).toBe(200);
     const err = await at('ot_multipliers', '2023-12-31').catch((e) => e);
     expect(err).toMatchObject({ code: 'PAYROLL_PARAM_MISSING', status: 409 });
     expect(err.message).toContain('ot_multipliers'); expect(err.message).toContain('31/12/2023');
+    // ot_tax_exempt_extra thiếu cũng 409 như mọi mã, không có mặc định
+    const ot = await at('ot_tax_exempt_extra', '2025-12-31').catch((e) => e);
+    expect(ot).toMatchObject({ code: 'PAYROLL_PARAM_MISSING', status: 409 }); expect(ot.message).toContain('ot_tax_exempt_extra');
     await sql`DELETE FROM legal_param WHERE code = 'payroll_probe'`.execute(ctx.t.admin);
+    await sql`DELETE FROM payroll_param WHERE code = 'payroll_probe'`.execute(ctx.t.admin);
+  });
+  it('GET /api/payroll/params/effective: giá trị đang áp dụng, kèm warning khi lệch; thiếu 409', async () => {
+    const r = await get('/api/payroll/params/effective?code=pit_deduction&date=2026-03-15', viewer);
+    expect(r.statusCode, r.body).toBe(200); expect(r.json()).toEqual({ value: { self: '2000', dependent: '700' }, source: 'payroll_param' });
+    const miss = await get('/api/payroll/params/effective?code=ot_tax_exempt_extra&date=2025-12-31');
+    expect(miss.statusCode).toBe(409); expect(miss.json().error.code).toBe('PAYROLL_PARAM_MISSING');
+  });
+  it('mã mới: pit_brackets_annual (cùng lược đồ bậc), pit_income_timing (period|payment_date), si_rates có KPCĐ và đoàn phí của đơn vị', async () => {
+    const SI = { employee: { si: 8, hi: 1.5, ui: 1 }, employer: { si: 17, hi: 3, ui: 1, occupational: 0.5, union: 2, union_fee: 1 } };
+    expect((await put({ code: 'si_rates', validFrom: '2026-01-01', value: SI, source: SRC })).statusCode).toBe(200);
+    expect((await put({ code: 'si_rates', validFrom: '2026-01-01', value: { ...SI, employer: { ...SI.employer, union: 101 } }, source: SRC })).statusCode).toBe(400);
+    expect((await put({ code: 'si_rates', validFrom: '2026-01-01', value: { ...SI, employer: { ...SI.employer, union_fee: 'x' } }, source: SRC })).statusCode).toBe(400);
+    expect((await put({ code: 'pit_brackets_annual', validFrom: '2026-01-01', value: BR, source: SRC })).statusCode).toBe(200);
+    expect((await put({ code: 'pit_brackets_annual', validFrom: '2026-01-02', value: [{ upTo: '5', rate: 5 }], source: SRC })).statusCode).toBe(400);
+    expect((await put({ code: 'pit_income_timing', validFrom: '2026-01-01', value: 'payment_date', source: SRC })).statusCode).toBe(200);
+    expect((await put({ code: 'pit_income_timing', validFrom: '2026-01-01', value: 'whenever', source: SRC })).statusCode).toBe(400);
   });
   it('xóa tham số: DELETE theo id, 404 khi không có', async () => {
     const id = (await get('/api/payroll/params?code=pit_non_resident_rate')).json()[0].id;

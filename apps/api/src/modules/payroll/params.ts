@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
@@ -15,17 +16,21 @@ const mult = z.number().positive().max(10);
 const upTo = z.string().regex(VND_AMOUNT_RE).nullable();
 const oneOf = (o: object) => Object.values(o).some((v) => v !== undefined);
 
+const brackets = z.array(z.object({ upTo, rate: pct }).strict()).min(1).superRefine((a, ctx) => {
+  if (a[a.length - 1]!.upTo !== null) ctx.addIssue({ code: 'custom', message: 'Bậc cuối cùng phải không giới hạn (upTo = null)' });
+  a.slice(0, -1).forEach((b, i) => {
+    if (b.upTo === null || (i > 0 && BigInt(b.upTo) <= BigInt(a[i - 1]!.upTo ?? 0))) ctx.addIssue({ code: 'custom', message: 'Mức trần các bậc phải tăng dần' });
+  });
+});
+
 export const PARAM_SCHEMAS = {
-  pit_brackets: z.array(z.object({ upTo, rate: pct }).strict()).min(1).superRefine((a, ctx) => {
-    if (a[a.length - 1]!.upTo !== null) ctx.addIssue({ code: 'custom', message: 'Bậc cuối cùng phải không giới hạn (upTo = null)' });
-    a.slice(0, -1).forEach((b, i) => {
-      if (b.upTo === null || (i > 0 && BigInt(b.upTo) <= BigInt(a[i - 1]!.upTo ?? 0))) ctx.addIssue({ code: 'custom', message: 'Mức trần các bậc phải tăng dần' });
-    });
-  }),
+  pit_brackets: brackets,
+  pit_brackets_annual: brackets, // biểu thuế quyết toán năm, nhập riêng (không suy 12 lần bậc tháng)
+  pit_income_timing: z.enum(['period', 'payment_date']), // thu nhập chịu thuế tính theo kỳ lương hay theo thời điểm chi trả (05/KK, quyết toán)
   pit_deduction: z.object({ self: vnd, dependent: vnd }).strict(),
   si_rates: z.object({
     employee: z.object({ si: pct, hi: pct, ui: pct }).strict(),
-    employer: z.object({ si: pct, hi: pct, ui: pct, occupational: pct }).strict(),
+    employer: z.object({ si: pct, hi: pct, ui: pct, occupational: pct, union: pct.optional(), union_fee: pct.optional() }).strict(), // union: kinh phí công đoàn; union_fee: đoàn phí
     parts: z.record(z.string(), pct).optional(), // tách BHXH theo quỹ khi cần hạch toán chi tiết
   }).strict(),
   si_ceiling: z.object({ si_base_max: vnd.optional(), si_base_max_multiple_of_min_wage: z.number().positive().optional(), ui_base_max_multiple_of_min_wage: z.number().positive().optional() }).strict().refine(oneOf, 'Cần ít nhất một mức trần'),
@@ -51,13 +56,18 @@ export type ParamInput = z.infer<typeof paramInput>;
 
 const vnDate = (d: string) => d.split('-').reverse().join('/');
 
-// Tra theo ngày: dòng của công ty → legal_param cùng mã → 409 PAYROLL_PARAM_MISSING.
-export async function payrollParam<T = unknown>(trx: Trx, code: string, date: string): Promise<T> {
-  const r = await trx.selectFrom('payroll_param').select('value').where('code', '=', code).where('valid_from', '<=', date)
+export interface ParamResult<T> { value: T; source: 'legal_param' | 'payroll_param'; warning?: string }
+// Tra theo ngày: legal_param (đã kiểm theo văn bản, CLAUDE.md) thắng khi có dòng hiệu lực; payroll_param của công ty chỉ dùng khi legal_param không có; không có cả hai thì 409 PAYROLL_PARAM_MISSING.
+// Cả hai có mà giá trị khác nhau: dùng legal_param và trả kèm warning (không lỗi) để màn hình nhắc người dùng dọn dòng của công ty.
+export async function payrollParam<T = unknown>(trx: Trx, code: string, date: string): Promise<ParamResult<T>> {
+  const own = await trx.selectFrom('payroll_param').select('value').where('code', '=', code).where('valid_from', '<=', date)
     .where((eb) => eb.or([eb('valid_to', 'is', null), eb('valid_to', '>=', date)])).executeTakeFirst();
-  if (r) return r.value as T;
   const legal = await legalParam<T>(trx as Kysely<Database>, code, date);
-  if (legal !== null) return legal;
+  if (legal !== null) {
+    const differs = own && !isDeepStrictEqual(own.value, legal);
+    return { value: legal, source: 'legal_param', ...(differs && { warning: `Tham số "${code}" ngày ${vnDate(date)}: giá trị công ty nhập khác tham số pháp lý đã kiểm; hệ thống dùng tham số pháp lý` }) };
+  }
+  if (own) return { value: own.value as T, source: 'payroll_param' };
   throw new AppError('PAYROLL_PARAM_MISSING', `Chưa có tham số "${code}" hiệu lực ngày ${vnDate(date)}: nhập ở Tham số lương kèm nguồn văn bản`, 409);
 }
 
