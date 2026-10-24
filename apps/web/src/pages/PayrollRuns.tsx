@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, DatePicker, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip, message } from 'antd';
+import { Alert, Button, DatePicker, Form, Input, Modal, Popconfirm, Radio, Select, Space, Table, Tag, Tooltip, message } from 'antd';
+import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColDef, GridApi, NewValueParams } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnNumber, type PayrollColumn } from '@kt/domain';
 import { KeyboardGrid, LookupSelect, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
+import { bankAccountFetcher } from '../lookups.js';
 import { useAuth } from '../auth.js';
 import { NO_SALARY, PayrollErrorAlert } from './payrollUi.js';
 import { RUN_KIND, RUN_STATUS, columnRound, lineToRow, money, parseManualInput, patchRow, totalRow, type GridRow, type RunLine } from './payrollCommon.js';
@@ -13,7 +15,16 @@ import { RUN_KIND, RUN_STATUS, columnRound, lineToRow, money, parseManualInput, 
 const R = '/api/payroll/runs';
 interface RunSummary { id: number; year: number; month: number; kind: string; status: string; name: string; departmentName: string | null; structureName: string; employeeCount: number;
   totals: { gross: string; siEmp: string; siEr: string; pit: string; net: string }; calculatedAt: string | null }
-interface RunDetail extends Omit<RunSummary, 'totals'> { warnings: { code: string; message: string }[]; stale: boolean; columns: PayrollColumn[]; lines: RunLine[]; proration: string; note: string | null; voucherId: string | null }
+interface RunDetail extends Omit<RunSummary, 'totals'> { warnings: { code: string; message: string }[]; stale: boolean; columns: PayrollColumn[]; lines: RunLine[]; proration: string; note: string | null; voucherId: string | null; voucherNo: string | null }
+type PayKind = 'pay' | 'insurance' | 'pit';
+interface PayLink { kind: PayKind; voucherId: string; voucherType: string; voucherNo: string | null; state: string; postingDate: string; amount: string; stale: boolean }
+// Chứng từ chi lập từ bảng lương đã hạch toán (nháp PC/BN; người dùng xem, sửa, ghi sổ ở màn hình chứng từ).
+const PAY_KIND: Record<PayKind, { label: string; button: string; path: string }> = {
+  pay: { label: 'Chi lương', button: 'Lập phiếu chi lương', path: 'pay-voucher' },
+  insurance: { label: 'Nộp bảo hiểm', button: 'Lập chứng từ nộp bảo hiểm', path: 'insurance-voucher' },
+  pit: { label: 'Nộp thuế TNCN', button: 'Lập chứng từ nộp thuế TNCN', path: 'pit-voucher' },
+};
+const VOUCHER_STATE: Record<string, { label: string; color: string }> = { draft: { label: 'Nháp', color: 'default' }, posted: { label: 'Đã ghi sổ', color: 'green' } };
 interface StructureRow { id: number; code: string; name: string; isDefault: boolean }
 const monthText = (y: number, m: number) => `${String(m).padStart(2, '0')}/${y}`;
 
@@ -53,6 +64,36 @@ function CreateDialog({ open, year, month, onClose, onCreated }: { open: boolean
     </Modal>);
 }
 
+function PayDialog({ runId, kind, onClose, onDone }: { runId: number; kind: PayKind | null; onClose: () => void; onDone: (l: PayLink) => void }) {
+  const [form] = Form.useForm<{ method: 'cash' | 'bank'; bankAccountNo: string | null; date: dayjs.Dayjs }>();
+  const bankId = useRef<number | null>(null);
+  const [err, setErr] = useState<unknown>(null); const [busy, setBusy] = useState(false);
+  const method = Form.useWatch('method', form);
+  useEffect(() => { if (kind) { setErr(null); bankId.current = null; form.resetFields(); form.setFieldsValue({ method: kind === 'pay' ? 'cash' : 'bank', bankAccountNo: null, date: dayjs() }); } }, [kind, form]);
+  const submit = () => {
+    void form.validateFields().then(async (v) => {
+      setBusy(true); setErr(null);
+      try {
+        onDone(await api<PayLink>(`${R}/${runId}/${PAY_KIND[kind!].path}`, { method: 'POST', json: { kind: v.method, date: v.date.format('YYYY-MM-DD'), ...(v.method === 'bank' && bankId.current ? { bankAccountId: bankId.current } : {}) } }));
+        onClose();
+      } catch (e) { setErr(e); } finally { setBusy(false); }
+    }, () => undefined);
+  };
+  return (
+    <Modal open={kind !== null} title={kind ? PAY_KIND[kind].button : ''} onCancel={onClose} onOk={submit} okText="Lập chứng từ nháp" cancelText="Bỏ qua" confirmLoading={busy} destroyOnHidden forceRender>
+      <Form form={form} name="payroll-pay" layout="vertical">
+        <Form.Item label="Hình thức" name="method"><Radio.Group aria-label="Hình thức" options={[{ value: 'cash', label: 'Tiền mặt (Phiếu chi)' }, { value: 'bank', label: 'Chuyển khoản (Giấy báo Nợ)' }]} /></Form.Item>
+        {method === 'bank' && <Form.Item label="Tài khoản ngân hàng (F4)" name="bankAccountNo" rules={[{ required: true, message: 'Chọn tài khoản ngân hàng chi tiền' }]}>
+          <LookupSelect catalog="bank_account" fetcher={bankAccountFetcher} aria-label="Tài khoản ngân hàng" onChange={(no, row) => { bankId.current = row ? Number(row.id) : null; form.setFieldValue('bankAccountNo', no); }} />
+        </Form.Item>}
+        <Form.Item label="Ngày chứng từ" name="date" rules={[{ required: true }]}><DatePicker format="DD/MM/YYYY" allowClear={false} aria-label="Ngày chứng từ" /></Form.Item>
+        <div style={{ marginBottom: 8 }}>{kind === 'pay' ? 'Một dòng Nợ phải trả người lao động cho mỗi nhân viên, số tiền bằng thực lĩnh trên chứng từ hạch toán lương.'
+          : kind === 'insurance' ? 'Nợ BHXH, BHYT, BHTN bằng số đã trích trên chứng từ hạch toán lương (cả phần doanh nghiệp và người lao động).' : 'Nợ thuế TNCN bằng số đã khấu trừ trên chứng từ hạch toán lương.'} Chứng từ lập ở trạng thái nháp, chưa ghi sổ.</div>
+        <PayrollErrorAlert error={err} />
+      </Form>
+    </Modal>);
+}
+
 function RunView({ id, onGone }: { id: number; onGone: () => void }) {
   const qc = useQueryClient(); const { can } = useAuth();
   const key = ['payroll-run', id];
@@ -77,6 +118,18 @@ function RunView({ id, onGone }: { id: number; onGone: () => void }) {
     mutationFn: () => api<RunDetail>(`${R}/${id}/cancel`, { method: 'POST' }),
     onError: setErr, onSuccess: (r) => { setErr(null); qc.setQueryData(key, r); refreshList(); void message.success('Đã hủy bảng lương'); },
   });
+  // Hạch toán (LU), chạy lại hạch toán (đảo cũ khi đổi), hủy hạch toán (đảo).
+  const postOp = useMutation({
+    mutationFn: (op: 'post' | 'repost' | 'unpost') => api<{ unchanged: boolean; voucherNo: string | null }>(`${R}/${id}/${op}`, { method: 'POST' }).then((r) => ({ op, r })),
+    onError: setErr,
+    onSuccess: ({ op, r }) => {
+      setErr(null); void qc.invalidateQueries({ queryKey: key }); void qc.invalidateQueries({ queryKey: ['payroll-run-vouchers', id] }); refreshList();
+      void message.success(op === 'unpost' ? 'Đã hủy hạch toán (đảo chứng từ hạch toán lương)' : r.unchanged ? 'Số liệu không đổi: giữ chứng từ hạch toán hiện có' : `Đã hạch toán: chứng từ ${r.voucherNo ?? ''}`);
+    },
+  });
+  const posted = run?.status === 'posted';
+  const links = useQuery({ queryKey: ['payroll-run-vouchers', id], enabled: !!run && run.status !== 'draft', queryFn: () => api<PayLink[]>(`${R}/${id}/vouchers`) });
+  const [paying, setPaying] = useState<PayKind | null>(null);
   const del = useMutation({
     mutationFn: () => api(`${R}/${id}`, { method: 'DELETE' }),
     onError: setErr, onSuccess: () => { void message.success('Đã xóa bảng lương nháp'); refreshList(); onGone(); },
@@ -159,13 +212,29 @@ function RunView({ id, onGone }: { id: number; onGone: () => void }) {
       </Space>
       <Space wrap style={{ marginBottom: 8 }}>
         {can('payroll.update') && open && <Button type="primary" loading={calc.isPending} onClick={() => calcRef.current()}>{run.status === 'draft' ? 'Tính (F9)' : 'Tính lại (F9)'}</Button>}
-        {/* Task 6b: nút "Hạch toán" đặt ở đây khi run.status === 'calculated' và API hạch toán đã có. */}
+        {can('payroll.post') && run.status === 'calculated' && <Button type="primary" disabled={run.stale} loading={postOp.isPending} onClick={() => postOp.mutate('post')}>Hạch toán</Button>}
+        {can('payroll.post') && posted && <Button loading={postOp.isPending} onClick={() => postOp.mutate('repost')}>Chạy lại hạch toán</Button>}
+        {can('payroll.post') && posted && <Popconfirm title="Hủy hạch toán bảng lương?" description="Chứng từ hạch toán lương bị đảo; bảng về trạng thái Đã tính." okText="Hủy hạch toán" cancelText="Không" onConfirm={() => postOp.mutate('unpost')}><Button>Hủy hạch toán</Button></Popconfirm>}
+        {can('payroll.pay') && posted && (Object.keys(PAY_KIND) as PayKind[]).filter((k) => links.data && !links.data.some((l) => l.kind === k)).map((k) =>
+          <Button key={k} onClick={() => setPaying(k)}>{PAY_KIND[k].button}</Button>)}
         {can('payroll.update') && open && <Popconfirm title="Hủy bảng lương này?" description="Nhân viên trong bảng được giải phóng để lập bảng khác." okText="Hủy bảng lương" cancelText="Không" onConfirm={() => cancel.mutate()}><Button>Hủy bảng lương</Button></Popconfirm>}
         {can('payroll.delete') && run.status === 'draft' && <Popconfirm title="Xóa bảng lương nháp này?" okText="Xóa" cancelText="Không" onConfirm={() => del.mutate()}><Button danger>Xóa nháp</Button></Popconfirm>}
       </Space>
       <PayrollErrorAlert error={err} onClose={() => setErr(null)} />
       {run.status === 'draft' && <Alert style={{ marginBottom: 8 }} type="info" showIcon message="Bảng lương nháp chưa có số liệu: bấm Tính (F9). Ô nhập tay (nền xanh) sửa được trước hoặc sau khi tính." />}
-      {run.stale && run.status !== 'draft' && <Alert style={{ marginBottom: 8 }} type="warning" showIcon message="Hồ sơ lương, chấm công, tham số hoặc cấu trúc đã đổi sau lần tính gần nhất: bấm Tính lại (F9) để cập nhật số liệu." />}
+      {run.stale && run.status !== 'draft' && <Alert style={{ marginBottom: 8 }} type="warning" showIcon message={posted ? 'Hồ sơ lương, chấm công, tham số hoặc cấu trúc đã đổi sau khi hạch toán: bấm Chạy lại hạch toán để tính lại và cập nhật chứng từ.'
+        : 'Hồ sơ lương, chấm công, tham số hoặc cấu trúc đã đổi sau lần tính gần nhất: bấm Tính lại (F9) để cập nhật số liệu.'} />}
+      {run.voucherId && <div style={{ marginBottom: 8 }} data-testid="run-voucher">Chứng từ hạch toán lương: <Link to="/chung-tu/$type/$id" params={{ type: 'LU', id: run.voucherId }}>{run.voucherNo ?? 'Xem'}</Link></div>}
+      {!!links.data?.length && <Table<PayLink> size="small" rowKey="voucherId" pagination={false} dataSource={links.data} data-testid="pay-vouchers" style={{ marginBottom: 8 }} title={() => 'Chứng từ chi của bảng lương'}
+        columns={[
+          { title: 'Nghiệp vụ', dataIndex: 'kind', width: 150, render: (k: PayKind) => PAY_KIND[k]?.label ?? k },
+          { title: 'Chứng từ', width: 170, render: (_, l) => <Link to="/chung-tu/$type/$id" params={{ type: l.voucherType, id: l.voucherId }}>{l.voucherNo ?? `${l.voucherType} (chưa có số)`}</Link> },
+          { title: 'Ngày', dataIndex: 'postingDate', width: 110, render: (d: string) => dayjs(d).format('DD/MM/YYYY') },
+          { title: 'Số tiền', dataIndex: 'amount', width: 150, align: 'right', render: (v: string) => money(v) },
+          { title: 'Trạng thái', dataIndex: 'state', width: 120, render: (s: string) => <Tag color={VOUCHER_STATE[s]?.color ?? 'default'}>{VOUCHER_STATE[s]?.label ?? s}</Tag> },
+          { title: 'Ghi chú', render: (_, l) => (l.stale ? <Tag color="orange">Lập từ hạch toán cũ: hủy chứng từ và lập lại</Tag> : '') },
+        ]} />}
+      <PayDialog runId={id} kind={paying} onClose={() => setPaying(null)} onDone={(l) => { void qc.invalidateQueries({ queryKey: ['payroll-run-vouchers', id] }); void message.success(`Đã lập chứng từ nháp ${l.voucherNo ?? l.voucherType}`); }} />
       {run.warnings.length > 0 && <Alert style={{ marginBottom: 8 }} type="warning" showIcon message={`Cảnh báo cả bảng (${run.warnings.length})`} data-testid="run-warnings"
         description={<ul style={{ margin: 0, paddingLeft: 18 }}>{run.warnings.slice(0, 8).map((w) => <li key={w.code + w.message}>{w.message}</li>)}</ul>} />}
       {lineWarnings.length > 0 && <Alert style={{ marginBottom: 8 }} type="warning" showIcon message={`${lineWarnings.length} nhân viên có cảnh báo`} data-testid="line-warnings"
