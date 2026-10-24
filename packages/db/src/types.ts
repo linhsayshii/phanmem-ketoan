@@ -393,6 +393,20 @@ export interface EmployeeDependentTable {
 export interface EmployeeCostSplitTable { id: Generated<number>; tenant_id: string; employee_id: number; project_id: number; pct: Numeric }
 export interface AttendanceSheetTable { id: Generated<number>; tenant_id: string; year: number; month: number; department_id: number | null; created_at: Generated<Timestamp> }
 export interface AttendanceEntryTable { id: Generated<number>; tenant_id: string; sheet_id: number; employee_id: number; work_date: DateOnly; kind: string; qty: Numeric }
+export interface PayrollStructureTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; proration: Generated<string>; columns: JSONColumnType<unknown>; is_default: Generated<boolean>;
+  parent_id: number | null; note: string | null; created_by: Generated<string | null>; created_at: Generated<Timestamp>; updated_at: Generated<Timestamp>;
+}
+export interface PayrollRunTable {
+  id: Generated<number>; tenant_id: string; year: number; month: number; kind: Generated<string>; status: Generated<string>; name: string; department_id: number | null; structure_id: number;
+  input_hash: string | null; calculated_at: Timestamp | null; warnings: ColumnType<unknown, string | undefined, string>; voucher_id: string | null; note: string | null;
+  created_by: Generated<string | null>; created_at: Generated<Timestamp>; updated_at: Generated<Timestamp>;
+}
+export interface PayrollLineTable {
+  id: Generated<number>; tenant_id: string; run_id: number; employee_id: number; year: Generated<number>; month: Generated<number>; kind: Generated<string>; run_status: Generated<string>; // chép từ payroll_run bằng trigger
+  gross: NumericDefault; si_emp: NumericDefault; si_er: NumericDefault; pit: NumericDefault; net: NumericDefault; warnings: ColumnType<unknown, string | undefined, string>; input_hash: string | null;
+}
+export interface PayrollLineValueTable { id: Generated<number>; tenant_id: string; line_id: number; column_code: string; value: string; manual: Generated<boolean> }
 export interface ApiKeyTable {
   id: Generated<string>; tenant_id: string; user_id: string; name: string; prefix: string; key_hash: string; scopes: string[]; default_warehouse_id: number | null;
   post_sales: Generated<boolean>; expires_at: Timestamp | null; revoked_at: Timestamp | null; last_used_at: Timestamp | null; created_at: Generated<Timestamp>;
@@ -541,6 +555,10 @@ export interface Database {
   employee_cost_split: EmployeeCostSplitTable;
   attendance_sheet: AttendanceSheetTable;
   attendance_entry: AttendanceEntryTable;
+  payroll_structure: PayrollStructureTable;
+  payroll_run: PayrollRunTable;
+  payroll_line: PayrollLineTable;
+  payroll_line_value: PayrollLineValueTable;
   cost_object: CostObjectTable;
   bank_feed: BankFeedTable;
   bank_transaction: BankTransactionTable;
