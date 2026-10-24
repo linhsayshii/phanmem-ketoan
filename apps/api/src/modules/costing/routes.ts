@@ -5,6 +5,7 @@ import { AppError } from '../../plugins/errors.js';
 import type { FastifyRequest } from 'fastify';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { collectCosts } from './collect.js';
+import reportRoutes from './reportRoutes.js';
 import { costRunInput, getCostRun, isStale, listCostRuns, previewCostRun, runCostRun } from './costRun.js';
 import { costNormInput, createCostNorm, deleteCostNorm, getCostNorm, listCostNorms, updateCostNorm } from './norms.js';
 import { COST_OBJECT_KINDS, costObjectInput, createCostObject, deleteCostObject, getCostObject, listCostObjects, lookupCostObjects, updateCostObject } from './objects.js';
@@ -13,6 +14,7 @@ const idParam = z.object({ id: z.coerce.number().int().positive().max(Number.MAX
 
 // Giá thành (GĐ6): danh mục đối tượng tập hợp chi phí. Quyền costing_obj.* (0094).
 const routes: FastifyPluginAsyncZod = async (app) => {
+  await app.register(reportRoutes); // báo cáo giá thành (Task 12)
   app.get('/api/costing/objects', { preHandler: app.requirePermission('costing_obj.view'), schema: { querystring: z.object({ q: z.string().optional(), kind: z.enum(COST_OBJECT_KINDS).optional(),
     active: z.enum(['true', 'false', 'all']).default('all'), page: z.coerce.number().int().min(1).max(10_000).default(1), size: z.coerce.number().int().min(1).max(1000).default(100) }) } },
     async (req) => app.withTenant(req, (trx) => listCostObjects(trx, req.query), READ_SNAPSHOT));
