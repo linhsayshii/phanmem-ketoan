@@ -242,7 +242,7 @@ Giới hạn:
 | Một tệp XML | 2 MB | "XML_TOO_LARGE": "Tệp XML vượt 2 MB (giới hạn thông điệp theo QĐ 1233)" |
 | Số tệp mỗi lượt | 50 | "TOO_MANY_FILES": "Mỗi lượt tải tối đa 50 tệp: phần còn lại chưa được nhận" |
 | Số mục trong một tệp zip | 200 | "ZIP_TOO_LARGE" |
-| Dung lượng giải nén một lượt | 50 MB (tệp zip 20 MB) | "ZIP_TOO_LARGE", "REQUEST_TOO_LARGE" |
+| Dung lượng giải nén mỗi tệp zip | 20 MB (tệp zip nén cũng tối đa 20 MB) | "ZIP_TOO_LARGE" |
 | Tổng dung lượng một lượt tải | 50 MB | "REQUEST_TOO_LARGE": "Tổng dung lượng một lượt tải vượt 50 MB" |
 
 Tệp bị từ chối: zip hỏng ("ZIP_INVALID"), XML không đọc được ("XML_INVALID"), XML có khai báo DOCTYPE hoặc ENTITY ("XML_UNSAFE"), tệp có hơn một thân hóa đơn, nghi đánh tráo nội dung ("XML_AMBIGUOUS"), không có tệp ("NO_FILE").
