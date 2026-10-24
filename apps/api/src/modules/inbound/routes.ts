@@ -7,6 +7,7 @@ import { AppError } from '../../plugins/errors.js';
 import { getSettings } from '../core/settings.js';
 import { MAX_INVOICE_XML_BYTES, parseInvoiceXml, stripBom } from './parseXml.js';
 import { sha256Of, storeInbound } from './store.js';
+import { buildProposal, createVoucherFromInbound, voucherBody } from './toVoucher.js';
 import { cleanText, taxCheckWarnings, taxCodeLookupFor, validateLookup, type TaxLookupResult } from './taxCodeLookup.js';
 
 // Giới hạn một lượt tải: số tệp, số phần multipart, dung lượng thô mỗi tệp (zip ≤ 20 MB, XML ≤ 2 MB), tổng dung lượng giải nén cả lượt.
@@ -160,13 +161,23 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.post('/api/inbound-invoices/:id/ignore', { preHandler: update, schema: { params: idParam } }, async (req) => app.withTenant(req, async (trx) => {
-    const r = await trx.updateTable('inbound_invoice').set({ status: 'ignored' }).where('id', '=', req.params.id).where('status', 'in', ['new', 'duplicate']).returning('id').executeTakeFirst();
+    // CHECK (status = 'duplicate') = (duplicate_of IS NOT NULL): rời trạng thái trùng thì phải xóa duplicate_of.
+    const r = await trx.updateTable('inbound_invoice').set({ status: 'ignored', duplicate_of: null }).where('id', '=', req.params.id).where('status', 'in', ['new', 'duplicate']).returning('id').executeTakeFirst();
     if (!r) {
       if (!(await trx.selectFrom('inbound_invoice').select('id').where('id', '=', req.params.id).executeTakeFirst())) notFound();
       throw new AppError('INBOUND_STATUS', 'Hóa đơn đã nhập thành chứng từ hoặc đã bỏ qua', 409);
     }
     return { ok: true };
   }));
+
+  app.get('/api/inbound-invoices/:id/proposal', { preHandler: view, schema: { params: idParam } }, async (req) => app.withTenant(req, (trx) => buildProposal(trx, req.params.id), READ_SNAPSHOT));
+
+  // Cần cả inbound_invoice.update và voucher.create (như POST /api/invoices); tạo đối tượng mới cần thêm catalog.create.
+  app.post('/api/inbound-invoices/:id/voucher', { preHandler: [update, app.requirePermission('voucher.create')], schema: { params: idParam, body: voucherBody } }, async (req, reply) => {
+    if (req.body.createParty && !req.auth!.permissions.has('catalog.create')) throw new AppError('FORBIDDEN', 'Thiếu quyền catalog.create để tạo đối tượng mới', 403);
+    const out = await app.withOverride(req, (trx) => createVoucherFromInbound(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId, auth: req.auth! }, req.params.id, req.body));
+    return reply.code(201).send(out);
+  });
 
   app.post('/api/inbound-invoices/:id/check-tax-code', { preHandler: update, schema: { params: idParam } }, async (req) => {
     const tenantId = req.auth!.tenantId!;

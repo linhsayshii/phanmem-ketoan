@@ -156,7 +156,7 @@ export function parseInvoiceXml(input: string): ParsedInvoice {
   const dt = issueDate && /^\d{4}-\d{2}-\d{2}$/.test(issueDate) ? new Date(`${issueDate}T00:00:00Z`) : null;
   if (!issueDate || !dt || Number.isNaN(dt.getTime()) || dt.toISOString().slice(0, 10) !== issueDate) throw bad('NLap (ngày lập) thiếu hoặc không đúng dạng YYYY-MM-DD');
   const dvtte = kids(tt, 'DVTTe')[0];
-  let currency = text(dvtte, 'Ma') ?? (dvtte?.textContent?.trim() || null); // 2.0.x: DVTTe/Ma; 2.1.x: DVTTe là chuỗi
+  let currency = (text(dvtte, 'Ma') ?? (dvtte?.textContent?.trim() || null))?.toUpperCase() ?? null; // 2.0.x: DVTTe/Ma; 2.1.x: DVTTe là chuỗi; viết hoa để so với 'VND'
   if (!currency) { currency = 'VND'; warnings.push({ code: 'CURRENCY_ASSUMED', message: 'Hóa đơn không ghi đơn vị tiền tệ: coi là VND' }); }
   const nb = only(only(dl, 'NDHDon'), 'NBan'); const nm = only(only(dl, 'NDHDon'), 'NMua');
   const sellerName = text(nb, 'Ten');
