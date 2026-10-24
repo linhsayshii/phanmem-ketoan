@@ -35,21 +35,21 @@ describe('soát lỗi', () => {
     expect(r.statusCode, r.body).toBe(200);
     const codes = (r.json().results as Res[]).map((x) => x.ruleCode);
     expect(codes).toEqual(expect.arrayContaining(['CT_KHONG_CO_DONG', 'CHUA_GHI_SO_TRONG_KY_KHOA', 'SO_DU_SAI_LOAI']));
-    // Cả 27 câu SQL hệ thống biên dịch và chạy được trên lược đồ thật (một câu hỏng sẽ hiện thành "Quy tắc lỗi"). CT_KHONG_CAN không có dữ liệu để báo vì DB đã chặn chứng từ lệch.
+    // Cả 36 câu SQL hệ thống biên dịch và chạy được trên lược đồ thật (một câu hỏng sẽ hiện thành "Quy tắc lỗi"). CT_KHONG_CAN không có dữ liệu để báo vì DB đã chặn chứng từ lệch.
     expect((r.json().results as Res[]).filter((x) => /Quy tắc lỗi/.test(x.message))).toEqual([]);
     // 4111 (dư Có) bị dư Nợ, 1111 và 1121 (dư Nợ) bị dư Có vì chưa có số dư đầu; 331 lưỡng tính thì không bị báo.
     const wrongSide = (r.json().results as Res[]).filter((x) => x.ruleCode === 'SO_DU_SAI_LOAI');
     expect(wrongSide.map((x) => x.ref).sort()).toEqual(['1111', '1121', '4111']);
-    expect(r.json().ran).toBe(27);
+    expect(r.json().ran).toBe(36);
     expect(r.json().skipped).toEqual([]); // chủ sở hữu có đủ cờ nhạy cảm
   }, 30_000);
 
-  it('mọi công ty có đủ 27 quy tắc hệ thống bật sẵn; app_user không gọi được hàm seed', async () => {
+  it('mọi công ty có đủ 36 quy tắc hệ thống bật sẵn; app_user không gọi được hàm seed', async () => {
     const rows = (await ctx.app.inject({ method: 'GET', url: '/api/catalogs/data_check_rule', headers: { cookie } })).json().rows as { code: string; is_system: boolean; is_enabled: boolean }[];
-    expect(rows.map((x) => x.code)).toEqual(['CHUA_GHI_SO_TRONG_KY_KHOA', 'CN_LECH_SO_CAI', 'CN_QUA_HAN', 'CN_THIEU_DOI_TUONG', 'CT_KHONG_CAN', 'CT_KHONG_CO_DONG', 'HD_THIEU_MST', 'HD_TRUNG', 'KHO_HANG_THIEU_KHO', 'KHO_LECH_SO_CAI', 'KHO_SAI_DVT', 'KHO_TON_0_CON_GIA_TRI', 'KHO_TON_AM', 'KHO_XUAT_CHUA_GIA_VON', 'KU_CHUA_TINH_LAI', 'KU_QUA_HAN', 'LCTT_THIEU_MA', 'SO_DU_SAI_LOAI', 'THUE_8_HET_HIEU_LUC', 'THUE_LECH', 'TIEN_MAT_VUOT_NGUONG', 'TK_NH_THIEU', 'TK_TONG_HOP_TREN_DONG', 'TS_DA_GIAM_CON_GIA_TRI', 'TS_HAO_MON_VUOT', 'TS_KHAU_HAO_CAN_CHAY_LAI', 'TS_THIEU_TAI_SAN']);
+    expect(rows.map((x) => x.code)).toEqual(['CHUA_GHI_SO_TRONG_KY_KHOA', 'CN_LECH_SO_CAI', 'CN_QUA_HAN', 'CN_THIEU_DOI_TUONG', 'CT_KHONG_CAN', 'CT_KHONG_CO_DONG', 'HDDT_CAN_DAO_GOC', 'HDDT_CHO_MA_CQT', 'HDDT_CHUA_PHAT_HANH', 'HDDT_DANG_GUI', 'HDDT_LOI', 'HDDV_CHUA_LAP_CT', 'HDDV_CHU_KY', 'HD_THIEU_MST', 'HD_TRUNG', 'KHO_HANG_THIEU_KHO', 'KHO_LECH_SO_CAI', 'KHO_SAI_DVT', 'KHO_TON_0_CON_GIA_TRI', 'KHO_TON_AM', 'KHO_XUAT_CHUA_GIA_VON', 'KU_CHUA_TINH_LAI', 'KU_QUA_HAN', 'LCTT_THIEU_MA', 'NH_CHUA_DOI_CHIEU', 'NH_LECH_SO_TIEN', 'SO_DU_SAI_LOAI', 'THUE_8_HET_HIEU_LUC', 'THUE_LECH', 'TIEN_MAT_VUOT_NGUONG', 'TK_NH_THIEU', 'TK_TONG_HOP_TREN_DONG', 'TS_DA_GIAM_CON_GIA_TRI', 'TS_HAO_MON_VUOT', 'TS_KHAU_HAO_CAN_CHAY_LAI', 'TS_THIEU_TAI_SAN']);
     expect(rows.every((x) => x.is_system && x.is_enabled)).toBe(true);
     // Công ty tạo trước migration cũng được bổ sung (backfill): không công ty nào thiếu quy tắc hệ thống.
-    const thin = await sql<{ n: number }>`SELECT count(*)::int AS n FROM tenant t WHERE (SELECT count(*) FROM data_check_rule r WHERE r.tenant_id = t.id AND r.is_system) < 27`.execute(ctx.t.admin);
+    const thin = await sql<{ n: number }>`SELECT count(*)::int AS n FROM tenant t WHERE (SELECT count(*) FROM data_check_rule r WHERE r.tenant_id = t.id AND r.is_system) < 36`.execute(ctx.t.admin);
     expect(thin.rows[0]!.n).toBe(0);
     await expect(withTenant(ctx.t.db, { tenantId }, (trx) => sql`SELECT seed_data_check_rules(${tenantId}::uuid)`.execute(trx)))
       .rejects.toMatchObject({ code: '42501', message: expect.stringMatching(/permission denied for function seed_data_check_rules/) });
@@ -256,5 +256,62 @@ describe('soát lỗi', () => {
     expect(of('CN_THIEU_DOI_TUONG')).toEqual([{ voucherId: ids.noParty, detail: 'TK 331 dòng 1' }]);
     expect(of('TK_TONG_HOP_TREN_DONG')).toEqual([{ voucherId: ids.group, detail: 'TK 3331' }]);
     expect(res.some((x) => x.voucherId === ids.cancelled)).toBe(false);
+  }, 30_000);
+
+  it('quy tắc GĐ5: hóa đơn điện tử, hóa đơn đầu vào, giao dịch ngân hàng (mỗi quy tắc một ca dương, một ca âm)', async () => {
+    const ids = await ctx.t.admin.transaction().execute(async (trx) => {
+      await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+      const voucher = async (date: string, state = 'posted', bankAcc: number | null = null, bankDebit = 0) => {
+        const v = await trx.insertInto('voucher').values({ tenant_id: tenantId, voucher_type: 'PKT', posting_date: date, document_date: date, state, created_by: userId }).returning('id').executeTakeFirstOrThrow();
+        if (bankAcc) await sql`INSERT INTO voucher_line(tenant_id, voucher_id, line_no, account_id, posting_date, debit, credit, bank_account_id)
+          SELECT ${tenantId}::uuid, ${v.id}::uuid, 1, a.id, ${date}::date, ${bankDebit}, 0, ${bankAcc} FROM account a WHERE a.tenant_id = ${tenantId}::uuid AND a.regime = 'TT133' AND a.code = '1121'`.execute(trx);
+        return v.id;
+      };
+      const pending = async (v: string, flag: boolean) => sql`INSERT INTO voucher_invoice(tenant_id, voucher_id, direction, invoice_no, invoice_date, einvoice_pending, base_amount, tax_amount)
+        VALUES (${tenantId}::uuid, ${v}::uuid, 'sale', ${flag ? null : 'N1'}, '2026-03-01', ${flag}, 0, 0)`.execute(trx);
+      const prov = (await sql<{ id: string }>`INSERT INTO einvoice_provider(tenant_id, code, name) VALUES (${tenantId}::uuid, 'fake', 'F') RETURNING id`.execute(trx)).rows[0]!.id;
+      const series = async (serial: string) => (await sql<{ id: string }>`INSERT INTO einvoice_series(tenant_id, provider_id, form_no, serial, year) VALUES (${tenantId}::uuid, ${prov}, '1', ${serial}, 2026) RETURNING id`.execute(trx)).rows[0]!.id;
+      const sC = await series('C26TAA'); const sK = await series('K26TAA');
+      const ein = async (v: string, o: { status: string; series?: string; at?: string; cqt?: string; reversal?: boolean; discarded?: boolean }) => sql`INSERT INTO einvoice(tenant_id, voucher_id, series_id, provider_id, status, transaction_uuid, cqt_status, needs_reversal, created_at, last_attempt_at, issued_at, discarded_at)
+        VALUES (${tenantId}::uuid, ${v}::uuid, ${o.series ?? sK}, ${prov}, ${o.status}, gen_random_uuid(), ${o.cqt ?? 'none'}, ${o.reversal ?? false}, ${o.at ?? '2026-03-01T03:00:00Z'}, ${o.at ?? '2026-03-01T03:00:00Z'}, ${o.status === 'issued' ? (o.at ?? '2026-03-01T03:00:00Z') : null},
+        ${o.discarded ? '2026-03-02T00:00:00Z' : null})`.execute(trx);
+      const inbound = async (n: string, o: { status?: string; voucher?: string; valid?: boolean; date?: string }) => sql`INSERT INTO inbound_invoice(tenant_id, source, xml, xml_sha256, form_no, serial, invoice_no, issue_date, seller_name, status, voucher_id, seller_sig)
+        VALUES (${tenantId}::uuid, 'upload', '<x/>', ${n}, '1', 'C26TAA', ${n}, ${o.date ?? '2026-03-01'}, 'NCC', ${o.status ?? 'new'}, ${o.voucher ?? null}, ${o.valid === undefined ? null : JSON.stringify({ valid: o.valid })}::jsonb)`.execute(trx);
+      const bank = (await sql<{ id: string }>`INSERT INTO bank(tenant_id, code, name) VALUES (${tenantId}::uuid, 'VCBX', 'VCB') RETURNING id`.execute(trx)).rows[0]!.id;
+      const acc = Number((await sql<{ id: string }>`INSERT INTO bank_account(tenant_id, bank_id, account_no, gl_account_code) VALUES (${tenantId}::uuid, ${bank}, 'GD5-1', '1121') RETURNING id`.execute(trx)).rows[0]!.id);
+      const txn = async (n: string, o: { status?: string; voucher?: string; amount?: number }) => sql`INSERT INTO bank_transaction(tenant_id, bank_account_id, source, external_id, value_date, amount_in, status, voucher_id)
+        VALUES (${tenantId}::uuid, ${acc}, 'manual', ${n}, '2026-03-01', ${o.amount ?? 100}, ${o.status ?? 'new'}, ${o.voucher ?? null})`.execute(trx);
+      const x = {
+        pendPos: await voucher('2026-03-01'), pendNeg: await voucher('2026-03-01'), pendDraft: await voucher('2026-03-01', 'draft'),
+        sendPos: await voucher('2026-03-01'), sendNeg: await voucher('2026-03-01'),
+        failPos: await voucher('2026-03-01'), failNeg: await voucher('2026-03-01'),
+        cqtPos: await voucher('2026-03-01'), cqtNegK: await voucher('2026-03-01'), cqtNegAcc: await voucher('2026-03-01'),
+        revPos: await voucher('2026-03-01'), revNeg: await voucher('2026-03-01'),
+        sigPos: await voucher('2026-03-01'), sigNeg: await voucher('2026-03-01'),
+        lechPos: await voucher('2026-03-01', 'draft', acc, 90), lechNeg: await voucher('2026-03-01', 'posted', acc, 100),
+      };
+      await pending(x.pendPos, true); await pending(x.pendNeg, false); await pending(x.pendDraft, true);
+      await ein(x.sendPos, { status: 'sending' }); await ein(x.sendNeg, { status: 'sending', at: new Date().toISOString() });
+      await ein(x.failPos, { status: 'failed' }); await ein(x.failNeg, { status: 'failed', discarded: true });
+      await ein(x.cqtPos, { status: 'issued', series: sC, cqt: 'waiting' }); await ein(x.cqtNegK, { status: 'issued', series: sK, cqt: 'waiting' }); await ein(x.cqtNegAcc, { status: 'issued', series: sC, cqt: 'accepted' });
+      await ein(x.revPos, { status: 'cancelled', reversal: true }); await ein(x.revNeg, { status: 'cancelled' });
+      await inbound('IN1', {}); await inbound('IN2', { status: 'ignored' });
+      await inbound('IN3', { status: 'voucher_created', voucher: x.sigPos, valid: false }); await inbound('IN4', { status: 'voucher_created', voucher: x.sigNeg, valid: true }); await inbound('IN5', { valid: false });
+      await txn('T1', {}); await txn('T2', { status: 'ignored' });
+      await txn('T3', { voucher: x.lechPos }); await txn('T4', { status: 'matched', voucher: x.lechNeg });
+      return x;
+    });
+    const res = await results({ ...range, codes: ['HDDT_CHUA_PHAT_HANH', 'HDDT_DANG_GUI', 'HDDT_LOI', 'HDDT_CHO_MA_CQT', 'HDDT_CAN_DAO_GOC', 'HDDV_CHUA_LAP_CT', 'HDDV_CHU_KY', 'NH_CHUA_DOI_CHIEU', 'NH_LECH_SO_TIEN'] });
+    expect(res.filter((x) => /Quy tắc lỗi/.test(x.message))).toEqual([]);
+    const of = (rule: string) => res.filter((x) => x.ruleCode === rule);
+    expect(of('HDDT_CHUA_PHAT_HANH').map((x) => x.voucherId)).toEqual([ids.pendPos]);
+    expect(of('HDDT_DANG_GUI').map((x) => x.voucherId)).toEqual([ids.sendPos]);
+    expect(of('HDDT_LOI').map((x) => x.voucherId)).toEqual([ids.failPos]);
+    expect(of('HDDT_CHO_MA_CQT').map((x) => x.voucherId)).toEqual([ids.cqtPos]);
+    expect(of('HDDT_CAN_DAO_GOC').map((x) => x.voucherId)).toEqual([ids.revPos]);
+    expect(of('HDDV_CHUA_LAP_CT').map((x) => x.ref)).toEqual(['IN1', 'IN5']);
+    expect(of('HDDV_CHU_KY').map((x) => x.voucherId)).toEqual([ids.sigPos]);
+    expect(of('NH_CHUA_DOI_CHIEU').length).toBe(2); // T1 và T3 (nháp gắn, trạng thái new); T2 đã bỏ qua, T4 đã đối chiếu không bị báo
+    expect(of('NH_LECH_SO_TIEN').map((x) => ({ v: x.voucherId, d: x.detail }))).toEqual([{ v: ids.lechPos, d: 'Giao dịch 100.0000, chứng từ 90' }]);
   }, 30_000);
 });
