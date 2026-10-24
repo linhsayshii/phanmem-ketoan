@@ -386,6 +386,8 @@ export interface EmployeeDependentTable {
   birth_date: DateOnly | null; from_month: string; to_month: string | null; note: string | null;
 }
 export interface EmployeeCostSplitTable { id: Generated<number>; tenant_id: string; employee_id: number; project_id: number; pct: Numeric }
+export interface AttendanceSheetTable { id: Generated<number>; tenant_id: string; year: number; month: number; department_id: number | null; created_at: Generated<Timestamp> }
+export interface AttendanceEntryTable { id: Generated<number>; tenant_id: string; sheet_id: number; employee_id: number; work_date: DateOnly; kind: string; qty: Numeric }
 export interface ApiKeyTable {
   id: Generated<string>; tenant_id: string; user_id: string; name: string; prefix: string; key_hash: string; scopes: string[]; default_warehouse_id: number | null;
   post_sales: Generated<boolean>; expires_at: Timestamp | null; revoked_at: Timestamp | null; last_used_at: Timestamp | null; created_at: Generated<Timestamp>;
@@ -532,6 +534,8 @@ export interface Database {
   employee_salary_history: EmployeeSalaryHistoryTable;
   employee_dependent: EmployeeDependentTable;
   employee_cost_split: EmployeeCostSplitTable;
+  attendance_sheet: AttendanceSheetTable;
+  attendance_entry: AttendanceEntryTable;
   bank_feed: BankFeedTable;
   bank_transaction: BankTransactionTable;
   bank_webhook_log: BankWebhookLogTable;

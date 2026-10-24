@@ -26,3 +26,4 @@ export * from './vietqr.js';
 export * from './cit.js';
 export * from './payrollFormula.js';
 export * from './payroll.js';
+export * from './attendance.js';

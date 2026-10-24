@@ -26,6 +26,9 @@ export const SETTINGS = z.object({
   stock_negative: z.enum(['forbid', 'warn', 'allow']).default('forbid'),
   // Cách tính khấu hao tháng đầu/tháng cuối: day = theo số ngày thực tế, month = tròn tháng.
   fa_proration: z.enum(['day', 'month']).default('day'),
+  // Chấm công/lương: giờ chuẩn mỗi ngày (quy đổi giờ làm việc ra ngày công) và ngày công chuẩn của tháng. Không có mặc định: để trống thì chấm công theo giờ và bảng lương báo lỗi khi cần tới.
+  payroll_standard_hours_per_day: z.string().regex(/^\d{1,2}(\.\d{1,2})?$/, 'Nhập số, tối đa 2 chữ số thập phân').refine((v) => Number(v) > 0 && Number(v) <= 24, 'Từ 0 đến 24').nullable().default(null),
+  payroll_standard_days_per_month: z.string().regex(/^\d{1,2}(\.\d{1,2})?$/, 'Nhập số, tối đa 2 chữ số thập phân').refine((v) => Number(v) > 0 && Number(v) <= 31, 'Từ 0 đến 31').nullable().default(null),
 });
 export type Settings = z.infer<typeof SETTINGS>;
 
