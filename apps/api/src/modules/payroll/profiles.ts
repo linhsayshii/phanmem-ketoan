@@ -9,7 +9,7 @@ import { likePattern } from '../master/crud.js';
 type Trx = Kysely<Database> | Transaction<Database>;
 
 // Bảng hồ sơ lương: nhật ký kiểm toán của các bảng này che khi thiếu view_salary (audit/routes.ts). Task sau thêm bảng lương, chấm công... vào đây.
-export const SALARY_AUDIT_ENTITIES = ['employee_payroll', 'employee_allowance', 'employee_salary_history', 'employee_dependent', 'employee_cost_split', 'payroll_run', 'payroll_line_value'];
+export const SALARY_AUDIT_ENTITIES = ['employee_payroll', 'employee_allowance', 'employee_salary_history', 'employee_dependent', 'employee_cost_split', 'payroll_run', 'payroll_line_value', 'payroll_payment_batch'];
 
 const vnd = z.string().regex(VND_AMOUNT_RE, 'Số tiền VND phải là số nguyên không âm tối đa 16 chữ số');
 const opt = (max: number) => z.string().trim().max(max).nullish().transform((v) => v || null);

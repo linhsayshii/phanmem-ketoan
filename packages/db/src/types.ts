@@ -419,6 +419,14 @@ export interface PayrollLineTable {
 export interface PayrollRunVoucherTable {
   id: Generated<number>; tenant_id: string; run_id: number; kind: string; voucher_id: string; lu_voucher_id: string | null; created_by: Generated<string | null>; created_at: Generated<Timestamp>;
 }
+export interface PayrollPaymentFormatTable {
+  id: Generated<number>; tenant_id: string; name: string; file_type: string; delimiter: Generated<string>; utf8_bom: Generated<boolean>; has_header: Generated<boolean>; ascii_only: Generated<boolean>;
+  content_template: Generated<string>; columns: ColumnType<unknown, string, string>; created_by: Generated<string | null>; created_at: Generated<Timestamp>; updated_at: Generated<Timestamp>;
+}
+export interface PayrollPaymentBatchTable {
+  id: Generated<number>; tenant_id: string; run_id: number; format_id: number; bank_account_id: number | null; voucher_id: string | null; file_name: string; content_type: string; file_content: Buffer;
+  total: string; count: number; warnings: ColumnType<unknown, string | undefined, string>; created_by: Generated<string | null>; created_at: Generated<Timestamp>;
+}
 export interface PayrollLineValueTable { id: Generated<number>; tenant_id: string; line_id: number; column_code: string; value: string; manual: Generated<boolean> }
 export interface ApiKeyTable {
   id: Generated<string>; tenant_id: string; user_id: string; name: string; prefix: string; key_hash: string; scopes: string[]; default_warehouse_id: number | null;
@@ -574,6 +582,8 @@ export interface Database {
   payroll_line: PayrollLineTable;
   payroll_line_value: PayrollLineValueTable;
   payroll_run_voucher: PayrollRunVoucherTable;
+  payroll_payment_format: PayrollPaymentFormatTable;
+  payroll_payment_batch: PayrollPaymentBatchTable;
   cost_object: CostObjectTable;
   cost_norm: CostNormTable;
   cost_norm_line: CostNormLineTable;
