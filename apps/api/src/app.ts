@@ -54,6 +54,7 @@ import signingRoutes from './modules/signing/routes.js';
 import payrollRoutes from './modules/payroll/routes.js';
 import payrollProfileRoutes from './modules/payroll/profileRoutes.js';
 import attendanceRoutes from './modules/payroll/attendanceRoutes.js';
+import costingRoutes from './modules/costing/routes.js';
 import inboundRoutes from './modules/inbound/routes.js';
 import openingAssetRoutes from './modules/assets/openingAssets.js';
 import bankRoutes from './modules/bank/routes.js';
@@ -126,6 +127,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(payrollRoutes);
   await app.register(payrollProfileRoutes);
   await app.register(attendanceRoutes);
+  await app.register(costingRoutes);
   await app.register(extRoutes); // khóa API (phiên) và /api/ext/v1 (Bearer kt_…, parser XML riêng)
   app.get('/api/health', async () => ({ ok: true }));
   return app;
