@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import PayrollRunsPage from '../src/pages/PayrollRuns.js';
 import PayrollStructuresPage from '../src/pages/PayrollStructures.js';
 import PayrollParamsPage from '../src/pages/PayrollParams.js';
+import { PayrollErrorAlert } from '../src/pages/payrollUi.js';
 
 const apiMock = vi.hoisted(() => vi.fn());
 const auth = vi.hoisted(() => ({ sensitive: [] as string[], perms: new Set<string>() }));
@@ -39,5 +40,14 @@ describe('màn hình lương', () => {
     expect(within(dialog).queryByRole('alert')).toBeNull();
     await userEvent.type(within(dialog).getByLabelText('Nguồn văn bản'), 'Dữ liệu minh họa kiểm thử');
     expect(await within(dialog).findByText(/không phải văn bản pháp lý/)).toBeInTheDocument();
+  });
+
+  it('lỗi PAYROLL_PAYMENT_POSTED liệt kê chứng từ chi đã ghi sổ chặn hủy hạch toán', async () => {
+    const { ApiError } = await import('../src/api/client.js');
+    renderPage(<PayrollErrorAlert error={new ApiError('PAYROLL_PAYMENT_POSTED', 'Bảng lương còn chứng từ chi lương PC0001 đã ghi sổ', 409, { vouchers: [{ kind: 'pay', voucherNo: 'PC0001' }, { kind: 'pit', voucherNo: null }] })} />);
+    expect(screen.getByText('Bảng lương còn chứng từ chi lương PC0001 đã ghi sổ')).toBeInTheDocument();
+    const list = screen.getByTestId('posted-payments');
+    expect(list).toHaveTextContent('Chi lương PC0001: bỏ ghi sổ hoặc đảo chứng từ này');
+    expect(list).toHaveTextContent('Nộp thuế TNCN (chưa có số)');
   });
 });

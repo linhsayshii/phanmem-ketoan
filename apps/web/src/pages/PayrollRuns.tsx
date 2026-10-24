@@ -122,11 +122,13 @@ function RunView({ id, onGone }: { id: number; onGone: () => void }) {
   });
   // Hạch toán (LU), chạy lại hạch toán (đảo cũ khi đổi), hủy hạch toán (đảo).
   const postOp = useMutation({
-    mutationFn: (op: 'post' | 'repost' | 'unpost') => api<{ unchanged: boolean; voucherNo: string | null }>(`${R}/${id}/${op}`, { method: 'POST' }).then((r) => ({ op, r })),
+    mutationFn: (op: 'post' | 'repost' | 'unpost') => api<{ unchanged: boolean; voucherNo: string | null; draftPayments?: { kind: PayKind; voucherNo: string | null }[] }>(`${R}/${id}/${op}`, { method: 'POST' }).then((r) => ({ op, r })),
     onError: setErr,
     onSuccess: ({ op, r }) => {
       setErr(null); void qc.invalidateQueries({ queryKey: key }); void qc.invalidateQueries({ queryKey: ['payroll-run-vouchers', id] }); refreshList();
       void message.success(op === 'unpost' ? 'Đã hủy hạch toán (đảo chứng từ hạch toán lương)' : r.unchanged ? 'Số liệu không đổi: giữ chứng từ hạch toán hiện có' : `Đã hạch toán: chứng từ ${r.voucherNo ?? ''}`);
+      // Nháp chi lương/nộp BH/nộp TNCN lập từ hạch toán cũ còn đó: ghi sổ nữa sẽ chi trùng hoặc lệch 334, nên nhắc hủy.
+      if (r.draftPayments?.length) void message.warning(`Còn ${r.draftPayments.length} chứng từ chi nháp lập từ hạch toán cũ (${r.draftPayments.map((x) => x.voucherNo ?? 'chưa có số').join(', ')}): hủy rồi lập lại, không ghi sổ`, 8);
     },
   });
   const posted = run?.status === 'posted';

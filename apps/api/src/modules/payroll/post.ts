@@ -114,6 +114,20 @@ const summary = (lines: VLine[]) => {
 export const payrollSourceId = (tenantId: string, runId: number) => createHash('md5').update(`${tenantId}:payroll_run:${runId}`).digest('hex').replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
 const voucherNoOf = async (trx: Trx, id: string | null) => (id ? (await trx.selectFrom('voucher').select('voucher_no').where('id', '=', id).executeTakeFirst())?.voucher_no ?? null : null);
 
+const PAY_LABEL: Record<string, string> = { pay: 'chi lương', insurance: 'nộp bảo hiểm', pit: 'nộp thuế TNCN' };
+// Chứng từ chi lương/nộp BH/nộp TNCN đang liên kết với bảng lương (trigger đã gỡ liên kết khi chứng từ về nháp, hủy, đảo). Đã ghi sổ thì đảo/hủy LU làm 334 lệch hoặc chi lương hai lần: chặn (409);
+// còn nháp thì cho qua nhưng báo lại để người dùng hủy nháp cũ (ghi sổ nháp đó sau khi LU đã đảo sẽ chi từ hạch toán không còn).
+async function payVouchersOf(trx: Trx, runId: number) {
+  return (await trx.selectFrom('payroll_run_voucher as x').innerJoin('voucher as v', 'v.id', 'x.voucher_id').select(['x.kind', 'v.id as voucherId', 'v.voucher_no as voucherNo', 'v.state'])
+    .where('x.run_id', '=', runId).orderBy('x.id').execute());
+}
+async function assertNoPostedPayment(trx: Trx, runId: number, what: string) {
+  const posted = (await payVouchersOf(trx, runId)).filter((x) => x.state === 'posted');
+  if (posted.length)
+    throw new AppError('PAYROLL_PAYMENT_POSTED', `Bảng lương còn chứng từ ${posted.map((x) => `${PAY_LABEL[x.kind] ?? x.kind}${x.voucherNo ? ` ${x.voucherNo}` : ''}`).join(', ')} đã ghi sổ: bỏ ghi sổ hoặc đảo chứng từ đó trước khi ${what}`, 409, { vouchers: posted });
+}
+const draftPayments = async (trx: Trx, runId: number) => (await payVouchersOf(trx, runId)).filter((x) => x.state === 'draft').map((x) => ({ kind: x.kind, voucherId: x.voucherId, voucherNo: x.voucherNo }));
+
 async function createLu(trx: Trx, ctx: Ctx, run: Run, date: string, lines: VLine[]) {
   if (!lines.length) throw new AppError('PAYROLL_RUN_NOTHING_TO_POST', 'Bảng lương không có số tiền nào để hạch toán', 409);
   const v = await S.createSystemVoucher(trx, ctx, { voucherType: 'LU', postingDate: date, documentDate: date, description: `Hạch toán ${run.name}`, currencyCode: 'VND', lines }, { type: 'payroll_run', id: payrollSourceId(ctx.tenantId, run.id) });
@@ -160,9 +174,11 @@ export async function repostRun(trx: Trx, ctx: Ctx, runId: number) {
       return { runId, status: 'posted', voucherId: cur, voucherNo: await voucherNoOf(trx, cur), reversedVoucherIds: [] as string[], unchanged: true, ...summary(lines) };
   }
   assertWritable(p, ctx);
+  await assertNoPostedPayment(trx, runId, 'chạy lại hạch toán');
+  const drafts = await draftPayments(trx, runId);
   if (cur) await S.reverseVoucher(trx, cur, { postingDate: p.date, description: `Đảo hạch toán ${run.name} (chạy lại)` }); // trigger gỡ liên kết, bảng về "đã tính"
   const voucherId = await createLu(trx, ctx, run, p.date, lines);
-  return { runId, status: 'posted', voucherId, voucherNo: await voucherNoOf(trx, voucherId), reversedVoucherIds: cur ? [cur] : [], unchanged: false, ...summary(lines) };
+  return { runId, status: 'posted', voucherId, voucherNo: await voucherNoOf(trx, voucherId), reversedVoucherIds: cur ? [cur] : [], unchanged: false, draftPayments: drafts, ...summary(lines) };
 }
 
 /** Hủy hạch toán: đảo LU (D8, không bỏ ghi sổ) ngày cuối kỳ lương; bảng lương về "đã tính" (trigger gỡ liên kết), mở lại chấm công và tính lại. */
@@ -172,7 +188,9 @@ export async function unpostRun(trx: Trx, ctx: Ctx, runId: number) {
   const cur = (await trx.selectFrom('payroll_run').select('voucher_id').where('id', '=', runId).executeTakeFirstOrThrow()).voucher_id;
   const p = await periodOfRun(trx, r);
   assertWritable(p, ctx);
+  await assertNoPostedPayment(trx, runId, 'hủy hạch toán');
+  const drafts = await draftPayments(trx, runId);
   if (cur) await S.reverseVoucher(trx, cur, { postingDate: p.date, description: `Đảo hạch toán ${r.name} (hủy hạch toán)` });
   await trx.updateTable('payroll_run').set({ voucher_id: null, status: 'calculated', updated_at: sql`now()` }).where('id', '=', runId).execute();
-  return { runId, status: 'calculated', voucherId: null, voucherNo: null, reversedVoucherIds: cur ? [cur] : [], unchanged: false };
+  return { runId, status: 'calculated', voucherId: null, voucherNo: null, reversedVoucherIds: cur ? [cur] : [], unchanged: false, draftPayments: drafts };
 }

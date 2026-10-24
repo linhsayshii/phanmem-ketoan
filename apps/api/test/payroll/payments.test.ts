@@ -127,11 +127,19 @@ describe('lập chứng từ chi từ bảng lương đã hạch toán', () => {
     await fail('POST', `${R}/${id}/pit-voucher`, 400, 'VALIDATION', { kind: 'bank', date: '2024-11-15' });
     await ok('POST', `/api/payroll/profiles/${emp.NV03}/allowances`, { code: 'an_trua', name: 'Ăn trưa', amount: '1000000', taxable: true, siBase: false, validFrom: '2024-10-01', validTo: '2024-10-31' });
     await fail('POST', `${R}/${id}/pit-voucher`, 409, 'PAYROLL_RUN_STALE', { kind: 'cash', date: '2024-11-15' });
-    expect((await ok('POST', `${R}/${id}/repost`)).unchanged).toBe(false);
-    expect((await links(id)).map((l) => [l.kind, l.stale])).toEqual([['pay', true], ['insurance', true]]);
+    // Phiếu chi lương đã ghi sổ: chạy lại hạch toán làm LU đổi sẽ chi hai lần/lệch 334 nên bị chặn (409) kèm danh sách phiếu; bỏ ghi sổ phiếu đó thì chạy lại được.
+    const blocked = await fail('POST', `${R}/${id}/repost`, 409, 'PAYROLL_PAYMENT_POSTED');
+    expect(blocked.details.vouchers).toEqual([expect.objectContaining({ kind: 'pay', state: 'posted' })]);
+    expect(blocked.message).toMatch(/chi lương .*đã ghi sổ/);
+    const payV = (await links(id)).find((l) => l.kind === 'pay')!;
+    await ok('POST', `/api/vouchers/${payV.voucherId}/unpost`, {});
+    const re = await ok('POST', `${R}/${id}/repost`);
+    expect(re.unchanged).toBe(false);
+    expect(re.draftPayments).toEqual([expect.objectContaining({ kind: 'insurance' })]); // nháp nộp BH còn đó: cảnh báo
+    expect((await links(id)).map((l) => [l.kind, l.stale])).toEqual([['insurance', true]]);
     await fail('POST', `${R}/${id}/insurance-voucher`, 409, 'PAYROLL_VOUCHER_EXISTS', { kind: 'bank', bankAccountId: bank[2024], date: '2024-11-10' });
     await ok('POST', `${R}/${id}/pit-voucher`, { kind: 'cash', date: '2024-11-15' });
-    expect((await links(id)).map((l) => [l.kind, l.stale])).toEqual([['pay', true], ['insurance', true], ['pit', false]]);
+    expect((await links(id)).map((l) => [l.kind, l.stale])).toEqual([['insurance', true], ['pit', false]]);
   });
 });
 
@@ -157,7 +165,15 @@ describe('gỡ liên kết khi chứng từ bị xóa, hủy, bỏ ghi sổ, đ�
     expect((await closing(2026, 'NV01')).credit).toBe((runs[2026]!.lines as Json[]).find((l) => l.employeeCode === 'NV01')!.net);
     expect((await ok('POST', `${R}/${id}/pay-voucher`, { kind: 'cash', date: '2026-11-07' })).voucherType).toBe('PC');
     // Hủy hạch toán bảng lương: chứng từ chi còn lại thành "lỗi thời"; bảng chưa hạch toán không lập chứng từ chi.
-    await ok('POST', `${R}/${id}/unpost`);
+    // Phiếu nộp TNCN đã ghi sổ thì không hủy hạch toán được (409); phiếu bỏ ghi sổ (đã gỡ liên kết) và nháp thì hủy được, nháp còn liên kết được báo lại.
+    const pitV = (await links(id)).find((l) => l.kind === 'pit')!;
+    await ok('POST', `/api/vouchers/${pitV.voucherId}/post`, {});
+    const blocked = await fail('POST', `${R}/${id}/unpost`, 409, 'PAYROLL_PAYMENT_POSTED');
+    expect(blocked.details.vouchers).toEqual([expect.objectContaining({ kind: 'pit', voucherId: pitV.voucherId })]);
+    expect((await ok('GET', `${R}/${id}`)).status).toBe('posted');
+    await ok('POST', `/api/vouchers/${pitV.voucherId}/unpost`, {});
+    const un = await ok('POST', `${R}/${id}/unpost`);
+    expect(un.draftPayments.map((x: Json) => x.kind)).toEqual(['pay']); // nháp lập từ đầu còn liên kết; phiếu bỏ ghi sổ đã bị gỡ liên kết
     expect((await links(id)).every((l) => l.stale)).toBe(true);
     await fail('POST', `${R}/${id}/insurance-voucher`, 409, 'PAYROLL_RUN_NOT_POSTED', body);
   });
