@@ -7,7 +7,7 @@ import { createMemoryHistory, createRouter } from '@tanstack/react-router';
 import type * as ReactRouter from '@tanstack/react-router';
 import { todayVn } from '@kt/domain';
 import VoucherForm, { settleSig, settleTargets, emptyLine, type Line } from '../src/pages/VoucherForm.js';
-import VoucherList from '../src/pages/VoucherList.js';
+import VoucherList, { totalText } from '../src/pages/VoucherList.js';
 import { routeTree } from '../src/router.js';
 
 const mocks = vi.hoisted(() => {
@@ -54,6 +54,18 @@ describe('Màn hình chứng từ theo loại', () => {
     fireEvent.mouseDown(screen.getByLabelText('Mục đích'));
     fireEvent.click(await screen.findByText('Thu tiền khách hàng', { selector: '.ant-select-item-option-content' }));
     await vi.waitFor(() => expect(screen.getByTestId('tk-1')).toHaveTextContent('131'));
+  });
+
+  it('thiếu view_salary (totalDebit null, salaryRedacted): hiện nhãn đã ẩn, tổng "—", không có nút Lưu, Ghi sổ, In; danh sách hiện "—"', async () => {
+    mocks.route.type = 'PKT'; mocks.route.id = 'v1';
+    mocks.api.mockImplementation(async (path: string) => (path === '/api/fiscal-years' ? years : path === '/api/vouchers/v1' ? posted({ state: 'draft', voucherNo: null, totalDebit: null, salaryRedacted: true,
+      lines: [line(1, '334', '0', '0'), line(2, '1111', '0', '1500000')] }) : []));
+    renderForm();
+    expect(await screen.findByTestId('salary-redacted', {}, slow)).toHaveTextContent('Đã ẩn do thiếu quyền xem lương');
+    expect(screen.getByTestId('total-redacted')).toHaveTextContent('Tổng Nợ: —');
+    expect(screen.queryByText(/Chênh lệch/)).not.toBeInTheDocument();
+    for (const name of [/Lưu/, /Ghi sổ/, /^In$/]) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    expect(totalText(null)).toBe('—'); expect(totalText('1500000')).toBe('1.500.000');
   });
 
   it('chứng từ đã ghi sổ ở kỳ khóa mềm: không có nút Bỏ ghi sổ, có Đảo; Đảo hỏi ngày và gửi ngày đã chọn', async () => {

@@ -27,7 +27,7 @@ export interface Line { lineNo?: number; accountCode: string; accountName?: stri
 interface Voucher { id: string; voucherType: string; voucherNo: string | null; postingDate: string; documentDate: string; state: string; description: string | null; partyCode: string | null;
   personName?: string | null; personAddress?: string | null; attachmentsCount?: number | null; bankAccountNo?: string | null; counterBankAccountNo?: string | null; partyBankAccountNo?: string | null;
   dueDate?: string | null; purpose?: string | null; invoices?: Parameters<typeof declRowsOf>[0]; periodStatus: 'open' | 'soft_locked' | 'hard_locked'; hashed: boolean;
-  currencyCode: string; fxRate: string | null; version: number; totalDebit: string; lines: Line[]; warnings?: { code: string; message: string }[] }
+  currencyCode: string; fxRate: string | null; version: number; totalDebit: string | null; salaryRedacted?: true; lines: Line[]; warnings?: { code: string; message: string }[] }
 interface FormValues { postingDate: Dayjs; documentDate: Dayjs; description?: string | null; partyCode?: string | null; personName?: string | null; personAddress?: string | null; attachmentsCount?: number | null;
   bankAccountNo?: string | null; counterBankAccountNo?: string | null; partyBankAccountNo?: string | null; dueDate?: Dayjs | null; purpose?: string | null; currencyCode?: string; fxRate?: string | null }
 
@@ -138,10 +138,11 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
 
   const state = (v.data?.state ?? 'draft') as VoucherState;
   const viewOnly = !eff.manual; // chứng từ hệ thống tự sinh: chỉ xem và in
+  const redacted = v.data?.salaryRedacted === true; // thiếu view_salary: số tiền dòng lương đã bị ẩn, tổng null; chỉ xem, không sửa (lưu sẽ ghi đè số lương bằng 0)
   const posted = state === 'posted';
   const decision = posted ? decideEdit({ periodStatus: v.data?.periodStatus ?? 'open', hashed: v.data?.hashed ?? false, change: 'amount', canEditPosted: can('voucher.edit_posted'), canBackdateLocked: can('voucher.backdate_locked') }) : null;
-  const editable = state === 'draft' && !viewOnly;
-  const metaOnly = posted && !viewOnly && decideEdit({ periodStatus: v.data?.periodStatus ?? 'open', hashed: v.data?.hashed ?? false, change: 'meta', canEditPosted: true, canBackdateLocked: true }) !== 'forbidden';
+  const editable = state === 'draft' && !viewOnly && !redacted;
+  const metaOnly = posted && !viewOnly && !redacted && decideEdit({ periodStatus: v.data?.periodStatus ?? 'open', hashed: v.data?.hashed ?? false, change: 'meta', canEditPosted: true, canBackdateLocked: true }) !== 'forbidden';
   const locked = !editable && !metaOnly;
 
   // Chưa lưu: so các dòng với bản lúc tải/lưu, cộng cờ đã sửa tiêu đề; dùng cho hộp xác nhận trước khi bỏ phần đang nhập.
@@ -266,7 +267,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const ready = isNew || !!v.data;
   const mayEdit = !viewOnly && !locked && (isNew ? can('voucher.create') : can('voucher.update'));
   const canSave = ready && mayEdit;
-  const mayPost = !viewOnly && (isNew || canTransition(state, 'post')) && can('voucher.post');
+  const mayPost = !viewOnly && !redacted && (isNew || canTransition(state, 'post')) && can('voucher.post');
   const canPost = ready && mayPost;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -359,8 +360,9 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const ledgerGrid = (<>
     <KeyboardGrid<Line> rows={lines} columns={columns} readOnly={locked} lockRows={metaOnly} onRowsChange={onRowsChange} addRowTemplate={emptyLine} onLookup={onLookup} height={360} />
     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, marginTop: 8 }}>
-      <b>Tổng Nợ: {formatVnNumber(t.debit)}</b><b>Tổng Có: {formatVnNumber(t.credit)}</b>
-      {!balanced && <Tag color="red">Chênh lệch {formatVnNumber(sum([t.debit, `-${t.credit}`]).toString())}</Tag>}
+      {redacted ? <><b data-testid="total-redacted">Tổng Nợ: —</b><b>Tổng Có: —</b></> : <>
+        <b>Tổng Nợ: {formatVnNumber(t.debit)}</b><b>Tổng Có: {formatVnNumber(t.credit)}</b>
+        {!balanced && <Tag color="red">Chênh lệch {formatVnNumber(sum([t.debit, `-${t.credit}`]).toString())}</Tag>}</>}
     </div>
   </>);
 
@@ -375,11 +377,12 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
         {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo} ngày ${formatVnDate(p)}` }); })}>Đảo</Button>}
         {!isNew && !viewOnly && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy chứng từ?', content: 'Số chứng từ (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
         {!isNew && mayDuplicate && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'duplicate', body: { postingDate: todayVn() } }))}>{decision === 'adjust_in_open_period' ? 'Nhân bản sang kỳ mở' : 'Nhân bản'}</Button>}
-        {!isNew && can('voucher.print') && (eff.printForms.length > 1
+        {!isNew && !redacted && can('voucher.print') && (eff.printForms.length > 1
           ? <Dropdown trigger={['click']} menu={{ items: eff.printForms.map((f) => ({ key: f, label: <a href={`/api/vouchers/${id}/print?format=pdf&form=${f}`} target="_blank" rel="noreferrer">{PRINT_FORM_LABELS[f] ?? f}</a> })) }}><Button>In ▾</Button></Dropdown>
           : <Button href={`/api/vouchers/${id}/print?format=pdf`} target="_blank">In</Button>)}
       </Space>}>
       {v.error && <Alert type="error" showIcon message={(v.error as Error).message} style={{ marginBottom: 12 }} />}
+      {redacted && <Alert type="warning" showIcon data-testid="salary-redacted" style={{ marginBottom: 12 }} message="Đã ẩn do thiếu quyền xem lương" description="Số tiền và nhân viên của các dòng tài khoản lương, bảo hiểm, thuế TNCN không hiển thị; chứng từ chỉ để xem, không sửa hoặc in được." />}
       <Form form={form} layout="vertical" initialValues={{ postingDate: dayjs(todayVn()), documentDate: dayjs(todayVn()), currencyCode: 'VND' }} onValuesChange={onValuesChange}>
         <Row gutter={12}>
           <Col span={4}><Form.Item label="Ngày hạch toán" name="postingDate" rules={[{ required: true, message: 'Nhập ngày hạch toán' }]}><DatePicker format="DD/MM/YYYY" disabled={!editable} /></Form.Item></Col>
