@@ -18,7 +18,7 @@ describe('formulaSafe', () => {
   it('giữ nguyên giá trị không phải chuỗi (ô số, rỗng)', () => { expect(formulaSafe(-5)).toBe(-5); expect(formulaSafe(null)).toBeNull(); expect(formulaSafe(undefined)).toBeUndefined(); });
 
   it('CSV báo cáo lương: ô chữ có nháy, ô tiền âm kiểu số giữ nguyên', () => {
-    const lines = renderCsv(doc()).toString('utf8').replace(/^﻿/, '').trimEnd().split('\r\n');
+    const lines = renderCsv(doc()).toString('utf8').replace(/^\uFEFF/, '').trimEnd().split('\r\n');
     expect(lines[0]).toBe("'=nhãn,Tiền,Ngày");
     expect(lines[1]).toBe('"\'=HYPERLINK(""http://x"",""y"")",-1500000,31/03/2026');
     expect(lines[2]!.startsWith("'\tTab,2000000")).toBe(true);
@@ -26,7 +26,7 @@ describe('formulaSafe', () => {
   });
 
   it('Excel: ô chữ có nháy, ô tiền là số thật', async () => {
-    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(await renderReportXlsx([doc()]));
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load((await renderReportXlsx([doc()])) as never);
     const ws = wb.worksheets[0]!;
     const cells: unknown[] = []; ws.eachRow((r) => cells.push(...(r.values as unknown[]).slice(1)));
     expect(cells).toContain("'+Công ty"); expect(cells).toContain("'=BẢNG LƯƠNG"); expect(cells).toContain("'@kỳ"); expect(cells).toContain("'-ghi chú"); expect(cells).toContain("'=nhãn");
