@@ -33,6 +33,8 @@ import LedgersPage from './pages/Ledgers.js';
 import ArapReportsPage from './pages/ArapReports.js';
 import InvoiceRegisterPage from './pages/InvoiceRegister.js';
 import VatReturnPage from './pages/VatReturn.js';
+import CitEstimatePage from './pages/CitEstimate.js';
+import CitReturnPage from './pages/CitReturn.js';
 import EInvoicesPage from './pages/EInvoices.js';
 import InboundInvoicesPage from './pages/InboundInvoices.js';
 import BankTransactionsPage from './pages/BankTransactions.js';
@@ -121,6 +123,8 @@ export const MENU: MenuItem[] = [
   { key: 'thue', label: 'Thuế', to: '/thue', children: [
     { key: 'invoice-register', label: 'Bảng kê hóa đơn', to: '/thue/bang-ke-hoa-don', permission: 'tax.view' },
     { key: 'vat-return', label: 'Tờ khai thuế GTGT', to: '/thue/to-khai-gtgt', permission: 'tax_return.view' },
+    { key: 'cit-estimate', label: 'Tạm tính thuế TNDN', to: '/thue/tam-tinh-tndn', permission: 'cit.view' },
+    { key: 'cit-return', label: 'Quyết toán thuế TNDN (03/TNDN)', to: '/thue/quyet-toan-tndn', permission: 'cit.view' },
     { key: 'signing', label: 'Cài đặt ký số', to: '/thue/ky-so', permission: 'signing.use' },
   ] },
   { key: 'hddt', label: 'Hóa đơn điện tử', to: '/hoa-don-dien-tu', children: [
@@ -184,6 +188,8 @@ const cashBooksRoute = createRoute({ getParentRoute: () => appRoute, path: '/bao
 const arapReportsRoute = createRoute({ getParentRoute: () => appRoute, path: '/cong-no/bao-cao', component: ArapReportsPage });
 const invoiceRegisterRoute = createRoute({ getParentRoute: () => appRoute, path: '/thue/bang-ke-hoa-don', component: InvoiceRegisterPage });
 const vatReturnRoute = createRoute({ getParentRoute: () => appRoute, path: '/thue/to-khai-gtgt', component: VatReturnPage });
+const citEstimateRoute = createRoute({ getParentRoute: () => appRoute, path: '/thue/tam-tinh-tndn', component: CitEstimatePage });
+const citReturnRoute = createRoute({ getParentRoute: () => appRoute, path: '/thue/quyet-toan-tndn', component: CitReturnPage });
 const settlementRoute = createRoute({ getParentRoute: () => appRoute, path: '/cong-no/doi-tru', component: SettlementPage });
 const fxToolsRoute = createRoute({ getParentRoute: () => appRoute, path: '/cong-no/ty-gia', component: FxToolsPage });
 const amortizationRoute = createRoute({ getParentRoute: () => appRoute, path: '/so-cai/phan-bo', component: AmortizationPage });
@@ -225,6 +231,6 @@ const apiKeysRoute = createRoute({ getParentRoute: () => appRoute, path: '/he-th
 const inboundInvoicesRoute = createRoute({ getParentRoute: () => appRoute, path: '/hoa-don-dau-vao', component: InboundInvoicesPage });
 const einvoiceNoticeRoute = createRoute({ getParentRoute: () => appRoute, path: '/hoa-don-dien-tu/thong-bao-sai-sot', component: EInvoiceErrorNoticePage });
 const einvoiceConfigRoute = createRoute({ getParentRoute: () => appRoute, path: '/hoa-don-dien-tu/cau-hinh', component: EInvoiceConfigPage });
-export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, bankTransactionsRoute, bankFeedsRoute, apiKeysRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, openingAssetsRoute, periodCloseRoute, closingRoute, amortizationRoute, tscdRoute, ccdcRoute, cpttRoute, assetCatRoute, loansRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, signingRoute, einvoicesRoute, inboundInvoicesRoute, einvoiceNoticeRoute, einvoiceConfigRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, stocktakeRoute, stockReportsRoute, assetReportsRoute, assetCountRoute, salesReportsRoute, purchaseReportsRoute, costingRoute, catalogRoute])]);
+export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, bankTransactionsRoute, bankFeedsRoute, apiKeysRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, openingAssetsRoute, periodCloseRoute, closingRoute, amortizationRoute, tscdRoute, ccdcRoute, cpttRoute, assetCatRoute, loansRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, citEstimateRoute, citReturnRoute, signingRoute, einvoicesRoute, inboundInvoicesRoute, einvoiceNoticeRoute, einvoiceConfigRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, stocktakeRoute, stockReportsRoute, assetReportsRoute, assetCountRoute, salesReportsRoute, purchaseReportsRoute, costingRoute, catalogRoute])]);
 export const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }

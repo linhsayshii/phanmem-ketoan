@@ -5,6 +5,7 @@ import type { Database } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
 import { openSecret, sealSecret } from '../../lib/secretBox.js';
 import { renderReturnXml } from '../tax/vatXml.js';
+import { renderCitXml } from '../tax/citReturn.js';
 import { FAKE_CERT_DER } from './providers/fake.js';
 import { assertFakeAllowed, assertSmartcaUrl, type SigningPolicy } from './providers/policy.js';
 import { describeCertificate, LOCAL_AGENT_URL } from './providers/localAgent.js';
@@ -79,12 +80,12 @@ export const smartcaCfgOf = (p: ProfileRow): SmartCaCfg => {
   return JSON.parse(openSecret(p.credentials)) as SmartCaCfg;
 };
 
-// Nguồn XML cần ký theo loại chứng từ. Tờ khai TNDN và thông báo 04/SS chưa có bộ dựng XML: báo rõ thay vì ký giả.
+// Nguồn XML cần ký theo loại chứng từ: tờ khai 01/GTGT, tờ khai 03/TNDN. Thông báo 04/SS chưa có bộ dựng XML: báo rõ thay vì ký giả.
 async function documentXml(trx: Trx, ctx: SessionCtx, kind: string, ref: string): Promise<string> {
-  if (kind !== 'vat_return') throw new AppError('SIGNING_DOC_UNSUPPORTED', `Chưa có XML để ký cho loại chứng từ "${kind}"`, 400);
-  if (!ctx.permissions.has('tax_return.view') || !ctx.permissions.has('tax.view')) throw new AppError('FORBIDDEN', 'Thiếu quyền xem tờ khai thuế', 403);
+  if (kind !== 'vat_return' && kind !== 'cit_return') throw new AppError('SIGNING_DOC_UNSUPPORTED', `Chưa có XML để ký cho loại chứng từ "${kind}"`, 400);
+  if (kind === 'vat_return' ? !ctx.permissions.has('tax_return.view') || !ctx.permissions.has('tax.view') : !ctx.permissions.has('cit.view')) throw new AppError('FORBIDDEN', 'Thiếu quyền xem tờ khai thuế', 403);
   if (!/^\d{1,9}$/.test(ref)) throw new AppError('SIGNING_DOC_INVALID', 'Mã tờ khai không hợp lệ', 400);
-  return (await renderReturnXml(trx, ctx.tenantId, Number(ref))).xml;
+  return (kind === 'vat_return' ? await renderReturnXml(trx, ctx.tenantId, Number(ref)) : await renderCitXml(trx, ctx.tenantId, Number(ref))).xml;
 }
 
 export interface SessionCtx { tenantId: string; userId: string; permissions: Set<string> }

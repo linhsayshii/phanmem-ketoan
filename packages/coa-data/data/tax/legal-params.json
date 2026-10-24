@@ -26,5 +26,40 @@
     "validFrom": "2026-07-01",
     "validTo": null,
     "source": "TT 89/2026/TT-BTC ngày 30/6/2026: Điều 99 khoản 1 (hiệu lực từ 01/7/2026), Điều 100 khoản 1 (kỳ tính thuế trước ngày 01/7/2026 dùng mẫu biểu cũ); mẫu 01/GTGT tại Phụ lục I. Tra theo một ngày thuộc kỳ tính thuế, không theo ngày nộp."
+  },
+  {
+    "code": "cit_rate",
+    "value": { "standard": 20, "tiers": [{ "maxRevenue": "3000000000", "rate": 15 }, { "maxRevenue": "50000000000", "rate": 17 }] },
+    "validFrom": "2025-01-01",
+    "validTo": null,
+    "source": "Luật Thuế TNDN số 67/2025/QH15 (Công báo 965+966 ngày 24/7/2025; ~/legal-docs/luat67-2025/luat67.txt): Điều 10 khoản 1 (thuế suất 20%), khoản 2 (15% với doanh nghiệp có tổng doanh thu năm không quá 03 tỷ đồng), khoản 3 (17% với tổng doanh thu năm từ trên 03 tỷ đồng đến không quá 50 tỷ đồng; doanh thu căn cứ là tổng doanh thu của kỳ tính thuế TNDN trước liền kề) tại dòng 355-370; Điều 19 khoản 1 (hiệu lực 01/10/2025, áp dụng từ kỳ tính thuế TNDN năm 2025) tại dòng 770-772; Điều 10 giữ nguyên trong VBHN 113/VBHN-VPQH (~/legal-docs/vbhn113-2026/vbhn113.txt dòng 440-455). Cách xác định tổng doanh thu: NĐ 320/2025/NĐ-CP Điều 11 khoản 4 (doanh thu bán hàng, cung cấp dịch vụ không bao gồm các khoản giảm trừ doanh thu, doanh thu hoạt động tài chính và thu nhập khác của kỳ tính thuế năm trước liền kề; điểm a: kỳ trước dưới 12 tháng thì chia số tháng thực tế hoạt động nhân 12; điểm c: không áp dụng 15%/17% cho công ty con, công ty có quan hệ liên kết với doanh nghiệp không đáp ứng điều kiện) tại ~/legal-docs/nd320-2025/nd320.txt dòng 1507-1546; Luật 67/2025 Điều 18 khoản 3, 4 (15%/17% không áp dụng cho một số thu nhập, công ty con/liên kết) dòng 737-759. validFrom là ngày đầu kỳ tính thuế năm 2025 (năm dương lịch); tra theo ngày đầu năm tài chính."
+  },
+  {
+    "code": "cit_exempt_revenue",
+    "value": "1000000000",
+    "validFrom": "2026-01-01",
+    "validTo": null,
+    "source": "NĐ 141/2026/NĐ-CP ngày 29/4/2026 (Công báo 272 ngày 14/5/2026; ~/legal-docs/nd141-2026/nd141.txt): Điều 2 bổ sung khoản 15 Điều 4 (thu nhập được miễn thuế) NĐ 320/2025/NĐ-CP: thu nhập của doanh nghiệp, tổ chức có tổng doanh thu năm từ 01 tỷ đồng trở xuống được miễn thuế TNDN; điểm a: doanh thu căn cứ là tổng doanh thu bán hàng, cung cấp dịch vụ (không bao gồm các khoản giảm trừ doanh thu), doanh thu tài chính và thu nhập khác của kỳ tính thuế năm trước liền kề; điểm b: kỳ trước dưới 12 tháng thì quy đổi 12 tháng; điểm c: doanh nghiệp mới thành lập dự kiến doanh thu không quá 01 tỷ đồng không phải tạm nộp; điểm d: không áp dụng cho công ty con, công ty có quan hệ liên kết với doanh nghiệp không đáp ứng điều kiện (dòng 74-110). Điều 3: hiệu lực từ 01/01/2026 (dòng 111-112); Điều 4 khoản 3: từ kỳ tính thuế năm 2026 thực hiện theo Điều 2 (dòng 125-133). Tra theo ngày đầu năm tài chính."
+  },
+  {
+    "code": "cit_reduction",
+    "value": { "rate": 30, "maxRevenue": "10000000000", "revenueOf": "current_year" },
+    "validFrom": "2026-01-01",
+    "validTo": "2027-12-31",
+    "source": "NQ 43/2026/QH16 ngày 24/8/2026 (bản quét ~/legal-docs/nq43-2026/nq43.signed.pdf, đối chiếu ảnh trang 1-2; OCR ocr/p001.txt dòng 45-50, ocr/p002.txt dòng 1-13): Điều 1 khoản 2 (giảm 30% số thuế TNDN phải nộp của kỳ tính thuế năm 2026 và năm 2027 đối với doanh nghiệp, tổ chức có mức doanh thu hằng năm của năm 2026, năm 2027 không quá 10 tỷ đồng; trừ doanh nghiệp hình thành từ chia, tách sau ngày Nghị quyết có hiệu lực mà tổng doanh thu sau chia, tách trên 10 tỷ đồng; doanh nghiệp đang được ưu đãi thì số giảm tính trên số thuế phải nộp sau khi đã trừ ưu đãi), Điều 2 khoản 1 (hiệu lực 24/8/2026, áp dụng cho kỳ tính thuế năm 2026, năm 2027), khoản 2 (Chính phủ quy định chi tiết: chưa có văn bản hướng dẫn trong ~/legal-docs). Doanh thu xét là doanh thu của chính năm được giảm (revenueOf current_year). Mẫu 03/TNDN không chỉ rõ khai số giảm này vào chỉ tiêu nào; phần mềm gợi ý C15 \"miễn, giảm theo từng thời kỳ\". Tra theo ngày đầu năm tài chính."
+  },
+  {
+    "code": "cit_prepay_min_ratio",
+    "value": 80,
+    "validFrom": "2026-07-01",
+    "validTo": null,
+    "source": "NĐ 252/2026/NĐ-CP (Công báo 401 ngày 16/7/2026; ~/legal-docs/nd252-2026/nd252.txt): Điều 24 khoản 1 điểm a (thuế TNDN tạm nộp theo quý), khoản 3 điểm a (tổng số thuế đã tạm nộp của 04 quý không được thấp hơn 80% số thuế phải nộp theo quyết toán năm), điểm b (nộp thiếu thì tính tiền chậm nộp) tại dòng 2065-2091; Điều 74 khoản 1 (hiệu lực từ 01/7/2026) tại dòng 5764-5768. Quy định trước 01/7/2026 chưa có văn bản gốc trong ~/legal-docs nên không nhập. Tra theo ngày cuối năm tài chính."
+  },
+  {
+    "code": "cit_return_template",
+    "value": "TT89",
+    "validFrom": "2026-07-01",
+    "validTo": null,
+    "source": "TT 89/2026/TT-BTC ngày 30/6/2026: Điều 99 khoản 1 (hiệu lực từ 01/7/2026), Điều 100 khoản 1 (hồ sơ khai thuế có kỳ tính thuế trước ngày 01/7/2026 dùng mẫu biểu cũ; ~/legal-docs/tt89-2026/ocr/p199.txt dòng 38-44); Mẫu số 03/TNDN tại Phụ lục I trang 270-273, ghi chú 3 của mẫu lấy ví dụ kỳ tính thuế 01/01/2026-31/12/2026. Tra theo ngày cuối năm tài chính: kỳ tính thuế năm kết thúc từ 01/7/2026 dùng mẫu này; kỳ kết thúc trước đó dùng mẫu theo TT 80/2021 chưa có văn bản gốc nên không có mẫu."
   }
 ]

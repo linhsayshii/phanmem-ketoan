@@ -7,7 +7,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Ký một chứng từ. Tiện ích cục bộ: trình duyệt gọi tiện ích (127.0.0.1) để ký băm rồi gửi chữ ký lên máy chủ. SmartCA/giả lập: máy chủ ký, trình duyệt hỏi kết quả.
 // Khóa riêng không bao giờ qua trình duyệt hay máy chủ. Trả mã phiên đã ký.
-export async function signDocument(a: { docKind: 'vat_return'; docRef: string; profileId?: number }, onStatus: (text: string) => void = () => undefined): Promise<string> {
+export async function signDocument(a: { docKind: 'vat_return' | 'cit_return'; docRef: string; profileId?: number }, onStatus: (text: string) => void = () => undefined): Promise<string> {
   const profiles = await api<SigningProfile[]>('/api/signing/profiles');
   const profile = a.profileId ? profiles.find((p) => p.id === a.profileId) : profiles.find((p) => p.isDefault);
   if (!profile) throw new ApiError('SIGNING_PROFILE_MISSING', 'Chưa có hồ sơ ký số: thêm chứng thư ở Cài đặt ký số', 409);
@@ -34,10 +34,11 @@ export async function signDocument(a: { docKind: 'vat_return'; docRef: string; p
   throw new ApiError('SIGNING_TIMEOUT', 'Hết thời gian chờ xác nhận ký số', 408);
 }
 
-// Tải bản đã ký (tờ khai GTGT) về máy.
-export async function downloadSignedVatReturn(returnId: number, sessionId: string): Promise<void> {
-  const res = await fetch(`/api/tax/vat-returns/${returnId}/xml?signedSession=${sessionId}`, { credentials: 'include' });
+// Tải bản đã ký về máy: xmlUrl là đường tải XML của tờ khai (01/GTGT, 03/TNDN), thêm signedSession.
+export async function downloadSigned(xmlUrl: string, sessionId: string, fallbackName: string): Promise<void> {
+  const res = await fetch(`${xmlUrl}${xmlUrl.includes('?') ? '&' : '?'}signedSession=${sessionId}`, { credentials: 'include' });
   if (!res.ok) throw new ApiError('HTTP', 'Không tải được XML đã ký', res.status);
   const name = /filename\*=UTF-8''([^;]+)/.exec(res.headers.get('content-disposition') ?? '')?.[1];
-  const url = URL.createObjectURL(await res.blob()); const a = document.createElement('a'); a.href = url; a.download = name ? decodeURIComponent(name) : 'to-khai-01-gtgt_signed.xml'; a.click(); URL.revokeObjectURL(url);
+  const url = URL.createObjectURL(await res.blob()); const a = document.createElement('a'); a.href = url; a.download = name ? decodeURIComponent(name) : fallbackName; a.click(); URL.revokeObjectURL(url);
 }
+export const downloadSignedVatReturn = (returnId: number, sessionId: string): Promise<void> => downloadSigned(`/api/tax/vat-returns/${returnId}/xml`, sessionId, 'to-khai-01-gtgt_signed.xml');

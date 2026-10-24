@@ -100,7 +100,7 @@ describe('xuất XML tờ khai 01/GTGT', () => {
     expect(err(await t.call('GET', `/api/tax/vat-returns/${id}/xml`, undefined, viewer))).toEqual([403, 'FORBIDDEN']);
     expect((await t.call('GET', `/api/tax/vat-returns/${id}`, undefined, viewer)).statusCode).toBe(200);
     const fm = await t.call('GET', '/api/tax/xml-formats', undefined, viewer);
-    expect(fm.json()).toEqual([{ id: 'htkk-01gtgt', formCode: '01/GTGT', verified: false }]);
+    expect(fm.json()).toEqual([{ id: 'htkk-01gtgt', formCode: '01/GTGT', verified: false }, { id: 'htkk-03tndn', formCode: '03/TNDN', verified: false }]);
   });
 
   it('in tờ khai: HTML theo bố cục mẫu (mọi chỉ tiêu, số lưu), bản nháp ghi rõ', async () => {
@@ -116,12 +116,13 @@ describe('xuất XML tờ khai 01/GTGT', () => {
 });
 
 describe('escapeXml', () => {
-  it('thoát & < > " \' và bỏ ký tự điều khiển; XML_FORMATS chỉ có htkk-01gtgt, verified=false', () => {
+  it('thoát & < > " \' và bỏ ký tự điều khiển; XML_FORMATS có htkk-01gtgt, htkk-03tndn, cùng verified=false', () => {
     expect(escapeXml('a&b<c>"d\'e\u0001\u000Bf')).toBe('a&amp;b&lt;c&gt;&quot;d&apos;ef');
     expect(escapeXml('Tiếng Việt: đồng')).toBe('Tiếng Việt: đồng');
     expect(escapeXml('a\uD83D\uDE00b')).toBe('a\uD83D\uDE00b'); // cặp thay thế đủ giữ nguyên
     expect(escapeXml('a\uD83Db\uDE00c\uFFFEd\uFFFFe')).toBe('abcde'); // nửa cặp lẻ, U+FFFE, U+FFFF bị bỏ
-    expect(Object.keys(XML_FORMATS)).toEqual(['htkk-01gtgt']);
+    expect(Object.keys(XML_FORMATS)).toEqual(['htkk-01gtgt', 'htkk-03tndn']);
+    expect(XML_FORMATS['htkk-03tndn']).toMatchObject({ verified: false, formCode: '03/TNDN', templateVersions: ['TT89'] });
     expect(XML_FORMATS['htkk-01gtgt']).toMatchObject({ verified: false, formCode: '01/GTGT', templateVersions: ['TT89'] });
   });
 });

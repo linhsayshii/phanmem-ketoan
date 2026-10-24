@@ -7,9 +7,17 @@
   "legalParam_vat_noncash_threshold@2025-07-01": true,
   "legalParam_vat_return_template@2022-01-01": false,
   "legalParam_vat_return_template@2026-07-01": true,
+  "legalParam_cit_rate@2025-01-01": true,
+  "legalParam_cit_exempt_revenue@2026-01-01": true,
+  "legalParam_cit_reduction@2026-01-01": true,
+  "legalParam_cit_prepay_min_ratio@2026-07-01": true,
+  "legalParam_cit_return_template@2026-07-01": true,
   "legalParam_note": "Cổng theo từng dòng của legal-params.json, khóa legalParam_<mã>@<validFrom>. true: giá trị và cả hai mốc hiệu lực đã đối chiếu văn bản gốc trong ~/legal-docs (nq204-2025, nd174-2025, nd181-2025, tt89-2026; PDF quét ảnh, đọc bằng OCR); false: còn phần chưa đối chiếu, nguồn của dòng ghi rõ \"chưa đối chiếu văn bản gốc\". vat_return_template@2022-01-01 (TT80) là false vì ngày bắt đầu 01/01/2022 chưa đối chiếu (TT 80/2021 chưa tải được); mốc kết thúc 30/6/2026 và dòng TT89 đã đối chiếu TT 89/2026 Điều 99, Điều 100. Như fxRules_*, cổng chỉ là nhãn trạng thái dữ liệu: syncReferenceData nạp mọi dòng vào legal_param và legalParam() không phân biệt dòng đã hay chưa đối chiếu; kiểm thử coa-data giữ cổng khớp với nguồn.",
   "01GTGT_TT89": true,
   "01GTGT_TT80": false,
   "01GTGT_TT89_rate8": false,
+  "03TNDN_TT89": true,
+  "CIT_RATES": true,
+  "03TNDN_note": "03TNDN_TT89: mọi mã chỉ tiêu (04, 05, A1, B1-B15, B12a, C1-C17, C3a, C3b, C7a, C8a, D1-D8, D2a, D2b, E, E1-E6, G, G1-G5, H1-H3, I, I1, I2) và công thức in trên mẫu 03/TNDN TT 89/2026 trang 270-273 đã đối chiếu ảnh 300 dpi form03tndn-p270..p273.png; mọi dòng đọc được. Công thức phần mềm tự gợi ý (mẫu không in: B14, C7, E1, E3) đánh dấu printed=false và cho sửa. Không có mẫu 03-1A/TNDN và không có mẫu phụ lục kết quả hoạt động sản xuất kinh doanh trong TT 89/2026 (danh mục Phụ lục I) và TT 20/2026 (chỉ có mẫu 01/TNDN, 02/TNDN): không lập phụ lục, A1 lấy từ B02. CIT_RATES: tham số cit_rate, cit_exempt_revenue, cit_reduction, cit_prepay_min_ratio, cit_return_template trong legal-params.json đã đối chiếu văn bản gốc (Luật 67/2025, NĐ 320/2025, NĐ 141/2026 bản Công báo có chữ; NQ 43/2026 bản quét, đối chiếu ảnh trang 1-2; NĐ 252/2026 bản Công báo có chữ).",
   "01GTGT_note": "01GTGT_TT89: 30 chỉ tiêu [21]-[43] nhập từ ảnh trang 241-243 TT 89/2026 (Phụ lục I, mẫu 01/GTGT); công thức đúng như in. 01GTGT_TT89_rate8 = false: mẫu không có dòng 8%; TT 89/2026 (trang 241-243 và Phụ lục II, trang 517-521) và NĐ 174/2025 (Điều 1) không nói 8% khai vào chỉ tiêu nào, nhóm 08 gộp vào [32]/[33] chỉ là giả định tạm (ghi chú trên dòng). 01GTGT_TT80 = false: chưa tải được TT 80/2021 từ nguồn chính thức (Công báo, vanban.chinhphu.vn, datafiles.chinhphu.vn); không tạo 01gtgt-tt80.json, kỳ trước 01/7/2026 không có mẫu."
 }

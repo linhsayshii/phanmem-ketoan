@@ -119,7 +119,8 @@ describe('ký số: hồ sơ và phiên', () => {
     const list = (await t.call('GET', '/api/signing/profiles')).json() as { id: number; isDefault: boolean }[];
     expect(list.filter((x) => x.isDefault).map((x) => x.id)).toEqual([b.id]);
     expect((await t.call('DELETE', `/api/signing/profiles/${a.id}`)).statusCode).toBe(204);
-    expect(err(await t.call('POST', '/api/signing/sessions', { docKind: 'cit_return', docRef: '1' }))).toEqual([400, 'SIGNING_DOC_UNSUPPORTED']);
+    expect(err(await t.call('POST', '/api/signing/sessions', { docKind: 'error_notice', docRef: '1' }))).toEqual([400, 'SIGNING_DOC_UNSUPPORTED']);
+    expect(err(await t.call('POST', '/api/signing/sessions', { docKind: 'cit_return', docRef: '999999' }))).toEqual([404, 'TAX_RETURN_NOT_FOUND']); // 03/TNDN đã có bộ dựng XML
   });
 
   it('chứng thư hết hạn → 409 CERTIFICATE_EXPIRED khi tạo phiên; phiên quá hạn → 409 SIGNING_SESSION_EXPIRED', async () => {

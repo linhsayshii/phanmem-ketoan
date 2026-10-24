@@ -134,7 +134,7 @@ const dto = (r: Row) => ({ id: r.id, formCode: r.form_code, templateVersion: r.t
 export type TaxReturnDto = ReturnType<typeof dto>;
 
 async function rowOf(trx: Trx, id: number, forUpdate = false): Promise<Row> {
-  let q = trx.selectFrom('tax_return').select(COLS).where('id', '=', id);
+  let q = trx.selectFrom('tax_return').select(COLS).where('id', '=', id).where('form_code', '=', FORM); // tờ khai 03/TNDN cùng bảng: không qua route 01/GTGT
   if (forUpdate) q = q.forUpdate();
   const r = await q.executeTakeFirst();
   if (!r) throw new AppError('TAX_RETURN_NOT_FOUND', 'Không tìm thấy tờ khai', 404);

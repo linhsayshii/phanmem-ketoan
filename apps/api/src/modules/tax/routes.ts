@@ -10,6 +10,8 @@ import { createReturn, deleteReturn, finalizeReturn, getReturn, listReturns, pre
 import { XML_FORMATS } from './xml/index.js';
 import { renderReturnXml } from './vatXml.js';
 import { AppError } from '../../plugins/errors.js';
+import { citEstimate, createEstimateVoucher, estimateQuery, estimateVoucherInput } from './citEstimate.js';
+import { citReturnInput, citReturnUpdate, citTemplateFor, createCitReturn, deleteCitReturn, finalizeCitReturn, getCitReturn, listCitReturns, previewCitReturn, renderCitXml, updateCitReturn } from './citReturn.js';
 
 const period = { year: z.coerce.number().int().min(2000).max(2100), period: z.coerce.number().int().min(1).max(12), periodKind: z.enum(['month', 'quarter']).default('month') };
 
@@ -93,6 +95,47 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     });
     if (!out.unchanged) notifyRecompute(app, auth.tenantId!);
     return out;
+  });
+  // ---- Thuế TNDN: tạm tính quý (đọc giá vốn tổng hợp như B02, theo quyền cit.view), tờ khai quyết toán 03/TNDN ----
+  app.get('/api/cit/estimate', { preHandler: app.requirePermission('cit.view'), schema: { querystring: estimateQuery } }, async (req) =>
+    app.withTenant(req, (trx) => citEstimate(trx, req.auth!.tenantId!, req.query), READ_SNAPSHOT));
+  // Lập PKT nháp chi phí thuế TNDN tạm tính quý: cần thêm quyền lập chứng từ.
+  app.post('/api/cit/estimate/voucher', { preHandler: app.requirePermission('cit.create'), schema: { body: estimateVoucherInput } }, async (req, reply) => {
+    if (!req.auth!.permissions.has('voucher.create')) throw new AppError('FORBIDDEN', 'Thiếu quyền voucher.create', 403);
+    return reply.status(201).send(await app.withTenant(req, (trx) => createEstimateVoucher(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.body)));
+  });
+  app.get('/api/cit/template', { preHandler: app.requirePermission('cit.view'), schema: { querystring: z.object({ year: z.coerce.number().int().min(2000).max(2100) }) } }, async (req) =>
+    app.withTenant(req, (trx) => citTemplateFor(trx, req.query.year), READ_SNAPSHOT));
+  app.get('/api/cit/returns', { preHandler: app.requirePermission('cit.view'), schema: { querystring: z.object({ year: z.coerce.number().int().min(2000).max(2100).optional() }) } }, async (req) =>
+    app.withTenant(req, (trx) => listCitReturns(trx, req.query.year), READ_SNAPSHOT));
+  app.get('/api/cit/returns/:id', { preHandler: app.requirePermission('cit.view'), schema: { params: numId } }, async (req) => app.withTenant(req, (trx) => getCitReturn(trx, req.params.id), READ_SNAPSHOT));
+  app.get('/api/cit/returns/:id/hints', { preHandler: app.requirePermission('cit.view'), schema: { params: numId } }, async (req) =>
+    app.withTenant(req, (trx) => previewCitReturn(trx, req.auth!.tenantId!, req.params.id), READ_SNAPSHOT));
+  app.post('/api/cit/returns', { preHandler: app.requirePermission('cit.create'), schema: { body: citReturnInput } }, async (req, reply) =>
+    reply.status(201).send(await app.withTenant(req, (trx) => createCitReturn(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.body), SNAPSHOT_RW)));
+  app.put('/api/cit/returns/:id', { preHandler: app.requirePermission('cit.update'), schema: { params: numId, body: citReturnUpdate } }, async (req) =>
+    app.withTenant(req, (trx) => updateCitReturn(trx, req.auth!.tenantId!, req.params.id, req.body), SNAPSHOT_RW));
+  app.delete('/api/cit/returns/:id', { preHandler: app.requirePermission('cit.delete'), schema: { params: numId } }, async (req, reply) => {
+    await app.withTenant(req, (trx) => deleteCitReturn(trx, req.auth!.tenantId!, req.params.id), SNAPSHOT_RW);
+    return reply.status(204).send();
+  });
+  // Chốt tờ khai TNDN dùng chung quyền chốt tờ khai thuế (kế toán viên mặc định không có).
+  app.post('/api/cit/returns/:id/finalize', { preHandler: app.requirePermission('tax_return.finalize'), schema: { params: numId } }, async (req) => {
+    if (!req.auth!.permissions.has('cit.update')) throw new AppError('FORBIDDEN', 'Thiếu quyền cit.update', 403);
+    return app.withTenant(req, (trx) => finalizeCitReturn(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.params.id), SNAPSHOT_RW);
+  });
+  // XML 03/TNDN (định dạng htkk-03tndn, chưa kiểm chứng: tiêu đề x-kt-unverified); signedSession: bản đã ký của phiên ký số của chính người dùng.
+  app.get('/api/cit/returns/:id/xml', { preHandler: app.requirePermission('cit.view'), schema: { params: numId, querystring: z.object({ signedSession: z.string().uuid().optional() }) } }, async (req, reply) => {
+    const r = await app.withTenant(req, async (trx) => {
+      const out = await renderCitXml(trx, req.auth!.tenantId!, req.params.id);
+      if (!req.query.signedSession) return out;
+      const sess = await trx.selectFrom('signing_session').select(['signed_xml']).where('id', '=', req.query.signedSession).where('user_id', '=', req.auth!.userId)
+        .where('doc_kind', '=', 'cit_return').where('doc_ref', '=', String(req.params.id)).where('status', '=', 'signed').executeTakeFirst();
+      if (!sess?.signed_xml) throw new AppError('SIGNING_SESSION_NOT_FOUND', 'Không tìm thấy phiên ký đã hoàn tất cho tờ khai này', 404);
+      return { ...out, xml: sess.signed_xml, file: out.file.replace(/\.xml$/, '_signed.xml') };
+    }, READ_SNAPSHOT);
+    if (!r.verified) reply.header('x-kt-unverified', '1');
+    return reply.type('application/xml; charset=utf-8').header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(r.file)}`).send(r.xml);
   });
 };
 export default routes;

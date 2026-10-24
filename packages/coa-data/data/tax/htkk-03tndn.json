@@ -1,0 +1,36 @@
+{
+  "id": "htkk-03tndn",
+  "verified": false,
+  "note": "Chưa kiểm chứng với HTKK: chưa có XSD hay tệp kết xuất mẫu 03/TNDN (xem Chờ người dùng trong docs/TIEP-THEO.md). Tên thẻ, thứ tự thẻ, mã tờ khai và phiên bản dưới đây là giả định tạm của phần mềm theo cùng khuôn với htkk-01gtgt.json, không phải đặc tả của HTKK; khi có tệp kết xuất mẫu từ HTKK chỉ cần sửa tệp này rồi đổi verified thành true. Chỉ tiêu tiêu đề (A, B, C, D, H) không có thẻ vì mẫu không ghi số tiền; thuế suất C7a, C8a, [05] xuất số phần trăm (ví dụ 20).",
+  "formCode": "03/TNDN",
+  "templateVersions": ["TT89"],
+  "root": "HSoThueDTu",
+  "encoding": "UTF-8",
+  "header": [
+    ["maTKhai", "03/TNDN"],
+    ["tenTKhai", "Tờ khai quyết toán thuế thu nhập doanh nghiệp"],
+    ["phienBanMau", "{templateVersion}"],
+    ["kyKKhai", "{periodLabel}"],
+    ["kyKKhaiTuNgay", "{from}"],
+    ["kyKKhaiDenNgay", "{to}"],
+    ["loaiTKhai", "{returnKind}"],
+    ["soLanBoSung", "{revision}"],
+    ["maSoThue", "{taxCode}"],
+    ["tenNNT", "{companyName}"],
+    ["diaChiNNT", "{address}"],
+    ["nguoiDaiDien", "{legalRep}"]
+  ],
+  "headerTag": "TTinChung",
+  "bodyTag": "CTieuTKhaiChinh",
+  "returnKind": { "first": "C", "supplement": "B" },
+  "tags": {
+    "04": "ct04", "05": "ct05", "A1": "ctA1",
+    "B1": "ctB1", "B2": "ctB2", "B3": "ctB3", "B4": "ctB4", "B5": "ctB5", "B6": "ctB6", "B7": "ctB7", "B8": "ctB8", "B9": "ctB9", "B10": "ctB10", "B11": "ctB11", "B12": "ctB12", "B12a": "ctB12a", "B13": "ctB13", "B14": "ctB14", "B15": "ctB15",
+    "C1": "ctC1", "C2": "ctC2", "C3": "ctC3", "C3a": "ctC3a", "C3b": "ctC3b", "C4": "ctC4", "C5": "ctC5", "C6": "ctC6", "C7": "ctC7", "C7a": "ctC7a", "C8": "ctC8", "C8a": "ctC8a", "C9": "ctC9", "C10": "ctC10", "C11": "ctC11", "C12": "ctC12", "C13": "ctC13", "C14": "ctC14", "C15": "ctC15", "C16": "ctC16", "C17": "ctC17",
+    "D1": "ctD1", "D2": "ctD2", "D2a": "ctD2a", "D2b": "ctD2b", "D3": "ctD3", "D4": "ctD4", "D5": "ctD5", "D6": "ctD6", "D7": "ctD7", "D8": "ctD8",
+    "E": "ctE", "E1": "ctE1", "E2": "ctE2", "E3": "ctE3", "E4": "ctE4", "E5": "ctE5", "E6": "ctE6",
+    "G": "ctG", "G1": "ctG1", "G2": "ctG2", "G3": "ctG3", "G4": "ctG4", "G5": "ctG5",
+    "H1": "ctH1", "H2": "ctH2", "H3": "ctH3",
+    "I": "ctI", "I1": "ctI1", "I2": "ctI2"
+  }
+}

@@ -84,4 +84,22 @@ describe('động cơ thuế: dữ liệu mặc định', () => {
     await expect(add('P3', 'pit', false, 'deduct', true)).rejects.toThrow(/tax_code_pit_check/);
     await add('P4', 'pit', false, 'deduct');
   });
+
+  it('tờ khai kỳ năm (03/TNDN): period_kind year chỉ có period 1; tham số thuế TNDN nạp vào legal_param theo ngày hiệu lực', async () => {
+    const a = await createTestTenant(t.admin, { code: `TY${Date.now()}`, name: 'Thuế năm' });
+    const ins = (kind: string, period: number) => sql`INSERT INTO tax_return(tenant_id, form_code, template_version, period_kind, year, period, values) VALUES (${a}, '03/TNDN', 'TT89', ${kind}, 2026, ${period}, '{}')`.execute(t.admin);
+    await ins('year', 1);
+    await expect(ins('year', 2)).rejects.toThrow(/tax_return_check/);
+    await expect(ins('half', 1)).rejects.toThrow(/tax_return_period_kind_check/);
+    await ins('quarter', 4); await expect(ins('quarter', 5)).rejects.toThrow(/tax_return_check/);
+    expect(await param('cit_rate', '2025-01-01')).toEqual([{ standard: 20, tiers: [{ maxRevenue: '3000000000', rate: 15 }, { maxRevenue: '50000000000', rate: 17 }] }]);
+    expect(await param('cit_rate', '2024-12-31')).toEqual([]);
+    expect(await param('cit_exempt_revenue', '2025-12-31')).toEqual([]);
+    expect(await param('cit_exempt_revenue', '2026-01-01')).toEqual(['1000000000']);
+    expect(await param('cit_reduction', '2027-01-01')).toEqual([{ rate: 30, maxRevenue: '10000000000', revenueOf: 'current_year' }]);
+    expect(await param('cit_reduction', '2028-01-01')).toEqual([]);
+    expect(await param('cit_prepay_min_ratio', '2026-12-31')).toEqual([80]);
+    expect(await param('cit_return_template', '2026-12-31')).toEqual(['TT89']);
+    expect(await param('cit_return_template', '2025-12-31')).toEqual([]);
+  });
 });

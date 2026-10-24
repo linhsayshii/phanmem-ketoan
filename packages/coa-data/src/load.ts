@@ -90,6 +90,23 @@ export function loadVatTemplate(version: 'TT89' | 'TT80'): VatTemplate {
   return JSON.parse(readFileSync(dataPath('tax', VAT_FILE[version]), 'utf8')) as VatTemplate;
 }
 
+// Tờ khai quyết toán thuế TNDN 03/TNDN theo TT 89/2026 (data/tax/03tndn-tt89.json), nhập từ ảnh trang mẫu; cổng status.json 03TNDN_TT89 (false: API 409 CIT_TEMPLATE_UNAVAILABLE).
+// kind: section (dòng tiêu đề, không có số), ledger (lấy từ sổ cái: A1, G2), input (nhập tay), formula, rate (thuế suất %), text (chữ: [04]). printed = false: công thức gợi ý của phần mềm, mẫu không in.
+export type CitLineKind = 'section' | 'ledger' | 'input' | 'formula' | 'rate' | 'text';
+export interface CitTemplateLine { code: string; label: string; section: string; stt: string; kind: CitLineKind; formula?: string; printed?: boolean; clamp?: 'positivePart'; overridable: boolean; note?: string; group?: string }
+export interface CitTemplate { form: '03/TNDN'; version: 'TT89'; source: string; lines: CitTemplateLine[]; notes: string[] }
+const taxStatus = (): Record<string, unknown> => { const p = dataPath('tax', 'status.json'); return existsSync(p) ? (JSON.parse(readFileSync(p, 'utf8')) as Record<string, unknown>) : {}; };
+export function isCitTemplateComplete(version: 'TT89'): boolean { return taxStatus()[`03TNDN_${version}`] === true && existsSync(dataPath('tax', '03tndn-tt89.json')); }
+export function loadCitTemplate(version: 'TT89'): CitTemplate {
+  if (!isCitTemplateComplete(version)) throw new Error('Chưa có mẫu tờ khai 03/TNDN theo TT 89/2026/TT-BTC đối chiếu văn bản gốc (status.json 03TNDN_TT89)');
+  return JSON.parse(readFileSync(dataPath('tax', '03tndn-tt89.json'), 'utf8')) as CitTemplate;
+}
+// Ánh xạ sổ cái cho thuế TNDN theo chế độ (data/tax/cit-ledger.json): chỉ tiêu B02 lợi nhuận/doanh thu, tài khoản chi phí thuế, thuế phải nộp, tiền. Chế độ không có trong tệp thì undefined.
+export interface CitLedgerMap { profitLine: string; revenueLines: string[]; expenseAccount: string; payableAccount: string; cashAccounts: string[] }
+export function loadCitLedger(regime: Regime): CitLedgerMap | undefined {
+  return (JSON.parse(readFileSync(dataPath('tax', 'cit-ledger.json'), 'utf8')) as Partial<Record<Regime, CitLedgerMap>>)[regime];
+}
+
 // Định dạng xuất XML tờ khai cho phần mềm của cơ quan thuế (data/tax/<id>.json): mọi mã đặc thù (tên thẻ, mã tờ khai, phiên bản) nằm ở đây, không nằm trong mã.
 // verified = false: chưa đối chiếu với tệp kết xuất thật của HTKK (chưa có XSD công khai); người dùng được cảnh báo khi tải.
 export interface TaxXmlFormatData {
