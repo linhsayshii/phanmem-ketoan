@@ -5,6 +5,7 @@ import { type Insertable, type Selectable, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
 import { D } from '@kt/domain';
+import { assertZipSafe } from '../master/excelSheet.js';
 import { AppError } from '../../plugins/errors.js';
 
 // Nhập sao kê Excel/CSV theo mẫu cột do người dùng khai (không có mẫu chính thức của ngân hàng: docs/dev/tich-hop/ngan-hang.md §5).
@@ -101,6 +102,7 @@ async function readSheet(file: Buffer, filename: string, sheetIndex: number): Pr
       return await wb.csv.read(Readable.from([file.toString('utf8').replace(/^\uFEFF/, '')]), { map: (v: unknown) => v, parserOptions: { delimiter: ',' } } as never);
     }
     if (/\.xlsx$/i.test(filename)) {
+      await assertZipSafe(file, { total: 50 * 1024 * 1024, entry: 50 * 1024 * 1024, entries: 2000 });
       await wb.xlsx.load(file as never);
       const ws = wb.worksheets[sheetIndex];
       if (!ws) throw new AppError('IMPORT_SHEET_MISSING', `Tệp không có trang tính số ${sheetIndex + 1}`, 400);

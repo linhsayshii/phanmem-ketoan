@@ -364,7 +364,7 @@ export interface InboundInvoiceLineTable {
 
 export interface BankFeedTable {
   id: Generated<number>; tenant_id: string; bank_account_id: number; provider: string; token_hash: string; auth_kind: string; secret: Buffer | null; apikey_hash: string | null;
-  is_active: Generated<boolean>; last_received_at: Timestamp | null; created_at: Generated<Timestamp>;
+  is_active: Generated<boolean>; created_at: Generated<Timestamp>;
 }
 export interface BankTransactionTable {
   id: Generated<number>; tenant_id: string; bank_account_id: number; feed_id: number | null; source: string; external_id: string; txn_time: Timestamp | null; value_date: DateOnly;

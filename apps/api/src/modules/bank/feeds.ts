@@ -19,10 +19,14 @@ const newToken = () => randomBytes(32).toString('base64url');
 const urlOf = (base: string, token: string) => `${base.replace(/\/+$/, '')}/api/hooks/bank/${token}`;
 
 type FeedRow = Selectable<Database['bank_feed']>;
-const dto = (r: FeedRow) => ({ id: r.id, bankAccountId: r.bank_account_id, provider: r.provider, authKind: r.auth_kind, hasSecret: r.secret !== null, hasApiKey: r.apikey_hash !== null,
-  isActive: r.is_active, lastReceivedAt: r.last_received_at, createdAt: r.created_at });
+const dto = (r: FeedRow, last: Date | string | null = null) => ({ id: r.id, bankAccountId: r.bank_account_id, provider: r.provider, authKind: r.auth_kind, hasSecret: r.secret !== null, hasApiKey: r.apikey_hash !== null,
+  isActive: r.is_active, lastReceivedAt: last, createdAt: r.created_at });
 
-export const listFeeds = async (trx: Trx) => (await trx.selectFrom('bank_feed').selectAll().orderBy('id').execute()).map(dto);
+// Lần nhận gần nhất suy từ nhật ký webhook (không ghi vào bank_feed để khỏi sinh audit_event mỗi lần nhận).
+export async function listFeeds(trx: Trx) {
+  const last = new Map((await trx.selectFrom('bank_webhook_log').select(['feed_id', (eb) => eb.fn.max('received_at').as('at')]).where('ok', '=', true).groupBy('feed_id').execute()).map((r) => [r.feed_id, r.at]));
+  return (await trx.selectFrom('bank_feed').selectAll().orderBy('id').execute()).map((r) => dto(r, last.get(r.id) ?? null));
+}
 
 async function requireAccount(trx: Trx, id: number) {
   if (!(await trx.selectFrom('bank_account').select('id').where('id', '=', id).executeTakeFirst())) throw new AppError('BANK_ACCOUNT_NOT_FOUND', 'Không tìm thấy tài khoản ngân hàng', 404);

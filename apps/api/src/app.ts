@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import type { FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
@@ -55,11 +56,15 @@ import openingAssetRoutes from './modules/assets/openingAssets.js';
 import bankRoutes from './modules/bank/routes.js';
 import bankWebhookRoutes from './modules/bank/webhook.js';
 
+// Token webhook nằm trong URL: che trước khi ghi nhật ký.
+export const maskHookUrl = (url: string) => url.replace(/(\/api\/hooks\/bank\/)[^/?#]+/, '$1***');
+const reqSerializer = (req: FastifyRequest) => ({ method: req.method, url: maskHookUrl(req.url), hostname: req.hostname, remoteAddress: req.ip, remotePort: req.socket?.remotePort ?? 0 });
+
 declare module 'fastify' { interface FastifyInstance { config: Config; boss: PgBoss | null } }
 
 export async function buildApp(opts: { db: Kysely<Database>; config: Config; boss?: PgBoss }) {
   // cast: các overload http/http2 của Fastify không chấp nhận hợp boolean|number|string, giá trị thật vẫn giữ nguyên
-  const app = Fastify({ logger: process.env.NODE_ENV !== 'test', trustProxy: opts.config.TRUST_PROXY as boolean }).withTypeProvider<ZodTypeProvider>();
+  const app = Fastify({ logger: process.env.NODE_ENV !== 'test' ? { serializers: { req: reqSerializer } } : false, trustProxy: opts.config.TRUST_PROXY as boolean }).withTypeProvider<ZodTypeProvider>();
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.decorate('config', opts.config);

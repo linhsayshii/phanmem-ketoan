@@ -152,4 +152,29 @@ describe('webhook ngân hàng', () => {
     const bad = await ctx.app.inject({ method: 'POST', url: '/api/bank-transactions', headers: { cookie: a.cookie }, payload: { bankAccountId: a.accountId, valueDate: '2026-01-05', amountIn: '1', amountOut: '2' } });
     expect(bad.statusCode).toBe(400);
   });
+
+  it('số TK chuẩn hóa hai phía; 3 lần gửi không thêm audit bank_feed; listFeeds có lastReceivedAt; NUL; Casso error≠0', async () => {
+    const t = await setupBankTenant(ctx, `BWN${Date.now()}`, '0071-000 123456');
+    const f = await createFeed(t, { provider: 'sepay', authKind: 'hmac', secret: 'khoa-chuan-hoa' });
+    const countAudit = async () => Number((await sql<{ n: string }>`SELECT count(*)::text n FROM audit_event WHERE tenant_id = ${t.tenantId}::uuid AND entity = 'bank_feed'`.execute(ctx.t.admin)).rows[0]!.n);
+    const before = await countAudit();
+    const body = sepayBody({ accountNumber: '0071000123456', content: 'noi dung\u0000co nul' });
+    for (let i = 0; i < 3; i++) { const r = await hook(f, sepaySign('khoa-chuan-hoa', body), body); expect(r.statusCode, r.body).toBe(200); }
+    expect(await txns(t)).toHaveLength(1);
+    expect(await countAudit()).toBe(before);
+    const list = await ctx.app.inject({ method: 'GET', url: '/api/bank-feeds', headers: { cookie: t.cookie } });
+    expect(list.json()[0].lastReceivedAt).toBeTruthy();
+    const c = await createFeed(t, { provider: 'casso', authKind: 'hmac', secret: 'khoa-casso-err' });
+    const eb = JSON.stringify({ error: 1, data: { id: 9, amount: 1000, transactionDateTime: '2025-02-12 15:36:21', accountNumber: '0071000123456' } });
+    expect((await hook(c, cassoSign('khoa-casso-err', eb), eb)).statusCode).toBe(400);
+    expect(await txns(t)).toHaveLength(1);
+  });
+});
+
+describe('che token trong nhật ký', () => {
+  it('maskHookUrl', async () => {
+    const { maskHookUrl } = await import('../../src/app.js');
+    expect(maskHookUrl('/api/hooks/bank/abc_DEF-123?x=1')).toBe('/api/hooks/bank/***?x=1');
+    expect(maskHookUrl('/api/other/abc')).toBe('/api/other/abc');
+  });
 });

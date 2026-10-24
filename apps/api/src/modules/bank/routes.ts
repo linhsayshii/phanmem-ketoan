@@ -3,6 +3,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { sql } from 'kysely';
 import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
+import { D } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { dateIso } from '../master/catalogs.js';
 import { createFeed, deleteFeed, feedInput, feedUpdate, listFeeds, rotateFeed, updateFeed } from './feeds.js';
@@ -65,7 +66,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
 
   app.post('/api/bank-transactions', { preHandler: create, schema: { body: manualInput } }, async (req, reply) => {
     const b = req.body;
-    if (Number(b.amountIn ?? 0) > 0 === Number(b.amountOut ?? 0) > 0) throw new AppError('BANK_TXN_AMOUNT', 'Nhập đúng một trong hai: số tiền vào hoặc số tiền ra (lớn hơn 0)', 400); // chỉ so dấu, không tính tiền
+    if (D(b.amountIn ?? '0').gt(0) === D(b.amountOut ?? '0').gt(0)) throw new AppError('BANK_TXN_AMOUNT', 'Nhập đúng một trong hai: số tiền vào hoặc số tiền ra (lớn hơn 0)', 400);
     const r = await app.withTenant(req, async (trx) => {
       if (!(await trx.selectFrom('bank_account').select('id').where('id', '=', b.bankAccountId).executeTakeFirst())) throw new AppError('BANK_ACCOUNT_NOT_FOUND', 'Không tìm thấy tài khoản ngân hàng', 404);
       return trx.insertInto('bank_transaction').values({ tenant_id: tid(req), bank_account_id: b.bankAccountId, source: 'manual', external_id: `man:${randomUUID()}`, value_date: b.valueDate,

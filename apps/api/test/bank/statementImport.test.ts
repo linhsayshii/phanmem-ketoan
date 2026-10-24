@@ -64,4 +64,15 @@ describe('nhập sao kê', () => {
     expect(noAmount.statusCode).toBe(400);
     expect((await ctx.app.inject({ method: 'GET', url: '/api/bank-statement-formats', headers: { cookie: a.cookie } })).json().length).toBeGreaterThanOrEqual(1);
   });
+
+  it('xlsx bom giải nén > 50 MB → từ chối', async () => {
+    const JSZip = (await import('jszip')).default;
+    const z = new JSZip();
+    z.file('xl/big.bin', Buffer.alloc(60 * 1024 * 1024), { compression: 'DEFLATE' });
+    const data = await z.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    const f = await ctx.app.inject({ method: 'POST', url: '/api/bank-statement-formats', headers: { cookie: a.cookie }, payload: { ...fmt, name: 'Mẫu bom' } });
+    const r = await imp(f.json().id, { name: 'bom.xlsx', data });
+    expect(r.statusCode).toBe(400);
+    expect(r.json().error.code).toBe('IMPORT_FILE_TOO_LARGE');
+  }, 60000);
 });

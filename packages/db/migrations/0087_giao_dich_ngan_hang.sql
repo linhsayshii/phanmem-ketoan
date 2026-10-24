@@ -13,7 +13,6 @@ CREATE TABLE bank_feed (
   secret bytea,
   apikey_hash text,
   is_active boolean NOT NULL DEFAULT true,
-  last_received_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (tenant_id, id),
   CHECK ((auth_kind = 'hmac') = (secret IS NOT NULL) AND (auth_kind = 'apikey') = (apikey_hash IS NOT NULL)),

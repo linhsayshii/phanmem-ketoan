@@ -49,7 +49,8 @@ class BadPayload extends Error {}
 export interface MappedTxn { externalId: string; txnTime: string; valueDate: string; amountIn: string; amountOut: string; balanceAfter: string | null; description: string | null; reference: string | null;
   counterAccount: string | null; counterName: string | null; paymentCode: string | null; accountNo: string | null; raw: unknown }
 
-const str = (v: unknown, max = 500): string | null => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : typeof v === 'number' && Number.isSafeInteger(v) ? String(v) : null);
+// Bỏ \u0000: PostgreSQL không lưu được NUL trong text/jsonb.
+const str = (v: unknown, max = 500): string | null => (typeof v === 'string' && v.replaceAll('\u0000', '').trim() ? v.replaceAll('\u0000', '').trim().slice(0, max) : typeof v === 'number' && Number.isSafeInteger(v) ? String(v) : null);
 // Tiền trong JSON là số nguyên: chuyển qua chuỗi thập phân, không tính toán bằng number.
 function intStr(v: unknown, what: string): string {
   if (typeof v === 'number' && Number.isSafeInteger(v)) return String(v);
@@ -81,6 +82,7 @@ export function mapSepay(payload: unknown): MappedTxn[] {
 // Casso: V2 `data` là đối tượng, v1 là mảng. Tiền ra là số âm (tài liệu không nêu; xem quyết định T13), vào là số dương.
 export function mapCasso(payload: unknown): MappedTxn[] {
   const root = obj(payload);
+  if (root.error !== undefined && root.error !== null && root.error !== 0 && root.error !== '0') throw new BadPayload('Casso báo lỗi (error khác 0)');
   const items = Array.isArray(root.data) ? root.data : [root.data];
   if (items.length === 0 || items.length > 100) throw new BadPayload('data rỗng hoặc quá nhiều giao dịch');
   return items.map((it) => {
@@ -95,6 +97,9 @@ export function mapCasso(payload: unknown): MappedTxn[] {
       accountNo: str(p.accountNumber) ?? str(p.bank_sub_acc_id) ?? str(p.subAccId), raw: p };
   });
 }
+
+// Số tài khoản so khớp bỏ dấu cách, gạch nối; không phân biệt hoa thường.
+export const normAcc = (x: string | null) => (x ?? '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
 
 const deny = (reply: { status(n: number): { send(b: unknown): unknown } }) => reply.status(401).send({ error: { code: 'UNAUTHORIZED', message: 'Không xác thực được yêu cầu webhook' } });
 
@@ -127,13 +132,12 @@ const webhookRoutes: FastifyPluginAsync = async (app) => {
       }
       let mismatch = false;
       for (const m of mapped) {
-        if (m.accountNo !== feed.account_no) { mismatch = true; continue; } // bỏ qua nhưng vẫn báo thành công để bên gửi không gửi lại vô hạn
+        if (!m.accountNo || normAcc(m.accountNo) !== normAcc(feed.account_no)) { mismatch = true; continue; } // bỏ qua nhưng vẫn báo thành công để bên gửi không gửi lại vô hạn
         await trx.insertInto('bank_transaction').values({ tenant_id: hit.tenant_id, bank_account_id: feed.bank_account_id, feed_id: feed.id, source: feed.provider, external_id: m.externalId,
           txn_time: m.txnTime, value_date: m.valueDate, amount_in: m.amountIn, amount_out: m.amountOut, balance_after: m.balanceAfter, description: m.description, reference: m.reference,
-          counter_account: m.counterAccount, counter_name: m.counterName, payment_code: m.paymentCode, raw: JSON.stringify(m.raw) })
+          counter_account: m.counterAccount, counter_name: m.counterName, payment_code: m.paymentCode, raw: JSON.stringify(m.raw).replaceAll('\\u0000', '') })
           .onConflict((oc) => oc.columns(['tenant_id', 'source', 'external_id']).doNothing()).execute();
       }
-      await trx.updateTable('bank_feed').set({ last_received_at: sql`now()` }).where('id', '=', feed.id).execute();
       await logRow(trx, hit.tenant_id, feed.id, true, 200, mismatch ? 'ACCOUNT_MISMATCH' : null, sha);
       return { status: 200 as const };
     });
