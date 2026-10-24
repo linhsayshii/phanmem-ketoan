@@ -31,6 +31,8 @@ export const SETTINGS = z.object({
   payroll_standard_days_per_month: z.string().regex(/^\d{1,2}(\.\d{1,2})?$/, 'Nhập số, tối đa 2 chữ số thập phân').refine((v) => Number(v) > 0 && Number(v) <= 31, 'Từ 0 đến 31').nullable().default(null),
   // Tài khoản chi phí lương mặc định của công ty khi bộ phận chưa cấu hình tài khoản chi phí (hạch toán lương LU); không có mặc định ngầm.
   payroll_expense_account: z.string().regex(/^\d{3,10}$/, 'Mã tài khoản gồm 3 đến 10 chữ số').nullable().default(null),
+  // Giá thành: bật thì lưới chứng từ luôn hiện cột "Đối tượng THCP" (tắt vẫn hiện ở dòng TK 621/622/627/154 hoặc dòng đã có đối tượng).
+  costing_enabled: z.boolean().default(false),
 });
 export type Settings = z.infer<typeof SETTINGS>;
 

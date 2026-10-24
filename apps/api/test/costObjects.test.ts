@@ -94,7 +94,7 @@ describe('đối tượng tập hợp chi phí', () => {
     const used = ((await call('GET', '/api/costing/objects?q=DT-SP')).json() as { rows: Obj[] }).rows[0]!;
     const del = await call('DELETE', `/api/costing/objects/${used.id}`);
     expect(del.statusCode).toBe(409); expect(del.json().error.code).toBe('REFERENCED');
-    const fresh = (await call('POST', '/api/costing/objects', { code: 'DT-XOA', name: 'Xóa', kind: 'project', projectCode: 'VV1' })).json() as Obj;
+    const fresh = (await call('POST', '/api/costing/objects', { code: 'DT-XOA', name: 'Xóa', kind: 'product', itemCode: 'HH1' })).json() as Obj;
     expect((await call('DELETE', `/api/costing/objects/${fresh.id}`)).statusCode).toBe(204);
     expect((await call('GET', `/api/costing/objects/${fresh.id}`)).statusCode).toBe(404);
   });

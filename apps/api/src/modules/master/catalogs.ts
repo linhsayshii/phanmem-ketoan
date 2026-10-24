@@ -107,9 +107,11 @@ const defs: CatalogDef[] = [
     columns: [{ key: 'type_a', label: 'Loại chứng từ A', type: 'text', required: true }, { key: 'type_b', label: 'Loại chứng từ B', type: 'text', required: true },
       { key: 'days_window', label: 'Cách tối đa (ngày)', type: 'number', required: true }, { key: 'match_party', label: 'Cùng đối tượng', type: 'boolean' }, { key: 'match_counter_account', label: 'Cùng TK đối ứng', type: 'boolean' }] },
   { name: 'cost_item', table: 'cost_item', label: 'Khoản mục chi phí', uniqueBy: ['code'], sort: 'code', searchIn: ['code', 'name'],
-    schema: z.object({ code, name: text(false), parent_code: text(), default_account_code: text(), is_active: z.boolean().optional() }),
+    schema: z.object({ code, name: text(false), parent_code: text(), default_account_code: text(), cost_element: z.enum(['material', 'labor', 'overhead']).nullable().optional(), is_active: z.boolean().optional() }),
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên khoản mục', type: 'text', required: true },
-      { key: 'parent_code', label: 'Thuộc khoản mục', type: 'text', lookup: { catalog: 'cost_item' } }, { key: 'default_account_code', label: 'TK chi phí ngầm định', type: 'text' }] },
+      { key: 'parent_code', label: 'Thuộc khoản mục', type: 'text', lookup: { catalog: 'cost_item' } }, { key: 'default_account_code', label: 'TK chi phí ngầm định', type: 'text' },
+      // yếu tố giá thành: tập hợp chi phí ghi thẳng TK 154 (TT133 không có 621/622/627) xếp theo khoản mục của dòng
+      { key: 'cost_element', label: 'Yếu tố giá thành', type: 'select', options: [{ value: 'material', label: 'Nguyên vật liệu trực tiếp' }, { value: 'labor', label: 'Nhân công trực tiếp' }, { value: 'overhead', label: 'Sản xuất chung' }] }] },
   { name: 'project', table: 'project', label: 'Vụ việc / công trình', uniqueBy: ['code'], sort: 'code', searchIn: ['code', 'name'],
     schema: z.object({ code, name: text(false), parent_code: text(), party_code: text(), date_from: dateIso.nullable().optional(), date_to: dateIso.nullable().optional(), budget: vnd.nullable().optional(), is_active: z.boolean().optional() }),
     columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên vụ việc', type: 'text', required: true },
