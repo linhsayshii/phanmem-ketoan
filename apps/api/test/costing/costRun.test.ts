@@ -221,3 +221,30 @@ describe('chạy giá thành TT133 (tập hợp thẳng 154, không có GT)', ()
     expect(await run(2025, 2, { objects: [{ objectCode: 'SP1', outputs: [{ qty: '10' }] }] })).toMatchObject({ unchanged: true, voucherId: null });
   });
 });
+
+describe('chạy giá thành ở kỳ khóa (qua API)', () => {
+  const params = (qty: string) => ({ objects: [{ objectCode: 'SP1', outputs: [{ qty }] }] });
+  it('khóa mềm: không đổi → unchanged kể cả không có quyền ghi lùi; đổi đầu vào → 409 PERIOD_SOFT_LOCKED, có quyền ghi lùi thì đảo GT cũ, sinh GT mới; khóa cứng: đổi tham số → 409 PERIOD_HARD_LOCKED, không đổi vẫn unchanged', async () => {
+    await pkt('2026-09-10', [L('622', '100000', '0', { costObjectCode: 'SP1' }), L('111', '0', '100000')]);
+    const first = await run(2026, 9, params('10'));
+    expect(first).toMatchObject({ status: 'posted', unchanged: false });
+    await ok('POST', '/api/periods/2026/9/lock', { level: 'soft' });
+    await sql`DELETE FROM role_permission rp USING role r WHERE r.id = rp.role_id AND r.tenant_id = ${tenantId}::uuid AND r.code = 'ketoan_truong' AND rp.permission_code = 'voucher.backdate_locked'`.execute(ctx.t.admin);
+    const noBackdate = await userWith('ketoan_truong', ['view_cost']);
+    const same = await ok('POST', '/api/costing/runs', { year: 2026, month: 9, params: params('10') }, noBackdate);
+    expect(same).toMatchObject({ unchanged: true, voucherId: first.voucherId });
+    // Đầu vào đổi (chi phí ghi thêm trong kỳ khóa mềm bởi người có quyền ghi lùi).
+    await pkt('2026-09-20', [L('622', '50000', '0', { costObjectCode: 'SP1' }), L('111', '0', '50000')]);
+    await fail('POST', '/api/costing/runs', 409, 'PERIOD_SOFT_LOCKED', { year: 2026, month: 9, params: params('10') }, noBackdate);
+    expect((await runRow(2026, 9))?.voucher_id).toBe(first.voucherId); // chưa đụng gì
+    const second = await run(2026, 9, params('10'));
+    expect(second).toMatchObject({ status: 'posted', unchanged: false, reversedVoucherIds: [first.voucherId] });
+    expect(second.voucherId).not.toBe(first.voucherId);
+    expect((await voucher(first.voucherId)).state).toBe('reversed');
+    expect(byCode(second).SP1.incurred.labor).toBe('150000');
+    // Khóa cứng: không chạy lại khi tham số đổi; không đổi thì vẫn trả unchanged, không ghi gì.
+    await sql`UPDATE fiscal_period SET status = 'hard_locked' WHERE tenant_id = ${tenantId}::uuid AND fiscal_year = 2026 AND period_no = 9`.execute(ctx.t.admin);
+    await fail('POST', '/api/costing/runs', 409, 'PERIOD_HARD_LOCKED', { year: 2026, month: 9, params: params('20') });
+    expect(await run(2026, 9, params('10'))).toMatchObject({ unchanged: true, voucherId: second.voucherId });
+  });
+});

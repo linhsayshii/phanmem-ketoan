@@ -180,4 +180,16 @@ describe('đợt thanh toán và lập hóa đơn từ đợt', () => {
     expect((await call('POST', `/api/contracts/${c.id}/milestones/${m.id}/invoice`, toInvoice(), noVoucher)).statusCode).toBe(403);
     expect((await milestones(c.id))[0]!.voucherId).toBeNull();
   });
+  it('kỳ khóa mềm: người không có quyền ghi lùi bị 409 và đợt vẫn chưa lập; có quyền ghi lùi lập được', async () => {
+    const c = await contract('HB40', 'sale');
+    const [m] = (await ok(call('PUT', `/api/contracts/${c.id}/milestones`, { milestones: [{ seq: 1, description: 'Đợt 1', amount: '10000000' }] }), 200)).milestones;
+    await ok(call('POST', '/api/periods/2026/6/lock', { level: 'soft' }), 200);
+    const noBackdate = await login(['order.view', 'order.update', 'voucher.create']);
+    const r = await call('POST', `/api/contracts/${c.id}/milestones/${m.id}/invoice`, toInvoice({ postingDate: '2026-06-15' }), noBackdate);
+    expect([r.statusCode, code(r)]).toEqual([409, 'PERIOD_SOFT_LOCKED']);
+    expect((await milestones(c.id))[0]!.voucherId).toBeNull(); // giao dịch lùi hết: đợt không gắn hóa đơn
+    const done = await ok(call('POST', `/api/contracts/${c.id}/milestones/${m.id}/invoice`, toInvoice({ postingDate: '2026-06-15' })));
+    expect(done.invoice.postingDate).toBe('2026-06-15');
+    expect((await milestones(c.id))[0]!.voucherId).toBe(done.invoice.id);
+  });
 });

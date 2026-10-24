@@ -164,6 +164,16 @@ describe('phân bổ TT133 (6421/6422)', () => {
     expect(await T.lines(r.voucherId)).toEqual([['6421', '250000', '0', 'P2', null], ['6421', '0', '250000', null, null], ['6422', M(1), '0', 'P2', null], ['6422', '0', M(1), null, null]]);
     expect((await T.pnl('2026-02-01', '2026-02-28')).unassigned).toMatchObject({ selling: '0', admin: '0' });
   });
+  it('kết chuyển giá vốn TT133 qua API: GT Nợ 632 / Có 154 giữ vụ việc, 154 về 0, giá vốn vào lãi lỗ theo nhóm cogs của chế độ, chạy lại unchanged', async () => {
+    const T = await setup('PG', 'TT133');
+    await T.pkt('2026-05-10', [{ accountCode: '154', debit: M(3), projectCode: 'P1' }, { accountCode: '154', debit: M(1), projectCode: 'P3' }, { accountCode: '1111', credit: M(4) }]);
+    const r = await T.run('cogs', 5, { projectCodes: ['P1'] });
+    expect(await T.lines(r.voucherId)).toEqual([['632', M(3), '0', 'P1', null], ['154', '0', M(3), 'P1', null]]);
+    expect((await T.ok(T.call('GET', `/api/vouchers/${r.voucherId}`))).voucherType).toBe('GT');
+    expect([await T.net('154', '2026-05-01', '2026-05-31', 'P1'), await T.net('154', '2026-05-01', '2026-05-31', 'P3')]).toEqual(['0', M(1)]);
+    expect((await T.pnl('2026-05-01', '2026-05-31')).rows.find((x: Json) => x.code === 'P1')).toMatchObject({ cogs: M(3) });
+    expect((await T.run('cogs', 5, { projectCodes: ['P1'] })).unchanged).toBe(true);
+  });
 });
 
 describe('kết chuyển giá vốn vụ việc/hợp đồng, số dư theo vụ việc, bộ lọc sổ chi tiết', () => {
