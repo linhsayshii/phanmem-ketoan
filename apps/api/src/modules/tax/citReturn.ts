@@ -66,7 +66,7 @@ async function compute(trx: Trx, tenantId: string, year: number, overrides: Reco
     const v = run(); const base = Decimal.max(0, D(v.C9!).minus(v.C10!).minus(v.C14!));
     defaults.C15 = base.times(red.rate).div(100).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toFixed(0);
     hints.C15 = `Gợi ý: giảm ${red.rate}% số thuế phải nộp sau ưu đãi (C9 - C10 - C14 = ${base.toFixed(0)}) vì doanh thu năm ${year} (${cur.revenue}) không quá ${red.maxRevenue} (NQ 43/2026/QH16 Điều 1 khoản 2)`;
-    warnings.push(`Giảm ${red.rate}% thuế TNDN theo NQ 43/2026/QH16 gợi ý ở chỉ tiêu C15: mẫu 03/TNDN không chỉ rõ chỉ tiêu khai số giảm này; không áp dụng cho doanh nghiệp hình thành từ chia, tách sau 24/8/2026 có tổng doanh thu sau chia, tách trên 10 tỷ đồng; Chính phủ chưa có văn bản hướng dẫn chi tiết.`);
+    warnings.push(`Giảm ${red.rate}% thuế TNDN theo NQ 43/2026/QH16 gợi ý ở chỉ tiêu C15: mẫu 03/TNDN không chỉ rõ chỉ tiêu khai số giảm này; số gợi ý chỉ tính trên thuế TNDN của hoạt động sản xuất kinh doanh (C9 - C10 - C14), chưa gồm thuế của thu nhập từ chuyển nhượng bất động sản (mục D), chờ hướng dẫn; không áp dụng cho doanh nghiệp hình thành từ chia, tách sau 24/8/2026 có tổng doanh thu sau chia, tách trên 10 tỷ đồng; Chính phủ chưa có văn bản hướng dẫn chi tiết.`);
   }
   return { version: t.version, values: run(), hints, warnings };
 }
@@ -92,12 +92,12 @@ export async function listCitReturns(trx: Trx, year?: number): Promise<CitReturn
 
 export async function createCitReturn(trx: Trx, ctx: { tenantId: string; userId: string }, input: z.infer<typeof citReturnInput>) {
   await lock(trx, ctx.tenantId);
-  const latest = await trx.selectFrom('tax_return').select(['id', 'revision', 'status']).where('form_code', '=', FORM).where('year', '=', input.year).where('period_kind', '=', 'year').where('period', '=', 1)
+  const latest = await trx.selectFrom('tax_return').select(['id', 'revision', 'status', 'overrides']).where('form_code', '=', FORM).where('year', '=', input.year).where('period_kind', '=', 'year').where('period', '=', 1)
     .orderBy('revision', 'desc').executeTakeFirst();
   if (latest?.status === 'draft') throw new AppError('TAX_RETURN_DRAFT_EXISTS', `Năm này đã có tờ khai nháp${latest.revision ? ` bổ sung lần ${latest.revision}` : ''}: sửa hoặc chốt tờ khai đó`, 409, { id: latest.id });
   const revision = latest ? latest.revision + 1 : 0;
   if (input.revision !== undefined && input.revision !== revision) throw new AppError('TAX_RETURN_REVISION', revision === 0 ? 'Năm này chưa có tờ khai: lập lần đầu (revision 0)' : `Lần bổ sung tiếp theo của năm này là lần ${revision}`, 409);
-  const overrides = input.overrides ?? {};
+  const overrides = input.overrides ?? ((latest?.overrides as Record<string, string> | undefined) ?? {}); // bổ sung: mặc định chép chỉ tiêu nhập tay của bản chốt gần nhất
   const c = await compute(trx, ctx.tenantId, input.year, overrides);
   const r = await trx.insertInto('tax_return').values({ tenant_id: ctx.tenantId, form_code: FORM, template_version: c.version, period_kind: 'year', year: input.year, period: 1, revision,
     values: JSON.stringify(c.values), overrides: JSON.stringify(overrides), created_by: ctx.userId }).returning('id').executeTakeFirstOrThrow()

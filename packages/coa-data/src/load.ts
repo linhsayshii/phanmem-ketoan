@@ -102,7 +102,7 @@ export function loadCitTemplate(version: 'TT89'): CitTemplate {
   return JSON.parse(readFileSync(dataPath('tax', '03tndn-tt89.json'), 'utf8')) as CitTemplate;
 }
 // Ánh xạ sổ cái cho thuế TNDN theo chế độ (data/tax/cit-ledger.json): chỉ tiêu B02 lợi nhuận/doanh thu, tài khoản chi phí thuế, thuế phải nộp, tiền. Chế độ không có trong tệp thì undefined.
-export interface CitLedgerMap { profitLine: string; revenueLines: string[]; expenseAccount: string; payableAccount: string; cashAccounts: string[] }
+export interface CitLedgerMap { profitLine: string; expenseLine: string; revenueLines: string[]; expenseAccount: string; payableAccount: string; cashAccounts: string[] }
 export function loadCitLedger(regime: Regime): CitLedgerMap | undefined {
   return (JSON.parse(readFileSync(dataPath('tax', 'cit-ledger.json'), 'utf8')) as Partial<Record<Regime, CitLedgerMap>>)[regime];
 }

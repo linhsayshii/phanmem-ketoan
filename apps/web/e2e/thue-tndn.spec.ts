@@ -31,6 +31,7 @@ test('Thuế TNDN: tạm tính quý 1/2026, lập chứng từ chi phí thuế n
   await expect(page.getByTestId('cit-rate')).toHaveText('20');
   await expect(page.getByTestId('cit-payable')).not.toHaveText('');
   await expect(page.getByTestId('cit-payable')).not.toHaveText('0');
+  await expect(page.getByTestId('cit-accrue')).not.toHaveText(/^0?$/); // chứng từ ghi chi phí thuế cần ghi thêm, không phải số phải nộp
   await page.getByRole('button', { name: 'Lập chứng từ chi phí thuế TNDN' }).click();
   const done = page.getByText('Đã lập phiếu kế toán nháp');
   await expect(done).toBeVisible();

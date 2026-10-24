@@ -37,12 +37,12 @@ export function citLedger(regime: string): CitLedgerMap {
   return m;
 }
 
-// Lợi nhuận trước thuế và tổng doanh thu (theo revenueLines) của B02 trong khoảng ngày, cùng hàm báo cáo màn hình B02 dùng.
-export async function b02Figures(trx: Trx, tenantId: string, regime: string, from: string, to: string): Promise<{ profit: string; revenue: string }> {
+// Lợi nhuận trước thuế, tổng doanh thu (theo revenueLines) và chi phí thuế TNDN đã hạch toán (expenseLine) của B02 trong khoảng ngày, cùng hàm báo cáo màn hình B02 dùng.
+export async function b02Figures(trx: Trx, tenantId: string, regime: string, from: string, to: string): Promise<{ profit: string; revenue: string; expense: string }> {
   const m = citLedger(regime);
   const rows = (await evaluateFinancialReport(trx, tenantId, { reportCode: 'B02', from, to, comparePrevYear: false })).rows;
-  const val = (code: string) => { const r = rows.find((x) => x.lineCode === code); if (!r) throw new AppError('REPORT_LINE_NOT_FOUND', `B02 của công ty không có chỉ tiêu ${code}`, 409); return D(r.current); };
-  return { profit: val(m.profitLine).toFixed(0), revenue: m.revenueLines.reduce((s, c) => s.plus(val(c)), D(0)).toFixed(0) };
+  const val = (code: string) => { const r = rows.find((x) => x.lineCode === code); if (!r) throw new AppError('B02_DEFINITION_INCOMPLETE', `Định nghĩa báo cáo B02 của công ty thiếu chỉ tiêu ${code}: nạp lại định nghĩa B02 theo chế độ kế toán rồi tính lại`, 409); return D(r.current); };
+  return { profit: val(m.profitLine).toFixed(0), revenue: m.revenueLines.reduce((s, c) => s.plus(val(c)), D(0)).toFixed(0), expense: val(m.expenseLine).toFixed(0) };
 }
 
 // Doanh thu năm trước từ sổ cái: năm tài chính trước đã mở và có chứng từ đã ghi sổ; năm dưới 12 tháng thì quy đổi 12 tháng (NĐ 320/2025 Điều 11 khoản 4 điểm a,
@@ -93,6 +93,8 @@ export async function citEstimate(trx: Trx, tenantId: string, q: z.infer<typeof 
   const paidYtd = q.paidYtd ?? (paidWindow ? await paidBetween(trx, fy.regime, paidWindow.from, paidWindow.to) : '0');
   const adjustments = q.adjustments ?? '0'; const lossCarried = q.lossCarried ?? '0';
   const est = rate ? quarterlyEstimate({ ytdProfit: cur.profit, adjustments, lossCarried, rate: rate.rate, paidYtd }) : null;
+  // Chi phí thuế ghi thêm = thuế lũy kế - chi phí thuế đã hạch toán từ đầu năm (khác số phải nộp, vốn trừ số đã nộp).
+  const expenseToAccrue = est ? Decimal.max(0, D(est.taxYtd).minus(cur.expense)).toFixed(0) : null;
 
   const reduction = await legalParam<{ rate: number; maxRevenue: string }>(trx, 'cit_reduction', fy.from);
   if (reduction) warnings.push(`NQ 43/2026/QH16: doanh nghiệp có doanh thu năm ${q.year} không quá ${D(reduction.maxRevenue).div(1e9).toString()} tỷ đồng được giảm ${reduction.rate}% số thuế TNDN phải nộp của năm; phần mềm chỉ áp dụng khi lập tờ khai quyết toán (03/TNDN chỉ tiêu C15), số tạm tính quý chưa giảm.`);
@@ -110,7 +112,7 @@ export async function citEstimate(trx: Trx, tenantId: string, q: z.infer<typeof 
     prevRevenue: prev?.revenue ?? null, prevRevenueSource: q.prevRevenue !== undefined ? 'manual' as const : prev ? 'ledger' as const : null, prevRevenueNote: prev?.note ?? null,
     rate: rate?.rate ?? null, rateBasis: rate?.basis ?? null, exempt: rate?.exempt ?? false,
     adjustments, lossCarried, paidYtd, paidWindow,
-    taxableIncome: est?.taxableIncome ?? null, taxYtd: est?.taxYtd ?? null, payable: est?.payable ?? null,
+    taxableIncome: est?.taxableIncome ?? null, taxYtd: est?.taxYtd ?? null, payable: est?.payable ?? null, accruedYtd: cur.expense, expenseToAccrue,
     accounts: { expense: m.expenseAccount, payable: m.payableAccount }, warnings,
   };
 }

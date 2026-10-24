@@ -75,4 +75,19 @@ describe('tạm tính thuế TNDN quý', () => {
     expect(err(await mid.call('GET', '/api/cit/estimate?year=2026&quarter=5'))).toEqual([400, 'VALIDATION']);
     expect(err(await mid.call('GET', '/api/cit/estimate?year=2031&quarter=1'))).toEqual([404, 'PERIOD_NOT_FOUND']);
   });
+
+  it('chứng từ chi phí thuế quý 2 chỉ ghi phần tăng so với chi phí thuế đã hạch toán (B02 chỉ tiêu 51), không phải số phải nộp', async () => {
+    const t = await tt99('2500000000'); // thuế suất 15%
+    await t.post('2026-02-10', '111', '511', '400000000');
+    const q1 = await ok(t.call('GET', '/api/cit/estimate?year=2026&quarter=1'));
+    expect(q1).toMatchObject({ taxYtd: '60000000', accruedYtd: '0', expenseToAccrue: '60000000', payable: '60000000' });
+    // Quý 1: hạch toán chi phí thuế và nộp ngay trong tháng 3.
+    await t.post('2026-03-31', '82111', '3334', '60000000'); await t.post('2026-03-31', '3334', '111', '60000000');
+    await t.post('2026-05-10', '111', '511', '200000000');
+    const q2 = await ok(t.call('GET', '/api/cit/estimate?year=2026&quarter=2'));
+    expect(q2).toMatchObject({ ytdProfit: '600000000', taxYtd: '90000000', accruedYtd: '60000000', expenseToAccrue: '30000000' });
+    // Đã hạch toán đủ (hoặc thừa) thì không còn chi phí phải ghi thêm.
+    await t.post('2026-06-30', '82111', '3334', '40000000');
+    expect((await ok(t.call('GET', '/api/cit/estimate?year=2026&quarter=2'))).expenseToAccrue).toBe('0');
+  });
 });

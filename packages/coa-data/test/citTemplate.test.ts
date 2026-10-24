@@ -53,8 +53,8 @@ describe('mẫu tờ khai 03/TNDN theo TT 89/2026', () => {
     expect(Object.keys(f.tags).sort()).toEqual(t.lines.filter((l) => l.kind !== 'section').map((l) => l.code).sort());
   });
   it('ánh xạ sổ cái theo chế độ: TT99 82111 (8211 là tài khoản tổng hợp), TT133 821; lợi nhuận B02 dòng 50', () => {
-    expect(loadCitLedger('TT99')).toMatchObject({ profitLine: '50', revenueLines: ['10', '22', '31'], expenseAccount: '82111', payableAccount: '3334' });
-    expect(loadCitLedger('TT133')).toMatchObject({ profitLine: '50', revenueLines: ['10', '21', '31'], expenseAccount: '821', payableAccount: '3334' });
+    expect(loadCitLedger('TT99')).toMatchObject({ profitLine: '50', expenseLine: '51', revenueLines: ['10', '22', '31'], expenseAccount: '82111', payableAccount: '3334' });
+    expect(loadCitLedger('TT133')).toMatchObject({ profitLine: '50', expenseLine: '51', revenueLines: ['10', '21', '31'], expenseAccount: '821', payableAccount: '3334' });
     expect(loadCitLedger('TT200')).toBeUndefined();
   });
   it('tham số thuế TNDN theo văn bản gốc (Luật 67/2025 Điều 10, NĐ 141/2026 Điều 2, NQ 43/2026 Điều 1 khoản 2, NĐ 252/2026 Điều 24 khoản 3)', () => {

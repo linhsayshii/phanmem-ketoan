@@ -13,12 +13,12 @@ import { useAuth } from '../auth.js';
 interface Estimate {
   year: number; quarter: number; regime: string; period: { from: string; to: string }; ytdProfit: string; revenueYtd: string; profitSource: string;
   prevRevenue: string | null; prevRevenueSource: 'manual' | 'ledger' | null; prevRevenueNote: string | null; rate: string | null; rateBasis: string | null; exempt: boolean;
-  adjustments: string; lossCarried: string; paidYtd: string; paidWindow: { from: string; to: string } | null; taxableIncome: string | null; taxYtd: string | null; payable: string | null;
+  adjustments: string; lossCarried: string; paidYtd: string; paidWindow: { from: string; to: string } | null; taxableIncome: string | null; taxYtd: string | null; payable: string | null; accruedYtd: string; expenseToAccrue: string | null;
   accounts: { expense: string; payable: string }; warnings: string[];
 }
-interface Inputs { prevRevenue: string | null; rate: string; adjustments: string | null; lossCarried: string | null }
+interface Inputs { prevRevenue: string | null; rate: string; adjustments: string | null; lossCarried: string | null; paidYtd: string | null }
 interface Voucher { id: string; voucherType: string; voucherNo: string | null; postingDate: string; state: string }
-const EMPTY: Inputs = { prevRevenue: null, rate: '', adjustments: null, lossCarried: null };
+const EMPTY: Inputs = { prevRevenue: null, rate: '', adjustments: null, lossCarried: null, paidYtd: null };
 
 const money = (v: string | null | undefined) => (v === null || v === undefined ? '' : formatVnNumber(v));
 const vnDate = (d: string) => dayjs(d).format('DD/MM/YYYY');
@@ -35,6 +35,7 @@ export default function CitEstimatePage() {
   if (applied.rate.trim()) qs.set('rate', applied.rate.trim());
   if (applied.adjustments) qs.set('adjustments', applied.adjustments);
   if (applied.lossCarried) qs.set('lossCarried', applied.lossCarried);
+  if (applied.paidYtd) qs.set('paidYtd', applied.paidYtd);
   const est = useQuery({ queryKey: ['cit-estimate', qs.toString()], queryFn: () => api<Estimate>(`/api/cit/estimate?${qs}`), retry: false });
   const e = est.data;
 
@@ -50,7 +51,7 @@ export default function CitEstimatePage() {
     }
   };
 
-  const voucher = useMutation({ mutationFn: () => api<Voucher>('/api/cit/estimate/voucher', { method: 'POST', json: { year: f.year, quarter: f.quarter, amount: e!.payable } }),
+  const voucher = useMutation({ mutationFn: () => api<Voucher>('/api/cit/estimate/voucher', { method: 'POST', json: { year: f.year, quarter: f.quarter, amount: e!.expenseToAccrue } }),
     onError: (err) => { void message.error((err as Error).message); }, onSuccess: (v) => { setCreated(v); void message.success('Đã lập chứng từ nghiệp vụ khác (nháp)'); } });
 
   const rows: { key: string; label: string; value: string; note?: string; strong?: boolean }[] = e ? [
@@ -61,10 +62,12 @@ export default function CitEstimatePage() {
     { key: 'prev', label: 'Doanh thu năm trước', value: e.prevRevenue === null ? 'Chưa có' : money(e.prevRevenue), note: e.prevRevenueSource === 'manual' ? 'Nhập tay' : (e.prevRevenueNote ?? '') },
     { key: 'rate', label: 'Thuế suất (%)', value: e.rate === null ? 'Chưa xác định' : e.rate, note: e.exempt ? `Miễn thuế. ${e.rateBasis ?? ''}` : (e.rateBasis ?? '') },
     { key: 'tax', label: 'Thuế TNDN lũy kế', value: money(e.taxYtd) },
-    { key: 'paid', label: 'Đã tạm nộp các quý trước', value: money(e.paidYtd), note: e.paidWindow ? `Nợ TK ${e.accounts.payable} đối ứng tiền, ${vnDate(e.paidWindow.from)} – ${vnDate(e.paidWindow.to)}` : 'Quý 1: chưa có khoản tạm nộp của năm' },
+    { key: 'paid', label: 'Đã tạm nộp các quý trước', value: money(e.paidYtd), note: applied.paidYtd ? 'Nhập tay' : e.paidWindow ? `Nợ TK ${e.accounts.payable} đối ứng tiền, ${vnDate(e.paidWindow.from)} – ${vnDate(e.paidWindow.to)}` : 'Quý 1: chưa có khoản tạm nộp của năm' },
     { key: 'payable', label: `Số tạm nộp quý ${e.quarter}`, value: money(e.payable), strong: true },
+    { key: 'accrued', label: 'Chi phí thuế TNDN đã hạch toán từ đầu năm', value: money(e.accruedYtd), note: `B02 chỉ tiêu 51 (TK ${e.accounts.expense})` },
+    { key: 'accrue', label: 'Chi phí thuế TNDN cần ghi thêm', value: money(e.expenseToAccrue), note: 'Thuế TNDN lũy kế trừ chi phí thuế đã hạch toán', strong: true },
   ] : [];
-  const canVoucher = !!e?.payable && e.payable !== '0' && can('cit.create') && can('voucher.create');
+  const canVoucher = !!e?.expenseToAccrue && e.expenseToAccrue !== '0' && can('cit.create') && can('voucher.create');
 
   return (
     <div onKeyDown={onKeyDown} style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 960 }}>
@@ -79,6 +82,7 @@ export default function CitEstimatePage() {
         <label>Thuế suất (%)<br /><Input aria-label="Thuế suất" data-cit-edit="1" placeholder="Theo luật" style={{ width: 110, textAlign: 'right' }} inputMode="decimal" value={draft.rate} onChange={(ev) => setDraft({ ...draft, rate: ev.target.value })} /></label>
         <label>Điều chỉnh<br /><VnNumberInput aria-label="Điều chỉnh" data-cit-edit="1" style={{ width: 170 }} value={draft.adjustments} onChange={(v) => setDraft({ ...draft, adjustments: v })} /></label>
         <label>Lỗ được chuyển<br /><VnNumberInput aria-label="Lỗ được chuyển" data-cit-edit="1" style={{ width: 170 }} value={draft.lossCarried} onChange={(v) => setDraft({ ...draft, lossCarried: v })} /></label>
+        <label>Đã tạm nộp<br /><VnNumberInput aria-label="Đã tạm nộp" data-cit-edit="1" placeholder="Theo sổ" style={{ width: 170 }} value={draft.paidYtd} onChange={(v) => setDraft({ ...draft, paidYtd: v })} /></label>
         <Button type="primary" loading={est.isFetching} onClick={apply}>Tính (F9)</Button>
       </Space>
 

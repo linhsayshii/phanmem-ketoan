@@ -92,7 +92,9 @@ describe('tờ khai quyết toán thuế TNDN 03/TNDN', () => {
 
     const b: Ret = await ok(t.call('POST', '/api/cit/returns', { year: 2026, revision: 1 }), 201);
     expect(b).toMatchObject({ revision: 1, status: 'draft' });
-    expect(b.overrides).toEqual({}); // bổ sung lập lại từ sổ; người dùng nhập lại điều chỉnh
+    // Bổ sung mặc định chép chỉ tiêu nhập tay/ghi đè của bản chốt gần nhất, số theo sổ tính lại.
+    expect(b.overrides).toEqual({ B4: '10000000', C7a: '20', '04': 'Dịch vụ tư vấn' });
+    expect(b.values).toMatchObject({ B4: '10000000', C9: '22000000', '04': 'Dịch vụ tư vấn' });
     expect((await ok(t.call('GET', '/api/cit/returns?year=2026'))).map((x: Ret) => [x.revision, x.status])).toEqual([[1, 'draft'], [0, 'final']]);
   });
 
