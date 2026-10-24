@@ -5,7 +5,7 @@ import { useNavigate } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
 import dayjs, { type Dayjs } from 'dayjs';
 import { canTransition, D, decideEdit, formatVnDate, formatVnNumber, parseVnNumber, sum, todayVn, VND_AMOUNT_RE, voucherTypeDef, type VoucherState, type VoucherTypeDef } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, VnNumberInput, useUnsavedChanges, type LookupRow } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, VnNumberInput, VietQr, useUnsavedChanges, type LookupRow } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { StatusTags, isLive, reportEInvoiceError, showWarnings, type EInvoice, type Series } from './einvoiceCommon.js';
@@ -83,6 +83,9 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
   const scope = eff.invoiceDirection ?? 'sale'; const refund = !!eff.refund;
   const isMH = eff.code === 'MH'; const isSaleGoods = eff.code === 'BH' || eff.code === 'TLB'; const goodsDoc = isMH || eff.code === 'TLM' || isSaleGoods; // chứng từ có dòng hàng nhập, xuất kho
   const state = (v.data?.state ?? 'draft') as VoucherState;
+  type QrInfo = { payload: string; bankName: string; accountNo: string; accountName: string | null; amount: string; content: string };
+  const [qr, setQr] = useState<QrInfo | null>(null);
+  const qrMut = useMutation({ mutationFn: () => api<QrInfo>(`/api/vouchers/${id}/vietqr`), onSuccess: setQr, onError: (e: Error) => void message.error(e.message) });
   const editable = state === 'draft';
   const posted = state === 'posted';
   const decision = posted ? decideEdit({ periodStatus: v.data?.periodStatus ?? 'open', hashed: v.data?.hashed ?? false, change: 'amount', canEditPosted: can('voucher.edit_posted'), canBackdateLocked: can('voucher.backdate_locked') }) : null;
@@ -407,6 +410,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
         {!isNew && mayUnpost && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'unpost' }))}>Bỏ ghi sổ</Button>}
         {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo} ngày ${formatVnDate(p)}` }); })}>Đảo</Button>}
         {!isNew && editable && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy chứng từ?', content: 'Số chứng từ (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
+        {!isNew && posted && ['HDB', 'BH'].includes(eff.code) && <Button loading={qrMut.isPending} onClick={() => qrMut.mutate()}>Mã QR thanh toán</Button>}
         {!isNew && can('voucher.print') && <Button href={`/api/vouchers/${id}/print?format=pdf`} target="_blank">In</Button>}
       </Space>}>
       {v.error && <Alert type="error" showIcon message={(v.error as Error).message} style={{ marginBottom: 12 }} />}
@@ -430,6 +434,7 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
       {!isNew && <Attachments voucherId={id} canEdit={can('voucher.update')} />}
       <PickDialog open={!!lookup} catalog={lookup ? LOOKUP_CATALOG[lookup.col]! : 'account'} withQuickAdd={!!lookup && ['departmentCode', 'projectCode', 'costItemCode'].includes(lookup.col)}
         {...(lookup?.col === 'accountCode' ? { fetcher: accountFetcher } : lookup?.col === 'taxCodes' ? { fetcher: taxes } : lookup?.col === 'vatImportCode' ? { fetcher: vatTaxes } : lookup?.col === 'assetCode' ? { fetcher: assetPick } : {})} onPick={pick} onClose={() => setLookup(null)} />
+      <Modal open={!!qr} title="Mã QR thanh toán" footer={null} destroyOnHidden onCancel={() => setQr(null)}>{qr && <VietQr {...qr} />}</Modal>
       <Modal open={!!reverse} title="Lập chứng từ đảo" okText="Lập chứng từ đảo" cancelText="Không" destroyOnHidden onCancel={() => setReverse(null)}
         okButtonProps={{ loading: action.isPending, disabled: !reverse?.date }}
         onOk={() => { if (reverse) action.mutate({ act: 'reverse', body: { postingDate: iso(reverse.date), ...(reverse.description.trim() ? { description: reverse.description.trim() } : {}) } }); }}>

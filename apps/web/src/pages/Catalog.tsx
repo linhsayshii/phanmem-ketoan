@@ -29,7 +29,7 @@ export function FieldFor({ c, catalog, canQuickAdd }: { c: ColumnDef; catalog: s
   if (c.type === 'boolean') return <Form.Item name={c.key} label={c.label} valuePropName="checked"><Checkbox /></Form.Item>;
   if (c.type === 'number') return <Form.Item name={c.key} label={c.label} rules={rules}><VnNumberInput scale={scaleOf(catalog, c.key)} /></Form.Item>;
   if (c.type === 'date') return <Form.Item name={c.key} label={c.label} rules={rules} getValueProps={(v) => ({ value: v ? dayjs(v as string) : undefined })} normalize={(v) => (v ? (v as dayjs.Dayjs).format('YYYY-MM-DD') : null)}><DatePicker format="DD/MM/YYYY" /></Form.Item>;
-  if (c.type === 'select') return <Form.Item name={c.key} label={c.label} rules={rules}><Select options={c.options ?? []} /></Form.Item>;
+  if (c.type === 'select') return <Form.Item name={c.key} label={c.label} rules={rules}><Select options={c.options ?? []} showSearch allowClear optionFilterProp="label" /></Form.Item>;
   return <Form.Item name={c.key} label={c.label} rules={rules}><Input /></Form.Item>;
 }
 

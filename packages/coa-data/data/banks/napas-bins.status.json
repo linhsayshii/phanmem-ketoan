@@ -1,0 +1,7 @@
+{
+  "complete": true,
+  "source": "GET https://api.vietqr.io/v2/banks",
+  "downloadedAt": "2026-10-23",
+  "count": 76,
+  "note": "danh sách công khai của VietQR, không phải văn bản NAPAS chính thức"
+}

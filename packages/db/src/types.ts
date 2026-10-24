@@ -84,7 +84,7 @@ export interface CurrencyTable {
 export interface ExchangeRateTable {
   id: Generated<number>; tenant_id: string; currency_code: string; rate_date: DateOnly; rate_type: string; rate: Numeric;
 }
-export interface BankTable { id: Generated<number>; tenant_id: string; code: string; name: string; short_name: string | null; is_active: Generated<boolean> }
+export interface BankTable { id: Generated<number>; tenant_id: string; code: string; name: string; short_name: string | null; napas_bin: string | null; is_active: Generated<boolean> }
 export interface BankAccountTable {
   id: Generated<number>; tenant_id: string; bank_id: number; account_no: string; account_name: string | null; branch: string | null;
   currency_code: Generated<string>; gl_account_code: string; is_active: Generated<boolean>;

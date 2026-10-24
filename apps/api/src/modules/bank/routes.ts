@@ -8,6 +8,7 @@ import { AppError } from '../../plugins/errors.js';
 import { dateIso } from '../master/catalogs.js';
 import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { createFromTxnInput, createVoucherFromTxn, matchToVoucher, suggestMatches, unmatch } from './match.js';
+import { voucherQr } from './vietqr.js';
 import { bankReconciliation, reconXlsx } from './reconReport.js';
 import { createFeed, deleteFeed, feedInput, feedUpdate, listFeeds, rotateFeed, updateFeed } from './feeds.js';
 import { deleteFormat, formatInput, importStatement, listFormats, MAX_IMPORT_BYTES, saveFormat } from './statementImport.js';
@@ -87,6 +88,10 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     if (out.voucher.state === 'posted') notifyRecompute(app, tid(req));
     return reply.status(201).send(out);
   });
+
+  // Mã VietQR thanh toán cho hóa đơn bán đã ghi sổ (số tiền = dư còn phải thu).
+  app.get('/api/vouchers/:id/vietqr', { preHandler: app.requirePermission('voucher.view'), schema: { params: z.object({ id: z.string().uuid() }) } }, async (req) =>
+    app.withTenant(req, (trx) => voucherQr(trx, req.auth!, req.params.id), READ_SNAPSHOT));
 
   app.get('/api/bank-reconciliation', { preHandler: view, schema: { querystring: z.object({ bankAccountId: z.coerce.number().int().positive(), from: dateIso, to: dateIso, format: z.enum(['json', 'xlsx']).default('json') })
     .refine((q) => q.from <= q.to, { message: 'Từ ngày phải trước hoặc bằng đến ngày' }) } }, async (req, reply) => {

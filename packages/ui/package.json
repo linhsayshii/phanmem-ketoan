@@ -3,6 +3,6 @@
   "exports": { ".": { "types": "./src/index.ts", "import": "./src/index.ts" } },
   "scripts": { "typecheck": "tsc -p tsconfig.json --noEmit", "test": "vitest run --environment jsdom", "build": "tsc -p tsconfig.json --noEmit" },
   "peerDependencies": { "antd": "^5.25.0", "react": "^18.3.1", "react-dom": "^18.3.1" },
-  "dependencies": { "@kt/domain": "workspace:*", "ag-grid-community": "^33.0.2", "ag-grid-react": "^33.0.2" },
-  "devDependencies": { "@testing-library/jest-dom": "^6.5.0", "@testing-library/react": "^16.0.1", "@testing-library/user-event": "^14.5.2", "@types/react": "^18.3.11", "@types/react-dom": "^18.3.0", "antd": "^5.25.0", "jsdom": "^25.0.1", "react": "^18.3.1", "react-dom": "^18.3.1" }
+  "dependencies": { "@kt/domain": "workspace:*", "ag-grid-community": "^33.0.2", "ag-grid-react": "^33.0.2", "qrcode": "^1.5.4" },
+  "devDependencies": { "@testing-library/jest-dom": "^6.5.0", "@testing-library/react": "^16.0.1", "@testing-library/user-event": "^14.5.2", "@types/qrcode": "^1.5.6", "@types/react": "^18.3.11", "@types/react-dom": "^18.3.0", "antd": "^5.25.0", "jsdom": "^25.0.1", "react": "^18.3.1", "react-dom": "^18.3.1" }
 }

@@ -97,3 +97,7 @@ export interface TaxXmlFormatData {
   headerTag: string; bodyTag: string; header: [string, string][]; returnKind: { first: string; supplement: string }; tags: Record<string, string>;
 }
 export function loadTaxXmlFormat(id: string): TaxXmlFormatData { return JSON.parse(readFileSync(dataPath('tax', `${id}.json`), 'utf8')) as TaxXmlFormatData; }
+
+// Danh sách BIN ngân hàng công khai của VietQR (tải 2026-10-23), không phải văn bản NAPAS chính thức; xem data/banks/napas-bins.status.json.
+export interface NapasBin { bin: string; code: string; shortName: string; name: string }
+export function loadNapasBins(): NapasBin[] { return JSON.parse(readFileSync(dataPath('banks', 'napas-bins.json'), 'utf8')) as NapasBin[]; }

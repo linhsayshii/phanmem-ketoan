@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { loadNapasBins } from '@kt/coa-data';
 import type { Database } from '@kt/db';
 import { TAX_CODE_RE, VND_AMOUNT_RE } from '@kt/domain';
 
@@ -70,8 +71,9 @@ const defs: CatalogDef[] = [
       { key: 'rate_type', label: 'Loại tỷ giá', type: 'select', required: true, options: [{ value: 'transfer_avg', label: 'Mua bán CK trung bình' }, { value: 'buy', label: 'Mua' }, { value: 'sell', label: 'Bán' }] },
       { key: 'rate', label: 'Tỷ giá', type: 'number', required: true }] },
   { name: 'bank', table: 'bank', label: 'Ngân hàng', uniqueBy: ['code'], sort: 'code', searchIn: ['code', 'name', 'short_name'],
-    schema: z.object({ code, name: text(false), short_name: text(), is_active: z.boolean().optional() }),
-    columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên ngân hàng', type: 'text', required: true }, { key: 'short_name', label: 'Tên viết tắt', type: 'text' }] },
+    schema: z.object({ code, name: text(false), short_name: text(), napas_bin: z.string().regex(/^\d{6}$/, 'BIN NAPAS gồm 6 chữ số').nullable().optional(), is_active: z.boolean().optional() }),
+    columns: [{ key: 'code', label: 'Mã', type: 'text', required: true }, { key: 'name', label: 'Tên ngân hàng', type: 'text', required: true }, { key: 'short_name', label: 'Tên viết tắt', type: 'text' },
+      { key: 'napas_bin', label: 'BIN NAPAS (mã VietQR)', type: 'select', options: loadNapasBins().map((b) => ({ value: b.bin, label: `${b.bin} – ${b.shortName}` })) }] },
   { name: 'bank_account', table: 'bank_account', label: 'Tài khoản ngân hàng công ty', uniqueBy: ['account_no'], sort: 'account_no', searchIn: ['account_no', 'account_name'],
     schema: z.object({ bank_code: code, account_no: text(false), account_name: text(), branch: text(), currency_code: ccy.optional(), gl_account_code: text(false), is_active: z.boolean().optional() }),
     columns: [{ key: 'bank_code', label: 'Ngân hàng', type: 'text', required: true, lookup: { catalog: 'bank' } }, { key: 'account_no', label: 'Số tài khoản', type: 'text', required: true },

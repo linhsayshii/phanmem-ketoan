@@ -1,10 +1,11 @@
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
-import { D, formatVnDate, formatVnNumber, ZERO, type Decimal } from '@kt/domain';
+import { D, formatVnDate, formatVnNumber, vietQrPayload, ZERO, type Decimal } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { accountsUnder, assertSensitive, dayBefore, regimeOf } from '../reporting/ledgers.js';
 import { companyInfo } from '../reporting/print/bookSet.js';
+import { defaultVietQrAccount, qrSvg } from '../bank/vietqr.js';
 import { periodSubtitle, type ReportDoc } from '../reporting/print/html.js';
 
 type Trx = Transaction<Database>;
@@ -230,7 +231,11 @@ export async function statementDoc(trx: Trx, auth: Auth, tenantId: string, q: { 
   const net = D(d.closing);
   // Sổ ghi theo góc nhìn của Bên A (công ty): dư Nợ là Bên B nợ Bên A, dư Có là Bên A nợ Bên B.
   const verdict = net.gt(0) ? `Bên B còn nợ Bên A số tiền ${formatVnNumber(vnd(net))} đồng.` : net.lt(0) ? `Bên A còn nợ Bên B số tiền ${formatVnNumber(vnd(net.neg()))} đồng.` : 'Hai bên không còn công nợ.';
-  return { title: 'Biên bản đối chiếu công nợ', company: c, formNo: '', issuedBy: '', subtitle: periodSubtitle(d.from, d.to), sheetName: `Đối chiếu ${d.partyCode}`, landscape: false,
+  // QR tổng còn nợ: chỉ khi Bên B còn nợ Bên A và công ty có tài khoản ngân hàng VND đã khai BIN.
+  const acc = net.gt(0) ? await defaultVietQrAccount(trx) : null;
+  const qr = acc ? { svg: await qrSvg(vietQrPayload({ bin: acc.bin, accountNo: acc.accountNo, amount: net.toFixed(0), content: `Doi chieu ${d.partyCode}` })),
+    caption: ['Quét mã VietQR để thanh toán số còn nợ:', `${acc.bankName} – STK ${acc.accountNo}${acc.accountName ? ` – ${acc.accountName}` : ''}`, `Số tiền: ${formatVnNumber(vnd(net))} đồng`] } : undefined;
+  return { ...(qr && { qr }), title: 'Biên bản đối chiếu công nợ', company: c, formNo: '', issuedBy: '', subtitle: periodSubtitle(d.from, d.to), sheetName: `Đối chiếu ${d.partyCode}`, landscape: false,
     intro: [`Bên A: ${c.name}. Địa chỉ: ${c.address || dots}. Mã số thuế: ${c.taxCode || dots}. Đại diện: ${c.legalRep || dots}.`,
       `Bên B: ${d.partyName} (${d.partyCode}). Địa chỉ: ${d.partyAddress || dots}. Mã số thuế: ${d.partyTaxCode || dots}.`,
       `Hai bên cùng đối chiếu số liệu công nợ tài khoản ${d.accountCode} – ${d.accountName} như sau:`],
