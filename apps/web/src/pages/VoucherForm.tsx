@@ -358,7 +358,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   };
 
   const ledgerGrid = (<>
-    <KeyboardGrid<Line> rows={lines} columns={columns} readOnly={locked} lockRows={metaOnly} onRowsChange={onRowsChange} addRowTemplate={emptyLine} onLookup={onLookup} height={360} />
+    <KeyboardGrid<Line> rows={lines} columns={columns} readOnly={locked} lockRows={metaOnly} onRowsChange={onRowsChange} addRowTemplate={emptyLine} onLookup={onLookup} height={360} allColumns />
     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, marginTop: 8 }}>
       {redacted ? <><b data-testid="total-redacted">Tổng Nợ: —</b><b>Tổng Có: —</b></> : <>
         <b>Tổng Nợ: {formatVnNumber(t.debit)}</b><b>Tổng Có: {formatVnNumber(t.credit)}</b>
