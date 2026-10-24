@@ -11,10 +11,12 @@ export interface KeyboardGridProps<T> {
   onGridApi?: (api: GridApi<T>) => void; // cho trang gọi refreshCells khi dữ liệu ngoài lưới đổi mà không phải dựng lại cột
   animateRows?: boolean; // false: dòng bị thay (nạp lại dữ liệu cả bảng) biến mất ngay, không mờ dần; mặc định giữ hiệu ứng của AG Grid
   lockRows?: boolean; // số dòng cố định: không thêm/chèn/xóa dòng bằng phím (vd. chứng từ đã ghi sổ), vẫn sửa được ô
+  // Lưới rộng hơn khung nhìn mà Enter nhảy qua nhiều cột không sửa được tới ô phải cuộn ngang: AG Grid ảo hóa cột dựng lại ô và ô sửa mất tiêu điểm; bật để dựng đủ cột.
+  allColumns?: boolean;
   pinnedBottomRows?: T[]; // hàng ghim cuối lưới (vd. hàng tổng); cột phải đặt editable theo `!p.node.rowPinned` nếu không muốn sửa hàng này
 }
 
-export function KeyboardGrid<T extends object>({ rows, columns, onRowsChange, addRowTemplate, onLookup, height = 320, readOnly, lockRows, animateRows, onGridApi, pinnedBottomRows }: KeyboardGridProps<T>) {
+export function KeyboardGrid<T extends object>({ rows, columns, onRowsChange, addRowTemplate, onLookup, height = 320, readOnly, lockRows, animateRows, onGridApi, pinnedBottomRows, allColumns }: KeyboardGridProps<T>) {
   const apiRef = useRef<GridApi<T> | null>(null);
   // Mã dòng theo danh tính đối tượng: có getRowId thì AG Grid cập nhật dòng tại chỗ thay vì dựng lại toàn bộ khi `rows` đổi, nên ô đang sửa (vừa chuyển sang bằng Enter) không bị hủy.
   // AG Grid ghi giá trị thẳng vào đối tượng dòng, nên onCellValueChanged giữ nguyên đối tượng (mã không đổi), chỉ thay mảng.
@@ -77,7 +79,7 @@ export function KeyboardGrid<T extends object>({ rows, columns, onRowsChange, ad
 
   return (
     <div style={{ height }}>
-      <AgGridReact<T> theme={themeQuartz} {...(animateRows === undefined ? {} : { animateRows })} rowData={rows} {...(pinnedBottomRows ? { pinnedBottomRowData: pinnedBottomRows } : {})} getRowId={getRowId} columnDefs={colDefs} singleClickEdit stopEditingWhenCellsLoseFocus suppressClickEdit={false}
+      <AgGridReact<T> theme={themeQuartz} {...(animateRows === undefined ? {} : { animateRows })} rowData={rows} {...(pinnedBottomRows ? { pinnedBottomRowData: pinnedBottomRows } : {})} getRowId={getRowId} columnDefs={colDefs} suppressColumnVirtualisation={!!allColumns} singleClickEdit stopEditingWhenCellsLoseFocus suppressClickEdit={false}
         onGridReady={(e) => { apiRef.current = e.api; onGridApi?.(e.api); }}
         onCellValueChanged={(e) => { const copy = [...rowsRef.current]; copy[e.rowIndex ?? 0] = e.data as T; emit(copy); }}
         defaultColDef={defaultColDef} />
