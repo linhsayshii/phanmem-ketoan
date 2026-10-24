@@ -2,6 +2,7 @@ import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
 import { D, sensitiveDenial, sum, SENSITIVE_FLAGS_ALL, ZERO, type Decimal } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
+import { withSalary } from '../payroll/accounts.js';
 
 type Trx = Transaction<Database>;
 export interface Side { debit: string; credit: string }
@@ -11,13 +12,14 @@ const add = (x: Side, y: Side): Side => ({ debit: D(x.debit).plus(y.debit).toStr
 export const dayBefore = (iso: string) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
 const POSTED = sql`v.state IN ('posted','reversed')`;
 
-interface Filters { partyId?: string | undefined; costItemId?: number | undefined; projectId?: number | undefined; departmentId?: number | undefined }
+interface Filters { partyId?: string | undefined; costItemId?: number | undefined; projectId?: number | undefined; departmentId?: number | undefined; employeeId?: number | undefined }
 // Điều kiện chiều phân tích trên dòng chứng từ gốc (bí danh `alias`); không có bộ lọc thì luôn đúng.
 const dimWhere = (alias: string, f: Filters) => sql.join([sql`true`,
   ...(f.partyId ? [sql`${sql.ref(`${alias}.party_id`)} = ${f.partyId}::uuid`] : []),
   ...(f.costItemId !== undefined ? [sql`${sql.ref(`${alias}.cost_item_id`)} = ${f.costItemId}`] : []),
   ...(f.projectId !== undefined ? [sql`${sql.ref(`${alias}.project_id`)} = ${f.projectId}`] : []),
-  ...(f.departmentId !== undefined ? [sql`${sql.ref(`${alias}.department_id`)} = ${f.departmentId}`] : [])], sql` AND `);
+  ...(f.departmentId !== undefined ? [sql`${sql.ref(`${alias}.department_id`)} = ${f.departmentId}`] : []),
+  ...(f.employeeId !== undefined ? [sql`${sql.ref(`${alias}.employee_id`)} = ${f.employeeId}`] : [])], sql` AND `);
 
 // Hệ tài khoản của khoảng ngày: kỳ chứa `from`, nếu không có thì kỳ chứa `to`, nếu không có thì kỳ bắt đầu gần nhất trước `to`.
 // Một công ty giữ nhiều hệ tài khoản (mã trùng nhau giữa các hệ), nên mọi tra cứu và so khớp tiền tố tài khoản phải gắn với một hệ.
@@ -34,7 +36,7 @@ export async function regimeOf(trx: Trx, f: { from: string; to: string }): Promi
 export async function accountsUnder(trx: Trx, regime: string, code: string) {
   const rows = await trx.selectFrom('account').select(['code', 'name', 'subledger_kind']).where('regime', '=', regime).where(sql<boolean>`starts_with(code, ${code})`).orderBy('code').execute();
   if (!rows.some((a) => a.code === code)) throw new AppError('ACCOUNT_NOT_FOUND', `Không có tài khoản ${code}`, 404);
-  return rows;
+  return withSalary(regime, rows);
 }
 
 // Số dư ròng (Nợ - Có) cuối ngày trước `from`, theo từng tài khoản của hệ `regime` có số hiệu bắt đầu bằng `prefix`.
@@ -122,19 +124,20 @@ export async function accountLedger(trx: Trx, tenantId: string, f: { accountCode
   return { ...base, rows: rows.map((r) => { run = run.plus(r.debit).minus(r.credit); return { ...r, running: side(run) }; }) };
 }
 
-export async function accountDetail(trx: Trx, tenantId: string, f: { accountCode: string; from: string; to: string; partyCode?: string | undefined; costItemCode?: string | undefined; projectCode?: string | undefined; departmentCode?: string | undefined }) {
+export async function accountDetail(trx: Trx, tenantId: string, f: { accountCode: string; from: string; to: string; partyCode?: string | undefined; costItemCode?: string | undefined; projectCode?: string | undefined; departmentCode?: string | undefined; employeeCode?: string | undefined }) {
   const regime = await regimeOf(trx, f);
   await accountsUnder(trx, regime, f.accountCode);
   // Mã lọc không có trong danh mục thì báo lỗi, không lặng lẽ bỏ bộ lọc (sẽ ra sổ của mọi đối tượng).
-  const id = async (table: 'party' | 'cost_item' | 'project' | 'department', code: string | undefined) => {
+  const id = async (table: 'party' | 'cost_item' | 'project' | 'department' | 'employee', code: string | undefined) => {
     if (!code) return undefined;
     const r = (await trx.selectFrom(table).select('id').where('code', '=', code).executeTakeFirst()) as { id: string | number } | undefined;
     if (!r) throw new AppError('LOOKUP_NOT_FOUND', `Không có mã "${code}" trong danh mục ${table}`, 404);
     return r.id;
   };
   const filters: Filters = { partyId: (await id('party', f.partyCode)) as string | undefined, costItemId: (await id('cost_item', f.costItemCode)) as number | undefined,
-    projectId: (await id('project', f.projectCode)) as number | undefined, departmentId: (await id('department', f.departmentCode)) as number | undefined };
-  const byDim = filters.costItemId !== undefined || filters.projectId !== undefined || filters.departmentId !== undefined;
+    projectId: (await id('project', f.projectCode)) as number | undefined, departmentId: (await id('department', f.departmentCode)) as number | undefined,
+    employeeId: (await id('employee', f.employeeCode)) as number | undefined };
+  const byDim = filters.costItemId !== undefined || filters.projectId !== undefined || filters.departmentId !== undefined || filters.employeeId !== undefined;
   const openNet = byDim ? await openingFromLines(trx, regime, f.accountCode, f.from, filters) : await openingNet(trx, tenantId, regime, f.accountCode, f.from, { partyId: filters.partyId });
   const rows = await pairRows(trx, regime, f.accountCode, f, filters);
   let run = openNet;
@@ -173,16 +176,18 @@ export async function trialBalance(trx: Trx, tenantId: string, f: { from: string
 }
 
 // Chặn khi cờ nhạy cảm che tài khoản này (lý do lấy từ sensitiveDenial của domain, dùng chung với lọc số dư).
-export function assertSensitive(auth: { sensitive: Set<string> }, acc: { subledger_kind: string | null; code: string }) {
+export function assertSensitive(auth: { sensitive: Set<string> }, acc: { subledger_kind: string | null; code: string; salary?: boolean }) {
   const denied = sensitiveDenial(auth, acc);
   if (denied) throw new AppError('FORBIDDEN', denied, 403);
 }
-// Sổ tổng hợp (Nhật ký chung, Bảng cân đối số phát sinh) gồm mọi tài khoản, kể cả công nợ và giá vốn: cần đủ cả ba cờ.
+// Sổ tổng hợp (Nhật ký chung, Bảng cân đối số phát sinh) gồm mọi tài khoản, kể cả công nợ, giá vốn và phải trả người lao động: cần đủ cả bốn cờ.
 export function assertAllSensitive(auth: { sensitive: Set<string> }) {
-  if (!SENSITIVE_FLAGS_ALL.every((f) => auth.sensitive.has(f))) throw new AppError('FORBIDDEN', 'Cần quyền xem công nợ phải thu, phải trả và giá vốn để xem sổ tổng hợp', 403);
+  if (!SENSITIVE_FLAGS_ALL.every((f) => auth.sensitive.has(f))) throw new AppError('FORBIDDEN', 'Cần quyền xem công nợ phải thu, phải trả, giá vốn và lương để xem sổ tổng hợp', 403);
 }
 
 // Kiểm tra cờ nhạy cảm trên chính tài khoản và mọi tài khoản con: sổ của tài khoản tổng hợp cũng chứa số liệu của các tài khoản con.
-export async function assertCanView(trx: Trx, auth: { sensitive: Set<string> }, f: { accountCode: string; from: string; to: string }) {
+// Lọc theo nhân viên (employeeCode) cho số liệu theo từng người, nên cần view_salary dù tài khoản là gì (sổ 6421 theo nhân viên cũng lộ lương).
+export async function assertCanView(trx: Trx, auth: { sensitive: Set<string> }, f: { accountCode: string; from: string; to: string; employeeCode?: string | undefined }) {
+  if (f.employeeCode) assertSensitive(auth, { subledger_kind: null, code: f.accountCode, salary: true });
   for (const a of await accountsUnder(trx, await regimeOf(trx, f), f.accountCode)) assertSensitive(auth, a);
 }

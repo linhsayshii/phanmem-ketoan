@@ -38,7 +38,7 @@ const Grid = <T extends object>({ rows, columns }: { rows: T[]; columns: ColDef<
 
 const BOOKS = [{ value: 'journal', label: 'Sổ Nhật ký chung' }, { value: 'ledgers', label: 'Sổ Cái (mọi tài khoản có số liệu)' }, { value: 'trial', label: 'Bảng cân đối số phát sinh' },
   { value: 'B01', label: 'B01 - Báo cáo tình hình tài chính' }, { value: 'B02', label: 'B02 - Kết quả hoạt động kinh doanh' }, { value: 'B03', label: 'B03 - Lưu chuyển tiền tệ' }];
-const FULL_BOOK_KEYS = ['journal', 'ledgers', 'trial']; // in mọi tài khoản, gồm công nợ và giá vốn: cần đủ ba cờ nhạy cảm
+const FULL_BOOK_KEYS = ['journal', 'ledgers', 'trial']; // in mọi tài khoản, gồm công nợ và giá vốn: cần đủ bốn cờ nhạy cảm
 const fileKind = { pdf: 'PDF', xlsx: 'Excel' } as const;
 
 // In liên tục cả bộ sổ của một năm tài chính: máy chủ trả một PDF nhiều phần hoặc một Excel nhiều sheet, tải về thành tệp.

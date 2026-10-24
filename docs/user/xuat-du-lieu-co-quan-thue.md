@@ -10,7 +10,7 @@ Mục đích: khi cơ quan thuế hoặc cơ quan có thẩm quyền yêu cầu 
 
 Quyền cần có:
 - Quyền "Xuất dữ liệu cho cơ quan thẩm quyền" (`export.authority`). Vai trò Kế toán viên mặc định không có quyền này.
-- Cả ba cờ nhạy cảm xem công nợ phải thu (`view_receivable`), công nợ phải trả (`view_payable`) và giá vốn (`view_cost`), vì gói chứa Sổ Nhật ký chung và Sổ Cái của mọi tài khoản. Thiếu một cờ thì máy chủ trả 403 và không xuất gì; màn hình báo cờ còn thiếu và khóa nút.
+- Cả bốn cờ nhạy cảm xem công nợ phải thu (`view_receivable`), công nợ phải trả (`view_payable`), giá vốn (`view_cost`) và lương (`view_salary`, từ giai đoạn 6), vì gói chứa Sổ Nhật ký chung và Sổ Cái của mọi tài khoản. Thiếu một cờ thì máy chủ trả 403 và không xuất gì; màn hình báo cờ còn thiếu và khóa nút.
 
 ## Nội dung gói
 

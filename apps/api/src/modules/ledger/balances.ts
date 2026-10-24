@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
 import { sensitiveDenial } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
+import { withSalary } from '../payroll/accounts.js';
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   app.get('/api/balances', { preHandler: app.requirePermission('report.view'), schema: { querystring: z.object({ asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), accountCode: z.string().optional(), byParty: z.enum(['true', 'false']).default('false') }) } }, async (req) =>
@@ -16,7 +17,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         .orderBy(sql`date_to < ${asOf}::date`).orderBy(sql`period_no = 0`).orderBy('fiscal_year', 'desc').orderBy('period_no', 'desc').executeTakeFirst();
       if (!period) return { rows: [], stale };
       // Cờ nhạy cảm như sổ sách: tài khoản công nợ/giá vốn người dùng không được xem thì bỏ khỏi kết quả; chỉ định mã trúng toàn tài khoản bị che thì 403.
-      const accounts = await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', period.regime).execute();
+      const accounts = withSalary(period.regime, await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', period.regime).execute());
       const denied = new Map(accounts.flatMap((a) => { const m = sensitiveDenial(req.auth!, a); return m ? [[a.code, m] as const] : []; }));
       if (req.query.accountCode) {
         const hit = accounts.filter((a) => a.code.startsWith(req.query.accountCode!));

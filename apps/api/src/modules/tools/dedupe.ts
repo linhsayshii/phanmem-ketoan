@@ -1,6 +1,7 @@
 import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
+import { salaryAccountIds } from '../payroll/accounts.js';
 import { voucherListRowsByIds, type VoucherListRow } from '../ledger/vouchers.service.js';
 
 type Trx = Transaction<Database>;
@@ -19,6 +20,7 @@ export const MAX_PAIRS = 500;
 // - Cờ nhạy cảm (khớp sensitiveDenial/flagsOf ở packages/domain/src/permissions.ts, sửa một nơi phải sửa cả hai): chứng từ có dòng trên tài khoản mà người gọi không được xem (công nợ, giá vốn, lương) bị loại ngay trong truy vấn, nên số tiền và đối tượng không lộ qua màn này.
 export async function findDuplicates(trx: Trx, tenantId: string, auth: { sensitive: Set<string> }, f: { from: string; to: string }, max = MAX_PAIRS): Promise<DuplicateResult> {
   const hideAr = !auth.sensitive.has('view_receivable'); const hideAp = !auth.sensitive.has('view_payable'); const hideCost = !auth.sensitive.has('view_cost'); const hideSalary = !auth.sensitive.has('view_salary');
+  const salaryIds = hideSalary ? await salaryAccountIds(trx) : []; // theo ánh xạ tài khoản lương của từng chế độ (coa-data/payroll/accounts.json)
   const w = (await trx.selectFrom('voucher_dup_rule').select(sql<number>`coalesce(max(days_window), 0)::int`.as('w')).where('tenant_id', '=', tenantId).where('is_active', '=', true).executeTakeFirst())?.w ?? 0;
   const { rows } = await sql<{ a_id: string; b_id: string; gap: number; same_party: boolean; same_counter: boolean; same_invoice: boolean }>`
     WITH rules AS (SELECT * FROM voucher_dup_rule WHERE tenant_id = ${tenantId}::uuid AND is_active),
@@ -30,7 +32,7 @@ export async function findDuplicates(trx: Trx, tenantId: string, auth: { sensiti
       SELECT l.voucher_id, sum(l.debit) AS total,
         coalesce(array_agg(DISTINCT (CASE WHEN l.debit > 0 THEN 'D:' ELSE 'C:' END) || a.code ORDER BY (CASE WHEN l.debit > 0 THEN 'D:' ELSE 'C:' END) || a.code) FILTER (WHERE a.subledger_kind IN ('receivable', 'payable')), '{}') AS arap,
         coalesce(array_agg(DISTINCT (CASE WHEN l.debit > 0 THEN 'D:' ELSE 'C:' END) || a.code ORDER BY (CASE WHEN l.debit > 0 THEN 'D:' ELSE 'C:' END) || a.code) FILTER (WHERE a.subledger_kind IS NULL OR a.subledger_kind NOT IN ('cash', 'bank', 'receivable', 'payable')), '{}') AS other,
-        bool_or((${hideAr} AND a.subledger_kind = 'receivable') OR (${hideAp} AND a.subledger_kind = 'payable') OR (${hideCost} AND (a.code LIKE '632%' OR a.subledger_kind = 'inventory')) OR (${hideSalary} AND a.code ~ '^(334|338[2-6])')) AS hidden
+        bool_or((${hideAr} AND a.subledger_kind = 'receivable') OR (${hideAp} AND a.subledger_kind = 'payable') OR (${hideCost} AND (a.code LIKE '632%' OR a.subledger_kind = 'inventory')) OR (${hideSalary} AND a.id = ANY(${salaryIds}::bigint[]))) AS hidden
       FROM voucher_line l JOIN cand c ON c.id = l.voucher_id AND c.posting_date = l.posting_date JOIN account a ON a.id = l.account_id
       WHERE l.tenant_id = ${tenantId}::uuid AND l.posting_date BETWEEN ${f.from}::date - ${w}::int AND ${f.to}::date + ${w}::int
       GROUP BY l.voucher_id HAVING sum(l.debit) > 0),

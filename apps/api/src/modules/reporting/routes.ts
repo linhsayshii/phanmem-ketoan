@@ -51,7 +51,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     // Bản in luôn là Sổ Cái theo chứng từ (mẫu S03b), không theo `mode` của màn hình.
     return printDoc(req, reply, req.query.format, req.query, `so-cai-${req.query.accountCode}-${req.query.from}-${req.query.to}`, async (trx, regime) => { await assertCanView(trx, req.auth!, req.query); return ledgerDoc(trx, req.auth!.tenantId!, regime, req.query); });
   });
-  app.get('/api/reports/ledgers/detail', { preHandler: view, schema: { querystring: z.object({ ...range, accountCode: z.string().min(1), partyCode: z.string().optional(), costItemCode: z.string().optional(), projectCode: z.string().optional(), departmentCode: z.string().optional(), format }).refine(ordered, orderedMsg) } }, async (req, reply) => {
+  app.get('/api/reports/ledgers/detail', { preHandler: view, schema: { querystring: z.object({ ...range, accountCode: z.string().min(1), partyCode: z.string().optional(), costItemCode: z.string().optional(), projectCode: z.string().optional(), departmentCode: z.string().optional(), employeeCode: z.string().optional(), format }).refine(ordered, orderedMsg) } }, async (req, reply) => {
     if (req.query.format === 'json') return app.withTenant(req, async (trx) => { await assertCanView(trx, req.auth!, req.query); return accountDetail(trx, req.auth!.tenantId!, req.query); }, READ_SNAPSHOT);
     return printDoc(req, reply, req.query.format, req.query, `so-chi-tiet-${req.query.accountCode}-${req.query.from}-${req.query.to}`, async (trx, regime) => { await assertCanView(trx, req.auth!, req.query); return detailDoc(trx, req.auth!.tenantId!, regime, req.query); });
   });
