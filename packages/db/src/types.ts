@@ -161,6 +161,11 @@ export interface VoucherTable {
   bank_account_id: number | null; counter_bank_account_id: number | null; party_bank_account_id: string | null; due_date: DateOnly | null; purpose: string | null;
   day_order: Generated<number>; stock_kind: string | null; receipt_state: string | null;
 }
+// Đối tượng tập hợp chi phí (0097): đúng một tham chiếu theo loại.
+export interface CostObjectTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; kind: 'product' | 'project' | 'order' | 'contract';
+  item_id: number | null; project_id: number | null; order_id: string | null; contract_id: number | null; method: string | null; unit: string | null; is_active: Generated<boolean>;
+}
 export interface ContractTable { id: Generated<number>; tenant_id: string; code: string; name: string; party_id: string | null; kind: string }
 export interface AssetCategoryTable {
   id: Generated<number>; tenant_id: string; code: string; name: string; kind: string; asset_account_code: string; depreciation_account_code: string | null;
@@ -204,7 +209,7 @@ export interface VoucherLineTable {
   currency_code: Generated<string>; fx_rate: Numeric | null; amount_currency: NumericDefault;
   debit: NumericDefault; credit: NumericDefault; balance: Generated<string>;
   party_id: string | null; item_id: number | null; warehouse_id: number | null; department_id: number | null; project_id: number | null;
-  cost_item_id: number | null; contract_id: number | null; employee_id: number | null; asset_id: number | null;
+  cost_item_id: number | null; contract_id: number | null; employee_id: number | null; asset_id: number | null; cost_object_id: number | null; // 0097
   // jsonb NOT NULL DEFAULT '{}': Generated<JSONColumnType<...>> không bung được kiểu lồng nên khai báo thẳng ColumnType.
   extra_dims: ColumnType<Record<string, unknown>, string | undefined, string>; description: string | null; due_date: DateOnly | null; bank_account_id: number | null;
   cash_flow_code: string | null; // mã chỉ tiêu B03 (dòng tiền), 0066
@@ -536,6 +541,7 @@ export interface Database {
   employee_cost_split: EmployeeCostSplitTable;
   attendance_sheet: AttendanceSheetTable;
   attendance_entry: AttendanceEntryTable;
+  cost_object: CostObjectTable;
   bank_feed: BankFeedTable;
   bank_transaction: BankTransactionTable;
   bank_webhook_log: BankWebhookLogTable;
