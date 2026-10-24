@@ -184,6 +184,8 @@ export function parseInvoiceXml(input: string): ParsedInvoice {
   let taxGroups = kids(only(tg, 'THTTLTSuat'), 'LTSuat').map((g, i) => ({
     taxRate: normRate(text(g, 'TSuat'), warnings) ?? '', base: num(text(g, 'ThTien'), `LTSuat ${i + 1} ThTien`), tax: num(text(g, 'TThue'), `LTSuat ${i + 1} TThue`) }));
   const sumOf = (xs: (string | null)[]) => xs.filter(ok).reduce((s, x) => s.plus(D(x)), D(0));
+  // Nhóm thuế thiếu thẻ ThTien/TThue: không cộng ngầm thành thiếu thuế, chặn tạo chứng từ.
+  if (taxGroups.some((g) => g.base === null || g.tax === null)) { blocked = true; warnings.push({ code: 'TAXGROUP_INCOMPLETE', message: 'Nhóm thuế suất (LTSuat) thiếu tiền hoặc thuế' }); }
   if (taxGroups.length === 0 && lines.length > 0) {
     // Mẫu thiếu THTTLTSuat (và hóa đơn bán hàng không có thuế): suy ra theo dòng, thuế = thành tiền × thuế suất khi thuế suất là số.
     const by = new Map<string, { base: ReturnType<typeof D>; tax: ReturnType<typeof D> }>();

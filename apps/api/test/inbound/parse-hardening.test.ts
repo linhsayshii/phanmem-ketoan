@@ -76,6 +76,11 @@ describe('parseInvoiceXml: chống đầu vào độc', () => {
     expect(p.taxGroups[0]).toEqual({ taxRate: '10', base: '1300000', tax: null }); expect(p.blocked).toBe(true);
   });
 
+  it('nhóm thuế thiếu thẻ TThue: blocked + TAXGROUP_INCOMPLETE', () => {
+    const p = parseInvoiceXml(VAT().replace('<TgTCThue>', '<THTTLTSuat><LTSuat><TSuat>10%</TSuat><ThTien>1300000</ThTien></LTSuat></THTTLTSuat><TgTCThue>'));
+    expect(p.taxGroups[0]?.tax).toBeNull(); expect(p.blocked).toBe(true); expect(codes(p)).toContain('TAXGROUP_INCOMPLETE');
+  });
+
   it('hóa đơn ngoại tệ thiếu hoặc sai tỷ giá → blocked + FX_RATE_MISSING', () => {
     const usd = VAT().replace('<Ma>VND</Ma>', '<Ma>USD</Ma>');
     const miss = parseInvoiceXml(usd); expect(miss.blocked).toBe(true); expect(codes(miss)).toContain('FX_RATE_MISSING');
