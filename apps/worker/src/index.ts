@@ -38,7 +38,9 @@ await boss.work<RecomputeBalancesJob>(QUEUES.recomputeBalances, { batchSize: 1 }
     throw e;
   }
 });
-await boss.createQueue(QUEUES.einvoiceReconcile);
+// stately: tối đa một job chờ và một job chạy, lượt cron sau không chồng lên lượt đang chạy lâu (worst case 200 hóa đơn x 60 giây).
+await boss.createQueue(QUEUES.einvoiceReconcile, { name: QUEUES.einvoiceReconcile, policy: 'stately' });
+await boss.updateQueue(QUEUES.einvoiceReconcile, { name: QUEUES.einvoiceReconcile, policy: 'stately' });
 await boss.schedule(QUEUES.einvoiceReconcile, EINVOICE_RECONCILE_CRON, {}, { tz: 'Asia/Ho_Chi_Minh' });
 // Lỗi từng hóa đơn đã được nuốt và đếm trong reconcilePending; lỗi còn lại (mất kết nối DB) để pg-boss ghi nhận, lượt 5 phút sau chạy lại.
 await boss.work(QUEUES.einvoiceReconcile, async () => {
