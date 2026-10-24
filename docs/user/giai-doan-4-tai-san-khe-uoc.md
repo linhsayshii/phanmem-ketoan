@@ -208,19 +208,21 @@ Nhập Excel: bấm "Tải mẫu Excel", điền sheet "Du_lieu", bấm "Nhập 
 
 Menu: Sổ cái > Quy trình cuối kỳ. Quyền xem: "period_close.view". Chọn Năm tài chính và Kỳ (Tháng N).
 
-Thứ tự cố định các bước:
-1. Tính giá vốn ("costing.run")
+Thứ tự cố định các bước (từ giai đoạn 6 có 12 bước, thêm "payroll" và "product_cost"):
+1. Tính lương và hạch toán ("payroll.post"), bước tùy chọn
 2. Phân bổ công cụ dụng cụ ("asset.run")
 3. Phân bổ chi phí trả trước ("asset.run")
 4. Khấu hao TSCĐ ("asset.run")
 5. Lãi vay ("loan.run")
-6. Phân bổ doanh thu nhận trước ("amortization.run")
-7. Tỷ giá xuất quỹ ("fx.run")
-8. Đánh giá lại ngoại tệ ("fx.run"), bước tùy chọn
-9. Khấu trừ thuế GTGT ("tax.offset")
-10. Kết chuyển ("closing.run")
+6. Tính giá vốn ("costing.run")
+7. Giá thành sản phẩm ("cost_run.run"), bước tùy chọn
+8. Phân bổ doanh thu nhận trước ("amortization.run")
+9. Tỷ giá xuất quỹ ("fx.run")
+10. Đánh giá lại ngoại tệ ("fx.run"), bước tùy chọn
+11. Khấu trừ thuế GTGT ("tax.offset")
+12. Kết chuyển ("closing.run")
 
-Tính giá vốn đứng đầu vì TSCĐ, CCDC xuất từ kho trong kỳ (Phiếu xuất kho có mã tài sản) nhận nguyên giá theo giá vốn; khấu hao, phân bổ chạy sau nên không phải chạy lại.
+Tính giá vốn nay đứng sau khấu hao và phân bổ (ở giai đoạn 4 nó đứng đầu): chạy giá vốn sau khấu hao không làm khấu hao "Cần chạy lại"; khấu hao chạy sau giá vốn thì giá vốn "Cần chạy lại". Giải thích hai bước mới ở tài liệu giai đoạn 6 (`docs/user/giai-doan-6-luong-gia-thanh-hop-dong.md`, mục 18).
 
 Mỗi dòng có Thứ tự, Bước, Trạng thái, Lần chạy cuối (ngày giờ, người), Chứng từ (liên kết) và nút "Chạy" hoặc "Chạy lại".
 

@@ -62,6 +62,7 @@ Tài liệu ngắn cho kế toán viên và kế toán trưởng: nhập Phiếu
 - Tiện ích → Soát lỗi dữ liệu (cần quyền chạy soát lỗi): chọn khoảng ngày ghi sổ rồi bấm "Soát lỗi". Các quy tắc có sẵn: chứng từ không cân, chứng từ nháp không có dòng, dòng công nợ thiếu đối tượng, tài khoản tổng hợp trên dòng định khoản, số dư trái loại dư, chứng từ nháp trong kỳ đã khóa. Bỏ tích quy tắc nào thì lần soát này không chạy quy tắc đó.
 - Kết quả gom theo quy tắc: mỗi dòng có chứng từ, tham chiếu, chi tiết, hướng dẫn sửa và liên kết "Sửa chứng từ" để mở phiếu. Mỗi quy tắc hiện tối đa 1.000 dòng đầu (có cảnh báo khi bị cắt); quy tắc tự báo lỗi thì hiện dòng "Quy tắc lỗi" thay vì làm hỏng cả lần soát; mỗi công ty chỉ soát một lần tại một thời điểm.
 - Quy tắc do hệ thống cung cấp: không thêm quy tắc mới bằng SQL, không xóa quy tắc (chỉ tắt), câu SQL chỉ để xem. Người có quyền quản lý quy tắc (`data_check.manage`) bật/tắt từng quy tắc bằng công tắc ở cột "Bật" hoặc sửa tên, mức (lỗi hay cảnh báo), thông điệp và hướng dẫn sửa; người khác chỉ xem.
+- Từ giai đoạn 6 hệ thống có tổng cộng 50 quy tắc (giai đoạn 1: 6; giai đoạn 2 trở đi thêm dần; giai đoạn 6 thêm 14 quy tắc về lương, giá thành, vụ việc, hợp đồng). Danh sách quy tắc mới và cờ `view_salary`, `view_cost` chi phối việc chạy xem ở `docs/user/giai-doan-6-luong-gia-thanh-hop-dong.md`, mục 19, 20.
 
 ## Xuất dữ liệu cho cơ quan thẩm quyền
 
