@@ -26,5 +26,7 @@ describe('vietqr', () => {
   it('đầu vào sai bị từ chối', () => {
     expect(() => vietQrPayload({ bin: '1234', accountNo: '1' })).toThrow();
     expect(() => vietQrPayload({ bin: '970416', accountNo: '1', amount: '1.5' })).toThrow();
+    expect(() => vietQrPayload({ bin: '970416', accountNo: '1', amount: '1'.repeat(14) })).toThrow(); // tag 54 tối đa 13 ký tự
+    expect(vietQrPayload({ bin: '970416', accountNo: '1', amount: '9'.repeat(13) })).toContain('5413' + '9'.repeat(13));
   });
 });

@@ -232,7 +232,7 @@ export async function statementDoc(trx: Trx, auth: Auth, tenantId: string, q: { 
   // Sổ ghi theo góc nhìn của Bên A (công ty): dư Nợ là Bên B nợ Bên A, dư Có là Bên A nợ Bên B.
   const verdict = net.gt(0) ? `Bên B còn nợ Bên A số tiền ${formatVnNumber(vnd(net))} đồng.` : net.lt(0) ? `Bên A còn nợ Bên B số tiền ${formatVnNumber(vnd(net.neg()))} đồng.` : 'Hai bên không còn công nợ.';
   // QR tổng còn nợ: chỉ khi Bên B còn nợ Bên A và công ty có tài khoản ngân hàng VND đã khai BIN.
-  const acc = net.gt(0) ? await defaultVietQrAccount(trx) : null;
+  const acc = s.kind === 'receivable' && net.gt(0) ? await defaultVietQrAccount(trx) : null; // QR chỉ khi khách còn nợ ta
   const qr = acc ? { svg: await qrSvg(vietQrPayload({ bin: acc.bin, accountNo: acc.accountNo, amount: net.toFixed(0), content: `Doi chieu ${d.partyCode}` })),
     caption: ['Quét mã VietQR để thanh toán số còn nợ:', `${acc.bankName} – STK ${acc.accountNo}${acc.accountName ? ` – ${acc.accountName}` : ''}`, `Số tiền: ${formatVnNumber(vnd(net))} đồng`] } : undefined;
   return { ...(qr && { qr }), title: 'Biên bản đối chiếu công nợ', company: c, formNo: '', issuedBy: '', subtitle: periodSubtitle(d.from, d.to), sheetName: `Đối chiếu ${d.partyCode}`, landscape: false,

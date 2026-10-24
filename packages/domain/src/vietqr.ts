@@ -20,7 +20,7 @@ export interface VietQrInput { bin: string; accountNo: string; amount?: string; 
 export function vietQrPayload(i: VietQrInput): string {
   if (!/^\d{6}$/.test(i.bin)) throw new Error('BIN ngân hàng phải gồm 6 chữ số');
   if (!/^[A-Za-z0-9]{1,19}$/.test(i.accountNo)) throw new Error('Số tài khoản không hợp lệ');
-  if (i.amount !== undefined && !/^[1-9]\d{0,15}$/.test(i.amount)) throw new Error('Số tiền không hợp lệ');
+  if (i.amount !== undefined && !/^[1-9]\d{0,12}$/.test(i.amount)) throw new Error('Số tiền không hợp lệ');
   const content = i.content ? vietQrContent(i.content) : '';
   const m = tlv('00', 'A000000727') + tlv('01', tlv('00', i.bin) + tlv('01', i.accountNo)) + tlv('02', i.service ?? 'QRIBFTTA');
   const body = tlv('00', '01') + tlv('01', i.amount ? '12' : '11') + tlv('38', m) + tlv('53', '704') + (i.amount ? tlv('54', i.amount) : '') + tlv('58', 'VN') + (content ? tlv('62', tlv('08', content)) : '') + '6304';
