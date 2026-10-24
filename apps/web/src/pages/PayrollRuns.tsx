@@ -10,6 +10,7 @@ import { api } from '../api/client.js';
 import { bankAccountFetcher } from '../lookups.js';
 import { useAuth } from '../auth.js';
 import { NO_SALARY, PayrollErrorAlert } from './payrollUi.js';
+import { RunImportDialog } from './PayrollRunImport.js';
 import { RUN_KIND, RUN_STATUS, columnRound, lineToRow, money, parseManualInput, patchRow, totalRow, type GridRow, type RunLine } from './payrollCommon.js';
 
 const R = '/api/payroll/runs';
@@ -100,7 +101,7 @@ function RunView({ id, onGone }: { id: number; onGone: () => void }) {
   const q = useQuery({ queryKey: key, queryFn: () => api<RunDetail>(`${R}/${id}`) });
   const run = q.data;
   const [rows, setRows] = useState<GridRow[]>([]);
-  const [err, setErr] = useState<unknown>(null);
+  const [err, setErr] = useState<unknown>(null); const [importing, setImporting] = useState(false);
   const gridApi = useRef<GridApi<GridRow> | null>(null);
   useEffect(() => { if (run) setRows(run.lines.map(lineToRow)); }, [run]);
   useEffect(() => { setErr(null); }, [id]);
@@ -212,6 +213,7 @@ function RunView({ id, onGone }: { id: number; onGone: () => void }) {
       </Space>
       <Space wrap style={{ marginBottom: 8 }}>
         {can('payroll.update') && open && <Button type="primary" loading={calc.isPending} onClick={() => calcRef.current()}>{run.status === 'draft' ? 'Tính (F9)' : 'Tính lại (F9)'}</Button>}
+        {can('payroll.update') && open && <Button onClick={() => setImporting(true)}>Nhập từ Excel</Button>}
         {can('payroll.post') && run.status === 'calculated' && <Button type="primary" disabled={run.stale} loading={postOp.isPending} onClick={() => postOp.mutate('post')}>Hạch toán</Button>}
         {can('payroll.post') && posted && <Button loading={postOp.isPending} onClick={() => postOp.mutate('repost')}>Chạy lại hạch toán</Button>}
         {can('payroll.post') && posted && <Popconfirm title="Hủy hạch toán bảng lương?" description="Chứng từ hạch toán lương bị đảo; bảng về trạng thái Đã tính." okText="Hủy hạch toán" cancelText="Không" onConfirm={() => postOp.mutate('unpost')}><Button>Hủy hạch toán</Button></Popconfirm>}
@@ -234,6 +236,7 @@ function RunView({ id, onGone }: { id: number; onGone: () => void }) {
           { title: 'Trạng thái', dataIndex: 'state', width: 120, render: (s: string) => <Tag color={VOUCHER_STATE[s]?.color ?? 'default'}>{VOUCHER_STATE[s]?.label ?? s}</Tag> },
           { title: 'Ghi chú', render: (_, l) => (l.stale ? <Tag color="orange">Lập từ hạch toán cũ: hủy chứng từ và lập lại</Tag> : '') },
         ]} />}
+      <RunImportDialog runId={id} open={importing} onClose={() => setImporting(false)} onDone={() => { void qc.invalidateQueries({ queryKey: key }); refreshList(); }} />
       <PayDialog runId={id} kind={paying} onClose={() => setPaying(null)} onDone={(l) => { void qc.invalidateQueries({ queryKey: ['payroll-run-vouchers', id] }); void message.success(`Đã lập chứng từ nháp ${l.voucherNo ?? l.voucherType}`); }} />
       {run.warnings.length > 0 && <Alert style={{ marginBottom: 8 }} type="warning" showIcon message={`Cảnh báo cả bảng (${run.warnings.length})`} data-testid="run-warnings"
         description={<ul style={{ margin: 0, paddingLeft: 18 }}>{run.warnings.slice(0, 8).map((w) => <li key={w.code + w.message}>{w.message}</li>)}</ul>} />}
