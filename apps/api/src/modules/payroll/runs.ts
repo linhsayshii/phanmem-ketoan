@@ -35,7 +35,7 @@ const sha = (x: unknown) => createHash('sha256').update(JSON.stringify(x)).diges
 const OT_KINDS = new Set(['ot_weekday_hour', 'ot_rest_hour', 'ot_holiday_hour']);
 
 interface RunRow { id: number; year: number; month: number; kind: string; status: string; structure_id: number }
-interface Structure { columns: PayrollColumn[]; proration: ProrationMode }
+export interface Structure { columns: PayrollColumn[]; proration: ProrationMode }
 interface Gathered {
   emps: Map<number, { code: string; name: string; region: MinWageRegion | undefined; input: PayrollInput; hash: string; warnings: PayrollWarning[] }>;
   raw: RawPayrollParams; runWarnings: PayrollWarning[]; settings: { hours: string | null; days: string | null }; usesHours: boolean;
@@ -139,7 +139,7 @@ async function priorOf(trx: Trx, run: { id: number; year: number; month: number 
   return out;
 }
 
-const structureOf = async (trx: Trx, sid: number): Promise<Structure> => { const r = await getStructureRow(trx, sid); return { columns: r.columns as PayrollColumn[], proration: r.proration as ProrationMode }; };
+export const structureOf = async (trx: Trx, sid: number): Promise<Structure> => { const r = await getStructureRow(trx, sid); return { columns: r.columns as PayrollColumn[], proration: r.proration as ProrationMode }; };
 
 async function manualOf(trx: Trx, lineIds: { id: number; employee_id: number }[]) {
   const m = new Map<number, Record<string, string>>();
@@ -199,7 +199,7 @@ export async function lockRun(trx: Trx, runId: number) {
   if (!r) throw new AppError('PAYROLL_RUN_NOT_FOUND', 'Không tìm thấy bảng lương', 404);
   return r;
 }
-function assertEditable(r: { status: string }) {
+export function assertEditable(r: { status: string }) {
   if (r.status === 'posted') throw new AppError('PAYROLL_RUN_POSTED', 'Bảng lương đã hạch toán: hủy hạch toán trước khi tính lại hoặc sửa', 409);
   if (r.status === 'cancelled') throw new AppError('PAYROLL_RUN_CANCELLED', 'Bảng lương đã hủy', 409);
 }
@@ -241,14 +241,8 @@ export async function calculateRun(trx: Trx, tenantId: string, runId: number) {
   return getRun(trx, tenantId, runId);
 }
 
-// Sửa ô nhập tay (cột input) của một nhân viên: đặt manual (null = bỏ ô nhập tay), ghi audit_event trước/sau (D14) rồi tính lại riêng dòng đó.
-export async function setManualValues(trx: Trx, tenantId: string, runId: number, employeeId: number, values: Record<string, string | null>) {
-  const run = await lockRun(trx, runId); assertEditable(run);
-  const line = await trx.selectFrom('payroll_line').select(['id', 'employee_id']).where('run_id', '=', runId).where('employee_id', '=', employeeId).executeTakeFirst();
-  if (!line) throw new AppError('PAYROLL_LINE_NOT_FOUND', 'Nhân viên không có trong bảng lương này', 404);
-  const { columns } = await structureOf(trx, run.structure_id);
-  const bad = Object.keys(values).find((c) => columns.find((x) => x.code === c)?.kind !== 'input');
-  if (bad !== undefined) throw new AppError('PAYROLL_COLUMN_NOT_INPUT', `Cột "${bad}" không phải cột nhập tay của cấu trúc bảng lương`, 400);
+// Ghi ô nhập tay (cột input) của một dòng: đặt manual (null = bỏ ô nhập tay), ghi audit_event trước/sau (D14); không tính lại. Trả số ô đã đổi.
+export async function applyManual(trx: Trx, tenantId: string, runId: number, line: { id: number; employee_id: number }, values: Record<string, string | null>) {
   const old = new Map((await trx.selectFrom('payroll_line_value').select(['column_code', 'value']).where('line_id', '=', line.id).where('manual', '=', true).execute()).map((r) => [r.column_code, r.value]));
   const before: Record<string, string | null> = {}; const after: Record<string, string | null> = {};
   for (const [c, v] of Object.entries(values)) {
@@ -260,8 +254,20 @@ export async function setManualValues(trx: Trx, tenantId: string, runId: number,
       .onConflict((oc) => oc.columns(['tenant_id', 'line_id', 'column_code']).doUpdateSet({ value: next, manual: true })).execute();
   }
   if (Object.keys(after).length) await sql`INSERT INTO audit_event(tenant_id, user_id, action, entity, entity_id, before, after, ip)
-    VALUES (${tenantId}::uuid, app_user_id(), 'manual_value', 'payroll_line_value', ${String(line.id)}, ${JSON.stringify({ runId, employeeId, values: before })}::jsonb,
-      ${JSON.stringify({ runId, employeeId, values: after })}::jsonb, nullif(current_setting('app.client_ip', true), ''))`.execute(trx);
+    VALUES (${tenantId}::uuid, app_user_id(), 'manual_value', 'payroll_line_value', ${String(line.id)}, ${JSON.stringify({ runId, employeeId: line.employee_id, values: before })}::jsonb,
+      ${JSON.stringify({ runId, employeeId: line.employee_id, values: after })}::jsonb, nullif(current_setting('app.client_ip', true), ''))`.execute(trx);
+  return Object.keys(after).length;
+}
+
+// Sửa ô nhập tay (cột input) của một nhân viên rồi tính lại riêng dòng đó.
+export async function setManualValues(trx: Trx, tenantId: string, runId: number, employeeId: number, values: Record<string, string | null>) {
+  const run = await lockRun(trx, runId); assertEditable(run);
+  const line = await trx.selectFrom('payroll_line').select(['id', 'employee_id']).where('run_id', '=', runId).where('employee_id', '=', employeeId).executeTakeFirst();
+  if (!line) throw new AppError('PAYROLL_LINE_NOT_FOUND', 'Nhân viên không có trong bảng lương này', 404);
+  const { columns } = await structureOf(trx, run.structure_id);
+  const bad = Object.keys(values).find((c) => columns.find((x) => x.code === c)?.kind !== 'input');
+  if (bad !== undefined) throw new AppError('PAYROLL_COLUMN_NOT_INPUT', `Cột "${bad}" không phải cột nhập tay của cấu trúc bảng lương`, 400);
+  await applyManual(trx, tenantId, runId, line, values);
   await computeLines(trx, tenantId, run, [line]);
   if (run.status === 'calculated') await refreshRunHash(trx, runId);
   return (await linesOf(trx, tenantId, run, [employeeId])).lines[0]!;
