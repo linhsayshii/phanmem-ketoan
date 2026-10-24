@@ -7,7 +7,7 @@ import { regimeOf } from '../reporting/ledgers.js';
 type Trx = Transaction<Database>;
 // Tập hợp chi phí sản xuất theo đối tượng (GĐ6 Task 10b, Quy ước 8, D2) — đầu vào cho chạy giá thành (Task 11).
 // TT99/TT200: phát sinh (Nợ − Có) của 621/622/627 → NVL/nhân công/SXC theo tài khoản. TT133 (không có 621/622/627): ghi thẳng 154,
-// yếu tố theo khoản mục của dòng (cost_item.cost_element); dòng Có 154 của chứng từ nhập thành phẩm/xuất bán (có Nợ 155/157/632) là giá thành ra, không phải phát sinh.
+// yếu tố theo khoản mục của dòng (cost_item.cost_element); dòng Có 154 của chứng từ nhập thành phẩm/xuất bán (có Nợ 155/157/632) và dòng Nợ 154 của GV chênh lệch giá nhập thành phẩm âm (có Có 155/157/632) là giá thành ra/điều chỉnh, không phải phát sinh.
 // Đối tượng của dòng: cost_object_id, nếu trống thì đối tượng loại vụ việc của project_id, rồi loại hợp đồng của contract_id (0103: mỗi vụ việc/hợp đồng một đối tượng).
 // Đối tượng sản phẩm, đơn hàng chỉ qua cost_object_id (D3). Không gắn được → "chưa gắn đối tượng" (627 là chi phí chung để phân bổ theo tiêu thức).
 // Bỏ chứng từ kết chuyển (is_closing) và chứng từ giá thành (source_doc_type 'cost_run'): chúng chuyển chi phí, không phát sinh.
@@ -47,6 +47,8 @@ export async function collectCosts(trx: Trx, q: { year: number; month: number; o
       AND (${sql.join(accounts.map((c) => sql`starts_with(a.code, ${c})`), sql` OR `)})
       AND NOT (${tt133}::boolean AND l.credit > 0 AND EXISTS (SELECT 1 FROM voucher_line y JOIN account ya ON ya.id = y.account_id
         WHERE y.voucher_id = l.voucher_id AND y.debit > 0 AND (ya.code LIKE '155%' OR ya.code LIKE '157%' OR ya.code LIKE '632%')))
+      AND NOT (${tt133}::boolean AND l.debit > 0 AND v.source_doc_type = 'costing_run' AND EXISTS (SELECT 1 FROM voucher_line y JOIN account ya ON ya.id = y.account_id
+        WHERE y.voucher_id = l.voucher_id AND y.credit > 0 AND (ya.code LIKE '155%' OR ya.code LIKE '157%' OR ya.code LIKE '632%')))
     GROUP BY 1, 2, 3, 4, 5
     HAVING sum(l.debit - l.credit) <> 0
     ORDER BY 2, 3 NULLS FIRST`.execute(trx)).rows.map((r) => ({ ...r, amount: D(r.amount).toFixed(0) }));
