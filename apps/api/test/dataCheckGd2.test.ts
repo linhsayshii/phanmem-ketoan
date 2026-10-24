@@ -198,16 +198,20 @@ describe('soát lỗi GĐ2: cờ nhạy cảm trên quy tắc', () => {
     expect(owner.results.map((x) => x.ruleCode)).toContain('CN_QUA_HAN');
     const reason = 'Bỏ qua do thiếu quyền xem công nợ';
     const why = 'Bỏ qua do thiếu quyền xem giá vốn';
-    const cost = ['SO_DU_SAI_LOAI', 'KHO_LECH_SO_CAI', 'KHO_TON_0_CON_GIA_TRI', 'KHO_XUAT_CHUA_GIA_VON'].map((code) => ({ code, reason: why })); // SO_DU_SAI_LOAI in số dư nên có thể lộ giá vốn; ba quy tắc kho (GĐ3) in giá trị tồn
+    const cost = ['SO_DU_SAI_LOAI', 'KHO_LECH_SO_CAI', 'KHO_TON_0_CON_GIA_TRI', 'KHO_XUAT_CHUA_GIA_VON',
+      'GIA_THANH_CAN_CHAY_LAI', 'GIA_THANH_154_CON_DU', 'GIA_THANH_THIEU_DINH_MUC', 'GIA_THANH_621_622_627_CON_DU', 'GIA_THANH_DAU_RA_KHONG_MA_HANG'].map((code) => ({ code, reason: why })); // SO_DU_SAI_LOAI in số dư nên có thể lộ giá vốn; ba quy tắc kho (GĐ3) in giá trị tồn
+    // Sáu quy tắc lương (GĐ6) cần view_salary mà các ca dưới không cấp, trừ ca cuối.
+    const salary = ['LUONG_THIEU_MST', 'LUONG_THIEU_TK_NH', 'LUONG_NV_NGHI_VAN_TINH', 'LUONG_CAN_TINH_LAI', 'LUONG_LECH_SO_CAI', 'LUONG_BH_VUOT_TRAN'].map((code) => ({ code, reason: 'Bỏ qua do thiếu quyền xem lương' }));
+    const byCode = (a: { code: string }, b: { code: string }) => a.code.localeCompare(b.code);
     for (const flags of [[], ['view_receivable'], ['view_receivable', 'view_cost']]) {
       const r = await t.run([], { from: '2026-01-01', to: '2026-12-31' }, await login(t, flags));
-      expect(r.skipped, flags.join()).toEqual([{ code: 'CN_LECH_SO_CAI', reason }, { code: 'CN_QUA_HAN', reason }, { code: 'KU_CHUA_TINH_LAI', reason }, { code: 'KU_QUA_HAN', reason }, ...(flags.includes('view_cost') ? [] : cost)].sort((a, b) => a.code.localeCompare(b.code)));
+      expect(r.skipped, flags.join()).toEqual([{ code: 'CN_LECH_SO_CAI', reason }, { code: 'CN_QUA_HAN', reason }, { code: 'KU_CHUA_TINH_LAI', reason }, { code: 'KU_QUA_HAN', reason }, ...(flags.includes('view_cost') ? [] : cost), ...salary].sort(byCode));
       expect(r.ran).toBe(owner.ran - r.skipped.length);
       expect(r.results.filter((x) => r.skipped.some((k) => k.code === x.ruleCode))).toEqual([]);
     }
     const noCost = await t.run([], { from: '2026-01-01', to: '2026-12-31' }, await login(t, ['view_receivable', 'view_payable']));
-    expect(noCost.skipped).toEqual([...cost].sort((a, b) => a.code.localeCompare(b.code)));
-    const all = await t.run([], { from: '2026-01-01', to: '2026-12-31' }, await login(t, ['view_receivable', 'view_payable', 'view_cost']));
+    expect(noCost.skipped).toEqual([...cost, ...salary].sort(byCode));
+    const all = await t.run([], { from: '2026-01-01', to: '2026-12-31' }, await login(t, ['view_receivable', 'view_payable', 'view_cost', 'view_salary']));
     expect(all.skipped).toEqual([]); expect(all.ran).toBe(owner.ran);
   });
 
