@@ -3,6 +3,7 @@ import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
 import { D } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
+import { moneyCell } from '../reporting/print/excel.js';
 
 type Trx = Transaction<Database>;
 export interface ReconQuery { bankAccountId: number; from: string; to: string }
@@ -47,16 +48,20 @@ export async function bankReconciliation(trx: Trx, q: ReconQuery): Promise<Recon
 
 export async function reconXlsx(r: ReconReport): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
+  const scale = r.currency === 'VND' ? 0 : 4;
+  const fmt = scale ? `#,##0.${'0'.repeat(scale)};[Red]-#,##0.${'0'.repeat(scale)}` : '#,##0;[Red]-#,##0';
+  const num = (v: string | null) => moneyCell(v, scale); // chuỗi thập phân thành ô số chỉ khi không mất chữ số, như các báo cáo khác
   const s = wb.addWorksheet('Tổng hợp');
   s.addRows([['Đối chiếu sổ phụ ngân hàng'], ['Tài khoản ngân hàng', r.accountNo], ['Tài khoản kế toán', r.glAccountCode], ['Từ ngày', r.from], ['Đến ngày', r.to],
-    ['Số dư đầu kỳ sổ cái', r.ledgerOpening], ['Số dư cuối kỳ sổ cái', r.ledgerClosing], ['Số dư theo sao kê', r.statementBalance ?? 'Chưa có'], ['Ngày số dư sao kê', r.statementBalanceDate ?? ''], ['Chênh lệch (sao kê trừ sổ cái)', r.difference ?? '']]);
+    ['Số dư đầu kỳ sổ cái', num(r.ledgerOpening)], ['Số dư cuối kỳ sổ cái', num(r.ledgerClosing)], ['Số dư theo sao kê', r.statementBalance === null ? 'Chưa có' : num(r.statementBalance)], ['Ngày số dư sao kê', r.statementBalanceDate ?? ''], ['Chênh lệch (sao kê trừ sổ cái)', num(r.difference)]]);
+  for (const row of [6, 7, 8, 10]) { const c = s.getCell(row, 2); c.numFmt = fmt; c.alignment = { horizontal: 'right' }; }
   s.getColumn(1).width = 34; s.getColumn(2).width = 24; s.getRow(1).font = { bold: true };
   const t = wb.addWorksheet('Giao dịch chưa đối chiếu');
   t.addRow(['Ngày', 'Số tiền vào', 'Số tiền ra', 'Diễn giải', 'Số tham chiếu', 'Đối tác']).font = { bold: true };
-  for (const x of r.unmatchedTransactions) t.addRow([x.valueDate, x.amountIn, x.amountOut, x.description, x.reference, x.counterName]);
+  for (const x of r.unmatchedTransactions) t.addRow([x.valueDate, num(x.amountIn), num(x.amountOut), x.description, x.reference, x.counterName]);
   const l = wb.addWorksheet('Dòng sổ cái không có giao dịch');
   l.addRow(['Ngày', 'Loại', 'Số chứng từ', 'Diễn giải', 'Nợ', 'Có']).font = { bold: true };
-  for (const x of r.unmatchedLedgerLines) l.addRow([x.postingDate, x.voucherType, x.voucherNo, x.description, x.debit, x.credit]);
-  for (const w of [t, l]) w.columns.forEach((c) => { c.width = 22; });
+  for (const x of r.unmatchedLedgerLines) l.addRow([x.postingDate, x.voucherType, x.voucherNo, x.description, num(x.debit), num(x.credit)]);
+  for (const [w, cols] of [[t, [2, 3]], [l, [5, 6]]] as const) { w.columns.forEach((c) => { c.width = 22; }); for (const k of cols) { const c = w.getColumn(k); c.numFmt = fmt; c.alignment = { horizontal: 'right' }; } }
   return Buffer.from(await wb.xlsx.writeBuffer());
 }

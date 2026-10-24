@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'kysely';
+import ExcelJS from 'exceljs';
 import { createTestApp, setupBankTenant, type BankTenant } from './helpers.js';
 import type { TestApp } from '../helpers.js';
 
@@ -107,6 +108,69 @@ describe('đối chiếu giao dịch ngân hàng', () => {
     expect(await getTxn(t2.id)).toMatchObject({ status: 'new', voucher_id: null });
   });
 
+  const limited = async (flags: string[]) => {
+    const username = `bl_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+    expect((await call('POST', '/api/users', { username, fullName: 'X', password: 'Matkhau1!', roleCode: 'ketoan_vien', sensitiveFlags: flags })).statusCode).toBe(201);
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+    return `sid=${login.cookies.find((x) => x.name === 'sid')!.value}`;
+  };
+  const suggested = async (id: number, text: string, amount: string) => {
+    const t = await txn({ valueDate: '2026-09-05', amountIn: amount, description: text });
+    return ((await call('POST', `/api/bank-transactions/${t.id}/suggestions`)).json().suggestions as { openItemId?: number }[]).map((s) => s.openItemId).includes(id);
+  };
+
+  it('so tham chiếu theo từ nguyên: số nằm trong số tiền, ngày hay số khác không khớp; số 0 đầu bỏ qua', async () => {
+    const i2345 = await receivable('KH001', '1111111', '2345', '2026-09-01');
+    const i2026 = await receivable('KH001', '1111112', '2026', '2026-09-01');
+    const i1231 = await receivable('KH001', '1111113', '1231', '2026-09-01');
+    const i99 = await receivable('KH001', '1111114', '99', '2026-09-01');
+    expect(await suggested(i2345, 'CK 12.345.000', '5000001')).toBe(false);
+    expect(await suggested(i2026, 'CK ngay 24/10/2026', '5000002')).toBe(false);
+    expect(await suggested(i1231, 'HD 123 1 CAI', '5000003')).toBe(false);
+    expect(await suggested(i99, 'TT HD 0000099', '5000004')).toBe(true);
+    expect(await suggested(i2345, 'TT hoa don 2345 cam on', '5000005')).toBe(true);
+  });
+
+  it('chứng từ đảo không đối chiếu được; đảo chứng từ đã gắn thì gỡ liên kết', async () => {
+    const t = await txn({ valueDate: '2026-09-10', amountIn: '640000', description: 'thu' });
+    const r = await call('POST', `/api/bank-transactions/${t.id}/create-voucher`, { post: true, purposeCode: 'thu_khac' });
+    const id = r.json().voucher.id as string;
+    const rev = await call('POST', `/api/vouchers/${id}/reverse`, { postingDate: '2026-09-11' });
+    expect(rev.statusCode, rev.body).toBeLessThan(300);
+    expect(await getTxn(t.id)).toMatchObject({ status: 'new', voucher_id: null });
+    const t2 = await txn({ valueDate: '2026-09-11', amountOut: '640000', description: 'chi' });
+    const m = await call('POST', `/api/bank-transactions/${t2.id}/match`, { voucherId: rev.json().id });
+    expect(m.statusCode).toBe(409);
+    expect(m.json().error.code).toBe('BANK_MATCH_REVERSAL');
+  });
+
+  it('sửa số tiền nháp rồi ghi sổ: không còn khớp, giao dịch về new và bỏ liên kết', async () => {
+    const t = await txn({ valueDate: '2026-09-12', amountIn: '700000', description: 'thu x' });
+    const r = await call('POST', `/api/bank-transactions/${t.id}/create-voucher`, { post: false, purposeCode: 'thu_khac' });
+    expect(r.statusCode, r.body).toBe(201);
+    const dto = r.json().voucher;
+    expect(await getTxn(t.id)).toMatchObject({ status: 'new', voucher_id: dto.id });
+    // giao dịch đã gắn nháp: không bỏ qua được
+    expect((await call('POST', `/api/bank-transactions/${t.id}/ignore`)).statusCode).toBe(409);
+    const amt = (v: string) => (v === '0' ? '0' : '650000');
+    const put = await call('PUT', `/api/vouchers/${dto.id}`, { voucherType: 'BC', postingDate: dto.postingDate, documentDate: dto.documentDate, description: dto.description, bankAccountNo: dto.bankAccountNo, purpose: dto.purpose, version: dto.version,
+      lines: dto.lines.map((l: { accountCode: string; debit: string; credit: string; bankAccountNo?: string | null }) => ({ accountCode: l.accountCode, debit: amt(l.debit), credit: amt(l.credit), ...(l.bankAccountNo ? { bankAccountNo: l.bankAccountNo } : {}) })) });
+    expect(put.statusCode, put.body).toBe(200);
+    expect((await call('POST', `/api/vouchers/${dto.id}/post`)).statusCode).toBe(200);
+    expect(await getTxn(t.id)).toMatchObject({ status: 'new', voucher_id: null });
+  });
+
+  it('thiếu cờ nhạy cảm: settle bị chặn 403 (không phải lỗi BANK_SETTLE_*); giao dịch ra không gợi ý khoản phải trả', async () => {
+    const item = await receivable('KH001', '1500000', 'HD-9001', '2026-09-01');
+    const cookie = await limited([]);
+    const t = await txn({ valueDate: '2026-09-15', amountIn: '1500000', description: 'x' });
+    const r = await call('POST', `/api/bank-transactions/${t.id}/create-voucher`, { post: false, settle: [{ openItemId: item, amount: '1500000' }] }, cookie);
+    expect(r.statusCode, r.body).toBe(403);
+    expect(r.json().error.code).not.toMatch(/^BANK_SETTLE/);
+    const o = await txn({ valueDate: '2026-09-15', amountOut: '1500000', description: 'HD 1' });
+    expect((await call('POST', `/api/bank-transactions/${o.id}/suggestions`, undefined, cookie)).json()).toEqual({ suggestions: [], hiddenBySensitivity: true });
+  });
+
   it('đối chiếu sổ phụ: liệt kê giao dịch chưa đối chiếu và dòng 1121 không có giao dịch', async () => {
     const from = '2026-08-01'; const to = '2026-08-31';
     await voucher({ voucherType: 'BC', postingDate: '2026-07-20', documentDate: '2026-07-20', bankAccountNo: a.accountNo, partyCode: 'KH002', lines: [L('1121', '1000000', '0', { bankAccountNo: a.accountNo }), L('131', '0', '1000000', { partyCode: 'KH002' })] });
@@ -128,5 +192,8 @@ describe('đối chiếu giao dịch ngân hàng', () => {
     const x = await call('GET', `/api/bank-reconciliation?bankAccountId=${a.accountId}&from=${from}&to=${to}&format=xlsx`);
     expect(x.statusCode).toBe(200);
     expect(x.headers['content-type']).toContain('spreadsheetml');
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(x.rawPayload as unknown as ArrayBuffer);
+    const cell = wb.getWorksheet('Giao dịch chưa đối chiếu')!.getCell(2, 2); // số tiền vào của giao dịch chưa đối chiếu: ô số có định dạng tiền
+    expect(cell.value).toBe(555000); expect(cell.numFmt).toContain('#,##0');
   });
 });

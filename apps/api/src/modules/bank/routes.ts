@@ -59,9 +59,13 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   }, READ_SNAPSHOT));
 
   const flip = (from: string, to: string) => async (req: { params: { id: number } } & Parameters<typeof app.withTenant>[0]) => app.withTenant(req, async (trx) => {
-    const r = await trx.updateTable('bank_transaction').set({ status: to }).where('id', '=', req.params.id).where('status', '=', from).returning(cols).executeTakeFirst();
+    let q = trx.updateTable('bank_transaction').set({ status: to }).where('id', '=', req.params.id).where('status', '=', from);
+    if (to === 'ignored') q = q.where('voucher_id', 'is', null);
+    const r = await q.returning(cols).executeTakeFirst();
     if (r) return txnDto(r);
-    if (!(await trx.selectFrom('bank_transaction').select('id').where('id', '=', req.params.id).executeTakeFirst())) throw new AppError('BANK_TXN_NOT_FOUND', 'Không tìm thấy giao dịch ngân hàng', 404);
+    const cur = await trx.selectFrom('bank_transaction').select(['status', 'voucher_id']).where('id', '=', req.params.id).executeTakeFirst();
+    if (!cur) throw new AppError('BANK_TXN_NOT_FOUND', 'Không tìm thấy giao dịch ngân hàng', 404);
+    if (to === 'ignored' && cur.status === 'new' && cur.voucher_id) throw new AppError('BANK_TXN_STATE', 'Giao dịch đã gắn chứng từ nháp, gỡ liên kết trước khi bỏ qua', 409);
     throw new AppError('BANK_TXN_STATE', `Chỉ chuyển được giao dịch đang ở trạng thái "${from === 'new' ? 'mới' : 'bỏ qua'}"`, 409);
   });
   app.post('/api/bank-transactions/:id/ignore', { preHandler: match, schema: { params: numId } }, flip('new', 'ignored'));

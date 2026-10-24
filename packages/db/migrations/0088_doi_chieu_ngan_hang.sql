@@ -12,15 +12,23 @@ BEGIN
 END $$;
 CREATE TRIGGER trg_bank_txn_unlinked BEFORE UPDATE OF voucher_id ON bank_transaction FOR EACH ROW EXECUTE FUNCTION fn_bank_txn_unlinked();
 
--- Trạng thái "đã đối chiếu" theo chứng từ: ghi sổ → matched; bỏ ghi sổ (về nháp) → new, vẫn giữ liên kết; đảo hoặc hủy → gỡ liên kết (về new).
+-- Trạng thái "đã đối chiếu" theo chứng từ: ghi sổ → matched nếu số tiền phía ngân hàng của chứng từ khớp giao dịch,
+-- không khớp (nháp bị sửa số tiền) → bỏ liên kết, không chặn ghi sổ; bỏ ghi sổ (về nháp) → new, vẫn giữ liên kết; đảo hoặc hủy → gỡ liên kết (về new).
 CREATE FUNCTION fn_bank_txn_voucher_state() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF NEW.state = 'posted' THEN
-    UPDATE bank_transaction SET status = 'matched', matched_at = coalesce(matched_at, now()) WHERE tenant_id = NEW.tenant_id AND voucher_id = NEW.id AND status = 'new';
+    UPDATE bank_transaction t SET status = CASE WHEN s.ok THEN 'matched' ELSE 'new' END, matched_at = CASE WHEN s.ok THEN coalesce(t.matched_at, now()) END,
+      matched_by = CASE WHEN s.ok THEN t.matched_by END, voucher_id = CASE WHEN s.ok THEN t.voucher_id END
+    FROM (SELECT x.id, (CASE WHEN x.amount_in > 0 THEN x.amount_in ELSE x.amount_out END) = (
+            SELECT coalesce(sum(CASE WHEN b.currency_code = 'VND' THEN CASE WHEN x.amount_in > 0 THEN l.debit ELSE l.credit END ELSE abs(l.amount_currency) END), 0)
+            FROM voucher_line l WHERE l.voucher_id = NEW.id AND l.bank_account_id = x.bank_account_id AND CASE WHEN x.amount_in > 0 THEN l.debit > 0 ELSE l.credit > 0 END) AS ok
+          FROM bank_transaction x JOIN bank_account b ON b.tenant_id = x.tenant_id AND b.id = x.bank_account_id
+          WHERE x.tenant_id = NEW.tenant_id AND x.voucher_id = NEW.id AND x.status = 'new') s
+    WHERE t.id = s.id;
   ELSIF NEW.state = 'draft' THEN
     UPDATE bank_transaction SET status = 'new', matched_at = NULL WHERE tenant_id = NEW.tenant_id AND voucher_id = NEW.id AND status = 'matched';
   ELSE
-    UPDATE bank_transaction SET voucher_id = NULL WHERE tenant_id = NEW.tenant_id AND voucher_id = NEW.id;
+    UPDATE bank_transaction SET voucher_id = NULL, matched_by = NULL WHERE tenant_id = NEW.tenant_id AND voucher_id = NEW.id;
   END IF;
   RETURN NULL;
 END $$;
