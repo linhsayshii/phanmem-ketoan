@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Alert, Button, Checkbox, DatePicker, Segmented, Space, Tabs } from 'antd';
+import { Alert, Button, Checkbox, DatePicker, Input, Segmented, Space, Tabs } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
@@ -15,7 +15,11 @@ interface TrackReport { rows: TrackRow[]; totals: Record<string, string | number
 interface Pnl { revenue: string; deduction: string; netRevenue: string; cogs: string; grossProfit: string; selling: string; admin: string; profit: string; production: string }
 type PnlRow = Pnl & { code: string; name: string; level?: number; value?: string | null; valuePct?: string | null; budget?: string | null; budgetPct?: string | null };
 interface PnlReport { rows: PnlRow[]; unassigned: Pnl; totals: Pnl }
-type TabKey = 'track' | 'contract' | 'project';
+// Số dư theo vụ việc/hợp đồng (Task 13c): dư đầu, phát sinh, dư cuối theo TK; dòng không gắn chiều giúp Σ khớp sổ cái; dở dang 154 theo vụ việc/hợp đồng.
+type Side = { debit: string; credit: string };
+interface BalRow { dimCode: string | null; dimName: string | null; accountCode: string; accountName: string; opening: Side; debit: string; credit: string; closing: Side }
+interface BalReport { rows: BalRow[]; wip: { dimCode: string; dimName: string; amount: string }[] }
+type TabKey = 'track' | 'contract' | 'project' | 'balance';
 
 const money = (v: unknown, dp = 0) => (typeof v === 'string' && !D(v).isZero() ? formatVnNumber(v, dp) : '');
 const num = <T,>(headerName: string, field: string, dp = 0, width = 130): ColDef<T> => ({ field, headerName, width, editable: false, cellClass: 'ag-right-aligned-cell', valueFormatter: (p) => money(p.value, dp) }) as ColDef<T>;
@@ -37,19 +41,24 @@ const pnlCols = (project: boolean): ColDef<PnlRow>[] => [
   ...(project ? [num<PnlRow>('Dự toán', 'budget'), num<PnlRow>('% dự toán', 'budgetPct', 2, 105)] : [num<PnlRow>('Giá trị hợp đồng', 'value'), num<PnlRow>('% giá trị', 'valuePct', 2, 105)]),
 ];
 
+const balCols: ColDef<BalRow>[] = [txt('Mã', 'dimCode', 110), { field: 'dimName', headerName: 'Tên', flex: 1, minWidth: 200, editable: false, valueFormatter: (p) => (p.value as string | null) ?? 'Không gắn' },
+  txt('Tài khoản', 'accountCode', 95), num('Dư đầu kỳ Nợ', 'opening.debit'), num('Dư đầu kỳ Có', 'opening.credit'), num('Phát sinh Nợ', 'debit'), num('Phát sinh Có', 'credit'),
+  num('Dư cuối kỳ Nợ', 'closing.debit'), num('Dư cuối kỳ Có', 'closing.credit')];
+
 export default function ContractReportsPage() {
   const { me, can } = useAuth();
   const cost = !!me?.sensitive.includes('view_cost');
   const [tab, setTab] = useState<TabKey>('track');
-  const [f, setF] = useRememberedFilter('contract-reports', { asOf: todayVn(), kind: '', overdue: false, from: dayjs().startOf('year').format('YYYY-MM-DD'), to: dayjs().endOf('month').format('YYYY-MM-DD') },
+  const [f, setF] = useRememberedFilter('contract-reports', { asOf: todayVn(), kind: '', overdue: false, from: dayjs().startOf('year').format('YYYY-MM-DD'), to: dayjs().endOf('month').format('YYYY-MM-DD'), by: 'project', accountCode: '' },
     `${me?.tenantId}:${me?.userId}`);
   const urls: Record<TabKey, string> = {
     track: `/api/contracts/track?${new URLSearchParams({ asOf: f.asOf, overdue: String(f.overdue), ...(f.kind ? { kind: f.kind } : {}) })}`,
     contract: `/api/contracts/pnl?from=${f.from}&to=${f.to}`,
     project: `/api/projects/pnl?from=${f.from}&to=${f.to}`,
+    balance: `/api/projects/balances?${new URLSearchParams({ from: f.from, to: f.to, by: f.by ?? 'project', ...(f.accountCode ? { accountCode: f.accountCode } : {}) })}`,
   };
   const url = urls[tab];
-  const data = useQuery({ queryKey: ['contract-report', url], queryFn: () => api<TrackReport | PnlReport>(url), retry: false });
+  const data = useQuery({ queryKey: ['contract-report', url], queryFn: () => api<TrackReport | PnlReport | BalReport>(url), retry: false });
   const cols = useMemo(() => pnlCols(tab === 'project'), [tab]);
   const open = (format: 'pdf' | 'xlsx') => { window.open(`${url}&format=${format}`, '_blank'); };
 
@@ -64,6 +73,16 @@ export default function ContractReportsPage() {
           <span>Đợt quá hạn: <b>{String(r.totals['overdueMilestoneCount'])}</b></span>
         </Space>
         <KeyboardGrid<TrackRow> rows={r.rows} columns={trackCols} onRowsChange={() => undefined} addRowTemplate={() => ({} as TrackRow)} readOnly height="calc(100vh - 300px)" />
+      </>);
+    }
+    if (tab === 'balance') {
+      const r = data.data as BalReport;
+      return (<>
+        <Space size="large" wrap style={{ marginBottom: 8 }} data-testid="wip-summary">
+          <span>Chi phí dở dang (154) theo {f.by === 'contract' ? 'hợp đồng' : 'vụ việc'}:</span>
+          {r.wip.length ? r.wip.map((w) => <span key={w.dimCode}>{w.dimCode}: <b>{formatVnNumber(w.amount)}</b></span>) : <b>không có</b>}
+        </Space>
+        <KeyboardGrid<BalRow> rows={r.rows} columns={balCols} onRowsChange={() => undefined} addRowTemplate={() => ({} as BalRow)} readOnly height="calc(100vh - 320px)" />
       </>);
     }
     const r = data.data as PnlReport;
@@ -87,12 +106,16 @@ export default function ContractReportsPage() {
           <DatePicker format="DD/MM/YYYY" allowClear={false} aria-label="Tại ngày" value={dayjs(f.asOf)} onChange={(d) => d && setF({ ...f, asOf: d.format('YYYY-MM-DD') })} />
           <Segmented aria-label="Loại hợp đồng" value={f.kind} onChange={(v) => setF({ ...f, kind: String(v) })} options={[{ value: '', label: 'Bán và mua' }, { value: 'sale', label: 'Bán (phải thu)' }, { value: 'purchase', label: 'Mua (phải trả)' }]} />
           <Checkbox checked={f.overdue} onChange={(e) => setF({ ...f, overdue: e.target.checked })}>Chỉ hợp đồng quá hạn</Checkbox>
-        </> : <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} aria-label="Khoảng ngày"
-          onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />}
+        </> : <><DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} aria-label="Khoảng ngày"
+          onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
+          {tab === 'balance' && <>
+            <Segmented aria-label="Theo" value={f.by ?? 'project'} onChange={(v) => setF({ ...f, by: String(v) })} options={[{ value: 'project', label: 'Theo vụ việc' }, { value: 'contract', label: 'Theo hợp đồng' }]} />
+            <Input aria-label="Tài khoản" placeholder="Tài khoản (để trống: mọi TK)" style={{ width: 210 }} defaultValue={f.accountCode ?? ''} onPressEnter={(e) => setF({ ...f, accountCode: e.currentTarget.value.trim() })}
+              onBlur={(e) => setF({ ...f, accountCode: e.currentTarget.value.trim() })} /></>}</>}
         {can('report.print') && <><Button onClick={() => open('pdf')}>In PDF</Button><Button onClick={() => open('xlsx')}>Xuất Excel</Button></>}
       </Space>
       <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={[{ key: 'track', label: 'Theo dõi thực hiện, quá hạn' },
-        ...(cost ? [{ key: 'contract', label: 'Lãi lỗ theo hợp đồng' }, { key: 'project', label: 'Lãi lỗ theo vụ việc' }] : [])]} />
+        ...(cost ? [{ key: 'contract', label: 'Lãi lỗ theo hợp đồng' }, { key: 'project', label: 'Lãi lỗ theo vụ việc' }, { key: 'balance', label: 'Số dư theo vụ việc, hợp đồng' }] : [])]} />
       {body()}
     </Space>);
 }

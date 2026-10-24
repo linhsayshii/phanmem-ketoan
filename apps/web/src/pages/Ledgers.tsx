@@ -4,10 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber, SENSITIVE_FLAGS_ALL } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useRememberedFilter } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, useRememberedFilter, type LookupRow } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
-import { accountFetcherFor } from '../lookups.js';
+import { accountFetcherFor, contractFetcher, costObjectPick } from '../lookups.js';
 
 interface Side { debit: string; credit: string }
 interface JournalRow { postingDate: string; voucherId: string; voucherNo: string; voucherType: string; documentDate: string; description: string | null; accountCode: string; accountName: string; debit: string; credit: string }
@@ -80,7 +80,7 @@ export default function LedgersPage() {
   const [bookSet, setBookSet] = useState(false);
   const [tab, setTab] = useState<TabKey>('journal');
   const [f, setF] = useRememberedFilter('ledgers', { from: dayjs().startOf('month').format('YYYY-MM-DD'), to: dayjs().endOf('month').format('YYYY-MM-DD'), accountCode: '', mode: 'voucher' as Mode, level: 0,
-    splitParty: true, partyCode: '', costItemCode: '', projectCode: '', departmentCode: '' }, `${me?.tenantId}:${me?.userId}`);
+    splitParty: true, partyCode: '', costItemCode: '', projectCode: '', departmentCode: '', contractCode: '', costObjectCode: '' }, `${me?.tenantId}:${me?.userId}`);
   const accountFetcher = useMemo(() => accountFetcherFor(f.from, true, true), [f.from]); // gồm tài khoản tổng hợp (sổ Cái của cả nhóm) và tài khoản đã ngưng dùng nhưng còn phát sinh
   const drillToAccount = (accountCode: string, mode: Mode = 'voucher') => { setF({ ...f, accountCode, mode }); setTab('ledger'); };
 
@@ -88,7 +88,8 @@ export default function LedgersPage() {
   const query = (o: Record<string, string>) => new URLSearchParams({ ...range, ...Object.fromEntries(Object.entries(o).filter(([, v]) => v)) }).toString();
   const url = { journal: `/api/reports/ledgers/general-journal?${query({})}`,
     ledger: `/api/reports/ledgers/account?${query({ accountCode: f.accountCode, mode: f.mode })}`,
-    detail: `/api/reports/ledgers/detail?${query({ accountCode: f.accountCode, partyCode: f.partyCode, costItemCode: f.costItemCode, projectCode: f.projectCode, departmentCode: f.departmentCode })}`,
+    detail: `/api/reports/ledgers/detail?${query({ accountCode: f.accountCode, partyCode: f.partyCode, costItemCode: f.costItemCode, projectCode: f.projectCode, departmentCode: f.departmentCode,
+      contractCode: f.contractCode ?? '', costObjectCode: f.costObjectCode ?? '' })}`,
     trial: `/api/reports/ledgers/trial-balance?${query({ level: f.level ? String(f.level) : '', splitParty: String(f.splitParty) })}` }[tab];
   const needAccount = (tab === 'ledger' || tab === 'detail') && !f.accountCode;
   const printAs = (format: 'pdf' | 'xlsx') => { window.open(`${url}&format=${format}`, '_blank'); }; // cùng bộ lọc với màn hình; Sổ Cái luôn in theo chứng từ
@@ -135,8 +136,8 @@ export default function LedgersPage() {
     return <Space direction="vertical" style={{ width: '100%' }}>{sums}<Grid<LedgerRow> rows={d['rows'] as LedgerRow[]} columns={tab === 'detail' ? columns.detail : columns.ledger} /></Space>;
   };
 
-  const lookup = (catalog: string, field: 'partyCode' | 'costItemCode' | 'projectCode' | 'departmentCode', placeholder: string) =>
-    <LookupSelect catalog={catalog} includeInactive placeholder={placeholder} style={{ width: 200 }} value={f[field] || null} onChange={(code) => setF({ ...f, [field]: code ?? '' })} />;
+  const lookup = (catalog: string, field: 'partyCode' | 'costItemCode' | 'projectCode' | 'departmentCode' | 'contractCode' | 'costObjectCode', placeholder: string, fetcher?: (q: string, signal: AbortSignal) => Promise<LookupRow[]>) =>
+    <LookupSelect catalog={catalog} includeInactive placeholder={placeholder} aria-label={placeholder} style={{ width: 200 }} value={f[field] || null} onChange={(code) => setF({ ...f, [field]: code ?? '' })} {...(fetcher && { fetcher })} />;
   return (
     <Space direction="vertical" size={8} style={{ width: '100%' }}>
       <Space wrap>
@@ -153,7 +154,8 @@ export default function LedgersPage() {
           <Button disabled={needAccount} onClick={() => printAs('xlsx')}>Xuất Excel</Button>
           <Button onClick={() => setBookSet(true)}>In cả bộ sổ năm…</Button></>}
       </Space>
-      {tab === 'detail' && <Space wrap>{lookup('party', 'partyCode', 'Đối tượng')}{lookup('cost_item', 'costItemCode', 'Khoản mục')}{lookup('project', 'projectCode', 'Vụ việc')}{lookup('department', 'departmentCode', 'Bộ phận')}</Space>}
+      {tab === 'detail' && <Space wrap>{lookup('party', 'partyCode', 'Đối tượng')}{lookup('cost_item', 'costItemCode', 'Khoản mục')}{lookup('project', 'projectCode', 'Vụ việc')}{lookup('department', 'departmentCode', 'Bộ phận')}
+        {lookup('contract', 'contractCode', 'Hợp đồng', contractFetcher())}{lookup('cost_object', 'costObjectCode', 'Đối tượng THCP', costObjectPick)}</Space>}
       <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={[{ key: 'journal', label: 'Nhật ký chung' }, { key: 'ledger', label: 'Sổ Cái' }, { key: 'detail', label: 'Sổ chi tiết' }, { key: 'trial', label: 'Bảng cân đối số phát sinh' }]} />
       {data.isFetching && !d ? <Alert type="info" message="Đang tải…" /> : body()}
       <BookSetModal open={bookSet} onClose={() => setBookSet(false)} />
