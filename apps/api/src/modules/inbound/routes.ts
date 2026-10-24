@@ -1,6 +1,7 @@
 import type { Readable } from 'node:stream';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import JSZip from 'jszip';
+import { sql } from 'kysely';
 import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
@@ -127,7 +128,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.get('/api/inbound-invoices', { preHandler: view, schema: { querystring: z.object({
     status: z.enum(['new', 'voucher_created', 'ignored', 'duplicate']).optional(), from: z.string().date().optional(), to: z.string().date().optional(), q: z.string().trim().max(100).optional(),
   }) } }, async (req) => app.withTenant(req, async (trx) => {
-    let q = trx.selectFrom('inbound_invoice').select(['id', 'status', 'source', 'received_at', 'form_no', 'serial', 'invoice_no', 'issue_date', 'seller_tax_code', 'seller_name', 'currency', 'total', 'buyer_matches', 'blocked', 'duplicate_of', 'voucher_id', 'seller_sig', 'warnings']);
+    let q = trx.selectFrom('inbound_invoice').select(['id', 'status', 'source', 'received_at', 'form_no', 'serial', 'invoice_no', 'issue_date', 'seller_tax_code', 'seller_name', 'currency', 'total', 'buyer_matches', 'blocked', 'duplicate_of', 'voucher_id', 'seller_sig', 'warnings', sql<string | null>`(SELECT v.voucher_type FROM voucher v WHERE v.id = inbound_invoice.voucher_id)`.as('voucher_type')]);
     if (req.query.status) q = q.where('status', '=', req.query.status);
     if (req.query.from) q = q.where('issue_date', '>=', req.query.from);
     if (req.query.to) q = q.where('issue_date', '<=', req.query.to);
@@ -135,19 +136,19 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     const rows = await q.orderBy('issue_date', 'desc').orderBy('id', 'desc').limit(500).execute();
     return rows.map((r) => ({
       id: r.id, status: r.status, source: r.source, receivedAt: r.received_at, formNo: r.form_no, serial: r.serial, invoiceNo: r.invoice_no, issueDate: r.issue_date,
-      sellerTaxCode: r.seller_tax_code, sellerName: r.seller_name, currency: r.currency, total: r.total, buyerMatches: r.buyer_matches, blocked: r.blocked, duplicateOf: r.duplicate_of, voucherId: r.voucher_id,
+      sellerTaxCode: r.seller_tax_code, sellerName: r.seller_name, currency: r.currency, total: r.total, buyerMatches: r.buyer_matches, blocked: r.blocked, duplicateOf: r.duplicate_of, voucherId: r.voucher_id, voucherType: r.voucher_type,
       signature: r.seller_sig === null ? 'none' : (asJson(r.seller_sig) as { valid: boolean }).valid ? 'valid' : 'invalid', warningCount: (asJson(r.warnings) as unknown[]).length,
     }));
   }, READ_SNAPSHOT));
 
   app.get('/api/inbound-invoices/:id', { preHandler: view, schema: { params: idParam } }, async (req) => app.withTenant(req, async (trx) => {
-    const r = await trx.selectFrom('inbound_invoice').selectAll().where('id', '=', req.params.id).executeTakeFirst().then((x) => x ?? notFound());
+    const r = await trx.selectFrom('inbound_invoice').selectAll().select(sql<string | null>`(SELECT v.voucher_type FROM voucher v WHERE v.id = inbound_invoice.voucher_id)`.as('voucher_type')).where('id', '=', req.params.id).executeTakeFirst().then((x) => x ?? notFound());
     const lines = await trx.selectFrom('inbound_invoice_line').selectAll().where('invoice_id', '=', r.id).orderBy('line_no').execute();
     return {
       id: r.id, status: r.status, source: r.source, receivedAt: r.received_at, receivedBy: r.received_by, formNo: r.form_no, serial: r.serial, invoiceNo: r.invoice_no, issueDate: r.issue_date,
       sellerTaxCode: r.seller_tax_code, sellerName: r.seller_name, sellerAddress: r.seller_address, buyerTaxCode: r.buyer_tax_code, buyerName: r.buyer_name, currency: r.currency, fxRate: r.fx_rate,
       totalBeforeTax: r.total_before_tax, totalTax: r.total_tax, total: r.total, cqtCode: r.cqt_code, sellerSig: r.seller_sig, cqtSig: r.cqt_sig, buyerMatches: r.buyer_matches, blocked: r.blocked,
-      taxCodeCheck: r.tax_code_check, warnings: r.warnings, duplicateOf: r.duplicate_of, voucherId: r.voucher_id, partyId: r.party_id,
+      taxCodeCheck: r.tax_code_check, warnings: r.warnings, duplicateOf: r.duplicate_of, voucherId: r.voucher_id, voucherType: r.voucher_type, partyId: r.party_id,
       lines: lines.map((l) => ({ lineNo: l.line_no, kind: l.kind, code: l.code, name: l.name, uom: l.uom, quantity: l.quantity, unitPrice: l.unit_price, discountAmount: l.discount_amount, amount: l.amount, taxRate: l.tax_rate })),
     };
   }, READ_SNAPSHOT));

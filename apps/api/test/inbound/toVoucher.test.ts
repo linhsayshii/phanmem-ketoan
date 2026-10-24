@@ -111,4 +111,54 @@ describe('lập chứng từ mua từ hóa đơn đầu vào', () => {
     expect((await (await t3.without('inbound_invoice.update'))('POST', `/api/inbound-invoices/${c.id}/voucher`, BODY)).statusCode).toBe(403);
     expect((await t3.call('GET', `/api/inbound-invoices/${c.id}`)).json().status).toBe('new');
   });
+  it('voucherType có trong danh sách và chi tiết; mã thuế KCT/KKK chỉ gợi ý khi còn dùng được cho mua vào', async () => {
+    const t = await tenant(); await t.setVendorMst();
+    const a = await t.one(VAT());
+    const r = await t.call('POST', `/api/inbound-invoices/${a.id}/voucher`, BODY);
+    expect(r.statusCode, r.body).toBe(201);
+    expect((await t.call('GET', `/api/inbound-invoices/${a.id}`)).json().voucherType).toBe('HDM');
+    expect((await t.call('GET', '/api/inbound-invoices')).json().find((x: { id: number }) => x.id === a.id).voucherType).toBe('HDM');
+    const kct = VAT().replace(/<TSuat>10%<\/TSuat>/g, '<TSuat>KCT</TSuat>');
+    const b = await t.one(withNo(kct, '00000501').replace('Giấy in A4 70gsm', 'Mặt hàng khác').replace('Dịch vụ giao hàng', 'Dịch vụ khác'));
+    expect((await t.call('GET', `/api/inbound-invoices/${b.id}/proposal`)).json().lines[0].taxCode).toBe('KCT');
+    await sql`UPDATE tax_code SET is_active = false WHERE tenant_id = ${t.tenantId}::uuid AND code = 'KCT'`.execute(ctx.t.admin);
+    expect((await t.call('GET', `/api/inbound-invoices/${b.id}/proposal`)).json().lines[0].taxCode).toBeNull();
+  });
+
+  it('ánh xạ đã nhớ không bị ghi đè bằng rỗng khi lần sau bỏ trống trường', async () => {
+    const t = await tenant(); await t.setVendorMst();
+    expect((await t.call('POST', '/api/catalogs/item', { code: 'GIAY', name: 'Giấy', base_uom_code: 'CAI', kind: 'goods', tracking: 'none', inventory_account_code: '156' })).statusCode).toBe(201);
+    const a = await t.one(VAT());
+    expect((await t.call('POST', `/api/inbound-invoices/${a.id}/voucher`, BODY)).statusCode).toBe(201);
+    await sql`UPDATE inbound_item_map SET item_id = (SELECT id FROM item WHERE tenant_id = ${t.tenantId}::uuid AND code = 'GIAY') WHERE tenant_id = ${t.tenantId}::uuid`.execute(ctx.t.admin);
+    const b = await t.one(withNo(VAT(), '00000502'));
+    expect((await t.call('POST', `/api/inbound-invoices/${b.id}/voucher`, BODY)).statusCode).toBe(201);
+    const m = await sql<{ n: string }>`SELECT count(*)::text n FROM inbound_item_map WHERE tenant_id = ${t.tenantId}::uuid AND item_id IS NOT NULL`.execute(ctx.t.admin);
+    expect(m.rows[0]!.n).toBe('2');
+  });
+
+  it('createParty: mã NCC<MST> đã có với cùng MST thì dùng lại; khác MST → 409 PARTY_CODE_TAKEN', async () => {
+    const t = await tenant();
+    await sql`INSERT INTO party (tenant_id, code, name, tax_code, is_vendor) VALUES (${t.tenantId}::uuid, 'NCC0100000001', 'Có sẵn', '0100000001', true)`.execute(ctx.t.admin);
+    const a = await t.one(VAT());
+    const r = await t.call('POST', `/api/inbound-invoices/${a.id}/voucher`, { ...BODY, createParty: true });
+    expect(r.statusCode, r.body).toBe(201);
+    const t2 = await tenant();
+    await sql`INSERT INTO party (tenant_id, code, name, tax_code, is_vendor) VALUES (${t2.tenantId}::uuid, 'NCC0100000001', 'Khác MST', '0999999999', true)`.execute(ctx.t.admin);
+    const b = await t2.one(VAT());
+    expect(err(await t2.call('POST', `/api/inbound-invoices/${b.id}/voucher`, { ...BODY, createParty: true }))).toEqual([409, 'PARTY_CODE_TAKEN']);
+  });
+
+  it('hóa đơn ngoại tệ USD có TGia → chứng từ ngoại tệ, thuế khai báo quy đổi VND', async () => {
+    const t = await tenant(); await t.setVendorMst();
+    const usd = withNo(VAT(), '00000504').replace('<Ma>VND</Ma>', '<Ma>USD</Ma>').replace('</DVTTe>', '</DVTTe><TGia>25000</TGia>').replace('<TgTCThue>1300000', '<TgTCThue>1000').replace('<TgTThue>130000', '<TgTThue>100').replace('<TgTTTBSo>1430000', '<TgTTTBSo>1100')
+      .replace('<DGia>50000</DGia>', '<DGia>40</DGia>').replace('<ThTien>1000000</ThTien>', '<ThTien>800</ThTien>')
+      .replace('<DGia>300000</DGia>', '<DGia>200</DGia>').replace('<ThTien>300000</ThTien>', '<ThTien>200</ThTien>');
+    const a = await t.one(usd);
+    const r = await t.call('POST', `/api/inbound-invoices/${a.id}/voucher`, BODY);
+    expect(r.statusCode, r.body).toBe(201);
+    const inv = (await t.call('GET', `/api/invoices/${r.json().voucherId}`)).json();
+    expect(inv).toMatchObject({ currencyCode: 'USD', fxRate: expect.stringMatching(/^25000/), totalDebit: '27500000' });
+    expect(inv.invoices[0]).toMatchObject({ taxAmount: '2500000' });
+  });
 });

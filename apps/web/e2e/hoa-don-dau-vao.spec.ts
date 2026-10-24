@@ -34,10 +34,13 @@ test('Hóa đơn đầu vào: tải XML, xem dòng, lập hóa đơn mua nháp b
 
   const dlg = page.getByRole('dialog', { name: /Lập chứng từ mua hàng/ });
   await expect(dlg.getByRole('button', { name: /Lập chứng từ/ })).toBeDisabled(); // chưa chọn tài khoản cho các dòng
-  for (const n of [1, 2]) {
-    await dlg.getByRole('combobox', { name: `Tài khoản dòng ${n}` }).click(); await page.keyboard.type('6422');
-    await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option', { hasText: '6422' }).click();
-  }
+  // Dòng 1: F4 chọn từ danh mục; dòng 2: gõ thẳng mã vào ô của lưới.
+  await dlg.locator('.ag-row[row-index="0"] .ag-cell[col-id="accountCode"]').click(); await page.keyboard.press('F4');
+  await expect(page.getByRole('dialog', { name: 'Chọn từ danh mục' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Chọn từ danh mục' }).getByRole('combobox')).toBeFocused(); await page.keyboard.type('6422');
+  await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option', { hasText: '6422' }).click();
+  await expect(dlg.getByRole('button', { name: /Lập chứng từ/ })).toBeDisabled(); // dòng 2 vẫn thiếu tài khoản
+  await dlg.locator('.ag-row[row-index="1"] .ag-cell[col-id="accountCode"]').click(); await page.keyboard.type('6422'); await page.keyboard.press('Tab');
   await dlg.getByLabel('Diễn giải').focus(); await page.keyboard.press('Control+s');
 
   await expect(page).toHaveURL(/\/chung-tu\/HDM\/[0-9a-f-]{36}/);

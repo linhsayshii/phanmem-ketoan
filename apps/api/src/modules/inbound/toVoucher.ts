@@ -38,7 +38,7 @@ async function guessTaxCodes(trx: Trx, rates: (string | null)[]): Promise<Map<st
   const out = new Map<string, string>();
   for (const r of new Set(rates)) {
     if (r === null) continue;
-    const hit = /^\d+(\.\d+)?$/.test(r) ? taxes.find((t) => t.rate !== null && D(t.rate).eq(r))?.code : r === 'KCT' ? 'KCT' : r === 'KKKNT' ? 'KKK' : undefined;
+    const hit = /^\d+(\.\d+)?$/.test(r) ? taxes.find((t) => t.rate !== null && D(t.rate).eq(r))?.code : taxes.find((t) => t.code === (r === 'KCT' ? 'KCT' : r === 'KKKNT' ? 'KKK' : ''))?.code;
     if (hit) out.set(r, hit);
   }
   return out;
@@ -81,7 +81,9 @@ export async function createVoucherFromInbound(trx: Trx, ctx: { tenantId: string
     if (!body.createParty) throw new AppError('PARTY_REQUIRED', 'Chưa có đối tượng cho người bán: chọn nhà cung cấp hoặc tạo mới từ hóa đơn', 400);
     const mst = r.seller_tax_code && TAX_CODE_RE.test(r.seller_tax_code) ? r.seller_tax_code : null;
     partyCode = `NCC${(r.seller_tax_code ?? String(r.id)).replace(/[^0-9A-Za-z]/g, '')}`.slice(0, 30);
-    await createRow(trx, ctx.tenantId, catalogByName('party')!, { code: partyCode, name: r.seller_name, is_vendor: true, tax_code: mst, address: r.seller_address });
+    const taken = await trx.selectFrom('party').select('tax_code').where('code', '=', partyCode).executeTakeFirst();
+    if (taken && taken.tax_code !== mst) throw conflict('PARTY_CODE_TAKEN', `Mã đối tượng ${partyCode} đã dùng cho đối tượng khác (mã số thuế không khớp): chọn nhà cung cấp có sẵn`);
+    if (!taken) await createRow(trx, ctx.tenantId, catalogByName('party')!, { code: partyCode, name: r.seller_name, is_vendor: true, tax_code: mst, address: r.seller_address });
   }
   const party = await trx.selectFrom('party').select(['id', 'tax_code']).where('code', '=', partyCode).executeTakeFirst();
   if (!party) throw new AppError('NOT_FOUND', `Không có đối tượng ${partyCode}`, 404);
@@ -135,7 +137,7 @@ export async function createVoucherFromInbound(trx: Trx, ctx: { tenantId: string
       await sql`INSERT INTO inbound_item_map (tenant_id, seller_tax_code, name_key, item_id, account_id, tax_code_id)
         VALUES (${ctx.tenantId}::uuid, fn_invoice_key(${r.seller_tax_code}), fn_invoice_key(${l.name}),
           (SELECT id FROM item WHERE code = ${c.itemCode ?? null}::text), (SELECT id FROM account WHERE code = ${c.accountCode ?? null}::text AND regime = ${regime ?? null}::text), (SELECT id FROM tax_code WHERE code = ${c.taxCode ?? null}::text))
-        ON CONFLICT (tenant_id, seller_tax_code, name_key) DO UPDATE SET item_id = EXCLUDED.item_id, account_id = EXCLUDED.account_id, tax_code_id = EXCLUDED.tax_code_id, updated_at = now()`.execute(trx);
+        ON CONFLICT (tenant_id, seller_tax_code, name_key) DO UPDATE SET item_id = COALESCE(EXCLUDED.item_id, inbound_item_map.item_id), account_id = COALESCE(EXCLUDED.account_id, inbound_item_map.account_id), tax_code_id = COALESCE(EXCLUDED.tax_code_id, inbound_item_map.tax_code_id), updated_at = now()`.execute(trx);
     }
   }
   await trx.updateTable('inbound_invoice').set({ status: 'voucher_created', voucher_id: inv.id, party_id: party.id }).where('id', '=', id).execute();

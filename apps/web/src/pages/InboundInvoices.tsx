@@ -2,30 +2,34 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Checkbox, DatePicker, Descriptions, Drawer, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, Upload, message } from 'antd';
+import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber } from '@kt/domain';
-import { LookupSelect, useHotkeys, useRememberedFilter } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, useHotkeys, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor } from '../lookups.js';
-import { groupFetcher, taxFetcher, useInvoiceGroups, useTaxDefs } from './voucherCommon.js';
+import { PickDialog, groupFetcher, taxFetcher, useInvoiceGroups, useTaxDefs } from './voucherCommon.js';
 
 // Hóa đơn đầu vào: tải XML/zip, xem chi tiết, lập chứng từ mua hàng (HDM/MH) với ánh xạ dòng được nhớ theo người bán.
 interface Row {
   id: number; status: string; invoiceNo: string; serial: string; issueDate: string | null; sellerTaxCode: string | null; sellerName: string | null; currency: string | null; total: string | null;
-  buyerMatches: boolean | null; blocked: boolean; voucherId: string | null; signature: 'none' | 'valid' | 'invalid'; warningCount: number;
+  buyerMatches: boolean | null; blocked: boolean; voucherId: string | null; voucherType: string | null; signature: 'none' | 'valid' | 'invalid'; warningCount: number;
 }
 interface Warning { code: string; message: string }
 interface Detail extends Omit<Row, 'warningCount' | 'signature'> {
   formNo: string; sellerAddress: string | null; buyerName: string | null; buyerTaxCode: string | null; totalBeforeTax: string | null; totalTax: string | null; warnings: Warning[];
-  lines: { lineNo: number; kind: number; code: string | null; name: string; uom: string | null; quantity: string | null; unitPrice: string | null; amount: string | null; taxRate: string | null }[];
+  lines: { lineNo: number; kind: string; code: string | null; name: string; uom: string | null; quantity: string | null; unitPrice: string | null; amount: string | null; taxRate: string | null }[];
 }
 interface Proposal {
   partyCode: string | null; sellerName: string | null; sellerTaxCode: string | null; blocked: boolean; status: string; voucherType: 'HDM' | 'MH';
-  lines: { lineNo: number; kind: number; name: string; amount: string; taxRate: string | null; itemCode: string | null; accountCode: string | null; taxCode: string | null; source: 'map' | 'guess' }[];
+  lines: { lineNo: number; kind: string; name: string; amount: string | null; taxRate: string | null; itemCode: string | null; accountCode: string | null; taxCode: string | null; source: 'map' | 'guess' }[];
 }
 interface Result { file: string; status: 'new' | 'duplicate' | 'skipped' | 'error'; id?: number; error?: { code: string; message: string } }
-interface LineEdit { itemCode: string | null; accountCode: string | null; taxCode: string | null }
+interface GridLine { lineNo: number; name: string; amount: string | null; taxRate: string | null; accountCode: string; itemCode: string; taxCode: string; source: string; convert: boolean }
+// Máy chủ chỉ lập dòng hàng, hoặc dòng khuyến mại có thành tiền > 0; dòng khác không cần tài khoản.
+const converts = (l: Proposal['lines'][number]) => l.kind === 'goods' || (l.kind === 'promotion' && /[1-9]/.test(l.amount ?? ''));
+const GRID_CATALOG: Record<string, string> = { accountCode: 'account', itemCode: 'item', taxCode: 'tax_code' };
 
 const STATUS: Record<string, { label: string; color: string }> = {
   new: { label: 'Mới', color: 'blue' }, voucher_created: { label: 'Đã lập chứng từ', color: 'green' }, ignored: { label: 'Đã bỏ qua', color: 'default' }, duplicate: { label: 'Trùng', color: 'orange' },
@@ -43,29 +47,37 @@ const money = (v: string | null) => (v === null ? '' : formatVnNumber(v));
 function VoucherDialog({ id, onClose, onDone }: { id: number | null; onClose: () => void; onDone: (voucherId: string, type: string) => void }) {
   const { can } = useAuth();
   const [form] = Form.useForm();
-  const [edits, setEdits] = useState<Record<number, LineEdit>>({});
+  const [rows, setRows] = useState<GridLine[]>([]);
+  const [lookup, setLookup] = useState<{ col: string; row: number } | null>(null);
   const p = useQuery({ queryKey: ['inbound-proposal', id], enabled: id !== null, queryFn: () => api<Proposal>(`/api/inbound-invoices/${id}/proposal`) });
   const prop = p.data;
   const defs = useTaxDefs(); const groups = useInvoiceGroups();
   const accounts = useMemo(() => accountFetcherFor(), []);
   const taxes = useMemo(() => taxFetcher(defs.data ?? [], 'purchase'), [defs.data]);
   const groupsOf = useMemo(() => groupFetcher(groups.data ?? [], 'purchase'), [groups.data]);
-  const pick = (lineNo: number): LineEdit => {
-    const l = prop?.lines.find((x) => x.lineNo === lineNo);
-    return edits[lineNo] ?? { itemCode: l?.itemCode ?? null, accountCode: l?.accountCode ?? null, taxCode: l?.taxCode ?? null };
-  };
-  const setLine = (lineNo: number, patch: Partial<LineEdit>) => setEdits((e) => ({ ...e, [lineNo]: { ...pick(lineNo), ...patch } }));
+  useEffect(() => { setRows((prop?.lines ?? []).map((l) => ({ lineNo: l.lineNo, name: l.name, amount: l.amount, taxRate: l.taxRate, accountCode: l.accountCode ?? '', itemCode: l.itemCode ?? '', taxCode: l.taxCode ?? '', source: l.source, convert: converts(l) }))); }, [prop]);
+  const columns = useMemo<ColDef<GridLine>[]>(() => [
+    { field: 'lineNo', headerName: 'Dòng', width: 70, editable: false },
+    { field: 'name', headerName: 'Tên hàng hóa, dịch vụ', flex: 1, minWidth: 200, editable: false },
+    { field: 'amount', headerName: 'Thành tiền', width: 120, editable: false, type: 'rightAligned', valueFormatter: (p) => money((p.value as string | null) ?? null) },
+    { field: 'taxRate', headerName: 'TS', width: 70, editable: false, valueFormatter: (p) => (p.value ? `${p.value as string}%` : '') },
+    { colId: 'accountCode', field: 'accountCode', headerName: 'Tài khoản (F4)', width: 140, editable: (p) => !!p.data?.convert },
+    { colId: 'itemCode', field: 'itemCode', headerName: 'Mã hàng (F4)', width: 130, editable: (p) => !!p.data?.convert },
+    { colId: 'taxCode', field: 'taxCode', headerName: 'Mã thuế (F4)', width: 120, editable: (p) => !!p.data?.convert },
+    { field: 'source', headerName: '', width: 70, editable: false, valueFormatter: (p) => (p.value === 'map' ? 'Nhớ' : '') , headerTooltip: 'Nhớ: lấy từ lần nhập trước của cùng người bán' },
+  ], []);
+  const lookupFetcher = lookup?.col === 'accountCode' ? accounts : lookup?.col === 'taxCode' ? taxes : undefined;
   const run = useMutation({
     mutationFn: (v: { postingDate: dayjs.Dayjs; invoiceGroupCode: string; voucherType: string; partyCode?: string; createParty?: boolean; counterAccountCode?: string; description?: string }) => api<{ voucherId: string }>(`/api/inbound-invoices/${id}/voucher`, {
       method: 'POST', json: {
         voucherType: v.voucherType, postingDate: v.postingDate.format('YYYY-MM-DD'), invoiceGroupCode: v.invoiceGroupCode,
         ...(v.createParty ? { createParty: true } : v.partyCode ? { partyCode: v.partyCode } : {}), ...(v.counterAccountCode ? { counterAccountCode: v.counterAccountCode } : {}), ...(v.description ? { description: v.description } : {}),
-        lines: prop!.lines.map((l) => { const e = pick(l.lineNo); return { lineNo: l.lineNo, ...(e.itemCode ? { itemCode: e.itemCode } : {}), ...(e.accountCode ? { accountCode: e.accountCode } : {}), ...(e.taxCode ? { taxCode: e.taxCode } : {}) }; }),
+        lines: rows.filter((e) => e.convert).map((e) => ({ lineNo: e.lineNo, ...(e.itemCode.trim() ? { itemCode: e.itemCode.trim() } : {}), ...(e.accountCode.trim() ? { accountCode: e.accountCode.trim() } : {}), ...(e.taxCode.trim() ? { taxCode: e.taxCode.trim() } : {}) })),
       } }),
     onSuccess: (r, v) => { message.success('Đã lập chứng từ mua hàng (nháp)'); onDone(r.voucherId, v.voucherType); },
     onError: (e: Error) => message.error(e.message),
   });
-  const missing = !!prop && prop.lines.some((l) => !pick(l.lineNo).accountCode);
+  const missing = !!prop && rows.some((l) => l.convert && !l.accountCode.trim());
   const submit = () => { if (prop && !prop.blocked && !missing && !run.isPending) form.submit(); };
   // useHotkeys bỏ qua phím khi tiêu điểm ở trong hộp thoại, nên Ctrl+S của hộp thoại này tự nghe ở cửa sổ.
   const go = useRef(submit); go.current = submit;
@@ -75,8 +87,10 @@ function VoucherDialog({ id, onClose, onDone }: { id: number | null; onClose: ()
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
   }, [id]);
   return (
-    <Modal title="Lập chứng từ mua hàng từ hóa đơn đầu vào" open={id !== null} onCancel={onClose} width={900} destroyOnHidden afterClose={() => { form.resetFields(); setEdits({}); }}
+    <Modal title="Lập chứng từ mua hàng từ hóa đơn đầu vào" open={id !== null} onCancel={onClose} width={900} destroyOnHidden afterClose={() => form.resetFields()}
       footer={<Space><Button onClick={onClose}>Đóng</Button><Button type="primary" disabled={!prop || prop.blocked || missing} loading={run.isPending} onClick={submit}>Lập chứng từ (Ctrl+S)</Button></Space>}>
+      <PickDialog open={!!lookup} catalog={lookup ? GRID_CATALOG[lookup.col]! : 'account'} {...(lookupFetcher ? { fetcher: lookupFetcher } : {})}
+        onPick={(code) => { if (lookup) setRows((rs) => rs.map((r, i) => (i === lookup.row ? { ...r, [lookup.col]: code } : r))); }} onClose={() => setLookup(null)} />
       {prop?.blocked && <Alert type="error" showIcon style={{ marginBottom: 12 }} message="Hóa đơn bị chặn, không lập được chứng từ" description="Số tiền trong tệp XML sai dạng hoặc vượt giới hạn: xem cảnh báo trong chi tiết hóa đơn." />}
       {prop && (
         <Form form={form} layout="vertical" onFinish={(v) => run.mutate(v)} initialValues={{ postingDate: dayjs(), invoiceGroupCode: '01', voucherType: prop.voucherType, partyCode: prop.partyCode ?? undefined, createParty: !prop.partyCode }}>
@@ -88,16 +102,8 @@ function VoucherDialog({ id, onClose, onDone }: { id: number | null; onClose: ()
             {can('catalog.create') && <Form.Item noStyle shouldUpdate={(a, b) => a.partyCode !== b.partyCode}>{() => !form.getFieldValue('partyCode') && (
               <Form.Item name="createParty" valuePropName="checked" label=" "><Checkbox>Tạo nhà cung cấp mới từ hóa đơn</Checkbox></Form.Item>)}</Form.Item>}
           </Space>
-          <Table size="small" pagination={false} rowKey="lineNo" dataSource={prop.lines} style={{ marginBottom: 12 }} columns={[
-            { title: 'Dòng', dataIndex: 'lineNo', width: 56 },
-            { title: 'Tên hàng hóa, dịch vụ', dataIndex: 'name', ellipsis: true },
-            { title: 'Thành tiền', dataIndex: 'amount', width: 110, align: 'right', render: (v: string) => money(v) },
-            { title: 'TS', dataIndex: 'taxRate', width: 56, render: (v: string | null) => (v ? `${v}%` : '') },
-            { title: 'Tài khoản chi phí/kho', width: 160, render: (_: unknown, l) => (<LookupSelect catalog="account" fetcher={accounts} aria-label={`Tài khoản dòng ${l.lineNo}`} style={{ width: '100%' }} value={pick(l.lineNo).accountCode} onChange={(c) => setLine(l.lineNo, { accountCode: c })} />) },
-            { title: 'Mã hàng', width: 140, render: (_: unknown, l) => (<LookupSelect catalog="item" aria-label={`Mã hàng dòng ${l.lineNo}`} style={{ width: '100%' }} value={pick(l.lineNo).itemCode} onChange={(c) => setLine(l.lineNo, { itemCode: c })} />) },
-            { title: 'Mã thuế', width: 120, render: (_: unknown, l) => (<LookupSelect catalog="tax_code" fetcher={taxes} aria-label={`Mã thuế dòng ${l.lineNo}`} style={{ width: '100%' }} value={pick(l.lineNo).taxCode} onChange={(c) => setLine(l.lineNo, { taxCode: c })} />) },
-            { title: '', width: 56, render: (_: unknown, l) => (l.source === 'map' ? <Tooltip title="Lấy từ lần nhập trước của cùng người bán"><Tag color="green">Nhớ</Tag></Tooltip> : null) },
-          ]} />
+          <div style={{ marginBottom: 12 }}><KeyboardGrid<GridLine> rows={rows} columns={columns} onRowsChange={setRows} addRowTemplate={() => ({} as GridLine)} lockRows height={Math.min(320, 80 + 42 * rows.length)}
+            onLookup={(col, row) => { if (col in GRID_CATALOG && rows[row]?.convert) setLookup({ col, row }); }} /></div>
           <Form.Item name="description" label="Diễn giải"><Input aria-label="Diễn giải" /></Form.Item>
         </Form>
       )}
@@ -182,7 +188,7 @@ export default function InboundInvoicesPage() {
         { title: 'Chữ ký', dataIndex: 'signature', width: 110, render: (s: Row['signature']) => <Tooltip title={SIG[s].tip}><Tag color={SIG[s].color}>{SIG[s].label}</Tag></Tooltip> },
         { title: 'Trạng thái', dataIndex: 'status', width: 150, render: (s: string, r) => (<Space size={4}><Tag color={STATUS[s]?.color ?? 'default'}>{STATUS[s]?.label ?? s}</Tag>{r.blocked && <Tag color="red">Bị chặn</Tag>}{r.warningCount > 0 && <Tooltip title="Có cảnh báo: mở chi tiết để xem"><Tag color="gold">{r.warningCount}</Tag></Tooltip>}</Space>) },
         { title: '', width: 150, render: (_: unknown, r) => (<Space size={0}><Button type="link" size="small" onClick={() => setDetail(r.id)}>Chi tiết</Button>
-          {r.voucherId && <Button type="link" size="small" onClick={() => void nav({ to: '/chung-tu/$type/$id', params: { type: 'HDM', id: r.voucherId! } })}>Chứng từ</Button>}</Space>) },
+          {r.voucherId && <Button type="link" size="small" onClick={() => void nav({ to: '/chung-tu/$type/$id', params: { type: r.voucherType ?? 'HDM', id: r.voucherId! } })}>Chứng từ</Button>}</Space>) },
       ]} />
       <DetailDrawer id={detail} mayEdit={mayEdit} onClose={() => setDetail(null)} onVoucher={(id) => setConvert(id)} onIgnore={(id) => ignore.mutate(id)} />
       <VoucherDialog id={convert} onClose={() => setConvert(null)} onDone={(vid, type) => { setConvert(null); setDetail(null); refresh(); void nav({ to: '/chung-tu/$type/$id', params: { type, id: vid } }); }} />
