@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Alert, Button, DatePicker, InputNumber, Select, Space, Tabs } from 'antd';
+import { Alert, Button, DatePicker, InputNumber, Select, Tabs } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
-import { KeyboardGrid, useRememberedFilter } from '@kt/ui';
+import { KeyboardGrid, PageHeader, Toolbar, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -74,32 +74,40 @@ export default function AssetReportsPage() {
   const periodic = tab === 'depreciation' || tab === 'allocation';
 
   const body = () => {
-    if (!url) return <Alert type="info" showIcon message="Chọn tài sản để xem thẻ tài sản" />;
-    if (data.error) return <Alert type="error" showIcon message={(data.error as Error).message} />;
-    if (!data.data) return <Alert type="info" message="Đang tải…" />;
-    return <KeyboardGrid<Row> rows={rows} columns={columns} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly height="calc(100vh - 300px)" />;
+    if (!url) return <Alert type="info" showIcon message="Chọn tài sản để xem thẻ tài sản" style={{ marginBottom: 12 }} />;
+    if (data.error) return <Alert type="error" showIcon message={(data.error as Error).message} style={{ marginBottom: 12 }} />;
+    if (!data.data) return <Alert type="info" message="Đang tải…" style={{ marginBottom: 12 }} />;
+    return <KeyboardGrid<Row> rows={rows} columns={columns} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly height="calc(100vh - 260px)" />;
   };
 
   const tabs: { key: TabKey; label: string }[] = [{ key: 'register', label: 'Sổ TSCĐ' }, { key: 'card', label: 'Thẻ TSCĐ' }, { key: 'location', label: 'Sổ theo nơi sử dụng' }, { key: 'depreciation', label: 'Bảng khấu hao' },
     { key: 'movement', label: 'Tăng giảm tài sản' }, { key: 'tool', label: 'Sổ CCDC, trả trước' }, { key: 'allocation', label: 'Bảng phân bổ CCDC' }];
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Báo cáo tài sản</h2>
-        {periodic ? <>
-          <InputNumber aria-label="Năm" addonBefore="Năm" min={1900} max={2200} value={f.year} onChange={(v) => setF({ ...f, year: v ?? f.year })} />
-          <InputNumber aria-label="Kỳ" addonBefore="Kỳ" min={1} max={12} value={f.period} onChange={(v) => setF({ ...f, period: v ?? f.period })} />
-        </> : tab === 'card' ? <>
-          <DatePicker format="DD/MM/YYYY" allowClear={false} aria-label="Tính đến ngày" value={dayjs(f.to2)} onChange={(d) => d && setF({ ...f, to2: d.format('YYYY-MM-DD') })} />
-          <Select showSearch optionFilterProp="label" aria-label="Tài sản" placeholder="Tài sản (F4)" style={{ width: 280 }} value={f.assetId || undefined} onChange={(v) => setF({ ...f, assetId: v ?? 0 })}
-            options={(assets.data ?? []).map((a) => ({ value: a.id, label: `${a.code} - ${a.name}` }))} />
-        </> : <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />}
-        {tab === 'movement' && <Select aria-label="Nhóm tài sản" style={{ width: 200 }} value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={[{ value: 'fixed', label: 'Tài sản cố định' }, { value: 'tool', label: 'Công cụ, dụng cụ' }, { value: 'prepaid', label: 'Chi phí trả trước' }]} />}
-        {tab === 'tool' && <Select aria-label="Sổ theo dõi" style={{ width: 200 }} value={f.toolKind} onChange={(v) => setF({ ...f, toolKind: v })} options={[{ value: 'tool', label: 'Công cụ, dụng cụ' }, { value: 'prepaid', label: 'Chi phí trả trước' }]} />}
-        {can('report.print') && <><Button disabled={!url} onClick={() => printAs('pdf')}>In PDF</Button><Button disabled={!url} onClick={() => printAs('xlsx')}>Xuất Excel</Button></>}
-      </Space>
-      <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={tabs} />
+    <>
+      <PageHeader
+        title="Báo cáo tài sản"
+        extra={can('report.print') ? (
+          <>
+            <Button disabled={!url} onClick={() => printAs('pdf')}>In PDF</Button>
+            <Button disabled={!url} onClick={() => printAs('xlsx')}>Xuất Excel</Button>
+          </>
+        ) : undefined}
+      >
+        <Toolbar>
+          {periodic ? <>
+            <InputNumber aria-label="Năm" addonBefore="Năm" min={1900} max={2200} value={f.year} onChange={(v) => setF({ ...f, year: v ?? f.year })} />
+            <InputNumber aria-label="Kỳ" addonBefore="Kỳ" min={1} max={12} value={f.period} onChange={(v) => setF({ ...f, period: v ?? f.period })} />
+          </> : tab === 'card' ? <>
+            <DatePicker format="DD/MM/YYYY" allowClear={false} aria-label="Tính đến ngày" value={dayjs(f.to2)} onChange={(d) => d && setF({ ...f, to2: d.format('YYYY-MM-DD') })} />
+            <Select showSearch optionFilterProp="label" aria-label="Tài sản" placeholder="Tài sản (F4)" style={{ width: 280 }} value={f.assetId || undefined} onChange={(v) => setF({ ...f, assetId: v ?? 0 })}
+              options={(assets.data ?? []).map((a) => ({ value: a.id, label: `${a.code} - ${a.name}` }))} />
+          </> : <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />}
+          {tab === 'movement' && <Select aria-label="Nhóm tài sản" style={{ width: 200 }} value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={[{ value: 'fixed', label: 'Tài sản cố định' }, { value: 'tool', label: 'Công cụ, dụng cụ' }, { value: 'prepaid', label: 'Chi phí trả trước' }]} />}
+          {tab === 'tool' && <Select aria-label="Sổ theo dõi" style={{ width: 200 }} value={f.toolKind} onChange={(v) => setF({ ...f, toolKind: v })} options={[{ value: 'tool', label: 'Công cụ, dụng cụ' }, { value: 'prepaid', label: 'Chi phí trả trước' }]} />}
+        </Toolbar>
+      </PageHeader>
+      <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={tabs} style={{ marginBottom: 12 }} />
       {body()}
-    </Space>
+    </>
   );
 }

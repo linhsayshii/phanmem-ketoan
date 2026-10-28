@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, DatePicker, Popconfirm, Space, Table, Tag, message } from 'antd';
+import { Alert, Button, DatePicker, Popconfirm, Space, Table, Tag, theme, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber, parseVnNumber } from '@kt/domain';
-import { KeyboardGrid, LookupSelect } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, PageHeader, Toolbar, Section } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { EventDialog, type DialogAsset, type EventKindName } from './assetDialogs.js';
@@ -78,6 +78,7 @@ export default function AssetCountPage() {
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  const { token } = theme.useToken();
   const columns = useMemo<ColDef<Row>[]>(() => {
     const right = { cellClass: 'ag-right-aligned-cell', headerClass: 'ag-right-aligned-header' };
     return [
@@ -88,59 +89,87 @@ export default function AssetCountPage() {
       { field: 'actualQuantity', headerName: 'SL kiểm kê', width: 110, ...right, valueFormatter: (p) => qtyText(p.value as string),
         valueParser: (p) => { const t = String(p.newValue ?? '').trim(); if (t === '') return ''; const n = parseVnNumber(t); return n !== null && QTY_RE.test(n) ? n : p.oldValue; } },
       { colId: 'diff', headerName: 'Chênh lệch SL', width: 120, editable: false, ...right, valueGetter: (p) => (p.data ? diffOf(p.data)?.toFixed() ?? '' : ''), valueFormatter: (p) => qtyText(p.value as string),
-        cellStyle: (p) => (p.value && D(p.value as string).lt(0) ? { color: '#cf1322' } : p.value && D(p.value as string).gt(0) ? { color: '#d46b08' } : null) },
+        cellStyle: (p) => (p.value && D(p.value as string).lt(0) ? { color: token.colorError } : p.value && D(p.value as string).gt(0) ? { color: token.colorWarning } : null) },
       { field: 'condition', headerName: 'Tình trạng', width: 140 }, { field: 'note', headerName: 'Ghi chú', width: 180 },
     ];
-  }, []);
+  }, [token.colorError, token.colorWarning]);
 
   const diffs = rows.map(diffOf).filter((d) => d !== null && !d.isZero());
   const missing = diffs.filter((d) => d!.lt(0)).length; const surplus = diffs.length - missing;
   const suggestions = (current?.lines ?? []).filter((l) => l.suggestion);
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <Space wrap><h2 style={{ margin: 0 }}>Kiểm kê tài sản</h2>{current && <Button onClick={() => { setCurrent(null); setRows([]); }}>Kiểm kê mới</Button>}</Space>
-      {!current && can('asset.create') && (
-        <Space wrap align="end" size="middle">
-          <Space direction="vertical" size={2}><label htmlFor="ac-kind">Đối tượng kiểm kê</label>
-            <select id="ac-kind" value={kind} onChange={(e) => setKind(e.target.value as Doc['kind'])}><option value="fixed">{KIND.fixed}</option><option value="tool">{KIND.tool}</option></select></Space>
-          <Space direction="vertical" size={2}><label htmlFor="ac-date">Ngày kiểm kê</label>
-            <DatePicker id="ac-date" format="DD/MM/YYYY" allowClear={false} value={dayjs(date)} onChange={(d) => d && setDate(d.format('YYYY-MM-DD'))} /></Space>
-          <Space direction="vertical" size={2}><label htmlFor="ac-dept">Bộ phận (để trống: toàn đơn vị)</label>
-            <LookupSelect id="ac-dept" catalog="department" allowClear placeholder="Bộ phận (F4)" style={{ width: 240 }} value={dept} onChange={(v) => setDept(v ?? null)} /></Space>
-          <Button type="primary" loading={create.isPending} onClick={() => create.mutate()}>Lập biên bản kiểm kê</Button>
-        </Space>
-      )}
+    <>
+      <PageHeader
+        title="Kiểm kê tài sản"
+        description="Điền số sổ sách tại ngày kiểm kê, nhập số lượng kiểm kê, lưu, hoàn thành, in biên bản"
+        tags={current ? <Tag color={STATUS[current.status].color} style={{ marginRight: 0 }}>{STATUS[current.status].label}</Tag> : undefined}
+        extra={<>
+          {current && <Button onClick={() => { setCurrent(null); setRows([]); }}>Kiểm kê mới</Button>}
+          {!current && can('asset.create') && (
+            <Button type="primary" loading={create.isPending} onClick={() => create.mutate()}>
+              Lập biên bản kiểm kê
+            </Button>
+          )}
+          {current && editable && <Button loading={fill.isPending} onClick={() => fill.mutate()}>Điền số sổ sách</Button>}
+          {current && editable && <Button type="primary" loading={save.isPending} onClick={() => save.mutate()}>Lưu (Ctrl+S)</Button>}
+          {current && editable && (
+            <Popconfirm title="Hoàn thành biên bản kiểm kê?" description="Sau khi hoàn thành không sửa số kiểm kê được." okText="Hoàn thành" cancelText="Không" onConfirm={() => finish.mutate()}>
+              <Button loading={finish.isPending} disabled={!rows.length}>Hoàn thành</Button>
+            </Popconfirm>
+          )}
+          {current && can('asset.view') && <Button onClick={() => window.open(`/api/print/asset-count/${current.id}?format=pdf`, '_blank')}>In biên bản</Button>}
+          {current && editable && can('asset.delete') && (
+            <Popconfirm title="Xóa biên bản kiểm kê này?" okText="Xóa" cancelText="Không" onConfirm={() => remove.mutate(current.id)}>
+              <Button danger>Xóa</Button>
+            </Popconfirm>
+          )}
+        </>}
+      >
+        {!current && can('asset.create') && (
+          <Toolbar>
+            <Space size={6} align="center">
+              <label htmlFor="ac-kind">Đối tượng kiểm kê</label>
+              <select id="ac-kind" value={kind} onChange={(e) => setKind(e.target.value as Doc['kind'])}>
+                <option value="fixed">{KIND.fixed}</option>
+                <option value="tool">{KIND.tool}</option>
+              </select>
+            </Space>
+            <Space size={6} align="center">
+              <label htmlFor="ac-date">Ngày kiểm kê</label>
+              <DatePicker id="ac-date" format="DD/MM/YYYY" allowClear={false} value={dayjs(date)} onChange={(d) => d && setDate(d.format('YYYY-MM-DD'))} />
+            </Space>
+            <Space size={6} align="center">
+              <label htmlFor="ac-dept">Bộ phận (để trống: toàn đơn vị)</label>
+              <LookupSelect id="ac-dept" catalog="department" allowClear placeholder="Bộ phận (F4)" style={{ width: 240 }} value={dept} onChange={(v) => setDept(v ?? null)} />
+            </Space>
+          </Toolbar>
+        )}
+      </PageHeader>
       {current && (
-        <>
-          <Space wrap>
-            <b>Biên bản số {current.id}</b><span>{KIND[current.kind]}</span><span>Ngày {formatVnDate(current.countDate)}</span>{current.departmentName && <span>Bộ phận {current.departmentName}</span>}
-            <Tag color={STATUS[current.status].color}>{STATUS[current.status].label}</Tag>
-            {editable && <Button loading={fill.isPending} onClick={() => fill.mutate()}>Điền số sổ sách</Button>}
-            {editable && <Button type="primary" loading={save.isPending} onClick={() => save.mutate()}>Lưu (Ctrl+S)</Button>}
-            {editable && <Popconfirm title="Hoàn thành biên bản kiểm kê?" description="Sau khi hoàn thành không sửa số kiểm kê được." okText="Hoàn thành" cancelText="Không" onConfirm={() => finish.mutate()}>
-              <Button loading={finish.isPending} disabled={!rows.length}>Hoàn thành</Button></Popconfirm>}
-            {can('asset.view') && <Button onClick={() => window.open(`/api/print/asset-count/${current.id}?format=pdf`, '_blank')}>In biên bản</Button>}
-            {editable && can('asset.delete') && <Popconfirm title="Xóa biên bản kiểm kê này?" okText="Xóa" cancelText="Không" onConfirm={() => remove.mutate(current.id)}><Button danger>Xóa</Button></Popconfirm>}
-          </Space>
-          <div>Chênh lệch: <b data-testid="ac-missing">{missing}</b> dòng thiếu, <b data-testid="ac-surplus">{surplus}</b> dòng thừa. Số sổ sách lấy tại ngày kiểm kê; nguyên giá và giá trị còn lại theo kiểm kê tính theo tỷ lệ số lượng.</div>
+        <Section title={<Space size="middle"><b>Biên bản số {current.id}</b><span>{KIND[current.kind]}</span><span>Ngày {formatVnDate(current.countDate)}</span>{current.departmentName && <span>Bộ phận {current.departmentName}</span>}</Space>}>
+          <div style={{ marginBottom: 8 }}>
+            Chênh lệch: <b data-testid="ac-missing" className="kt-num">{missing}</b> dòng thiếu, <b data-testid="ac-surplus" className="kt-num">{surplus}</b> dòng thừa. Số sổ sách lấy tại ngày kiểm kê; nguyên giá và giá trị còn lại theo kiểm kê tính theo tỷ lệ số lượng.
+          </div>
           <KeyboardGrid<Row> rows={rows} columns={columns} onRowsChange={setRows} addRowTemplate={() => ({ assetId: 0, code: '', name: '', bookQuantity: '0', actualQuantity: '', bookCost: '0', bookNbv: '0', condition: '', note: '' })}
             lockRows readOnly={!editable} height={Math.min(560, 90 + Math.max(rows.length, 4) * 42)} />
           {suggestions.length > 0 && (
-            <Alert type="warning" showIcon message="Xử lý chênh lệch: biên bản không tự ghi sổ; lập biến động cho từng thẻ"
+            <Alert type="warning" showIcon style={{ marginTop: 12 }} message="Xử lý chênh lệch: biên bản không tự ghi sổ; lập biến động cho từng thẻ"
               description={<Table<Line> size="small" rowKey="assetId" pagination={false} dataSource={suggestions} columns={[
                 { title: 'Mã', dataIndex: 'code', width: 120 }, { title: 'Tên', dataIndex: 'name' },
-                { title: 'Chênh lệch SL', dataIndex: 'diffQuantity', align: 'right', render: qtyText }, { title: 'Chênh lệch nguyên giá', dataIndex: 'diffCost', align: 'right', render: moneyText },
+                { title: 'Chênh lệch SL', dataIndex: 'diffQuantity', align: 'right', render: qtyText, className: 'kt-num' }, { title: 'Chênh lệch nguyên giá', dataIndex: 'diffCost', align: 'right', render: moneyText, className: 'kt-num' },
                 { title: '', width: 120, render: (_, l) => (can('asset.update') ? <Button size="small" onClick={() => void suggest(l)}>{l.suggestion === 'decrease' ? 'Ghi giảm' : 'Ghi tăng'}</Button> : null) }]} />} />)}
           {dialog && <EventDialog asset={dialog.card} kind={dialog.kind} onClose={() => setDialog(null)} onDone={() => void refresh()} />}
-        </>
+        </Section>
       )}
-      <Table<Doc> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 10, hideOnSinglePage: true }} title={() => <b>Các biên bản kiểm kê gần đây</b>}
-        rowClassName={(d) => (d.id === current?.id ? 'ant-table-row-selected' : '')} onRow={(d) => ({ onClick: () => { api<Doc>(base(d.id)).then(open, fail); }, style: { cursor: 'pointer' } })}
-        columns={[
-          { title: 'Số', dataIndex: 'id', width: 70 }, { title: 'Đối tượng', dataIndex: 'kind', render: (k: Doc['kind']) => KIND[k] }, { title: 'Ngày kiểm kê', dataIndex: 'countDate', width: 130, render: (d: string) => formatVnDate(d) },
-          { title: 'Số dòng', width: 90, align: 'right', render: (_, d) => d.lineCount ?? d.lines.length }, { title: 'Trạng thái', render: (_, d) => <Tag color={STATUS[d.status].color}>{STATUS[d.status].label}</Tag> },
-        ]} />
-    </Space>
+      <Section title="Các biên bản kiểm kê gần đây" style={{ marginTop: 16 }} bodyPadding={0}>
+        <Table<Doc> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 10, hideOnSinglePage: true }}
+          rowClassName={(d) => (d.id === current?.id ? 'ant-table-row-selected' : '')} onRow={(d) => ({ onClick: () => { api<Doc>(base(d.id)).then(open, fail); }, style: { cursor: 'pointer' } })}
+          columns={[
+            { title: 'Số', dataIndex: 'id', width: 70, className: 'kt-num' }, { title: 'Đối tượng', dataIndex: 'kind', render: (k: Doc['kind']) => KIND[k] }, { title: 'Ngày kiểm kê', dataIndex: 'countDate', width: 130, render: (d: string) => formatVnDate(d) },
+            { title: 'Số dòng', width: 90, align: 'right', render: (_, d) => d.lineCount ?? d.lines.length, className: 'kt-num' }, { title: 'Trạng thái', render: (_, d) => <Tag color={STATUS[d.status].color}>{STATUS[d.status].label}</Tag> },
+          ]} />
+      </Section>
+    </>
   );
 }

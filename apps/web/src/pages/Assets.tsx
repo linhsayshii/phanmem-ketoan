@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
-import { LookupSelect, useHotkeys, useRememberedFilter, VnNumberInput } from '@kt/ui';
+import { COLOR, LookupSelect, PageHeader, Toolbar, Section, useHotkeys, useRememberedFilter, VnNumberInput } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor, assetCategoryFetcher } from '../lookups.js';
@@ -141,25 +141,35 @@ export function AssetsPage({ kind }: { kind: AssetKind }) {
   const rows = (list.data ?? []).filter((r) => (!f.categoryCode || r.categoryCode === f.categoryCode) && (!f.departmentCode || r.departmentCode === f.departmentCode) && (!f.status || r.status === f.status));
   useHotkeys({ Insert: () => { if (can('asset.create') && !open) setOpen('new'); } });
   return (
-    <div>
-      <Space wrap style={{ marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>{KIND_LABEL[kind]}</h2>
-        <Input.Search placeholder="Tìm theo mã, tên" allowClear defaultValue={f.q} onSearch={(q) => setF({ ...f, q })} style={{ width: 220 }} />
-        <LookupSelect catalog="asset_category" fetcher={catFetcher} allowClear placeholder="Loại" value={f.categoryCode || null} onChange={(c) => setF({ ...f, categoryCode: c ?? '' })} style={{ width: 200 }} />
-        <LookupSelect catalog="department" allowClear placeholder="Bộ phận" value={f.departmentCode || null} onChange={(c) => setF({ ...f, departmentCode: c ?? '' })} style={{ width: 200 }} />
-        <select aria-label="Trạng thái" value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}><option value="">Mọi trạng thái</option><option value="active">Đang dùng</option><option value="decreased">Đã ghi giảm</option></select>
-        {can('asset.create') && <Button type="primary" onClick={() => setOpen('new')}>Thêm (Insert)</Button>}
-      </Space>
-      <Table<AssetRow> size="small" rowKey="id" loading={list.isLoading} dataSource={rows} pagination={{ pageSize: 50, hideOnSinglePage: true }} data-testid="assets-table"
-        onRow={(r) => ({ onClick: () => setOpen(r), tabIndex: 0, onKeyDown: (e) => { if (e.key === 'Enter') setOpen(r); }, style: { cursor: 'pointer' } })} locale={{ emptyText: 'Chưa có thẻ nào' }}
-        columns={[{ title: 'Mã', dataIndex: 'code' }, { title: 'Tên', dataIndex: 'name' }, { title: 'Loại', dataIndex: 'categoryCode' }, { title: 'Bộ phận', dataIndex: 'departmentCode' },
-          { title: 'Ngày sử dụng', dataIndex: 'useDate', render: (d: string | null) => (d ? formatVnDate(d) : '') },
-          { title: 'Nguyên giá', dataIndex: 'cost', align: 'right', render: money }, { title: 'Hao mòn lũy kế', dataIndex: 'accumulated', align: 'right', render: money },
-          { title: 'Giá trị còn lại', align: 'right', render: (_, r) => money(D(r.cost).minus(r.accumulated).toString()) },
-
-          { title: 'Số kỳ còn lại', dataIndex: 'remainingUnits', align: 'right' }, { title: 'Trạng thái', dataIndex: 'status', render: (s: string) => STATUS_LABEL[s] ?? s }]} />
+    <>
+      <PageHeader
+        title={KIND_LABEL[kind]}
+        extra={can('asset.create') && <Button type="primary" onClick={() => setOpen('new')}>Thêm (Insert)</Button>}
+      >
+        <Toolbar>
+          <Input.Search placeholder="Tìm theo mã, tên" allowClear defaultValue={f.q} onSearch={(q) => setF({ ...f, q })} style={{ width: 220 }} />
+          <LookupSelect catalog="asset_category" fetcher={catFetcher} allowClear placeholder="Loại" value={f.categoryCode || null} onChange={(c) => setF({ ...f, categoryCode: c ?? '' })} style={{ width: 200 }} />
+          <LookupSelect catalog="department" allowClear placeholder="Bộ phận" value={f.departmentCode || null} onChange={(c) => setF({ ...f, departmentCode: c ?? '' })} style={{ width: 200 }} />
+          <select aria-label="Trạng thái" value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}><option value="">Mọi trạng thái</option><option value="active">Đang dùng</option><option value="decreased">Đã ghi giảm</option></select>
+          {list.data !== undefined && (
+            <span style={{ marginLeft: 'auto', color: COLOR.textSecondary, fontSize: 13 }}>
+              {formatVnNumber(String(rows.length))} thẻ
+            </span>
+          )}
+        </Toolbar>
+      </PageHeader>
+      <Section bodyPadding={0}>
+        <Table<AssetRow> size="small" rowKey="id" loading={list.isLoading} dataSource={rows} pagination={{ pageSize: 50, hideOnSinglePage: true }} data-testid="assets-table"
+          onRow={(r) => ({ onClick: () => setOpen(r), tabIndex: 0, onKeyDown: (e) => { if (e.key === 'Enter') setOpen(r); }, style: { cursor: 'pointer' } })} locale={{ emptyText: 'Chưa có thẻ nào' }}
+          columns={[{ title: 'Mã', dataIndex: 'code' }, { title: 'Tên', dataIndex: 'name' }, { title: 'Loại', dataIndex: 'categoryCode' }, { title: 'Bộ phận', dataIndex: 'departmentCode' },
+            { title: 'Ngày sử dụng', dataIndex: 'useDate', render: (d: string | null) => (d ? formatVnDate(d) : '') },
+            { title: 'Nguyên giá', dataIndex: 'cost', align: 'right', render: money, className: 'kt-num' }, { title: 'Hao mòn lũy kế', dataIndex: 'accumulated', align: 'right', render: money, className: 'kt-num' },
+            { title: 'Giá trị còn lại', align: 'right', render: (_, r) => money(D(r.cost).minus(r.accumulated).toString()), className: 'kt-num' },
+            { title: 'Số kỳ còn lại', dataIndex: 'remainingUnits', align: 'right', className: 'kt-num' }, { title: 'Trạng thái', dataIndex: 'status', render: (s: string) => STATUS_LABEL[s] ?? s }]} />
+      </Section>
       {open && <AssetDrawer kind={kind} asset={open} onClose={() => setOpen(null)} />}
-    </div>);
+    </>
+  );
 }
 export const FixedAssetsPage = () => <AssetsPage kind="fixed" />;
 export const ToolsPage = () => <AssetsPage kind="tool" />;
@@ -180,13 +190,18 @@ export function AssetCategoriesPage() {
     onError: (e) => setErr((e as Error).message), onSuccess: () => { setEditing(null); void qc.invalidateQueries({ queryKey: ['asset-categories'] }); void message.success('Đã lưu loại tài sản'); } });
   const del = useMutation({ mutationFn: (id: number) => api(`/api/asset-categories/${id}`, { method: 'DELETE' }), onError: (e) => void message.error((e as Error).message), onSuccess: () => void qc.invalidateQueries({ queryKey: ['asset-categories'] }) });
   return (
-    <div>
-      <Space style={{ marginBottom: 12 }}><h2 style={{ margin: 0 }}>Loại tài sản</h2>{can('asset.create') && <Button type="primary" onClick={() => openEdit('new')}>Thêm loại</Button>}</Space>
-      <Table<Category> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={false} data-testid="categories-table"
-        columns={[{ title: 'Mã', dataIndex: 'code' }, { title: 'Tên', dataIndex: 'name' }, { title: 'Nhóm', dataIndex: 'kind', render: (k: AssetKind) => KIND_LABEL[k] }, { title: 'TK tài sản', dataIndex: 'assetAccountCode' },
-          { title: 'TK hao mòn', dataIndex: 'depreciationAccountCode' }, { title: 'Số kỳ mặc định', dataIndex: 'defaultLifeUnits', align: 'right' }, { title: 'Dùng', dataIndex: 'isActive', render: (b: boolean) => (b ? 'Có' : 'Ngưng') },
-          { title: '', render: (_, r) => (<Space>{can('asset.update') && <Button size="small" onClick={() => openEdit(r)}>Sửa</Button>}
-            {can('asset.delete') && <Popconfirm title="Xóa loại này?" okText="Xóa" cancelText="Không" onConfirm={() => del.mutate(r.id)}><Button size="small" danger>Xóa</Button></Popconfirm>}</Space>) }]} />
+    <>
+      <PageHeader
+        title="Loại tài sản"
+        extra={can('asset.create') && <Button type="primary" onClick={() => openEdit('new')}>Thêm loại</Button>}
+      />
+      <Section bodyPadding={0}>
+        <Table<Category> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={false} data-testid="categories-table"
+          columns={[{ title: 'Mã', dataIndex: 'code' }, { title: 'Tên', dataIndex: 'name' }, { title: 'Nhóm', dataIndex: 'kind', render: (k: AssetKind) => KIND_LABEL[k] }, { title: 'TK tài sản', dataIndex: 'assetAccountCode' },
+            { title: 'TK hao mòn', dataIndex: 'depreciationAccountCode' }, { title: 'Số kỳ mặc định', dataIndex: 'defaultLifeUnits', align: 'right', className: 'kt-num' }, { title: 'Dùng', dataIndex: 'isActive', render: (b: boolean) => (b ? 'Có' : 'Ngưng') },
+            { title: '', render: (_, r) => (<Space>{can('asset.update') && <Button size="small" onClick={() => openEdit(r)}>Sửa</Button>}
+              {can('asset.delete') && <Popconfirm title="Xóa loại này?" okText="Xóa" cancelText="Không" onConfirm={() => del.mutate(r.id)}><Button size="small" danger>Xóa</Button></Popconfirm>}</Space>) }]} />
+      </Section>
       <Modal open={editing !== null} title={editing === 'new' ? 'Thêm loại tài sản' : 'Sửa loại tài sản'} okText="Lưu" cancelText="Bỏ qua" onCancel={() => setEditing(null)} onOk={() => { void form.validateFields().then((v) => save.mutate(v), () => undefined); }} confirmLoading={save.isPending} forceRender>
         <Form form={form} layout="vertical">
           <Form.Item label="Mã" name="code" rules={[{ required: true, whitespace: true }]}><Input maxLength={30} /></Form.Item>
@@ -199,5 +214,6 @@ export function AssetCategoriesPage() {
           {err && <Alert type="error" showIcon message={err} />}
         </Form>
       </Modal>
-    </div>);
+    </>
+  );
 }
