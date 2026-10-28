@@ -25,14 +25,15 @@ export function VoucherBranchField({ voucherId, editable, onPick }: { voucherId:
   if (!branches.data?.rows?.length) return null;
   const options = unitOptions(branches.data);
   if (voucherId && !editable) return <Form.Item label="Chi nhánh"><Tag data-testid="voucher-branch">{value === undefined ? '…' : unitLabel(branches.data, value)}</Tag></Form.Item>;
-  return (
-    <Form.Item label="Chi nhánh" name={voucherId ? undefined : 'branchUnit'}>
-      <Select aria-label="Chi nhánh của chứng từ" options={options} loading={change.isPending} {...(voucherId ? { value: value === undefined ? undefined : unitValue(value) } : {})}
-        onChange={(v: string) => {
-          const unit: Unit = v === 'HO' ? 'HO' : Number(v);
-          if (voucherId) change.mutate(unit);
-          else onPick?.(unit === working.data?.working ? undefined : unit);
-        }} />
-    </Form.Item>
+  const select = (extra: { value?: string | null }) => (
+    <Select aria-label="Chi nhánh của chứng từ" options={options} loading={change.isPending} {...extra}
+      onChange={(v: string) => {
+        const unit: Unit = v === 'HO' ? 'HO' : Number(v);
+        if (voucherId) change.mutate(unit);
+        else onPick?.(unit === working.data?.working ? undefined : unit);
+      }} />
   );
+  return voucherId
+    ? <Form.Item label="Chi nhánh">{select({ value: value === undefined ? null : unitValue(value) })}</Form.Item>
+    : <Form.Item label="Chi nhánh" name="branchUnit">{select({})}</Form.Item>;
 }
