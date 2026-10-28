@@ -1,3 +1,4 @@
+import { Modal } from 'antd';
 import { ApiError, api } from '../api/client.js';
 
 export interface SigningProfile { id: number; kind: 'local_agent' | 'smartca' | 'fake'; label: string; certSubject: string; certSerial: string; certNotAfter: string; isDefault: boolean; hasCredentials: boolean; expired: boolean }
@@ -7,12 +8,12 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Ký một chứng từ. Tiện ích cục bộ: trình duyệt gọi tiện ích (127.0.0.1) để ký băm rồi gửi chữ ký lên máy chủ. SmartCA/giả lập: máy chủ ký, trình duyệt hỏi kết quả.
 // Khóa riêng không bao giờ qua trình duyệt hay máy chủ. Trả mã phiên đã ký.
-export async function signDocument(a: { docKind: 'vat_return' | 'cit_return'; docRef: string; profileId?: number }, onStatus: (text: string) => void = () => undefined): Promise<string> {
+export async function signDocument(a: { docKind: 'vat_return' | 'cit_return'; docRef: string; profileId?: number; acknowledgeUnverified?: boolean }, onStatus: (text: string) => void = () => undefined): Promise<string> {
   const profiles = await api<SigningProfile[]>('/api/signing/profiles');
   const profile = a.profileId ? profiles.find((p) => p.id === a.profileId) : profiles.find((p) => p.isDefault);
   if (!profile) throw new ApiError('SIGNING_PROFILE_MISSING', 'Chưa có hồ sơ ký số: thêm chứng thư ở Cài đặt ký số', 409);
   onStatus('Đang dựng tệp cần ký');
-  const s = await api<Session>('/api/signing/sessions', { method: 'POST', json: { docKind: a.docKind, docRef: a.docRef, profileId: profile.id } });
+  const s = await api<Session>('/api/signing/sessions', { method: 'POST', json: { docKind: a.docKind, docRef: a.docRef, profileId: profile.id, ...(a.acknowledgeUnverified && { acknowledgeUnverified: true }) } });
   if (s.mode === 'client') {
     onStatus('Chờ tiện ích ký số xác nhận (xem cửa sổ dòng lệnh của tiện ích)');
     let r: Response;
@@ -42,3 +43,16 @@ export async function downloadSigned(xmlUrl: string, sessionId: string, fallback
   const url = URL.createObjectURL(await res.blob()); const a = document.createElement('a'); a.href = url; a.download = name ? decodeURIComponent(name) : fallbackName; a.click(); URL.revokeObjectURL(url);
 }
 export const downloadSignedVatReturn = (returnId: number, sessionId: string): Promise<void> => downloadSigned(`/api/tax/vat-returns/${returnId}/xml`, sessionId, 'to-khai-01-gtgt_signed.xml');
+
+// Ký tờ khai: định dạng XML chưa kiểm chứng với HTKK (máy chủ trả XML_FORMAT_UNVERIFIED) thì hỏi xác nhận rõ ràng rồi ký lại với acknowledgeUnverified; không đồng ý thì ném lỗi gốc.
+export async function signDocumentConfirmed(a: Parameters<typeof signDocument>[0], onStatus?: (text: string) => void): Promise<string> {
+  try { return await signDocument(a, onStatus); }
+  catch (e) {
+    if (!(e instanceof ApiError) || e.code !== 'XML_FORMAT_UNVERIFIED') throw e;
+    const ok = await new Promise<boolean>((resolve) => Modal.confirm({ title: 'Ký tệp XML chưa kiểm chứng?', width: 520,
+      content: 'Tên thẻ, mã mẫu và phiên bản trong tệp là giả định tạm của phần mềm, chưa đối chiếu với tệp HTKK thật. Ký rồi nộp có thể bị cơ quan thuế từ chối. Nên nạp thử vào HTKK trước. Việc ký bản chưa kiểm chứng được ghi nhật ký.',
+      okText: 'Vẫn ký', okButtonProps: { danger: true }, cancelText: 'Không ký', onOk: () => resolve(true), onCancel: () => resolve(false) }));
+    if (!ok) throw e;
+    return signDocument({ ...a, acknowledgeUnverified: true }, onStatus);
+  }
+}

@@ -6,7 +6,7 @@ import { notifyRecompute } from '../ledger/notifyRecompute.js';
 import { logCloseStep, periodOfDate, runSummary } from '../ledger/periodClose.js';
 import { invoiceRegister, reconcileDoc, reconcileTax, registerDoc } from './register.js';
 import { offsetInput, runVatOffset } from './vatOffset.js';
-import { createReturn, deleteReturn, finalizeReturn, getReturn, listReturns, previewReturn, returnDoc, returnInput, returnUpdate, templateOfPeriod, updateReturn } from './vatReturn.js';
+import { createReturn, deleteReturn, finalizeInput, finalizeReturn, getReturn, listReturns, previewReturn, returnDoc, returnInput, returnUpdate, templateOfPeriod, updateReturn } from './vatReturn.js';
 import { XML_FORMATS } from './xml/index.js';
 import { renderReturnXml } from './vatXml.js';
 import { AppError } from '../../plugins/errors.js';
@@ -53,8 +53,8 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     await app.withTenant(req, (trx) => deleteReturn(trx, req.auth!.tenantId!, req.params.id), SNAPSHOT_RW);
     return reply.status(204).send();
   });
-  app.post('/api/tax/vat-returns/:id/finalize', { preHandler: app.requirePermission('tax_return.finalize'), schema: { params: numId } }, async (req) =>
-    app.withTenant(req, (trx) => finalizeReturn(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.params.id), SNAPSHOT_RW));
+  app.post('/api/tax/vat-returns/:id/finalize', { preHandler: app.requirePermission('tax_return.finalize'), schema: { params: numId, body: finalizeInput.nullish() } }, async (req) =>
+    app.withTenant(req, (trx) => finalizeReturn(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.params.id, req.body?.acknowledge), SNAPSHOT_RW));
 
   // In tờ khai theo bố cục mẫu (html, pdf): cần thêm report.print; bản nháp in kèm chữ "bản nháp".
   app.get('/api/tax/vat-returns/:id/print', { preHandler: app.requirePermission('tax_return.view'), schema: { params: numId, querystring: z.object({ format: z.enum(['html', 'pdf']).default('pdf') }) } }, async (req, reply) => {

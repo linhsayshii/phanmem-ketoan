@@ -8,3 +8,13 @@ export async function legalParam<T>(trx: Kysely<Database>, code: string, date: s
     .where((eb) => eb.or([eb('valid_to', 'is', null), eb('valid_to', '>=', date)])).executeTakeFirst();
   return r ? (r.value as T) : null;
 }
+
+// Thuế suất GTGT giảm (tham số vat_reduced_rate: value.to là thuế suất sau giảm, hiện 8%) có hiệu lực tại ngày không?
+// Trả false chỉ khi `rate` đúng là thuế suất giảm của một dòng tham số mà không dòng nào bao ngày đó (vd. sau 31/12/2026, hết hiệu lực NQ 204/2025). Thuế suất khác (0, 5, 10) luôn true.
+// Thuế suất giảm lấy từ dữ liệu, không viết cứng: khi có nghị quyết mới thêm dòng tham số thì tự có hiệu lực.
+export async function isReducedVatRateEffective(trx: Kysely<Database>, rate: string, date: string): Promise<boolean> {
+  const rows = await trx.selectFrom('legal_param').select(['value', 'valid_from', 'valid_to']).where('code', '=', 'vat_reduced_rate').execute();
+  const mine = rows.filter((r) => String((r.value as { to?: number | string }).to) === rate);
+  if (!mine.length) return true;
+  return mine.some((r) => r.valid_from <= date && (r.valid_to === null || r.valid_to >= date));
+}
