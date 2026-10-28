@@ -1,0 +1,60 @@
+:root {
+  --kt-border: #e5e7eb;
+  --kt-text-secondary: rgba(0, 0, 0, 0.55);
+  --kt-bg-layout: #f3f4f6;
+}
+
+/* Phông chữ số và nền toàn cục theo evon:ui-ux */
+body {
+  background-color: var(--kt-bg-layout);
+  margin: 0;
+}
+
+.kt-page-title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.kt-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Thanh cuộn 8px mảnh, tự đậm khi rê */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* StatStrip trên màn hình nhỏ (<768px): 2 cột */
+@media (max-width: 767px) {
+  .kt-stat-strip {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .kt-stat-item {
+    border-right: 1px solid var(--kt-border) !important;
+    border-bottom: 1px solid var(--kt-border) !important;
+  }
+  .kt-stat-item:nth-child(2n) {
+    border-right: none !important;
+  }
+  .kt-stat-item:last-child {
+    border-bottom: none !important;
+  }
+}

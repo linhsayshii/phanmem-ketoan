@@ -30,6 +30,7 @@ test('Danh mục đối tượng: thêm, ngưng dùng, lọc', async ({ page, re
   await expect(page.getByText('Đã ngưng dùng')).toBeVisible();
   await expect(row).toHaveCount(0); // bộ lọc mặc định "Đang dùng" ẩn dòng vừa ngưng
 
+  await expect(page.locator('.ant-message-notice')).toHaveCount(0); // thông báo nổi ở giữa đầu trang có thể đè lên ô Trạng thái
   await page.getByRole('combobox', { name: 'Trạng thái' }).click({ force: true }); await page.locator('.ant-select-item-option', { hasText: 'Ngưng dùng' }).click();
   await expect(page.locator('.ag-row', { hasText: code })).toBeVisible();
 });

@@ -7,6 +7,7 @@ import { RouterProvider } from '@tanstack/react-router';
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
 import 'antd/dist/reset.css';
+import '@kt/ui/app.css';
 import { AuthProvider } from './auth.js';
 import { appTheme } from '@kt/ui';
 import { router } from './router.js';

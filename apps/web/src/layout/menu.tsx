@@ -141,3 +141,44 @@ export const MENU: MenuItem[] = [
     { key: 'assistant', label: 'Bút toán định kỳ, nhận diện hóa đơn', to: '/tro-ly', permission: 'assistant.use' },
   ] },
 ];
+
+export interface MatchedMenuRoute {
+  leaf: MenuItem | null;
+  group: MenuItem | null;
+  selectedKey: string;
+}
+
+// Khớp đường dẫn theo nguyên tắc: path === to || path.startsWith(to + '/').
+// Nếu nhiều mục khớp thì chọn mục có to dài nhất.
+export function matchMenuRoute(items: MenuItem[], path: string): MatchedMenuRoute {
+  let bestLeaf: MenuItem | null = null;
+  let bestGroup: MenuItem | null = null;
+  let maxLen = -1;
+
+  for (const item of items) {
+    if (item.children) {
+      for (const child of item.children) {
+        const matches = path === child.to || (child.to !== '/' && path.startsWith(child.to + '/'));
+        if (matches && child.to.length > maxLen) {
+          maxLen = child.to.length;
+          bestLeaf = child;
+          bestGroup = item;
+        }
+      }
+    } else {
+      const matches = path === item.to || (item.to !== '/' && path.startsWith(item.to + '/'));
+      if (matches && item.to.length > maxLen) {
+        maxLen = item.to.length;
+        bestLeaf = item;
+        bestGroup = null;
+      }
+    }
+  }
+
+  return {
+    leaf: bestLeaf,
+    group: bestGroup,
+    selectedKey: bestLeaf?.to ?? path,
+  };
+}
+
