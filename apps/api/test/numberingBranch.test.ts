@@ -141,6 +141,19 @@ describe('đánh số theo chi nhánh', () => {
     expect(kc.map((x) => Number(x.seq_no))).toEqual(kc.map((_, i) => i + 1));
   });
 
+  it('đánh lại số: bộ đếm có đủ mọi chi nhánh xuất hiện trên chứng từ, kể cả bộ phận đã bỏ cờ chi nhánh', async () => {
+    const b = await draft('2026-04-02', brB); await post(b);
+    await sql`UPDATE department SET is_branch = false WHERE tenant_id = ${tenantId}::uuid AND id = ${brB}`.execute(ctx.t.admin);
+    try {
+      await sql`DELETE FROM voucher_counter WHERE tenant_id = ${tenantId}::uuid AND voucher_type = 'PKT' AND fiscal_year = 2026 AND branch_key = ${brB}`.execute(ctx.t.admin);
+      await ok('POST', '/api/vouchers/renumber', owner, { voucherType: 'PKT', fiscalYear: 2026 });
+      const n = (await sql<{ n: number }>`SELECT count(*)::int AS n FROM voucher WHERE tenant_id = ${tenantId}::uuid AND voucher_type = 'PKT' AND fiscal_year = 2026 AND voucher_no IS NOT NULL AND branch_id = ${brB}`.execute(ctx.t.admin)).rows[0]!.n;
+      const c = await sql<{ last_no: string }>`SELECT last_no FROM voucher_counter WHERE tenant_id = ${tenantId}::uuid AND voucher_type = 'PKT' AND fiscal_year = 2026 AND branch_key = ${brB}`.execute(ctx.t.admin);
+      expect(n).toBeGreaterThan(0);
+      expect(c.rows.map((r) => Number(r.last_no))).toEqual([n]);
+    } finally { await sql`UPDATE department SET is_branch = true WHERE tenant_id = ${tenantId}::uuid AND id = ${brB}`.execute(ctx.t.admin); }
+  });
+
   it('cấu hình: mã trụ sở chính không trùng mã chi nhánh; cần quyền setting.update', async () => {
     expect((await settings(true, 'HN')).json().error.code).toBe('NUMBERING_CODE_CONFLICT');
     expect((await req('POST', '/api/branches', owner, { code: 'TSC', name: 'Trùng mã' })).json().error.code).toBe('NUMBERING_CODE_CONFLICT');
