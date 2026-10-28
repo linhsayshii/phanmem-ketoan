@@ -560,4 +560,10 @@ export interface Database {
   approval_request: ApprovalRequestTable;
   approval_step_log: ApprovalStepLogTable;
   approval_attachment: ApprovalAttachmentTable;
+  user_branch_scope: UserBranchScopeTable;
+  branch_consolidation_setting: BranchConsolidationSettingTable;
 }
+
+// GĐ7 nhóm 5: đa chi nhánh (0240). voucher.branch_id, department.tax_code đọc/ghi qua sql trong modules/branch.
+export interface UserBranchScopeTable { id: Generated<number>; tenant_id: string; user_id: string; branch_id: number | null }
+export interface BranchConsolidationSettingTable { tenant_id: string; internal_prefixes: string[]; updated_at: Generated<string> }

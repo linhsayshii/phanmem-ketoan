@@ -6,6 +6,7 @@ import type { AuthCtx } from '../../plugins/auth.js';
 import { AppError } from '../../plugins/errors.js';
 import type { FastifyInstance } from 'fastify';
 import { hashKey, KEY_RE, scopePermissions } from './apiKeys.js';
+import { loadBranchScope } from '../branch/scope.js';
 
 export interface ApiKeyCtx { id: string; name: string; scopes: string[]; postSales: boolean; defaultWarehouseCode: string | null }
 declare module 'fastify' { interface FastifyRequest { apiKey: ApiKeyCtx | null } }
@@ -54,6 +55,7 @@ export function extAuthHook(app: FastifyInstance) {
       }
       const auth: AuthCtx = { sessionId: `ext:${found.id}`, userId: found.user_id, username: u.username, tenantId: found.tenant_id,
         permissions: new Set(rolePerms.map((p) => p.permission_code).filter((p) => allowed.has(p))), sensitive: new Set(tu.sensitive_flags as string[]) };
+      Object.assign(auth, await loadBranchScope(trx, found.tenant_id, found.user_id, auth.permissions)); // khóa API mang phạm vi chi nhánh của người dùng tạo khóa
       return { auth, key: { id: found.id, name: k.name, scopes: k.scopes, postSales: k.post_sales, defaultWarehouseCode: k.wh_code } satisfies ApiKeyCtx };
     });
     if (!ctx) throw unauthorized();

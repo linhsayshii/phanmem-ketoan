@@ -12,9 +12,13 @@ import { renderReportXlsx } from './print/excel.js';
 import { assertPrintable, renderReportsHtml, type ReportDoc } from './print/html.js';
 import { localizeDoc } from './print/i18n.js';
 import { renderPdf } from './print/pdf.js';
+import { effectiveBranch } from '../branch/scope.js';
 
 export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => !Number.isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s, 'Ngày không hợp lệ');
 const range = { from: isoDate, to: isoDate };
+// GĐ7: chi nhánh (HO = trụ sở chính, hoặc id); không ghi = mọi chi nhánh trong phạm vi người dùng.
+const branch = z.string().regex(/^(HO|\d{1,18})$/).optional();
+const br = (req: FastifyRequest & { query: unknown }) => effectiveBranch(req.auth!, (req.query as { branch?: string }).branch);
 export const ordered = (q: { from: string; to: string }) => q.from <= q.to;
 export const orderedMsg = { message: 'Từ ngày phải trước hoặc bằng đến ngày' };
 export const assertPrint = (auth: { permissions: Set<string> }) => {
@@ -44,24 +48,27 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     const pl: PrintLang = (req.query as { lang?: PrintLang }).lang ?? 'vi';
     return respondReport(reply, [await app.withTenant(req, async (trx) => { const regime = await regimeOf(trx, q); return localizeDoc(trx, regime, await build(trx, regime), pl); }, READ_SNAPSHOT)], fmt, fileName);
   };
-  app.get('/api/reports/ledgers/general-journal', { preHandler: view, schema: { querystring: z.object({ ...range, format, lang }).refine(ordered, orderedMsg) } }, async (req, reply) => {
+  app.get('/api/reports/ledgers/general-journal', { preHandler: view, schema: { querystring: z.object({ ...range, branch, format, lang }).refine(ordered, orderedMsg) } }, async (req, reply) => {
     assertAllSensitive(req.auth!); // Nhật ký chung gồm cả công nợ và giá vốn
-    if (req.query.format === 'json') return app.withTenant(req, (trx) => generalJournal(trx, req.query, JOURNAL_JSON_LIMIT), READ_SNAPSHOT);
-    return printDoc(req, reply, req.query.format, req.query, `nhat-ky-chung-${req.query.from}-${req.query.to}`, (trx, regime) => journalDoc(trx, req.auth!.tenantId!, regime, req.query));
+    const q = { ...req.query, branch: br(req) };
+    if (req.query.format === 'json') return app.withTenant(req, (trx) => generalJournal(trx, q, JOURNAL_JSON_LIMIT), READ_SNAPSHOT);
+    return printDoc(req, reply, req.query.format, req.query, `nhat-ky-chung-${req.query.from}-${req.query.to}`, (trx, regime) => journalDoc(trx, req.auth!.tenantId!, regime, q));
   });
   // Cờ nhạy cảm (công nợ, giá vốn) kiểm tra trong cùng giao dịch với truy vấn sổ.
-  app.get('/api/reports/ledgers/account', { preHandler: view, schema: { querystring: z.object({ ...range, accountCode: z.string().min(1), mode: z.enum(['voucher', 'subaccount', 't']).default('voucher'), format, lang }).refine(ordered, orderedMsg) } }, async (req, reply) => {
-    if (req.query.format === 'json') return app.withTenant(req, async (trx) => { await assertCanView(trx, req.auth!, req.query); return accountLedger(trx, req.auth!.tenantId!, req.query); }, READ_SNAPSHOT);
+  app.get('/api/reports/ledgers/account', { preHandler: view, schema: { querystring: z.object({ ...range, accountCode: z.string().min(1), mode: z.enum(['voucher', 'subaccount', 't']).default('voucher'), branch, format, lang }).refine(ordered, orderedMsg) } }, async (req, reply) => {
+    const q = { ...req.query, branch: br(req) };
+    if (req.query.format === 'json') return app.withTenant(req, async (trx) => { await assertCanView(trx, req.auth!, req.query); return accountLedger(trx, req.auth!.tenantId!, q); }, READ_SNAPSHOT);
     // Bản in luôn là Sổ Cái theo chứng từ (mẫu S03b), không theo `mode` của màn hình.
-    return printDoc(req, reply, req.query.format, req.query, `so-cai-${req.query.accountCode}-${req.query.from}-${req.query.to}`, async (trx, regime) => { await assertCanView(trx, req.auth!, req.query); return ledgerDoc(trx, req.auth!.tenantId!, regime, req.query); });
+    return printDoc(req, reply, req.query.format, req.query, `so-cai-${req.query.accountCode}-${req.query.from}-${req.query.to}`, async (trx, regime) => { await assertCanView(trx, req.auth!, req.query); return ledgerDoc(trx, req.auth!.tenantId!, regime, q); });
   });
-  app.get('/api/reports/ledgers/detail', { preHandler: view, schema: { querystring: z.object({ ...range, accountCode: z.string().min(1), partyCode: z.string().optional(), costItemCode: z.string().optional(), projectCode: z.string().optional(), departmentCode: z.string().optional(), format, lang }).refine(ordered, orderedMsg) } }, async (req, reply) => {
-    if (req.query.format === 'json') return app.withTenant(req, async (trx) => { await assertCanView(trx, req.auth!, req.query); return accountDetail(trx, req.auth!.tenantId!, req.query); }, READ_SNAPSHOT);
-    return printDoc(req, reply, req.query.format, req.query, `so-chi-tiet-${req.query.accountCode}-${req.query.from}-${req.query.to}`, async (trx, regime) => { await assertCanView(trx, req.auth!, req.query); return detailDoc(trx, req.auth!.tenantId!, regime, req.query); });
+  app.get('/api/reports/ledgers/detail', { preHandler: view, schema: { querystring: z.object({ ...range, accountCode: z.string().min(1), partyCode: z.string().optional(), costItemCode: z.string().optional(), projectCode: z.string().optional(), departmentCode: z.string().optional(), branch, format, lang }).refine(ordered, orderedMsg) } }, async (req, reply) => {
+    const q = { ...req.query, branch: br(req) };
+    if (req.query.format === 'json') return app.withTenant(req, async (trx) => { await assertCanView(trx, req.auth!, req.query); return accountDetail(trx, req.auth!.tenantId!, q); }, READ_SNAPSHOT);
+    return printDoc(req, reply, req.query.format, req.query, `so-chi-tiet-${req.query.accountCode}-${req.query.from}-${req.query.to}`, async (trx, regime) => { await assertCanView(trx, req.auth!, req.query); return detailDoc(trx, req.auth!.tenantId!, regime, q); });
   });
-  app.get('/api/reports/ledgers/trial-balance', { preHandler: view, schema: { querystring: z.object({ ...range, level: z.coerce.number().int().min(1).max(6).optional(), splitParty: z.enum(['true', 'false']).default('true'), format, lang }).refine(ordered, orderedMsg) } }, async (req, reply) => {
+  app.get('/api/reports/ledgers/trial-balance', { preHandler: view, schema: { querystring: z.object({ ...range, level: z.coerce.number().int().min(1).max(6).optional(), splitParty: z.enum(['true', 'false']).default('true'), branch, format, lang }).refine(ordered, orderedMsg) } }, async (req, reply) => {
     assertAllSensitive(req.auth!); // mọi tài khoản, kể cả công nợ và giá vốn
-    const q = { ...req.query, splitParty: req.query.splitParty === 'true' };
+    const q = { ...req.query, splitParty: req.query.splitParty === 'true', branch: br(req) };
     if (req.query.format === 'json') return app.withTenant(req, (trx) => trialBalance(trx, req.auth!.tenantId!, q), READ_SNAPSHOT);
     return printDoc(req, reply, req.query.format, q, `bang-can-doi-so-phat-sinh-${q.from}-${q.to}`, (trx, regime) => trialBalanceDoc(trx, req.auth!.tenantId!, regime, q));
   });
@@ -76,13 +83,14 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       if (regime) q = q.where('regime', '=', regime);
       return q.orderBy('regime').orderBy('report_code').execute();
     }, READ_SNAPSHOT));
-  app.get('/api/reports/financial/:code', { preHandler: view, schema: { params: z.object({ code: reportCode }), querystring: z.object({ ...range, comparePrevYear: z.enum(['true', 'false']).default('false'), format, lang }).refine(ordered, orderedMsg) } }, async (req, reply) => {
-    if (req.query.format === 'json') return app.withTenant(req, (trx) => evaluateFinancialReport(trx, req.auth!.tenantId!, { reportCode: req.params.code, from: req.query.from, to: req.query.to, comparePrevYear: req.query.comparePrevYear === 'true' }), READ_SNAPSHOT);
+  app.get('/api/reports/financial/:code', { preHandler: view, schema: { params: z.object({ code: reportCode }), querystring: z.object({ ...range, comparePrevYear: z.enum(['true', 'false']).default('false'), branch, format, lang }).refine(ordered, orderedMsg) } }, async (req, reply) => {
+    const b = br(req);
+    if (req.query.format === 'json') return app.withTenant(req, (trx) => evaluateFinancialReport(trx, req.auth!.tenantId!, { reportCode: req.params.code, from: req.query.from, to: req.query.to, comparePrevYear: req.query.comparePrevYear === 'true', branch: b }), READ_SNAPSHOT);
     // Bản in luôn kèm cột so sánh (số đầu năm của B01, năm trước của B02/B03).
-    return printDoc(req, reply, req.query.format, req.query, `${req.params.code}-${req.query.from}-${req.query.to}`, (trx, regime) => financialDoc(trx, req.auth!.tenantId!, regime, { reportCode: req.params.code, from: req.query.from, to: req.query.to }));
+    return printDoc(req, reply, req.query.format, req.query, `${req.params.code}-${req.query.from}-${req.query.to}`, (trx, regime) => financialDoc(trx, req.auth!.tenantId!, regime, { reportCode: req.params.code, from: req.query.from, to: req.query.to, branch: b }));
   });
-  app.get('/api/reports/financial/:code/lines/:lineCode', { preHandler: view, schema: { params: z.object({ code: reportCode, lineCode: z.string().min(1) }), querystring: z.object(range).refine(ordered, orderedMsg) } }, async (req) =>
-    app.withTenant(req, (trx) => drillLine(trx, req.auth!.tenantId!, { reportCode: req.params.code, lineCode: req.params.lineCode, ...req.query }, req.auth!), READ_SNAPSHOT));
+  app.get('/api/reports/financial/:code/lines/:lineCode', { preHandler: view, schema: { params: z.object({ code: reportCode, lineCode: z.string().min(1) }), querystring: z.object({ ...range, branch }).refine(ordered, orderedMsg) } }, async (req) =>
+    app.withTenant(req, (trx) => drillLine(trx, req.auth!.tenantId!, { reportCode: req.params.code, lineCode: req.params.lineCode, ...req.query, branch: br(req) }, req.auth!), READ_SNAPSHOT));
   // Định nghĩa báo cáo của công ty: xem dòng, lưu lại toàn bộ dòng (kiểm tra công thức trước khi ghi), nạp lại một báo cáo từ mẫu hệ thống.
   app.get('/api/report-defs/:code', { preHandler: app.requirePermission('report_def.view'), schema: { params: z.object({ code: reportCode }), querystring: z.object({ regime: regimeEnum }) } }, async (req) =>
     app.withTenant(req, async (trx) => {

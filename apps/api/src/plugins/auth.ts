@@ -3,10 +3,13 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { withTenant } from '@kt/db';
 import { hashSessionToken } from '../modules/auth/service.js';
 import { AppError } from './errors.js';
+import { branchRouteDenied, loadBranchScope, type BranchScope } from '../modules/branch/scope.js';
 
 export interface AuthCtx {
   sessionId: string; userId: string; username: string; tenantId: string | null;
   permissions: Set<string>; sensitive: Set<string>;
+  // GĐ7: phạm vi chi nhánh (null/không có = toàn công ty) và chi nhánh làm việc (0 = trụ sở chính).
+  branchScope?: BranchScope; branchWorking?: number;
 }
 declare module 'fastify' {
   interface FastifyRequest { auth: AuthCtx | null }
@@ -38,9 +41,15 @@ export default fp(async (app) => {
         const perms = await trx.selectFrom('role_permission').select('permission_code').where('role_id', '=', tu.role_id).execute();
         ctx.permissions = new Set(perms.map((p) => p.permission_code));
         ctx.sensitive = new Set(tu.sensitive_flags as string[]);
+        Object.assign(ctx, await loadBranchScope(trx, tenantId, s.user_id, ctx.permissions));
       });
     }
     req.auth = ctx;
+  });
+  // Người dùng bị giới hạn chi nhánh: báo cáo đọc dữ liệu không mang chi nhánh bị chặn ở API (không chỉ ẩn ở giao diện).
+  app.addHook('onRequest', async (req) => {
+    if (req.auth?.branchScope && branchRouteDenied(req.routeOptions.url))
+      throw new AppError('BRANCH_SCOPE_FORBIDDEN', 'Báo cáo này tổng hợp cả công ty, không xem được khi tài khoản bị giới hạn chi nhánh', 403);
   });
 
   app.decorate('requireAuth', async (req: FastifyRequest) => {

@@ -14,6 +14,9 @@ export interface TenantCtx {
   tenantId: string;
   userId?: string;
   ip?: string;
+  // GĐ7 đa chi nhánh: phạm vi chi nhánh (id cách nhau dấu phẩy, 0 = trụ sở chính; rỗng = toàn công ty) và chi nhánh làm việc (mặc định của voucher.branch_id).
+  branchScope?: string;
+  branchDefault?: string;
 }
 
 export function createPool(connectionString: string): pg.Pool {
@@ -40,7 +43,9 @@ export async function withTenant<T>(
     if (opts.readOnly) await sql`SET TRANSACTION READ ONLY`.execute(trx); // phải đứng trước truy vấn đầu tiên
     await sql`SELECT set_config('app.current_tenant', ${ctx.tenantId}, true),
                      set_config('app.current_user', ${ctx.userId ?? ''}, true),
-                     set_config('app.client_ip', ${ctx.ip ?? ''}, true)`.execute(trx);
+                     set_config('app.client_ip', ${ctx.ip ?? ''}, true),
+                     set_config('app.branch_scope', ${ctx.branchScope ?? ''}, true),
+                     set_config('app.branch_default', ${ctx.branchDefault ?? ''}, true)`.execute(trx);
     return fn(trx);
   });
 }
