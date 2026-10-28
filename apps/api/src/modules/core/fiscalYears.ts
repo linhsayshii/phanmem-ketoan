@@ -1,19 +1,18 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { sql, type Transaction } from 'kysely';
-import { checkRegimeForYear } from '@kt/coa-data';
+import { BOOK_REGIMES, checkRegimeForYear, isRegimeReady, type BookRegime } from '@kt/coa-data';
 import { buildFiscalPeriods, type Regime } from '@kt/domain';
 import type { Database } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
 import { generateAccounts } from '../coa/service.js';
 import { loadClosingTemplate } from '../ledger/closing.js';
 import { copyReportTemplates } from '../reporting/financial.js';
-import { BOOK_REGIMES, isRegimeReady, type BookRegime } from '@kt/coa-data';
 
 export const fiscalYearBody = z.object({
   fiscalYear: z.number().int().min(2000).max(2100), dateFrom: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-01$/, 'Ngày bắt đầu phải là ngày đầu tháng (YYYY-MM-01)'),
   months: z.number().int().min(1).max(15).default(12), regime: z.enum(['TT99', 'TT133', 'TT200', 'TT58', 'TT152']),
-  // true: người dùng xác nhận rõ tạo năm theo chế độ ngoài hiệu lực hoặc có cổng dữ liệu chưa đối chiếu (TT200); ghi audit_event. Không áp dụng cho chế độ chưa có hệ thống tài khoản (TT58, TT152).
+  // true: người dùng xác nhận rõ tạo năm theo chế độ ngoài hiệu lực hoặc có cổng dữ liệu chưa đối chiếu (TT200); ghi audit_event. Với TT58, TT152 chỉ cho phép khi sổ bắt buộc đã sẵn sàng (cổng books); chưa sẵn sàng thì 409 COA_TEMPLATE_PENDING dù có xác nhận.
   confirmRegimeOverride: z.boolean().optional(),
 });
 export type FiscalYearInput = z.infer<typeof fiscalYearBody>;
@@ -26,7 +25,7 @@ export async function createFiscalYear(trx: Transaction<Database>, tenantId: str
     const next = new Date(last.date_to + 'T00:00:00Z'); next.setUTCDate(next.getUTCDate() + 1);
     if (next.toISOString().slice(0, 10) !== input.dateFrom) throw new AppError('FISCAL_YEAR_GAP', `Năm mới phải bắt đầu ngày ${next.toISOString().slice(0, 10)}`, 409);
   }
-  // Chế độ phải sẵn sàng (cổng dữ liệu pháp lý) và có hiệu lực tại ngày đầu năm tài chính (data/regimes). TT58, TT152 chưa có hệ thống tài khoản: không có xác nhận ghi đè.
+  // Chế độ phải sẵn sàng (cổng dữ liệu pháp lý) và có hiệu lực tại ngày đầu năm tài chính (data/regimes). TT58, TT152 không có hệ thống tài khoản; chưa sẵn sàng thì không có xác nhận ghi đè, sẵn sàng thì chỉ tạo kỳ (ngoài hiệu lực vẫn cần xác nhận).
   const rc = checkRegimeForYear(input.regime, input.dateFrom);
   const bookOnly = input.regime === 'TT58' || input.regime === 'TT152';
   if (!rc.ready && bookOnly) throw new AppError('COA_TEMPLATE_PENDING', `${rc.label} chưa có dữ liệu đối chiếu văn bản gốc (cổng ${rc.notReady.join(', ')} chưa mở): chưa tạo được năm tài chính theo chế độ này`, 409, { regime: input.regime, notReady: rc.notReady });

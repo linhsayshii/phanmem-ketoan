@@ -102,7 +102,14 @@ describe('năm tài chính', () => {
     const { cookie: c2 } = await bootstrapTenant(ctx, { code: `FH${Date.now()}` });
     const r = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c2 }, payload: { fiscalYear: 2025, dateFrom: '2025-01-01', months: 12, regime: 'TT99', confirmRegimeOverride: true } });
     expect(r.statusCode, r.body).toBe(201); // ngoài hiệu lực nhưng đã xác nhận
-    const none = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c2 }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT58', confirmRegimeOverride: true } });
-    expect(e(none)).toEqual([409, 'COA_TEMPLATE_PENDING']); // chế độ chưa có dữ liệu: xác nhận không mở được
+    // TT58/TT152 đã sẵn sàng (sổ bắt buộc đã nhập): chỉ tạo kỳ, không sinh tài khoản. TT58 hiệu lực từ 2026-07-01 nên năm bắt đầu 2026-01-01 cần xác nhận ghi đè.
+    const post = (fiscalYear: number, regime: string, more: object = {}) => ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c2 }, payload: { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime, ...more } });
+    expect(e(await post(2026, 'TT58'))).toEqual([409, 'REGIME_NOT_EFFECTIVE']);
+    expect((await post(2026, 'TT58', { confirmRegimeOverride: true })).statusCode).toBe(201);
+    const { cookie: c3 } = await bootstrapTenant(ctx, { code: `FI${Date.now()}` });
+    const r152 = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c3 }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT152' } });
+    expect(r152.statusCode, r152.body).toBe(201);
+    const acc = await sql<{ n: string }>`SELECT count(*)::text AS n FROM account WHERE regime = 'TT152' AND tenant_id = (SELECT tenant_id FROM fiscal_period WHERE regime = 'TT152' LIMIT 1)`.execute(ctx.t.admin);
+    expect(acc.rows[0]!.n).toBe('0');
   });
 });
