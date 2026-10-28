@@ -110,12 +110,14 @@ describe('bước product_cost trong quy trình cuối kỳ', () => {
     expect(stepOf(await status(5), 'product_cost').status).toBe('pending');
   });
 
-  it('thiếu cost_run.run → 403 nêu quyền; thiếu view_cost: chạy được nhưng kết quả và trạng thái che chi tiết', async () => {
+  it('thiếu cost_run.run → 403 nêu quyền; thiếu view_cost: kỳ có chi phí thì 403 (như route chạy giá thành, QĐ #987), trạng thái che chi tiết', async () => {
     const f = await run('product_cost', 10, noRun); expect(f.statusCode).toBe(403); expect(f.json().error.message).toContain('cost_run.run');
     await pkt('2026-10-10', [L('622', '80000', '0', { costObjectCode: 'SP1' }), L('111', '0', '80000')]);
-    const r = await runOk('product_cost', 10, noFlag);
-    expect(r.result).toEqual({ masked: true, skipped: false, unchanged: false });
-    expect(stepOf(r, 'product_cost')).toMatchObject({ status: 'done', masked: true, vouchers: [] });
+    const d = await run('product_cost', 10, noFlag); expect(d.statusCode, d.body).toBe(403); expect(d.json().error.code).toBe('FORBIDDEN'); expect(d.body).not.toContain('80000');
+    expect(stepOf(await status(10), 'product_cost')).toMatchObject({ status: 'pending', vouchers: [] }); // giao dịch hoàn tác
+    const r = await runOk('product_cost', 10);
+    expect(r.result).toMatchObject({ skipped: false, unchanged: false });
+    expect(stepOf(await status(10, noFlag), 'product_cost')).toMatchObject({ status: 'done', masked: true, vouchers: [] });
     const full = await status(10); expect(stepOf(full, 'product_cost')).toMatchObject({ masked: false }); expect(stepOf(full, 'product_cost').vouchers).toHaveLength(1);
     await pkt('2026-10-12', [L('622', '5000', '0', { costObjectCode: 'SP1' }), L('111', '0', '5000')]);
     expect(stepOf(await status(10, noFlag), 'product_cost')).toMatchObject({ status: 'rerun', masked: true, vouchers: [] });

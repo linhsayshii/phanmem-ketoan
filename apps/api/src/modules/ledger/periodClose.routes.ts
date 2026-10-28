@@ -47,14 +47,17 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       const { span } = await periodSpan(trx, fy, pn);
       let result: object; let summary: Record<string, unknown>; let ok = true;
       switch (step) {
-        case 'payroll': { // chi tiết (mã bảng lương, tên) cần view_salary; thiếu thì chỉ cờ chung
+        // Kỳ có bảng lương/chi phí giá thành: cần cờ như route hạch toán lương, chạy giá thành (403 làm giao dịch hoàn tác); kỳ không có gì (skipped) thì chạy được.
+        case 'payroll': {
           const r = await runPayrollStep(trx, ctx, span); ok = !r.needCalculation.length;
-          result = auth.sensitive.has('view_salary') ? r : { masked: true, skipped: r.skipped, unchanged: r.unchanged };
+          if (!r.skipped && !auth.sensitive.has('view_salary')) throw new AppError('SALARY_FORBIDDEN', 'Không có quyền xem lương', 403);
+          result = r;
           summary = { ...runSummary(r), ...(r.skipped ? { skipped: true } : {}), errors: r.needCalculation.length }; break;
         }
-        case 'product_cost': { // lỗi chặn (chưa phân loại/gắn đối tượng) → 409 kèm chi tiết khi có view_cost; kết quả che khi thiếu view_cost
+        case 'product_cost': { // lỗi chặn (chưa phân loại/gắn đối tượng) → 409 kèm chi tiết khi có view_cost, không kèm số khi thiếu
           const r = await runCostStep(trx, ctx, span, auth.sensitive.has('view_cost'));
-          result = auth.sensitive.has('view_cost') ? r : { masked: true, skipped: r.skipped, unchanged: r.unchanged };
+          if (!r.skipped && !auth.sensitive.has('view_cost')) throw new AppError('FORBIDDEN', 'Không có quyền xem giá vốn', 403);
+          result = r;
           summary = { ...runSummary(r), ...(r.skipped ? { skipped: true } : {}) }; break;
         }
         case 'tool': case 'prepaid': case 'depreciation': { const r = await runAssetPeriod(trx, ctx, { kind: step, fiscalYear: fy, periodNo: pn }); result = r; summary = runSummary(r); break; }

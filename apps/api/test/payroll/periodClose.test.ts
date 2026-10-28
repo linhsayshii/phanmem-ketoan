@@ -100,23 +100,25 @@ describe('bước payroll trong quy trình cuối kỳ', () => {
     expect(runId).toBeGreaterThan(0);
   });
 
-  it('thiếu payroll.post → 403 nêu quyền; thiếu view_salary: chạy được nhưng kết quả và trạng thái che chi tiết', async () => {
+  it('thiếu payroll.post → 403 nêu quyền; thiếu view_salary: kỳ có bảng lương thì 403 SALARY_FORBIDDEN (như hạch toán bảng lương, QĐ #987), trạng thái che chi tiết', async () => {
     const f = await run('payroll', 2, noPost); expect(f.statusCode).toBe(403); expect(f.json().error.message).toContain('payroll.post');
     const runId = await monthRun(9, false);
-    const r = await run('payroll', 9, noFlag); expect(r.statusCode, r.body).toBe(200);
-    expect(r.json().result).toEqual({ masked: true, skipped: false, unchanged: true }); // bảng chưa tính: không chi tiết mã bảng lương, tên
+    const r = await run('payroll', 9, noFlag); expect(r.statusCode, r.body).toBe(403); expect(r.json().error.code).toBe('SALARY_FORBIDDEN');
     const masked = await payroll(9, noFlag);
-    expect(masked).toMatchObject({ status: 'pending', failed: true, masked: true, vouchers: [], reason: 'Lần chạy gần nhất chưa hoàn tất' });
+    expect(masked).toMatchObject({ status: 'pending', failed: false, masked: true, vouchers: [] }); // không ghi nhật ký bước
     expect(JSON.stringify(masked)).not.toMatch(/bảng lương|1 /);
     expect((await payroll(9)).masked).toBe(false);
     await ok('POST', `/api/payroll/runs/${runId}/calculate`);
-    const r2 = await run('payroll', 9, noFlag); expect(r2.statusCode, r2.body).toBe(200);
-    expect(r2.json().result).toEqual({ masked: true, skipped: false, unchanged: false });
+    expect((await run('payroll', 9, noFlag)).statusCode).toBe(403);
+    expect((await payroll(9)).vouchers).toHaveLength(0); // giao dịch hoàn tác: chưa hạch toán
+    expect((await run('payroll', 9)).statusCode).toBe(200);
     const m2 = await payroll(9, noFlag); expect(m2).toMatchObject({ status: 'done', masked: true, vouchers: [] });
     expect((await payroll(9)).vouchers).toHaveLength(1);
     // đổi hồ sơ: người thiếu view_salary chỉ thấy câu trung tính
     await ok('POST', `/api/payroll/profiles/${empId}/allowances`, { code: 'xang', name: 'Xăng', amount: '500000', taxable: true, siBase: false, validFrom: '2026-09-01', validTo: '2026-09-30' });
     expect(await payroll(9, noFlag)).toMatchObject({ status: 'rerun', reason: 'Bảng lương trong kỳ đã thay đổi sau lần chạy' });
+    // Kỳ không có bảng lương: bước chạy được (bỏ qua) dù thiếu cờ, không có gì để lộ.
+    const empty = await run('payroll', 11, noFlag); expect(empty.statusCode, empty.body).toBe(200); expect(empty.json().result).toMatchObject({ skipped: true });
   });
 
   it('kỳ khóa cứng: chạy bước hạch toán → 409 PERIOD_HARD_LOCKED, không ghi nhật ký', async () => {
