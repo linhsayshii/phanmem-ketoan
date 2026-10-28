@@ -1,11 +1,11 @@
 import { useCallback, useMemo } from 'react';
-import { Alert, Button, DatePicker, Dropdown, Input, Select, Space, Tag } from 'antd';
+import { Alert, Button, DatePicker, Dropdown, Input, Select, Tag } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import type { ColDef, SuppressKeyboardEventParams } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber, voucherTypeDef, type VoucherTypeDef } from '@kt/domain';
-import { KeyboardGrid, useHotkeys, useRememberedFilter } from '@kt/ui';
+import { KeyboardGrid, PageHeader, Toolbar, COLOR, useHotkeys, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { kindsOf } from './stockCalc.js';
 import { useAuth } from '../auth.js';
@@ -49,19 +49,20 @@ function VoucherList({ def }: { def: VoucherTypeDef }) {
   ] satisfies ColDef<Row>[]).map((c): ColDef<Row> => ({ ...c, editable: false, suppressKeyboardEvent: openOnEnter, onCellDoubleClicked: (e) => { if (e.data) open(e.data.id); } })), [open, hasBranches]);
   return (
     <>
-      <Space style={{ marginBottom: 12 }} wrap>
-        <h2 style={{ margin: 0 }}>{typeLabel(def)}</h2>
-        <DatePicker.RangePicker format="DD/MM/YYYY" value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
-        <Select style={{ width: 140 }} value={f.state} onChange={(state) => setF({ ...f, state })} options={[{ value: '', label: 'Mọi trạng thái' }, ...Object.entries(STATE_LABEL).map(([value, label]) => ({ value, label }))]} />
-        <Input.Search key={f.q} placeholder="Số, diễn giải, đối tượng" defaultValue={f.q} onSearch={(q) => setF({ ...f, q })} style={{ width: 260 }} allowClear />
-        <BranchFilter value={f.branch ?? ''}onChange={(branch) => setF({ ...f, branch })} />
-        {stockKinds.length > 1
+      <PageHeader title={typeLabel(def)}
+        extra={stockKinds.length > 1
           ? <Dropdown menu={{ items: stockKinds.map((k) => ({ key: k.code, label: k.label })), onClick: (e) => openKind(e.key) }}><Button type="primary">Thêm (Insert)</Button></Dropdown>
-          : <Button type="primary" onClick={() => (stockKinds.length ? openKind(stockKinds[0]!.code) : open('moi'))}>Thêm (Insert)</Button>}
-        <span>{data.data?.total ?? 0} chứng từ</span>
-      </Space>
+          : <Button type="primary" onClick={() => (stockKinds.length ? openKind(stockKinds[0]!.code) : open('moi'))}>Thêm (Insert)</Button>}>
+        <Toolbar>
+          <DatePicker.RangePicker format="DD/MM/YYYY" value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
+          <Select aria-label="Trạng thái" style={{ width: 140 }} value={f.state} onChange={(state) => setF({ ...f, state })} options={[{ value: '', label: 'Mọi trạng thái' }, ...Object.entries(STATE_LABEL).map(([value, label]) => ({ value, label }))]} />
+          <Input.Search key={f.q} placeholder="Số, diễn giải, đối tượng" defaultValue={f.q} onSearch={(q) => setF({ ...f, q })} style={{ width: 260 }} allowClear />
+          <BranchFilter value={f.branch ?? ''} onChange={(branch) => setF({ ...f, branch })} />
+          <span className="kt-num" style={{ color: COLOR.textSecondary }}>{formatVnNumber(String(data.data?.total ?? 0))} chứng từ</span>
+        </Toolbar>
+      </PageHeader>
       <KeyboardGrid<Row> rows={data.data?.rows ?? []} columns={columns}
-        onRowsChange={() => undefined} addRowTemplate={() => ({} as Row)} readOnly height="calc(100vh - 180px)" />
+        onRowsChange={() => undefined} addRowTemplate={() => ({} as Row)} readOnly height="calc(100vh - 210px)" />
     </>
   );
 }

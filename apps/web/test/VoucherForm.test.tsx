@@ -17,7 +17,8 @@ const mocks = vi.hoisted(() => {
 vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: mocks.ApiError }));
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: () => true, loading: false }) }));
 // Lưới AG Grid nặng trong jsdom: thay bằng danh sách mã tài khoản để quan sát dòng đối ứng được điền.
-vi.mock('@kt/ui', () => ({
+vi.mock('@kt/ui', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   // Hộp thoại Chọn chứng từ công nợ dùng cùng lưới: dòng có docNo là khoản công nợ, nút "Chọn <số>" đặt số đối trừ bằng đủ số còn dư (như Enter ở ô trống).
   // Nút "Vượt <số>" đặt số đối trừ lớn hơn số còn dư. Lưới dòng chứng từ (dòng không có docNo) lưu bản mới nhất vào mocks.lineGrid để kiểm thử sửa dòng.
   KeyboardGrid: ({ rows, onRowsChange }: { rows: { accountCode?: string; docNo?: string; remain?: string }[]; onRowsChange: (r: object[]) => void }) => {

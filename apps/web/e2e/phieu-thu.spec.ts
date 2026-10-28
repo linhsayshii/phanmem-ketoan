@@ -46,7 +46,7 @@ test('lập Phiếu thu bằng bàn phím, ghi sổ F9', async ({ page, request 
   await expect(page.locator('.ag-center-cols-container [col-id="accountCode"]', { hasText: '131' })).toBeVisible();
   await page.keyboard.press('F9');
   await expect(page.locator('.ant-message').getByText('Đã ghi sổ')).toBeVisible();
-  await expect(page.locator('.ant-card-head-title')).toContainText(/PT\d+/);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/PT\d+/);
   await expect(page.getByRole('button', { name: 'Đảo' })).toBeVisible();
 
   // Mẫu in: công ty thử dùng chế độ TT133 nên in theo mẫu 01 - TT của TT 133/2016, có người nộp tiền và số tiền bằng chữ

@@ -24,6 +24,13 @@ describe('PageHeader và Toolbar', () => {
     expect(screen.getByText('Bộ lọc')).toBeDefined();
   });
 
+  it('tags nằm ngoài h1, h1 vẫn duy nhất', () => {
+    const { container } = render(<PageHeader title="Phiếu thu PT0001" tags={<span>Nháp</span>} />);
+    expect(container.querySelectorAll('h1').length).toBe(1);
+    expect(container.querySelector('h1')?.textContent).toBe('Phiếu thu PT0001');
+    expect(screen.getByText('Nháp')).toBeDefined();
+  });
+
   it('Toolbar gom các control con với kiểu flex', () => {
     const { container } = render(
       <Toolbar>

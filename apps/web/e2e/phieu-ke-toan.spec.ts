@@ -39,7 +39,7 @@ test('nhập phiếu kế toán hoàn toàn bằng bàn phím rồi ghi sổ', a
   await expect(page.locator('.ag-center-cols-container [col-id="accountCode"]', { hasText: '6422' })).toBeVisible(); // hasText: lưới có thể giữ tạm dòng trống cũ cạnh dòng mới nên không chọn theo row-index
   await page.keyboard.press('F9');
   await expect(page.locator('.ant-message').getByText('Đã ghi sổ')).toBeVisible();
-  await expect(page.locator('.ant-card-head-title')).toContainText(/PKT\d+/);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/PKT\d+/);
 });
 
 test('Ctrl+S khi con trỏ còn trong ô đang gõ vẫn lưu số vừa gõ; Enter ở danh sách mở chứng từ', async ({ page, request }) => {
@@ -101,7 +101,7 @@ test('dòng tiền chọn mã luồng tiền bằng F4, dòng vay nhập ngày �
   const saved = await (await request.get(`/api/vouchers/${id}`)).json() as { lines: { accountCode: string; dueDate: string | null; cashFlowCode: string | null }[] };
   expect(saved.lines.map((l) => [l.accountCode, l.dueDate, l.cashFlowCode])).toEqual([['1111', null, '33'], ['3411', '2029-01-01', null]]);
   // Đã ghi sổ: mã luồng tiền vẫn sửa được (siêu dữ liệu), lưu bằng Ctrl+S
-  await expect(page.locator('.ant-card-head-title')).toContainText(/PKT\d+/);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/PKT\d+/);
   await cfCell('33').dblclick(); await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type('31'); await page.keyboard.press('Enter');
   await page.keyboard.press('Control+s');
   await expect(page.locator('.ant-message').getByText('Đã lưu')).toBeVisible();

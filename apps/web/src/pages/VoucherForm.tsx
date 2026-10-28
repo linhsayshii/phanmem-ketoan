@@ -1,12 +1,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Alert, Button, Card, Col, DatePicker, Dropdown, Form, Input, InputNumber, Modal, Row, Select, Space, Spin, Tabs, Tag, message } from 'antd';
+import { Alert, Button, Col, DatePicker, Dropdown, Form, Input, InputNumber, Modal, Row, Select, Space, Spin, Tabs, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
 import dayjs, { type Dayjs } from 'dayjs';
 import { canTransition, CASH_PURPOSES, D, decideEdit, formatVnDate, formatVnNumber, HEADER_FIELD_LABELS, isBalanced, parseVnDate, parseVnNumber, sum, todayVn, VND_AMOUNT_RE, voucherTypeDef,
   type CashPurpose, type HeaderField, type VoucherState, type VoucherTypeDef } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, VnNumberInput, useUnsavedChanges } from '@kt/ui';
+import { COLOR, KeyboardGrid, LookupSelect, PageHeader, Section, VnNumberInput, useUnsavedChanges } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { assetPick, contractFetcher, contractPick, costObjectPick, isAssetAccount, isContractAccount, isCostAccount, accountFetcherFor, bankAccountFetcher, cashFlowFetcherFor, regimeFor, type FiscalYearRef } from '../lookups.js';
@@ -384,16 +384,17 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const ledgerGrid = (<>
     <KeyboardGrid<Line> rows={lines} columns={columns} readOnly={locked} lockRows={metaOnly} onRowsChange={onRowsChange} addRowTemplate={emptyLine} onLookup={onLookup} height={360} allColumns />
     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, marginTop: 8 }}>
-      {redacted ? <><b data-testid="total-redacted">Tổng Nợ: —</b><b>Tổng Có: —</b></> : <>
-        <b>Tổng Nợ: {formatVnNumber(t.debit)}</b><b>Tổng Có: {formatVnNumber(t.credit)}</b>
+      {redacted ? <><b className="kt-num" data-testid="total-redacted">Tổng Nợ: —</b><b className="kt-num">Tổng Có: —</b></> : <>
+        <b className="kt-num">Tổng Nợ: {formatVnNumber(t.debit)}</b><b className="kt-num">Tổng Có: {formatVnNumber(t.credit)}</b>
         {!balanced && <Tag color="red">Chênh lệch {formatVnNumber(sum([t.debit, `-${t.credit}`]).toString())}</Tag>}</>}
     </div>
   </>);
 
   if (mismatch) return <Spin />; // đang chuyển sang đường dẫn đúng loại của chứng từ
   return (
-    <Card title={<Space><span>{typeLabel(eff)} {v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}</span><Tag>{STATE_LABEL[state]}</Tag></Space>}
-      extra={<Space>
+    <>
+      <PageHeader title={`${typeLabel(eff)} ${v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}`} tags={<Tag style={{ marginRight: 0 }}>{STATE_LABEL[state]}</Tag>}
+      extra={<>
         {mayEdit && editable && <SuggestEntryButton enabled getFields={suggestFields} onApply={applySuggestion} />}
         {maySettle && <Button onClick={() => setSettleOpen(true)} disabled={settleList.length === 0} title={settleList.length === 0 ? 'Nhập dòng tài khoản 131 hoặc 331 để chọn chứng từ công nợ' : undefined}>Chọn chứng từ công nợ{settleCount > 0 && <Tag style={{ marginLeft: 8, marginRight: 0 }}>{settleCount}</Tag>}</Button>}
         {mayEdit && <Button onClick={() => save.mutate(false)} type="primary" loading={save.isPending} disabled={!ready}>Lưu (Ctrl+S)</Button>}
@@ -405,9 +406,10 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
         {!isNew && !redacted && can('voucher.print') && (eff.printForms.length > 1
           ? <Dropdown trigger={['click']} menu={{ items: eff.printForms.map((f) => ({ key: f, label: <a href={`/api/vouchers/${id}/print?format=pdf&form=${f}`} target="_blank" rel="noreferrer">{PRINT_FORM_LABELS[f] ?? f}</a> })) }}><Button>In ▾</Button></Dropdown>
           : <Button href={`/api/vouchers/${id}/print?format=pdf`} target="_blank">In</Button>)}
-      </Space>}>
+      </>} />
       {v.error && <Alert type="error" showIcon message={(v.error as Error).message} style={{ marginBottom: 12 }} />}
       {redacted && <Alert type="warning" showIcon data-testid="salary-redacted" style={{ marginBottom: 12 }} message="Đã ẩn do thiếu quyền xem lương" description="Số tiền và nhân viên của các dòng tài khoản lương, bảo hiểm, thuế TNCN không hiển thị; chứng từ chỉ để xem, không sửa hoặc in được." />}
+      <Section title="Thông tin chung">
       <Form form={form} layout="vertical" initialValues={{ postingDate: dayjs(todayVn()), documentDate: dayjs(todayVn()), currencyCode: 'VND' }} onValuesChange={onValuesChange}>
         <Row gutter={12}>
           <Col span={4}><Form.Item label="Ngày hạch toán" name="postingDate" rules={[{ required: true, message: 'Nhập ngày hạch toán' }]}><DatePicker format="DD/MM/YYYY" disabled={!editable} /></Form.Item></Col>
@@ -418,19 +420,22 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
           <Col span={24}><Form.Item label={sideIn ? 'Lý do nộp' : sideOut ? 'Lý do chi' : 'Diễn giải'} name="description"><Input disabled={locked} /></Form.Item></Col>
         </Row>
       </Form>
+      </Section>
+      <Section title="Hạch toán" style={{ marginTop: 12 }}>
       {declaring ? (
         <Tabs size="small" items={[{ key: 'ledger', label: 'Hạch toán', children: ledgerGrid },
           { key: 'invoices', label: <span>Hóa đơn{declRows.some((r) => r.invoiceNo.trim()) && <Tag style={{ marginLeft: 6, marginRight: 0 }}>{declRows.filter((r) => r.invoiceNo.trim()).length}</Tag>}</span>,
             children: <DeclaredInvoices rows={declRows} onRowsChange={changeDecl} editable={editable} /> }]} />
       ) : ledgerGrid}
+      </Section>
       {cashBalance.data?.balance !== undefined && postingIso && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
           <Tag color={D(cashBalance.data.balance).lt(0) ? 'red' : 'default'}>
             {eff.moneyKind === 'cash' ? 'Tồn quỹ' : 'Số dư tiền gửi'} cuối ngày {formatVnDate(postingIso)}{posted ? '' : ' (chưa kể phiếu này)'}: {formatVnNumber(cashBalance.data.balance)}
             {currency !== 'VND' && <> ({formatVnNumber(cashBalance.data.balanceCurrency, D(cashBalance.data.balanceCurrency).decimalPlaces())} {currency})</>}
           </Tag>
         </div>)}
-      {!isNew && <Attachments voucherId={id} canEdit={can('voucher.update')} />}
+      {!isNew && <Section style={{ marginTop: 12 }}><Attachments voucherId={id} canEdit={can('voucher.update')} /></Section>}
       <Modal open={!!lookup} onCancel={() => setLookup(null)} footer={null} title="Chọn từ danh mục" destroyOnHidden afterOpenChange={(o) => { if (o) lookupBox.current?.querySelector('input')?.focus(); }}>
         {lookup && <div ref={lookupBox}><LookupSelect catalog={LOOKUP_CATALOG[lookup.col]!} style={{ width: '100%' }}
           {...(lookup.col === 'accountCode' ? { fetcher: accountFetcher } : lookup.col === 'bankAccountNo' ? { fetcher: bankAccountFetcher } : lookup.col === 'cashFlowCode' ? { fetcher: cashFlowFetcher } : lookup.col === 'assetCode' ? { fetcher: assetPick } : lookup.col === 'contractCode' ? { fetcher: isContractAccount(linesRef.current[lookup.row]?.accountCode ?? '') ? contractPick : contractFetcher() } : lookup.col === 'costObjectCode' ? { fetcher: costObjectPick } : { quickAddFields: quickAdd })}
@@ -447,9 +452,9 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
             onChange={(d) => d && setReverse({ ...reverse, date: d })} />
           <label htmlFor="reverse-desc">Diễn giải chứng từ đảo</label>
           <Input id="reverse-desc" value={reverse.description} maxLength={500} onChange={(e) => setReverse({ ...reverse, description: e.target.value })} />
-          <span style={{ color: 'rgba(0,0,0,.45)' }}>Chứng từ đảo ghi sổ ngay; chứng từ gốc chuyển sang trạng thái Đã đảo.</span>
+          <span style={{ color: COLOR.textSecondary }}>Chứng từ đảo ghi sổ ngay; chứng từ gốc chuyển sang trạng thái Đã đảo.</span>
         </Space>}
       </Modal>
-    </Card>
+    </>
   );
 }

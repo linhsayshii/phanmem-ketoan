@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: mocks.ApiError }));
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: (c: string) => mocks.perms.has(c) }) }));
 // lưới AG Grid và ô tra danh mục nặng trong jsdom và không thuộc điều đang kiểm tra (nút theo trạng thái/quyền); đường nhập phím được kiểm bằng Playwright
-vi.mock('@kt/ui', () => ({ KeyboardGrid: () => null, LookupSelect: () => null, useUnsavedChanges: () => (proceed: () => void) => proceed() }));
+vi.mock('@kt/ui', async (importOriginal) => ({ ...(await importOriginal<object>()), KeyboardGrid: () => null, LookupSelect: () => null, useUnsavedChanges: () => (proceed: () => void) => proceed() }));
 vi.mock('@tanstack/react-router', () => ({ useParams: () => ({ type: 'PKT', id: mocks.id.v }), useNavigate: () => vi.fn() }));
 
 const voucher = (state: string, extra: object = {}) => ({ id: 'v1', voucherType: 'PKT', voucherNo: state === 'draft' ? null : 'PKT00001', postingDate: '2026-01-05', documentDate: '2026-01-05', state, description: 'Chi VPP',
