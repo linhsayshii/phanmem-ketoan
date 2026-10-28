@@ -13,6 +13,7 @@ import { assetPick, contractFetcher, contractPick, costObjectPick, isAssetAccoun
 import { STATE_LABEL, typeLabel } from './VoucherList.js';
 import { SettleDialog, type SettleEntry, type SettleTarget } from './settleCommon.js';
 import { Attachments, iso, quickAdd, reportError, text } from './voucherCommon.js';
+import { SuggestEntryButton, type SuggestFields, type SuggestLine } from './SuggestEntry.js';
 import InvoiceEditor from './InvoiceForm.js';
 import StockVoucher from './StockVoucher.js';
 import AssemblyVoucher from './AssemblyVoucher.js';
@@ -280,6 +281,21 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     };
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
   }, [save, canSave, canPost]);
+  // Gợi ý định khoản (Ctrl+G): điền tài khoản vào các dòng còn trống (Nợ trước, Có sau), không đụng dòng đã nhập; số tiền do người dùng nhập.
+  const suggestFields = useCallback((): SuggestFields => {
+    const sumDebit = D(totals(linesRef.current).debit);
+    return { voucherType: eff.code, partyCode: (form.getFieldValue('partyCode') as string | null | undefined) ?? undefined, description: (form.getFieldValue('description') as string | null | undefined) ?? undefined,
+      ...(sumDebit.gt(0) && /^\d{1,16}$/.test(sumDebit.toFixed(0)) && { amount: sumDebit.toFixed(0) }), ...(postingIso && { postingDate: postingIso }) };
+  }, [eff.code, form, postingIso]);
+  const applySuggestion = useCallback((ls: SuggestLine[]) => {
+    const rows = [...linesRef.current];
+    for (const l of [...ls.filter((x) => x.side === 'debit'), ...ls.filter((x) => x.side === 'credit')]) {
+      const at = rows.findIndex((r) => !r.accountCode.trim());
+      if (at >= 0) rows[at] = { ...rows[at]!, accountCode: l.accountCode }; else rows.push({ ...emptyLine(), accountCode: l.accountCode });
+    }
+    if (rows.length === 0 || rows[rows.length - 1]!.accountCode.trim()) rows.push(emptyLine());
+    changeRows(rows);
+  }, [changeRows]);
   // Nút theo trạng thái, quyền và kỳ (decideEdit): kỳ mở cần quyền sửa sau ghi sổ mới Bỏ ghi sổ; kỳ khóa mềm chỉ Đảo; kỳ khóa cứng hoặc đã vào chuỗi băm chỉ Nhân bản sang kỳ mở.
   const mayUnpost = !viewOnly && canTransition(state, 'unpost') && decision === 'unpost_edit_post' && can('voucher.unpost');
   const mayReverse = !viewOnly && canTransition(state, 'reverse') && decision !== 'adjust_in_open_period' && can('voucher.post');
@@ -370,6 +386,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   return (
     <Card title={<Space><span>{typeLabel(eff)} {v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}</span><Tag>{STATE_LABEL[state]}</Tag></Space>}
       extra={<Space>
+        {mayEdit && editable && <SuggestEntryButton enabled getFields={suggestFields} onApply={applySuggestion} />}
         {maySettle && <Button onClick={() => setSettleOpen(true)} disabled={settleList.length === 0} title={settleList.length === 0 ? 'Nhập dòng tài khoản 131 hoặc 331 để chọn chứng từ công nợ' : undefined}>Chọn chứng từ công nợ{settleCount > 0 && <Tag style={{ marginLeft: 8, marginRight: 0 }}>{settleCount}</Tag>}</Button>}
         {mayEdit && <Button onClick={() => save.mutate(false)} type="primary" loading={save.isPending} disabled={!ready}>Lưu (Ctrl+S)</Button>}
         {mayEdit && mayPost && <Button onClick={() => save.mutate(true)} disabled={!ready || !balanced || save.isPending}>Ghi sổ (F9)</Button>}
