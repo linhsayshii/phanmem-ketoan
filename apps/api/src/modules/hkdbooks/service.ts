@@ -1,4 +1,4 @@
-import { sql, type Transaction } from 'kysely';
+import type { Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
 import { D, VND_AMOUNT_MSG, VND_AMOUNT_RE, vnd, type Decimal } from '@kt/domain';
@@ -11,7 +11,6 @@ export const KINDS = ['revenue', 'other_income', 'expense', 'tax_paid', 'vat_inp
 export const EXPENSE_CATS = ['a', 'b', 'c', 'd', 'dd', 'e'] as const;
 export const TAX_METHODS = ['exempt', 'percent', 'income', 'percent_both', 'vat_percent_cit_profit', 'vat_deduct_cit_percent', 'vat_deduct_cit_profit'] as const;
 export const OTHER_TAX_KINDS = ['xnk_ttdb', 'env', 'resource', 'land', 'other'] as const;
-const FAR_PAST = '1900-01-01';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => !Number.isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s, 'Ngày không hợp lệ');
 const money = z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG);
