@@ -88,6 +88,22 @@ describe('chiều hợp đồng trên chứng từ', () => {
 });
 
 describe('đợt thanh toán và lập hóa đơn từ đợt', () => {
+  // GĐ7 gói 2 (phụ lục B, TB2): các đợt theo tỷ lệ cộng đúng 100% thì tổng các đợt bằng đúng giá trị hợp đồng (đợt cuối nhận phần dư làm tròn).
+  it('đợt theo tỷ lệ cộng 100%: đợt cuối nhận phần dư, tổng đợt = giá trị hợp đồng', async () => {
+    const c1 = await contract('HBR1', 'sale', { value: '100000001' });
+    const s1 = await ok(call('PUT', `/api/contracts/${c1.id}/milestones`, { milestones: [{ seq: 1, description: 'A', percent: '50' }, { seq: 2, description: 'B', percent: '50' }] }), 200);
+    expect(s1.milestones.map((m: { amount: string }) => m.amount)).toEqual(['50000001.0000', '50000000.0000']);
+    expect(s1.milestoneTotal).toBe('100000001.0000');
+    const c2 = await contract('HBR2', 'sale', { value: '1000000001' });
+    const s2 = await ok(call('PUT', `/api/contracts/${c2.id}/milestones`, { milestones: [{ seq: 1, description: 'A', percent: '33.3333' }, { seq: 2, description: 'B', percent: '33.3333' }, { seq: 3, description: 'C', percent: '33.3334' }] }), 200);
+    expect(s2.milestones.map((m: { amount: string }) => m.amount)).toEqual(['333333000.0000', '333333000.0000', '333334001.0000']);
+    expect(s2.milestoneTotal).toBe('1000000001.0000');
+    // không cộng đủ 100%: giữ cách làm tròn từng đợt
+    const c3 = await contract('HBR3', 'sale', { value: '100000001' });
+    const s3 = await ok(call('PUT', `/api/contracts/${c3.id}/milestones`, { milestones: [{ seq: 1, description: 'A', percent: '50' }, { seq: 2, description: 'B', percent: '40' }] }), 200);
+    expect(s3.milestones.map((m: { amount: string }) => m.amount)).toEqual(['50000001.0000', '40000000.0000']);
+  });
+
   it('lưu đợt theo tỷ lệ/số tiền, lập HDB nháp đúng số tiền, thuế, chiều hợp đồng; lập lần hai 409; đợt đã lập không sửa số tiền, không xóa', async () => {
     const c = await contract('HB10', 'sale', { value: '100000001' });
     const saved = await ok(call('PUT', `/api/contracts/${c.id}/milestones`, { milestones: [
