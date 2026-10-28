@@ -49,7 +49,7 @@ test('chấm công: gõ X, N, giờ, làm thêm, Ctrl+S lưu, ô sai mã bị ch
 
   // Sửa ô sai thành P (nghỉ phép) rồi lưu bằng Ctrl+S ngay khi đang sửa ô
   await cellOf(6).click();
-  await page.keyboard.press('Control+a'); await page.keyboard.type('p');
+  await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type('p');
   await page.keyboard.press('Control+s');
   await expect(page.getByText('Đã lưu chấm công 5 ô')).toBeVisible();
 

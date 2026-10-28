@@ -38,7 +38,7 @@ test('kiểm kê tài sản: điền số sổ sách, nhập số kiểm kê, l�
 
   // Nhập số kiểm kê 0: thiếu một tài sản, gợi ý Ghi giảm.
   await row.locator('[col-id="actualQuantity"]').dblclick();
-  await page.keyboard.press('Control+A'); await page.keyboard.type('0'); await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type('0'); await page.keyboard.press('Enter');
   await expect(page.getByTestId('ac-missing')).toHaveText('1');
   await page.keyboard.press('Control+S');
   await expect(page.getByText('Đã lưu số kiểm kê')).toBeVisible();

@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { typeDate } from './helpers/dates.js';
 
 // Yêu cầu trước khi chạy: pnpm -F @kt/api cli create-admin --username e2e --password Matkhau1! --tenant-code E2E --tenant-name "Công ty E2E"
 
@@ -41,7 +42,7 @@ test('Công cụ tỷ giá: chạy tỷ giá xuất quỹ ghi nhật ký; đánh
 
   // Đánh giá lại: tỷ giá lấy sẵn từ danh mục theo ngày, nút Chạy khóa tới khi xem trước
   await page.getByRole('tab', { name: 'Đánh giá lại ngoại tệ' }).click();
-  await page.getByLabel('Ngày đánh giá lại').fill(vn); await page.keyboard.press('Enter');
+  await typeDate(page, page.getByLabel('Ngày đánh giá lại'), vn);
   await expect(page.getByLabel('Tỷ giá USD')).toHaveValue(new RegExp(`^${rate.slice(0, 2)}\\.${rate.slice(2)}`));
   await expect(page.locator('.ant-table-row', { hasText: 'USD - ' })).toContainText(vn);
   const run = page.getByRole('button', { name: 'Chạy đánh giá lại' });

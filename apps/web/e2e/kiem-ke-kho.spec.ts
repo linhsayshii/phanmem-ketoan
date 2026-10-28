@@ -31,7 +31,7 @@ test('Kiểm kê kho: lập biên bản, nhập số đếm, lưu, điều chỉ
 
   const cell = (col: string) => page.locator(`.ag-center-cols-container .ag-row[row-index="0"] [col-id="${col}"]`);
   await expect(cell('itemCode')).toHaveText('HANG-KK');
-  await cell('countedQty').click(); await page.keyboard.press('Control+a'); await page.keyboard.type('0'); await page.keyboard.press('Tab');
+  await cell('countedQty').click(); await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type('0'); await page.keyboard.press('Tab');
   await expect(page.getByTestId('st-shortage')).toHaveText('1');
   await page.keyboard.press('Control+s');
   await expect(page.locator('.ant-message').getByText('Đã lưu số đếm')).toBeVisible();

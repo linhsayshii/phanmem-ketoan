@@ -149,6 +149,8 @@ function RunView({ id, onGone }: { id: number; onGone: () => void }) {
     } catch (x) {
       row.vals = { ...row.vals, [code]: prev ?? '' }; setRows((rs) => [...rs]); setErr(x);
     }
+    // dòng sửa tại chỗ (cùng tham chiếu) nên lưới không tự vẽ lại: buộc vẽ lại giá trị và kiểu ô (ô sửa tay in đậm) của dòng này
+    if (e.node) gridApi.current?.refreshCells({ rowNodes: [e.node], force: true });
   }, [id]);
 
   const columns = useMemo<ColDef<GridRow>[]>(() => {

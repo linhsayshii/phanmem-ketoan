@@ -13,6 +13,7 @@ async function signIn(page: Page, request: APIRequestContext) {
 const pickF4 = async (page: Page, combo: string, code: string) => {
   await page.getByRole('combobox', { name: combo }).focus(); await page.keyboard.press('F4'); await page.keyboard.type(code);
   await page.locator('.ant-select-item-option', { hasText: code }).first().click();
+  await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0); // chờ dropdown đóng: antd trả tiêu điểm về ô vừa chọn sau hiệu ứng đóng
 };
 
 test('đối tượng tập hợp chi phí, định mức NVL bằng bàn phím và cột Đối tượng THCP (F4) trên phiếu kế toán', async ({ page, request }) => {
@@ -41,7 +42,7 @@ test('đối tượng tập hợp chi phí, định mức NVL bằng bàn phím 
   const cell = (row: number, col: string) => page.locator(`.ant-modal .ag-center-cols-container .ag-row[row-index="${row}"] [col-id="${col}"]`);
   await cell(0, 'itemCode').dblclick(); await page.keyboard.type(nvl); await page.keyboard.press('Tab');
   await cell(0, 'quantity').dblclick(); await page.keyboard.type('2,5'); await page.keyboard.press('Tab');
-  await cell(0, 'lossPercent').dblclick(); await page.keyboard.press('Control+a'); await page.keyboard.type('2'); await page.keyboard.press('Tab');
+  await cell(0, 'lossPercent').dblclick(); await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type('2'); await page.keyboard.press('Tab');
   await expect(cell(0, 'grossQuantity')).toContainText('2,55');
   await page.keyboard.press('Control+s');
   await expect(page.locator('.ant-message').getByText('Đã lưu định mức')).toBeVisible();

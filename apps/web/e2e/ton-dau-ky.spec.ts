@@ -28,8 +28,9 @@ test('Tồn kho đầu kỳ: nhập kho, hàng, số lượng, giá trị bằng
     await expect(page.getByRole('button', { name: 'Lưu' })).toBeEnabled();
     await expect(page.locator('.ag-center-cols-container .ag-row')).toHaveCount(1);
     const cell = (row: number, col: string) => page.locator(`.ag-center-cols-container .ag-row[row-index="${row}"] [col-id="${col}"]`);
-    const editingCol = () => page.evaluate(() => document.activeElement?.closest('.ag-cell')?.getAttribute('col-id') ?? null);
-    const type = async (text: string) => { await page.keyboard.press('Control+a'); await page.keyboard.type(text); };
+    // chỉ tính khi tiêu điểm đã vào ô nhập của trình soạn: ô vừa được chọn (div) có tiêu điểm trước, gõ lúc đó thì phím rơi mất
+    const editingCol = () => page.evaluate(() => (document.activeElement instanceof HTMLInputElement ? document.activeElement.closest('.ag-cell')?.getAttribute('col-id') ?? null : null));
+    const type = async (text: string) => { await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type(text); };
 
     await cell(0, 'warehouseCode').click(); await type('KTDK'); await page.keyboard.press('Enter');
     await expect.poll(editingCol).toBe('itemCode'); await type('TDK1'); await page.keyboard.press('Enter');

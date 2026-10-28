@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { typeDate, typeRange } from './helpers/dates.js';
 
 // Yêu cầu trước khi chạy: pnpm -F @kt/api cli create-admin --username e2e --password Matkhau1! --tenant-code E2E --tenant-name "Công ty E2E"
 
@@ -28,13 +29,13 @@ test('Báo cáo công nợ: sổ chi tiết, tổng hợp, tuổi nợ, đối c
   const inv = await post(request, 'PKT', iso, `Bán chịu ${stamp}`, [{ accountCode: '131', partyCode: code, debit: '5000000', credit: '0', dueDate: '2026-12-01' }, { accountCode: '5113', debit: '0', credit: '5000000' }]);
   const rcpt = await post(request, 'PT', iso, `Thu nợ ${stamp}`, [{ accountCode: '1111', debit: '2000000', credit: '0' }, { accountCode: '131', partyCode: code, debit: '0', credit: '2000000' }]);
 
+  // Bộ lọc nhớ của lần chạy trước giữ ngày khác: đặt sẵn ngày của lần này (gõ vào RangePicker đôi khi không phát onChange khi chạy nhanh).
+  expect((await request.put('/api/prefs/filter:arap-reports', { data: { value: { from: iso, to: iso, asOf: iso, accountCode: '131', partyCode: '' } } })).ok()).toBeTruthy();
   // Bộ lọc nhớ nạp từ máy chủ sau khi trang mở và ghi đè ô vừa nhập: chờ bản nạp xong rồi mới nhập.
   const prefs = page.waitForResponse((r) => r.url().includes('/api/prefs/') && r.url().includes('arap-reports'));
   await page.goto('/cong-no/bao-cao'); await prefs;
   await expect(page.getByRole('heading', { name: 'Báo cáo công nợ' })).toBeVisible();
-  const range = page.locator('.ant-picker-range input');
-  await range.nth(0).fill(vn); await page.keyboard.press('Enter');
-  await range.nth(1).fill(vn); await page.keyboard.press('Enter');
+  await typeRange(page, vn, vn);
 
   // Sổ chi tiết: chọn khách bằng F4 rồi gõ mã để lọc danh sách (bộ lọc nhớ có thể đã giữ khách của lần chạy trước, chọn mới sẽ thay)
   await page.getByRole('combobox', { name: 'Đối tượng (F4)' }).focus(); await page.keyboard.press('F4'); await page.keyboard.type(code);
@@ -56,7 +57,7 @@ test('Báo cáo công nợ: sổ chi tiết, tổng hợp, tuổi nợ, đối c
 
   // Tuổi nợ tính đến cuối ngày lập: hóa đơn hạn 01/12 quá 1 đến 30 ngày còn 5.000.000; phiếu thu chưa đối trừ là khoản dư Có 2.000.000; chọn khách để xem từng khoản
   await page.getByRole('tab', { name: 'Tuổi nợ' }).click();
-  await page.getByLabel('Tính đến ngày').fill(vn); await page.keyboard.press('Enter');
+  await typeDate(page, page.getByLabel('Tính đến ngày'), vn);
   await page.getByRole('combobox', { name: 'Đối tượng (không bắt buộc)' }).focus(); await page.keyboard.press('F4'); await page.keyboard.type(code);
   await page.locator('.ant-select-item-option', { hasText: code }).click();
   await expect(page.getByText(`Các khoản còn nợ của đối tượng ${code}`)).toBeVisible();

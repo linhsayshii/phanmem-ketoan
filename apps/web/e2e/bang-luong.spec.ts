@@ -114,7 +114,7 @@ test.describe.serial('bảng lương', () => {
     // Sửa tay ô Thưởng của NA: dòng tính lại ngay, ô đánh dấu đã sửa tay
     const put = page.waitForResponse((r) => r.url().includes('/values') && r.request().method() === 'PUT');
     const bonus = await cell(page, 0, 'bonus');
-    await bonus.click(); await page.keyboard.press('Control+a'); await page.keyboard.type('1.000.000'); await page.keyboard.press('Enter');
+    await bonus.click(); await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type('1.000.000'); await page.keyboard.press('Enter');
     expect((await put).ok()).toBeTruthy();
     await page.keyboard.press('Escape');
     await expect(await cell(page, 0, 'bonus')).toHaveText('1.000.000');

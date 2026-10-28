@@ -14,6 +14,7 @@ async function signIn(page: Page, request: APIRequestContext) {
 const choose = async (page: Page, combo: string, option: string) => {
   await page.getByRole('combobox', { name: combo }).click({ force: true });
   await page.locator('.ant-select-dropdown:visible .ant-select-item-option', { hasText: option }).first().click();
+  await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0); // chờ dropdown đóng hẳn: bấm ô kế tiếp khi còn hiệu ứng đóng thì ô đó không mở
 };
 
 test('báo cáo giá thành: thẻ tính giá thành, sổ chi tiết 154, tổng hợp theo khoản mục, so sánh định mức, in và Excel', async ({ page, request }) => {

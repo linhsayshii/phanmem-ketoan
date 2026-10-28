@@ -50,7 +50,7 @@ test.use({ viewport: { width: 1600, height: 1400 } }); // công ty E2E có nhi�
 test('thuế TNCN: bảng kê quý, lập và chốt 05/KK-TNCN, quyết toán năm loại người không ủy quyền', async ({ page, request }) => {
   await signIn(page, request);
   await page.goto('/luong/thue-tncn');
-  await page.getByRole('combobox', { name: 'Loại kỳ' }).click({ force: true }); await page.locator('.ant-select-item-option', { hasText: 'Khấu trừ theo quý' }).click();
+  await page.getByRole('combobox', { name: 'Loại kỳ' }).click({ force: true }); await page.locator('.ant-select-item-option', { hasText: 'Khấu trừ theo quý' }).click(); await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0);
   await page.getByRole('combobox', { name: 'Quý' }).click({ force: true }); await page.locator('.ant-select-item-option', { hasText: `Quý ${quarter}` }).last().click();
   await expect(page.getByText('Chưa có mẫu tờ khai theo TT 89/2026: xuất bảng kê Excel')).toBeVisible();
   await expect(page.getByText(names[0]!)).toBeVisible(); await expect(page.getByText(names[1]!)).toBeVisible();

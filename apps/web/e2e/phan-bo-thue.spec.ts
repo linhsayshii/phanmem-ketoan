@@ -20,7 +20,9 @@ test('Phân bổ thuế: tìm phân bổ TNCN khấu trừ tại nguồn 3335, s
   try {
     await page.goto('/danh-muc/tax_distribution');
     await expect(page.getByRole('heading', { name: 'Phân bổ thuế' })).toBeVisible();
-    await page.getByPlaceholder('Tìm mã, tên…').fill('3335'); await page.keyboard.press('Enter');
+    // chờ kết quả tìm về: đọc row-index khi lưới còn danh sách chưa lọc thì nút Sửa ở vùng ghim không còn đúng dòng
+    const searched = page.waitForResponse((r) => r.url().includes('/api/catalogs/tax_distribution') && r.url().includes('q=3335'));
+    await page.getByPlaceholder('Tìm mã, tên…').fill('3335'); await page.keyboard.press('Enter'); await searched;
     const gridRow = page.locator('.ag-center-cols-container .ag-row', { hasText: 'Hóa đơn' }).filter({ hasText: 'TNCN_KT' });
     await expect(gridRow).toHaveCount(1);
     await expect(gridRow).toContainText('-100,0000');

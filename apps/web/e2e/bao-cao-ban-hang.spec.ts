@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { typeRange } from './helpers/dates.js';
 
 // Yêu cầu trước khi chạy: như phieu-thu.spec.ts (tài khoản e2e). Hàng riêng mỗi lần chạy; chứng từ lập tháng 08/2026.
 async function signIn(page: Page, request: APIRequestContext) {
@@ -29,10 +30,8 @@ test('báo cáo bán hàng: doanh thu thuần, giá vốn và lãi gộp theo m�
   const prefs = page.waitForResponse((r) => r.url().includes('/api/prefs/') && r.url().includes('sales-reports'));
   await page.goto('/ban-hang/bao-cao'); await prefs;
   await expect(page.getByRole('heading', { name: 'Báo cáo bán hàng' })).toBeVisible();
-  const range = page.locator('.ant-picker-range input');
-  await range.nth(0).fill('01/08/2026'); await page.keyboard.press('Enter');
-  await range.nth(1).fill('31/08/2026'); await page.keyboard.press('Enter');
-  await page.locator('.ant-select').filter({ has: page.getByRole('combobox', { name: 'Nhóm theo' }) }).click(); await page.locator('.ant-select-item-option', { hasText: 'Theo mặt hàng' }).click();
+  await typeRange(page, '01/08/2026', '31/08/2026');
+  await page.locator('.ant-select').filter({ has: page.getByRole('combobox', { name: 'Nhóm theo' }) }).click(); await page.locator('.ant-select-item-option', { hasText: 'Theo mặt hàng' }).click(); await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0);
   await page.getByRole('combobox', { name: 'Mã hàng' }).focus(); await page.keyboard.press('F4'); await page.keyboard.type(item);
   await page.locator('.ant-select-item-option', { hasText: item }).first().click();
 

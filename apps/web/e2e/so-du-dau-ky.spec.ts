@@ -33,8 +33,9 @@ test('Số dư đầu kỳ: nhập bằng bàn phím, ô TK ngân hàng chỉ d�
     await expect(page.locator('.ag-center-cols-container .ag-row')).toHaveCount(1); // chỉ còn dòng trống cuối (dòng cũ của lần nạp trước đã gỡ khỏi lưới)
     const cell = (row: number, col: string) => page.locator(`.ag-center-cols-container .ag-row[row-index="${row}"] [col-id="${col}"]`);
     // ô đang có trình soạn (tiêu điểm nằm trong ô): col-id của ô đó
-    const editingCol = () => page.evaluate(() => document.activeElement?.closest('.ag-cell')?.getAttribute('col-id') ?? null);
-    const type = async (text: string) => { await page.keyboard.press('Control+a'); await page.keyboard.type(text); };
+    // chỉ tính khi tiêu điểm đã vào ô nhập của trình soạn: ô vừa được chọn (div) có tiêu điểm trước, gõ lúc đó thì phím rơi mất
+    const editingCol = () => page.evaluate(() => (document.activeElement instanceof HTMLInputElement ? document.activeElement.closest('.ag-cell')?.getAttribute('col-id') ?? null : null));
+    const type = async (text: string) => { await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type(text); };
 
     // Dòng 1: 1121 (tiền gửi). Enter đi qua Đối tượng rồi dừng ở TK ngân hàng, nhập số tài khoản, đi tiếp qua Loại tiền tới Dư Nợ
     await cell(0, 'accountCode').click(); await type('1121'); await page.keyboard.press('Enter');

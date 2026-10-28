@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { typeRange } from './helpers/dates.js';
 
 // Yêu cầu trước khi chạy: pnpm -F @kt/api cli create-admin --username e2e --password Matkhau1! --tenant-code E2E --tenant-name "Công ty E2E"
 
@@ -86,9 +87,7 @@ test('Hóa đơn bán dịch vụ: nhập bằng bàn phím, thuế tự tính, 
   const prefs = page.waitForResponse((r) => r.url().includes('/api/prefs/') && r.url().includes('arap-reports'));
   await page.goto('/cong-no/bao-cao'); await prefs;
   await expect(page.getByRole('heading', { name: 'Báo cáo công nợ' })).toBeVisible();
-  const range = page.locator('.ant-picker-range input');
-  await range.nth(0).fill(vn); await page.keyboard.press('Enter');
-  await range.nth(1).fill(vn); await page.keyboard.press('Enter');
+  await typeRange(page, vn, vn);
   await page.getByRole('combobox', { name: 'Đối tượng (F4)' }).focus(); await page.keyboard.press('F4'); await page.keyboard.type(code);
   await page.locator('.ant-select-item-option', { hasText: code }).click();
   const row = page.locator('.ag-center-cols-container .ag-row', { hasText: saved.voucherNo });

@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { typeRange } from './helpers/dates.js';
 
 // Yêu cầu trước khi chạy: như tai-san.spec.ts (tài khoản e2e). Thẻ TSCĐ riêng của spec, mã mới mỗi lần chạy; nguyên giá ghi bằng phiếu kế toán ngày 01/01/2026.
 async function signIn(page: Page, request: APIRequestContext) {
@@ -26,9 +27,7 @@ test('báo cáo tài sản: sổ TSCĐ, thẻ TSCĐ, tăng giảm', async ({ pag
   const prefs = page.waitForResponse((r) => r.url().includes('/api/prefs/') && r.url().includes('asset-reports'));
   await page.goto('/tai-san/bao-cao'); await prefs;
   await expect(page.getByRole('heading', { name: 'Báo cáo tài sản' })).toBeVisible();
-  const range = page.locator('.ant-picker-range input');
-  await range.nth(0).fill('01/01/2026'); await page.keyboard.press('Enter');
-  await range.nth(1).fill('31/12/2026'); await page.keyboard.press('Enter');
+  await typeRange(page, '01/01/2026', '31/12/2026');
 
   const row = page.locator('.ag-center-cols-container .ag-row', { hasText: `Máy báo cáo ${code}` });
   // CSDL e2e dùng chung nên sổ có nhiều thẻ của spec khác: lưới ảo hóa dòng, cuộn dần đến khi thấy thẻ của spec này.

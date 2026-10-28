@@ -23,7 +23,7 @@ test('Số dư đầu kỳ tài sản: nhập thẻ bằng bàn phím rồi lưu
     await expect(page.locator('.ant-card-head-title', { hasText: 'Số dư đầu kỳ tài sản' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Lưu' })).toBeEnabled();
     const cell = (row: number, col: string) => page.locator(`.ag-center-cols-container .ag-row[row-index="${row}"] [col-id="${col}"]`).first();
-    const type = async (text: string) => { await page.keyboard.press('Control+a'); await page.keyboard.type(text); };
+    const type = async (text: string) => { await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type(text); };
     const edit = async (col: string, text: string) => { await cell(0, col).dblclick(); await type(text); await page.keyboard.press('Enter'); };
 
     await edit('code', 'DKE01'); await edit('name', 'Máy đầu kỳ'); await edit('categoryCode', 'DKE2E');

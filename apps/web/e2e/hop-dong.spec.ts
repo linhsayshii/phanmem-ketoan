@@ -13,6 +13,7 @@ async function signIn(page: Page, request: APIRequestContext) {
 const pickF4 = async (page: Page, combo: string, code: string | RegExp, typed = String(code)) => {
   await page.getByRole('combobox', { name: combo }).focus(); await page.keyboard.press('F4'); await page.keyboard.type(typed);
   await page.locator('.ant-select-item-option', { hasText: code }).first().click();
+  await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0); // chờ dropdown đóng: antd trả tiêu điểm về ô vừa chọn sau hiệu ứng đóng
 };
 
 test('Hợp đồng bán: nhập hợp đồng và đợt thanh toán bằng bàn phím, lập hóa đơn từ đợt, theo dõi đã lập hóa đơn', async ({ page, request }) => {

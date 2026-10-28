@@ -139,11 +139,15 @@ export function EventDialog({ asset, kind, onClose, onDone }: { asset: DialogAss
     }
   })();
   const open = kind !== null;
+  // Đặt lại form ngay khi mở (không đợi hết hiệu ứng mở): đặt lại trong afterOpenChange xóa mất lựa chọn người dùng đã kịp chọn.
+  useEffect(() => {
+    if (!kind) return;
+    form.resetFields(); form.setFieldsValue({ date: dayjs(todayVn()), ...(kind === 'revalue' ? { counterAccountCode: revalCounter(todayVn()) } : {}) }); setErr(null); setResult(null);
+    setAlloc(kind === 'transfer' && asset.allocations.length ? toRows(asset.allocations) : [emptyAlloc()]);
+  }, [kind]);
   return (
     <Modal open={open} title={kind ? `${EVENT_TITLE[kind]} ${asset.code}` : ''} destroyOnHidden width={needAlloc ? 760 : 520} okText={result ? 'Đóng' : 'Lưu (Ctrl+S)'} cancelText={result ? undefined : 'Bỏ qua'} cancelButtonProps={{ style: result ? { display: 'none' } : {} }}
-      okButtonProps={{ loading: run.isPending }} onCancel={onClose} onOk={() => (result ? onClose() : submit())}
-      afterOpenChange={(o) => { if (o) { form.resetFields(); form.setFieldsValue({ date: dayjs(todayVn()), ...(kind === 'revalue' ? { counterAccountCode: revalCounter(todayVn()) } : {}) }); setErr(null); setResult(null);
-        setAlloc(kind === 'transfer' && asset.allocations.length ? toRows(asset.allocations) : [emptyAlloc()]); } }}>
+      okButtonProps={{ loading: run.isPending }} onCancel={onClose} onOk={() => (result ? onClose() : submit())}>
       {open && <div onKeyDown={onKey}>
         {result ? (
           <Alert type="success" showIcon data-testid="event-result" message={`Đã ghi nhận ${EVENT_TITLE[kind].toLowerCase()}`} description={<>

@@ -59,6 +59,7 @@ test('báo cáo lương: bảng thanh toán khớp sổ cái, phiếu lương in
   await signIn(page, request);
   await page.goto('/luong/bao-cao');
   await page.getByRole('combobox', { name: 'Tháng' }).click({ force: true }); await page.locator('.ant-select-item-option', { hasText: `Tháng ${month}` }).last().click();
+  await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0); // chờ dropdown tháng đóng hẳn rồi mới mở ô Bảng lương
   await page.getByRole('combobox', { name: 'Bảng lương' }).click({ force: true }); await page.locator('.ant-select-item-option', { hasText: runName }).click();
   await expect(page.getByText(names[0]!)).toBeVisible(); await expect(page.getByText(names[1]!)).toBeVisible();
   await expect(page.getByTestId('recon')).toContainText('Khớp sổ cái');

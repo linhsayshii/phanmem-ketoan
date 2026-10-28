@@ -25,7 +25,8 @@ test('Danh mục đối tượng: thêm, ngưng dùng, lọc', async ({ page, re
   await page.getByPlaceholder('Tìm mã, tên…').fill(code); await page.keyboard.press('Enter');
   const row = page.locator('.ag-row', { hasText: code });
   await expect(row).toBeVisible();
-  await page.getByRole('button', { name: 'Ngưng dùng' }).click(); // tìm theo mã nên còn đúng một dòng
+  await expect(page.locator('.ag-center-cols-container .ag-row')).toHaveCount(1); // chờ lưới lọc xong: tìm theo mã nên còn đúng một dòng
+  await page.getByRole('button', { name: 'Ngưng dùng' }).click();
   await expect(page.getByText('Đã ngưng dùng')).toBeVisible();
   await expect(row).toHaveCount(0); // bộ lọc mặc định "Đang dùng" ẩn dòng vừa ngưng
 

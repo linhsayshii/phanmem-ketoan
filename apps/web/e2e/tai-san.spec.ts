@@ -20,8 +20,8 @@ test('Tài sản cố định: tạo loại, tạo thẻ, ghi tăng xây dựng 
   await page.getByRole('button', { name: 'Thêm loại' }).click();
   const dlg = page.getByRole('dialog');
   await dlg.getByLabel('Mã', { exact: true }).fill(cat); await dlg.getByLabel('Tên', { exact: true }).fill(`Máy móc ${stamp}`);
-  await dlg.getByLabel('TK tài sản (F4)').fill('2111'); await page.locator('.ant-select-item-option', { hasText: /^2111/ }).first().click();
-  await dlg.getByLabel('TK hao mòn (F4)').fill('2141'); await page.locator('.ant-select-item-option', { hasText: /^2141/ }).first().click();
+  await dlg.getByLabel('TK tài sản (F4)').fill('2111'); await page.locator('.ant-select-item-option', { hasText: /^2111/ }).first().click(); await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0);
+  await dlg.getByLabel('TK hao mòn (F4)').fill('2141'); await page.locator('.ant-select-item-option', { hasText: /^2141/ }).first().click(); await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0);
   await dlg.getByRole('button', { name: 'Lưu' }).click();
   await expect(page.locator('.ant-table-row', { hasText: cat })).toBeVisible();
 
@@ -31,7 +31,7 @@ test('Tài sản cố định: tạo loại, tạo thẻ, ghi tăng xây dựng 
   await page.getByRole('button', { name: /Thêm/ }).click();
   const dr = page.getByRole('dialog').first();
   await dr.getByLabel('Mã', { exact: true }).fill(code); await dr.getByLabel('Tên', { exact: true }).fill(`Máy tiện ${stamp}`);
-  await dr.getByLabel('Loại (F4)').fill(cat); await page.locator('.ant-select-item-option', { hasText: cat }).first().click();
+  await dr.getByLabel('Loại (F4)').fill(cat); await page.locator('.ant-select-item-option', { hasText: cat }).first().click(); await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0);
   await dr.getByLabel('Ngày bắt đầu khấu hao').fill('01/02/2026'); await page.keyboard.press('Enter');
   await dr.getByLabel('Số kỳ sử dụng').fill('12');
   await dr.getByLabel('Ghi chú').press('Control+s');
@@ -49,7 +49,7 @@ test('Tài sản cố định: tạo loại, tạo thẻ, ghi tăng xây dựng 
   await dr.getByRole('tab', { name: 'Biến động và chứng từ' }).click();
   await dr.getByRole('button', { name: 'Ghi tăng', exact: true }).click();
   const ev = page.getByRole('dialog', { name: /Ghi tăng/ });
-  await ev.locator('.ant-form-item', { hasText: 'Lý do ghi tăng' }).locator('.ant-select').click(); await page.locator('.ant-select-item-option', { hasText: 'Hoàn thành xây dựng cơ bản' }).click();
+  await ev.locator('.ant-form-item', { hasText: 'Lý do ghi tăng' }).locator('.ant-select').click(); await page.locator('.ant-select-item-option', { hasText: 'Hoàn thành xây dựng cơ bản' }).click(); await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0);
   await ev.getByLabel('TK đối ứng (Có, F4)').fill('2412'); await page.locator('.ant-select-item-option', { hasText: /^2412/ }).first().click();
   await ev.getByLabel('Giá trị ghi tăng').fill('120000000');
   await ev.getByRole('button', { name: /Lưu/ }).click();

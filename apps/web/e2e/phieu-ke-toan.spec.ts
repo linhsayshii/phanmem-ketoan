@@ -102,7 +102,7 @@ test('dòng tiền chọn mã luồng tiền bằng F4, dòng vay nhập ngày �
   expect(saved.lines.map((l) => [l.accountCode, l.dueDate, l.cashFlowCode])).toEqual([['1111', null, '33'], ['3411', '2029-01-01', null]]);
   // Đã ghi sổ: mã luồng tiền vẫn sửa được (siêu dữ liệu), lưu bằng Ctrl+S
   await expect(page.locator('.ant-card-head-title')).toContainText(/PKT\d+/);
-  await cfCell('33').dblclick(); await page.keyboard.press('Control+a'); await page.keyboard.type('31'); await page.keyboard.press('Enter');
+  await cfCell('33').dblclick(); await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type('31'); await page.keyboard.press('Enter');
   await page.keyboard.press('Control+s');
   await expect(page.locator('.ant-message').getByText('Đã lưu')).toBeVisible();
   expect(((await (await request.get(`/api/vouchers/${id}`)).json()) as typeof saved).lines[0]!.cashFlowCode).toBe('31');

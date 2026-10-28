@@ -35,10 +35,13 @@ const dateRule = (dt: dayjs.Dayjs | null) => (dt ? iso(dt) : null);
 // Hộp thoại thêm/sửa một dòng con (phụ cấp, người phụ thuộc, mức lương): lưu bằng Enter hoặc nút; lỗi máy chủ hiện trong hộp thoại.
 function RowDialog<V extends object>({ open, title, form, formName, onClose, onSave, children }: { open: boolean; title: string; form: ReturnType<typeof Form.useForm<V>>[0]; formName: string; onClose: () => void; onSave: (v: V) => Promise<unknown>; children: React.ReactNode }) {
   const [err, setErr] = useState<string | null>(null); const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) setErr(null); }, [open]);
+  // busy về false cùng lúc hộp thoại ẩn: hiệu ứng thu biểu tượng loading không chạy xong, forceRender giữ nút đó cho lần mở sau ("loading Lưu"). Mỗi lần mở dựng lại chân hộp thoại.
+  const [gen, setGen] = useState(0);
+  useEffect(() => { if (open) { setErr(null); setGen((g) => g + 1); } }, [open]);
   const submit = () => { void form.validateFields().then(async (v) => { setBusy(true); try { await onSave(v); onClose(); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); } }, () => undefined); };
   return (
-    <Modal open={open} title={title} onCancel={onClose} onOk={submit} okText="Lưu" cancelText="Bỏ qua" confirmLoading={busy} destroyOnHidden forceRender>
+    <Modal open={open} title={title} onCancel={onClose} onOk={submit} okText="Lưu" cancelText="Bỏ qua" confirmLoading={busy} destroyOnHidden forceRender
+      footer={(_, { OkBtn, CancelBtn }) => <span key={gen}><CancelBtn /><OkBtn /></span>}>
       <Form form={form} name={formName} layout="vertical" onKeyDown={(e) => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT' && !(e.target as HTMLElement).closest('.ant-select')) { e.preventDefault(); submit(); } }}>
         {children}{err && <Alert type="error" showIcon message={err} />}
       </Form>

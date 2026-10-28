@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { typeRange } from './helpers/dates.js';
 
 // Yêu cầu trước khi chạy: pnpm -F @kt/api cli create-admin --username e2e --password Matkhau1! --tenant-code E2E --tenant-name "Công ty E2E"
 
@@ -30,9 +31,7 @@ test('Sổ quỹ tiền mặt: xem một ngày, mở chứng từ, xuất Excel;
   await page.goto('/bao-cao/so-quy'); await prefs;
   await expect(page.getByRole('heading', { name: 'Sổ quỹ và tiền gửi' })).toBeVisible();
   // Khoảng ngày chỉ gồm ngày vừa lập: hai ô của bộ chọn khoảng ngày nhận chữ rồi Enter
-  const range = page.locator('.ant-picker-range input');
-  await range.nth(0).fill(vn); await page.keyboard.press('Enter');
-  await range.nth(1).fill(vn); await page.keyboard.press('Enter');
+  await typeRange(page, vn, vn);
 
   const thu = page.locator('.ag-center-cols-container .ag-row', { hasText: `Thu sổ quỹ ${stamp}` });
   const chi = page.locator('.ag-center-cols-container .ag-row', { hasText: `Chi sổ quỹ ${stamp}` });

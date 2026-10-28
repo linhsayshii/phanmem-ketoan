@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { typeRange } from './helpers/dates.js';
 
 // Yêu cầu trước khi chạy: như phieu-thu.spec.ts (tài khoản e2e). Kho, hàng riêng của spec này; phiếu lập ngày 05/07/2026 và 12/07/2026 (mỗi lần chạy cộng thêm số lượng, nên kiểm tra theo mã hàng mới mỗi lần).
 async function signIn(page: Page, request: APIRequestContext) {
@@ -31,9 +32,7 @@ test('báo cáo kho: nhập xuất tồn, thẻ kho, đối chiếu', async ({ p
   const prefs = page.waitForResponse((r) => r.url().includes('/api/prefs/') && r.url().includes('stock-reports'));
   await page.goto('/kho/bao-cao'); await prefs;
   await expect(page.getByRole('heading', { name: 'Báo cáo kho' })).toBeVisible();
-  const range = page.locator('.ant-picker-range input');
-  await range.nth(0).fill('01/07/2026'); await page.keyboard.press('Enter');
-  await range.nth(1).fill('31/07/2026'); await page.keyboard.press('Enter');
+  await typeRange(page, '01/07/2026', '31/07/2026');
   const pick = async (label: string, code: string) => {
     await page.getByRole('combobox', { name: label }).focus(); await page.keyboard.press('F4'); await page.keyboard.type(code);
     await page.locator('.ant-select-item-option', { hasText: code }).first().click();

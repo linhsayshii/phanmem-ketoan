@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import PayrollRunsPage from '../src/pages/PayrollRuns.js';
@@ -33,6 +33,8 @@ describe('màn hình lương', () => {
     renderPage(<PayrollParamsPage />);
     expect(screen.getByTestId('params-banner')).toHaveTextContent('Giá trị do người dùng nhập từ văn bản gốc; phần mềm không có mặc định.');
     expect((await screen.findAllByText('Chưa có')).length).toBeGreaterThan(0);
+    // bảng còn đang tải (lớp mờ của Spin chặn con trỏ) khi vài dòng đã hiện "Chưa có": chờ hết tải mới bấm
+    await waitFor(() => expect(document.querySelector('.ant-spin-blur')).toBeNull());
 
     await userEvent.click(screen.getAllByText('Nhập', { selector: 'a' })[0]!); // dòng đầu: biểu thuế lũy tiến
     const dialog = await screen.findByRole('dialog');

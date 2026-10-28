@@ -33,7 +33,7 @@ test('Kiểm kê quỹ: nhập mệnh giá, tổng tự tính, lưu, xử lý ch
   // Lưới mệnh giá có sẵn 9 mệnh giá VND; nhập số lượng ở cột "Số lượng (tờ)" của dòng 500.000, 200.000, 1.000
   const qty = (rowIndex: number) => page.locator(`.ag-center-cols-container .ag-row[row-index="${rowIndex}"] [col-id="qty"]`);
   for (const [row, n] of [[0, 2], [1, 3], [8, sheets1k]] as const) {
-    await qty(row).click(); await page.keyboard.press('Control+a'); await page.keyboard.type(String(n)); await page.keyboard.press('Tab');
+    await qty(row).click(); await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type(String(n)); await page.keyboard.press('Tab');
   }
   await expect(page.getByTestId('cc-counted')).toHaveText(fmt(counted));
   await expect(page.locator('.ag-center-cols-container .ag-row[row-index="0"] [col-id="amount"]')).toHaveText('1.000.000');

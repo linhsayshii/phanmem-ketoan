@@ -46,6 +46,15 @@ describe('useRememberedFilter', () => {
     expect(result.current[0]).toEqual(defaults);
   });
 
+  it('người dùng đổi bộ lọc trước khi bản nạp từ máy chủ về: bản nạp về muộn không ghi đè', async () => {
+    let release!: (v: unknown) => void;
+    fetchMock.mockImplementation((_url: string, init?: { method?: string }) => (init?.method === 'PUT' ? Promise.resolve({ ok: true, status: 200 }) : new Promise((r) => { release = r; })));
+    const { result } = renderHook(() => useRememberedFilter('k', defaults, 's'));
+    act(() => result.current[1]({ q: 'vừa nhập' }));
+    await act(async () => { release(answer({ q: 'bản cũ máy chủ' })); await Promise.resolve(); await Promise.resolve(); });
+    expect(result.current[0]).toEqual({ q: 'vừa nhập' });
+  });
+
   it('máy chủ trả giá trị thì trộn lên mặc định', async () => {
     fetchMock.mockResolvedValue(answer({ q: 'máy chủ' }));
     const { result } = renderHook(() => useRememberedFilter('k', { q: '', page: 1 }, 's'));
