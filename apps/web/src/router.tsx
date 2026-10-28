@@ -54,6 +54,7 @@ import FinancialPage from './pages/Financial.js';
 import DataCheckPage from './pages/DataCheck.js';
 import DedupePage from './pages/Dedupe.js';
 import ExportPage from './pages/Export.js';
+import ApprovalsPage, { ApprovalFlowsPage } from './pages/Approvals.js';
 import { VOUCHER_TYPES } from '@kt/domain';
 import { api } from './api/client.js';
 
@@ -160,6 +161,10 @@ export const MENU: MenuItem[] = [
     { key: 'dedupe', label: 'Khử trùng chứng từ', to: '/tien-ich/khu-trung', permission: 'dedupe.run' },
     { key: 'datacheck', label: 'Soát lỗi dữ liệu', to: '/tien-ich/soat-loi', permission: 'data_check.run' },
     { key: 'export', label: 'Xuất dữ liệu cho cơ quan thẩm quyền', to: '/tien-ich/xuat-du-lieu', permission: 'export.authority' },
+  ] },  // GĐ7 nhóm 4: người chỉ có quyền duyệt vào hộp duyệt từ huy hiệu "Chờ duyệt" ở đầu trang.
+  { key: 'pheduyet', label: 'Phê duyệt', to: '/phe-duyet-nhom', children: [
+    { key: 'approvals', label: 'Đề nghị thanh toán, tạm ứng', to: '/phe-duyet', permission: 'approval_request.create' },
+    { key: 'approval-flows', label: 'Quy trình phê duyệt', to: '/phe-duyet/quy-trinh', permission: 'setting.update' },
   ] },
 ];
 
@@ -231,6 +236,8 @@ const apiKeysRoute = createRoute({ getParentRoute: () => appRoute, path: '/he-th
 const inboundInvoicesRoute = createRoute({ getParentRoute: () => appRoute, path: '/hoa-don-dau-vao', component: InboundInvoicesPage });
 const einvoiceNoticeRoute = createRoute({ getParentRoute: () => appRoute, path: '/hoa-don-dien-tu/thong-bao-sai-sot', component: EInvoiceErrorNoticePage });
 const einvoiceConfigRoute = createRoute({ getParentRoute: () => appRoute, path: '/hoa-don-dien-tu/cau-hinh', component: EInvoiceConfigPage });
-export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, bankTransactionsRoute, bankFeedsRoute, apiKeysRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, openingAssetsRoute, periodCloseRoute, closingRoute, amortizationRoute, tscdRoute, ccdcRoute, cpttRoute, assetCatRoute, loansRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, citEstimateRoute, citReturnRoute, signingRoute, einvoicesRoute, inboundInvoicesRoute, einvoiceNoticeRoute, einvoiceConfigRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, stocktakeRoute, stockReportsRoute, assetReportsRoute, assetCountRoute, salesReportsRoute, purchaseReportsRoute, costingRoute, catalogRoute])]);
+const approvalsRoute = createRoute({ getParentRoute: () => appRoute, path: '/phe-duyet', component: ApprovalsPage });
+const approvalFlowsRoute = createRoute({ getParentRoute: () => appRoute, path: '/phe-duyet/quy-trinh', component: ApprovalFlowsPage });
+export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, bankTransactionsRoute, bankFeedsRoute, apiKeysRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, openingAssetsRoute, periodCloseRoute, closingRoute, amortizationRoute, tscdRoute, ccdcRoute, cpttRoute, assetCatRoute, loansRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, citEstimateRoute, citReturnRoute, signingRoute, einvoicesRoute, inboundInvoicesRoute, einvoiceNoticeRoute, einvoiceConfigRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, stocktakeRoute, stockReportsRoute, assetReportsRoute, assetCountRoute, salesReportsRoute, purchaseReportsRoute, costingRoute, catalogRoute, approvalsRoute, approvalFlowsRoute])]);
 export const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }
