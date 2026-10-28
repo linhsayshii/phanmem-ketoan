@@ -8,6 +8,7 @@ import { KeyboardGrid, LookupSelect, useRememberedFilter } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor } from '../lookups.js';
+import { BranchFilter } from './branchCommon.js';
 
 interface Side { debit: string; credit: string }
 interface JournalRow { postingDate: string; voucherId: string; voucherNo: string; voucherType: string; documentDate: string; description: string | null; accountCode: string; accountName: string; debit: string; credit: string }
@@ -80,11 +81,11 @@ export default function LedgersPage() {
   const [bookSet, setBookSet] = useState(false);
   const [tab, setTab] = useState<TabKey>('journal');
   const [f, setF] = useRememberedFilter('ledgers', { from: dayjs().startOf('month').format('YYYY-MM-DD'), to: dayjs().endOf('month').format('YYYY-MM-DD'), accountCode: '', mode: 'voucher' as Mode, level: 0,
-    splitParty: true, partyCode: '', costItemCode: '', projectCode: '', departmentCode: '' }, `${me?.tenantId}:${me?.userId}`);
+    splitParty: true, partyCode: '', costItemCode: '', projectCode: '', departmentCode: '', branch: '' }, `${me?.tenantId}:${me?.userId}`);
   const accountFetcher = useMemo(() => accountFetcherFor(f.from, true, true), [f.from]); // gồm tài khoản tổng hợp (sổ Cái của cả nhóm) và tài khoản đã ngưng dùng nhưng còn phát sinh
   const drillToAccount = (accountCode: string, mode: Mode = 'voucher') => { setF({ ...f, accountCode, mode }); setTab('ledger'); };
 
-  const range = { from: f.from, to: f.to };
+  const range = { from: f.from, to: f.to, ...(f.branch && { branch: f.branch }) };
   const query = (o: Record<string, string>) => new URLSearchParams({ ...range, ...Object.fromEntries(Object.entries(o).filter(([, v]) => v)) }).toString();
   const url = { journal: `/api/reports/ledgers/general-journal?${query({})}`,
     ledger: `/api/reports/ledgers/account?${query({ accountCode: f.accountCode, mode: f.mode })}`,
@@ -142,6 +143,7 @@ export default function LedgersPage() {
       <Space wrap>
         <h2 style={{ margin: 0 }}>Sổ sách kế toán</h2>
         <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
+        <BranchFilter value={f.branch ?? ''} onChange={(branch) => setF({ ...f, branch })} />
         {(tab === 'ledger' || tab === 'detail') && <LookupSelect catalog="account" fetcher={accountFetcher} placeholder="Tài khoản" style={{ width: 300 }} value={f.accountCode || null} onChange={(accountCode) => setF({ ...f, accountCode: accountCode ?? '' })} />}
         {tab === 'ledger' && <Radio.Group optionType="button" value={f.mode} onChange={(e) => setF({ ...f, mode: e.target.value as Mode })}
           options={[{ value: 'voucher', label: 'Theo chứng từ' }, { value: 'subaccount', label: 'Theo tiểu khoản' }, { value: 't', label: 'Chữ T' }]} />}

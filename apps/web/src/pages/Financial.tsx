@@ -6,6 +6,7 @@ import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber } from '@kt/domain';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
+import { BranchFilter } from './branchCommon.js';
 
 interface FiscalYear { fiscalYear: number; regime: string; dateFrom: string; dateTo: string }
 interface Row { lineCode: string; label: string; parentLineCode: string | null; isBold: boolean; negate: boolean; noteRef: string | null; source: string; formula: string | null; current: string; previous: string | null }
@@ -93,12 +94,13 @@ export default function FinancialPage() {
   const [code, setCode] = useState('B01');
   const [custom, setCustom] = useState<{ year: number; from: string; to: string } | null>(null);
   const [compare, setCompare] = useState(false);
+  const [branch, setBranch] = useState('');
   const [drill, setDrill] = useState<Row | null>(null);
   const [editing, setEditing] = useState(false);
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<FiscalYear[]>('/api/fiscal-years') });
   const fy = years.data?.find((y) => y.fiscalYear === yearNo) ?? years.data?.at(-1);
   const mine = fy && custom?.year === fy.fiscalYear ? custom : null; // khoảng ngày tự chọn chỉ có hiệu lực trong năm đã chọn nó
-  const range = fy ? { from: mine?.from ?? fy.dateFrom, to: mine?.to ?? fy.dateTo } : null;
+  const range = fy ? { from: mine?.from ?? fy.dateFrom, to: mine?.to ?? fy.dateTo, ...(branch && { branch }) } : null;
   const isB01 = code === 'B01'; // B01 là số dư tại một ngày: chỉ chọn "đến ngày", số đầu năm tính theo năm tài chính
   const report = useQuery({ queryKey: ['financial', code, range, compare], enabled: !!range, retry: false,
     queryFn: () => api<Report>(`/api/reports/financial/${code}?${query({ ...range!, comparePrevYear: String(compare && !isB01) })}`) });
@@ -124,6 +126,7 @@ export default function FinancialPage() {
         {range && fy && (isB01
           ? <><span>Đến ngày</span><DatePicker format="DD/MM/YYYY" allowClear={false} value={dayjs(range.to)} onChange={(d) => d && setCustom({ year: fy.fiscalYear, from: fy.dateFrom, to: d.format('YYYY-MM-DD') })} /></>
           : <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(range.from), dayjs(range.to)]} onChange={(r) => r?.[0] && r[1] && setCustom({ year: fy.fiscalYear, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />)}
+        <BranchFilter value={branch} onChange={setBranch} />
         {!isB01 && <span><Switch checked={compare} onChange={setCompare} /> So sánh năm trước</span>}
         {can('report.print') && range && <>
           <Button disabled={!report.data} onClick={() => { window.open(`/api/reports/financial/${code}?${query({ ...range, format: 'pdf' })}`, '_blank'); }}>In PDF</Button>
