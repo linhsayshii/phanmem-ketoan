@@ -103,5 +103,11 @@ export const PERMISSIONS: readonly { code: string; name: string; group: string }
   { code: 'assistant.use', name: 'Dùng trợ lý (gợi ý định khoản, nhận diện hóa đơn)', group: 'Trợ lý' },
   { code: 'recurring.view', name: 'Xem bút toán định kỳ', group: 'Trợ lý' },
   { code: 'recurring.manage', name: 'Quản lý bút toán định kỳ (lập mẫu, chạy)', group: 'Trợ lý' },
+  // GĐ7 nhóm 6b: sổ hộ kinh doanh (TT 152/2025) và doanh nghiệp siêu nhỏ (TT 58/2026), cấp bởi migration 0251.
+  { code: 'sohkd.view', name: 'Xem sổ hộ kinh doanh, doanh nghiệp siêu nhỏ', group: 'Sổ HKD, siêu nhỏ' },
+  { code: 'sohkd.create', name: 'Ghi sổ hộ kinh doanh, doanh nghiệp siêu nhỏ', group: 'Sổ HKD, siêu nhỏ' },
+  { code: 'sohkd.update', name: 'Sửa bút ghi sổ hộ kinh doanh, doanh nghiệp siêu nhỏ', group: 'Sổ HKD, siêu nhỏ' },
+  { code: 'sohkd.delete', name: 'Xóa bút ghi sổ hộ kinh doanh, doanh nghiệp siêu nhỏ', group: 'Sổ HKD, siêu nhỏ' },
+  { code: 'sohkd.config', name: 'Cấu hình nhóm ngành nghề, tỷ lệ thuế, phương pháp nộp thuế', group: 'Sổ HKD, siêu nhỏ' },
 ];
 export const PERMISSION_CODES: readonly string[] = PERMISSIONS.map((p) => p.code);
