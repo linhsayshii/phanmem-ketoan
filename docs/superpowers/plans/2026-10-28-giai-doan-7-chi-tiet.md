@@ -1,6 +1,6 @@
 # Kế hoạch thực hiện chi tiết: GĐ7 (Mở rộng, phần không phụ thuộc GĐ6)
 
-> Chạy song song với GĐ6 (lương, giá thành, hợp đồng; nhánh `claude/magical-ritchie-ijawwy`). Nhánh này: `claude/gd7-mo-rong`, tách từ `main` (tag `gd5-hoan-tat`). Không push `main`, không force-push.
+> Chạy song song với GĐ6 (lương, giá thành, hợp đồng; nhánh `claude/magical-ritchie-ijawwy`). Nhánh này: `claude/loving-euler-jskha6`, tách từ `main` (tag `gd5-hoan-tat`). Không push `main`, không force-push.
 
 **Goal:** Sáu nhóm mở rộng không đụng lương/giá thành/hợp đồng/kho/giá vốn: (1) hình thức sổ Chứng từ ghi sổ, Nhật ký – Sổ cái, Nhật ký – Chứng từ; (2) báo cáo song ngữ Việt–Anh; (3) ngân sách/dự toán, cảnh báo vượt ngân sách, dashboard phân tích; (4) quy trình phê duyệt và API mobile; (5) đa chi nhánh, BCTC tổng hợp; (6) hộ kinh doanh TT 152/2025 và siêu nhỏ TT 58/2026 (chỉ khi có văn bản gốc).
 

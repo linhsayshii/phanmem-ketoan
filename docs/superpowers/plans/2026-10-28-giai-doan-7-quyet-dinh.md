@@ -4,7 +4,7 @@ Kế hoạch: `2026-10-28-giai-doan-7-chi-tiet.md`. Số bắt đầu từ 1000 
 
 ## Chung (1300+)
 
-1300. Nhánh `claude/gd7-mo-rong` từ `main`, không push `main`; migration từ 0200 vì `migrate.ts` sắp tên và áp dụng tệp chưa có, chịu được khoảng trống — khi hợp nhất với GĐ6 không cần đánh lại số; nếu hàm/trigger cùng tên bị định nghĩa lại ở cả hai nhánh thì phải viết migration hòa giải. (chung)
+1300. Nhánh `claude/loving-euler-jskha6` từ `main`, không push `main`; migration từ 0200 vì `migrate.ts` sắp tên và áp dụng tệp chưa có, chịu được khoảng trống — khi hợp nhất với GĐ6 không cần đánh lại số; nếu hàm/trigger cùng tên bị định nghĩa lại ở cả hai nhánh thì phải viết migration hòa giải. (chung)
 
 ## Nhóm 1 — Hình thức sổ (1000–1049)
 
