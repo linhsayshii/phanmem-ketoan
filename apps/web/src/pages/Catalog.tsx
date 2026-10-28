@@ -5,7 +5,7 @@ import { useParams } from '@tanstack/react-router';
 import type { ColDef, ICellRendererParams } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, VnNumberInput, useHotkeys, useRememberedFilter } from '@kt/ui';
+import { COLOR, KeyboardGrid, LookupSelect, PageHeader, Toolbar, VnNumberInput, useHotkeys, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -71,13 +71,43 @@ export default function CatalogPage() {
   if (!def) return null;
   return (
     <>
-      <Space style={{ marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>{def.label}</h2>
-        <Input.Search placeholder="Tìm mã, tên…" value={qText} onChange={(e) => setQText(e.target.value)} onSearch={(q) => setFilter({ ...filter, q })} style={{ width: 280 }} allowClear />
-        {def.hasActiveFlag && <Select value={filter.active} options={ACTIVE_OPTIONS} onChange={(active: Active) => setFilter({ ...filter, active })} style={{ width: 140 }} aria-label="Trạng thái" />}
-        {can(perm + '.create') && <Button type="primary" onClick={add}>Thêm (Insert)</Button>}
-      </Space>
-      <KeyboardGrid<Row> rows={rows.data?.rows ?? []} columns={columns} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly height="calc(100vh - 200px)" />
+      <PageHeader
+        title={def.label}
+        extra={can(perm + '.create') ? <Button type="primary" onClick={add}>Thêm (Insert)</Button> : null}
+      >
+        <Toolbar>
+          <Input.Search
+            placeholder="Tìm mã, tên…"
+            value={qText}
+            onChange={(e) => setQText(e.target.value)}
+            onSearch={(q) => setFilter({ ...filter, q })}
+            style={{ width: 280 }}
+            allowClear
+          />
+          {def.hasActiveFlag && (
+            <Select
+              value={filter.active}
+              options={ACTIVE_OPTIONS}
+              onChange={(active: Active) => setFilter({ ...filter, active })}
+              style={{ width: 140 }}
+              aria-label="Trạng thái"
+            />
+          )}
+          {rows.data?.total !== undefined && (
+            <span style={{ marginLeft: 'auto', color: COLOR.textSecondary, fontSize: 13 }}>
+              {formatVnNumber(String(rows.data.total))} dòng
+            </span>
+          )}
+        </Toolbar>
+      </PageHeader>
+      <KeyboardGrid<Row>
+        rows={rows.data?.rows ?? []}
+        columns={columns}
+        onRowsChange={() => undefined}
+        addRowTemplate={() => ({})}
+        readOnly
+        height="calc(100vh - 190px)"
+      />
       <Modal title={editing === 'new' ? `Thêm ${def.label.toLowerCase()}` : `Sửa ${def.label.toLowerCase()}`} open={!!editing} onCancel={() => setEditing(null)} onOk={() => form.submit()} width={720} destroyOnHidden>
         <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v)} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16 }}>
           {cols.map((c) => <FieldFor key={c.key} c={c} catalog={name} canQuickAdd={can(perm + '.create')} />)}

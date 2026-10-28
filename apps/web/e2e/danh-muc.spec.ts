@@ -34,3 +34,11 @@ test('Danh mục đối tượng: thêm, ngưng dùng, lọc', async ({ page, re
   await page.getByRole('combobox', { name: 'Trạng thái' }).click({ force: true }); await page.locator('.ant-select-item-option', { hasText: 'Ngưng dùng' }).click();
   await expect(page.locator('.ag-row', { hasText: code })).toBeVisible();
 });
+
+test('Hệ thống tài khoản: tìm kiếm số hiệu tài khoản', async ({ page, request }) => {
+  await signIn(page, request);
+  await page.goto('/danh-muc/he-thong-tai-khoan');
+  await expect(page.getByRole('heading', { name: 'Hệ thống tài khoản' })).toBeVisible();
+  await page.getByPlaceholder('Tìm số hiệu, tên…').fill('111');
+  await expect(page.locator('tr', { hasText: '1111' })).toBeVisible();
+});

@@ -116,3 +116,20 @@ Chỉ đổi bố cục. Không đổi gọi API, quyền, hộp thoại, nhãn 
 - `ImportExcel.tsx`: bỏ `Card` ngoài; `PageHeader` title "Nhập danh mục từ Excel", description "Tải mẫu, điền dữ liệu, kiểm tra rồi nhập. Có lỗi thì chưa nhập dòng nào."; `Toolbar` giữ các control theo thứ tự cũ (chọn danh mục thêm `aria-label="Danh mục"`), nút "Nhập" là primary duy nhất. Kết quả và bảng lỗi đặt trong `Section` "Kết quả kiểm tra" chỉ khi có kết quả/lỗi.
 - Kiểm thử: cập nhật `apps/web/test` nếu có test các trang này (grep `Catalog|Accounts|ImportExcel`); thêm test vitest nhỏ cho bộ lọc cây tài khoản (hàm thuần xuất từ `Accounts.tsx`, vd. `filterTree(tree, q)`).
 - E2E: `danh-muc.spec.ts` và `khu-trung.spec.ts` phải xanh (heading `Đối tượng` vẫn là heading; nút "Ngưng dùng", "Sửa", "Đồng ý" giữ tên). Thêm một ca vào `danh-muc.spec.ts`: vào `/danh-muc/he-thong-tai-khoan`, thấy heading "Hệ thống tài khoản", gõ "111" vào ô tìm, thấy dòng "1111".
+
+## Tác vụ 3: Tiền mặt, ngân hàng và khung chứng từ chung
+
+Chia hai phần, làm tuần tự: 3a (Claude Sonnet, rủi ro cao vì mọi loại chứng từ dùng chung), 3b (agy).
+
+### 3a. `VoucherList.tsx`, `VoucherForm.tsx` (dùng cho mọi loại chứng từ qua `/chung-tu/$type`)
+
+- `VoucherList`: `PageHeader` title `typeLabel(def)` (h1), `extra` = nút/dropdown "Thêm (Insert)" giữ nguyên logic loại phiếu kho; `Toolbar`: khoảng ngày, trạng thái (thêm `aria-label="Trạng thái"`), ô tìm (giữ placeholder), `BranchFilter`, cuối hàng chữ xám "{n} chứng từ" (định dạng số Việt Nam). Lưới chiếm phần còn lại (`height` tính lại theo đầu trang). Giữ Enter mở, Insert thêm, nhấp đúp mở, bộ lọc nhớ.
+- `VoucherForm`: bỏ `Card` ngoài, thay bằng `PageHeader`: title = "{typeLabel} {số | (mới) | (chưa cấp số)}" là h1, ngay sau là `Tag` trạng thái (trong `title` dạng ReactNode hoặc prop `tags` mới của `PageHeader` nếu cần, thêm vào `packages/ui` kèm test); `extra` = các nút như hiện có, cùng thứ tự, "Lưu (Ctrl+S)" vẫn là primary duy nhất, nút ít dùng (Bỏ ghi sổ, Đảo, Hủy, Nhân bản) giữ là nút thường (không gom menu, để E2E và phím tắt không đổi). Đầu phiếu (Form) đặt trong `Section` "Thông tin chung"; lưới hạch toán trong `Section` "Hạch toán" (bodyPadding 0 hoặc nhỏ), tổng Nợ/Có và chênh lệch ở `extra` hoặc chân khối, số `kt-num`; Tabs Hạch toán/Hóa đơn khi kê khai giữ nguyên, đặt trong khối. Tồn quỹ/số dư tiền gửi, Đính kèm giữ chỗ, đặt trong khối riêng nếu hợp lý. Màu chữ phụ dùng `COLOR.textSecondary`.
+- Giữ tuyệt đối: phím tắt (Ctrl+S, F9, F4, Insert, Enter/Tab trong lưới), `useUnsavedChanges`, tên nút, nhãn trường, `data-testid` có sẵn, chữ "(mới)", logic quyền và trạng thái.
+- E2E: các spec dùng `.ant-card-head-title` cho form chứng từ chung (`phieu-thu.spec.ts:49`, `phieu-ke-toan.spec.ts:42,104`, và spec nào khác mở `/chung-tu/<loại>` do `VoucherForm` render; kiểm `InvoiceForm`/`StockVoucher`/`LandedCost`/`AssemblyVoucher` có dùng `VoucherForm` không trước khi sửa) đổi sang `page.getByRole('heading', { level: 1 })` (đối với số chứng từ) và locator Tag trạng thái tương ứng. Không đụng spec của các form riêng (để phân hệ của chúng).
+- Spec chạy: `phieu-thu`, `nhap-chung-tu`, `phieu-ke-toan`, `chung-tu-chi-nhanh`, `tong-quan`.
+
+### 3b. `CashCount.tsx`, `BankTransactions.tsx`, `BankFeeds.tsx`, `VoucherBranchField.tsx` (agy)
+
+- Mỗi trang: `PageHeader` (h1 giữ đúng tên trang hiện tại nếu E2E dùng heading/text), `Toolbar` cho hàng lọc/tham số, nội dung trong `Section`; một nút primary. `VoucherBranchField` chỉ chỉnh nếu lệch bố cục với form mới.
+- Spec chạy: `kiem-ke-quy`, `ngan-hang`.
