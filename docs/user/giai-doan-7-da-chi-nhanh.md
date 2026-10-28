@@ -47,6 +47,16 @@ Người dùng bị giới hạn chi nhánh:
 - Chỉ giữ các quyền làm việc với chứng từ, phiếu kho, xem danh mục, Sổ sách và Báo cáo tài chính. Các phân hệ tổng hợp cả công ty (công nợ, đối trừ, quỹ, kho, tài sản, khế ước vay, thuế, hóa đơn điện tử, ngân hàng, cuối kỳ, số dư đầu kỳ, quản trị) bị tắt vì số liệu của chúng chưa tách theo chi nhánh.
 - Khóa API do người dùng này tạo cũng mang phạm vi chi nhánh của họ.
 
+### Phạm vi chi nhánh phủ những gì
+
+Giới hạn chi nhánh nằm ở cơ sở dữ liệu (không chỉ ở màn hình) và phủ **chứng từ cùng mọi dữ liệu con của chứng từ**: dòng sổ cái, dòng hàng của phiếu kho, lịch sử sửa dòng, tệp đính kèm, cặp đối ứng, hóa đơn kèm chứng từ, phát sinh kho, khoản công nợ theo chứng từ, đơn hàng liên kết, phân bổ chi phí mua hàng, phiếu kiểm kê kho. Người dùng bị giới hạn không đọc, sửa, xóa hay chèn được các dữ liệu này của đơn vị ngoài phạm vi, kể cả qua màn hình hay đường tắt chưa nối với chứng từ.
+
+Các số tổng hợp cho người dùng bị giới hạn cũng tính trong phạm vi: Báo cáo tài chính và số dư tiền trong ứng dụng điện thoại (`B01`, `B02`, số dư tiền mặt, tiền gửi, lãi lỗ), màn Phân tích tài chính (tiền, phải thu, phải trả theo tháng, hệ số tài chính; ngân sách cả công ty không hiện), và số dư tồn quỹ trên phiếu thu, phiếu chi. Số tồn kho "khả dụng" trên màn hình chỉ cộng phát sinh kho của chứng từ trong phạm vi.
+
+Kiểm soát lúc ghi sổ vẫn tính trên **toàn công ty**: tồn kho âm (kho dùng chung giữa các chi nhánh), tồn quỹ âm, vượt ngân sách. Vì người ghi sổ không thấy số của đơn vị khác, thông báo "làm tồn quỹ âm" không nêu số tiền, và thông báo vượt ngân sách chỉ nêu phần trăm đã thực hiện.
+
+Người dùng bị giới hạn **không** làm được: bảng lương, chấm công, TNCN, tính giá thành, hợp đồng, phê duyệt, ngân sách, nhật ký kiểm toán (các quyền này không nằm trong nhóm được giữ). Chứng từ lương (LU) và chứng từ giá thành, giá vốn tự sinh do người không bị giới hạn chạy thuộc **chi nhánh làm việc của người chạy** (thường là trụ sở chính): chọn đúng chi nhánh làm việc trước khi hạch toán lương theo chi nhánh. Người dùng chi nhánh thấy chứng từ lương khi nó thuộc phạm vi của họ, và vẫn không thấy số lương từng nhân viên nếu thiếu quyền xem lương.
+
 ## 4. Sổ sách và Báo cáo tài chính theo chi nhánh
 
 Màn **Sổ sách** (Nhật ký chung, Sổ Cái, Sổ chi tiết, Bảng cân đối số phát sinh) và **Báo cáo tài chính** (B01, B02, B03, truy ngược) có ô **Chi nhánh**: Tất cả chi nhánh, Trụ sở chính hoặc một chi nhánh. Bản in PDF/Excel theo cùng bộ lọc. Người dùng bị giới hạn chỉ thấy các đơn vị trong phạm vi; "Tất cả" là tất cả đơn vị trong phạm vi.
@@ -77,3 +87,5 @@ Chưa có. Báo cáo tài chính hợp nhất của công ty mẹ và công ty c
 
 - Thứ tự `seq_no` (dùng để sắp chứng từ cùng ngày khi tính giá vốn và băm chuỗi) không còn duy nhất toàn công ty khi bật đánh số theo chi nhánh; thứ tự cùng ngày giữa hai chi nhánh cùng loại chứng từ phân định theo mã nội bộ của chứng từ (sổ cái, hash chuỗi và các sổ đã sắp theo mã này; tính giá vốn xếp tiếp theo số dòng và mã phát sinh kho).
 - Số dư đầu kỳ theo chi nhánh: chứng từ số dư đầu kỳ thuộc chi nhánh làm việc của người nhập.
+- Chứng từ lương, giá thành, giá vốn tự sinh gắn chi nhánh của nhân viên hoặc đối tượng tập hợp chi phí (hiện gắn chi nhánh làm việc của người chạy).
+- Phân hệ công nợ, hóa đơn điện tử, ngân hàng, tài sản cho người dùng bị giới hạn chi nhánh: các bảng riêng của phân hệ chưa tách theo chi nhánh nên các quyền này vẫn tắt.

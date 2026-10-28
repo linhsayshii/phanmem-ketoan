@@ -41,8 +41,10 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     book(req, reply, req.query, `so-cai-ctgs-${req.query.accountCode}-${req.query.from}-${req.query.to}`, (trx, regime) => ctgsLedger(trx, req.auth!.tenantId!, regime, req.query), (trx, regime) => ctgsLedgerDoc(trx, req.auth!.tenantId!, regime, req.query)));
 
   // Lập, xem, in, xóa Chứng từ ghi sổ. Xóa chỉ gỡ nhóm (chứng từ gốc và sổ cái không đổi).
-  app.get('/api/voucher-sets', { preHandler: app.requirePermission('voucher_set.view'), schema: { querystring: z.object({ fiscalYear: year }) } }, async (req) =>
-    app.withTenant(req, (trx) => listVoucherSets(trx, req.query.fiscalYear), READ_SNAPSHOT));
+  app.get('/api/voucher-sets', { preHandler: app.requirePermission('voucher_set.view'), schema: { querystring: z.object({ fiscalYear: year }) } }, async (req) => {
+    assertAllSensitive(req.auth!); // cùng hàm với Sổ đăng ký CTGS: cột số tiền cộng cả TK giá vốn, công nợ, lương
+    return app.withTenant(req, (trx) => listVoucherSets(trx, req.query.fiscalYear), READ_SNAPSHOT);
+  });
   app.post('/api/voucher-sets', { preHandler: app.requirePermission('voucher_set.create'), schema: { body: z.object({ fiscalYear: z.number().int(), setDate: isoDate, description: z.string().trim().min(1).max(500), dateFrom: isoDate, dateTo: isoDate, voucherType: z.string().min(1).max(10).optional() }) } }, async (req, reply) =>
     reply.status(201).send(await app.withTenant(req, (trx) => createVoucherSet(trx, req.auth!.tenantId!, req.auth!.userId, req.body))));
   app.get('/api/voucher-sets/:id', { preHandler: app.requirePermission('voucher_set.view'), schema: { params: z.object({ id: z.coerce.number().int() }), querystring: z.object({ format }) } }, async (req, reply) => {

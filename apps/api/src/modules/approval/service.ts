@@ -7,6 +7,7 @@ import { D, VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
 import type { AuthCtx } from '../../plugins/auth.js';
 import { AppError } from '../../plugins/errors.js';
 import { createSystemVoucher, dateIso, fxRate, type SystemVoucherInput } from '../ledger/vouchers.service.js';
+import { isSalaryCode } from '../payroll/accounts.js';
 import { assertSensitive, regimeOf } from '../reporting/ledgers.js';
 import { activeDelegators, type Delegator } from './delegation.js';
 
@@ -93,18 +94,21 @@ const toDto = (r: Row): RequestDto => ({
 });
 
 // Cờ nhạy cảm theo TK Nợ của phiếu sẽ sinh (331 cần view_payable...); người đề nghị luôn xem được đề nghị của mình.
+// Đề nghị chưa gắn chế độ tài khoản: cờ lương tính theo hợp ánh xạ của mọi chế độ (isSalaryCode với chế độ lạ): che nhiều hơn là lộ lương.
+type SensAcc = { code: string; subledger_kind: string | null; salary: boolean };
+const sensAcc = (code: string, kind: string | null): SensAcc => ({ code, subledger_kind: kind, salary: isSalaryCode('*', code) });
 async function accountsOf(trx: Trx, codes: string[]) {
-  if (!codes.length) return new Map<string, { code: string; subledger_kind: string | null }>();
+  if (!codes.length) return new Map<string, SensAcc>();
   const rows = await trx.selectFrom('account').select(['code', 'subledger_kind']).where('code', 'in', [...new Set(codes)]).execute();
-  return new Map(rows.map((a) => [a.code, a]));
+  return new Map(rows.map((a) => [a.code, sensAcc(a.code, a.subledger_kind)]));
 }
-const visible = (auth: Auth, r: { requester_id: string; account_code: string }, accs: Map<string, { code: string; subledger_kind: string | null }>) => {
+const visible = (auth: Auth, r: { requester_id: string; account_code: string }, accs: Map<string, SensAcc>) => {
   if (r.requester_id === auth.userId) return true;
-  try { assertSensitive(auth, accs.get(r.account_code) ?? { code: r.account_code, subledger_kind: null }); return true; } catch { return false; }
+  try { assertSensitive(auth, accs.get(r.account_code) ?? sensAcc(r.account_code, null)); return true; } catch { return false; }
 };
 async function assertVisible(trx: Trx, auth: Auth, r: { requester_id: string; account_code: string }) {
   if (r.requester_id === auth.userId) return;
-  assertSensitive(auth, (await accountsOf(trx, [r.account_code])).get(r.account_code) ?? { code: r.account_code, subledger_kind: null });
+  assertSensitive(auth, (await accountsOf(trx, [r.account_code])).get(r.account_code) ?? sensAcc(r.account_code, null));
 }
 
 async function resolveInput(trx: Trx, input: RequestInput) {

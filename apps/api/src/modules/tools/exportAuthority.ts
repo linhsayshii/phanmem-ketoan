@@ -4,6 +4,7 @@ import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
 import { formatVnNumber } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
+import { formulaSafe } from '../../lib/formulaSafe.js';
 import { vnDayEnd, vnDayStart } from '../core/vnTime.js';
 import { renderPdf } from '../reporting/print/pdf.js';
 import { assertPrintable, MAX_PRINT_ROWS, renderReportsHtml, type ReportDoc } from '../reporting/print/html.js';
@@ -14,8 +15,14 @@ type Row = Record<string, unknown>;
 export interface AuthorityData { from: string; to: string; company: { name: string; taxCode: string | null }; csv: { name: string; data: string }[]; pdfs: { name: string; docs: ReportDoc[] }[]; omitted: { name: string; reason: string }[] }
 
 // BOM để Excel nhận UTF-8; bọc nháy kép khi ô chứa dấu phân cách, nháy kép hoặc xuống dòng (\n hoặc \r).
+// Ô chữ bắt đầu bằng = + - @ (diễn giải lập từ nội dung chuyển khoản do bên ngoài gửi) được thêm dấu nháy đơn để Excel không chạy như công thức; chuỗi số (kể cả số âm) giữ nguyên.
+const isNumeric = (s: string) => /^[+-]?\d+([.,]\d+)?$/.test(s);
 export function toCsv(rows: Row[], columns: string[]): string {
-  const esc = (v: unknown) => { const s = v === null || v === undefined ? '' : String(v); return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const esc = (v: unknown) => {
+    let s = v === null || v === undefined ? '' : String(v);
+    if (!isNumeric(s)) s = formulaSafe(s);
+    return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
   return '\ufeff' + [columns.join(';'), ...rows.map((r) => columns.map((c) => esc(r[c])).join(';'))].join('\n') + '\n';
 }
 
