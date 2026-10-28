@@ -81,5 +81,7 @@ export const PERMISSIONS: readonly { code: string; name: string; group: string }
   { code: 'api_key.manage', name: 'Quản lý khóa API', group: 'Hệ thống' },
   ...crud('cit', 'thuế TNDN', 'Thuế'),
   { code: 'signing.use', name: 'Ký số', group: 'Hệ thống' },
+  // GĐ7: hình thức sổ.
+  ...crud('voucher_set', 'Chứng từ ghi sổ', 'Báo cáo'),
 ];
 export const PERMISSION_CODES: readonly string[] = PERMISSIONS.map((p) => p.code);
