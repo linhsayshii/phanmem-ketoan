@@ -3,6 +3,7 @@ import type { Database } from '@kt/db';
 import { D, sensitiveDenial, sum, SENSITIVE_FLAGS_ALL, ZERO, type Decimal } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { isSalaryCode, SALARY_HIDDEN, withSalary } from '../payroll/accounts.js';
+import { balancesAt as balanceSource, branchWhere, type BranchFilter } from '../branch/scope.js';
 
 type Trx = Transaction<Database>;
 export interface Side { debit: string; credit: string }
@@ -12,8 +13,10 @@ const add = (x: Side, y: Side): Side => ({ debit: D(x.debit).plus(y.debit).toStr
 export const dayBefore = (iso: string) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
 const POSTED = sql`v.state IN ('posted','reversed')`;
 
+// branch (GĐ7): chi nhánh của chứng từ (bí danh v), không phải chiều trên dòng.
 interface Filters { partyId?: string | undefined; costItemId?: number | undefined; projectId?: number | undefined; departmentId?: number | undefined; employeeId?: number | undefined;
-  contractId?: number | undefined; costObjectId?: number | undefined }
+  contractId?: number | undefined; costObjectId?: number | undefined; branch?: BranchFilter | undefined }
+type Br = { branch?: BranchFilter | undefined };
 // Điều kiện chiều phân tích trên dòng chứng từ gốc (bí danh `alias`); không có bộ lọc thì luôn đúng.
 const dimWhere = (alias: string, f: Filters) => sql.join([sql`true`,
   ...(f.partyId ? [sql`${sql.ref(`${alias}.party_id`)} = ${f.partyId}::uuid`] : []),
@@ -43,32 +46,32 @@ export async function accountsUnder(trx: Trx, regime: string, code: string) {
 }
 
 // Số dư ròng (Nợ - Có) cuối ngày trước `from`, theo từng tài khoản của hệ `regime` có số hiệu bắt đầu bằng `prefix`.
-async function openingNets(trx: Trx, tenantId: string, regime: string, prefix: string, from: string, partyId?: string): Promise<Map<string, Decimal>> {
-  const r = await sql<{ code: string; net: string }>`SELECT a.code, sum(b.debit - b.credit)::text AS net FROM fn_balances_at(${tenantId}::uuid, ${dayBefore(from)}::date) b JOIN account a ON a.id = b.account_id
+async function openingNets(trx: Trx, tenantId: string, regime: string, prefix: string, from: string, partyId?: string, branch?: BranchFilter): Promise<Map<string, Decimal>> {
+  const r = await sql<{ code: string; net: string }>`SELECT a.code, sum(b.debit - b.credit)::text AS net FROM ${balanceSource(tenantId, dayBefore(from), branch)} b JOIN account a ON a.id = b.account_id
     WHERE a.regime = ${regime} AND starts_with(a.code, ${prefix}) ${partyId ? sql`AND b.party_id = ${partyId}::uuid` : sql``} GROUP BY a.code`.execute(trx);
   return new Map(r.rows.map((x) => [x.code, D(x.net)]));
 }
-export async function openingNet(trx: Trx, tenantId: string, regime: string, prefix: string, from: string, filters: { partyId?: string | undefined } = {}): Promise<Decimal> {
-  return sum((await openingNets(trx, tenantId, regime, prefix, from, filters.partyId)).values());
+export async function openingNet(trx: Trx, tenantId: string, regime: string, prefix: string, from: string, filters: { partyId?: string | undefined } & Br = {}): Promise<Decimal> {
+  return sum((await openingNets(trx, tenantId, regime, prefix, from, filters.partyId, filters.branch)).values());
 }
 // Dư đầu hai bên theo đối tượng: dư ròng từng đối tượng (gộp loại tiền) rồi cộng riêng các đối tượng dư Nợ và các đối tượng dư Có.
-export async function openingSplit(trx: Trx, tenantId: string, regime: string, prefix: string, from: string): Promise<Side> {
+export async function openingSplit(trx: Trx, tenantId: string, regime: string, prefix: string, from: string, branch?: BranchFilter): Promise<Side> {
   const r = await sql<{ d: string | null; c: string | null }>`SELECT sum(greatest(x.n, 0))::text AS d, sum(greatest(-x.n, 0))::text AS c FROM (
-      SELECT sum(b.debit - b.credit) AS n FROM fn_balances_at(${tenantId}::uuid, ${dayBefore(from)}::date) b JOIN account a ON a.id = b.account_id
+      SELECT sum(b.debit - b.credit) AS n FROM ${balanceSource(tenantId, dayBefore(from), branch)} b JOIN account a ON a.id = b.account_id
       WHERE a.regime = ${regime} AND starts_with(a.code, ${prefix}) GROUP BY b.account_id, b.party_id) x`.execute(trx);
   return { debit: r.rows[0]?.d ?? '0', credit: r.rows[0]?.c ?? '0' };
 }
 // Dư đầu khi lọc theo khoản mục/vụ việc/bộ phận: số dư kỳ không mang các chiều này, nên cộng trực tiếp các dòng đã ghi sổ trước `from` với cùng bộ lọc.
 async function openingFromLines(trx: Trx, regime: string, prefix: string, from: string, filters: Filters): Promise<Decimal> {
   const r = await sql<{ net: string | null }>`SELECT sum(l.debit - l.credit)::text AS net FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
-    WHERE ${POSTED} AND l.posting_date < ${from}::date AND a.regime = ${regime} AND starts_with(a.code, ${prefix}) AND ${dimWhere('l', filters)}`.execute(trx);
+    WHERE ${POSTED} AND ${branchWhere(filters.branch)} AND l.posting_date < ${from}::date AND a.regime = ${regime} AND starts_with(a.code, ${prefix}) AND ${dimWhere('l', filters)}`.execute(trx);
   return D(r.rows[0]?.net ?? '0');
 }
 
 // Trần số dòng của Nhật ký chung trả JSON cho màn hình; bản in/Excel không bị cắt.
 export const JOURNAL_JSON_LIMIT = 50_000;
-export async function generalJournal(trx: Trx, f: { from: string; to: string }, limit?: number) {
-  const where = sql`${POSTED} AND v.posting_date BETWEEN ${f.from}::date AND ${f.to}::date AND l.posting_date BETWEEN ${f.from}::date AND ${f.to}::date`;
+export async function generalJournal(trx: Trx, f: { from: string; to: string } & Br, limit?: number) {
+  const where = sql`${POSTED} AND ${branchWhere(f.branch)} AND v.posting_date BETWEEN ${f.from}::date AND ${f.to}::date AND l.posting_date BETWEEN ${f.from}::date AND ${f.to}::date`;
   const rows = await sql<{ postingDate: string; voucherId: string; voucherNo: string; voucherType: string; documentDate: string; description: string | null; accountCode: string; accountName: string; debit: string; credit: string }>`
     SELECT v.posting_date AS "postingDate", v.id AS "voucherId", v.voucher_no AS "voucherNo", v.voucher_type AS "voucherType", v.document_date AS "documentDate", coalesce(l.description, v.description) AS description,
            a.code AS "accountCode", a.name AS "accountName", l.debit::text AS debit, l.credit::text AS credit
@@ -114,16 +117,16 @@ async function rawPairRows(trx: Trx, regime: string, prefix: string, f: { from: 
     FROM sd s JOIN voucher v ON v.id = s.voucher_id
     LEFT JOIN voucher_line ln ON ln.id = s.line_id AND ln.posting_date = s.posting_date
     LEFT JOIN party pt ON pt.id = ln.party_id LEFT JOIN cost_item ci ON ci.id = ln.cost_item_id LEFT JOIN project pj ON pj.id = ln.project_id LEFT JOIN department dp ON dp.id = ln.department_id
-    WHERE ${POSTED} AND ${dimWhere('ln', filters)}
+    WHERE ${POSTED} AND ${branchWhere(filters.branch)} AND ${dimWhere('ln', filters)}
     ORDER BY s.posting_date, v.voucher_type, v.seq_no, v.id, ln.line_no, s.counter, s.ord`.execute(trx)).rows;
 }
 
-export async function accountLedger(trx: Trx, tenantId: string, f: { accountCode: string; from: string; to: string; mode: 'voucher' | 'subaccount' | 't' }, hideSalary = false) {
+export async function accountLedger(trx: Trx, tenantId: string, f: { accountCode: string; from: string; to: string; mode: 'voucher' | 'subaccount' | 't' } & Br, hideSalary = false) {
   const regime = await regimeOf(trx, f);
   const accs = await accountsUnder(trx, regime, f.accountCode);
-  const opens = await openingNets(trx, tenantId, regime, f.accountCode, f.from);
+  const opens = await openingNets(trx, tenantId, regime, f.accountCode, f.from, undefined, f.branch);
   const openNet = sum(opens.values());
-  const rows = await pairRows(trx, regime, f.accountCode, f, {}, hideSalary);
+  const rows = await pairRows(trx, regime, f.accountCode, f, { branch: f.branch }, hideSalary);
   const totalDebit = sum(rows.map((r) => r.debit)); const totalCredit = sum(rows.map((r) => r.credit));
   const base = { opening: side(openNet), totalDebit: totalDebit.toString(), totalCredit: totalCredit.toString(), closing: side(openNet.plus(totalDebit).minus(totalCredit)) };
   if (f.mode === 'subaccount') {
@@ -143,7 +146,7 @@ export async function accountLedger(trx: Trx, tenantId: string, f: { accountCode
 }
 
 export async function accountDetail(trx: Trx, tenantId: string, f: { accountCode: string; from: string; to: string; partyCode?: string | undefined; costItemCode?: string | undefined; projectCode?: string | undefined; departmentCode?: string | undefined; employeeCode?: string | undefined;
-  contractCode?: string | undefined; costObjectCode?: string | undefined }, hideSalary = false) {
+  contractCode?: string | undefined; costObjectCode?: string | undefined } & Br, hideSalary = false) {
   const regime = await regimeOf(trx, f);
   await accountsUnder(trx, regime, f.accountCode);
   // Mã lọc không có trong danh mục thì báo lỗi, không lặng lẽ bỏ bộ lọc (sẽ ra sổ của mọi đối tượng).
@@ -156,26 +159,26 @@ export async function accountDetail(trx: Trx, tenantId: string, f: { accountCode
   const filters: Filters = { partyId: (await id('party', f.partyCode)) as string | undefined, costItemId: (await id('cost_item', f.costItemCode)) as number | undefined,
     projectId: (await id('project', f.projectCode)) as number | undefined, departmentId: (await id('department', f.departmentCode)) as number | undefined,
     employeeId: (await id('employee', f.employeeCode)) as number | undefined, contractId: (await id('contract', f.contractCode)) as number | undefined,
-    costObjectId: (await id('cost_object', f.costObjectCode)) as number | undefined };
+    costObjectId: (await id('cost_object', f.costObjectCode)) as number | undefined, branch: f.branch };
   const byDim = [filters.costItemId, filters.projectId, filters.departmentId, filters.employeeId, filters.contractId, filters.costObjectId].some((x) => x !== undefined);
-  const openNet = byDim ? await openingFromLines(trx, regime, f.accountCode, f.from, filters) : await openingNet(trx, tenantId, regime, f.accountCode, f.from, { partyId: filters.partyId });
+  const openNet = byDim ? await openingFromLines(trx, regime, f.accountCode, f.from, filters) : await openingNet(trx, tenantId, regime, f.accountCode, f.from, { partyId: filters.partyId, branch: f.branch });
   const rows = await pairRows(trx, regime, f.accountCode, f, filters, hideSalary);
   let run = openNet;
   return { opening: side(openNet), rows: rows.map((r) => { run = run.plus(r.debit).minus(r.credit); return { ...r, running: side(run) }; }),
     totalDebit: sum(rows.map((r) => r.debit)).toString(), totalCredit: sum(rows.map((r) => r.credit)).toString(), closing: side(run) };
 }
 
-export async function trialBalance(trx: Trx, tenantId: string, f: { from: string; to: string; level?: number | undefined; splitParty?: boolean | undefined }) {
+export async function trialBalance(trx: Trx, tenantId: string, f: { from: string; to: string; level?: number | undefined; splitParty?: boolean | undefined } & Br) {
   const regime = await regimeOf(trx, f);
   // Không lọc is_active: tài khoản đã ngừng dùng mà còn số liệu vẫn phải vào bảng, nếu không ba cột không cân.
   const accounts = await trx.selectFrom('account').select(['id', 'code', 'name', 'is_group', 'subledger_kind']).where('regime', '=', regime).orderBy('code').execute();
   // Dư cuối ngày theo tài khoản: ròng, và tách hai bên theo từng đối tượng (dư ròng từng đối tượng gộp loại tiền).
   const balancesAt = async (date: string) => new Map((await sql<{ account_id: number; net: string; d: string; c: string }>`
     SELECT x.account_id, sum(x.n)::text AS net, sum(greatest(x.n, 0))::text AS d, sum(greatest(-x.n, 0))::text AS c
-    FROM (SELECT b.account_id, b.party_id, sum(b.debit - b.credit) AS n FROM fn_balances_at(${tenantId}::uuid, ${date}::date) b GROUP BY 1, 2) x GROUP BY 1`.execute(trx)).rows.map((r) => [r.account_id, r]));
+    FROM (SELECT b.account_id, b.party_id, sum(b.debit - b.credit) AS n FROM ${balanceSource(tenantId, date, f.branch)} b GROUP BY 1, 2) x GROUP BY 1`.execute(trx)).rows.map((r) => [r.account_id, r]));
   const open = await balancesAt(dayBefore(f.from)); const close = await balancesAt(f.to);
   const mv = new Map((await sql<{ account_id: number; d: string; c: string }>`SELECT l.account_id, sum(l.debit)::text AS d, sum(l.credit)::text AS c FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id
-    WHERE ${POSTED} AND v.posting_date BETWEEN ${f.from}::date AND ${f.to}::date AND l.posting_date BETWEEN ${f.from}::date AND ${f.to}::date GROUP BY l.account_id`.execute(trx)).rows.map((r) => [r.account_id, r]));
+    WHERE ${POSTED} AND ${branchWhere(f.branch)} AND v.posting_date BETWEEN ${f.from}::date AND ${f.to}::date AND l.posting_date BETWEEN ${f.from}::date AND ${f.to}::date GROUP BY l.account_id`.execute(trx)).rows.map((r) => [r.account_id, r]));
   const splits = (a: { subledger_kind: string | null }) => !!f.splitParty && ['receivable', 'payable'].includes(a.subledger_kind ?? '');
   const leafSide = (m: typeof open, a: { id: number; subledger_kind: string | null }): Side => {
     const x = m.get(a.id);

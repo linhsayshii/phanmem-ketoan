@@ -3,11 +3,13 @@ import { Alert, Button, Checkbox, DatePicker, Modal, Radio, Select, Space, Switc
 import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
-import { formatVnDate, formatVnNumber, SENSITIVE_FLAGS_ALL } from '@kt/domain';
+import { formatVnDate, formatVnNumber, SENSITIVE_FLAGS_ALL, type PrintLang } from '@kt/domain';
 import { KeyboardGrid, LookupSelect, useRememberedFilter, type LookupRow } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor, contractFetcher, costObjectPick } from '../lookups.js';
+import { PrintLangSelect } from './PrintLangSelect.js';
+import { BranchFilter } from './branchCommon.js';
 
 interface Side { debit: string; credit: string }
 interface JournalRow { postingDate: string; voucherId: string; voucherNo: string; voucherType: string; documentDate: string; description: string | null; accountCode: string; accountName: string; debit: string; credit: string }
@@ -48,14 +50,14 @@ export function BookSetModal({ open, onClose }: { open: boolean; onClose(): void
   const [year, setYear] = useState<number | undefined>();
   const [include, setInclude] = useState<string[]>(['journal', 'ledgers', 'trial']);
   const [format, setFormat] = useState<'pdf' | 'xlsx'>('pdf');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(false); const [lang, setLang] = useState<PrintLang>('vi');
   const fiscalYear = year ?? years.data?.at(-1)?.fiscalYear;
   const fullBooks = SENSITIVE_FLAGS_ALL.every((f) => me?.sensitive.includes(f));
   const picked = fullBooks ? include : include.filter((x) => !FULL_BOOK_KEYS.includes(x)); // ô bị khóa không còn được tích nên không gửi lên (máy chủ trả 403)
   const run = async () => {
     setBusy(true);
     try {
-      const res = await fetch('/api/print/book-set', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fiscalYear, include: picked, format }) });
+      const res = await fetch('/api/print/book-set', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fiscalYear, include: picked, format, lang }) });
       if (!res.ok) { const b = await res.json().catch(() => null) as { error?: { message?: string } } | null; throw new ApiError('HTTP_' + res.status, b?.error?.message ?? `Lỗi hệ thống (${res.status})`, res.status); }
       const url = URL.createObjectURL(await res.blob());
       const a = Object.assign(document.createElement('a'), { href: url, download: `bo-so-${fiscalYear}.${format}` });
@@ -70,6 +72,7 @@ export function BookSetModal({ open, onClose }: { open: boolean; onClose(): void
           options={BOOKS.map((b) => ({ ...b, disabled: !fullBooks && FULL_BOOK_KEYS.includes(b.value) }))} />
         {!fullBooks && <Alert type="info" showIcon message="Nhật ký chung, Sổ Cái và Bảng cân đối số phát sinh cả năm cần đủ các quyền xem công nợ phải thu, phải trả và giá vốn." />}
         <Radio.Group optionType="button" value={format} onChange={(e) => setFormat(e.target.value as 'pdf' | 'xlsx')} options={Object.entries(fileKind).map(([value, label]) => ({ value, label }))} />
+        <PrintLangSelect value={lang} onChange={setLang} />
       </Space>
     </Modal>
   );
@@ -77,14 +80,14 @@ export function BookSetModal({ open, onClose }: { open: boolean; onClose(): void
 
 export default function LedgersPage() {
   const { me, can } = useAuth();
-  const [bookSet, setBookSet] = useState(false);
+  const [bookSet, setBookSet] = useState(false); const [printLang, setPrintLang] = useState<PrintLang>('vi');
   const [tab, setTab] = useState<TabKey>('journal');
   const [f, setF] = useRememberedFilter('ledgers', { from: dayjs().startOf('month').format('YYYY-MM-DD'), to: dayjs().endOf('month').format('YYYY-MM-DD'), accountCode: '', mode: 'voucher' as Mode, level: 0,
-    splitParty: true, partyCode: '', costItemCode: '', projectCode: '', departmentCode: '', contractCode: '', costObjectCode: '' }, `${me?.tenantId}:${me?.userId}`);
+    splitParty: true, partyCode: '', costItemCode: '', projectCode: '', departmentCode: '', contractCode: '', costObjectCode: '', branch: '' }, `${me?.tenantId}:${me?.userId}`);
   const accountFetcher = useMemo(() => accountFetcherFor(f.from, true, true), [f.from]); // gồm tài khoản tổng hợp (sổ Cái của cả nhóm) và tài khoản đã ngưng dùng nhưng còn phát sinh
   const drillToAccount = (accountCode: string, mode: Mode = 'voucher') => { setF({ ...f, accountCode, mode }); setTab('ledger'); };
 
-  const range = { from: f.from, to: f.to };
+  const range = { from: f.from, to: f.to, ...(f.branch && { branch: f.branch }) };
   const query = (o: Record<string, string>) => new URLSearchParams({ ...range, ...Object.fromEntries(Object.entries(o).filter(([, v]) => v)) }).toString();
   const url = { journal: `/api/reports/ledgers/general-journal?${query({})}`,
     ledger: `/api/reports/ledgers/account?${query({ accountCode: f.accountCode, mode: f.mode })}`,
@@ -92,7 +95,7 @@ export default function LedgersPage() {
       contractCode: f.contractCode ?? '', costObjectCode: f.costObjectCode ?? '' })}`,
     trial: `/api/reports/ledgers/trial-balance?${query({ level: f.level ? String(f.level) : '', splitParty: String(f.splitParty) })}` }[tab];
   const needAccount = (tab === 'ledger' || tab === 'detail') && !f.accountCode;
-  const printAs = (format: 'pdf' | 'xlsx') => { window.open(`${url}&format=${format}`, '_blank'); }; // cùng bộ lọc với màn hình; Sổ Cái luôn in theo chứng từ
+  const printAs = (format: 'pdf' | 'xlsx') => { window.open(`${url}&format=${format}&lang=${printLang}`, '_blank'); }; // cùng bộ lọc với màn hình; Sổ Cái luôn in theo chứng từ
   const data = useQuery({ queryKey: ['ledgers', url], queryFn: () => api<Record<string, unknown>>(url), enabled: !needAccount, retry: false });
 
   const columns = useMemo(() => {
@@ -143,6 +146,7 @@ export default function LedgersPage() {
       <Space wrap>
         <h2 style={{ margin: 0 }}>Sổ sách kế toán</h2>
         <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
+        <BranchFilter value={f.branch ?? ''} onChange={(branch) => setF({ ...f, branch })} />
         {(tab === 'ledger' || tab === 'detail') && <LookupSelect catalog="account" fetcher={accountFetcher} placeholder="Tài khoản" style={{ width: 300 }} value={f.accountCode || null} onChange={(accountCode) => setF({ ...f, accountCode: accountCode ?? '' })} />}
         {tab === 'ledger' && <Radio.Group optionType="button" value={f.mode} onChange={(e) => setF({ ...f, mode: e.target.value as Mode })}
           options={[{ value: 'voucher', label: 'Theo chứng từ' }, { value: 'subaccount', label: 'Theo tiểu khoản' }, { value: 't', label: 'Chữ T' }]} />}
@@ -150,6 +154,7 @@ export default function LedgersPage() {
           <Radio.Group optionType="button" value={f.level} onChange={(e) => setF({ ...f, level: e.target.value as number })} options={[{ value: 1, label: 'Cấp 1' }, { value: 2, label: 'Cấp 2' }, { value: 3, label: 'Cấp 3' }, { value: 0, label: 'Tất cả' }]} />
           <span><Switch checked={f.splitParty} onChange={(splitParty) => setF({ ...f, splitParty })} /> Tách dư hai bên theo đối tượng</span></>}
         {can('report.print') && <>
+          <PrintLangSelect value={printLang} onChange={setPrintLang} />
           <Button disabled={needAccount} onClick={() => printAs('pdf')}>In PDF</Button>
           <Button disabled={needAccount} onClick={() => printAs('xlsx')}>Xuất Excel</Button>
           <Button onClick={() => setBookSet(true)}>In cả bộ sổ năm…</Button></>}

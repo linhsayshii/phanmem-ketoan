@@ -91,5 +91,13 @@ export const PERMISSIONS: readonly { code: string; name: string; group: string }
   { code: 'cost_run.run', name: 'Chạy tính giá thành', group: 'Giá thành' },
   { code: 'contract_track.view', name: 'Xem theo dõi hợp đồng, lãi lỗ vụ việc', group: 'Hợp đồng' },
   { code: 'contract_track.run', name: 'Chạy phân bổ chi phí theo vụ việc, chuyển số dư vụ việc', group: 'Hợp đồng' },
+  // GĐ7: hình thức sổ.
+  ...crud('voucher_set', 'Chứng từ ghi sổ', 'Báo cáo'),
+  // GĐ7 nhóm 3: ngân sách.
+  ...crud('budget', 'ngân sách', 'Ngân sách', [['approve', 'Duyệt, cấu hình cảnh báo']]),
+  // GĐ7 nhóm 4: đề nghị thanh toán, tạm ứng và phê duyệt (cấu hình quy trình dùng setting.update).
+  { code: 'approval_request.view', name: 'Xem mọi đề nghị thanh toán, tạm ứng', group: 'Phê duyệt' },
+  { code: 'approval_request.create', name: 'Lập đề nghị thanh toán, tạm ứng', group: 'Phê duyệt' },
+  { code: 'approval_request.approve', name: 'Duyệt đề nghị thanh toán, tạm ứng', group: 'Phê duyệt' },
 ];
 export const PERMISSION_CODES: readonly string[] = PERMISSIONS.map((p) => p.code);

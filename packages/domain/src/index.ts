@@ -28,3 +28,4 @@ export * from './payrollFormula.js';
 export * from './payroll.js';
 export * from './attendance.js';
 export * from './productCost.js';
+export * from './printLang.js';

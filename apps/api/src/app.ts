@@ -16,6 +16,7 @@ import userRoutes from './modules/core/users.js';
 import roleRoutes from './modules/core/roles.js';
 import tenantRoutes from './modules/core/tenants.js';
 import fiscalYearRoutes from './modules/core/fiscalYears.js';
+import regimeRoutes from './modules/core/regimes.js';
 import settingRoutes from './modules/core/settings.js';
 import prefRoutes from './modules/core/prefs.js';
 import coaRoutes from './modules/coa/routes.js';
@@ -41,6 +42,7 @@ import balanceRoutes from './modules/ledger/balances.js';
 import closingRoutes from './modules/ledger/closing.js';
 import periodCloseRoutes from './modules/ledger/periodClose.routes.js';
 import reportingRoutes from './modules/reporting/routes.js';
+import bookFormRoutes from './modules/reporting/bookFormRoutes.js';
 import cashRoutes from './modules/cash/routes.js';
 import toolsRoutes from './modules/tools/routes.js';
 import arapRoutes from './modules/arap/routes.js';
@@ -65,6 +67,11 @@ import openingAssetRoutes from './modules/assets/openingAssets.js';
 import bankRoutes from './modules/bank/routes.js';
 import bankWebhookRoutes from './modules/bank/webhook.js';
 import extRoutes from './modules/ext/routes.js';
+import budgetRoutes from './modules/budget/routes.js';
+import translationRoutes from './modules/translations/routes.js';
+import approvalRoutes from './modules/approval/routes.js';
+import mobileRoutes from './modules/approval/mobile.js';
+import branchRoutes from './modules/branch/routes.js';
 
 // Token webhook nằm trong URL: che trước khi ghi nhật ký.
 export const maskHookUrl = (url: string) => url.replace(/(\/api\/hooks\/bank\/)[^/?#]+/, '$1***');
@@ -139,6 +146,13 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(tncnRoutes);
   await app.register(costingRoutes);
   await app.register(extRoutes); // khóa API (phiên) và /api/ext/v1 (Bearer kt_…, parser XML riêng)
+  await app.register(regimeRoutes); // GĐ7 nhóm 6
+  await app.register(bookFormRoutes); // GĐ7: hình thức sổ
+  await app.register(budgetRoutes); // GĐ7 nhóm 3: ngân sách, cảnh báo vượt ngân sách, phân tích tài chính
+  await app.register(translationRoutes); // GĐ7 nhóm 2: tên tiếng Anh tài khoản, chỉ tiêu báo cáo
+  await app.register(approvalRoutes); // GĐ7 nhóm 4: đề nghị thanh toán/tạm ứng, quy trình phê duyệt
+  await app.register(mobileRoutes, { prefix: '/api/mobile/v1' }); // khóa API phạm vi mobile hoặc phiên cookie
+  await app.register(branchRoutes); // GĐ7 nhóm 5: chi nhánh, phạm vi, BCTC tổng hợp
   app.get('/api/health', async () => ({ ok: true }));
   return app;
 }

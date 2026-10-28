@@ -51,6 +51,7 @@ export interface AccountTable {
   id: Generated<number>; tenant_id: string; regime: string; code: string; name: string; name_en: string | null;
   parent_id: number | null; is_group: Generated<boolean>; root_type: string; normal_balance: string;
   track_currency: Generated<boolean>; subledger_kind: string | null; reconcile: Generated<boolean>; is_active: Generated<boolean>;
+  translation_status: Generated<string | null>;
 }
 export interface CoaTemplateTable {
   regime: string; code: string; name: string; name_en: string | null; parent_code: string | null; is_group: boolean;
@@ -352,12 +353,13 @@ export interface ClosingRunTable {
 // Mẫu báo cáo hệ thống (toàn cục) và bản của công ty; source/side/formula: xem packages/domain/src/reportFormula.ts.
 export interface ReportTemplateTable {
   regime: string; report_code: string; line_code: string; label: string; parent_line_code: string | null; source: string; side: string; formula: string | null;
-  sort_order: number; is_bold: Generated<boolean>; negate: Generated<boolean>; note_ref: string | null;
+  sort_order: number; is_bold: Generated<boolean>; negate: Generated<boolean>; note_ref: string | null; label_en: Generated<string | null>;
 }
 export interface ReportDefTable { id: Generated<string>; tenant_id: string; regime: string; report_code: string; name: string; form_no: string; issued_by: string }
 export interface ReportLineTable {
   id: Generated<number>; tenant_id: string; report_def_id: string; line_code: string; label: string; parent_line_code: string | null; source: string; side: string; formula: string | null;
   sort_order: number; is_bold: Generated<boolean>; negate: Generated<boolean>; note_ref: string | null;
+  label_en: Generated<string | null>; translation_status: Generated<string | null>;
 }
 
 // sql chỉ chủ sở hữu CSDL (migration/seed) ghi được; app_user chỉ UPDATE các cột thông điệp (xem 0014).
@@ -502,6 +504,9 @@ export interface EinvoiceFakeStoreTable {
   id: Generated<number>; tenant_id: string; transaction_uuid: string; serial: string; invoice_no: string; issue_date: DateOnly; cqt_code: string | null; cancelled: Generated<boolean>; created_at: Generated<string>;
 }
 
+export interface FiscalYearSettingTable { tenant_id: string; fiscal_year: number; book_form: Generated<string>; updated_at: Generated<string> }
+export interface LedgerVoucherSetTable { id: Generated<number>; tenant_id: string; fiscal_year: number; set_no: number; set_date: DateOnly; description: string; date_from: DateOnly; date_to: DateOnly; voucher_type: string | null; created_by: string; created_at: Generated<string> }
+export interface LedgerVoucherSetItemTable { tenant_id: string; set_id: number; voucher_id: string }
 export interface Database {
   tenant: TenantTable;
   app_user: AppUserTable;
@@ -627,4 +632,52 @@ export interface Database {
   einvoice_error_notice_line: EinvoiceErrorNoticeLineTable;
   einvoice_log: EinvoiceLogTable;
   einvoice_fake_store: EinvoiceFakeStoreTable;
+  fiscal_year_setting: FiscalYearSettingTable;
+  ledger_voucher_set: LedgerVoucherSetTable;
+  ledger_voucher_set_item: LedgerVoucherSetItemTable;
+  budget: BudgetTable;
+  budget_line: BudgetLineTable;
+  budget_setting: BudgetSettingTable;
 }
+
+// GĐ7 nhóm 3: ngân sách.
+export interface BudgetTable {
+  id: Generated<number>; tenant_id: string; fiscal_year: number; version: Generated<number>; name: string; status: Generated<string>; note: string | null;
+  approved_by: string | null; approved_at: Timestamp | null; created_by: string; created_at: Generated<Timestamp>;
+}
+export interface BudgetLineTable {
+  id: Generated<number>; tenant_id: string; budget_id: number; line_no: number; account_prefix: string; cost_item_id: number | null; department_id: number | null; project_id: number | null;
+  m01: NumericDefault; m02: NumericDefault; m03: NumericDefault; m04: NumericDefault; m05: NumericDefault; m06: NumericDefault;
+  m07: NumericDefault; m08: NumericDefault; m09: NumericDefault; m10: NumericDefault; m11: NumericDefault; m12: NumericDefault; note: string | null;
+}
+export interface BudgetSettingTable { tenant_id: string; enabled: Generated<boolean>; warn_pct: Generated<number>; block_pct: number | null }
+
+// GĐ7 nhóm 4: phê duyệt đề nghị thanh toán / tạm ứng (0230). Gộp khai báo vào Database để chỉ thêm ở cuối tệp.
+export interface ApprovalStepSnapshot { stepNo: number; roleId: string | null; roleName: string | null; userId: string | null; username: string | null }
+export interface ApprovalFlowTable {
+  id: Generated<number>; tenant_id: string; kind: string; name: string; min_amount: NumericDefault; is_active: Generated<boolean>; created_at: Generated<Timestamp>;
+}
+export interface ApprovalFlowStepTable { tenant_id: string; flow_id: number; step_no: number; role_id: string | null; user_id: string | null }
+export interface ApprovalRequestTable {
+  id: Generated<string>; tenant_id: string; kind: string; request_no: string; request_date: DateOnly; requester_id: string; party_id: string | null; payee_name: string; reason: string;
+  currency_code: Generated<string>; amount_currency: Numeric; fx_rate: Numeric | null; amount: Numeric; account_code: string; pay_method: string; bank_account_id: number | null; due_date: DateOnly | null;
+  state: Generated<string>; flow_id: number | null; steps: ColumnType<ApprovalStepSnapshot[], string | undefined, string>; current_step: Generated<number>; reject_reason: string | null; voucher_id: string | null;
+  submitted_at: Timestamp | null; decided_at: Timestamp | null; created_at: Generated<Timestamp>;
+}
+export interface ApprovalStepLogTable { id: Generated<number>; tenant_id: string; request_id: string; step_no: number; action: string; actor_id: string; note: string | null; created_at: Generated<Timestamp> }
+export interface ApprovalAttachmentTable {
+  id: Generated<string>; tenant_id: string; request_id: string; file_name: string; mime: string; bytes: number; storage_key: string; uploaded_by: string; uploaded_at: Generated<Timestamp>;
+}
+export interface Database {
+  approval_flow: ApprovalFlowTable;
+  approval_flow_step: ApprovalFlowStepTable;
+  approval_request: ApprovalRequestTable;
+  approval_step_log: ApprovalStepLogTable;
+  approval_attachment: ApprovalAttachmentTable;
+  user_branch_scope: UserBranchScopeTable;
+  branch_consolidation_setting: BranchConsolidationSettingTable;
+}
+
+// GĐ7 nhóm 5: đa chi nhánh (0240). voucher.branch_id, department.tax_code đọc/ghi qua sql trong modules/branch.
+export interface UserBranchScopeTable { id: Generated<number>; tenant_id: string; user_id: string; branch_id: number | null }
+export interface BranchConsolidationSettingTable { tenant_id: string; internal_prefixes: string[]; updated_at: Generated<string> }

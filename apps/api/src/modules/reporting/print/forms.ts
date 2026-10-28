@@ -11,6 +11,10 @@ const FORMS: Record<string, Record<string, string>> = {
   S03a: { TT99: 'S03a-DN', TT133: 'S03a-DNN', TT200: 'S03a-DN' },
   S03b: { TT99: 'S03b-DN', TT133: 'S03b-DNN', TT200: 'S03b-DN' },
   S38: { TT99: 'S38-DN', TT133: 'S20-DNN', TT200: 'S38-DN' },
+  // Hình thức Chứng từ ghi sổ (TT99/TT200 theo yêu cầu nghiệp vụ GĐ7; CHƯA đối chiếu văn bản gốc, TT133 chưa có mục). Nhật ký – Sổ Cái và Nhật ký – Chứng từ cố ý không có mục: chưa đối chiếu được số mẫu nên in để trống.
+  S02a: { TT99: 'S02a-DN', TT200: 'S02a-DN' },
+  S02b: { TT99: 'S02b-DN', TT200: 'S02b-DN' },
+  S02c1: { TT99: 'S02c1-DN', TT200: 'S02c1-DN' },
   S06: { TT99: 'S06-DN', TT133: 'S06-DNN', TT200: 'S06-DN' },
   B01: { TT99: 'B01-DN', TT133: 'B01a-DNN', TT200: 'B01-DN' },
   B02: { TT99: 'B02-DN', TT133: 'B02-DNN', TT200: 'B02-DN' },

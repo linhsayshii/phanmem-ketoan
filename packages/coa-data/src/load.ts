@@ -11,8 +11,12 @@ const SOURCE: Record<string, string> = {
   TT99: 'Phụ lục II TT 99/2025/TT-BTC ngày 27/10/2025, Công báo số 1565 + 1566 ngày 16/11/2025, https://congbao.chinhphu.vn/van-ban/thong-tu-so-99-2025-tt-btc-46529.htm',
 };
 export function dataPath(...p: string[]): string { return path.join(dataDir, ...p); }
+// Tên tiếng Anh tham khảo (data/i18n): chỉ điền khi CSV chưa có name_en; không có trong tệp thì để trống.
+const readI18n = (f: string) => JSON.parse(readFileSync(dataPath('i18n', f), 'utf8')) as Record<string, string>;
 export function loadCoaTemplate(regime: Regime): CoaTemplateRow[] {
-  return parseCoaCsv(readFileSync(dataPath('coa', `${regime.toLowerCase()}.csv`), 'utf8'), regime, SOURCE[regime] ?? regime);
+  const en = readI18n('account-names-en.json');
+  return parseCoaCsv(readFileSync(dataPath('coa', `${regime.toLowerCase()}.csv`), 'utf8'), regime, SOURCE[regime] ?? regime)
+    .map((r) => ({ ...r, nameEn: r.nameEn ?? en[`${regime}:${r.code}`] ?? en[r.code] ?? null }));
 }
 export function tt99Status(): { complete: boolean; source: string } {
   const p = dataPath('coa', 'tt99.status.json');
@@ -23,7 +27,7 @@ export interface ClosingStepTemplate { stepOrder: number; name: string; mode: 't
 // Sơ đồ kết chuyển mặc định theo chế độ (TT133 không có 521 và 641; TT99 giảm trừ doanh thu kết chuyển thẳng vào 511).
 export function loadDefaultClosingSteps(regime: Regime): ClosingStepTemplate[] { return JSON.parse(readFileSync(dataPath('closing-steps', `${regime.toLowerCase()}.json`), 'utf8')) as ClosingStepTemplate[]; }
 
-export interface ReportTemplateRow { regime: Regime; reportCode: string; lineCode: string; label: string; parentLineCode: string | null; source: Source; side: Side; formula: string | null; sortOrder: number; isBold: boolean; negate: boolean; noteRef: string | null }
+export interface ReportTemplateRow { regime: Regime; reportCode: string; lineCode: string; label: string; parentLineCode: string | null; source: Source; side: Side; formula: string | null; sortOrder: number; isBold: boolean; negate: boolean; noteRef: string | null; labelEn: string | null }
 export type ReportStatus = Record<'tt99' | 'tt133', Record<string, boolean | string>>;
 export const REPORT_REGIMES: Regime[] = ['TT99', 'TT133'];
 export const REPORT_CODES = ['B01', 'B02', 'B03'] as const;
@@ -33,7 +37,9 @@ export function reportStatus(): ReportStatus { return JSON.parse(readFileSync(da
 export function isReportComplete(regime: Regime, code: string): boolean { return reportStatus()[regime.toLowerCase() as 'tt99' | 'tt133']?.[code] === true; }
 // onlyComplete: chỉ các bộ đã đối chiếu văn bản gốc (status.json = true); bộ chờ văn bản có dòng ví dụ định dạng, không được thành mẫu của công ty.
 export function loadReportTemplates(opts: { onlyComplete?: boolean } = {}): ReportTemplateRow[] {
-  const out: ReportTemplateRow[] = [];
+  const out: ReportTemplateRow[] = []; const en = readI18n('report-labels-en.json');
+  // Bỏ số thứ tự đầu dòng (I., 1., -) rồi tra từ điển; giữ lại phần số thứ tự ở bản tiếng Anh.
+  const labelEn = (label: string) => { const m = /^((?:[IVX]+\.|\d+\.|-)\s+)?(.*)$/s.exec(label)!; const t = en[m[2]!]; return t === undefined ? null : (m[1] ?? '') + t; };
   for (const regime of REPORT_REGIMES) for (const code of REPORT_CODES) {
     const p = dataPath('reports', regime.toLowerCase(), `${code}.csv`); if (!existsSync(p)) continue;
     if (opts.onlyComplete && !isReportComplete(regime, code)) continue;
@@ -45,7 +51,7 @@ export function loadReportTemplates(opts: { onlyComplete?: boolean } = {}): Repo
       if (!SOURCES.includes(c[3]!)) throw new Error(`${at}: source không hợp lệ "${c[3]}"`);
       if (!SIDES.includes(c[4]!)) throw new Error(`${at}: side không hợp lệ "${c[4]}"`);
       if (!['0', '1'].includes(c[6]!) || !['0', '1'].includes(c[7]!)) throw new Error(`${at}: is_bold và negate phải là 0 hoặc 1`);
-      out.push({ regime, reportCode: code, lineCode: c[0]!, label: c[1]!, parentLineCode: c[2] || null, source: c[3] as Source, side: c[4] as Side, formula: c[5] || null, sortOrder: i + 1, isBold: c[6] === '1', negate: c[7] === '1', noteRef: c[8] || null });
+      out.push({ regime, reportCode: code, lineCode: c[0]!, label: c[1]!, parentLineCode: c[2] || null, source: c[3] as Source, side: c[4] as Side, formula: c[5] || null, sortOrder: i + 1, isBold: c[6] === '1', negate: c[7] === '1', noteRef: c[8] || null, labelEn: labelEn(c[1]!) });
     });
   }
   return out;

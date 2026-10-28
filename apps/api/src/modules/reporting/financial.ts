@@ -6,6 +6,7 @@ import { assertSensitive, regimeOf } from './ledgers.js';
 import { isSalaryCode } from '../payroll/accounts.js';
 import { formNoFor } from './print/forms.js';
 import { loanLongRows } from '../loans/stats.js';
+import { balancesAt, branchWhere, type BranchFilter } from '../branch/scope.js';
 
 type Trx = Transaction<Database>;
 export const REPORT_NAMES: Record<string, Record<string, string>> = {
@@ -25,7 +26,7 @@ export async function copyReportTemplates(trx: Trx, tenantId: string, regime: st
     const f = formNoFor(regime, c);
     const def = await trx.insertInto('report_def').values({ tenant_id: tenantId, regime, report_code: c, name: REPORT_NAMES[c]?.[regime] ?? c, form_no: f.formNo, issued_by: f.issuedBy }).returning('id').executeTakeFirstOrThrow();
     await trx.insertInto('report_line').values(tpl.filter((x) => x.report_code === c).map((t) => ({ tenant_id: tenantId, report_def_id: def.id, line_code: t.line_code, label: t.label, parent_line_code: t.parent_line_code,
-      source: t.source, side: t.side, formula: t.formula, sort_order: t.sort_order, is_bold: t.is_bold, negate: t.negate, note_ref: t.note_ref }))).execute();
+      source: t.source, side: t.side, formula: t.formula, sort_order: t.sort_order, is_bold: t.is_bold, negate: t.negate, note_ref: t.note_ref, label_en: t.label_en }))).execute();
   }
   return tpl.length;
 }
@@ -51,14 +52,16 @@ export const usesLongTerm = (formulas: (string | null)[]) => formulas.some((f) =
 const CASH_SIDE = (a: 'ad' | 'ac') => sql.raw(`(coalesce(${a}.subledger_kind IN ('cash','bank'), false) OR ${a}.code LIKE '113%')`) // coalesce: loại NULL không được làm cả điều kiện thành NULL;
 export const isCashLike = (a: { code: string; kind: string | null } | undefined) => !!a && (a.kind === 'cash' || a.kind === 'bank' || a.code.startsWith('113'));
 
-export function reportData(trx: Trx, tenantId: string, regime: string, p: { from: string; to: string }, opts: { longTerm?: boolean } = {}) {
+// opts.branch (GĐ7): chỉ chứng từ của các chi nhánh đó; số dư cộng từ dòng (fn_balances_at_branch) vì số dư kỳ không mang chi nhánh.
+export function reportData(trx: Trx, tenantId: string, regime: string, p: { from: string; to: string }, opts: { longTerm?: boolean; branch?: BranchFilter | undefined } = {}) {
+  const br = branchWhere(opts.branch);
   // Phát sinh trong kỳ không gồm chứng từ kết chuyển (KC và bản đảo của KC mang cờ is_closing), nếu không doanh thu/chi phí về 0.
   // onlyReval: chỉ nhóm đánh giá lại ngoại tệ cuối kỳ = dòng của chứng từ DG (source_doc_type 'fx_revaluation', gồm bản đảo do chạy lại; DG của TT133 qua 413 rồi kết chuyển cũng cùng loại)
   // và của chứng từ CL sinh khi đảo khoản công nợ đã đánh giá lại (đối trừ kiểu 'reversal' kèm fx_voucher_id): CL đó gỡ chênh lệch đánh giá lại của chính khoản ấy. CL đối trừ thông thường ('fx') và XQ không thuộc nhóm.
   const movementRows = async (onlyReval: boolean): Promise<Unit[]> => (await sql<{ code: string; name: string; kind: string | null; d: string; c: string }>`
       SELECT a.code, a.name, a.subledger_kind AS kind, sum(l.debit)::text AS d, sum(l.credit)::text AS c
       FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
-      WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND NOT v.is_closing AND a.regime = ${regime}
+      WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND NOT v.is_closing AND a.regime = ${regime} AND ${br}
         AND v.posting_date BETWEEN ${p.from}::date AND ${p.to}::date AND l.posting_date BETWEEN ${p.from}::date AND ${p.to}::date
         ${onlyReval ? sql`AND (v.source_doc_type = 'fx_revaluation' OR v.id IN (SELECT s.fx_voucher_id FROM settlement s WHERE s.tenant_id = ${tenantId}::uuid AND s.kind = 'reversal' AND s.fx_voucher_id IS NOT NULL))` : sql``}
       GROUP BY a.id`.execute(trx)).rows.map((r) => ({ code: r.code, name: r.name, kind: r.kind, partyCode: null, d: D(r.d), c: D(r.c) }));
@@ -70,7 +73,7 @@ export function reportData(trx: Trx, tenantId: string, regime: string, p: { from
       const base = (await sql<{ code: string; name: string; kind: string | null; partyCode: string | null; net: string }>`
       SELECT a.code, a.name, a.subledger_kind AS kind, pt.code AS "partyCode", x.n::text AS net FROM (
         SELECT a.id, CASE WHEN a.subledger_kind IN ('receivable','payable') THEN b.party_id END AS party_id, sum(b.debit - b.credit) AS n
-        FROM fn_balances_at(${tenantId}::uuid, ${p.to}::date) b JOIN account a ON a.id = b.account_id WHERE a.regime = ${regime}
+        FROM ${balancesAt(tenantId, p.to, opts.branch)} b JOIN account a ON a.id = b.account_id WHERE a.regime = ${regime}
         GROUP BY 1, 2 HAVING sum(b.debit - b.credit) <> 0) x
       JOIN account a ON a.id = x.id LEFT JOIN party pt ON pt.id = x.party_id`.execute(trx)).rows;
       if (!opts.longTerm) return base.map((r) => unitOf(r, D(r.net), false));
@@ -78,14 +81,16 @@ export function reportData(trx: Trx, tenantId: string, regime: string, p: { from
       const long = [...(await sql<{ code: string; name: string; kind: string | null; partyCode: string | null; net: string }>`
       SELECT a.code, a.name, a.subledger_kind AS kind, pt.code AS "partyCode", x.n::text AS net FROM (
         SELECT o.account_id AS id, o.party_id, sum(o.residual) AS n FROM fn_open_items_at(${tenantId}::uuid, ${p.to}::date) o
-        WHERE o.due_date > ${cutoff}::date GROUP BY 1, 2
+        WHERE o.due_date > ${cutoff}::date ${opts.branch ? sql`AND o.item_id IN (SELECT oi.id FROM open_item oi JOIN voucher v ON v.id = oi.voucher_id WHERE ${br})` : sql``} GROUP BY 1, 2
         UNION ALL
         SELECT l.account_id, NULL::uuid, sum(l.debit - l.credit) FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
-        WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND l.posting_date <= ${p.to}::date AND l.due_date > ${cutoff}::date
+        WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND ${br} AND l.posting_date <= ${p.to}::date AND l.due_date > ${cutoff}::date
           AND a.subledger_kind IS DISTINCT FROM 'receivable' AND a.subledger_kind IS DISTINCT FROM 'payable'
           -- gốc vay của khế ước vay tách theo lịch trả (loanLongRows), không theo hạn ghi ở dòng
           AND NOT EXISTS (SELECT 1 FROM loan_term lt WHERE lt.tenant_id = l.tenant_id AND lt.contract_id = l.contract_id AND lt.principal_account_code = a.code) GROUP BY 1) x
-      JOIN account a ON a.id = x.id LEFT JOIN party pt ON pt.id = x.party_id WHERE a.regime = ${regime} AND x.n <> 0`.execute(trx)).rows, ...await loanLongRows(trx, p.to, regime)];
+      JOIN account a ON a.id = x.id LEFT JOIN party pt ON pt.id = x.party_id WHERE a.regime = ${regime} AND x.n <> 0`.execute(trx)).rows,
+        // shortcut: khế ước vay không mang chi nhánh, khi lọc chi nhánh phần dài hạn của gốc vay theo lịch trả không tách (nằm ở ngắn hạn); gắn khế ước với chi nhánh khi cần.
+        ...(opts.branch ? [] : await loanLongRows(trx, p.to, regime))];
       const key = (r: { code: string; partyCode: string | null }) => `${r.code}|${r.partyCode ?? ''}`;
       const rows = new Map(base.map((r) => [key(r), { r, n: D(r.net), l: ZERO }]));
       for (const r of long) { const k = key(r); const x = rows.get(k); if (x) x.l = x.l.plus(r.net); else rows.set(k, { r, n: ZERO, l: D(r.net) }); }
@@ -105,12 +110,17 @@ export function reportData(trx: Trx, tenantId: string, regime: string, p: { from
              CASE WHEN dl.cash_flow_code IS NOT NULL THEN 1 ELSE -1 END AS "cfSign"
       FROM voucher_pair p JOIN voucher v ON v.id = p.voucher_id JOIN account ad ON ad.id = p.debit_account_id JOIN account ac ON ac.id = p.credit_account_id
         LEFT JOIN voucher_line dl ON dl.id = p.debit_line_id AND dl.posting_date = p.posting_date LEFT JOIN voucher_line cl ON cl.id = p.credit_line_id AND cl.posting_date = p.posting_date
-      WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND ad.regime = ${regime} AND ac.regime = ${regime}
+      WHERE v.tenant_id = ${tenantId}::uuid AND v.state IN ('posted','reversed') AND ${br} AND ad.regime = ${regime} AND ac.regime = ${regime}
         AND p.posting_date BETWEEN ${p.from}::date AND ${p.to}::date
       GROUP BY ad.id, ac.id, 8, 9`.execute(trx)).rows.map((r) => ({ ...r, amount: D(r.amount) }))),
   };
 }
-type ReportData = ReturnType<typeof reportData>;
+export type ReportData = ReturnType<typeof reportData>;
+// Dữ liệu chỉ gồm đơn vị của tài khoản thỏa `keep` (cặp đối ứng: một trong hai bên thỏa). Dùng cho cột loại trừ nội bộ của BCTC tổng hợp.
+export function restrictData(data: ReportData, keep: (code: string) => boolean): ReportData {
+  const units = (f: () => Promise<Unit[]>) => once(async () => (await f()).filter((u) => keep(u.code)));
+  return { balance: units(data.balance), movement: units(data.movement), reval: units(data.reval), pair: once(async () => (await data.pair()).filter((r) => keep(r.dcode) || keep(r.ccode))) };
+}
 const underAny = (code: string, prefixes: string[]) => prefixes.some((x) => code.startsWith(x));
 const matches = (code: string, ref: { prefix: string; exclude: string[] }) => code.startsWith(ref.prefix) && !underAny(code, ref.exclude);
 const pick = (side: Side, u: { d: Decimal; c: Decimal }): Decimal => side === 'debit' ? u.d : side === 'credit' ? u.c : side === 'net_debit' ? u.d.minus(u.c) : u.c.minus(u.d);
@@ -140,7 +150,7 @@ export function sqlResolver(data: ReportData): Resolver {
   };
 }
 
-async function loadDef(trx: Trx, reportCode: string, regime: string) {
+export async function loadDef(trx: Trx, reportCode: string, regime: string) {
   const def = await trx.selectFrom('report_def').selectAll().where('report_code', '=', reportCode).where('regime', '=', regime).executeTakeFirst();
   if (!def) throw new AppError('REPORT_NOT_FOUND', `Chưa có định nghĩa báo cáo ${reportCode} cho ${regime}; hãy định nghĩa trong Sửa công thức hoặc Nạp lại mẫu`, 404);
   const lines = await trx.selectFrom('report_line').selectAll().where('report_def_id', '=', def.id).orderBy('sort_order').execute();
@@ -166,12 +176,12 @@ async function regimeAt(trx: Trx, date: string): Promise<string | null> {
   return r.rows[0]?.regime ?? null;
 }
 
-export async function evaluateFinancialReport(trx: Trx, tenantId: string, q: { reportCode: string; from: string; to: string; comparePrevYear: boolean }) {
+export async function evaluateFinancialReport(trx: Trx, tenantId: string, q: { reportCode: string; from: string; to: string; comparePrevYear: boolean; branch?: BranchFilter | undefined }) {
   const regime = await regimeOf(trx, q);
   const { def, lines } = await loadDef(trx, q.reportCode, regime);
   const defs: ReportLineDef[] = lines.map((l) => ({ lineCode: l.line_code, formula: l.formula, source: l.source as Source, side: l.side as Side }));
   const longTerm = usesLongTerm(lines.map((l) => l.formula));
-  const run = (from: string, to: string) => evaluateReport(defs, sqlResolver(reportData(trx, tenantId, regime, { from, to }, { longTerm })));
+  const run = (from: string, to: string) => evaluateReport(defs, sqlResolver(reportData(trx, tenantId, regime, { from, to }, { longTerm, branch: q.branch })));
   const current = await run(q.from, q.to);
   // B01: cột so sánh là "số đầu năm" = dư tại ngày trước ngày đầu năm tài chính chứa `to` (gồm DK kỳ 0); B02/B03: cùng kỳ năm trước khi được yêu cầu.
   const compareTo = q.reportCode === 'B01' ? dayBeforeIso(await yearStartOf(trx, q.to)) : q.comparePrevYear ? shiftYear(q.to, -1) : null;
@@ -194,13 +204,13 @@ function signedTerms(e: Expr, sign = 1): { sign: number; term: Expr }[] {
 // Truy ngược cấp 1: các đơn vị (tài khoản, đối tượng; hoặc cặp Nợ/Có với nguồn đối ứng) tạo nên chỉ tiêu, dùng đúng dữ liệu, tiền tố, loại trừ và dấu của công thức nên cộng lại bằng giá trị chỉ tiêu.
 // Dòng tổng hợp chỉ gồm [x] không có tài khoản trực tiếp: trả rỗng, người dùng truy ngược từng dòng thành phần.
 interface DrillRow { kind?: 'reval_net'; accountCode: string; accountName: string; counterAccountCode?: string; partyCode: string | null; amount: Decimal; checks: { code: string; kind: string | null }[] }
-export async function drillLine(trx: Trx, tenantId: string, q: { reportCode: string; lineCode: string; from: string; to: string }, auth: { sensitive: Set<string> }) {
+export async function drillLine(trx: Trx, tenantId: string, q: { reportCode: string; lineCode: string; from: string; to: string; branch?: BranchFilter | undefined }, auth: { sensitive: Set<string> }) {
   const regime = await regimeOf(trx, q);
   const { lines } = await loadDef(trx, q.reportCode, regime);
   const l = lines.find((x) => x.line_code === q.lineCode);
   if (!l) throw new AppError('REPORT_LINE_NOT_FOUND', `Báo cáo ${q.reportCode} không có dòng ${q.lineCode}`, 404);
   if (!l.formula?.trim()) return { accounts: [] };
-  const data = reportData(trx, tenantId, regime, q, { longTerm: usesLongTerm([l.formula]) }); const side = l.side as Side;
+  const data = reportData(trx, tenantId, regime, q, { longTerm: usesLongTerm([l.formula]), branch: q.branch }); const side = l.side as Side;
   const rows = new Map<string, DrillRow>();
   const add = (key: string, row: Omit<DrillRow, 'amount'>, amount: Decimal) => rows.set(key, { ...row, amount: (rows.get(key)?.amount ?? ZERO).plus(amount) });
   for (const { sign, term } of signedTerms(parseFormula(l.formula))) {
@@ -227,7 +237,7 @@ export async function drillLine(trx: Trx, tenantId: string, q: { reportCode: str
   return { accounts: out.map((r) => ({ ...(r.kind && { kind: r.kind }), accountCode: r.accountCode, accountName: r.accountName, ...(r.counterAccountCode !== undefined && { counterAccountCode: r.counterAccountCode }), partyCode: r.partyCode, amount: r.amount.toString() })) };
 }
 
-export interface ReportLineInput { lineCode: string; label: string; parentLineCode: string | null; source: Source; side: Side; formula: string | null; isBold: boolean; negate: boolean; noteRef: string | null }
+export interface ReportLineInput { lineCode: string; label: string; parentLineCode: string | null; source: Source; side: Side; formula: string | null; isBold: boolean; negate: boolean; noteRef: string | null; labelEn?: string | null | undefined; translationStatus?: string | null | undefined }
 
 // Lưu toàn bộ dòng của một báo cáo. Kiểm tra trước khi ghi: cú pháp công thức, dòng [x] tồn tại, không vòng lặp (chạy thử với bộ giải trả 0), mã dòng không trùng, dòng cha tồn tại.
 export async function saveReportDef(trx: Trx, tenantId: string, regime: string, reportCode: string, lines: ReportLineInput[]): Promise<void> {
@@ -244,8 +254,10 @@ export async function saveReportDef(trx: Trx, tenantId: string, regime: string, 
   const f = formNoFor(regime, reportCode);
   const d = await trx.insertInto('report_def').values({ tenant_id: tenantId, regime, report_code: reportCode, name: REPORT_NAMES[reportCode]?.[regime] ?? reportCode, form_no: f.formNo, issued_by: f.issuedBy })
     .onConflict((oc) => oc.columns(['tenant_id', 'regime', 'report_code']).doUpdateSet({ name: sql`report_def.name` })).returning('id').executeTakeFirstOrThrow(); // cập nhật giả để RETURNING trả id của định nghĩa đã có
+  // Tên tiếng Anh sửa riêng ở màn hình Tên tiếng Anh: màn hình công thức không gửi thì giữ bản cũ theo mã dòng.
+  const oldEn = new Map((await trx.selectFrom('report_line').select(['line_code', 'label_en', 'translation_status']).where('report_def_id', '=', d.id).execute()).map((x) => [x.line_code, x]));
   await trx.deleteFrom('report_line').where('report_def_id', '=', d.id).execute();
-  if (lines.length) await trx.insertInto('report_line').values(lines.map((l, i) => ({ tenant_id: tenantId, report_def_id: d.id, line_code: l.lineCode, label: l.label, parent_line_code: l.parentLineCode, source: l.source, side: l.side,
+  if (lines.length) await trx.insertInto('report_line').values(lines.map((l, i) => ({ label_en: l.labelEn === undefined ? oldEn.get(l.lineCode)?.label_en ?? null : l.labelEn, translation_status: l.labelEn === undefined ? oldEn.get(l.lineCode)?.translation_status ?? null : l.translationStatus ?? null, tenant_id: tenantId, report_def_id: d.id, line_code: l.lineCode, label: l.label, parent_line_code: l.parentLineCode, source: l.source, side: l.side,
     formula: l.formula, sort_order: i + 1, is_bold: l.isBold, negate: l.negate, note_ref: l.noteRef }))).execute();
 }
 
