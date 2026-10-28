@@ -103,6 +103,9 @@ afterAll(async () => { await ctx.close(); });
 describe('chứng từ LU theo ba chế độ', () => {
   it.each([2024, 2025, 2026])('năm %i: cân bằng, chi phí = gross + BH DN, dư Có phải trả theo nhân viên = thực lĩnh, BH và TNCN đúng', async (y) => {
     const run = runs[y]!; const a = REGIME[y]!;
+    // Tạm ứng cho NV11 đầu tháng (Nợ 141 theo nhân viên / Có tiền mặt); cuối tháng trừ lương (cột advance) → LU Có 141 theo nhân viên, 141 của NV11 về 0 (#971).
+    await ok('POST', '/api/vouchers', { voucherType: 'PKT', postingDate: `${y}-10-05`, documentDate: `${y}-10-05`, description: 'Tạm ứng NV11', autoPost: true,
+      lines: [{ accountCode: '141', debit: '1000000', employeeCode: 'NV11' }, { accountCode: y === 2026 ? '111' : '1111', credit: '1000000' }] });
     const res = await ok('POST', `${R}/${run.id}/post`);
     expect(res).toMatchObject({ runId: run.id, status: 'posted', unchanged: false, reversedVoucherIds: [], voucherNo: expect.stringMatching(/^LU/) });
     const v = await voucher(res.voucherId);
@@ -119,9 +122,14 @@ describe('chứng từ LU theo ba chế độ', () => {
     expect(credit(a.si)).toBe(D(val('si_er_si')).plus(val('si_er_occ')).plus(val('si_emp_si')).toFixed(0));
     expect(credit(a.hi)).toBe(D(val('si_er_hi')).plus(val('si_emp_hi')).toFixed(0));
     expect(credit(a.ui)).toBe(D(val('si_er_ui')).plus(val('si_emp_ui')).toFixed(0));
-    expect(credit('3388')).toBe(val('other_withholding'));
-    // D7b: chỉ dòng phải trả người lao động mang nhân viên; dư Có theo nhân viên = thực lĩnh.
-    expect(lines.filter((l) => l.employeeCode).every((l) => l.accountCode === a.payable)).toBe(true);
+    // Tạm ứng trừ lương ghi Có 141 theo nhân viên; 3388 chỉ còn khấu trừ khác (đóng góp, đoàn phí), không chứa tạm ứng (#971).
+    expect(val('advance')).toBe('1000000');
+    expect(lines.filter((l) => l.accountCode === '141').map((l) => [l.employeeCode, l.debit, l.credit])).toEqual([['NV11', '0', '1000000']]);
+    expect(credit('3388')).toBe(D(val('other_withholding')).minus(val('advance')).toFixed(0));
+    const adv = (await ok('GET', `/api/reports/ledgers/detail?accountCode=141&from=${y}-10-01&to=${y}-10-31&employeeCode=NV11`)).closing;
+    expect(D(adv.debit).minus(adv.credit).toFixed(0)).toBe('0');
+    // D7b: chỉ dòng phải trả người lao động (và tạm ứng 141) mang nhân viên; dư Có theo nhân viên = thực lĩnh.
+    expect(lines.filter((l) => l.employeeCode).every((l) => [a.payable, '141'].includes(l.accountCode))).toBe(true);
     for (const l of L) expect(`${l.employeeCode}:${credit2(lines, a.payable, l.employeeCode)}`).toBe(`${l.employeeCode}:${l.net}`);
     // Tài khoản chi phí theo vai trò bộ phận của chế độ; SX mang khoản mục, đối tượng; NV03 tách 60/40 hai vụ việc; NV04 vụ việc mặc định.
     for (const [dept, code] of Object.entries(a.cost)) expect(cost.filter((l) => l.departmentCode === dept).every((l) => l.accountCode === code), dept).toBe(true);
@@ -187,6 +195,23 @@ describe('chạy lại và hủy hạch toán (đảo)', () => {
     expect((await ok('POST', `${R}/${run.id}/post`)).status).toBe('posted');
   });
 
+  it('đổi tỷ lệ phân bổ chi phí của nhân viên sau hạch toán: bảng "Cần chạy lại" (không "Cần tính lại" số), chạy lại sinh LU mới (#974)', async () => {
+    const run = runs[2026]!;
+    const split = (p1: string, p2: string) => ok('PUT', `/api/payroll/profiles/${emp.NV03}/cost-split`, { items: [{ projectId: ids.P1, pct: p1 }, { projectId: ids.P2, pct: p2 }] });
+    expect((await ok('GET', `${R}/${run.id}`)).stale).toBe(false);
+    await split('50', '50');
+    const g = await ok('GET', `${R}/${run.id}`);
+    expect(g.stale).toBe(true); expect(g.lines.some((l: Json) => l.stale)).toBe(false);
+    const re = await ok('POST', `${R}/${run.id}/repost`);
+    expect(re.unchanged).toBe(false);
+    expect((await ok('GET', `${R}/${run.id}`)).stale).toBe(false);
+    await split('60', '40');
+    expect((await ok('GET', `${R}/${run.id}`)).stale).toBe(true);
+    expect((await ok('POST', `${R}/${run.id}/repost`)).unchanged).toBe(false);
+    expect((await ok('GET', `${R}/${run.id}`)).stale).toBe(false);
+    expect((await ok('POST', `${R}/${run.id}/repost`)).unchanged).toBe(true);
+  });
+
   it('kỳ khóa sổ: không có quyền ghi lùi → 409; có quyền → đảo trong kỳ khóa; khóa cứng → 409', async () => {
     const run = runs[2025]!;
     await ok('POST', '/api/periods/2025/10/lock', { level: 'soft' });
@@ -195,6 +220,18 @@ describe('chạy lại và hủy hạch toán (đảo)', () => {
     const noBackdate = await userWith('ketoan_truong', ['view_salary']);
     await fail('POST', `${R}/${run.id}/unpost`, 409, 'PERIOD_SOFT_LOCKED', undefined, noBackdate);
     // Chạy lại không đổi ở kỳ khóa vẫn qua (không ghi gì).
+    expect((await ok('POST', `${R}/${run.id}/repost`, undefined, noBackdate)).unchanged).toBe(true);
+    // Người phụ thuộc mới của NV11 (thuế vẫn 0 nên LU không đổi) đổi giảm trừ của bảng lương kỳ khóa: không được ghi âm thầm (#973).
+    const lineOf = async () => (await ok('GET', `${R}/${run.id}`)).lines.find((l: Json) => l.employeeCode === 'NV11');
+    const v0 = (await lineOf()).values;
+    const dep = await ok('POST', `/api/payroll/profiles/${emp.NV11}/dependents`, { name: 'Con', relationship: 'child', fromMonth: '2025-10', toMonth: '2025-10' });
+    await fail('POST', `${R}/${run.id}/repost`, 409, 'PERIOD_SOFT_LOCKED', undefined, noBackdate);
+    expect((await lineOf()).values).toEqual(v0);
+    await sql`UPDATE fiscal_period SET status = 'hard_locked' WHERE tenant_id = ${tenantId}::uuid AND fiscal_year = 2025 AND period_no = 10`.execute(ctx.t.admin);
+    await fail('POST', `${R}/${run.id}/repost`, 409, 'PERIOD_HARD_LOCKED');
+    expect((await lineOf()).values).toEqual(v0);
+    await sql`UPDATE fiscal_period SET status = 'soft_locked' WHERE tenant_id = ${tenantId}::uuid AND fiscal_year = 2025 AND period_no = 10`.execute(ctx.t.admin);
+    await ok('DELETE', `/api/payroll/profiles/${emp.NV11}/dependents/${dep.id}`);
     expect((await ok('POST', `${R}/${run.id}/repost`, undefined, noBackdate)).unchanged).toBe(true);
     const cur = (await ok('GET', `${R}/${run.id}`)).voucherId;
     const u = await ok('POST', `${R}/${run.id}/unpost`);

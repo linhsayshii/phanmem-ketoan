@@ -434,6 +434,7 @@ export interface PayrollStructureTable {
 export interface PayrollRunTable {
   id: Generated<number>; tenant_id: string; year: number; month: number; kind: Generated<string>; status: Generated<string>; name: string; department_id: number | null; structure_id: number;
   input_hash: string | null; calculated_at: Timestamp | null; warnings: ColumnType<unknown, string | undefined, string>; voucher_id: string | null; note: string | null;
+  cost_hash: string | null; // chữ ký cấu hình hạch toán LU (0111, #974)
   created_by: Generated<string | null>; created_at: Generated<Timestamp>; updated_at: Generated<Timestamp>;
 }
 export interface PayrollLineTable {

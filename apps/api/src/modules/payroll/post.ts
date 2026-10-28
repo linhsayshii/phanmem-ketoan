@@ -7,11 +7,12 @@ import { getSettings } from '../core/settings.js';
 import * as S from '../ledger/vouchers.service.js';
 import { payrollAccountMaps } from './accounts.js';
 import { monthRange } from './attendance.js';
-import { computeLines, getRun, lockRun, refreshRunHash } from './runs.js';
+import { computeLines, getRun, lockRun, refreshCostHash, refreshRunHash } from './runs.js';
 
 // Hạch toán bảng lương (Quy ước 6, D1, D2, D7b, D8): một chứng từ hệ thống LU mỗi bảng lương, ngày cuối kỳ lương, ghi sổ ngay.
 // Nợ chi phí lương (TK theo bộ phận) / Có phải trả NLĐ (gross, theo nhân viên); Nợ chi phí BH, KPCĐ DN / Có BHXH, BHYT, BHTN, KPCĐ;
-// Nợ phải trả NLĐ (theo nhân viên) / Có BH phần NLĐ, thuế TNCN, khấu trừ khác. Chỉ dòng phải trả NLĐ mang nhân viên; dòng khác gom theo (TK, bộ phận, vụ việc, khoản mục, đối tượng).
+// Nợ phải trả NLĐ (theo nhân viên) / Có BH phần NLĐ, thuế TNCN, khấu trừ khác (tạm ứng trừ lương Có 141 theo nhân viên, #971). Chỉ dòng phải trả NLĐ và khấu trừ có TK riêng mang nhân viên;
+// dòng khác gom theo (TK, bộ phận, vụ việc, khoản mục, đối tượng).
 // Chạy lại và hủy hạch toán luôn bằng đảo (như khấu hao GĐ4, assets/periodRun.ts); chứng từ khớp thì giữ (unchanged).
 type Trx = Transaction<Database>;
 export type Ctx = { tenantId: string; userId: string; canBackdate: boolean };
@@ -29,6 +30,7 @@ async function periodOfRun(trx: Trx, run: { year: number; month: number }) {
   if (!p) throw new AppError('PERIOD_NOT_FOUND', `Ngày ${formatVnDate(to)} (cuối kỳ lương) không thuộc kỳ kế toán nào đã mở`, 404);
   return { ...p, date: to };
 }
+const locked = (p: Awaited<ReturnType<typeof periodOfRun>>, ctx: Ctx) => p.status === 'hard_locked' || (p.status === 'soft_locked' && !ctx.canBackdate);
 function assertWritable(p: Awaited<ReturnType<typeof periodOfRun>>, ctx: Ctx) {
   if (p.status === 'hard_locked') throw new AppError('PERIOD_HARD_LOCKED', `Kỳ ${p.period_no}/${p.fiscal_year} đã khóa cứng: không hạch toán, chạy lại hay hủy hạch toán lương`, 409);
   if (p.status === 'soft_locked' && !ctx.canBackdate) throw new AppError('PERIOD_SOFT_LOCKED', `Kỳ ${p.period_no}/${p.fiscal_year} đã khóa sổ, cần quyền ghi lùi ngày để hạch toán lương`, 409);
@@ -67,6 +69,10 @@ async function buildLines(trx: Trx, tenantId: string, run: Run, regime: string):
     const cur = acc.get(k); if (cur) cur.amount = cur.amount.plus(a); else acc.set(k, { line: { ...l, debit: '0', credit: '0' }, amount: a });
   };
   const tot = { si: D(0), hi: D(0), ui: D(0), union: D(0), pit: D(0), other: D(0) };
+  // Cột khấu trừ có TK Có riêng (khai ở cột; 'advance' chưa khai → TK tạm ứng của chế độ, #971) ghi Có theo nhân viên; phần còn lại của khấu trừ khác (đoàn phí, cột khác) ghi phải trả khác.
+  const routed = run.columns.filter((c) => c.kind !== 'builtin' && c.deduct)
+    .map((c) => ({ code: c.code, name: c.name, account: c.creditAccount ?? (c.code === 'advance' ? m.advance : undefined) }))
+    .filter((c): c is { code: string; name: string; account: string } => !!c.account && c.account !== m.withholding);
   for (const l of run.lines) {
     const v = (c: string) => D(l.values[c] ?? 0);
     const e = empOf.get(l.employeeId)!;
@@ -84,7 +90,9 @@ async function buildLines(trx: Trx, tenantId: string, run: Run, regime: string):
     add(v('gross').neg(), { accountCode: m.payable, employeeCode: l.employeeCode, description: `Tiền lương phải trả ${run.name}` });
     add(ee.si.plus(ee.hi).plus(ee.ui).plus(v('pit')).plus(v('other_withholding')), { accountCode: m.payable, employeeCode: l.employeeCode, description: `Khấu trừ bảo hiểm, thuế TNCN và khấu trừ khác ${run.name}` });
     tot.si = tot.si.plus(er.si).plus(ee.si); tot.hi = tot.hi.plus(er.hi).plus(ee.hi); tot.ui = tot.ui.plus(er.ui).plus(ee.ui); tot.union = tot.union.plus(er.union);
-    tot.pit = tot.pit.plus(v('pit')); tot.other = tot.other.plus(v('other_withholding'));
+    let routedSum = D(0);
+    for (const c of routed) { routedSum = routedSum.plus(v(c.code)); add(v(c.code).neg(), { accountCode: c.account, employeeCode: l.employeeCode, description: `${c.name} ${run.name}` }); }
+    tot.pit = tot.pit.plus(v('pit')); tot.other = tot.other.plus(v('other_withholding')).minus(routedSum);
   }
   if (missing.size) throw new AppError('ACCOUNT_MISSING', `Chưa có tài khoản chi phí lương cho bộ phận: ${[...missing].join(', ')}. Khai ở Tài khoản chi phí lương theo bộ phận hoặc tài khoản mặc định của công ty`, 400, { departments: [...missing] });
   const sfx = `kỳ ${mmyyyy(run.year, run.month)}`;
@@ -114,8 +122,12 @@ const summary = (lines: VLine[]) => {
 export const payrollSourceId = (tenantId: string, runId: number) => createHash('md5').update(`${tenantId}:payroll_run:${runId}`).digest('hex').replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
 const voucherNoOf = async (trx: Trx, id: string | null) => (id ? (await trx.selectFrom('voucher').select('voucher_no').where('id', '=', id).executeTakeFirst())?.voucher_no ?? null : null);
 
+// Mọi giá trị cột của bảng lương (gồm tổng thu nhập, BH, thuế, thực lĩnh): so trước/sau khi tính lại ở kỳ khóa.
+const valuesHash = async (trx: Trx, runId: number) => (await sql<{ h: string }>`SELECT md5(coalesce(string_agg(concat_ws('|', v.line_id, v.column_code, v.value), ';' ORDER BY v.line_id, v.column_code), '')) AS h
+  FROM payroll_line_value v JOIN payroll_line l ON l.id = v.line_id WHERE l.run_id = ${runId}`.execute(trx)).rows[0]!.h;
+
 const PAY_LABEL: Record<string, string> = { pay: 'chi lương', insurance: 'nộp bảo hiểm', pit: 'nộp thuế TNCN' };
-// Chứng từ chi lương/nộp BH/nộp TNCN đang liên kết với bảng lương (trigger đã gỡ liên kết khi chứng từ về nháp, hủy, đảo). Đã ghi sổ thì đảo/hủy LU làm 334 lệch hoặc chi lương hai lần: chặn (409);
+// Chứng từ chi lương/nộp BH/nộp TNCN đang liên kết với bảng lương (trigger gỡ liên kết khi chứng từ bị hủy, đảo; bỏ ghi sổ về nháp vẫn giữ, 0111). Đã ghi sổ thì đảo/hủy LU làm 334 lệch hoặc chi lương hai lần: chặn (409);
 // còn nháp thì cho qua nhưng báo lại để người dùng hủy nháp cũ (ghi sổ nháp đó sau khi LU đã đảo sẽ chi từ hạch toán không còn).
 async function payVouchersOf(trx: Trx, runId: number) {
   return (await trx.selectFrom('payroll_run_voucher as x').innerJoin('voucher as v', 'v.id', 'x.voucher_id').select(['x.kind', 'v.id as voucherId', 'v.voucher_no as voucherNo', 'v.state'])
@@ -133,6 +145,7 @@ async function createLu(trx: Trx, ctx: Ctx, run: Run, date: string, lines: VLine
   const v = await S.createSystemVoucher(trx, ctx, { voucherType: 'LU', postingDate: date, documentDate: date, description: `Hạch toán ${run.name}`, currencyCode: 'VND', lines }, { type: 'payroll_run', id: payrollSourceId(ctx.tenantId, run.id) });
   await S.postVoucher(trx, v.id);
   await trx.updateTable('payroll_run').set({ voucher_id: v.id, status: 'posted', updated_at: sql`now()` }).where('id', '=', run.id).execute();
+  await refreshCostHash(trx, ctx.tenantId, run.id);
   return v.id;
 }
 
@@ -153,25 +166,30 @@ export async function postRun(trx: Trx, ctx: Ctx, runId: number) {
 
 /**
  * Chạy lại hạch toán bảng lương đã hạch toán: tính lại bảng (kể cả khi đã hạch toán), dựng lại LU và so với LU hiện hành.
- * Khớp → giữ chứng từ (unchanged, kể cả ở kỳ khóa); lệch → đảo LU cũ ngày cuối kỳ lương, sinh LU mới.
+ * Khớp → giữ chứng từ (unchanged; ở kỳ khóa chỉ khi số của bảng lương cũng không đổi); lệch → đảo LU cũ ngày cuối kỳ lương, sinh LU mới.
  */
 export async function repostRun(trx: Trx, ctx: Ctx, runId: number) {
   const r = await lockRun(trx, runId);
   if (r.status !== 'posted') throw new AppError('PAYROLL_RUN_NOT_POSTED', 'Bảng lương chưa hạch toán: dùng Hạch toán', 409);
   const cur = (await trx.selectFrom('payroll_run').select('voucher_id').where('id', '=', runId).executeTakeFirstOrThrow()).voucher_id;
+  const p = await periodOfRun(trx, r);
+  // Kỳ khóa (#973): tính lại chỉ để so; số của bảng lương đổi (bảng kê, quyết toán TNCN của kỳ đã khóa dù LU không đổi) → 409 trước khi trả, giao dịch hoàn tác.
+  const before = locked(p, ctx) ? await valuesHash(trx, runId) : null;
   const warnings = await computeLines(trx, ctx.tenantId, r, await trx.selectFrom('payroll_line').select(['id', 'employee_id']).where('run_id', '=', runId).execute());
+  if (before !== null && before !== await valuesHash(trx, runId)) assertWritable(p, ctx);
   await trx.updateTable('payroll_run').set({ calculated_at: new Date(), warnings: JSON.stringify(warnings) }).where('id', '=', runId).execute();
   await refreshRunHash(trx, runId);
   const run = await getRun(trx, ctx.tenantId, runId);
-  const p = await periodOfRun(trx, run);
   const lines = await buildLines(trx, ctx.tenantId, run, p.regime);
   if (cur) {
     const old = await trx.selectFrom('voucher_line as l').innerJoin('account as a', 'a.id', 'l.account_id').leftJoin('department as d', 'd.id', 'l.department_id').leftJoin('project as pr', 'pr.id', 'l.project_id')
       .leftJoin('cost_item as c', 'c.id', 'l.cost_item_id').leftJoin('cost_object as o', 'o.id', 'l.cost_object_id').leftJoin('employee as e', 'e.id', 'l.employee_id')
       .select(['a.code as accountCode', 'l.debit', 'l.credit', 'd.code as departmentCode', 'pr.code as projectCode', 'c.code as costItemCode', 'o.code as costObjectCode', 'e.code as employeeCode'])
       .where('l.voucher_id', '=', cur).where('l.posting_date', '=', p.date).execute();
-    if (old.map(lineKey).sort().join(';') === lines.map(lineKey).sort().join(';'))
+    if (old.map(lineKey).sort().join(';') === lines.map(lineKey).sort().join(';')) {
+      await refreshCostHash(trx, ctx.tenantId, runId); // LU khớp cấu hình hiện tại (cả bảng lập trước khi có chữ ký)
       return { runId, status: 'posted', voucherId: cur, voucherNo: await voucherNoOf(trx, cur), reversedVoucherIds: [] as string[], unchanged: true, ...summary(lines) };
+    }
   }
   assertWritable(p, ctx);
   await assertNoPostedPayment(trx, runId, 'chạy lại hạch toán');

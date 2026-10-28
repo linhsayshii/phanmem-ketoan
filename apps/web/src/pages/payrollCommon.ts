@@ -69,9 +69,9 @@ export function structureProblem(columns: PayrollColumn[]): string | null {
   try { validateStructure({ columns }); return null; } catch (e) { if (e instanceof PayrollError) return e.message; throw e; }
 }
 
-export interface EditRow { key: number; code: string; name: string; kind: PayrollColumn['kind']; formula: string; round: number | null; income: boolean; taxable: boolean; siBase: boolean; pitRelief: boolean; deduct: boolean }
+export interface EditRow { key: number; code: string; name: string; kind: PayrollColumn['kind']; formula: string; round: number | null; income: boolean; taxable: boolean; siBase: boolean; pitRelief: boolean; deduct: boolean; creditAccount: string }
 export const columnToRow = (c: PayrollColumn, key: number): EditRow => ({
-  key, code: c.code, name: c.name, kind: c.kind, formula: c.formula ?? '', round: c.round ?? null, income: !!c.income, taxable: c.taxable !== false, siBase: !!c.siBase, pitRelief: !!c.pitRelief, deduct: !!c.deduct,
+  key, code: c.code, name: c.name, kind: c.kind, formula: c.formula ?? '', round: c.round ?? null, income: !!c.income, taxable: c.taxable !== false, siBase: !!c.siBase, pitRelief: !!c.pitRelief, deduct: !!c.deduct, creditAccount: c.creditAccount ?? '',
 });
 // Chỉ ghi cờ khi khác mặc định, để cấu trúc lưu gọn và giống cấu trúc mặc định của hệ thống. Cột dựng sẵn không mang cờ/công thức.
 export function rowToColumn(r: EditRow): PayrollColumn {
@@ -84,6 +84,7 @@ export function rowToColumn(r: EditRow): PayrollColumn {
   if (r.siBase) c.siBase = true;
   if (r.pitRelief) c.pitRelief = true;
   if (r.deduct) c.deduct = true;
+  if (r.deduct && r.creditAccount.trim()) c.creditAccount = r.creditAccount.trim();
   return c;
 }
 

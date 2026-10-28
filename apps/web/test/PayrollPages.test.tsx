@@ -6,6 +6,7 @@ import PayrollRunsPage from '../src/pages/PayrollRuns.js';
 import PayrollStructuresPage from '../src/pages/PayrollStructures.js';
 import PayrollParamsPage from '../src/pages/PayrollParams.js';
 import { PayrollErrorAlert } from '../src/pages/payrollUi.js';
+import { columnToRow, rowToColumn } from '../src/pages/payrollCommon.js';
 
 const apiMock = vi.hoisted(() => vi.fn());
 const auth = vi.hoisted(() => ({ sensitive: [] as string[], perms: new Set<string>() }));
@@ -49,5 +50,12 @@ describe('màn hình lương', () => {
     const list = screen.getByTestId('posted-payments');
     expect(list).toHaveTextContent('Chi lương PC0001: bỏ ghi sổ hoặc đảo chứng từ này');
     expect(list).toHaveTextContent('Nộp thuế TNCN (chưa có số)');
+  });
+
+  it('TK Có của cột khấu trừ: lưu khi khai, bỏ khi trống hoặc cột không khấu trừ (#971)', () => {
+    const adv = { code: 'advance', name: 'Tạm ứng trừ lương', kind: 'input' as const, deduct: true };
+    expect(rowToColumn(columnToRow(adv, 1))).toEqual(adv);
+    expect(rowToColumn({ ...columnToRow(adv, 1), creditAccount: ' 1388 ' })).toEqual({ ...adv, creditAccount: '1388' });
+    expect(rowToColumn({ ...columnToRow(adv, 1), deduct: false, creditAccount: '1388' })).toEqual({ code: 'advance', name: 'Tạm ứng trừ lương', kind: 'input' });
   });
 });

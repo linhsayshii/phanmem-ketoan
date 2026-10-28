@@ -106,16 +106,17 @@ const s0 = (x: Decimal) => x.toFixed(0);
 
 // ---- Đối chiếu với sổ cái (chứng từ LU của các bảng đã hạch toán trong phạm vi) ----
 export interface Recon { postedRuns: number; unpostedRuns: number; ok: boolean; items: { label: string; report: string; ledger: string; diff: string }[] }
-interface LuTotals { net: Map<string, Decimal>; employeeNet: Decimal; map: ReturnType<typeof payrollAccountMaps>[number] }
+interface LuTotals { net: Map<string, Decimal>; employeeNet: Decimal; employeeAccounts: Set<string>; map: ReturnType<typeof payrollAccountMaps>[number] }
 async function luTotals(trx: Trx, voucherIds: string[]): Promise<LuTotals> {
   const reg = await trx.selectFrom('voucher as v').innerJoin('fiscal_period as p', 'p.fiscal_year', 'v.fiscal_year').select('p.regime').where('v.id', '=', voucherIds[0]!).limit(1).executeTakeFirstOrThrow();
   const maps = payrollAccountMaps(reg.regime);
   if (maps.length !== 1) throw new AppError('ACCOUNT_MISSING', `Chế độ kế toán ${reg.regime} chưa có ánh xạ tài khoản lương (coa-data/payroll/accounts.json)`, 400);
   const rows = (await sql<{ code: string; emp: boolean; net: string }>`SELECT a.code, (l.employee_id IS NOT NULL) AS emp, sum(l.credit - l.debit)::text AS net
     FROM voucher_line l JOIN account a ON a.id = l.account_id WHERE l.voucher_id IN (${sql.join(voucherIds)}) GROUP BY 1, 2`.execute(trx)).rows;
-  const net = new Map<string, Decimal>(); let employeeNet = D(0);
-  for (const r of rows) { net.set(r.code, (net.get(r.code) ?? D(0)).plus(r.net)); if (r.emp) employeeNet = employeeNet.plus(r.net); }
-  return { net, employeeNet, map: maps[0]! };
+  // Dòng mang nhân viên: phải trả NLĐ và khấu trừ ghi Có tài khoản riêng theo nhân viên (tạm ứng 141, #971); thực lĩnh chỉ tính trên phải trả NLĐ.
+  const net = new Map<string, Decimal>(); let employeeNet = D(0); const employeeAccounts = new Set<string>();
+  for (const r of rows) { net.set(r.code, (net.get(r.code) ?? D(0)).plus(r.net)); if (r.emp) { employeeAccounts.add(r.code); if (r.code === maps[0]!.payable) employeeNet = employeeNet.plus(r.net); } }
+  return { net, employeeNet, employeeAccounts, map: maps[0]! };
 }
 type Check = { label: string; report: Decimal; ledger: (t: LuTotals) => Decimal };
 async function reconcile(trx: Trx, l: Loaded, checks: (posted: LineRec[]) => Check[]): Promise<Recon> {
@@ -223,7 +224,7 @@ export async function costReport(trx: Trx, q: z.infer<typeof costScope>): Promis
   const salary = sum(list.map((g) => g.salary)), insurance = sum(list.map((g) => g.insurance));
   const recon = await reconcile(trx, l, (p) => [{
     label: 'Tổng chi phí lương, bảo hiểm, KPCĐ = Nợ các tài khoản chi phí (LU)', report: sum(p.map((x) => grossOf(x).plus(ins(x)))),
-    ledger: (u) => { const m = u.map; const nonCost = new Set([m.payable, m.si, m.hi, m.ui, m.union, m.pit, ...(m.withholding ? [m.withholding] : [])]); return sum([...u.net].filter(([c]) => !nonCost.has(c)).map(([, x]) => x)).neg(); },
+    ledger: (u) => { const m = u.map; const nonCost = new Set([m.payable, m.si, m.hi, m.ui, m.union, m.pit, ...(m.withholding ? [m.withholding] : []), ...u.employeeAccounts]); return sum([...u.net].filter(([c]) => !nonCost.has(c)).map(([, x]) => x)).neg(); },
   }]);
   const by = q.groupBy === 'department' ? 'bộ phận' : 'vụ việc';
   return finish(trx, l, {

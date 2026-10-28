@@ -36,7 +36,7 @@ function Editor({ source, isNew, templateColumns, onSaved, onDeleted, onClone }:
   const problem = useMemo(() => structureProblem(columns), [columns]);
   const patch = (key: number, p: Partial<EditRow>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...p } : r)));
   const move = (i: number, d: number) => setRows((rs) => { const j = i + d; if (j < 0 || j >= rs.length) return rs; const c = [...rs]; [c[i], c[j]] = [c[j]!, c[i]!]; return c; });
-  const blank = (kind: EditRow['kind']): EditRow => ({ key: keySeq.current++, code: '', name: '', kind, formula: '', round: null, income: false, taxable: true, siBase: false, pitRelief: false, deduct: false });
+  const blank = (kind: EditRow['kind']): EditRow => ({ key: keySeq.current++, code: '', name: '', kind, formula: '', round: null, income: false, taxable: true, siBase: false, pitRelief: false, deduct: false, creditAccount: '' });
   const addBuiltin = () => {
     const free = PAYROLL_BUILTIN_COLUMNS.find((b) => !rows.some((r) => r.code === b.code));
     if (free) setRows((rs) => [...rs, { ...blank('builtin'), code: free.code, name: free.name }]);
@@ -85,7 +85,7 @@ function Editor({ source, isNew, templateColumns, onSaved, onDeleted, onClone }:
       </Space>
       <PayrollErrorAlert error={err} onClose={() => setErr(null)} />
       {problem && canEdit && <Alert style={{ marginBottom: 8 }} type="warning" showIcon message={`Cấu trúc chưa hợp lệ: ${problem}`} data-testid="structure-problem" />}
-      <Table<EditRow> size="small" rowKey="key" pagination={false} dataSource={rows} data-testid="structure-columns" scroll={{ x: 1250 }} locale={{ emptyText: 'Chưa có cột' }}
+      <Table<EditRow> size="small" rowKey="key" pagination={false} dataSource={rows} data-testid="structure-columns" scroll={{ x: 1360 }} locale={{ emptyText: 'Chưa có cột' }}
         columns={[
           { title: 'Loại cột', width: 120, render: (_, r) => <Select aria-label="Loại cột" value={r.kind} disabled={!canEdit} style={{ width: 108 }} options={KINDS} onChange={(kind) => patch(r.key, { kind, ...(kind === 'builtin' ? { name: builtinName(r.code) } : {}) })} /> },
           { title: 'Mã cột', width: 200, render: (_, r) => r.kind === 'builtin'
@@ -102,6 +102,9 @@ function Editor({ source, isNew, templateColumns, onSaved, onDeleted, onClone }:
           { title: 'Tính BH', width: 80, align: 'center', render: (_, r) => flag(r, 'siBase', 'Tính vào lương đóng BH') },
           { title: 'Giảm trừ thuế', width: 90, align: 'center', render: (_, r) => flag(r, 'pitRelief', 'Giảm trừ khi tính thuế') },
           { title: 'Khấu trừ', width: 80, align: 'center', render: (_, r) => flag(r, 'deduct', 'Khấu trừ vào thực lĩnh') },
+          // Bỏ trống: cột advance ghi Có TK tạm ứng (141) theo nhân viên, cột khác ghi Có phải trả khác (3388).
+          { title: 'TK Có khi hạch toán', width: 110, render: (_, r) => r.kind === 'builtin' || !r.deduct ? null
+            : <Input aria-label={`Tài khoản Có (${r.code || 'cột mới'})`} value={r.creditAccount} disabled={!canEdit} maxLength={20} placeholder={r.code === 'advance' ? '141' : '3388'} onChange={(e) => patch(r.key, { creditAccount: e.target.value })} /> },
           ...(canEdit ? [{ title: '', width: 110, fixed: 'right' as const, render: (_: unknown, r: EditRow) => {
             const i = rows.findIndex((x) => x.key === r.key);
             return <Space size={4}><Button size="small" aria-label="Lên" disabled={i === 0} onClick={() => move(i, -1)}>↑</Button><Button size="small" aria-label="Xuống" disabled={i === rows.length - 1} onClick={() => move(i, 1)}>↓</Button>

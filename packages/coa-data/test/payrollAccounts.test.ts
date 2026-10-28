@@ -8,7 +8,7 @@ describe('tài khoản lương theo chế độ (data/payroll/accounts.json)', (
       const m = loadPayrollAccounts(regime)!;
       expect(m, 'thiếu chế độ trong accounts.json').toBeDefined();
       const rows = new Map(loadCoaTemplate(regime).map((r) => [r.code, r]));
-      const codes = [m.payable, m.union, m.si, m.hi, m.ui, m.pit, m.withholding!, ...(m.payableLeaves ?? []), ...COST_ROLES.map((r) => m.cost![r])];
+      const codes = [m.payable, m.union, m.si, m.hi, m.ui, m.pit, m.withholding!, m.advance!, ...(m.payableLeaves ?? []), ...COST_ROLES.map((r) => m.cost![r])];
       for (const c of codes) { expect(rows.has(c), `${regime}: không có TK ${c}`).toBe(true); expect(rows.get(c)!.isGroup, `${regime}: TK ${c} không phải tài khoản lá`).toBe(false); }
       for (const c of m.payableLeaves ?? []) expect(rows.get(c)!.parentCode, c).toBe('334');
     });
@@ -29,6 +29,7 @@ describe('tài khoản lương theo chế độ (data/payroll/accounts.json)', (
     expect(loadPayrollAccounts('TT133')!.cost).toEqual({ direct: '154', workshop: '154', selling: '6421', admin: '6422' });
     expect([name('TT133', '6421'), name('TT133', '6422'), name('TT133', '622')]).toEqual([expect.stringMatching(/bán hàng/i), expect.stringMatching(/quản lý doanh nghiệp/i), undefined]);
     for (const r of COA_REGIMES) expect(name(r, loadPayrollAccounts(r)!.withholding!)).toMatch(/phải trả, phải nộp khác/i);
+    for (const r of COA_REGIMES) expect(name(r, loadPayrollAccounts(r)!.advance!), r).toMatch(/^tạm ứng$/i); // tạm ứng trừ lương ghi Có 141 (#971)
   });
   it('nhóm tài khoản lãi lỗ hợp đồng/vụ việc (Task 13b): mã có trong hệ thống tài khoản, đúng nghĩa theo chế độ', () => {
     const name = (r: (typeof COA_REGIMES)[number], c: string) => loadCoaTemplate(r).find((x) => x.code === c)?.name;

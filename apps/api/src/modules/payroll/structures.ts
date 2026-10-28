@@ -11,6 +11,7 @@ const column = z.object({
   code: z.string().max(40), name: z.string().trim().min(1, 'Nhập tên cột').max(200), kind: z.enum(['builtin', 'input', 'formula']),
   formula: z.string().max(2000).optional(), round: z.number().int().min(0).max(6).optional(),
   income: z.boolean().optional(), taxable: z.boolean().optional(), siBase: z.boolean().optional(), pitRelief: z.boolean().optional(), deduct: z.boolean().optional(),
+  creditAccount: z.string().trim().regex(/^\d{3,20}$/, 'Tài khoản Có là mã tài khoản (chữ số)').optional(),
 }).strict();
 export const prorationEnum = z.enum(['calendar', 'standard_26', 'standard_22', 'fixed']);
 export const structureBody = z.object({ proration: prorationEnum.default('calendar'), columns: z.array(column).min(1).max(200) }).strict();

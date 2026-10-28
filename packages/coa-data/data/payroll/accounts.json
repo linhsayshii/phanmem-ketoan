@@ -1,11 +1,11 @@
 {
-  "tt99": { "payable": "334", "union": "3382", "si": "3383", "hi": "3384", "ui": "3386", "pit": "3335", "withholding": "3388", "wip": "154",
+  "tt99": { "payable": "334", "union": "3382", "si": "3383", "hi": "3384", "ui": "3386", "pit": "3335", "withholding": "3388", "advance": "141", "wip": "154",
     "cost": { "direct": "622", "workshop": "6271", "selling": "6411", "admin": "6421" },
     "pnl": { "revenue": ["511"], "deduction": ["521"], "cogs": ["632"], "production": ["621", "622", "623", "627"], "selling": ["641"], "admin": ["642"] } },
-  "tt133": { "payable": "334", "union": "3382", "si": "3383", "hi": "3384", "ui": "3385", "pit": "3335", "withholding": "3388", "wip": "154",
+  "tt133": { "payable": "334", "union": "3382", "si": "3383", "hi": "3384", "ui": "3385", "pit": "3335", "withholding": "3388", "advance": "141", "wip": "154",
     "cost": { "direct": "154", "workshop": "154", "selling": "6421", "admin": "6422" },
     "pnl": { "revenue": ["511"], "deduction": [], "cogs": ["632"], "production": ["154"], "selling": ["6421"], "admin": ["6422"] } },
-  "tt200": { "payable": "3341", "payableLeaves": ["3341", "3348"], "union": "3382", "si": "3383", "hi": "3384", "ui": "3386", "pit": "3335", "withholding": "3388", "wip": "154",
+  "tt200": { "payable": "3341", "payableLeaves": ["3341", "3348"], "union": "3382", "si": "3383", "hi": "3384", "ui": "3386", "pit": "3335", "withholding": "3388", "advance": "141", "wip": "154",
     "cost": { "direct": "622", "workshop": "6271", "selling": "6411", "admin": "6421" },
     "pnl": { "revenue": ["511"], "deduction": ["521"], "cogs": ["632"], "production": ["621", "622", "623", "627"], "selling": ["641"], "admin": ["642"] } }
 }

@@ -39,7 +39,7 @@ async function moneyAccount(trx: Trx, regime: string, b: z.infer<typeof payVouch
   return { voucherType: 'PC', accountCode: a.code, bankAccountNo: undefined };
 }
 
-// Số liệu từ LU: dư Có theo nhân viên (chỉ dòng phải trả NLĐ mang nhân viên, D7b) và dư Có theo tài khoản BH/TNCN của chế độ của LU.
+// Số liệu từ LU: dư Có theo nhân viên trên TK phải trả NLĐ (dòng tạm ứng 141 cũng mang nhân viên, #971) và dư Có theo tài khoản BH/TNCN của chế độ của LU.
 async function luAmounts(trx: Trx, luId: string) {
   const lines = await trx.selectFrom('voucher_line as l').innerJoin('account as a', 'a.id', 'l.account_id').leftJoin('employee as e', 'e.id', 'l.employee_id')
     .select(['a.code', 'e.code as employee_code', 'e.name as employee_name', 'l.debit', 'l.credit']).where('l.voucher_id', '=', luId).execute();
@@ -49,7 +49,7 @@ async function luAmounts(trx: Trx, luId: string) {
   for (const l of lines) {
     const net = D(l.credit).minus(l.debit);
     byAcc.set(l.code, (byAcc.get(l.code) ?? D(0)).plus(net));
-    if (l.employee_code) { const c = byEmp.get(l.employee_code); if (c) c.amount = c.amount.plus(net); else byEmp.set(l.employee_code, { name: l.employee_name ?? '', amount: net }); }
+    if (l.employee_code && l.code === m.payable) { const c = byEmp.get(l.employee_code); if (c) c.amount = c.amount.plus(net); else byEmp.set(l.employee_code, { name: l.employee_name ?? '', amount: net }); }
   }
   const acc = (code: string) => byAcc.get(code) ?? D(0);
   return { byEmp, si: acc(m.si), hi: acc(m.hi), ui: acc(m.ui), pit: acc(m.pit) };

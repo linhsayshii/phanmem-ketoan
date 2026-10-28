@@ -136,6 +136,10 @@ describe('validateStructure', () => {
     expect(code(() => validateStructure(add({ code: 'bonus', name: 'Trùng', kind: 'input' })))).toBe('STRUCTURE_INVALID');
     expect(code(() => validateStructure(add({ code: 'la', name: 'Lạ', kind: 'builtin' })))).toBe('STRUCTURE_INVALID');
     expect(code(() => validateStructure(add({ code: 'a', name: 'A', kind: 'formula' })))).toBe('STRUCTURE_INVALID');
+    // TK Có chỉ cho cột khấu trừ, là mã số (#971).
+    expect(code(() => validateStructure(add({ code: 'a', name: 'A', kind: 'input', creditAccount: '1388' })))).toBe('STRUCTURE_INVALID');
+    expect(code(() => validateStructure(add({ code: 'a', name: 'A', kind: 'input', deduct: true, creditAccount: '13x' })))).toBe('STRUCTURE_INVALID');
+    expect(() => validateStructure(add({ code: 'a', name: 'A', kind: 'input', deduct: true, creditAccount: '1388' }))).not.toThrow();
   });
 });
 

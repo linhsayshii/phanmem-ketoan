@@ -194,6 +194,24 @@ export async function refreshRunHash(trx: Trx, runId: number) {
   await trx.updateTable('payroll_run').set({ input_hash: sha(ls.map((l) => [l.employee_id, l.input_hash])), updated_at: sql`now()` }).where('id', '=', runId).execute();
 }
 
+// Chữ ký cấu hình hạch toán LU (#974): bộ phận, vụ việc mặc định, tỷ lệ phân bổ chi phí của nhân viên, tài khoản chi phí theo bộ phận của các bộ phận đó, tài khoản chi phí mặc định công ty.
+// Không đổi số của bảng lương nên không vào chữ ký dòng ("Cần tính lại"); chỉ so với bảng đã hạch toán ("Cần chạy lại").
+export async function costHash(trx: Trx, tenantId: string, employeeIds: number[]) {
+  const ids = employeeIds.length ? employeeIds : [-1];
+  const emps = await trx.selectFrom('employee as e').leftJoin('employee_payroll as p', 'p.employee_id', 'e.id').select(['e.id', 'e.department_id', 'p.default_project_id']).where('e.id', 'in', ids).orderBy('e.id').execute();
+  const depts = [...new Set(emps.flatMap((e) => (e.department_id === null ? [] : [e.department_id])))];
+  const [splits, cfg, s] = await Promise.all([
+    trx.selectFrom('employee_cost_split').select(['employee_id', 'project_id', 'pct']).where('employee_id', 'in', ids).orderBy('employee_id').orderBy('project_id').execute(),
+    trx.selectFrom('department_cost_account').select(['department_id', 'kind', 'role', 'account_code', 'cost_item_id', 'cost_object_id']).where('department_id', 'in', depts.length ? depts : [-1]).orderBy('department_id').orderBy('kind').execute(),
+    getSettings(trx, tenantId),
+  ]);
+  return sha({ emps, splits, cfg, fallback: s.payroll_expense_account });
+}
+export async function refreshCostHash(trx: Trx, tenantId: string, runId: number) {
+  const ids = (await trx.selectFrom('payroll_line').select('employee_id').where('run_id', '=', runId).execute()).map((l) => l.employee_id);
+  await trx.updateTable('payroll_run').set({ cost_hash: await costHash(trx, tenantId, ids) }).where('id', '=', runId).execute();
+}
+
 export async function lockRun(trx: Trx, runId: number) {
   const r = await trx.selectFrom('payroll_run').select(['id', 'year', 'month', 'kind', 'status', 'structure_id', 'name']).where('id', '=', runId).forUpdate().executeTakeFirst();
   if (!r) throw new AppError('PAYROLL_RUN_NOT_FOUND', 'Không tìm thấy bảng lương', 404);
@@ -325,12 +343,13 @@ export async function getRun(trx: Trx, tenantId: string, runId: number) {
     .selectAll('r').select(['s.name as structure_name', 's.columns', 's.proration', 'd.name as department_name', 'v.voucher_no']).where('r.id', '=', runId).executeTakeFirst();
   if (!r) throw new AppError('PAYROLL_RUN_NOT_FOUND', 'Không tìm thấy bảng lương', 404);
   const { lines } = await linesOf(trx, tenantId, r);
+  const costStale = r.status === 'posted' && r.cost_hash !== null && r.cost_hash !== await costHash(trx, tenantId, lines.map((l) => l.employeeId));
   const totals: Record<string, string> = {};
   for (const l of lines) for (const [c, v] of Object.entries(l.values)) totals[c] = D(totals[c] ?? 0).plus(v).toString();
   return {
     id: r.id, year: r.year, month: r.month, kind: r.kind, status: r.status, name: r.name, departmentId: r.department_id, departmentName: r.department_name,
     structureId: r.structure_id, structureName: r.structure_name, proration: r.proration, inputHash: r.input_hash, calculatedAt: r.calculated_at, voucherId: r.voucher_id, voucherNo: r.voucher_no,
-    note: r.note, createdAt: r.created_at, warnings: r.warnings as PayrollWarning[], stale: lines.some((l) => l.stale), employeeCount: lines.length,
+    note: r.note, createdAt: r.created_at, warnings: r.warnings as PayrollWarning[], stale: costStale || lines.some((l) => l.stale), employeeCount: lines.length,
     columns: r.columns as PayrollColumn[], lines, totals,
   };
 }

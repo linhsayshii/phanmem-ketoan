@@ -462,6 +462,9 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
     }
     return out;
   };
+  // Tạm ứng cho NV11 trước khi nghỉ việc; bảng lương tháng 10 trừ lương 1.000.000 (cột advance) → LU ghi Có 141 theo nhân viên, 141 của NV11 về 0 (#971).
+  at(day(10, 2), () => voucher({ voucherType: 'PC', postingDate: day(10, 2), documentDate: day(10, 2), description: 'Tạm ứng cho anh Dương Văn Minh (NV11)', personName: 'Dương Văn Minh', purpose: 'chi_tam_ung',
+    lines: [L('141', M(1), '0', { employeeCode: 'NV11' }), L('1111', '0', M(1))] }));
   const payrollRunId: Record<number, number> = {};
   const finishedQty: Record<number, string> = { 10: '500', 11: '600', 12: '800' };
   for (const m of [10, 11, 12]) {

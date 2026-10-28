@@ -177,6 +177,7 @@ export interface PayrollColumn {
   siBase?: boolean; // cộng vào lương đóng bảo hiểm
   pitRelief?: boolean; // giảm trừ khác khi tính thuế (từ thiện, hưu trí tự nguyện…)
   deduct?: boolean; // khấu trừ khác vào thực lĩnh
+  creditAccount?: string; // với cột khấu trừ: TK Có khi hạch toán LU; bỏ trống = 'advance' ghi TK tạm ứng của chế độ, cột khác ghi phải trả khác (#971)
 }
 export interface PayrollStructure { columns: PayrollColumn[] }
 
@@ -272,6 +273,7 @@ function graph(structure: PayrollStructure, input: PayrollInput | null, params: 
     seen.add(c.code);
     if (c.kind === 'builtin' && !BUILTIN.has(c.code)) bad('không phải cột dựng sẵn');
     if (c.kind === 'formula' && !c.formula?.trim()) bad('thiếu công thức');
+    if (c.creditAccount !== undefined && (!c.deduct || !/^\d{3,20}$/.test(c.creditAccount))) bad('tài khoản Có chỉ khai cho cột khấu trừ và là mã tài khoản (chữ số)');
     if (c.round !== undefined && (!Number.isInteger(c.round) || c.round < 0 || c.round > 6)) bad('số chữ số làm tròn từ 0 đến 6');
   }
   const user = structure.columns.filter((c) => c.kind !== 'builtin');

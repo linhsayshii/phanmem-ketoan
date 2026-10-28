@@ -5,6 +5,8 @@ export interface PayrollAccountMap {
   payableLeaves?: string[];
   // Hạch toán lương (LU): khấu trừ khác vào thực lĩnh (đoàn phí, tạm ứng, đóng góp...) ghi Có tài khoản này; tài khoản chi phí theo vai trò bộ phận.
   withholding?: string;
+  // Tạm ứng trừ lương (cột 'advance' chưa khai TK Có): ghi Có tài khoản tạm ứng theo nhân viên (#971).
+  advance?: string;
   cost?: Record<CostRole, string>;
   // Lãi lỗ theo hợp đồng/vụ việc (GĐ6 Task 13b): tiền tố tài khoản từng nhóm (doanh thu, giảm trừ, giá vốn, chi phí sản xuất, bán hàng, quản lý doanh nghiệp).
   pnl?: Record<PnlGroup, string[]>;

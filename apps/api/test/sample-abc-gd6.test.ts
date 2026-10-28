@@ -34,7 +34,7 @@ describe('Bộ dữ liệu mẫu ABC GĐ6: lương, giá thành, hợp đồng, 
     expect(rows.map((r) => r.n)).toEqual([20, 19, 19]); // NV11 nghỉ việc từ 09/10
   });
 
-  it('chứng từ LU từng tháng: chi phí sản xuất, bán hàng, quản lý và Có 334, 3383, 3384, 3385, 3335, 3388', async () => {
+  it('chứng từ LU từng tháng: chi phí sản xuất, bán hàng, quản lý và Có 334, 3383, 3384, 3385, 3335, 3388, 141 (tạm ứng trừ lương)', async () => {
     const rows = await q<{ m: string; code: string; dr: string; cr: string }>(sql`SELECT to_char(v.posting_date, 'MM') AS m, a.code, sum(l.debit)::text AS dr, sum(l.credit)::text AS cr
       FROM voucher v JOIN voucher_line l ON l.voucher_id = v.id AND l.posting_date = v.posting_date JOIN account a ON a.id = l.account_id
       WHERE v.tenant_id = ${tenantId}::uuid AND v.voucher_type = 'LU' AND v.state = 'posted' GROUP BY 1, 2`);
@@ -46,13 +46,14 @@ describe('Bộ dữ liệu mẫu ABC GĐ6: lương, giá thành, hợp đồng, 
       expect(at('334')!.cr, `${m}/334 Có`).toBe(w.gross);
       expect(at('3383')!.cr).toBe(w.si); expect(at('3384')!.cr).toBe(w.hi); expect(at('3385')!.cr).toBe(w.ui); expect(at('3335')!.cr).toBe(w.pit);
       expect(at('3388')?.cr ?? '0', `${m}/3388`).toBe(w.khauTruKhac);
+      expect(at('141')?.cr ?? '0', `${m}/141`).toBe(w.tamUngTruLuong);
     }
   });
 
-  it('số dư 334, 3383, 3384, 3385, 3335, 3388 cuối từng tháng (tháng 10 đã chi ngày 05/11)', async () => {
+  it('số dư 334, 3383, 3384, 3385, 3335, 3388, 141 cuối từng tháng (tháng 10 đã chi ngày 05/11)', async () => {
     for (const m of MONTHS) {
       const b = byAccount(await sumFromLines(ctx, tenantId, eom(m)));
-      for (const code of ['334', '3383', '3384', '3385', '3335', '3388']) expect(b[code], `${code} cuối tháng ${m}`).toBe(g6.soDuCuoiThang[code][eom(m)]);
+      for (const code of ['334', '3383', '3384', '3385', '3335', '3388', '141']) expect(b[code] ?? '0', `${code} cuối tháng ${m}`).toBe(g6.soDuCuoiThang[code][eom(m)]);
     }
   });
 
