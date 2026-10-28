@@ -4,7 +4,7 @@ import { useAuth } from '../auth.js';
 import { ApprovalBadge } from '../pages/Approvals.js';
 
 // flag: cờ nhạy cảm (view_salary...) cần có để mục hiện ra.
-export interface MenuItem { key: string; label: string; to: string; permission?: string; flag?: string; children?: MenuItem[] | undefined }
+export interface MenuItem { key: string; label: string; to: string; icon?: React.ReactNode; permission?: string; flag?: string; children?: MenuItem[] | undefined }
 
 // Mục có quyền, bỏ cả nhóm khi không còn mục con nào hiện (không để nhóm rỗng trên menu).
 export const visibleMenu = (items: MenuItem[], can: (code: string) => boolean, has: (flag: string) => boolean = () => true): MenuItem[] =>
@@ -14,8 +14,8 @@ export function AppLayout({ menu }: { menu: MenuItem[] }) {
   const { me, can, logout } = useAuth();
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const toAntd = (items: MenuItem[]): { key: string; label: React.ReactNode; children?: unknown[] | undefined }[] =>
-    items.map((i) => ({ key: i.to, label: i.children ? i.label : <Link to={i.to}>{i.label}</Link>, children: i.children ? toAntd(i.children) : undefined }));
+  const toAntd = (items: MenuItem[]): { key: string; icon?: React.ReactNode; label: React.ReactNode; children?: unknown[] | undefined }[] =>
+    items.map((i) => ({ key: i.to, icon: i.icon, label: i.children ? i.label : <Link to={i.to}>{i.label}</Link>, children: i.children ? toAntd(i.children) : undefined }));
   const company = me?.tenants.find((t) => t.id === me.tenantId);
   return (
     <Layout style={{ minHeight: '100vh' }}>
