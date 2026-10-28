@@ -81,6 +81,23 @@ describe('nhật ký kiểm toán che lương', () => {
   });
 });
 
+describe('nhật ký kiểm toán: chứng từ không còn dòng lương (QĐ #986)', () => {
+  it('sửa dòng đã ghi sổ của chứng từ lương, rồi bỏ ghi sổ và sửa nháp bỏ dòng 334: sự kiện cũ vẫn bị bỏ khi thiếu view_salary (lọc theo TK của chính sự kiện)', async () => {
+    const v = await pkt('2026-05-10', 'Tạm ứng lương 2', [L('334', '8888000', '0', { employeeCode: 'NV01' }), L('111', '0', '8888000')]);
+    await ctx.t.admin.transaction().execute(async (trx) => {
+      await sql`SELECT set_config('app.current_tenant', ${tenantId}, true), set_config('app.current_user', ${userId}, true)`.execute(trx);
+      await sql`UPDATE voucher_line SET description = 'Sửa diễn giải 2' WHERE voucher_id = ${v.id}::uuid`.execute(trx);
+    });
+    expect((await send('POST', `/api/vouchers/${v.id}/unpost`, {})).statusCode).toBe(200);
+    // Chứng từ đã có số không xóa được; sửa nháp thay cả bộ dòng (bỏ dòng 334) nên chứng từ không còn dòng lương để so.
+    const cur = (await get(`/api/vouchers/${v.id}`, cookie)).json() as Json;
+    const upd = await send('PUT', `/api/vouchers/${v.id}`, { voucherType: 'PKT', postingDate: '2026-05-10', documentDate: '2026-05-10', description: 'Đổi thành chi khác', version: cur.version, lines: [L('6421', '1000', '0'), L('111', '0', '1000')] });
+    expect(upd.statusCode, upd.body).toBe(200);
+    expect((await get('/api/audit?entity=voucher_line&size=500', full)).body).toContain('8888000');
+    for (const url of ['/api/audit?size=500', '/api/audit?entity=voucher_line&size=500']) expect((await get(url, none)).body, url).not.toContain('8888000');
+  });
+});
+
 describe('sổ quỹ và sổ tiền gửi che đối ứng lương', () => {
   it('chứng từ chi lương: thiếu view_salary mất TK đối ứng 334 và diễn giải (có tên nhân viên), số thu chi và số dư giữ nguyên; chứng từ thường không đổi', async () => {
     const v = await ctx.app.inject({ method: 'POST', url: '/api/vouchers', headers: { cookie }, payload: { voucherType: 'PC', postingDate: '2026-04-05', documentDate: '2026-04-05', description: 'Chi lương Nguyễn Văn An', autoPost: true,
