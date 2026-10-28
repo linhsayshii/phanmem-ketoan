@@ -2,7 +2,16 @@
 
 Màn hình **Báo cáo > Hình thức sổ** (`/bao-cao/hinh-thuc-so`) cho chọn hình thức ghi sổ của từng năm tài chính: Nhật ký chung (mặc định), Chứng từ ghi sổ, Nhật ký – Sổ Cái, Nhật ký – Chứng từ. Hình thức sổ chỉ là cách trình bày: số liệu vẫn lấy từ sổ cái, đổi hình thức không tạo chứng từ và không làm đổi số dư. Chỉ người có quyền sửa kỳ kế toán mới đổi được hình thức.
 
-Hình thức đã chọn quyết định các sổ in khi dùng **In cả bộ sổ năm** ở trang Sổ sách kế toán (Nhật ký và Sổ Cái được thay bằng các sổ của hình thức đó; Bảng cân đối số phát sinh và báo cáo tài chính giữ nguyên). Các sổ ở đây gồm mọi tài khoản, kể cả công nợ và giá vốn nên cần đủ ba quyền xem công nợ phải thu, phải trả và giá vốn.
+Hình thức đã chọn quyết định các sổ in khi dùng **In cả bộ sổ năm** ở trang Sổ sách kế toán (Nhật ký và Sổ Cái được thay bằng các sổ của hình thức đó; Bảng cân đối số phát sinh và báo cáo tài chính giữ nguyên). Hộp **In cả bộ sổ năm** nêu rõ hình thức của năm đang chọn và đổi nhãn hai mục đầu theo hình thức đó:
+
+| Hình thức | Mục "Nhật ký" in | Mục "Sổ Cái" in |
+|---|---|---|
+| Nhật ký chung | Sổ Nhật ký chung | Sổ Cái từng tài khoản có số liệu |
+| Chứng từ ghi sổ | Sổ đăng ký Chứng từ ghi sổ và từng Chứng từ ghi sổ | Sổ Cái theo Chứng từ ghi sổ (từng tài khoản) |
+| Nhật ký – Sổ Cái | Sổ Nhật ký – Sổ Cái | Không in thêm (đã gồm trong Nhật ký – Sổ Cái) |
+| Nhật ký – Chứng từ | Một bảng kê cho mỗi tài khoản có phát sinh Có | Sổ Cái từng tài khoản như thường |
+
+Năm dùng hình thức Chứng từ ghi sổ mà còn chứng từ chưa gom vào Chứng từ ghi sổ thì Sổ Cái in có cảnh báo; nên lập đủ Chứng từ ghi sổ trước khi in bộ sổ. Đổi hình thức ở **Báo cáo > Hình thức sổ** (cần quyền sửa kỳ kế toán). Các sổ ở đây gồm mọi tài khoản, kể cả công nợ và giá vốn nên cần đủ ba quyền xem công nợ phải thu, phải trả và giá vốn.
 
 ## Nhật ký – Sổ Cái
 Một sổ liệt kê từng dòng chứng từ (ngày ghi sổ, số hiệu, ngày chứng từ, diễn giải, tài khoản, phát sinh Nợ, phát sinh Có), cuối sổ cộng phát sinh theo từng tài khoản. Tổng Nợ bằng tổng Có và bằng tổng phát sinh của Bảng cân đối số phát sinh cùng kỳ.

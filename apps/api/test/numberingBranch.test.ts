@@ -115,6 +115,20 @@ describe('đánh số theo chi nhánh', () => {
     }), { numRuns: Number(process.env.FC_RUNS ?? 6) });
   });
 
+  it('chứng từ kết chuyển thuộc trụ sở chính (dãy TSC) dù người chạy đang làm việc ở chi nhánh', async () => {
+    await ok('PUT', '/api/me/branch', owner, { branch: brA });
+    try {
+      const rev = await draft('2026-12-20', brA); await ok('POST', `/api/vouchers/${rev}/post`, owner);
+      await ok('POST', '/api/vouchers', owner, { voucherType: 'PKT', postingDate: '2026-12-21', documentDate: '2026-12-21', description: 'DT', autoPost: true, lines: [{ accountCode: '1111', debit: '9000' }, { accountCode: '5113', credit: '9000' }] });
+      const r = await req('POST', '/api/closing/run-all', owner, { postingDate: '2026-12-31' });
+      expect(r.statusCode, r.body).toBe(200);
+    } finally { await ok('PUT', '/api/me/branch', owner, { branch: 'HO' }); }
+    const kc = (await sql<{ voucher_no: string; branch_id: number | null; seq_no: string }>`SELECT voucher_no, branch_id, seq_no FROM voucher WHERE tenant_id = ${tenantId}::uuid AND voucher_type = 'KC' AND voucher_no IS NOT NULL ORDER BY seq_no`.execute(ctx.t.admin)).rows;
+    expect(kc.length).toBeGreaterThan(0);
+    expect(kc.every((x) => x.branch_id === null && x.voucher_no.startsWith('TSC-'))).toBe(true);
+    expect(kc.map((x) => Number(x.seq_no))).toEqual(kc.map((_, i) => i + 1));
+  });
+
   it('cấu hình: mã trụ sở chính không trùng mã chi nhánh; cần quyền setting.update', async () => {
     expect((await settings(true, 'HN')).json().error.code).toBe('NUMBERING_CODE_CONFLICT');
     expect((await req('POST', '/api/branches', owner, { code: 'TSC', name: 'Trùng mã' })).json().error.code).toBe('NUMBERING_CODE_CONFLICT');
