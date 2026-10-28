@@ -8,6 +8,7 @@ import type { AuthCtx } from '../../plugins/auth.js';
 import { AppError } from '../../plugins/errors.js';
 import { createSystemVoucher, dateIso, fxRate, type SystemVoucherInput } from '../ledger/vouchers.service.js';
 import { assertSensitive, regimeOf } from '../reporting/ledgers.js';
+import { activeDelegators, type Delegator } from './delegation.js';
 
 type Trx = Transaction<Database>;
 type Auth = Pick<AuthCtx, 'tenantId' | 'userId' | 'permissions' | 'sensitive'>;
@@ -151,12 +152,12 @@ export async function getRequest(trx: Trx, auth: Auth, id: string) {
   // Người đề nghị, người được xem mọi đề nghị, người có quyền duyệt (để quyết định) mới thấy.
   if (r.requester_id !== auth.userId && !auth.permissions.has('approval_request.view') && !auth.permissions.has('approval_request.approve')) throw new AppError('APPROVAL_REQUEST_NOT_FOUND', 'Không tìm thấy đề nghị', 404);
   await assertVisible(trx, auth, r);
-  const log = await trx.selectFrom('approval_step_log as l').innerJoin('app_user as u', 'u.id', 'l.actor_id')
-    .select(['l.step_no', 'l.action', 'l.note', 'l.created_at', 'u.username']).where('l.request_id', '=', id).orderBy('l.id').execute();
+  const log = await trx.selectFrom('approval_step_log as l').innerJoin('app_user as u', 'u.id', 'l.actor_id').leftJoin('app_user as o', 'o.id', 'l.on_behalf_of')
+    .select(['l.step_no', 'l.action', 'l.note', 'l.created_at', 'u.username', 'o.username as on_behalf_username']).where('l.request_id', '=', id).orderBy('l.id').execute();
   const attachments = await trx.selectFrom('approval_attachment').select(['id', 'file_name', 'mime', 'bytes', 'uploaded_at']).where('request_id', '=', id).orderBy('uploaded_at').execute();
   return {
     ...toDto(r), canAct: await canAct(trx, auth, r).then(() => true, () => false),
-    log: log.map((l) => ({ stepNo: l.step_no, action: l.action, note: l.note, at: iso(l.created_at)!, username: l.username })),
+    log: log.map((l) => ({ stepNo: l.step_no, action: l.action, note: l.note, at: iso(l.created_at)!, username: l.username, onBehalfOf: l.on_behalf_username })),
     attachments: attachments.map((a) => ({ id: a.id, fileName: a.file_name, mime: a.mime, bytes: Number(a.bytes), uploadedAt: iso(a.uploaded_at)! })),
   };
 }
@@ -187,8 +188,8 @@ export async function updateRequest(trx: Trx, auth: Auth, id: string, input: Req
   await trx.updateTable('approval_request').set(await resolveInput(trx, input)).where('id', '=', id).execute();
 }
 
-const log = (trx: Trx, tenantId: string, requestId: string, stepNo: number, action: string, actorId: string, note: string | null) =>
-  trx.insertInto('approval_step_log').values({ tenant_id: tenantId, request_id: requestId, step_no: stepNo, action, actor_id: actorId, note }).execute();
+const log = (trx: Trx, tenantId: string, requestId: string, stepNo: number, action: string, actorId: string, note: string | null, onBehalfOf: string | null = null) =>
+  trx.insertInto('approval_step_log').values({ tenant_id: tenantId, request_id: requestId, step_no: stepNo, action, actor_id: actorId, note, on_behalf_of: onBehalfOf }).execute();
 
 export async function submitRequest(trx: Trx, auth: Auth, id: string) {
   const r = await getRequestRow(trx, id, true);
@@ -210,17 +211,43 @@ export async function cancelRequest(trx: Trx, auth: Auth, id: string, note: stri
 }
 
 // Người duyệt bước hiện tại: có quyền duyệt, không phải người đề nghị, đúng người hoặc đúng vai trò của bước, chưa duyệt bước nào trước đó của đề nghị (mỗi bước một người khác nhau).
-async function canAct(trx: Trx, auth: Auth, r: { id: string; state: string; requester_id: string; steps: ApprovalStepSnapshot[]; current_step: number; account_code: string }) {
+// Ủy quyền (GĐ7 gói 3): người được ủy quyền hôm nay duyệt thay người ủy quyền khi người ủy quyền đúng người/vai trò của bước, không phải người đề nghị và chưa duyệt bước nào;
+// người được ủy quyền vẫn phải có quyền duyệt và cờ nhạy cảm của chính mình. Một bước, không bắc cầu.
+interface StepCtx { userId: string; roleId: string; delegators: Delegator[] }
+type StepReq = { id: string; state: string; requester_id: string; steps: ApprovalStepSnapshot[]; current_step: number; account_code: string };
+const matchStep = (step: ApprovalStepSnapshot, w: { userId: string; roleId: string }) => (step.userId ? step.userId === w.userId : step.roleId === w.roleId);
+async function stepCtx(trx: Trx, auth: Auth): Promise<StepCtx> {
+  const me = await trx.selectFrom('tenant_user').select('role_id').where('user_id', '=', auth.userId).executeTakeFirstOrThrow();
+  return { userId: auth.userId, roleId: me.role_id, delegators: await activeDelegators(trx, auth.tenantId!, auth.userId) };
+}
+// approvers: người đã duyệt một bước của đề nghị, tính cả người được duyệt thay.
+async function approversOf(trx: Trx, requestIds: string[]): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
+  if (!requestIds.length) return out;
+  const rows = await trx.selectFrom('approval_step_log').select(['request_id', 'actor_id', 'on_behalf_of']).where('request_id', 'in', requestIds).where('action', '=', 'approve').execute();
+  for (const r of rows) { const set = out.get(r.request_id) ?? new Set<string>(); set.add(r.actor_id); if (r.on_behalf_of) set.add(r.on_behalf_of); out.set(r.request_id, set); }
+  return out;
+}
+type Acting = { ok: true; step: ApprovalStepSnapshot; onBehalfOf: string | null; via: string | null } | { ok: false; status: number; code: string; message: string };
+function resolveActing(r: StepReq, c: StepCtx, approvers: Set<string>): Acting {
+  const step = r.steps[r.current_step - 1]!;
+  if (r.requester_id === c.userId) return { ok: false, status: 403, code: 'APPROVAL_SELF', message: 'Người đề nghị không tự duyệt đề nghị của mình' };
+  if (matchStep(step, c)) {
+    if (approvers.has(c.userId)) return { ok: false, status: 403, code: 'APPROVAL_ALREADY_ACTED', message: 'Bạn đã duyệt một bước của đề nghị này; bước sau cần người khác duyệt' };
+    return { ok: true, step, onBehalfOf: null, via: null };
+  }
+  const d = c.delegators.find((x) => matchStep(step, x) && x.userId !== r.requester_id && !approvers.has(x.userId));
+  if (!d) return { ok: false, status: 403, code: 'APPROVAL_WRONG_APPROVER', message: `Bước ${step.stepNo} do ${step.username ?? step.roleName ?? 'người khác'} duyệt` };
+  if (approvers.has(c.userId)) return { ok: false, status: 403, code: 'APPROVAL_ALREADY_ACTED', message: 'Bạn đã duyệt một bước của đề nghị này; bước sau cần người khác duyệt' };
+  return { ok: true, step, onBehalfOf: d.userId, via: d.username };
+}
+async function canAct(trx: Trx, auth: Auth, r: StepReq) {
   if (r.state !== 'submitted') throw new AppError('APPROVAL_NOT_PENDING', 'Đề nghị không ở trạng thái chờ duyệt', 409);
   if (!auth.permissions.has('approval_request.approve')) throw new AppError('FORBIDDEN', 'Thiếu quyền approval_request.approve', 403);
-  if (r.requester_id === auth.userId) throw new AppError('APPROVAL_SELF', 'Người đề nghị không tự duyệt đề nghị của mình', 403);
-  const step = r.steps[r.current_step - 1]!;
-  const me = await trx.selectFrom('tenant_user').select('role_id').where('user_id', '=', auth.userId).executeTakeFirstOrThrow();
-  if (step.userId ? step.userId !== auth.userId : step.roleId !== me.role_id) throw new AppError('APPROVAL_WRONG_APPROVER', `Bước ${step.stepNo} do ${step.username ?? step.roleName ?? 'người khác'} duyệt`, 403);
-  const acted = await trx.selectFrom('approval_step_log').select('id').where('request_id', '=', r.id).where('actor_id', '=', auth.userId).where('action', '=', 'approve').executeTakeFirst();
-  if (acted) throw new AppError('APPROVAL_ALREADY_ACTED', 'Bạn đã duyệt một bước của đề nghị này; bước sau cần người khác duyệt', 403);
+  const a = resolveActing(r, await stepCtx(trx, auth), (await approversOf(trx, [r.id])).get(r.id) ?? new Set());
+  if (!a.ok) throw new AppError(a.code, a.message, a.status);
   await assertVisible(trx, auth, r);
-  return step;
+  return a;
 }
 
 export const decisionInput = z.object({ note: z.string().trim().max(1000).optional() });
@@ -265,8 +292,8 @@ async function copyAttachments(trx: Trx, auth: Auth, requestId: string, voucherI
 
 export async function approveRequest(trx: Trx, auth: Auth, id: string, note: string | null, attachmentDir: string, written: string[]) {
   const r = await getRequestRow(trx, id, true);
-  const step = await canAct(trx, auth, r);
-  await log(trx, auth.tenantId!, id, step.stepNo, 'approve', auth.userId, note);
+  const { step, onBehalfOf } = await canAct(trx, auth, r);
+  await log(trx, auth.tenantId!, id, step.stepNo, 'approve', auth.userId, note, onBehalfOf);
   if (r.current_step < r.steps.length) {
     await trx.updateTable('approval_request').set({ current_step: r.current_step + 1 }).where('id', '=', id).execute();
     return { state: 'submitted', currentStep: r.current_step + 1, voucherId: null };
@@ -279,8 +306,8 @@ export async function approveRequest(trx: Trx, auth: Auth, id: string, note: str
 
 export async function rejectRequest(trx: Trx, auth: Auth, id: string, reason: string) {
   const r = await getRequestRow(trx, id, true);
-  const step = await canAct(trx, auth, r);
-  await log(trx, auth.tenantId!, id, step.stepNo, 'reject', auth.userId, reason);
+  const { step, onBehalfOf } = await canAct(trx, auth, r);
+  await log(trx, auth.tenantId!, id, step.stepNo, 'reject', auth.userId, reason, onBehalfOf);
   await trx.updateTable('approval_request').set({ state: 'rejected', reject_reason: reason, decided_at: new Date().toISOString() }).where('id', '=', id).execute();
 }
 
@@ -289,16 +316,21 @@ export const BOXES = ['mine', 'inbox', 'all'] as const;
 export type Box = (typeof BOXES)[number];
 const LIST_LIMIT = 500;
 
-async function inboxRows(trx: Trx, auth: Auth) {
-  const me = await trx.selectFrom('tenant_user').select('role_id').where('user_id', '=', auth.userId).executeTakeFirstOrThrow();
-  return baseQuery(trx).where('r.state', '=', 'submitted').where('r.requester_id', '<>', auth.userId)
-    .where(sql<boolean>`coalesce((r.steps -> (r.current_step - 1) ->> 'userId')::uuid = ${auth.userId}::uuid, (r.steps -> (r.current_step - 1) ->> 'roleId')::uuid = ${me.role_id}::uuid)`)
-    .where(({ not, exists, selectFrom }) => not(exists(selectFrom('approval_step_log as l').select('l.id').whereRef('l.request_id', '=', 'r.id').where('l.actor_id', '=', auth.userId).where('l.action', '=', 'approve'))))
+// Hộp duyệt: đề nghị chờ chính mình hoặc người đã ủy quyền cho mình duyệt (xem canAct); mỗi dòng ghi `via` là người ủy quyền khi duyệt thay.
+async function inboxRows(trx: Trx, auth: Auth): Promise<(Row & { via: string | null })[]> {
+  const c = await stepCtx(trx, auth);
+  const userIds = [c.userId, ...c.delegators.map((d) => d.userId)]; const roleIds = [c.roleId, ...c.delegators.map((d) => d.roleId)];
+  const rows = await baseQuery(trx).where('r.state', '=', 'submitted').where('r.requester_id', '<>', auth.userId)
+    .where(sql<boolean>`coalesce((r.steps -> (r.current_step - 1) ->> 'userId')::uuid = ANY (${userIds}::uuid[]), (r.steps -> (r.current_step - 1) ->> 'roleId')::uuid = ANY (${roleIds}::uuid[]))`)
     .orderBy('r.submitted_at').limit(LIST_LIMIT).execute();
+  const approvers = await approversOf(trx, rows.map((r) => r.id));
+  const out: (Row & { via: string | null })[] = [];
+  for (const r of rows) { const a = resolveActing(r, c, approvers.get(r.id) ?? new Set()); if (a.ok) out.push({ ...r, via: a.via }); }
+  return out;
 }
 
-export async function listRequests(trx: Trx, auth: Auth, box: Box, f: { state?: string | undefined; from?: string | undefined; to?: string | undefined } = {}): Promise<RequestDto[]> {
-  let rows: Row[];
+export async function listRequests(trx: Trx, auth: Auth, box: Box, f: { state?: string | undefined; from?: string | undefined; to?: string | undefined } = {}): Promise<(RequestDto & { via?: string | null })[]> {
+  let rows: (Row & { via?: string | null })[];
   if (box === 'inbox') {
     if (!auth.permissions.has('approval_request.approve')) throw new AppError('FORBIDDEN', 'Thiếu quyền approval_request.approve', 403);
     rows = await inboxRows(trx, auth);
@@ -312,7 +344,7 @@ export async function listRequests(trx: Trx, auth: Auth, box: Box, f: { state?: 
     rows = await q.orderBy('r.created_at', 'desc').limit(LIST_LIMIT).execute();
   }
   const accs = await accountsOf(trx, rows.map((r) => r.account_code));
-  return rows.filter((r) => visible(auth, r, accs)).map(toDto);
+  return rows.filter((r) => visible(auth, r, accs)).map((r) => ({ ...toDto(r), ...(r.via !== undefined && { via: r.via }) }));
 }
 
 export async function inboxCount(trx: Trx, auth: Auth): Promise<number> {

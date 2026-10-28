@@ -11,6 +11,7 @@ import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { assetPick, contractFetcher, contractPick, costObjectPick, isAssetAccount, isContractAccount, isCostAccount, accountFetcherFor, bankAccountFetcher, cashFlowFetcherFor, regimeFor, type FiscalYearRef } from '../lookups.js';
 import { STATE_LABEL, typeLabel } from './VoucherList.js';
+import { VoucherBranchField } from './VoucherBranchField.js';
 import { SettleDialog, type SettleEntry, type SettleTarget } from './settleCommon.js';
 import { Attachments, iso, quickAdd, reportError, text } from './voucherCommon.js';
 import InvoiceEditor from './InvoiceForm.js';
@@ -154,6 +155,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const declRef = useRef(declRows); const declBaseline = useRef(JSON.stringify(declRows)); const [declDirty, setDeclDirty] = useState(false);
   const changeDecl = useCallback((rows: DeclRow[]) => { declRef.current = rows; setDeclRows(rows); setDeclDirty(JSON.stringify(rows) !== declBaseline.current); }, []);
   const confirmIfDirty = useUnsavedChanges((formDirty || rowsDirty || declDirty) && (editable || metaOnly));
+  const branchPick = useRef<'HO' | number>(); // chi nhánh chọn khi lập mới, khác chi nhánh làm việc
   const lastCash = useRef('0'); const autoAccount = useRef<string>(); const lastParty = useRef<string | null>(null);
   const cashSide = eff.cashSide && eff.moneyKind ? (eff.cashSide === 'in' ? 'debit' : 'credit') : undefined;
 
@@ -237,6 +239,11 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     if (postAfter) { // kiểm tra trên dòng vừa chốt (không phải state có thể chưa kịp render), trước mọi lời gọi máy chủ
       const rows = cleanLines(linesRef.current);
       if (!isBalanced(rows)) throw new Error(`Chứng từ chưa cân: tổng Nợ ${formatVnNumber(sum(rows.map((l) => l.debit)).toString())} khác tổng Có ${formatVnNumber(sum(rows.map((l) => l.credit)).toString())}`);
+    }
+    if (isNew && branchPick.current !== undefined) { // chi nhánh khác chi nhánh làm việc: lập nháp, gắn chi nhánh rồi mới ghi sổ (chứng từ đã ghi sổ không đổi được chi nhánh)
+      const draft = await api<Voucher>('/api/vouchers', { method: 'POST', json: { ...body(f), idempotencyKey } });
+      await api(`/api/vouchers/${draft.id}/branch`, { method: 'PUT', json: { branch: branchPick.current } });
+      return postAfter ? api<Voucher>(`/api/vouchers/${draft.id}/post`, { method: 'POST', json: {} }) : draft;
     }
     if (isNew) return api<Voucher>('/api/vouchers', { method: 'POST', json: { ...body(f), idempotencyKey, ...(postAfter ? { autoPost: true } : {}) } });
     // sửa chứng từ đã ghi sổ: định vị dòng theo lineNo của máy chủ, không theo vị trí trên lưới
@@ -387,7 +394,8 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
         <Row gutter={12}>
           <Col span={4}><Form.Item label="Ngày hạch toán" name="postingDate" rules={[{ required: true, message: 'Nhập ngày hạch toán' }]}><DatePicker format="DD/MM/YYYY" disabled={!editable} /></Form.Item></Col>
           <Col span={4}><Form.Item label="Ngày chứng từ" name="documentDate" rules={[{ required: true, message: 'Nhập ngày chứng từ' }]}><DatePicker format="DD/MM/YYYY" disabled={!editable} /></Form.Item></Col>
-          {!eff.header.includes('party') && <Col span={16} />}
+          <Col span={4}><VoucherBranchField voucherId={isNew ? undefined : id} editable={editable} onPick={(b) => { branchPick.current = b; }} /></Col>
+          {!eff.header.includes('party') && <Col span={12} />}
           {eff.header.map((h) => <Fragment key={h}>{headerField(h)}</Fragment>)}
           <Col span={24}><Form.Item label={sideIn ? 'Lý do nộp' : sideOut ? 'Lý do chi' : 'Diễn giải'} name="description"><Input disabled={locked} /></Form.Item></Col>
         </Row>

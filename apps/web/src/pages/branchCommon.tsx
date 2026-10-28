@@ -20,7 +20,7 @@ export const unitOptions = (b: BranchList | undefined) => [
 // Bộ lọc chi nhánh của sổ sách/báo cáo: rỗng = mọi đơn vị trong phạm vi. Công ty chưa khai báo chi nhánh thì không hiện.
 export function BranchFilter({ value, onChange }: { value: string; onChange(v: string): void }) {
   const b = useBranches();
-  if (!b.data?.rows.length) return null;
+  if (!b.data?.rows?.length) return null;
   return <Select aria-label="Chi nhánh" style={{ width: 220 }} value={value} onChange={onChange}
     options={[{ value: '', label: 'Tất cả chi nhánh' }, ...unitOptions(b.data)]} />;
 }
