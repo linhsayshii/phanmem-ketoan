@@ -146,6 +146,21 @@ describe('ủy quyền duyệt', () => {
     await act(id, t.users.ktt.cookie, 'reject', { reason: 'Dọn' });
   });
 
+  it('lập thay người khác: kế toán trưởng (chỉ có setting.update) không được; không được lập ủy quyền thay người khác với người nhận là chính mình; quản trị lập thay thì ghi audit_event', async () => {
+    // Kịch bản tấn công: kế toán trưởng lập "ktt2 -> chính mình" rồi duyệt thay ktt2.
+    const self = await t.call('POST', '/api/approval-delegations', { delegatorId: t.users.ktt2.id, delegateId: t.users.ktt.id, dateFrom: day(0), dateTo: day(2) }, t.users.ktt.cookie);
+    expect(self.statusCode, self.body).toBe(403);
+    // Quản trị cũng không được tự nhận quyền của người khác.
+    const adminSelf = await t.call('POST', '/api/approval-delegations', { delegatorId: t.users.ktt2.id, delegateId: t.adminId, dateFrom: day(0), dateTo: day(2) }, t.admin);
+    expect(adminSelf.statusCode, adminSelf.body).toBe(403);
+    expect(adminSelf.json().error.code).toBe('FORBIDDEN');
+    const ok = await t.call('POST', '/api/approval-delegations', { delegatorId: t.users.ktt2.id, delegateId: t.users.ktt.id, dateFrom: day(0), dateTo: day(2) }, t.admin);
+    expect(ok.statusCode, ok.body).toBe(201);
+    const ev = await sql<{ n: string }>`SELECT count(*)::text AS n FROM audit_event WHERE tenant_id = ${t.tenantId}::uuid AND action = 'approval_delegation_on_behalf' AND entity_id = ${String(ok.json().id)}`.execute(ctx.t.admin);
+    expect(ev.rows[0]!.n).toBe('1');
+    await revoke(ok.json().id, t.users.ktt2.cookie);
+  });
+
   it('danh sách và nhật ký: người ủy quyền/được ủy quyền xem của mình, quản trị xem tất cả; sự kiện kiểm toán được ghi', async () => {
     const d = await mkDelegation(t.users.ktt, t.users.kv2.id, { reason: 'Nghỉ phép' });
     const mine = (await t.call('GET', '/api/approval-delegations', undefined, t.users.kv2.cookie)).json() as { id: number; reason: string | null; status: string }[];

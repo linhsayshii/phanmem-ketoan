@@ -30,7 +30,11 @@ async function approverInfo(trx: Trx, userId: string) {
 
 export async function createDelegation(trx: Trx, auth: Auth, input: DelegationInput) {
   const delegator = input.delegatorId ?? auth.userId;
-  if (delegator !== auth.userId && !auth.permissions.has('setting.update')) throw new AppError('FORBIDDEN', 'Chỉ quản trị mới lập ủy quyền thay người khác', 403);
+  const onBehalf = delegator !== auth.userId;
+  // Lập thay người khác cần quyền quản lý người dùng (user.update), không dùng setting.update mà kế toán trưởng cũng có; người nhận không được là chính người lập,
+  // nếu không người lập tự cấp quyền duyệt của người khác cho mình (vượt phân tách nhiệm vụ).
+  if (onBehalf && !auth.permissions.has('user.update')) throw new AppError('FORBIDDEN', 'Chỉ quản trị người dùng mới lập ủy quyền thay người khác', 403);
+  if (onBehalf && input.delegateId === auth.userId) throw new AppError('FORBIDDEN', 'Không được lập ủy quyền thay người khác với người nhận là chính mình', 403);
   if (delegator === input.delegateId) throw new AppError('VALIDATION', 'Không ủy quyền cho chính mình', 400);
   const today = (await sql<{ d: string }>`SELECT ${TODAY}::text AS d`.execute(trx)).rows[0]!.d;
   if (input.dateTo < today) throw new AppError('VALIDATION', 'Khoảng ủy quyền đã qua', 400);
@@ -53,6 +57,10 @@ export async function createDelegation(trx: Trx, auth: Auth, input: DelegationIn
   }
   const r = await trx.insertInto('approval_delegation').values({ tenant_id: auth.tenantId!, delegator_id: delegator, delegate_id: input.delegateId, date_from: input.dateFrom, date_to: input.dateTo,
     reason: input.reason || null, created_by: auth.userId }).returning('id').executeTakeFirstOrThrow();
+  if (onBehalf) {
+    await sql`INSERT INTO audit_event(tenant_id, user_id, action, entity, entity_id, after) VALUES (${auth.tenantId}::uuid, ${auth.userId}::uuid, 'approval_delegation_on_behalf', 'approval_delegation', ${String(r.id)},
+      ${JSON.stringify({ delegatorId: delegator, delegateId: input.delegateId, dateFrom: input.dateFrom, dateTo: input.dateTo, createdBy: auth.userId })}::jsonb)`.execute(trx);
+  }
   return { id: r.id };
 }
 
