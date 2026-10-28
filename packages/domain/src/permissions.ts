@@ -81,5 +81,9 @@ export const PERMISSIONS: readonly { code: string; name: string; group: string }
   { code: 'api_key.manage', name: 'Quản lý khóa API', group: 'Hệ thống' },
   ...crud('cit', 'thuế TNDN', 'Thuế'),
   { code: 'signing.use', name: 'Ký số', group: 'Hệ thống' },
+  // GĐ7 nhóm 4: đề nghị thanh toán, tạm ứng và phê duyệt (cấu hình quy trình dùng setting.update).
+  { code: 'approval_request.view', name: 'Xem mọi đề nghị thanh toán, tạm ứng', group: 'Phê duyệt' },
+  { code: 'approval_request.create', name: 'Lập đề nghị thanh toán, tạm ứng', group: 'Phê duyệt' },
+  { code: 'approval_request.approve', name: 'Duyệt đề nghị thanh toán, tạm ứng', group: 'Phê duyệt' },
 ];
 export const PERMISSION_CODES: readonly string[] = PERMISSIONS.map((p) => p.code);

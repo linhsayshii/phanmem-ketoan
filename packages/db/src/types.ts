@@ -514,3 +514,27 @@ export interface Database {
   einvoice_log: EinvoiceLogTable;
   einvoice_fake_store: EinvoiceFakeStoreTable;
 }
+
+// GĐ7 nhóm 4: phê duyệt đề nghị thanh toán / tạm ứng (0230). Gộp khai báo vào Database để chỉ thêm ở cuối tệp.
+export interface ApprovalStepSnapshot { stepNo: number; roleId: string | null; roleName: string | null; userId: string | null; username: string | null }
+export interface ApprovalFlowTable {
+  id: Generated<number>; tenant_id: string; kind: string; name: string; min_amount: NumericDefault; is_active: Generated<boolean>; created_at: Generated<Timestamp>;
+}
+export interface ApprovalFlowStepTable { tenant_id: string; flow_id: number; step_no: number; role_id: string | null; user_id: string | null }
+export interface ApprovalRequestTable {
+  id: Generated<string>; tenant_id: string; kind: string; request_no: string; request_date: DateOnly; requester_id: string; party_id: string | null; payee_name: string; reason: string;
+  currency_code: Generated<string>; amount_currency: Numeric; fx_rate: Numeric | null; amount: Numeric; account_code: string; pay_method: string; bank_account_id: number | null; due_date: DateOnly | null;
+  state: Generated<string>; flow_id: number | null; steps: ColumnType<ApprovalStepSnapshot[], string | undefined, string>; current_step: Generated<number>; reject_reason: string | null; voucher_id: string | null;
+  submitted_at: Timestamp | null; decided_at: Timestamp | null; created_at: Generated<Timestamp>;
+}
+export interface ApprovalStepLogTable { id: Generated<number>; tenant_id: string; request_id: string; step_no: number; action: string; actor_id: string; note: string | null; created_at: Generated<Timestamp> }
+export interface ApprovalAttachmentTable {
+  id: Generated<string>; tenant_id: string; request_id: string; file_name: string; mime: string; bytes: number; storage_key: string; uploaded_by: string; uploaded_at: Generated<Timestamp>;
+}
+export interface Database {
+  approval_flow: ApprovalFlowTable;
+  approval_flow_step: ApprovalFlowStepTable;
+  approval_request: ApprovalRequestTable;
+  approval_step_log: ApprovalStepLogTable;
+  approval_attachment: ApprovalAttachmentTable;
+}
