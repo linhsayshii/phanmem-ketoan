@@ -195,6 +195,10 @@ Chi tiết và lý do trong sổ quyết định `2026-10-22-giai-doan-3-quyet-d
 | Kế toán trưởng rà cách lấy doanh thu xác định thuế suất/miễn thuế (B02 doanh thu thuần + doanh thu tài chính + thu nhập khác, `data/tax/cit-ledger.json`) và số đã tạm nộp (Nợ 3334 đối ứng tiền, từ đầu quý 2 đến hết tháng 3 năm sau) | NĐ 320 Điều 11 khoản 4 nói doanh thu "không gồm các khoản giảm trừ"; tách khoản nộp theo năm cần phán đoán | Thuế suất gợi ý và chỉ tiêu G2 có thể lệch; cả hai sửa tay được trên tờ khai |
 | Tên miền và cách triển khai thật (qua nginx proxy manager sẵn có hay không) | Đụng dịch vụ đang chạy trên VPS | Chỉ chạy được nội bộ qua SSH tunnel |
 
+## E2E Playwright sau GĐ7 (2026-10-28, máy Mac)
+
+`pnpm -F @kt/web e2e` chạy được (Chromium 1248, cổng đặt qua `E2E_API_PORT`/`E2E_WEB_PORT`, hai công ty `e2e` và `e2ehkd` tạo bằng `create-admin`): 64 đạt, 19 đỏ, 2 không chạy. Cùng lệnh trên `daeafe7` (trước GĐ7): 58 đạt, 17 đỏ, 2 không chạy, tức phần lớn là đỏ sẵn có từ GĐ6 (chưa ai chạy E2E từ đó). Nhóm đỏ cố định cả hai phía: `so-du-dau-ky`, `ton-dau-ky`, `cham-cong` (gõ phím vào lưới AG Grid/ô số, ví dụ `1000000` thành `10000000`), `danh-muc` (không idempotent khi chạy lại trên cùng DB), `bang-luong`, `luong-ho-so`, `tncn`, `hop-dong`, `kiem-ke-quy`, `cong-no`, `tai-san-dau-ky`, `ty-gia`, `phieu-ke-toan`, `doi-tuong-gia-thanh`, `bao-cao-gia-thanh`. `bao-cao-kho`, `hoa-don`, `tai-san` đỏ lẻ khi chạy cả bộ nhưng đạt khi chạy riêng. Spec `ky-so` đã sửa theo cổng xác nhận mới ("Vẫn ký", "Xác nhận và chốt"). Việc tiếp theo: điều tra nhóm đỏ cố định (nghi lỗi gõ phím trên lưới chung hoặc spec lỗi thời sau GĐ6), chạy mỗi spec trên công ty E2E mới.
+
 ## 5. Ghi chú môi trường
 
 - VPS oracle: repo ở `~/phanmem-ketoan`, remote `origin` = `~/git/phanmem-ketoan.git` (bare). Trên máy Mac của người dùng, remote `oracle` trỏ tới repo bare đó: `git pull oracle main` để lấy về.

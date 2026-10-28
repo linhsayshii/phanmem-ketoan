@@ -37,16 +37,22 @@ test('Ký số: thêm hồ sơ giả lập, ký tờ khai GTGT đã chốt và t
   await page.locator('.ant-select', { has: page.getByRole('combobox', { name: 'Kỳ' }) }).click(); await page.locator('.ant-select-item-option', { hasText: /^Tháng 9$/ }).click();
   const calc = page.getByRole('button', { name: 'Tính tờ khai' }); const supp = page.getByRole('button', { name: 'Lập bổ sung' }); const recalc = page.getByRole('button', { name: /Tính lại/ });
   const sign = page.getByRole('button', { name: 'Ký và tải XML' });
-  await expect(calc.or(supp).or(recalc).or(sign)).toBeVisible();
+  await expect(calc.or(supp).or(recalc).or(sign).first()).toBeVisible();
   if (!(await sign.isVisible())) { if (await calc.isVisible()) await calc.click(); else await supp.click(); }
   await expect(sign).toBeVisible();
   if (await sign.isDisabled()) { // bản nháp: chốt trước khi ký
     await page.getByRole('button', { name: 'Chốt', exact: true }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'Chốt', exact: true }).click();
+    // Có hóa đơn 8% chưa có chỉ tiêu trong mẫu: cổng pháp lý đòi xác nhận rõ trước khi chốt.
+    const ack = page.getByRole('button', { name: 'Xác nhận và chốt' });
+    if (await ack.waitFor({ timeout: 3000 }).then(() => true, () => false)) await ack.click();
     await expect(sign).toBeEnabled();
   }
   const download = page.waitForEvent('download');
   await sign.click();
+  // XML 01/GTGT chưa kiểm chứng với HTKK: ký cần xác nhận rõ ràng.
+  const still = page.getByRole('button', { name: 'Vẫn ký' });
+  if (await still.waitFor({ timeout: 5000 }).then(() => true, () => false)) await still.click();
   const file = await download;
   expect(file.suggestedFilename()).toMatch(/^01GTGT_0100109106_T9-2026(-BS\d+)?_signed\.xml$/);
   const xml = await readFile((await file.path())!, 'utf8');
