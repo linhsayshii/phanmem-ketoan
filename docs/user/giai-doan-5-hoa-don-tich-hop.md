@@ -574,7 +574,7 @@ Cách xử lý:
 - Viettel SInvoice: bộ kết nối làm theo tài liệu công khai. Tiền gửi lên có tối đa 15 chữ số có nghĩa; tỷ giá làm tròn 2 chữ số theo tài liệu nên tỷ giá trên hóa đơn có thể lệch tỷ giá sổ cái ở chữ số thứ ba. Triển khai thiếu biến `DATA_ENCRYPTION_KEY` thì đối soát báo "ENCRYPTION_KEY_MISSING".
 - SePay, Casso (chuẩn JSON và chữ ký thật của Casso), VNPT SmartCA, USB token (cần thư viện PKCS#11 của hãng; tiện ích ký tham chiếu chỉ đọc khóa PEM, không đọc tệp .pfx).
 - Mã QR chưa quét bằng ứng dụng ngân hàng thật.
-- XML tờ khai 01/GTGT, 03/TNDN chưa nạp thử vào HTKK.
+- XML tờ khai 01/GTGT, 03/TNDN chưa nạp thử vào HTKK; ký số tệp này cần xác nhận riêng "Vẫn ký" và được ghi nhật ký. Hóa đơn điện tử thuế suất 8% bị chặn (VAT_RATE_NOT_EFFECTIVE) khi ngày hóa đơn ngoài thời gian hiệu lực của Nghị quyết 204/2025/QH15 (đến hết 31/12/2026); hóa đơn điều chỉnh, thay thế của hóa đơn gốc 8% đã lập đúng hạn không bị chặn.
 - Chữ ký người bán trên hóa đơn đầu vào chưa kiểm chuỗi chứng thư CA; MST trong chứng thư đọc theo trường UID `MST:` chưa thử trên chứng thư CA thật.
 
 ### Hóa đơn điện tử

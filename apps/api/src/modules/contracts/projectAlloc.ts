@@ -3,7 +3,7 @@ import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
 import { COA_REGIMES, loadPayrollAccounts } from '@kt/coa-data';
-import { allocateByRatio, D, Decimal, formatVnDate, sum } from '@kt/domain';
+import { allocateByRatio, D, formatVnDate, sum, type Decimal } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import * as S from '../ledger/vouchers.service.js';
 import { pnlGroups, sums } from './pnl.js';

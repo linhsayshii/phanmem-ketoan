@@ -8,6 +8,7 @@ describe('format', () => {
     expect(formatVnNumber('1234.5', 2)).toBe('1.234,50');
     expect(formatVnNumber(null)).toBe('');
     expect(formatVnNumber('0')).toBe('0');
+    expect(formatVnNumber('-0.4')).toBe('0'); expect(formatVnNumber('-0.004', 2)).toBe('0,00'); expect(formatVnNumber('-0.5')).toBe('-1'); // không in "-0" (GĐ7 gói 2, T6)
   });
   it('phân tích số người dùng gõ', () => {
     expect(parseVnNumber('1.500.000')).toBe('1500000');

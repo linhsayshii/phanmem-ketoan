@@ -157,9 +157,9 @@ Menu Thuế > "Tờ khai thuế GTGT" (cần quyền xem tờ khai). Kỳ khai t
 
 **Điều cần biết trước khi nộp**
 
-- Tệp XML xuất ra chưa được kiểm chứng với HTKK. Phần mềm chưa có tệp mẫu hay XSD của HTKK nên tên thẻ, mã mẫu và phiên bản trong tệp là giả định tạm. Màn hình cảnh báo "XML chưa kiểm chứng với HTKK"; hãy nạp thử vào HTKK và đối chiếu số liệu rồi mới nộp.
+- Tệp XML xuất ra chưa được kiểm chứng với HTKK. Phần mềm chưa có tệp mẫu hay XSD của HTKK nên tên thẻ, mã mẫu và phiên bản trong tệp là giả định tạm. Màn hình cảnh báo "XML chưa kiểm chứng với HTKK" (cả 01/GTGT và 03/TNDN); hãy nạp thử vào HTKK và đối chiếu số liệu rồi mới nộp. Ký số tệp này cũng phải xác nhận riêng (mục Ký số trong `docs/user/giai-doan-7-phap-ly-lam-tron.md`).
 - Phần mềm mới có mẫu 01/GTGT theo Thông tư 89/2026 (áp dụng từ 01/7/2026) với 30 chỉ tiêu [21] đến [43]. Mẫu theo Thông tư 80 chưa có văn bản gốc nên không lập được tờ khai cho kỳ trước 01/7/2026: phần mềm báo kỳ này chưa có mẫu tờ khai.
-- Thuế suất 8% (giảm thuế GTGT theo Nghị quyết 204/2025/QH15 và Nghị định 174/2025) hiện chưa có chỉ tiêu xác nhận riêng. Hàng hóa 8% tạm gộp vào [32] và [33] kèm cảnh báo; hãy tự đối chiếu trước khi chốt.
+- Thuế suất 8% (giảm thuế GTGT theo Nghị quyết 204/2025/QH15 và Nghị định 174/2025) hiện chưa có chỉ tiêu xác nhận riêng. Hàng hóa 8% tạm gộp vào [32] và [33]. Từ giai đoạn 7, kỳ có hóa đơn bán ra 8% không chốt được cho đến khi bạn xác nhận rõ (hộp thoại "Hóa đơn bán ra 8% chưa có chỉ tiêu trong mẫu", mã VAT_RATE8_UNVERIFIED); xác nhận được lưu trên tờ khai và ghi nhật ký kiểm toán. Chưa xác nhận thì không xuất XML hay ký số được. Xem `docs/user/giai-doan-7-phap-ly-lam-tron.md`.
 - Chỉ tiêu [25] (thuế đầu vào dùng chung được phân bổ theo tỷ lệ doanh thu chịu thuế) là cách tính của phần mềm, bạn có thể ghi đè.
 
 **Cách lập**

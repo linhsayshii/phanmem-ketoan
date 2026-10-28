@@ -2,7 +2,8 @@ import { D, VND_AMOUNT_RE, type Decimal } from './money.js';
 
 export function formatVnNumber(v: string | Decimal | null | undefined, scale = 0): string {
   if (v === null || v === undefined || v === '') return '';
-  const d = D(v).toFixed(scale);
+  const raw = D(v).toFixed(scale);
+  const d = /^-0(\.0*)?$/.test(raw) ? raw.slice(1) : raw; // -0,4 làm tròn về 0 thì in 0, không in "-0"
   const [intPart, frac] = d.split('.');
   const sign = intPart!.startsWith('-') ? '-' : '';
   const digits = intPart!.replace('-', '');
