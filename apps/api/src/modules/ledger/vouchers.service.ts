@@ -505,6 +505,8 @@ export async function duplicateVoucher(trx: Trx, ctx: { tenantId: string; userId
       departmentCode: l.departmentCode, projectCode: l.projectCode, costItemCode: l.costItemCode, employeeCode: l.employeeCode, description: l.description, dueDate: l.dueDate, extraDims: l.extraDims, bankAccountNo: l.bankAccountNo, cashFlowCode: l.cashFlowCode, assetCode: l.assetCode, contractCode: l.contractCode, costObjectCode: l.costObjectCode })) });
 }
 export async function deleteDraft(trx: Trx, id: string): Promise<void> {
+  // Khóa và kiểm chứng từ trước khi động tới dòng: chứng từ ngoài phạm vi chi nhánh (RLS che) hoặc không có thì 404 mà chưa xóa gì (review trục 1 P1).
+  if (!(await trx.selectFrom('voucher').select('id').where('id', '=', id).forUpdate().executeTakeFirst())) throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy chứng từ', 404);
   await assertNotSystemGenerated(trx, id);
   if (await trx.selectFrom('einvoice').select('id').where('voucher_id', '=', id).limit(1).executeTakeFirst()) throw new AppError('EINVOICE_HISTORY', 'Chứng từ đã có lịch sử hóa đơn điện tử, không xóa được; dùng Hủy chứng từ', 409);
   await releaseOrderLinks(trx, id);
