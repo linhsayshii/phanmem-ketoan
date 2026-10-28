@@ -702,6 +702,8 @@ export interface BookOtherTaxTable {
 }
 export interface Database {
   book_group: BookGroupTable; book_year_setting: BookYearSettingTable; book_entry: BookEntryTable; book_stock_item: BookStockItemTable; book_stock_move: BookStockMoveTable; book_other_tax: BookOtherTaxTable;
+}
+
 // GĐ7 nhóm 7: trợ lý (0290). Mẫu bút toán định kỳ, lần chạy theo (mẫu, kỳ), nhật ký nhận diện hóa đơn.
 export interface RecurringEntryTable {
   id: Generated<string>; tenant_id: string; code: string; name: string; status: Generated<string>; frequency: string; day_of_month: number; start_date: string; end_date: string | null;
