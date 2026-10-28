@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useRememberedFilter } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, PageHeader, Toolbar, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { RUN_KIND } from './payrollCommon.js';
@@ -87,7 +87,14 @@ export default function PayrollReportsPage() {
         : kind === 'month' ? <Select aria-label="Tháng" value={f.month} style={{ width: 90 }} onChange={(month) => setF({ ...f, month })} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `Tháng ${i + 1}` }))} /> : null}
     </Space.Compact>);
 
-  if (!me?.sensitive.includes('view_salary')) return NO_SALARY;
+  if (!me?.sensitive.includes('view_salary')) {
+    return (
+      <>
+        <PageHeader title="Báo cáo lương" description="Bảng thanh toán, bảo hiểm, chi phí, thuế TNCN, phiếu lương và sổ chi tiết" />
+        {NO_SALARY}
+      </>
+    );
+  }
   const d = data.data;
   const body = () => {
     if (!url) return <Alert type="info" showIcon message={tab === 'ledger' ? 'Chọn nhân viên để xem Sổ chi tiết tài khoản phải trả người lao động' : 'Chọn bảng lương để in phiếu lương'} />;
@@ -102,29 +109,37 @@ export default function PayrollReportsPage() {
   };
 
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Báo cáo lương</h2>
-        {tab === 'ledger' ? <>
-          <Select aria-label="Tài khoản" value={f.accountCode} style={{ width: 90 }} onChange={(accountCode) => setF({ ...f, accountCode })} options={[{ value: '334', label: '334' }, { value: '3341', label: '3341' }]} />
-          <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
-          <LookupSelect catalog="employee" value={f.employeeCode || null} style={{ width: 280 }} placeholder="Nhân viên (F4)" aria-label="Nhân viên" onChange={(code) => setF({ ...f, employeeCode: code ?? '' })} />
-        </> : <>
-          {yearInput('year', 'Năm')}
-          {(tab === 'insurance' || tab === 'cost' || tab === 'pit') ? periodSel : <Select aria-label="Tháng" value={f.month} style={{ width: 100 }} onChange={(month) => setF({ ...f, month, runId: 0 })} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `Tháng ${i + 1}` }))} />}
-          {tab === 'compare' && <>{yearInput('year2', 'So với năm')}<Select aria-label="Tháng so sánh" value={f.month2} style={{ width: 100 }} onChange={(month2) => setF({ ...f, month2 })} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `Tháng ${i + 1}` }))} /></>}
-          {tab === 'cost' && <Select aria-label="Nhóm theo" value={f.groupBy} style={{ width: 150 }} onChange={(groupBy) => setF({ ...f, groupBy })} options={[{ value: 'department', label: 'Theo bộ phận' }, { value: 'project', label: 'Theo vụ việc' }]} />}
-          {(tab === 'payment' || tab === 'slips') && <Select aria-label="Bảng lương" allowClear placeholder={tab === 'payment' ? 'Mọi bảng lương trong tháng' : 'Chọn bảng lương'} style={{ width: 300 }} value={f.runId || undefined} onChange={(runId) => setF({ ...f, runId: runId ?? 0 })}
-            options={(runs.data ?? []).filter((r) => r.status === 'calculated' || r.status === 'posted').map((r) => ({ value: r.id, label: `${r.name} (${RUN_KIND[r.kind] ?? r.kind})` }))} />}
-          {tab === 'slips' && <LookupSelect catalog="employee" valueField="id" value={f.employeeId ? String(f.employeeId) : null} style={{ width: 260 }} placeholder="Một nhân viên (bỏ trống: cả bảng)" aria-label="Nhân viên" allowClear
-            onChange={(_, row) => setF({ ...f, employeeId: row ? Number(row.id) : 0 })} />}
-        </>}
-        <Button disabled={!url || tab === 'ledger'} onClick={() => open('html')}>{tab === 'slips' ? 'In phiếu lương' : 'In'}</Button>
-        {exportOk && tab !== 'slips' && tab !== 'ledger' && <Button disabled={!url} onClick={() => open('xlsx')}>Xuất Excel</Button>}
-        {exportOk && tab === 'bhxh' && <Button disabled={!url} onClick={() => open('csv')}>Xuất CSV</Button>}
-      </Space>
-      <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={TABS.filter((t) => t.key !== 'ledger' || can('report.view')).map((t) => ({ key: t.key, label: t.label }))} />
+    <>
+      <PageHeader
+        title="Báo cáo lương"
+        description="Bảng thanh toán, bảo hiểm, chi phí, thuế TNCN, phiếu lương và sổ chi tiết"
+        extra={
+          <>
+            <Button disabled={!url || tab === 'ledger'} onClick={() => open('html')}>{tab === 'slips' ? 'In phiếu lương' : 'In'}</Button>
+            {exportOk && tab !== 'slips' && tab !== 'ledger' && <Button disabled={!url} onClick={() => open('xlsx')}>Xuất Excel</Button>}
+            {exportOk && tab === 'bhxh' && <Button disabled={!url} onClick={() => open('csv')}>Xuất CSV</Button>}
+          </>
+        }
+      >
+        <Toolbar>
+          {tab === 'ledger' ? <>
+            <Select aria-label="Tài khoản" value={f.accountCode} style={{ width: 90 }} onChange={(accountCode) => setF({ ...f, accountCode })} options={[{ value: '334', label: '334' }, { value: '3341', label: '3341' }]} />
+            <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
+            <LookupSelect catalog="employee" value={f.employeeCode || null} style={{ width: 280 }} placeholder="Nhân viên (F4)" aria-label="Nhân viên" onChange={(code) => setF({ ...f, employeeCode: code ?? '' })} />
+          </> : <>
+            {yearInput('year', 'Năm')}
+            {(tab === 'insurance' || tab === 'cost' || tab === 'pit') ? periodSel : <Select aria-label="Tháng" value={f.month} style={{ width: 100 }} onChange={(month) => setF({ ...f, month, runId: 0 })} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `Tháng ${i + 1}` }))} />}
+            {tab === 'compare' && <>{yearInput('year2', 'So với năm')}<Select aria-label="Tháng so sánh" value={f.month2} style={{ width: 100 }} onChange={(month2) => setF({ ...f, month2 })} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `Tháng ${i + 1}` }))} /></>}
+            {tab === 'cost' && <Select aria-label="Nhóm theo" value={f.groupBy} style={{ width: 150 }} onChange={(groupBy) => setF({ ...f, groupBy })} options={[{ value: 'department', label: 'Theo bộ phận' }, { value: 'project', label: 'Theo vụ việc' }]} />}
+            {(tab === 'payment' || tab === 'slips') && <Select aria-label="Bảng lương" allowClear placeholder={tab === 'payment' ? 'Mọi bảng lương trong tháng' : 'Chọn bảng lương'} style={{ width: 300 }} value={f.runId || undefined} onChange={(runId) => setF({ ...f, runId: runId ?? 0 })}
+              options={(runs.data ?? []).filter((r) => r.status === 'calculated' || r.status === 'posted').map((r) => ({ value: r.id, label: `${r.name} (${RUN_KIND[r.kind] ?? r.kind})` }))} />}
+            {tab === 'slips' && <LookupSelect catalog="employee" valueField="id" value={f.employeeId ? String(f.employeeId) : null} style={{ width: 260 }} placeholder="Một nhân viên (bỏ trống: cả bảng)" aria-label="Nhân viên" allowClear
+              onChange={(_, row) => setF({ ...f, employeeId: row ? Number(row.id) : 0 })} />}
+          </>}
+        </Toolbar>
+      </PageHeader>
+      <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={TABS.filter((t) => t.key !== 'ledger' || can('report.view')).map((t) => ({ key: t.key, label: t.label }))} style={{ marginBottom: 12 }} />
       {body()}
-    </Space>
+    </>
   );
 }

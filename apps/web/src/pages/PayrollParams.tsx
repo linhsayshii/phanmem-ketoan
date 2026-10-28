@@ -3,7 +3,7 @@ import { Alert, Button, DatePicker, Input, Modal, Popconfirm, Select, Space, Tab
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { formatVnDate } from '@kt/domain';
-import { VnNumberInput } from '@kt/ui';
+import { COLOR, PageHeader, Section, Toolbar, VnNumberInput } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { PayrollErrorAlert } from './payrollUi.js';
@@ -74,7 +74,7 @@ function ParamDialog({ target, onClose }: { target: { row?: ParamRow; code?: str
           <label>Hiệu lực từ ngày<br /><DatePicker aria-label="Hiệu lực từ ngày" format="DD/MM/YYYY" value={validFrom} disabled={!!edit} onChange={setValidFrom} /></label>
           <label>Đến ngày (trống = không giới hạn)<br /><DatePicker aria-label="Hiệu lực đến ngày" format="DD/MM/YYYY" value={validTo} onChange={setValidTo} /></label>
         </Space>
-        {def && <div style={{ color: '#666' }}>{def.hint}</div>}
+        {def && <div style={{ color: COLOR.textSecondary }}>{def.hint}</div>}
         {def?.brackets && <Brackets rows={form.brackets} onChange={(brackets) => setForm({ ...form, brackets })} />}
         {def && !def.brackets && (
           <Space wrap align="start" size="large">
@@ -115,43 +115,55 @@ export default function PayrollParamsPage() {
 
   const effective = (
     <>
-      <Space style={{ marginBottom: 8 }} wrap>Hiệu lực tại ngày <DatePicker aria-label="Ngày xem hiệu lực" format="DD/MM/YYYY" allowClear={false} value={date} onChange={(v) => v && setDate(v)} /></Space>
+      <Toolbar style={{ marginBottom: 8 }}>
+        <Space size={6} align="center">
+          <label htmlFor="eff-date">Hiệu lực tại ngày</label>
+          <DatePicker id="eff-date" aria-label="Ngày xem hiệu lực" format="DD/MM/YYYY" allowClear={false} value={date} onChange={(v) => v && setDate(v)} />
+        </Space>
+      </Toolbar>
       {illustrative && <Alert style={{ marginBottom: 8 }} type="warning" showIcon data-testid="illustrative-warning" message="Có tham số đang áp dụng ghi nguồn là dữ liệu minh họa, không phải văn bản pháp lý: không dùng để tính lương thật." />}
-      <Table size="small" rowKey={(r) => r.def.code} pagination={false} dataSource={effRows} loading={eff.some((q) => q.isLoading)} data-testid="effective-params"
-        columns={[
-          { title: 'Tham số', render: (_, r) => <div>{r.def.label}<div style={{ color: '#999', fontSize: 12 }}>{r.def.code}</div></div> },
-          { title: 'Trạng thái', width: 120, render: (_, r) => (r.error ? <Tag color="red">Lỗi</Tag> : r.eff ? <Tag color="green">Có hiệu lực</Tag> : <Tag color="red">Chưa có</Tag>) },
-          { title: 'Giá trị áp dụng', render: (_, r) => (r.eff ? summarizeParam(r.def.code, r.eff.value) : <span style={{ color: '#999' }}>Chưa nhập</span>) },
-          { title: 'Nguồn', render: (_, r) => (!r.eff ? null : r.eff.source === 'legal_param' ? <Tag color="blue">Tham số pháp lý đã kiểm của hệ thống</Tag> : sourceCell(sourceOn(r.def.code, iso(date)))) },
-          { title: 'Cảnh báo', render: (_, r) => r.eff?.warning && <Tag color="gold" style={{ whiteSpace: 'normal' }}>{r.eff.warning}</Tag> },
-          ...(canEdit ? [{ title: '', width: 80, render: (_: unknown, r: { def: { code: string }; eff: Effective | null }) => <a onClick={() => setDialog({ code: r.def.code })}>{r.eff ? 'Thêm kỳ mới' : 'Nhập'}</a> }] : []),
-        ]} />
+      <Section bodyPadding={0}>
+        <Table size="small" rowKey={(r) => r.def.code} pagination={false} dataSource={effRows} loading={eff.some((q) => q.isLoading)} data-testid="effective-params"
+          columns={[
+            { title: 'Tham số', render: (_, r) => <div>{r.def.label}<div style={{ color: COLOR.textSecondary, fontSize: 12 }}>{r.def.code}</div></div> },
+            { title: 'Trạng thái', width: 120, render: (_, r) => (r.error ? <Tag color="red">Lỗi</Tag> : r.eff ? <Tag color="green">Có hiệu lực</Tag> : <Tag color="red">Chưa có</Tag>) },
+            { title: 'Giá trị áp dụng', render: (_, r) => (r.eff ? summarizeParam(r.def.code, r.eff.value) : <span style={{ color: COLOR.textSecondary }}>Chưa nhập</span>) },
+            { title: 'Nguồn', render: (_, r) => (!r.eff ? null : r.eff.source === 'legal_param' ? <Tag color="blue">Tham số pháp lý đã kiểm của hệ thống</Tag> : sourceCell(sourceOn(r.def.code, iso(date)))) },
+            { title: 'Cảnh báo', render: (_, r) => r.eff?.warning && <Tag color="gold" style={{ whiteSpace: 'normal' }}>{r.eff.warning}</Tag> },
+            ...(canEdit ? [{ title: '', width: 80, render: (_: unknown, r: { def: { code: string }; eff: Effective | null }) => <a onClick={() => setDialog({ code: r.def.code })}>{r.eff ? 'Thêm kỳ mới' : 'Nhập'}</a> }] : []),
+          ]} />
+      </Section>
     </>);
 
   const history = (
     <>
-      <Space style={{ marginBottom: 8 }} wrap>
+      <Toolbar style={{ marginBottom: 8 }}>
         <Select aria-label="Lọc theo tham số" allowClear placeholder="Tất cả tham số" style={{ width: 380 }} value={filter ?? undefined} onChange={(v) => setFilter(v ?? null)} options={PARAM_DEFS.map((d) => ({ value: d.code, label: d.label }))} />
-        {canEdit && <Button type="primary" onClick={() => setDialog(filter ? { code: filter } : {})}>Thêm tham số</Button>}
-      </Space>
-      <Table<ParamRow> size="small" rowKey="id" pagination={{ pageSize: 20, hideOnSinglePage: true }} dataSource={rows.filter((r) => !filter || r.code === filter)} loading={list.isLoading} data-testid="param-list"
-        locale={{ emptyText: 'Chưa nhập tham số nào: nhập từ văn bản pháp luật hiện hành kèm nguồn' }}
-        columns={[
-          { title: 'Tham số', dataIndex: 'code', render: label }, { title: 'Từ ngày', dataIndex: 'validFrom', width: 110, render: formatVnDate },
-          { title: 'Đến ngày', dataIndex: 'validTo', width: 110, render: (v: string | null) => (v ? formatVnDate(v) : 'Không giới hạn') },
-          { title: 'Giá trị', render: (_, r) => summarizeParam(r.code, r.value) }, { title: 'Nguồn', render: (_, r) => sourceCell(r) },
-          ...(canEdit ? [{ title: '', width: 110, render: (_: unknown, r: ParamRow) => (<Space><a onClick={() => setDialog({ row: r })}>Sửa</a>
-            <Popconfirm title="Xóa dòng tham số này?" okText="Xóa" cancelText="Không" onConfirm={() => del.mutate(r.id)}><a>Xóa</a></Popconfirm></Space>) }] : []),
-        ]} />
+      </Toolbar>
+      <Section bodyPadding={0}>
+        <Table<ParamRow> size="small" rowKey="id" pagination={{ pageSize: 20, hideOnSinglePage: true }} dataSource={rows.filter((r) => !filter || r.code === filter)} loading={list.isLoading} data-testid="param-list"
+          locale={{ emptyText: 'Chưa nhập tham số nào: nhập từ văn bản pháp luật hiện hành kèm nguồn' }}
+          columns={[
+            { title: 'Tham số', dataIndex: 'code', render: label }, { title: 'Từ ngày', dataIndex: 'validFrom', width: 110, render: formatVnDate },
+            { title: 'Đến ngày', dataIndex: 'validTo', width: 110, render: (v: string | null) => (v ? formatVnDate(v) : 'Không giới hạn') },
+            { title: 'Giá trị', render: (_, r) => summarizeParam(r.code, r.value) }, { title: 'Nguồn', render: (_, r) => sourceCell(r) },
+            ...(canEdit ? [{ title: '', width: 110, render: (_: unknown, r: ParamRow) => (<Space><a onClick={() => setDialog({ row: r })}>Sửa</a>
+              <Popconfirm title="Xóa dòng tham số này?" okText="Xóa" cancelText="Không" onConfirm={() => del.mutate(r.id)}><a>Xóa</a></Popconfirm></Space>) }] : []),
+          ]} />
+      </Section>
     </>);
 
   return (
-    <div>
-      <h2 style={{ marginTop: 0 }}>Tham số lương</h2>
+    <>
+      <PageHeader
+        title="Tham số lương"
+        description="Thuế suất, giảm trừ gia cảnh, tỷ lệ bảo hiểm và lương tối thiểu vùng"
+        extra={canEdit && <Button type="primary" onClick={() => setDialog(filter ? { code: filter } : {})}>Thêm tham số</Button>}
+      />
       <Alert style={{ marginBottom: 12 }} type="info" showIcon data-testid="params-banner" message="Giá trị do người dùng nhập từ văn bản gốc; phần mềm không có mặc định."
         description="Thuế suất, giảm trừ gia cảnh, tỷ lệ và mức trần bảo hiểm, lương tối thiểu vùng, hệ số làm thêm giờ đều phải nhập kèm nguồn văn bản (số hiệu, điều, khoản) và ngày hiệu lực. Khi có tham số pháp lý đã kiểm của hệ thống thì hệ thống dùng tham số đó." />
       {(list.error as Error | null) && <PayrollErrorAlert error={list.error} />}
       <Tabs items={[{ key: 'eff', label: 'Đang hiệu lực', children: effective }, { key: 'all', label: 'Các dòng đã nhập', children: history }]} />
       <ParamDialog target={dialog} onClose={() => setDialog(null)} />
-    </div>);
+    </>);
 }

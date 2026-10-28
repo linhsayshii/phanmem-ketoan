@@ -3,7 +3,7 @@ import { Alert, AutoComplete, Button, Checkbox, DatePicker, Form, Input, InputNu
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { PAYROLL_BUILTIN_COLUMNS, formatVnNumber, type PayrollColumn } from '@kt/domain';
-import { LookupSelect } from '@kt/ui';
+import { COLOR, EmptyState, LookupSelect, PageHeader, Section } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { NO_SALARY, PayrollErrorAlert } from './payrollUi.js';
@@ -95,7 +95,7 @@ function Editor({ source, isNew, templateColumns, onSaved, onDeleted, onClone }:
           { title: 'Tên cột', width: 220, render: (_, r) => <Input aria-label="Tên cột" value={r.name} disabled={!canEdit} maxLength={200} onChange={(e) => patch(r.key, { name: e.target.value })} /> },
           { title: 'Công thức', width: 300, render: (_, r) => r.kind === 'formula'
             ? <FormulaInput value={r.formula} columns={columns} selfCode={r.code} disabled={!canEdit} onChange={(v) => patch(r.key, { formula: v })} />
-            : <span style={{ color: '#999' }}>{r.kind === 'input' ? 'Nhập tay trên bảng lương' : 'Tính theo quy tắc của hệ thống'}</span> },
+            : <span style={{ color: COLOR.textSecondary }}>{r.kind === 'input' ? 'Nhập tay trên bảng lương' : 'Tính theo quy tắc của hệ thống'}</span> },
           { title: 'Làm tròn', width: 90, render: (_, r) => r.kind === 'builtin' ? null : <InputNumber aria-label="Số chữ số làm tròn" min={0} max={6} precision={0} placeholder="0" value={r.round} disabled={!canEdit} style={{ width: 70 }} onChange={(v) => patch(r.key, { round: v })} /> },
           { title: 'Thu nhập', width: 80, align: 'center', render: (_, r) => flag(r, 'income', 'Thu nhập') },
           { title: 'Chịu thuế', width: 80, align: 'center', render: (_, r) => flag(r, 'taxable', 'Chịu thuế') },
@@ -115,9 +115,9 @@ function Editor({ source, isNew, templateColumns, onSaved, onDeleted, onClone }:
         <Button onClick={() => setRows((rs) => [...rs, blank('input')])}>Thêm cột nhập tay</Button>
         <Button onClick={() => setRows((rs) => [...rs, blank('formula')])}>Thêm cột công thức</Button>
         <Button onClick={addBuiltin}>Thêm cột dựng sẵn</Button></Space>}
-      <div style={{ marginTop: 8, color: '#666' }}>{FORMULA_HELP}</div>
+      <div style={{ marginTop: 8, color: COLOR.textSecondary }}>{FORMULA_HELP}</div>
 
-      <h4 style={{ marginTop: 20 }}>Xem thử với một nhân viên</h4>
+      <div style={{ fontWeight: 600, fontSize: 14, marginTop: 20, marginBottom: 8 }}>Xem thử với một nhân viên</div>
       <Space wrap align="center">
         <LookupSelect catalog="employee" value={empCode} allowClear placeholder="Chọn nhân viên (F4)" style={{ width: 280 }} aria-label="Nhân viên xem thử" onChange={(c, row) => { setEmpCode(c); setEmpId(row ? Number(row.id) : null); }} />
         <DatePicker picker="month" format="MM/YYYY" allowClear={false} value={period} aria-label="Tháng xem thử" onChange={(v) => v && setPeriod(v)} />
@@ -152,23 +152,24 @@ function Structures() {
     }, () => undefined);
   };
   return (
-    <div>
-      <Space wrap align="center" style={{ marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>Cấu trúc bảng lương</h2>
-        {can('payroll.create') && <Button type="primary" onClick={() => setSel('new')}>Thêm cấu trúc</Button>}
-      </Space>
+    <>
+      <PageHeader
+        title="Cấu trúc bảng lương"
+        description="Định nghĩa các cột tính, công thức, bảo hiểm và thuế cho bảng lương"
+        extra={can('payroll.create') && <Button type="primary" onClick={() => setSel('new')}>Thêm cấu trúc</Button>}
+      />
       {list.error && <PayrollErrorAlert error={list.error} />}
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-        <div style={{ width: 340, flexShrink: 0 }}>
+        <Section title="Danh sách cấu trúc" bodyPadding={0} style={{ width: 340, flexShrink: 0 }}>
           <Table<Structure> size="small" rowKey="id" pagination={false} dataSource={rows} loading={list.isLoading} data-testid="structure-list" showHeader={false}
             rowClassName={(r) => (r.id === sel ? 'ant-table-row-selected' : '')} onRow={(r) => ({ onClick: () => setSel(r.id), style: { cursor: 'pointer' } })}
             columns={[{ render: (_, r) => (<div><b>{r.code}</b> - {r.name}<div>{r.isDefault && <Tag color="blue">Mặc định</Tag>}{r.inUse && <Tag color="green">Đã dùng</Tag>}<Tag>{r.columns.length} cột</Tag></div></div>) }]} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {sel === null && <div>Chọn một cấu trúc để xem, hoặc thêm cấu trúc mới (bắt đầu từ các cột của cấu trúc mặc định).</div>}
+        </Section>
+        <Section title={current ? `${current.code} - ${current.name}` : sel === 'new' ? 'Thêm cấu trúc mới' : 'Chi tiết cấu trúc'} style={{ flex: 1, minWidth: 0 }}>
+          {sel === null && <EmptyState title="Chưa chọn cấu trúc" description="Chọn một cấu trúc bên trái để xem, hoặc bấm 'Thêm cấu trúc' để tạo mới." />}
           {sel === 'new' && <Editor key="new" source={null} isNew templateColumns={template} onSaved={(s) => setSel(s.id)} onDeleted={() => setSel(null)} onClone={setCloning} />}
           {current && <Editor key={`${current.id}:${current.inUse}`} source={current} isNew={false} templateColumns={template} onSaved={(s) => setSel(s.id)} onDeleted={() => setSel(null)} onClone={setCloning} />}
-        </div>
+        </Section>
       </div>
       <Modal open={cloning !== null} title="Nhân bản cấu trúc" onCancel={() => setCloning(null)} onOk={doClone} okText="Nhân bản" cancelText="Bỏ qua" confirmLoading={cBusy} destroyOnHidden forceRender>
         <Form form={cForm} name="clone" layout="vertical">
@@ -177,10 +178,15 @@ function Structures() {
           <PayrollErrorAlert error={cErr} />
         </Form>
       </Modal>
-    </div>);
+    </>);
 }
 
 export default function PayrollStructuresPage() {
   const { me } = useAuth();
-  return me?.sensitive.includes('view_salary') ? <Structures /> : NO_SALARY;
+  return me?.sensitive.includes('view_salary') ? <Structures /> : (
+    <>
+      <PageHeader title="Cấu trúc bảng lương" description="Định nghĩa các cột tính, công thức, bảo hiểm và thuế cho bảng lương" />
+      {NO_SALARY}
+    </>
+  );
 }

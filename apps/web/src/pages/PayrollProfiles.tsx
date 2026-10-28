@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Checkbox, DatePicker, Empty, Form, Input, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, Upload, message } from 'antd';
+import { Alert, Button, Checkbox, DatePicker, Form, Input, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, Upload, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber } from '@kt/domain';
-import { LookupSelect, VnNumberInput } from '@kt/ui';
+import { COLOR, EmptyState, LookupSelect, PageHeader, Section, VnNumberInput } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { iso, text } from './voucherCommon.js';
@@ -131,7 +131,7 @@ function Editor({ employeeId }: { employeeId: number }) {
           <Form.Item key={name} name={name} valuePropName="checked" noStyle><Checkbox>{label}</Checkbox></Form.Item>)}
       </Space>
       <Form.Item label="Ghi chú" name="note"><Input.TextArea rows={2} maxLength={500} /></Form.Item>
-      <h4>Phụ cấp</h4>
+      <div style={{ fontWeight: 600, fontSize: 14, margin: '16px 0 8px' }}>Phụ cấp</div>
       {canEdit && <Button style={{ marginBottom: 8 }} onClick={() => openA('new')}>Thêm phụ cấp</Button>}
       <Table<Allowance> size="small" rowKey="id" pagination={false} dataSource={d?.allowances ?? []} data-testid="allowances" locale={{ emptyText: 'Chưa có phụ cấp' }}
         onRow={(r) => ({ onClick: () => canEdit && openA(r), style: { cursor: canEdit ? 'pointer' : 'default' } })}
@@ -175,52 +175,61 @@ function Editor({ employeeId }: { employeeId: number }) {
   if (detail.isLoading) return <div>Đang tải…</div>;
   if (detail.error) return <Alert type="error" showIcon message={(detail.error as Error).message} />;
   return (
-    <div onKeyDown={onKey}>
-      <Space style={{ marginBottom: 12, width: '100%', justifyContent: 'space-between' }} align="start">
-        <div><h3 style={{ margin: 0 }}>{d!.employee.code} - {d!.employee.name}</h3>
-          <span>{d!.employee.departmentName ?? 'Chưa có bộ phận'}{d!.employee.position ? ` · ${d!.employee.position}` : ''}</span> {!d!.profile && <Tag color="orange">Chưa có hồ sơ lương</Tag>}</div>
-        {canEdit && tab === 'profile' && <Button type="primary" loading={saveProfile.isPending} onClick={() => { void form.validateFields().then((v) => saveProfile.mutate(v), () => undefined); }}>Lưu hồ sơ (Ctrl+S)</Button>}
-      </Space>
-      {err && <Alert type="error" showIcon message={err} style={{ marginBottom: 12 }} closable onClose={() => setErr(null)} />}
-      <Tabs activeKey={tab} onChange={setTab} items={[{ key: 'profile', label: 'Lương và phụ cấp', children: profileTab }, { key: 'dependents', label: 'Người phụ thuộc', children: dependentsTab },
-        { key: 'salary', label: 'Lịch sử lương', children: salaryTab }, { key: 'split', label: 'Phân bổ chi phí', children: splitTab }]} />
+    <Section
+      title={
+        <Space wrap align="center">
+          <span>{d!.employee.code} - {d!.employee.name}</span>
+          {!d!.profile && <Tag color="orange" style={{ margin: 0 }}>Chưa có hồ sơ lương</Tag>}
+          <span style={{ fontSize: 13, fontWeight: 400, color: COLOR.textSecondary }}>
+            {d!.employee.departmentName ?? 'Chưa có bộ phận'}{d!.employee.position ? ` · ${d!.employee.position}` : ''}
+          </span>
+        </Space>
+      }
+      extra={canEdit && tab === 'profile' && <Button type="primary" loading={saveProfile.isPending} onClick={() => { void form.validateFields().then((v) => saveProfile.mutate(v), () => undefined); }}>Lưu hồ sơ (Ctrl+S)</Button>}
+      style={{ flex: 1, minWidth: 0 }}
+    >
+      <div onKeyDown={onKey}>
+        {err && <Alert type="error" showIcon message={err} style={{ marginBottom: 12 }} closable onClose={() => setErr(null)} />}
+        <Tabs activeKey={tab} onChange={setTab} items={[{ key: 'profile', label: 'Lương và phụ cấp', children: profileTab }, { key: 'dependents', label: 'Người phụ thuộc', children: dependentsTab },
+          { key: 'salary', label: 'Lịch sử lương', children: salaryTab }, { key: 'split', label: 'Phân bổ chi phí', children: splitTab }]} />
 
-      <RowDialog open={aEdit !== null} title={aEdit === 'new' ? 'Thêm phụ cấp' : 'Sửa phụ cấp'} form={aForm} formName="allowance" onClose={() => setAEdit(null)} onSave={async (v) => {
-        const body = { code: v.code.trim(), name: v.name.trim(), amount: v.amount, taxable: !!v.taxable, siBase: !!v.siBase, validFrom: dateRule(v.validFrom), validTo: dateRule(v.validTo) };
-        await (aEdit === 'new' || aEdit === null ? api(`${P}/${employeeId}/allowances`, { method: 'POST', json: body }) : api(`${P}/${employeeId}/allowances/${aEdit.id}`, { method: 'PUT', json: body }));
-        void message.success('Đã lưu phụ cấp'); refresh(); }}>
-        <Space align="start" wrap>
-          <Form.Item label="Mã phụ cấp" name="code" rules={[{ required: true, pattern: /^[a-z0-9_]+$/, message: 'Chữ thường không dấu, số, gạch dưới' }]}><Input maxLength={40} autoFocus /></Form.Item>
-          <Form.Item label="Tên phụ cấp" name="name" rules={[{ required: true, whitespace: true, message: 'Nhập tên phụ cấp' }]}><Input maxLength={200} style={{ width: 260 }} /></Form.Item></Space>
-        <Form.Item label="Số tiền (VND/tháng)" name="amount" rules={[{ required: true, message: 'Nhập số tiền' }]}><VnNumberInput scale={0} aria-label="Số tiền phụ cấp" /></Form.Item>
-        <Space wrap><Form.Item name="taxable" valuePropName="checked" noStyle><Checkbox>Chịu thuế TNCN</Checkbox></Form.Item><Form.Item name="siBase" valuePropName="checked" noStyle><Checkbox>Tính vào lương đóng bảo hiểm</Checkbox></Form.Item></Space>
-        <Space wrap style={{ marginTop: 12 }}><Form.Item label="Hiệu lực từ ngày" name="validFrom"><DatePicker format="DD/MM/YYYY" /></Form.Item><Form.Item label="Đến ngày" name="validTo"><DatePicker format="DD/MM/YYYY" /></Form.Item></Space>
-      </RowDialog>
+        <RowDialog open={aEdit !== null} title={aEdit === 'new' ? 'Thêm phụ cấp' : 'Sửa phụ cấp'} form={aForm} formName="allowance" onClose={() => setAEdit(null)} onSave={async (v) => {
+          const body = { code: v.code.trim(), name: v.name.trim(), amount: v.amount, taxable: !!v.taxable, siBase: !!v.siBase, validFrom: dateRule(v.validFrom), validTo: dateRule(v.validTo) };
+          await (aEdit === 'new' || aEdit === null ? api(`${P}/${employeeId}/allowances`, { method: 'POST', json: body }) : api(`${P}/${employeeId}/allowances/${aEdit.id}`, { method: 'PUT', json: body }));
+          void message.success('Đã lưu phụ cấp'); refresh(); }}>
+          <Space align="start" wrap>
+            <Form.Item label="Mã phụ cấp" name="code" rules={[{ required: true, pattern: /^[a-z0-9_]+$/, message: 'Chữ thường không dấu, số, gạch dưới' }]}><Input maxLength={40} autoFocus /></Form.Item>
+            <Form.Item label="Tên phụ cấp" name="name" rules={[{ required: true, whitespace: true, message: 'Nhập tên phụ cấp' }]}><Input maxLength={200} style={{ width: 260 }} /></Form.Item></Space>
+          <Form.Item label="Số tiền (VND/tháng)" name="amount" rules={[{ required: true, message: 'Nhập số tiền' }]}><VnNumberInput scale={0} aria-label="Số tiền phụ cấp" /></Form.Item>
+          <Space wrap><Form.Item name="taxable" valuePropName="checked" noStyle><Checkbox>Chịu thuế TNCN</Checkbox></Form.Item><Form.Item name="siBase" valuePropName="checked" noStyle><Checkbox>Tính vào lương đóng bảo hiểm</Checkbox></Form.Item></Space>
+          <Space wrap style={{ marginTop: 12 }}><Form.Item label="Hiệu lực từ ngày" name="validFrom"><DatePicker format="DD/MM/YYYY" /></Form.Item><Form.Item label="Đến ngày" name="validTo"><DatePicker format="DD/MM/YYYY" /></Form.Item></Space>
+        </RowDialog>
 
-      <RowDialog open={pEdit !== null} title={pEdit === 'new' ? 'Thêm người phụ thuộc' : 'Sửa người phụ thuộc'} form={pForm} formName="dependent" onClose={() => setPEdit(null)} onSave={async (v) => {
-        const body = { name: v.name.trim(), relationship: v.relationship, taxCode: text(v.taxCode), idNumber: text(v.idNumber), birthDate: dateRule(v.birthDate), fromMonth: v.fromMonth.format('YYYY-MM'), toMonth: v.toMonth ? v.toMonth.format('YYYY-MM') : null, note: text(v.note) };
-        await (pEdit === 'new' || pEdit === null ? api(`${P}/${employeeId}/dependents`, { method: 'POST', json: body }) : api(`${P}/${employeeId}/dependents/${pEdit.id}`, { method: 'PUT', json: body }));
-        void message.success('Đã lưu người phụ thuộc'); refresh(); }}>
-        <Space align="start" wrap>
-          <Form.Item label="Họ tên" name="name" rules={[{ required: true, whitespace: true, message: 'Nhập họ tên' }]}><Input maxLength={200} style={{ width: 260 }} autoFocus /></Form.Item>
-          <Form.Item label="Quan hệ" name="relationship" rules={[{ required: true }]}><Select style={{ width: 170 }} options={Object.entries(RELATIONSHIPS).map(([value, label]) => ({ value, label }))} /></Form.Item></Space>
-        <Space align="start" wrap>
-          <Form.Item label="MST" name="taxCode"><Input maxLength={20} /></Form.Item><Form.Item label="Số CCCD" name="idNumber"><Input maxLength={20} /></Form.Item>
-          <Form.Item label="Ngày sinh" name="birthDate"><DatePicker format="DD/MM/YYYY" /></Form.Item></Space>
-        <Space align="start" wrap>
-          <Form.Item label="Từ tháng" name="fromMonth" rules={[{ required: true, message: 'Chọn từ tháng' }]}><DatePicker picker="month" format="MM/YYYY" allowClear={false} /></Form.Item>
-          <Form.Item label="Đến tháng (trống = còn hiệu lực)" name="toMonth"><DatePicker picker="month" format="MM/YYYY" /></Form.Item></Space>
-        <Form.Item label="Ghi chú" name="note"><Input maxLength={500} /></Form.Item>
-      </RowDialog>
+        <RowDialog open={pEdit !== null} title={pEdit === 'new' ? 'Thêm người phụ thuộc' : 'Sửa người phụ thuộc'} form={pForm} formName="dependent" onClose={() => setPEdit(null)} onSave={async (v) => {
+          const body = { name: v.name.trim(), relationship: v.relationship, taxCode: text(v.taxCode), idNumber: text(v.idNumber), birthDate: dateRule(v.birthDate), fromMonth: v.fromMonth.format('YYYY-MM'), toMonth: v.toMonth ? v.toMonth.format('YYYY-MM') : null, note: text(v.note) };
+          await (pEdit === 'new' || pEdit === null ? api(`${P}/${employeeId}/dependents`, { method: 'POST', json: body }) : api(`${P}/${employeeId}/dependents/${pEdit.id}`, { method: 'PUT', json: body }));
+          void message.success('Đã lưu người phụ thuộc'); refresh(); }}>
+          <Space align="start" wrap>
+            <Form.Item label="Họ tên" name="name" rules={[{ required: true, whitespace: true, message: 'Nhập họ tên' }]}><Input maxLength={200} style={{ width: 260 }} autoFocus /></Form.Item>
+            <Form.Item label="Quan hệ" name="relationship" rules={[{ required: true }]}><Select style={{ width: 170 }} options={Object.entries(RELATIONSHIPS).map(([value, label]) => ({ value, label }))} /></Form.Item></Space>
+          <Space align="start" wrap>
+            <Form.Item label="MST" name="taxCode"><Input maxLength={20} /></Form.Item><Form.Item label="Số CCCD" name="idNumber"><Input maxLength={20} /></Form.Item>
+            <Form.Item label="Ngày sinh" name="birthDate"><DatePicker format="DD/MM/YYYY" /></Form.Item></Space>
+          <Space align="start" wrap>
+            <Form.Item label="Từ tháng" name="fromMonth" rules={[{ required: true, message: 'Chọn từ tháng' }]}><DatePicker picker="month" format="MM/YYYY" allowClear={false} /></Form.Item>
+            <Form.Item label="Đến tháng (trống = còn hiệu lực)" name="toMonth"><DatePicker picker="month" format="MM/YYYY" /></Form.Item></Space>
+          <Form.Item label="Ghi chú" name="note"><Input maxLength={500} /></Form.Item>
+        </RowDialog>
 
-      <RowDialog open={sOpen} title="Thêm mức lương" form={sForm} formName="salary" onClose={() => setSOpen(false)} onSave={async (v) => {
-        await api(`${P}/${employeeId}/salary-history`, { method: 'POST', json: { validFrom: iso(v.validFrom), monthlySalary: v.monthlySalary, note: text(v.note) } });
-        void message.success('Đã thêm mức lương'); refresh(); }}>
-        <Form.Item label="Hiệu lực từ ngày" name="validFrom" rules={[{ required: true, message: 'Chọn ngày hiệu lực' }]}><DatePicker format="DD/MM/YYYY" allowClear={false} /></Form.Item>
-        <Form.Item label="Lương cơ bản (VND/tháng)" name="monthlySalary" rules={[{ required: true, message: 'Nhập lương cơ bản' }]}><VnNumberInput scale={0} aria-label="Lương cơ bản" /></Form.Item>
-        <Form.Item label="Ghi chú" name="note"><Input maxLength={500} /></Form.Item>
-      </RowDialog>
-    </div>);
+        <RowDialog open={sOpen} title="Thêm mức lương" form={sForm} formName="salary" onClose={() => setSOpen(false)} onSave={async (v) => {
+          await api(`${P}/${employeeId}/salary-history`, { method: 'POST', json: { validFrom: iso(v.validFrom), monthlySalary: v.monthlySalary, note: text(v.note) } });
+          void message.success('Đã thêm mức lương'); refresh(); }}>
+          <Form.Item label="Hiệu lực từ ngày" name="validFrom" rules={[{ required: true, message: 'Chọn ngày hiệu lực' }]}><DatePicker format="DD/MM/YYYY" allowClear={false} /></Form.Item>
+          <Form.Item label="Lương cơ bản (VND/tháng)" name="monthlySalary" rules={[{ required: true, message: 'Nhập lương cơ bản' }]}><VnNumberInput scale={0} aria-label="Lương cơ bản" /></Form.Item>
+          <Form.Item label="Ghi chú" name="note"><Input maxLength={500} /></Form.Item>
+        </RowDialog>
+      </div>
+    </Section>);
 }
 
 interface ImportResult { total: number; inserted: number; allowances?: number; dependents?: number; errors: { row: number; column: string; message: string }[]; errorCount?: number }
@@ -264,7 +273,16 @@ export default function PayrollProfilesPage() {
   const qc = useQueryClient();
   const list = useQuery({ queryKey: ['payroll-profiles', q], enabled: allowed, queryFn: () => api<ListRow[]>(`${P}?size=500&q=${encodeURIComponent(q)}`) });
   const rows = useMemo(() => list.data ?? [], [list.data]);
-  if (!allowed) return <Alert type="warning" showIcon message="Không có quyền xem lương" description="Hồ sơ lương cần quyền xem lương của người quản trị." />;
+
+  if (!allowed) {
+    return (
+      <>
+        <PageHeader title="Hồ sơ lương" description="Thông tin tính lương, người phụ thuộc, lịch sử lương và phân bổ chi phí của nhân viên" />
+        <Alert type="warning" showIcon message="Không có quyền xem lương" description="Hồ sơ lương cần quyền xem lương của người quản trị." />
+      </>
+    );
+  }
+
   const move = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     e.preventDefault();
@@ -272,28 +290,35 @@ export default function PayrollProfilesPage() {
     if (n) { setSel(n.employeeId); (document.querySelector(`[data-employee="${n.employeeId}"]`) as HTMLElement | null)?.focus(); }
   };
   return (
-    <div>
-      <h2 style={{ marginTop: 0 }}>Hồ sơ lương</h2>
+    <>
+      <PageHeader
+        title="Hồ sơ lương"
+        description="Thông tin tính lương, người phụ thuộc, lịch sử lương và phân bổ chi phí của nhân viên"
+        extra={can('payroll.update') && <Button onClick={() => setImporting(true)}>Nhập Excel hồ sơ lương</Button>}
+      />
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-        <div style={{ width: 300, flexShrink: 0 }}>
+        <Section title="Danh sách nhân viên" style={{ width: 320, flexShrink: 0 }}>
           <Space direction="vertical" style={{ width: '100%' }}>
             <Input.Search placeholder="Tìm theo mã, tên nhân viên" allowClear onSearch={setQ} aria-label="Tìm nhân viên" />
-            {can('payroll.update') && <Button block onClick={() => setImporting(true)}>Nhập Excel hồ sơ lương</Button>}
-            <ul role="listbox" aria-label="Nhân viên" onKeyDown={move} data-testid="employee-list" style={{ listStyle: 'none', margin: 0, padding: 0, maxHeight: '70vh', overflow: 'auto', border: '1px solid #f0f0f0' }}>
+            <ul role="listbox" aria-label="Nhân viên" onKeyDown={move} data-testid="employee-list" style={{ listStyle: 'none', margin: 0, padding: 0, maxHeight: 'calc(100vh - 280px)', overflow: 'auto', border: `1px solid ${COLOR.border}`, borderRadius: 4 }}>
               {rows.map((r) => (
                 <li key={r.employeeId} role="option" aria-selected={sel === r.employeeId} tabIndex={0} data-employee={r.employeeId} onClick={() => setSel(r.employeeId)} onKeyDown={(e) => { if (e.key === 'Enter') setSel(r.employeeId); }}
-                  style={{ padding: '6px 10px', cursor: 'pointer', background: sel === r.employeeId ? '#e6f4ff' : undefined, borderBottom: '1px solid #f5f5f5', opacity: r.isActive ? 1 : 0.55 }}>
-                  <b>{r.code}</b> - {r.name}<br /><small>{r.hasProfile ? (r.currentSalary ? `Lương ${money(r.currentSalary)}` : 'Có hồ sơ, chưa có mức lương') : <span style={{ color: '#d46b08' }}>Chưa có hồ sơ lương</span>}</small>
+                  style={{ padding: '6px 10px', cursor: 'pointer', background: sel === r.employeeId ? 'rgba(22, 119, 255, 0.08)' : undefined, borderBottom: `1px solid ${COLOR.border}`, opacity: r.isActive ? 1 : 0.55 }}>
+                  <b>{r.code}</b> - {r.name}<br /><small>{r.hasProfile ? (r.currentSalary ? `Lương ${money(r.currentSalary)}` : 'Có hồ sơ, chưa có mức lương') : <Tag color="orange" style={{ margin: 0, fontSize: 11, lineHeight: '18px' }}>Chưa có hồ sơ lương</Tag>}</small>
                 </li>))}
-              {!rows.length && !list.isLoading && <li style={{ padding: 12 }}><Empty description="Không có nhân viên" image={Empty.PRESENTED_IMAGE_SIMPLE} /></li>}
+              {!rows.length && !list.isLoading && <li style={{ padding: 12 }}><EmptyState title="Không có nhân viên" /></li>}
             </ul>
           </Space>
-        </div>
+        </Section>
         <div style={{ flex: 1, minWidth: 0 }}>
           {list.error && <Alert type="error" showIcon message={(list.error as Error).message} style={{ marginBottom: 8 }} />}
-          {sel === null ? <Empty description="Chọn nhân viên ở bên trái để xem hồ sơ lương" /> : <Editor key={sel} employeeId={sel} />}
+          {sel === null ? (
+            <Section title="Chi tiết hồ sơ lương">
+              <EmptyState title="Chọn nhân viên ở bên trái để xem hồ sơ lương" />
+            </Section>
+          ) : <Editor key={sel} employeeId={sel} />}
         </div>
       </div>
       <ImportDialog open={importing} onClose={() => setImporting(false)} onDone={() => void qc.invalidateQueries({ queryKey: ['payroll-profiles'] })} />
-    </div>);
+    </>);
 }

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColDef, GridApi } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { ATTENDANCE_KIND_LABEL, D, checkAttendanceDay, formatAttendanceCell, parseAttendanceCell, workDays, type AttendanceItem, type AttendanceKind } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useRememberedFilter, useUnsavedChanges } from '@kt/ui';
+import { COLOR, KeyboardGrid, LookupSelect, PageHeader, Toolbar, useRememberedFilter, useUnsavedChanges } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -186,24 +186,33 @@ export default function AttendancePage() {
   const change = (patch: Partial<typeof f>) => confirmIfDirty(() => setF({ ...f, ...patch }));
 
   return (
-    <div>
-      <Space wrap style={{ marginBottom: 12 }} align="center">
-        <h2 style={{ margin: 0 }}>Bảng chấm công</h2>
-        <DatePicker picker="month" format="MM/YYYY" allowClear={false} value={dayjs(`${f.year}-${String(f.month).padStart(2, '0')}-01`)} aria-label="Tháng chấm công"
-          onChange={(v) => { if (v) change({ year: v.year(), month: v.month() + 1 }); }} />
-        <LookupSelect catalog="department" value={f.departmentCode} allowClear placeholder="Tất cả bộ phận" style={{ width: 220 }} aria-label="Bộ phận"
-          onChange={(code, row) => change({ departmentCode: code, departmentId: row ? Number(row.id) : null })} />
-        {canEdit && <Button type="primary" loading={save.isPending} disabled={!dirty} onClick={() => saveRef.current()}>Lưu (Ctrl+S)</Button>}
-        {canEdit && <Button loading={copy.isPending} onClick={() => confirmIfDirty(() => copy.mutate())}>Sao chép từ tháng trước</Button>}
-        {canEdit && <Button onClick={() => confirmIfDirty(() => setImporting(true))}>Nhập Excel</Button>}
-        <Popover title="Mã chấm công" trigger="click" content={<table><tbody>{LEGEND.map(([k, v]) => <tr key={k}><td style={{ paddingRight: 12 }}><b>{k}</b></td><td>{v}</td></tr>)}</tbody></table>}><Button>Bảng mã</Button></Popover>
-      </Space>
+    <>
+      <PageHeader
+        title="Bảng chấm công"
+        description="Chấm công theo ngày cho nhân viên, quy đổi ngày công và giờ làm thêm"
+        extra={
+          <>
+            {canEdit && <Button type="primary" loading={save.isPending} disabled={!dirty} onClick={() => saveRef.current()}>Lưu (Ctrl+S)</Button>}
+            {canEdit && <Button loading={copy.isPending} onClick={() => confirmIfDirty(() => copy.mutate())}>Sao chép từ tháng trước</Button>}
+            {canEdit && <Button onClick={() => confirmIfDirty(() => setImporting(true))}>Nhập Excel</Button>}
+            <Popover title="Mã chấm công" trigger="click" content={<table><tbody>{LEGEND.map(([k, v]) => <tr key={k}><td style={{ paddingRight: 12 }}><b>{k}</b></td><td>{v}</td></tr>)}</tbody></table>}><Button>Bảng mã</Button></Popover>
+          </>
+        }
+      >
+        <Toolbar>
+          <DatePicker picker="month" format="MM/YYYY" allowClear={false} value={dayjs(`${f.year}-${String(f.month).padStart(2, '0')}-01`)} aria-label="Tháng chấm công"
+            onChange={(v) => { if (v) change({ year: v.year(), month: v.month() + 1 }); }} />
+          <LookupSelect catalog="department" value={f.departmentCode} allowClear placeholder="Tất cả bộ phận" style={{ width: 220 }} aria-label="Bộ phận"
+            onChange={(code, row) => change({ departmentCode: code, departmentId: row ? Number(row.id) : null })} />
+          {data?.employees.length ? <span style={{ color: COLOR.textSecondary, marginLeft: 'auto' }}>{data.employees.length} nhân viên</span> : null}
+        </Toolbar>
+      </PageHeader>
       {hoursMissing && <Alert style={{ marginBottom: 8 }} type="info" showIcon message="Chưa khai số giờ làm việc chuẩn mỗi ngày (Cài đặt công ty > Tùy chọn hệ thống): chưa chấm công theo giờ được." />}
       {grid.error && <Alert style={{ marginBottom: 8 }} type="error" showIcon message={(grid.error as Error).message} />}
       {warnings.length > 0 && <Alert style={{ marginBottom: 8 }} type="warning" showIcon message={`Cảnh báo chấm công (${warnings.length})`} description={<ul style={{ margin: 0, paddingLeft: 18 }}>{warnings.slice(0, 8).map((m) => <li key={m}>{m}</li>)}</ul>} />}
       <div data-testid="attendance-grid">
-        <KeyboardGrid<Row> rows={rows} columns={columns} readOnly={!canEdit} lockRows animateRows={false} onRowsChange={onRowsChange} addRowTemplate={() => ({} as Row)} height="calc(100vh - 260px)" onGridApi={(a) => { gridApi.current = a; }} />
+        <KeyboardGrid<Row> rows={rows} columns={columns} readOnly={!canEdit} lockRows animateRows={false} onRowsChange={onRowsChange} addRowTemplate={() => ({} as Row)} height="calc(100vh - 220px)" onGridApi={(a) => { gridApi.current = a; }} />
       </div>
       <ImportDialog open={importing} year={f.year} month={f.month} departmentId={f.departmentId} onClose={() => setImporting(false)} onDone={() => void qc.invalidateQueries({ queryKey: ['attendance'] })} />
-    </div>);
+    </>);
 }

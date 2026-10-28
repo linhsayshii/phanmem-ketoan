@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Button, DatePicker, Input, Modal, Popconfirm, Radio, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import { COLOR, PageHeader, Section } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { NO_SALARY, PayrollErrorAlert } from './payrollUi.js';
@@ -72,7 +73,7 @@ function FormatDialog({ target, onClose }: { target: Fmt | null; onClose: () => 
               {pv.sample && <Tag color="orange">Dữ liệu minh họa, không phải nhân viên thật</Tag>}
               {pv.warnings.length > 0 && <Alert type="warning" showIcon style={{ marginBottom: 8 }} message={`${pv.warnings.length} nhân viên không vào tệp`} description={<ul style={{ margin: 0, paddingLeft: 18 }}>{pv.warnings.map((w) => <li key={w.message}>{w.message}</li>)}</ul>} />}
               <div style={{ overflowX: 'auto' }}><table style={{ borderCollapse: 'collapse', minWidth: '100%' }}><tbody>
-                {pv.rows.map((r, i) => (<tr key={i}>{r.map((c, j) => <td key={j} style={{ border: '1px solid #ddd', padding: '2px 8px', fontWeight: f.hasHeader && i === 0 ? 600 : 400, whiteSpace: 'nowrap' }}>{c}</td>)}</tr>))}
+                {pv.rows.map((r, i) => (<tr key={i}>{r.map((c, j) => <td key={j} style={{ border: `1px solid ${COLOR.border}`, padding: '2px 8px', fontWeight: f.hasHeader && i === 0 ? 600 : 400, whiteSpace: 'nowrap' }}>{c}</td>)}</tr>))}
               </tbody></table></div>
               <div>Tệp có {pv.recipientCount} người; hiển thị tối đa 5 dòng đầu.</div>
             </div>)}
@@ -91,26 +92,34 @@ function Formats() {
     onError: (e) => void message.error((e as Error).message), onSuccess: () => { void message.success('Đã xóa mẫu tệp'); void qc.invalidateQueries({ queryKey: ['payroll-payment-formats'] }); },
   });
   return (
-    <div>
-      <Space wrap align="center" style={{ marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>Mẫu tệp chi lương</h2>
-        {can('payroll.export') && <Button type="primary" onClick={() => setDlg(NEW)}>Thêm mẫu</Button>}
-      </Space>
+    <>
+      <PageHeader
+        title="Mẫu tệp chi lương"
+        description="Cấu hình định dạng tệp chi lương chuyển khoản theo mẫu của ngân hàng"
+        extra={can('payroll.export') && <Button type="primary" onClick={() => setDlg(NEW)}>Thêm mẫu</Button>}
+      />
       <Alert style={{ marginBottom: 12 }} type="info" showIcon data-testid="formats-banner" message="Chưa có mẫu tệp theo từng ngân hàng."
         description="Mỗi ngân hàng có mẫu nhập chi hộ riêng. Khai cột theo đúng thứ tự và tiêu đề trong mẫu ngân hàng cấp cho công ty, xem thử rồi lưu. Mẫu Chung chỉ là bố cục tham khảo, không thuộc ngân hàng nào." />
       <PayrollErrorAlert error={list.error} />
-      <Table<Fmt & { id: number }> size="small" rowKey="id" pagination={false} dataSource={list.data ?? []} loading={list.isLoading} data-testid="format-list"
-        columns={[
-          { title: 'Tên mẫu', dataIndex: 'name' }, { title: 'Loại tệp', dataIndex: 'fileType', width: 100, render: (t: string) => (t === 'xlsx' ? 'Excel' : 'CSV') },
-          { title: 'Các cột', render: (_, r) => r.columns.map((c) => c.header || fieldLabel(c.field)).join(' | ') },
-          ...(can('payroll.export') ? [{ title: '', width: 120, render: (_: unknown, r: Fmt & { id: number }) => (<Space><a onClick={() => setDlg(r)}>Sửa</a>
-            <Popconfirm title="Xóa mẫu tệp này?" description="Mẫu đã dùng để xuất tệp thì không xóa được." okText="Xóa" cancelText="Không" onConfirm={() => del.mutate(r.id)}><a>Xóa</a></Popconfirm></Space>) }] : []),
-        ]} />
+      <Section bodyPadding={0}>
+        <Table<Fmt & { id: number }> size="small" rowKey="id" pagination={false} dataSource={list.data ?? []} loading={list.isLoading} data-testid="format-list"
+          columns={[
+            { title: 'Tên mẫu', dataIndex: 'name' }, { title: 'Loại tệp', dataIndex: 'fileType', width: 100, render: (t: string) => (t === 'xlsx' ? 'Excel' : 'CSV') },
+            { title: 'Các cột', render: (_, r) => r.columns.map((c) => c.header || fieldLabel(c.field)).join(' | ') },
+            ...(can('payroll.export') ? [{ title: '', width: 120, render: (_: unknown, r: Fmt & { id: number }) => (<Space><a onClick={() => setDlg(r)}>Sửa</a>
+              <Popconfirm title="Xóa mẫu tệp này?" description="Mẫu đã dùng để xuất tệp thì không xóa được." okText="Xóa" cancelText="Không" onConfirm={() => del.mutate(r.id)}><a>Xóa</a></Popconfirm></Space>) }] : []),
+          ]} />
+      </Section>
       <FormatDialog target={dlg} onClose={() => setDlg(null)} />
-    </div>);
+    </>);
 }
 
 export default function PayrollPaymentFormatsPage() {
   const { me } = useAuth();
-  return me?.sensitive.includes('view_salary') ? <Formats /> : NO_SALARY;
+  return me?.sensitive.includes('view_salary') ? <Formats /> : (
+    <>
+      <PageHeader title="Mẫu tệp chi lương" description="Cấu hình định dạng tệp chi lương chuyển khoản theo mẫu của ngân hàng" />
+      {NO_SALARY}
+    </>
+  );
 }

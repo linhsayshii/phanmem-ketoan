@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber } from '@kt/domain';
-import { KeyboardGrid, useRememberedFilter } from '@kt/ui';
+import { KeyboardGrid, PageHeader, Section, Toolbar, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { NO_SALARY, PayrollErrorAlert } from './payrollUi.js';
@@ -52,51 +52,70 @@ export default function TncnReturnsPage() {
 
   const d = data.data;
   const total = useMemo<Row[]>(() => (d ? [{ name: 'Cộng', ...d.totals }] : []), [d]);
-  if (!me?.sensitive.includes('view_salary')) return NO_SALARY;
+  if (!me?.sensitive.includes('view_salary')) {
+    return (
+      <>
+        <PageHeader title="Thuế thu nhập cá nhân" description="Bảng kê khấu trừ theo quý, theo tháng và quyết toán thuế TNCN năm" />
+        {NO_SALARY}
+      </>
+    );
+  }
   const open = (u: string) => window.open(u, '_blank');
   const settle = f.kind === 'settlement';
 
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Thuế thu nhập cá nhân</h2>
-        <InputNumber aria-label="Năm" addonBefore="Năm" min={2000} max={2100} value={f.year} onChange={(v) => setF({ ...f, year: v ?? f.year })} style={{ width: 130 }} />
-        <Select aria-label="Loại kỳ" value={f.kind} style={{ width: 190 }} onChange={(kind) => setF({ ...f, kind })}
-          options={[{ value: 'quarter', label: 'Khấu trừ theo quý' }, { value: 'month', label: 'Khấu trừ theo tháng' }, { value: 'settlement', label: 'Quyết toán năm' }]} />
-        {f.kind === 'quarter' && <Select aria-label="Quý" value={f.quarter} style={{ width: 90 }} onChange={(quarter) => setF({ ...f, quarter })} options={[1, 2, 3, 4].map((q) => ({ value: q, label: `Quý ${q}` }))} />}
-        {f.kind === 'month' && <Select aria-label="Tháng" value={f.month} style={{ width: 100 }} onChange={(month) => setF({ ...f, month })} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `Tháng ${i + 1}` }))} />}
-        {can('payroll.export') && <Button onClick={() => open(`${url}&format=xlsx`)}>Xuất bảng kê Excel</Button>}
-        <Button onClick={() => open(`${url}&format=html`)}>In bảng kê</Button>
-        <Button onClick={() => open(`/api/tncn/certificates?year=${f.year}&format=html`)}>In chứng từ khấu trừ năm {f.year}</Button>
-        {can('tax_return.create') && <Button type="primary" loading={create.isPending} onClick={() => create.mutate()}>Lập tờ khai {FORM[f.kind]}</Button>}
-      </Space>
-      <Alert type="warning" showIcon message="Chưa có mẫu tờ khai theo TT 89/2026: xuất bảng kê Excel"
+    <>
+      <PageHeader
+        title="Thuế thu nhập cá nhân"
+        description="Bảng kê khấu trừ theo quý, theo tháng và quyết toán thuế TNCN năm"
+        extra={
+          <>
+            {can('payroll.export') && <Button onClick={() => open(`${url}&format=xlsx`)}>Xuất bảng kê Excel</Button>}
+            <Button onClick={() => open(`${url}&format=html`)}>In bảng kê</Button>
+            <Button onClick={() => open(`/api/tncn/certificates?year=${f.year}&format=html`)}>In chứng từ khấu trừ năm {f.year}</Button>
+            {can('tax_return.create') && <Button type="primary" loading={create.isPending} onClick={() => create.mutate()}>Lập tờ khai {FORM[f.kind]}</Button>}
+          </>
+        }
+      >
+        <Toolbar>
+          <InputNumber aria-label="Năm" addonBefore="Năm" min={2000} max={2100} value={f.year} onChange={(v) => setF({ ...f, year: v ?? f.year })} style={{ width: 130 }} />
+          <Select aria-label="Loại kỳ" value={f.kind} style={{ width: 190 }} onChange={(kind) => setF({ ...f, kind })}
+            options={[{ value: 'quarter', label: 'Khấu trừ theo quý' }, { value: 'month', label: 'Khấu trừ theo tháng' }, { value: 'settlement', label: 'Quyết toán năm' }]} />
+          {f.kind === 'quarter' && <Select aria-label="Quý" value={f.quarter} style={{ width: 90 }} onChange={(quarter) => setF({ ...f, quarter })} options={[1, 2, 3, 4].map((q) => ({ value: q, label: `Quý ${q}` }))} />}
+          {f.kind === 'month' && <Select aria-label="Tháng" value={f.month} style={{ width: 100 }} onChange={(month) => setF({ ...f, month })} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `Tháng ${i + 1}` }))} />}
+        </Toolbar>
+      </PageHeader>
+      <Alert style={{ marginBottom: 12 }} type="warning" showIcon message="Chưa có mẫu tờ khai theo TT 89/2026: xuất bảng kê Excel"
         description="Mẫu 05/KK-TNCN, 05/QTT-TNCN (TT 89/2026 Phụ lục I) chưa được nhập từ văn bản gốc. Tờ khai lưu và chốt bảng kê số liệu nguồn; chưa xuất XML, chưa ký số. Chứng từ khấu trừ in bản tổng hợp không có mẫu số, ký hiệu." />
       <PayrollErrorAlert error={err} onClose={() => setErr(null)} />
       {data.error ? <PayrollErrorAlert error={data.error} /> : !d ? <Alert type="info" message="Đang tải…" /> : <>
-        {[...d.intro, ...d.warnings].map((t) => <Alert key={t} type="warning" showIcon message={t} />)}
-        <div data-testid="tncn-summary">
+        {[...d.intro, ...d.warnings].map((t) => <Alert key={t} type="warning" showIcon style={{ marginBottom: 8 }} message={t} />)}
+        <div data-testid="tncn-summary" style={{ marginBottom: 8 }}>
           {settle ? <Space wrap><Tag>{d.totals.settled} người quyết toán thay</Tag><Tag>{d.totals.excluded} người tự quyết toán</Tag>
             <Tag color="red">Còn phải nộp {formatVnNumber(String(d.totals.payable), 0)}</Tag><Tag color="green">Nộp thừa {formatVnNumber(String(d.totals.refund), 0)}</Tag></Space>
             : <Space wrap><Tag>{d.totals.persons} người có thu nhập từ tiền lương, tiền công</Tag><Tag color="blue">Thuế khấu trừ từ lương {formatVnNumber(String(d.totals.pit), 0)}</Tag>
               {d.others?.length ? <Tag color="blue">Khấu trừ ngoài lương {formatVnNumber(String(d.totals.othersPit), 0)}</Tag> : null}<Tag color="geekblue">Cộng {formatVnNumber(String(d.totals.totalPit), 0)}</Tag></Space>}
         </div>
         <KeyboardGrid<Row> rows={d.rows} pinnedBottomRows={total} columns={settle ? SETTLEMENT : WITHHOLDING} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly lockRows animateRows={false} height="max(360px, calc(100vh - 460px))" />
-        {!!d.others?.length && <Table size="small" rowKey={(r) => String(r.partyCode)} pagination={false} title={() => 'Thuế TNCN khấu trừ ngoài lương (hóa đơn mua dịch vụ của cá nhân)'} dataSource={d.others}
+        {!!d.others?.length && <Table size="small" rowKey={(r) => String(r.partyCode)} pagination={false} title={() => 'Thuế TNCN khấu trừ ngoài lương (hóa đơn mua dịch vụ của cá nhân)'} dataSource={d.others} style={{ marginTop: 12 }}
           columns={[{ dataIndex: 'partyCode', title: 'Mã đối tượng', width: 140 }, { dataIndex: 'partyName', title: 'Tên cá nhân' }, { dataIndex: 'taxCode', title: 'Mã số thuế', width: 140 },
             { dataIndex: 'pit', title: 'Thuế đã khấu trừ', align: 'right', width: 160, render: (v: string) => formatVnNumber(v, 0) }]} />}
       </>}
-      {canReturns && <Table<Ret> data-testid="tncn-returns" size="small" rowKey="id" pagination={false} title={() => `Tờ khai thuế TNCN năm ${f.year}`} loading={returns.isLoading} dataSource={returns.data ?? []}
-        locale={{ emptyText: 'Chưa lập tờ khai nào' }}
-        columns={[{ dataIndex: 'formCode', title: 'Tờ khai', width: 130 }, { title: 'Kỳ', width: 120, render: (_, r) => periodText(r) },
-          { title: 'Lần', width: 110, render: (_, r) => (r.revision ? `Bổ sung lần ${r.revision}` : 'Lần đầu') },
-          { title: 'Trạng thái', width: 160, render: (_, r) => (r.status === 'final' ? <Tag color="green">Đã chốt {r.finalizedAt ? formatVnDate(r.finalizedAt.slice(0, 10)) : ''}</Tag> : <Tag>Nháp</Tag>) },
-          { title: 'Số thuế', align: 'right', width: 160, render: (_, r) => formatVnNumber(r.values.totals.totalPit ?? r.values.totals.pitDue ?? '0', 0) },
-          { title: '', render: (_, r) => r.status === 'draft' && <Space>
-            {can('tax_return.update') && <Button size="small" onClick={() => act.mutate({ id: r.id, op: 'refresh' })}>Tính lại</Button>}
-            {can('tax_return.finalize') && <Popconfirm title="Chốt tờ khai? Sau khi chốt chỉ lập được tờ khai bổ sung." okText="Chốt" cancelText="Không" onConfirm={() => act.mutate({ id: r.id, op: 'finalize' })}><Button size="small" type="primary">Chốt</Button></Popconfirm>}
-            {can('tax_return.delete') && <Popconfirm title="Xóa tờ khai nháp?" okText="Xóa" cancelText="Không" onConfirm={() => act.mutate({ id: r.id, op: 'delete' })}><Button size="small" danger>Xóa</Button></Popconfirm>}
-          </Space> }]} />}
-    </Space>
+      {canReturns && (
+        <Section title={`Tờ khai thuế TNCN năm ${f.year}`} bodyPadding={0} style={{ marginTop: 12 }}>
+          <Table<Ret> data-testid="tncn-returns" size="small" rowKey="id" pagination={false} loading={returns.isLoading} dataSource={returns.data ?? []}
+            locale={{ emptyText: 'Chưa lập tờ khai nào' }}
+            columns={[{ dataIndex: 'formCode', title: 'Tờ khai', width: 130 }, { title: 'Kỳ', width: 120, render: (_, r) => periodText(r) },
+              { title: 'Lần', width: 110, render: (_, r) => (r.revision ? `Bổ sung lần ${r.revision}` : 'Lần đầu') },
+              { title: 'Trạng thái', width: 160, render: (_, r) => (r.status === 'final' ? <Tag color="green">Đã chốt {r.finalizedAt ? formatVnDate(r.finalizedAt.slice(0, 10)) : ''}</Tag> : <Tag>Nháp</Tag>) },
+              { title: 'Số thuế', align: 'right', width: 160, render: (_, r) => formatVnNumber(r.values.totals.totalPit ?? r.values.totals.pitDue ?? '0', 0) },
+              { title: '', render: (_, r) => r.status === 'draft' && <Space>
+                {can('tax_return.update') && <Button size="small" onClick={() => act.mutate({ id: r.id, op: 'refresh' })}>Tính lại</Button>}
+                {can('tax_return.finalize') && <Popconfirm title="Chốt tờ khai? Sau khi chốt chỉ lập được tờ khai bổ sung." okText="Chốt" cancelText="Không" onConfirm={() => act.mutate({ id: r.id, op: 'finalize' })}><Button size="small" type="primary">Chốt</Button></Popconfirm>}
+                {can('tax_return.delete') && <Popconfirm title="Xóa tờ khai nháp?" okText="Xóa" cancelText="Không" onConfirm={() => act.mutate({ id: r.id, op: 'delete' })}><Button size="small" danger>Xóa</Button></Popconfirm>}
+              </Space> }]} />
+        </Section>
+      )}
+    </>
   );
 }

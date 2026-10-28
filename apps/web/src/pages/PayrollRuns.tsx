@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColDef, GridApi, NewValueParams } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnNumber, type PayrollColumn } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useRememberedFilter } from '@kt/ui';
+import { COLOR, EmptyState, KeyboardGrid, LookupSelect, PageHeader, Section, Toolbar, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { bankAccountFetcher } from '../lookups.js';
 import { useAuth } from '../auth.js';
@@ -208,15 +208,22 @@ function RunView({ id, onGone }: { id: number; onGone: () => void }) {
   const lineWarnings = rows.filter((r) => r.warnings.length);
 
   return (
-    <div data-testid="run-detail">
-      <Space wrap align="center" style={{ marginBottom: 8 }}>
-        <h3 style={{ margin: 0 }}>{run.name}</h3>
-        <Tag color={st.color} data-testid="run-status">{st.label}</Tag>
-        {run.stale && <Tag color="orange" data-testid="run-stale">Cần tính lại</Tag>}
-        <span>{RUN_KIND[run.kind] ?? run.kind} · Kỳ {monthText(run.year, run.month)} · {run.structureName} · {run.employeeCount} nhân viên{run.departmentName ? ` · ${run.departmentName}` : ''}
-          {run.calculatedAt ? ` · Tính lúc ${dayjs(run.calculatedAt).format('DD/MM/YYYY HH:mm')}` : ''}</span>
-      </Space>
-      <Space wrap style={{ marginBottom: 8 }}>
+    <Section
+      testId="run-detail"
+      title={
+        <Space wrap align="center">
+          <span>{run.name}</span>
+          <Tag color={st.color} data-testid="run-status">{st.label}</Tag>
+          {run.stale && <Tag color="orange" data-testid="run-stale">Cần tính lại</Tag>}
+          <span style={{ fontSize: 13, fontWeight: 400, color: COLOR.textSecondary }}>
+            {RUN_KIND[run.kind] ?? run.kind} · Kỳ {monthText(run.year, run.month)} · {run.structureName} · {run.employeeCount} nhân viên{run.departmentName ? ` · ${run.departmentName}` : ''}
+            {run.calculatedAt ? ` · Tính lúc ${dayjs(run.calculatedAt).format('DD/MM/YYYY HH:mm')}` : ''}
+          </span>
+        </Space>
+      }
+      style={{ marginBottom: 12 }}
+    >
+      <Space wrap style={{ marginBottom: 12 }}>
         {can('payroll.update') && open && <Button type="primary" loading={calc.isPending} onClick={() => calcRef.current()}>{run.status === 'draft' ? 'Tính (F9)' : 'Tính lại (F9)'}</Button>}
         {can('payroll.update') && open && <Button onClick={() => setImporting(true)}>Nhập từ Excel</Button>}
         {can('payroll.post') && run.status === 'calculated' && <Button type="primary" disabled={run.stale} loading={postOp.isPending} onClick={() => postOp.mutate('post')}>Hạch toán</Button>}
@@ -253,8 +260,8 @@ function RunView({ id, onGone }: { id: number; onGone: () => void }) {
         <KeyboardGrid<GridRow> rows={rows} columns={columns} readOnly={!canEdit} lockRows animateRows={false} pinnedBottomRows={total} height="calc(100vh - 430px)"
           onRowsChange={(next) => setRows(next)} addRowTemplate={() => ({} as GridRow)} onGridApi={(a) => { gridApi.current = a; }} />
       </div>
-      <div style={{ marginTop: 4 }}>Chỉ cột nhập tay (nền xanh) sửa được; ô đã sửa tay có nền vàng, xóa trống ô để bỏ giá trị nhập tay. Số liệu mỗi dòng tính lại ngay sau khi sửa.</div>
-    </div>);
+      <div style={{ marginTop: 4, color: COLOR.textSecondary }}>Chỉ cột nhập tay (nền xanh) sửa được; ô đã sửa tay có nền vàng, xóa trống ô để bỏ giá trị nhập tay. Số liệu mỗi dòng tính lại ngay sau khi sửa.</div>
+    </Section>);
 }
 
 function Runs() {
@@ -266,34 +273,46 @@ function Runs() {
   const shown = (list.data ?? []).filter((r) => f.kind === 'all' || r.kind === f.kind);
   const qc = useQueryClient();
   return (
-    <div>
-      <Space wrap align="center" style={{ marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>Bảng lương</h2>
-        <DatePicker picker="month" format="MM/YYYY" allowClear={false} value={dayjs(`${f.year}-${String(f.month).padStart(2, '0')}-01`)} aria-label="Kỳ lương" onChange={(v) => { if (v) { setSel(null); setF({ ...f, year: v.year(), month: v.month() + 1 }); } }} />
-        <Select value={f.kind} style={{ width: 170 }} aria-label="Lọc loại bảng" onChange={(kind) => setF({ ...f, kind })}
-          options={[{ value: 'all', label: 'Tất cả loại bảng' }, ...Object.entries(RUN_KIND).map(([value, label]) => ({ value, label }))]} />
-        {can('payroll.create') && <Button type="primary" onClick={() => setCreating(true)}>Tạo bảng lương</Button>}
-      </Space>
+    <>
+      <PageHeader
+        title="Bảng lương"
+        description="Tính lương, hạch toán chi phí lương và sinh chứng từ thanh toán theo kỳ"
+        extra={can('payroll.create') && <Button type="primary" onClick={() => setCreating(true)}>Tạo bảng lương</Button>}
+      >
+        <Toolbar>
+          <DatePicker picker="month" format="MM/YYYY" allowClear={false} value={dayjs(`${f.year}-${String(f.month).padStart(2, '0')}-01`)} aria-label="Kỳ lương" onChange={(v) => { if (v) { setSel(null); setF({ ...f, year: v.year(), month: v.month() + 1 }); } }} />
+          <Select value={f.kind} style={{ width: 170 }} aria-label="Lọc loại bảng" onChange={(kind) => setF({ ...f, kind })}
+            options={[{ value: 'all', label: 'Tất cả loại bảng' }, ...Object.entries(RUN_KIND).map(([value, label]) => ({ value, label }))]} />
+          {shown.length > 0 && <span style={{ color: COLOR.textSecondary, marginLeft: 'auto' }}>{shown.length} bảng lương</span>}
+        </Toolbar>
+      </PageHeader>
       {list.error && <PayrollErrorAlert error={list.error} />}
-      <Table<RunSummary> size="small" rowKey="id" pagination={false} dataSource={shown} loading={list.isLoading} data-testid="run-list" scroll={{ y: 150 }} style={{ marginBottom: 12 }}
-        locale={{ emptyText: `Chưa có bảng lương tháng ${monthText(f.year, f.month)}` }}
-        rowClassName={(r) => (r.id === sel ? 'ant-table-row-selected' : '')}
-        onRow={(r) => ({ onClick: () => setSel(r.id), style: { cursor: 'pointer' } })}
-        columns={[
-          { title: 'Tên bảng lương', dataIndex: 'name' }, { title: 'Loại', dataIndex: 'kind', width: 120, render: (k: string) => RUN_KIND[k] ?? k },
-          { title: 'Trạng thái', dataIndex: 'status', width: 130, render: (s: string) => <Tag color={RUN_STATUS[s]?.color ?? 'default'}>{RUN_STATUS[s]?.label ?? s}</Tag> },
-          { title: 'Số NV', dataIndex: 'employeeCount', width: 80, align: 'right' },
-          { title: 'Tổng thu nhập', width: 150, align: 'right', render: (_, r) => money(r.totals.gross) }, { title: 'Thực lĩnh', width: 150, align: 'right', render: (_, r) => money(r.totals.net) },
-          { title: 'Tính lúc', dataIndex: 'calculatedAt', width: 150, render: (v: string | null) => (v ? dayjs(v).format('DD/MM/YYYY HH:mm') : '') },
-        ]} />
-      {sel !== null ? <RunView key={sel} id={sel} onGone={() => setSel(null)} /> : <div>Chọn một bảng lương ở trên hoặc tạo bảng mới.</div>}
+      <Section title={`Danh sách bảng lương tháng ${monthText(f.year, f.month)}`} bodyPadding={0} style={{ marginBottom: 12 }}>
+        <Table<RunSummary> size="small" rowKey="id" pagination={false} dataSource={shown} loading={list.isLoading} data-testid="run-list" scroll={{ y: 150 }}
+          locale={{ emptyText: `Chưa có bảng lương tháng ${monthText(f.year, f.month)}` }}
+          rowClassName={(r) => (r.id === sel ? 'ant-table-row-selected' : '')}
+          onRow={(r) => ({ onClick: () => setSel(r.id), style: { cursor: 'pointer' } })}
+          columns={[
+            { title: 'Tên bảng lương', dataIndex: 'name' }, { title: 'Loại', dataIndex: 'kind', width: 120, render: (k: string) => RUN_KIND[k] ?? k },
+            { title: 'Trạng thái', dataIndex: 'status', width: 130, render: (s: string) => <Tag color={RUN_STATUS[s]?.color ?? 'default'}>{RUN_STATUS[s]?.label ?? s}</Tag> },
+            { title: 'Số NV', dataIndex: 'employeeCount', width: 80, align: 'right' },
+            { title: 'Tổng thu nhập', width: 150, align: 'right', render: (_, r) => money(r.totals.gross) }, { title: 'Thực lĩnh', width: 150, align: 'right', render: (_, r) => money(r.totals.net) },
+            { title: 'Tính lúc', dataIndex: 'calculatedAt', width: 150, render: (v: string | null) => (v ? dayjs(v).format('DD/MM/YYYY HH:mm') : '') },
+          ]} />
+      </Section>
+      {sel !== null ? <RunView key={sel} id={sel} onGone={() => setSel(null)} /> : <Section><EmptyState title="Chưa chọn bảng lương" description="Chọn một bảng lương ở trên để xem chi tiết hoặc bấm 'Tạo bảng lương' để lập bảng mới." /></Section>}
       <CreateDialog open={creating} year={f.year} month={f.month} onClose={() => setCreating(false)} onCreated={(r) => {
         void message.success('Đã tạo bảng lương'); qc.setQueryData(['payroll-run', r.id], r); setF({ ...f, year: r.year, month: r.month }); void qc.invalidateQueries({ queryKey: ['payroll-runs'] }); setSel(r.id);
       }} />
-    </div>);
+    </>);
 }
 
 export default function PayrollRunsPage() {
   const { me } = useAuth();
-  return me?.sensitive.includes('view_salary') ? <Runs /> : NO_SALARY;
+  return me?.sensitive.includes('view_salary') ? <Runs /> : (
+    <>
+      <PageHeader title="Bảng lương" description="Tính lương, hạch toán chi phí lương và sinh chứng từ thanh toán theo kỳ" />
+      {NO_SALARY}
+    </>
+  );
 }
