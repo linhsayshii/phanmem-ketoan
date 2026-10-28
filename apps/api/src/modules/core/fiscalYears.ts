@@ -10,7 +10,7 @@ import { copyReportTemplates } from '../reporting/financial.js';
 
 export const fiscalYearBody = z.object({
   fiscalYear: z.number().int().min(2000).max(2100), dateFrom: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-01$/, 'Ngày bắt đầu phải là ngày đầu tháng (YYYY-MM-01)'),
-  months: z.number().int().min(1).max(15).default(12), regime: z.enum(['TT99', 'TT133', 'TT200', 'TT58']),
+  months: z.number().int().min(1).max(15).default(12), regime: z.enum(['TT99', 'TT133', 'TT200', 'TT58', 'TT152']),
 });
 export type FiscalYearInput = z.infer<typeof fiscalYearBody>;
 

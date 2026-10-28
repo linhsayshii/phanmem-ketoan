@@ -5,15 +5,18 @@ import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
+import { RegimeNotice } from './Regimes.js';
 
 export const REGIMES = [
   { value: 'TT99', label: 'TT99' },
   { value: 'TT133', label: 'TT 133/2016/TT-BTC (DNNVV)' },
   { value: 'TT200', label: 'TT 200/2014/TT-BTC (dữ liệu 2025 trở về trước)' },
+  { value: 'TT58', label: 'TT 58/2026/TT-BTC (doanh nghiệp siêu nhỏ) - chờ văn bản gốc' },
+  { value: 'TT152', label: 'TT 152/2025/TT-BTC (hộ kinh doanh) - chờ văn bản gốc' },
 ];
 
 export default function CompanyWizard() {
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(0); const [regime, setRegime] = useState('TT133');
   const { refresh } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -40,7 +43,8 @@ export default function CompanyWizard() {
           <Form.Item label="Năm tài chính" name="fiscalYear" rules={[{ required: true }]}><InputNumber min={2000} max={2100} /></Form.Item>
           <Form.Item label="Ngày bắt đầu" name="dateFrom" rules={[{ required: true }]}><DatePicker format="DD/MM/YYYY" disabledDate={(d) => d.date() !== 1} /></Form.Item>
           <Form.Item label="Số tháng (năm đầu tối đa 15)" name="months" rules={[{ required: true }]}><InputNumber min={1} max={15} /></Form.Item>
-          <Form.Item label="Chế độ kế toán" name="regime" rules={[{ required: true }]}><Select options={REGIMES} /></Form.Item>
+          <Form.Item label="Chế độ kế toán" name="regime" rules={[{ required: true }]}><Select options={REGIMES} onChange={setRegime} /></Form.Item>
+          <RegimeNotice regime={regime} />
           <Button type="primary" htmlType="submit">Hoàn tất</Button>
         </Form>
       )}

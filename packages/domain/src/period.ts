@@ -1,4 +1,4 @@
-export type Regime = 'TT99' | 'TT133' | 'TT200' | 'TT58';
+export type Regime = 'TT99' | 'TT133' | 'TT200' | 'TT58' | 'TT152';
 export interface FiscalPeriodInput { fiscalYear: number; periodNo: number; dateFrom: string; dateTo: string; regime: Regime }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);

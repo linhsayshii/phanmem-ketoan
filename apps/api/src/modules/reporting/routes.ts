@@ -19,7 +19,7 @@ export const orderedMsg = { message: 'Từ ngày phải trước hoặc bằng �
 export const assertPrint = (auth: { permissions: Set<string> }) => {
   if (!auth.permissions.has('report.print')) throw new AppError('FORBIDDEN', 'Thiếu quyền report.print', 403);
 };
-const regimeEnum = z.enum(['TT99', 'TT133', 'TT200', 'TT58']);
+const regimeEnum = z.enum(['TT99', 'TT133', 'TT200', 'TT58', 'TT152']);
 const reportCode = z.enum(['B01', 'B02', 'B03']);
 const format = z.enum(['json', 'html', 'pdf', 'xlsx']).default('json');
 type PrintFormat = 'html' | 'pdf' | 'xlsx';

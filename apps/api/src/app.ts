@@ -16,6 +16,7 @@ import userRoutes from './modules/core/users.js';
 import roleRoutes from './modules/core/roles.js';
 import tenantRoutes from './modules/core/tenants.js';
 import fiscalYearRoutes from './modules/core/fiscalYears.js';
+import regimeRoutes from './modules/core/regimes.js';
 import settingRoutes from './modules/core/settings.js';
 import prefRoutes from './modules/core/prefs.js';
 import coaRoutes from './modules/coa/routes.js';
@@ -121,6 +122,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(bankRoutes);
   await app.register(bankWebhookRoutes); // công khai, có parser thân thô riêng
   await app.register(extRoutes); // khóa API (phiên) và /api/ext/v1 (Bearer kt_…, parser XML riêng)
+  await app.register(regimeRoutes); // GĐ7 nhóm 6
   app.get('/api/health', async () => ({ ok: true }));
   return app;
 }

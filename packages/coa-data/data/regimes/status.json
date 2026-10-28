@@ -1,0 +1,64 @@
+{
+  "TT58": {
+    "label": "TT 58/2026/TT-BTC (doanh nghiệp siêu nhỏ)",
+    "issuedOn": "2026-05-25",
+    "effectiveFrom": "2026-07-01",
+    "replaces": "TT 132/2018/TT-BTC",
+    "primaryTextObtained": false,
+    "gates": { "coa": false, "books": false, "reports": false },
+    "note": "Nguồn thứ cấp cho biết chế độ này ghi sổ theo nhóm phương pháp nộp thuế; chưa có văn bản gốc nên phần mềm chưa có hệ thống tài khoản, sổ, mẫu in hay báo cáo của chế độ này.",
+    "booksSecondary": [
+      { "code": "S1-DNSN", "name": "Sổ doanh thu bán hàng hóa, dịch vụ" },
+      { "code": "S2a-DNSN", "name": "Sổ doanh thu bán hàng hóa, dịch vụ" },
+      { "code": "S2b-DNSN", "name": "Sổ chi tiết doanh thu, chi phí" },
+      { "code": "S2c-DNSN", "name": "Sổ chi tiết vật liệu, dụng cụ, sản phẩm, hàng hóa" },
+      { "code": "S2d-DNSN", "name": "Sổ chi tiết tiền" },
+      { "code": "S3a-DNSN", "name": "Sổ doanh thu bán hàng hóa, dịch vụ" },
+      { "code": "S3b-DNSN", "name": "Sổ theo dõi nghĩa vụ thuế GTGT" },
+      { "code": "S4a-DNSN", "name": "Sổ chi tiết thanh toán công nợ" },
+      { "code": "S4b-DNSN", "name": "Sổ tài sản cố định" },
+      { "code": "S4c-DNSN", "name": "Sổ theo dõi nghĩa vụ thuế khác" },
+      { "code": "S4d-DNSN", "name": "Sổ theo dõi vốn chủ sở hữu" }
+    ],
+    "reportsSecondary": [
+      { "code": "B01-DNSN", "name": "Báo cáo tình hình tài chính" },
+      { "code": "B02-DNSN", "name": "Báo cáo kết quả hoạt động kinh doanh" }
+    ],
+    "sources": [
+      { "url": "https://amis.misa.vn/264117/thong-tu-58-2026-tt-btc-cho-dn-sieu-nho/", "fetched": "2026-10-28", "kind": "thứ cấp (MISA AMIS)", "used": "danh mục sổ, tên báo cáo, hiệu lực" }
+    ],
+    "missing": [
+      "Văn bản gốc TT 58/2026/TT-BTC (ký 25/5/2026, Công báo số 323 ngày 11/6/2026) kèm các phụ lục mẫu sổ S1-DNSN đến S4d-DNSN",
+      "Mẫu B01-DNSN, B02-DNSN và hướng dẫn lập từng chỉ tiêu",
+      "Quy định về hệ thống tài khoản (nếu có) và chứng từ kế toán của chế độ"
+    ]
+  },
+  "TT152": {
+    "label": "TT 152/2025/TT-BTC (hộ kinh doanh, cá nhân kinh doanh)",
+    "issuedOn": "2025-12-31",
+    "effectiveFrom": "2026-01-01",
+    "replaces": "TT 88/2021/TT-BTC",
+    "primaryTextObtained": false,
+    "gates": { "coa": false, "books": false, "reports": false },
+    "note": "Hộ kinh doanh ghi sổ theo nhóm nghĩa vụ thuế; chưa có văn bản gốc nên phần mềm chưa có sổ, mẫu in hay tờ khai 01/CNKD.",
+    "booksSecondary": [
+      { "code": "S1a-HKD", "name": "Sổ doanh thu bán hàng hóa, dịch vụ" },
+      { "code": "S2a-HKD", "name": "Sổ doanh thu bán hàng hóa, dịch vụ" },
+      { "code": "S2b-HKD", "name": "Sổ doanh thu bán hàng hóa, dịch vụ" },
+      { "code": "S2c-HKD", "name": "Sổ chi tiết doanh thu, chi phí" },
+      { "code": "S2d-HKD", "name": "Sổ chi tiết vật liệu, dụng cụ, hàng hóa" },
+      { "code": "S2e-HKD", "name": "Sổ chi tiết tiền" },
+      { "code": "S3a-HKD", "name": null }
+    ],
+    "reportsSecondary": [],
+    "sources": [
+      { "url": "https://nhanh.vn/toan-van-thong-tu-1522025ttbtc-huong-dan-che-do-ke-toan-cua-ho-kinh-doanh-ca-nhan-kinh-doanh-n168240.html", "fetched": "2026-10-28", "kind": "thứ cấp (Nhanh.vn)", "used": "tên sổ S1a đến S2e, hiệu lực" }
+    ],
+    "missing": [
+      "Văn bản gốc TT 152/2025/TT-BTC (31/12/2025) kèm phụ lục mẫu sổ S1a, S2a, S2b, S2c, S2d, S2e, S3a-HKD và hướng dẫn ghi sổ từng cột",
+      "Mẫu tờ khai 01/CNKD và văn bản ban hành mẫu hiện hành (TT 89/2026/TT-BTC hoặc văn bản thay thế)",
+      "NĐ 68/2026/NĐ-CP và NĐ 141/2026/NĐ-CP (ngưỡng doanh thu 1 tỷ đồng, cách xác định doanh thu, tỷ lệ thuế theo ngành)",
+      "Quy định hóa đơn từ máy tính tiền của hộ kinh doanh (nếu dựng khung dữ liệu)"
+    ]
+  }
+}
