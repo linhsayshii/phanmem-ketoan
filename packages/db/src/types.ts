@@ -676,6 +676,10 @@ export interface Database {
   approval_attachment: ApprovalAttachmentTable;
   user_branch_scope: UserBranchScopeTable;
   branch_consolidation_setting: BranchConsolidationSettingTable;
+  recurring_entry: RecurringEntryTable;
+  recurring_entry_line: RecurringEntryLineTable;
+  recurring_run: RecurringRunTable;
+  assistant_recognition_log: AssistantRecognitionLogTable;
 }
 
 // GĐ7 nhóm 5: đa chi nhánh (0240). voucher.branch_id, department.tax_code đọc/ghi qua sql trong modules/branch.
@@ -698,4 +702,20 @@ export interface BookOtherTaxTable {
 }
 export interface Database {
   book_group: BookGroupTable; book_year_setting: BookYearSettingTable; book_entry: BookEntryTable; book_stock_item: BookStockItemTable; book_stock_move: BookStockMoveTable; book_other_tax: BookOtherTaxTable;
+// GĐ7 nhóm 7: trợ lý (0290). Mẫu bút toán định kỳ, lần chạy theo (mẫu, kỳ), nhật ký nhận diện hóa đơn.
+export interface RecurringEntryTable {
+  id: Generated<string>; tenant_id: string; code: string; name: string; status: Generated<string>; frequency: string; day_of_month: number; start_date: string; end_date: string | null;
+  catch_up: Generated<boolean>; description: string | null; auto_post: Generated<boolean>; created_by: string; created_at: Generated<string>; updated_at: Generated<string>;
+}
+export interface RecurringEntryLineTable {
+  id: Generated<number>; tenant_id: string; entry_id: string; line_no: number; account_code: string; debit_expr: Generated<string>; credit_expr: Generated<string>;
+  party_code: string | null; department_code: string | null; project_code: string | null; cost_item_code: string | null; description: string | null;
+}
+export interface RecurringRunTable {
+  id: Generated<number>; tenant_id: string; entry_id: string; period_key: string; occurrence_date: string; status: string; reason_code: string | null; message: string | null;
+  voucher_id: string | null; trigger: string; run_by: string | null; run_at: Generated<string>;
+}
+export interface AssistantRecognitionLogTable {
+  id: Generated<number>; tenant_id: string; user_id: string | null; provider: string; external: Generated<boolean>; file_name: string | null; file_sha256: string | null; bytes: number | null;
+  status: string; error_code: string | null; created_at: Generated<string>;
 }

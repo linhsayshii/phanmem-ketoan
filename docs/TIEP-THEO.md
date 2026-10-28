@@ -220,3 +220,13 @@ Hộ kinh doanh (TT 152/2025) và doanh nghiệp siêu nhỏ (TT 58/2026): đã 
 | Văn bản gốc Thông tư 202/2014/TT-BTC (lập và trình bày BCTC hợp nhất, phụ lục mẫu B01-DN/HN, B02-DN/HN, B03-DN/HN) và Thông tư 43/2026/TT-BTC sửa đổi, chép vào `~/legal-docs/tt202-2014/` | thuvienphapluat.vn, vbpl.vn chặn tải tự động (403); không dựng mẫu hợp nhất từ trí nhớ | Chưa có BCTC hợp nhất nhiều pháp nhân (`packages/coa-data/data/consolidation/status.json` `complete=false`); chỉ có BCTC tổng hợp các chi nhánh trong một công ty |
 | Kế toán trưởng xác nhận tài khoản nội bộ loại trừ khi tổng hợp chi nhánh (mặc định 136, 336; thêm tài khoản chi tiết doanh thu, giá vốn bán nội bộ nếu công ty mở riêng) | Cách hạch toán nội bộ khác nhau giữa các công ty | BCTC tổng hợp chỉ loại trừ phải thu, phải trả nội bộ; doanh thu nội bộ không tách được nếu không khai báo tài khoản riêng |
 | Quyết định: có cần đánh số chứng từ riêng theo chi nhánh (tiền tố theo chi nhánh) không | Phải định nghĩa lại `post_voucher` (GĐ6 có thể cũng sửa) và ràng buộc trùng số | Chứng từ mọi chi nhánh dùng chung một dãy số theo loại chứng từ và năm |
+
+## GĐ7 nhóm 7 (trợ lý AI): chờ người dùng
+
+Đã xong: gợi ý định khoản cục bộ (`POST /api/assistant/suggest-entry`, Ctrl+G ở form chứng từ), bút toán định kỳ (mẫu, "Chạy ngay", job worker `recurring-entries` 01:30 hằng ngày), nhận diện hóa đơn (XML cục bộ; ảnh/PDF qua adapter `http`/`anthropic` mặc định tắt). Không chức năng nào tự ghi sổ trừ mẫu có "Tự ghi sổ" do người có quyền ghi sổ bật rõ.
+
+| Việc cần người dùng | Lý do | Ảnh hưởng nếu chưa có |
+|---|---|---|
+| Thử adapter nhận diện ảnh/PDF trên môi trường thật: đặt `RECOGNIZER_PROVIDER` (`anthropic` kèm `RECOGNIZER_API_KEY`, `RECOGNIZER_MODEL`, hoặc `http` kèm `RECOGNIZER_URL`) và nộp vài hóa đơn thật (đã được phép gửi ra ngoài) | Adapter viết theo tài liệu công khai, kiểm bằng máy chủ giả, chưa gọi dịch vụ thật; hợp đồng JSON của adapter `http` do dự án định nghĩa (`recognizer/remote.ts`) | Ảnh/PDF báo "Nhận diện ảnh và PDF chưa được cấu hình"; XML vẫn dùng được |
+| Kế toán trưởng thử gợi ý định khoản trên dữ liệu thật vài tháng và cho ý kiến về trọng số (đối tượng 3, loại chứng từ 1, từ khóa 0,5, mặt hàng 2, số tiền 0,5; độ mới 365 ngày) | Trọng số chọn theo trực giác nghiệp vụ, chưa hiệu chỉnh bằng dữ liệu thật | Gợi ý vẫn chạy với trọng số hiện tại |
+| Quyết định: ảnh/PDF nhận diện xong có được lập thẳng hóa đơn mua nháp (không có XML gốc làm bằng chứng) hay vẫn nhập tay | `inbound_invoice` yêu cầu XML gốc; lập từ bản OCR cần mô hình bằng chứng riêng (lưu ảnh gốc làm tệp đính kèm?) | Ảnh/PDF chỉ trả bản nháp để soát và nhập tay |

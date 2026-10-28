@@ -5,6 +5,7 @@ import { createBoss } from './boss.js';
 import { runBackup } from './jobs/backup.js';
 import { recomputeAndRequeue } from './jobs/recomputeBalances.js';
 import { EINVOICE_RECONCILE_CRON, runEInvoiceReconcile } from './jobs/einvoiceReconcile.js';
+import { RECURRING_CRON, runRecurringAll } from './jobs/recurringEntries.js';
 
 const env = z.object({ DATABASE_URL: z.string(), DATABASE_ADMIN_URL: z.string(), BACKUP_DIR: z.string().default('./backups'), BACKUP_CRON: z.string().default('0 2 * * *'), BACKUP_KEEP: z.coerce.number().int().min(1).default(14) }).parse(process.env);
 const log = (msg: string, extra: Record<string, unknown> = {}) => console.log(JSON.stringify({ ts: new Date().toISOString(), msg, ...extra }));
@@ -49,6 +50,16 @@ await boss.work(QUEUES.einvoiceReconcile, async () => {
   if (counts.checked) log('einvoice reconcile', counts);
   for (const d of errorDetails) log('einvoice reconcile error', { ...d });
   for (const d of notices) log('einvoice reconcile notice', { ...d });
+});
+// Bút toán định kỳ (GĐ7 nhóm 7): sinh chứng từ nháp theo kỳ đến hạn; stately để lượt sau không chồng lên lượt đang chạy.
+await boss.createQueue(QUEUES.recurringEntries, { name: QUEUES.recurringEntries, policy: 'stately' });
+await boss.updateQueue(QUEUES.recurringEntries, { name: QUEUES.recurringEntries, policy: 'stately' });
+await boss.schedule(QUEUES.recurringEntries, RECURRING_CRON, {}, { tz: 'Asia/Ho_Chi_Minh' });
+await boss.work(QUEUES.recurringEntries, async () => {
+  const r = await runRecurringAll(db);
+  const { details, ...counts } = r;
+  if (counts.created || counts.skipped || counts.errors) log('recurring entries', counts);
+  for (const d of details) log('recurring entries detail', { ...d });
 });
 // dừng êm: đợi job đang chạy xong (tối đa 60 giây) rồi mới thoát
 for (const s of ['SIGTERM', 'SIGINT'] as const) process.once(s, () => { void boss.stop({ graceful: true, timeout: 60000, wait: true }).finally(() => process.exit(0)); });

@@ -99,5 +99,9 @@ export const PERMISSIONS: readonly { code: string; name: string; group: string }
   { code: 'approval_request.view', name: 'Xem mọi đề nghị thanh toán, tạm ứng', group: 'Phê duyệt' },
   { code: 'approval_request.create', name: 'Lập đề nghị thanh toán, tạm ứng', group: 'Phê duyệt' },
   { code: 'approval_request.approve', name: 'Duyệt đề nghị thanh toán, tạm ứng', group: 'Phê duyệt' },
+  // GĐ7 nhóm 7: trợ lý (gợi ý định khoản, nhận diện hóa đơn) và bút toán định kỳ.
+  { code: 'assistant.use', name: 'Dùng trợ lý (gợi ý định khoản, nhận diện hóa đơn)', group: 'Trợ lý' },
+  { code: 'recurring.view', name: 'Xem bút toán định kỳ', group: 'Trợ lý' },
+  { code: 'recurring.manage', name: 'Quản lý bút toán định kỳ (lập mẫu, chạy)', group: 'Trợ lý' },
 ];
 export const PERMISSION_CODES: readonly string[] = PERMISSIONS.map((p) => p.code);

@@ -33,6 +33,13 @@ const schema = z.object({
   EINVOICE_ALLOWED_HOSTS: z.string().default(''),
   // Chỉ để kiểm thử (máy giả chạy http, cổng khác): bị từ chối khi chạy production.
   EINVOICE_ALLOW_HTTP: z.enum(['true', 'false']).default('false'),
+  // Nhận diện hóa đơn từ ảnh/PDF (GĐ7 nhóm 7): off = tắt (mặc định), http = dịch vụ OCR theo hợp đồng JSON của @kt/api (RECOGNIZER_URL), anthropic = Claude đọc ảnh/PDF (RECOGNIZER_API_KEY, RECOGNIZER_MODEL).
+  // Chưa thử trên môi trường thật. Dù cấu hình thế nào, nội dung chỉ rời máy chủ khi công ty bật cài đặt và người dùng chọn gửi ra ngoài ở từng lần nhận diện (ghi nhật ký).
+  RECOGNIZER_PROVIDER: z.enum(['off', 'http', 'anthropic']).default('off'),
+  RECOGNIZER_URL: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
+  RECOGNIZER_API_KEY: z.string().optional(),
+  RECOGNIZER_MODEL: z.string().optional(),
+  RECOGNIZER_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(30000),
   // Mặc định không tin X-Forwarded-For (tránh giả IP ghi vào nhật ký đăng nhập); sau reverse proxy đặt số bước proxy hoặc danh sách IP/CIDR của proxy; không đặt 'true' (người gọi giả được IP)
   TRUST_PROXY: z.string().default('false').transform((v): boolean | number | string => {
     const t = v.trim();
@@ -44,6 +51,9 @@ const schema = z.object({
   if (c.DATA_ENCRYPTION_KEY && !isValidEncryptionKey(c.DATA_ENCRYPTION_KEY)) ctx.addIssue({ code: 'custom', path: ['DATA_ENCRYPTION_KEY'], message: 'DATA_ENCRYPTION_KEY phải là base64 chuẩn của đúng 32 byte (openssl rand -base64 32)' });
   if (c.NODE_ENV === 'production' && c.SMARTCA_ALLOW_HTTP === 'true') ctx.addIssue({ code: 'custom', path: ['SMARTCA_ALLOW_HTTP'], message: 'SMARTCA_ALLOW_HTTP chỉ để kiểm thử, không đặt true khi chạy production' });
   if (c.NODE_ENV === 'production' && c.EINVOICE_ALLOW_HTTP === 'true') ctx.addIssue({ code: 'custom', path: ['EINVOICE_ALLOW_HTTP'], message: 'EINVOICE_ALLOW_HTTP chỉ để kiểm thử, không đặt true khi chạy production' });
+  if (c.RECOGNIZER_PROVIDER === 'http' && !c.RECOGNIZER_URL) ctx.addIssue({ code: 'custom', path: ['RECOGNIZER_URL'], message: 'RECOGNIZER_PROVIDER=http cần RECOGNIZER_URL' });
+  if (c.RECOGNIZER_PROVIDER === 'http' && c.NODE_ENV === 'production' && c.RECOGNIZER_URL && !c.RECOGNIZER_URL.startsWith('https://')) ctx.addIssue({ code: 'custom', path: ['RECOGNIZER_URL'], message: 'RECOGNIZER_URL phải là https khi chạy production' });
+  if (c.RECOGNIZER_PROVIDER === 'anthropic' && !c.RECOGNIZER_API_KEY) ctx.addIssue({ code: 'custom', path: ['RECOGNIZER_API_KEY'], message: 'RECOGNIZER_PROVIDER=anthropic cần RECOGNIZER_API_KEY' });
   if (c.NODE_ENV !== 'production') return;
   if (c.SESSION_SECRET.length < 32 || c.SESSION_SECRET === 'doi-chuoi-nay-khi-trien-khai') ctx.addIssue({ code: 'custom', path: ['SESSION_SECRET'], message: 'SESSION_SECRET phải dài ít nhất 32 ký tự và khác giá trị mẫu khi chạy production' });
   if (!c.DATA_ENCRYPTION_KEY) ctx.addIssue({ code: 'custom', path: ['DATA_ENCRYPTION_KEY'], message: 'DATA_ENCRYPTION_KEY là bắt buộc khi chạy production' });
