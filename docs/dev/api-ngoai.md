@@ -16,6 +16,7 @@ Tạo ở màn hình Hệ thống, Khóa API (quyền `api_key.manage`), hoặc 
 | `stock.read` | `GET /stock` | `stock_voucher.view` |
 | `sales.write` | `POST /sales`, `GET /sales/:externalId` | `voucher.create`, `stock_voucher.create`, `settlement.create` (và `voucher.post` khi khóa tự ghi sổ) |
 | `inbound_invoice.write` | `POST /inbound-invoices` | `inbound_invoice.create` |
+| `mobile` | Chỉ `/api/mobile/v1` (xem `api-mobile.md`); bị từ chối ở `/api/ext/v1` | `report.view`, `approval_request.approve` |
 
 - Tùy chọn: kho mặc định (`defaultWarehouseCode`), tự ghi sổ chứng từ bán hàng (`postSales`), ngày hết hạn (`expiresAt`).
 - Thu hồi: `POST /api/api-keys/:id/revoke`. Khóa thu hồi, hết hạn hoặc người dùng bị khóa đều bị từ chối.
