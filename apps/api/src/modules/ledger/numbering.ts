@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { sql } from 'kysely';
 import { formatVoucherNo } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
+import { effectiveBranch } from '../branch/scope.js';
 
 const notFound = (code: string) => new AppError('VOUCHER_TYPE_NOT_FOUND', `Không có loại chứng từ ${code}`, 404);
 const typeBody = z.object({ name: z.string().min(1).optional(), prefix: z.string().max(20).optional(), suffix: z.string().max(20).optional(),
@@ -21,6 +22,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     app.withTenant(req, async (trx) => {
       const vt = await trx.selectFrom('voucher_type').selectAll().where('code', '=', req.params.code).executeTakeFirst();
       if (!vt) throw notFound(req.params.code);
+      if (req.query.branch !== undefined) effectiveBranch(req.auth!, req.query.branch); // ngoài phạm vi chi nhánh của người dùng: 403
       const b = req.query.branch === undefined ? (req.auth!.branchWorking ?? 0) : req.query.branch === 'HO' ? 0 : Number(req.query.branch);
       const sc = (await sql<{ branch_key: string; branch_code: string | null }>`SELECT branch_key, branch_code FROM fn_voucher_number_scope(${req.auth!.tenantId!}::uuid, ${b === 0 ? null : b}::bigint)`.execute(trx)).rows[0]!;
       const c = await trx.selectFrom('voucher_counter').select('last_no').where('voucher_type', '=', vt.code).where('fiscal_year', '=', req.query.year).where('branch_key', '=', Number(sc.branch_key)).executeTakeFirst();

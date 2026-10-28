@@ -47,6 +47,18 @@ describe('đánh số theo chi nhánh', () => {
     expect(r.rows.map((x) => x.voucher_no)).toEqual(['PKT25-001', 'PKT25-002', 'PKT25-003']);
   });
 
+  it('xem trước số theo chi nhánh ngoài phạm vi của người dùng bị giới hạn: 403; trong phạm vi và mặc định thì được', async () => {
+    const username = `ph${Date.now()}`;
+    const { id } = await ok('POST', '/api/users', owner, { username, fullName: 'Chi nhánh A', password: 'Matkhau1!', roleCode: 'ketoan_vien' });
+    await ok('PUT', `/api/users/${id}/branch-scope`, owner, { branches: [brA] });
+    const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+    const c = `sid=${login.cookies.find((x) => x.name === 'sid')!.value}`;
+    expect((await req('GET', `/api/voucher-types/PKT/next-no?year=2026&branch=${brB}`, c)).statusCode).toBe(403);
+    expect((await req('GET', '/api/voucher-types/PKT/next-no?year=2026&branch=HO', c)).statusCode).toBe(403);
+    expect((await req('GET', `/api/voucher-types/PKT/next-no?year=2026&branch=${brA}`, c)).statusCode).toBe(200);
+    expect((await req('GET', '/api/voucher-types/PKT/next-no?year=2026', c)).statusCode).toBe(200);
+  });
+
   it('bật: mỗi chi nhánh một dãy riêng có mã chi nhánh; xem trước theo chi nhánh; đảo cùng dãy chi nhánh gốc', async () => {
     expect((await settings(true)).statusCode).toBe(200);
     expect((await ok('GET', `/api/voucher-types/PKT/next-no?year=2026&branch=${brA}`, owner)).preview).toBe('HN-PKT26-001');
