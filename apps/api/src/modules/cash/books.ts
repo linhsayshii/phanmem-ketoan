@@ -1,3 +1,4 @@
+import { budgetCheck, type BudgetWarning } from '../budget/alert.js';
 import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
 import { D, formatVnDate, formatVnNumber, ZERO, type Decimal } from '@kt/domain';
@@ -248,11 +249,13 @@ function applyMode<T extends object>(mode: string, dto: T, warnings: CashWarning
 }
 
 // Ghi sổ có kiểm tra tồn quỹ âm theo cài đặt `cash_negative`.
-export async function postWithCashCheck(trx: Trx, tenantId: string, id: string): Promise<S.VoucherDto & { warnings?: CashWarning[] }> {
+export async function postWithCashCheck(trx: Trx, tenantId: string, id: string): Promise<S.VoucherDto & { warnings?: (CashWarning | BudgetWarning)[] }> {
   const mode = (await getSettings(trx, tenantId)).cash_negative;
   await lockCashAccounts(trx, id);
   const dto = await S.postVoucher(trx, id);
-  return applyMode(mode, dto, await cashNegativeWarnings(trx, id, 'post'));
+  const out: S.VoucherDto & { warnings?: (CashWarning | BudgetWarning)[] } = applyMode(mode, dto, await cashNegativeWarnings(trx, id, 'post'));
+  const budget = await budgetCheck(trx, id); // GĐ7: cảnh báo/chặn vượt ngân sách (tắt mặc định)
+  return budget.length ? { ...out, warnings: [...(out.warnings ?? []), ...budget] } : out;
 }
 // Bỏ ghi sổ chứng từ thu tiền làm các ngày sau có thể bị âm quỹ: cùng phép kiểm tra, dòng chứng từ bị lấy khỏi sổ.
 export async function unpostWithCashCheck(trx: Trx, tenantId: string, id: string): Promise<S.VoucherDto & { warnings?: CashWarning[] }> {

@@ -513,4 +513,19 @@ export interface Database {
   einvoice_error_notice_line: EinvoiceErrorNoticeLineTable;
   einvoice_log: EinvoiceLogTable;
   einvoice_fake_store: EinvoiceFakeStoreTable;
+  budget: BudgetTable;
+  budget_line: BudgetLineTable;
+  budget_setting: BudgetSettingTable;
 }
+
+// GĐ7 nhóm 3: ngân sách.
+export interface BudgetTable {
+  id: Generated<number>; tenant_id: string; fiscal_year: number; version: Generated<number>; name: string; status: Generated<string>; note: string | null;
+  approved_by: string | null; approved_at: Timestamp | null; created_by: string; created_at: Generated<Timestamp>;
+}
+export interface BudgetLineTable {
+  id: Generated<number>; tenant_id: string; budget_id: number; line_no: number; account_prefix: string; cost_item_id: number | null; department_id: number | null; project_id: number | null;
+  m01: NumericDefault; m02: NumericDefault; m03: NumericDefault; m04: NumericDefault; m05: NumericDefault; m06: NumericDefault;
+  m07: NumericDefault; m08: NumericDefault; m09: NumericDefault; m10: NumericDefault; m11: NumericDefault; m12: NumericDefault; note: string | null;
+}
+export interface BudgetSettingTable { tenant_id: string; enabled: Generated<boolean>; warn_pct: Generated<number>; block_pct: number | null }
