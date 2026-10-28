@@ -20,7 +20,7 @@ const b02Line = async (call: ReturnType<typeof as>, from: string, to: string, li
 // Công ty TT99 có năm 2025 và 2026: doanh thu 2025 quyết định thuế suất/miễn thuế năm 2026.
 async function tt99(rev2025: string) {
   const b = await bootstrapTenant(ctx, { code: `CE${Date.now()}${n++}` }); const call = as(b.cookie);
-  for (const y of [2025, 2026]) await ok(call('POST', '/api/fiscal-years', { fiscalYear: y, dateFrom: `${y}-01-01`, months: 12, regime: 'TT99' }), 201);
+  for (const y of [2025, 2026]) await ok(call('POST', '/api/fiscal-years', { fiscalYear: y, dateFrom: `${y}-01-01`, months: 12, regime: 'TT99', confirmRegimeOverride: true }), 201);
   const post = async (date: string, debit: string, credit: string, amount: string) => { const r = await postVoucher(ctx, b.cookie, date, [{ accountCode: debit, debit: amount, credit: '0' }, { accountCode: credit, debit: '0', credit: amount }]); expect(r.statusCode, r.body).toBe(201); };
   await post('2025-06-30', '111', '511', rev2025);
   return { ...b, call, post };
