@@ -17,7 +17,7 @@ beforeAll(async () => {
   ctx = await createTestApp(); ({ cookie } = await bootstrapTenant(ctx, { code: `BA${Date.now()}` }));
   // Hai năm hai chế độ: một công ty giữ nhiều hệ tài khoản (cùng mã 1111 nhưng là hai tài khoản khác nhau).
   for (const [fiscalYear, dateFrom, regime] of [[2026, '2026-01-01', 'TT133'], [2027, '2027-01-01', 'TT200']] as const) {
-    const r = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear, dateFrom, months: 12, regime } });
+    const r = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear, dateFrom, months: 12, regime, confirmRegimeOverride: true } });
     expect(r.statusCode, r.body).toBe(201);
   }
   for (const [code, name] of [['KH001', 'Khách A'], ['KH002', 'Khách B']]) await ctx.app.inject({ method: 'POST', url: '/api/catalogs/party', headers: { cookie }, payload: { code, name, is_customer: true } });

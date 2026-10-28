@@ -39,7 +39,7 @@ const pkt = (date: string, i: number, autoPost = true) => ctx.app.inject({ metho
 
 beforeAll(async () => {
   ctx = await createTestApp(); ({ cookie, tenantId } = await bootstrapTenant(ctx, { code: `EX${Date.now()}` }));
-  const fy = (fiscalYear: number, regime: string) => ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime } });
+  const fy = (fiscalYear: number, regime: string) => ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime, confirmRegimeOverride: true } });
   expect((await fy(2026, 'TT133')).statusCode).toBe(201);
   expect((await fy(2027, 'TT200')).statusCode).toBe(201); // hệ tài khoản thứ hai trong cùng công ty
   await ctx.app.inject({ method: 'POST', url: '/api/catalogs/party', headers: { cookie }, payload: { code: 'KH001', name: 'Công ty "A"; B', is_customer: true } });

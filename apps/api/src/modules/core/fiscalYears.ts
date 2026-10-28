@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import type { Transaction } from 'kysely';
+import { sql, type Transaction } from 'kysely';
+import { checkRegimeForYear } from '@kt/coa-data';
 import { buildFiscalPeriods, type Regime } from '@kt/domain';
 import type { Database } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
@@ -11,6 +12,8 @@ import { copyReportTemplates } from '../reporting/financial.js';
 export const fiscalYearBody = z.object({
   fiscalYear: z.number().int().min(2000).max(2100), dateFrom: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-01$/, 'Ngày bắt đầu phải là ngày đầu tháng (YYYY-MM-01)'),
   months: z.number().int().min(1).max(15).default(12), regime: z.enum(['TT99', 'TT133', 'TT200', 'TT58', 'TT152']),
+  // true: người dùng xác nhận rõ tạo năm theo chế độ ngoài hiệu lực hoặc có cổng dữ liệu chưa đối chiếu (TT200); ghi audit_event. Không áp dụng cho chế độ chưa có hệ thống tài khoản (TT58, TT152).
+  confirmRegimeOverride: z.boolean().optional(),
 });
 export type FiscalYearInput = z.infer<typeof fiscalYearBody>;
 
@@ -21,6 +24,17 @@ export async function createFiscalYear(trx: Transaction<Database>, tenantId: str
   if (last) {
     const next = new Date(last.date_to + 'T00:00:00Z'); next.setUTCDate(next.getUTCDate() + 1);
     if (next.toISOString().slice(0, 10) !== input.dateFrom) throw new AppError('FISCAL_YEAR_GAP', `Năm mới phải bắt đầu ngày ${next.toISOString().slice(0, 10)}`, 409);
+  }
+  // Chế độ phải sẵn sàng (cổng dữ liệu pháp lý) và có hiệu lực tại ngày đầu năm tài chính (data/regimes). TT58, TT152 chưa có hệ thống tài khoản: không có xác nhận ghi đè.
+  const rc = checkRegimeForYear(input.regime, input.dateFrom);
+  const bookOnly = input.regime === 'TT58' || input.regime === 'TT152';
+  if (!rc.ready && bookOnly) throw new AppError('COA_TEMPLATE_PENDING', `${rc.label} chưa có dữ liệu đối chiếu văn bản gốc (cổng ${rc.notReady.join(', ')} chưa mở): chưa tạo được năm tài chính theo chế độ này`, 409, { regime: input.regime, notReady: rc.notReady });
+  if (!input.confirmRegimeOverride) {
+    if (!rc.ready) throw new AppError('REGIME_NOT_READY', `${rc.label} còn dữ liệu chưa đối chiếu văn bản gốc (${rc.notReady.join(', ')}): hệ thống tài khoản hoặc báo cáo có thể sai. Chọn chế độ khác hoặc xác nhận tạo năm theo chế độ này`, 409, { regime: input.regime, notReady: rc.notReady });
+    if (!rc.effective) throw new AppError('REGIME_NOT_EFFECTIVE', `${rc.label} không áp dụng cho năm tài chính bắt đầu ngày ${input.dateFrom}${rc.effectiveFrom ? ` (hiệu lực từ ${rc.effectiveFrom})` : ''}${rc.effectiveTo ? ` (hiệu lực đến ${rc.effectiveTo})` : ''}. Chọn chế độ khác hoặc xác nhận tạo năm theo chế độ này`, 409, { regime: input.regime, effectiveFrom: rc.effectiveFrom, effectiveTo: rc.effectiveTo });
+  } else if (!rc.ready || !rc.effective) {
+    await sql`INSERT INTO audit_event(tenant_id, user_id, action, entity, entity_id, after) VALUES (${tenantId}::uuid, app_user_id(), 'fiscal_year_regime_override', 'fiscal_year', ${String(input.fiscalYear)},
+      ${JSON.stringify({ regime: input.regime, dateFrom: input.dateFrom, notReady: rc.notReady, effective: rc.effective })}::jsonb)`.execute(trx);
   }
   let periods: ReturnType<typeof buildFiscalPeriods>;
   try { periods = buildFiscalPeriods({ fiscalYear: input.fiscalYear, dateFrom: input.dateFrom, months: input.months, regime: input.regime as Regime }); }

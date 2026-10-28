@@ -73,7 +73,7 @@ describe('in sổ: nội dung, hệ tài khoản, quyền', () => {
     await ctx.app.inject({ method: 'PUT', url: '/api/company', headers: { cookie: c2 }, payload: { name: 'Công ty Hai Hệ', address: '2 Hàng Bài', legalRep: 'Lê Văn C', chiefAccountant: 'Phạm Thị D' } });
     // Hai hệ tài khoản trong một công ty: 6421 là "Chi phí bán hàng" ở TT133 nhưng là "Chi phí nhân viên quản lí" ở TT200.
     expect((await post('/api/fiscal-years', { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' })).statusCode).toBe(201);
-    expect((await post('/api/fiscal-years', { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT200' })).statusCode).toBe(201);
+    expect((await post('/api/fiscal-years', { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT200', confirmRegimeOverride: true })).statusCode).toBe(201);
     expect((await post('/api/catalogs/party', { code: 'KH001', name: 'Khách một', is_customer: true })).statusCode).toBe(201);
     expect((await pkt('2026-01-05', '<script>alert(1)</script>', [{ accountCode: '6421', debit: '100000' }, { accountCode: '1111', credit: '100000' }])).statusCode).toBe(201);
     expect((await pkt('2026-01-06', 'Bán chịu', [{ accountCode: '131', debit: '500000', partyCode: 'KH001' }, { accountCode: '5113', credit: '500000' }])).statusCode).toBe(201);

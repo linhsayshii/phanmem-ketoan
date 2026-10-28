@@ -83,7 +83,7 @@ const runs: Record<number, Json> = {};
 beforeAll(async () => {
   ctx = await createTestApp();
   ({ cookie: owner, tenantId, userId } = await bootstrapTenant(ctx, { code: `PO${Date.now()}` }));
-  for (const [fiscalYear, regime] of [[2024, 'TT133'], [2025, 'TT200'], [2026, 'TT99']] as const) await ok('POST', '/api/fiscal-years', { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime });
+  for (const [fiscalYear, regime] of [[2024, 'TT133'], [2025, 'TT200'], [2026, 'TT99']] as const) await ok('POST', '/api/fiscal-years', { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime, confirmRegimeOverride: true });
   noFlag = await userWith('ketoan_truong', []); noPost = await userWith('ketoan_vien', ['view_salary']);
   await ok('PUT', '/api/settings', { payroll_standard_hours_per_day: fx.settings.standardHoursPerDay, payroll_standard_days_per_month: fx.settings.standardDays });
   for (const [code, value] of Object.entries(fx.params)) await ok('PUT', '/api/payroll/params', { code, validFrom: '2024-01-01', value, source: fx.source });

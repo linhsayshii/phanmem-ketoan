@@ -11,8 +11,8 @@ const bal = async (asOf: string) => { const r = await ctx.app.inject({ method: '
 
 beforeAll(async () => {
   ctx = await createTestApp(); ({ cookie, tenantId, userId } = await bootstrapTenant(ctx, { code: `KC${Date.now()}` }));
-  await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT200' } });
-  await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT200' } });
+  await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT200', confirmRegimeOverride: true } });
+  await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT200', confirmRegimeOverride: true } });
   await pkt('2026-03-05', [{ accountCode: '1121', debit: '1000' }, { accountCode: '5113', credit: '1000' }]);
   await pkt('2026-06-05', [{ accountCode: '6421', debit: '600' }, { accountCode: '1121', credit: '600' }]);
   await pkt('2026-09-05', [{ accountCode: '6422', debit: '100' }, { accountCode: '1111', credit: '100' }]);
@@ -102,7 +102,7 @@ async function newTenant(label: string, years: [number, string][]) {
   const { cookie: c, tenantId, userId } = await bootstrapTenant(ctx, { code: `${label}${Date.now()}` });
   const call: Call = (method, url, payload) => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload ? { payload } : {}) });
   for (const [fiscalYear, regime] of years) {
-    const r = await call('POST', '/api/fiscal-years', { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime });
+    const r = await call('POST', '/api/fiscal-years', { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime, confirmRegimeOverride: true });
     expect(r.statusCode, r.body).toBe(201);
   }
   return { call, tenantId, userId, steps: async (): Promise<{ id: string; stepOrder: number }[]> => (await call('GET', '/api/closing/steps')).json() };

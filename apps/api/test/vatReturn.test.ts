@@ -10,7 +10,7 @@ afterAll(async () => { await ctx.close(); });
 
 type Res = { statusCode: number; body: string; json: () => any }; // eslint-disable-line @typescript-eslint/no-explicit-any
 const err = (r: Res) => [r.statusCode, r.json().error?.code];
-interface Ret { id: number; revision: number; status: string; templateVersion: string; values: Record<string, string>; overrides: Record<string, string>; hints: Record<string, string>; warnings: string[] }
+interface Ret { acknowledgedGates?: string[]; id: number; revision: number; status: string; templateVersion: string; values: Record<string, string>; overrides: Record<string, string>; hints: Record<string, string>; warnings: string[] }
 const M = (x: number) => String(x * 1_000_000);
 
 // Mỗi kiểm thử một công ty: năm 2026 theo TT133, khai thuế theo tháng (mặc định).

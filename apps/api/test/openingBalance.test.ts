@@ -196,7 +196,7 @@ describe('số dư đầu kỳ nhiều hệ tài khoản và nhiều năm', () =
   beforeAll(async () => {
     ({ cookie: c2, tenantId: t2 } = await bootstrapTenant(ctx, { code: `OC${Date.now()}` }));
     for (const [fiscalYear, dateFrom, regime] of [[2026, '2026-01-01', 'TT133'], [2027, '2027-01-01', 'TT200']] as const)
-      expect((await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c2 }, payload: { fiscalYear, dateFrom, months: 12, regime } })).statusCode).toBe(201);
+      expect((await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c2 }, payload: { fiscalYear, dateFrom, months: 12, regime, confirmRegimeOverride: true } })).statusCode).toBe(201);
   }, 60_000);
 
   it('tra tài khoản theo hệ của năm: mã chỉ có ở TT200 bị từ chối ở năm TT133; checkOpening và ghi sổ bỏ qua dòng thuộc hệ khác', async () => {

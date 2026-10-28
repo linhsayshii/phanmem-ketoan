@@ -60,7 +60,7 @@ const runs: Record<number, Json> = {};
 beforeAll(async () => {
   ctx = await createTestApp();
   ({ cookie: owner, tenantId } = await bootstrapTenant(ctx, { code: `PP${Date.now()}` }));
-  for (const [fiscalYear, regime] of [[2024, 'TT133'], [2025, 'TT200'], [2026, 'TT99']] as const) await ok('POST', '/api/fiscal-years', { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime });
+  for (const [fiscalYear, regime] of [[2024, 'TT133'], [2025, 'TT200'], [2026, 'TT99']] as const) await ok('POST', '/api/fiscal-years', { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime, confirmRegimeOverride: true });
   noFlag = await userWith('ketoan_truong', []);
   await sql`DELETE FROM role_permission rp USING role r WHERE r.id = rp.role_id AND r.tenant_id = ${tenantId}::uuid AND r.code = 'ketoan_vien' AND rp.permission_code = 'payroll.pay'`.execute(ctx.t.admin);
   noPay = await userWith('ketoan_vien', ['view_salary']);

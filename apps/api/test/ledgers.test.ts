@@ -100,7 +100,7 @@ describe('sổ sách: đối ứng nội bộ, chiều phân tích, hai hệ tà
   beforeAll(async () => {
     ({ cookie: c, tenantId } = await bootstrapTenant(ctx, { code: `LX${Date.now()}` }));
     for (const [fiscalYear, regime] of [[2026, 'TT133'], [2027, 'TT200']] as const) {
-      const r = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime } });
+      const r = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime, confirmRegimeOverride: true } });
       expect(r.statusCode, r.body).toBe(201);
     }
     for (const code of ['CPA', 'CPB']) expect((await ctx.app.inject({ method: 'POST', url: '/api/catalogs/cost_item', headers: { cookie: c }, payload: { code, name: `Khoản mục ${code}` } })).statusCode).toBe(201);
