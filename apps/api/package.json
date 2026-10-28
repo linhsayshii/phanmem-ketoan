@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./einvoice-reconcile": { "types": "./src/modules/einvoice/reconcile.ts", "import": "./src/modules/einvoice/reconcile.ts" }
+    "./einvoice-reconcile": { "types": "./src/modules/einvoice/reconcile.ts", "import": "./src/modules/einvoice/reconcile.ts" },
+    "./recurring": { "types": "./src/modules/assistant/recurring.ts", "import": "./src/modules/assistant/recurring.ts" }
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",

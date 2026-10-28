@@ -1,1 +1,1 @@
-{ "extends": "./tsconfig.json", "compilerOptions": { "noEmit": true, "rootDir": "." }, "include": ["src", "test", "vitest.config.ts"] }
+{ "extends": "./tsconfig.json", "compilerOptions": { "noEmit": true, "rootDir": "../.." }, "include": ["src", "test", "vitest.config.ts", "../api/src/app.ts"] }
