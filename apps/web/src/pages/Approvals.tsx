@@ -244,11 +244,10 @@ export function ApprovalFlowsPage() {
     onError: fail, onSuccess: () => { void message.success('Đã lưu quy trình'); setEditing(null); void qc.invalidateQueries({ queryKey: ['approval-flows'] }); },
   });
   const approvers = [...(roles.data ?? []).map((r) => ({ value: `role:${r.id}`, label: `Vai trò: ${r.name}` })), ...(users.data ?? []).map((u) => ({ value: `user:${u.id}`, label: `Người: ${u.fullName || u.username} (${u.username})` }))];
-  const openEdit = (f: Flow | 'new') => {
-    form.setFieldsValue(f === 'new' ? { kind: 'payment', name: '', minAmount: '0', isActive: true, steps: [undefined] }
-      : { ...f, steps: f.steps.map((s) => (s.roleId ? `role:${s.roleId}` : `user:${s.userId}`)) });
-    setEditing(f);
-  };
+  const openEdit = (f: Flow | 'new') => setEditing(f);
+  // Form dựng lại mỗi lần mở (destroyOnHidden) nên giá trị đầu đặt qua initialValues.
+  const init = !editing || editing === 'new' ? { kind: 'payment', name: '', minAmount: '0', isActive: true, steps: [undefined] }
+    : { ...editing, steps: editing.steps.map((s) => (s.roleId ? `role:${s.roleId}` : `user:${s.userId}`)) };
   const submit = (v: { kind: string; name: string; minAmount: string | null; isActive: boolean; steps: string[] }) => save.mutate({
     ...(editing !== 'new' && editing ? { id: editing.id } : {}),
     body: { kind: v.kind, name: v.name, minAmount: v.minAmount || '0', isActive: v.isActive, steps: v.steps.map((s) => { const [k, id] = s.split(':'); return k === 'role' ? { roleId: id } : { userId: id }; }) },
@@ -273,7 +272,7 @@ export function ApprovalFlowsPage() {
           { title: '', width: 80, render: (_, f) => <Button size="small" onClick={() => openEdit(f)} aria-label={`Sửa ${f.name}`}>Sửa</Button> },
         ]} />
       <Modal title={editing === 'new' ? 'Thêm quy trình phê duyệt' : 'Sửa quy trình phê duyệt'} open={!!editing} okText="Lưu" cancelText="Hủy" confirmLoading={save.isPending} onCancel={() => setEditing(null)} onOk={() => form.submit()} destroyOnHidden>
-        <Form form={form} layout="vertical" onFinish={submit} onKeyDown={(e: React.KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); form.submit(); } }}>
+        <Form form={form} layout="vertical" initialValues={init} preserve={false} onFinish={submit} onKeyDown={(e: React.KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); form.submit(); } }}>
           <Form.Item name="kind" label="Loại đề nghị"><Radio.Group options={[{ value: 'payment', label: 'Thanh toán' }, { value: 'advance', label: 'Tạm ứng' }]} /></Form.Item>
           <Form.Item name="name" label="Tên quy trình" rules={[{ required: true, whitespace: true, message: 'Nhập tên quy trình' }]}><Input maxLength={200} /></Form.Item>
           <Form.Item name="minAmount" label="Áp dụng từ số tiền (VND)"><VnNumberInput style={{ width: 200 }} /></Form.Item>
