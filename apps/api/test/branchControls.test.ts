@@ -4,7 +4,6 @@ import { bootstrapTenant, createTestApp, TEST_PASSWORD, type TestApp } from './h
 // GĐ7 gói 1 (review trục 3 C1, C2, M1; trục 5 #1): API mobile, phân tích tài chính, số dư quỹ theo phạm vi chi nhánh; kiểm soát lúc ghi sổ (tồn kho, quỹ âm, ngân sách) tính toàn công ty.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
 let ctx: TestApp; let owner: string; let userA: string; let userB: string; let brA: number; let brB: number;
-const ids: Record<string, string> = {};
 const call = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, c: string, payload?: object) => ctx.app.inject({ method, url, headers: { cookie: c }, ...(payload && { payload }) });
 const ok = async (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, c: string, payload?: object) => {
   const r = await call(method, url, c, payload); expect(r.statusCode, `${method} ${url}: ${r.body}`).toBeLessThan(300); return r.json();
@@ -50,7 +49,6 @@ beforeAll(async () => {
 }, 240_000);
 afterAll(async () => { await ctx?.close(); });
 
-const bold = (rows: Row[]) => Object.fromEntries(rows.filter((r) => r.isBold).map((r) => [r.lineCode, r.current]));
 
 describe('API mobile theo phạm vi chi nhánh (C1)', () => {
   it('B01 mobile của người dùng A bằng B01 web theo chi nhánh A, khác B01 cả công ty', async () => {
