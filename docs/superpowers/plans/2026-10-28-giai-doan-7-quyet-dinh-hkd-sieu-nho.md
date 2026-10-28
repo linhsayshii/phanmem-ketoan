@@ -1,0 +1,37 @@
+# GĐ7 nhóm 6b (HKD TT 152/2025, siêu nhỏ TT 58/2026): quyết định 1500–1599
+
+Chuyển vào mục "Nhóm 6" của sổ quyết định GĐ7 khi hợp nhất. Thay các quyết định 1250–1299 của nhóm 6 (chỉ dựng khung) ở những chỗ trái nhau.
+
+1500. **Mô hình: ghi sổ đơn trong bảng riêng `book_*`, không dùng sổ cái bút toán kép** — cả hai thông tư không có hệ thống tài khoản; sổ ghi theo phương pháp nộp thuế và theo nhóm ngành nghề cùng tỷ lệ. Phương án "ánh xạ sang tài khoản TT 133 rồi dựng sổ HKD từ đó" bị loại vì không có nhóm thuế trong sổ cái và làm hộ kinh doanh phải học hệ tài khoản. Giá phải trả: hai kho dữ liệu song song; công ty ghi TT152 hoặc TT58 không dùng chứng từ, kho, tài sản, lương của phần mềm; báo cáo tài chính B01-DNSN không tự cân (quyết định 1509).
+
+1501. **`ready` = các sổ bắt buộc đã nhập, báo cáo tài chính xét riêng** — `isRegimeReady` bỏ qua hệ thống tài khoản khi thông tư không có (`applicable.coa=false`) và chỉ cần `gates.books`; `regimeReportsReady` bỏ qua báo cáo khi thông tư không có (TT152) và cần `gates.reports` (TT58: chưa, vì B01-DNSN chưa dựng). TT58 vẫn `ready=true` kèm `limits` (hiển thị "Dùng được, còn giới hạn") để doanh nghiệp siêu nhỏ nộp thuế GTGT, TNDN theo tỷ lệ % trên doanh thu (không cần BCTC, Điều 10 khoản 1b) dùng được ngay. Giá phải trả: doanh nghiệp theo Điều 6, 8 cần B01-DNSN phải tự lập ngoài phần mềm cho đến khi dựng xong.
+
+1502. **Đối chiếu văn bản gốc** — TT58 từ `tt58-2026.txt` (chuyển từ .docx Công báo số 323, chữ chuẩn); TT152 từ PDF scan ký số, đối chiếu cột và dòng với ảnh các trang 3, 4, 5, 6, 8, 9, 11, 12 (mẫu S1a, S2a, S2b, S2c, S2d, S2e, S3a), phần phương pháp ghi sổ đọc từ OCR. `data/books/*.json` ghi điều, cột, ký hiệu cột; `built` và `verified` từng sổ; kiểm thử đếm số cột từng mẫu.
+
+1503. **Tỷ lệ thuế do người dùng khai, không đặt sẵn** — thông tư không nêu tỷ lệ, ngưỡng; NĐ 68/2026 chưa có văn bản gốc. `book_group.vat_rate`, `income_rate` (% có 4 chữ số thập phân) và `book_year_setting.income_tax_rate`. Nhóm chưa khai tỷ lệ tính thuế 0 và sổ in kèm chú thích. Thuế của nhóm = tổng doanh thu nhóm x tỷ lệ, làm tròn nửa lên đến đồng một lần cho cả nhóm (không làm tròn từng dòng), theo cách thông tư ghi "Tổng cộng, Thuế GTGT" theo nhóm.
+
+1504. **Phương pháp nộp thuế theo năm tài chính quyết định bộ sổ** — `book_year_setting.tax_method` (7 giá trị: exempt, percent, income của TT152; percent_both, vat_percent_cit_profit, vat_deduct_cit_percent, vat_deduct_cit_profit của TT58 ứng với Điều 5 đến 8). Danh mục sổ đánh dấu sổ bắt buộc; sổ khác vẫn xem, in được. Chuyển phương pháp giữa năm không được thông tư cho phép (Điều 4 khoản 1 TT58 cho đổi khi đổi phương pháp tính thuế): sổ theo năm tài chính của kỳ chứa ngày kết thúc.
+
+1505. **Số thuế còn phải nộp đầu kỳ** (S2a-DNSN, S3a-DNSN, S2b-DNSN) = số dư đầu nhập tay (bút `opening`, ngày không sau đầu kỳ) + thuế phát sinh các kỳ trước - thuế đã nộp các kỳ trước, tính lại từ bút ghi, không lưu số dư. Thuế trên thu nhập tính thuế của các kỳ trước tính như một kỳ liền (lãi lỗ cộng dồn rồi nhân thuế suất). Giá phải trả: nếu thuế suất hoặc tỷ lệ nhóm đổi giữa chừng, số các kỳ cũ thay đổi theo; không bút ghi nào được ghi trước ngày số dư đầu của cùng khoản.
+
+1506. **S3b-DNSN đọc theo số dư ròng** — công thức chữ của thông tư (còn được khấu trừ cuối kỳ = đầu vào đầu kỳ + đầu vào phát sinh - đầu ra phát sinh + đã nộp - đã hoàn; còn phải nộp cuối kỳ = đầu ra đầu kỳ + đầu ra phát sinh - đầu vào phát sinh - đã nộp + đã hoàn) có thể ra đồng thời hai số khi đầu kỳ có một bên và phát sinh sang bên kia. Phần mềm lấy số dư ròng (phải nộp dương, được khấu trừ âm) và ghi một bên, đúng ý "căn cứ chênh lệch". Số "phải nộp, đã nộp, đã hoàn trong kỳ" ghi ở cột 2 vì mẫu không chỉ rõ cột.
+
+1507. **Sổ chi tiết tiền** — mỗi bút ghi có `money_account` (TM hoặc tên ngân hàng) thì đi vào sổ: thu (doanh thu, thu nhập khác, `cash_in`), chi (chi phí, thuế đã nộp, `cash_out`); `opening` ref `cash` là số dư đầu. Số dư đầu và tồn cuối kỳ ghi ở cột 1 (Thu/Gửi vào) vì mẫu chỉ có hai cột số. Chuyển tiền giữa TM và ngân hàng ghi hai bút (`cash_out` rồi `cash_in`).
+
+1508. **Sổ vật tư, hàng hóa: giá bình quân theo tháng dương lịch** — thông tư không nêu độ dài kỳ tính đơn giá xuất; chọn tháng (kỳ báo cáo thường dùng, khớp quyền xem theo tháng). Tồn đầu tháng tính từ dòng đầu tiên chạy tuần tự; dòng xuất cuối tháng làm tồn về 0 thì nhận phần dư làm tròn để giá trị tồn về 0. Xuất nhiều hơn tồn không bị chặn (số âm hiện nguyên trên sổ).
+
+1509. **Chưa dựng S4a, S4b, S4d và B01-DNSN** — đã nhập đủ cột và chỉ tiêu (`built=false`, có lý do). B01-DNSN cần số dư công nợ, TSCĐ, vốn chủ sở hữu, "tài sản khác"; sổ ghi đơn không có đối ứng nên không bảo đảm tổng tài sản = tổng nguồn vốn (thông tư bắt buộc 200 = 500). Dựng bừa thì báo cáo không cân; dựng đúng cần mô-đun số dư riêng (hoãn). S4c-DNSN dựng chung với S3a-HKD vì cùng cấu trúc.
+
+1510. **Bút ghi sổ đơn cho sửa, xóa, có nhật ký kiểm toán** — khác sổ cái bất biến: bảng `book_*` không phải sổ cái bút toán kép, `audit_enable` ghi trước và sau. Không khóa theo kỳ khóa sổ (kỳ chỉ có ý nghĩa báo cáo). Giá phải trả: bản in cũ có thể khác bản in sau khi sửa số cũ; chưa có "chốt sổ" cho HKD.
+
+1511. **`createFiscalYear` cho chế độ sổ (TT58, TT152) chỉ tạo kỳ** — không sinh tài khoản, sơ đồ kết chuyển, định nghĩa báo cáo; chặn bằng `isRegimeReady` (409 `COA_TEMPLATE_PENDING`, giữ mã cũ). Tệp dùng chung đã chạm: `core/fiscalYears.ts` (một nhánh sớm), `core/regimes.ts` (thêm `applicable`, `reportsReady`, `limits`), `coa-data/src/regimes.ts`.
+
+1512. **Công thức S3a-HKD, S4c-DNSN** — cột 4 "Thuế suất" nhập theo phần trăm (10 = 10%): `cột 5 = c1 x c3 x c4 / 100`; thuế bảo vệ môi trường `c1 x c2`; tài nguyên và sử dụng đất `c1 x c3 x c4 / 100`; mỗi dòng nhập một loại thuế nên các cột loại khác để 0; "Khác" (S4c cột 11) nhập số thuế trực tiếp. Làm tròn nửa lên từng dòng.
+
+1513. **Hộ kinh doanh chọn TT 58/2026** (TT58 Điều 2 khoản 2, Điều 4 khoản 4) — dùng chung chế độ TT58 với doanh nghiệp, không thêm cờ riêng. Giá phải trả: bản in ký tên theo mẫu doanh nghiệp (Người lập biểu, Kế toán trưởng, Người đại diện theo pháp luật), đúng mẫu TT58.
+
+1514. **Nhận biết sổ theo hậu tố mã** (`-HKD` là TT152; `-DNSN` là TT58) — mã sổ do thông tư đặt, không đụng nhau; route `GET /api/hkd/books/:code` không cần biết năm tài chính.
+
+1515. **Giao diện dùng form và bảng Ant Design, không dùng `KeyboardGrid`** — bút ghi nhập từng dòng (như phiếu đơn giản), Enter trong ô gửi biểu mẫu. Giá phải trả: chưa có Insert, F4 tra cứu, nhập nhiều dòng liên tiếp bằng lưới; hoãn.
+
+1516. **Kiểm thử cần Postgres riêng** — cụm dùng chung ở cổng 5441 không chạy khi làm; dùng container `ketoan-hkd-pg` cổng 5486 (init `docker/postgres/init`), đặt `DATABASE_URL`, `DATABASE_ADMIN_URL` ngoài `.env`. E2E dùng công ty riêng `E2EHKD` (`cli create-admin --username e2ehkd`) vì tạo năm tài chính TT152 sẽ phá công ty E2E dùng chung của các spec khác.

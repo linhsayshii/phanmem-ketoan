@@ -133,6 +133,8 @@ describe('TT 152/2025 hộ kinh doanh: tạo năm tài chính, sổ doanh thu th
   it('PDF và Excel của một sổ in được', async () => {
     const x = await ctx.app.inject({ method: 'GET', url: '/api/hkd/books/S2a-HKD?from=2026-01-01&to=2026-01-31&format=xlsx', headers: s.h });
     expect([x.statusCode, x.headers['content-type']]).toEqual([200, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+    const pdf = await ctx.app.inject({ method: 'GET', url: '/api/hkd/books/S2a-HKD?from=2026-01-01&to=2026-01-31&format=pdf', headers: s.h });
+    expect([pdf.statusCode, pdf.headers['content-type'], pdf.rawPayload.subarray(0, 4).toString()]).toEqual([200, 'application/pdf', '%PDF']);
     const h = await ctx.app.inject({ method: 'GET', url: '/api/hkd/books/S2a-HKD?from=2026-01-01&to=2026-01-31&format=html', headers: s.h });
     expect(h.body).toContain('Mẫu số S2a-HKD'); expect(h.body).toContain('Kèm theo Thông tư số 152/2025/TT-BTC');
   });
