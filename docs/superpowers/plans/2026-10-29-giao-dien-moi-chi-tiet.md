@@ -133,3 +133,19 @@ Chia hai phần, làm tuần tự: 3a (Claude Sonnet, rủi ro cao vì mọi lo�
 
 - Mỗi trang: `PageHeader` (h1 giữ đúng tên trang hiện tại nếu E2E dùng heading/text), `Toolbar` cho hàng lọc/tham số, nội dung trong `Section`; một nút primary. `VoucherBranchField` chỉ chỉnh nếu lệch bố cục với form mới.
 - Spec chạy: `kiem-ke-quy`, `ngan-hang`.
+
+## Tác vụ 4: Mua hàng (agy, Sonnet rà)
+
+`InvoiceForm` dùng chung cho mua và bán (MH, TLM, HDM, GGM, BH, TLB, HDB, GGB), nên đổi khung của nó ở tác vụ này và chạy cả spec bán hàng, hóa đơn điện tử. Tác vụ 5 chỉ còn phần riêng của bán hàng.
+
+- `InvoiceForm`: theo mẫu `VoucherForm` (commit 7121077). Bỏ `Card`. `PageHeader` có title = "{typeLabel} {số | (mới) | (chưa cấp số)}" (h1). `tags` = Tag trạng thái, `StatusTags` HĐĐT và ký hiệu số hóa đơn (`<b>`). `extra` = các nút như hiện có, giữ thứ tự. Lưu và Phát hành HĐĐT vẫn là primary như cũ (không đổi hành vi). Đầu phiếu đặt trong `Section` "Thông tin chung". Tabs Hàng tiền/Thuế/Hóa đơn/Hạch toán đặt trong `Section` (không tiêu đề hoặc "Chi tiết"). Chữ phụ `rgba(0,0,0,.45)` đổi thành `COLOR.textSecondary`.
+- `LandedCost` (CPM): cùng mẫu, title "{def.name} {số…}", tags = Tag trạng thái.
+- `Orders` (đơn mua; cùng component cho báo giá, đơn bán): `PageHeader` title `TITLE[kind]`, extra nút "Thêm (Insert)". Bảng trong `Section` (bodyPadding 0) hoặc ngay dưới đầu trang. Có `EmptyState` khi chưa có đơn, nếu `Table` hỗ trợ qua `locale.emptyText`. Modal giữ nguyên.
+- `SalesPurchaseReports`: `PageHeader` title (h1), extra = In PDF/Xuất Excel. `Toolbar` = khoảng ngày, Nhóm theo, Mã hàng, Tag ẩn giá vốn. Lưới `calc(100vh - 260px)` hoặc tương đương.
+- Bỏ mọi `<h2>` tiêu đề trang (một h1).
+- E2E: đổi `.ant-card-head-title` của các form trên. Số chứng từ dùng `page.getByRole('heading', { level: 1 })`. Trạng thái, Tag HĐĐT và ký hiệu hóa đơn dùng `page.locator('.kt-page-header')` (lớp gốc mới của `PageHeader`). Các dòng cần đổi: `mua-hang.spec.ts:49`, `chi-phi-mua.spec.ts:56,57,88`, `ban-hang.spec.ts:50`, `hoa-don.spec.ts:79`, `hoa-don-dien-tu.spec.ts:75,76`.
+- Spec chạy: `mua-hang`, `don-hang`, `chi-phi-mua`, `hoa-don`, `ban-hang`, `bao-cao-ban-hang`, `hoa-don-dien-tu`.
+
+## Tác vụ 5: Bán hàng (gộp vào tác vụ 4)
+
+Mọi màn của phân hệ Bán hàng (`Orders` báo giá/đơn bán, `InvoiceForm` BH/TLB/HDB/GGB, `SalesPurchaseReports` bán) là cùng component với Mua hàng. Tác vụ 4 đổi chúng cùng lúc, nên gộp thành một commit "Mua hàng, bán hàng". Không còn việc riêng.

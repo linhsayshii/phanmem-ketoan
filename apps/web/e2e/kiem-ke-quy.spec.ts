@@ -53,7 +53,7 @@ test('Kiểm kê quỹ: nhập mệnh giá, tổng tự tính, lưu, xử lý ch
   await page.getByRole('button', { name: 'Lập chứng từ' }).click();
   const kind = diff > 0n ? 'Phiếu thu' : 'Phiếu chi';
   await expect(page.getByText('Đã xử lý bằng')).toBeVisible();
-  await expect(page.getByRole('link', { name: new RegExp(kind) })).toBeVisible();
+  await expect(page.getByRole('link', { name: new RegExp(`^${kind} `) })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Xử lý chênh lệch' })).toHaveCount(0); // chỉ xử lý một lần
   const count = await (await request.get(`/api/cash-counts/${id}`)).json() as { voucherId: string; voucherState: string; difference: string };
   expect(count.voucherState).toBe('draft'); expect(BigInt(count.difference)).toBe(diff);

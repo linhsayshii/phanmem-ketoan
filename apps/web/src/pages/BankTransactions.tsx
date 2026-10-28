@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Card, DatePicker, Descriptions, Empty, Form, Input, Modal, Select, Space, Table, Tabs, Tag, Upload, message } from 'antd';
 import dayjs from 'dayjs';
 import { CASH_PURPOSES, D, formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
-import { LookupSelect, useHotkeys, useRememberedFilter } from '@kt/ui';
+import { COLOR, LookupSelect, PageHeader, Section, Toolbar, useHotkeys, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -117,12 +117,12 @@ function ReconTab({ accountId }: { accountId?: number | undefined }) {
   const q = useQuery({ queryKey: ['bank-recon', run], enabled: !!run, queryFn: () => api<Recon>(`/api/bank-reconciliation?bankAccountId=${run!.accountId}&from=${run!.from}&to=${run!.to}`) });
   return (
     <Space direction="vertical" style={{ width: '100%' }}>
-      <Space wrap>
+      <Toolbar>
         <DatePicker.RangePicker format="DD/MM/YYYY" value={[dayjs(r[0]), dayjs(r[1])]} allowClear={false} onChange={(v) => v?.[0] && v[1] && setR([v[0].format('YYYY-MM-DD'), v[1].format('YYYY-MM-DD')])} />
         <Button type="primary" disabled={!accountId} onClick={() => setRun({ accountId: accountId!, from: r[0], to: r[1] })}>Đối chiếu</Button>
         {run && <Button href={`/api/bank-reconciliation?bankAccountId=${run.accountId}&from=${run.from}&to=${run.to}&format=xlsx`}>Xuất Excel</Button>}
         {!accountId && <Tag color="orange">Chọn tài khoản ngân hàng ở bộ lọc phía trên</Tag>}
-      </Space>
+      </Toolbar>
       {q.error && <Alert type="error" showIcon message={(q.error as Error).message} />}
       {q.data && (
         <>
@@ -132,16 +132,16 @@ function ReconTab({ accountId }: { accountId?: number | undefined }) {
             <Descriptions.Item label={`Số dư theo sổ phụ${q.data.statementBalanceDate ? ` (${formatVnDate(q.data.statementBalanceDate)})` : ''}`}>{q.data.statementBalance === null ? 'Chưa có' : num(q.data.statementBalance)}</Descriptions.Item>
             <Descriptions.Item label="Chênh lệch"><b>{q.data.difference === null ? '' : num(q.data.difference)}</b></Descriptions.Item>
           </Descriptions>
-          <Card size="small" title={`Giao dịch ngân hàng chưa có chứng từ (${q.data.unmatchedTransactions.length})`}>
+          <Section title={`Giao dịch ngân hàng chưa có chứng từ (${q.data.unmatchedTransactions.length})`} bodyPadding={0}>
             <Table size="small" rowKey="id" pagination={false} dataSource={q.data.unmatchedTransactions} locale={{ emptyText: 'Không có' }}
               columns={[{ title: 'Ngày', dataIndex: 'valueDate', width: 100, render: (d: string) => formatVnDate(d) }, { title: 'Diễn giải', dataIndex: 'description' }, { title: 'Tham chiếu', dataIndex: 'reference', width: 140 },
-                { title: 'Tiền vào', dataIndex: 'amountIn', align: 'right', width: 120, render: (v: string) => (D(v).gt(0) ? num(v) : '') }, { title: 'Tiền ra', dataIndex: 'amountOut', align: 'right', width: 120, render: (v: string) => (D(v).gt(0) ? num(v) : '') }]} />
-          </Card>
-          <Card size="small" title={`Bút toán sổ cái chưa có giao dịch ngân hàng (${q.data.unmatchedLedgerLines.length})`}>
+                { title: 'Tiền vào', dataIndex: 'amountIn', align: 'right', className: 'kt-num', width: 120, render: (v: string) => (D(v).gt(0) ? num(v) : '') }, { title: 'Tiền ra', dataIndex: 'amountOut', align: 'right', className: 'kt-num', width: 120, render: (v: string) => (D(v).gt(0) ? num(v) : '') }]} />
+          </Section>
+          <Section title={`Bút toán sổ cái chưa có giao dịch ngân hàng (${q.data.unmatchedLedgerLines.length})`} bodyPadding={0}>
             <Table size="small" rowKey={(_, i) => String(i)} pagination={false} dataSource={q.data.unmatchedLedgerLines} locale={{ emptyText: 'Không có' }}
               columns={[{ title: 'Ngày', dataIndex: 'postingDate', width: 100, render: (d: string) => formatVnDate(d) }, { title: 'Số chứng từ', dataIndex: 'voucherNo', width: 140 }, { title: 'Diễn giải', dataIndex: 'description' },
-                { title: 'Nợ', dataIndex: 'debit', align: 'right', width: 120, render: (v: string) => (D(v).gt(0) ? num(v) : '') }, { title: 'Có', dataIndex: 'credit', align: 'right', width: 120, render: (v: string) => (D(v).gt(0) ? num(v) : '') }]} />
-          </Card>
+                { title: 'Nợ', dataIndex: 'debit', align: 'right', className: 'kt-num', width: 120, render: (v: string) => (D(v).gt(0) ? num(v) : '') }, { title: 'Có', dataIndex: 'credit', align: 'right', className: 'kt-num', width: 120, render: (v: string) => (D(v).gt(0) ? num(v) : '') }]} />
+          </Section>
         </>)}
     </Space>
   );
@@ -175,25 +175,25 @@ export default function BankTransactionsPage() {
 
   const txnTab = (
     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <Section bodyPadding={0} style={{ flex: 1, minWidth: 0 }}>
         <Table<Txn> rowKey="id" size="small" loading={list.isLoading} dataSource={list.data ?? []} pagination={false} scroll={{ y: 'calc(100vh - 330px)' }} locale={{ emptyText: 'Không có giao dịch' }}
           onRow={(t) => ({ onClick: () => setSel(t), 'aria-selected': sel?.id === t.id, style: { cursor: 'pointer', background: sel?.id === t.id ? 'var(--ant-color-primary-bg, #e6f4ff)' : undefined } })}
           columns={[
             { title: 'Ngày', dataIndex: 'valueDate', width: 100, render: (d: string) => formatVnDate(d) },
             { title: 'Diễn giải', dataIndex: 'description', ellipsis: true },
             { title: 'Tham chiếu', dataIndex: 'reference', width: 130, ellipsis: true },
-            { title: 'Tiền vào', dataIndex: 'amountIn', width: 120, align: 'right', render: (v: string) => (D(v).gt(0) ? num(v) : '') },
-            { title: 'Tiền ra', dataIndex: 'amountOut', width: 120, align: 'right', render: (v: string) => (D(v).gt(0) ? num(v) : '') },
-            { title: 'Số dư', dataIndex: 'balanceAfter', width: 130, align: 'right', render: (v: string | null) => num(v) },
+            { title: 'Tiền vào', dataIndex: 'amountIn', width: 120, align: 'right', className: 'kt-num', render: (v: string) => (D(v).gt(0) ? num(v) : '') },
+            { title: 'Tiền ra', dataIndex: 'amountOut', width: 120, align: 'right', className: 'kt-num', render: (v: string) => (D(v).gt(0) ? num(v) : '') },
+            { title: 'Số dư', dataIndex: 'balanceAfter', width: 130, align: 'right', className: 'kt-num', render: (v: string | null) => num(v) },
             { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (s: Txn['status']) => <Tag color={STATUS[s].color}>{STATUS[s].label}</Tag> },
             { title: 'Chứng từ', dataIndex: 'voucherId', width: 90, render: (id: string | null, t) => (id ? <a onClick={(e) => { e.stopPropagation(); void navigate({ to: '/chung-tu/$type/$id', params: { type: isIn(t) ? 'BC' : 'BN', id } }); }}>Mở</a> : '') },
             ...(accountId ? [] : [{ title: 'TK', dataIndex: 'bankAccountId', width: 110, render: (id: number) => accLabel(id) }]),
           ]} />
-      </div>
-      <Card size="small" style={{ width: 360, flex: 'none' }} title={sel ? `Giao dịch ${formatVnDate(sel.valueDate)}: ${num(amountOf(sel))}` : 'Gợi ý đối chiếu'}>
+      </Section>
+      <Section style={{ width: 360, flex: 'none' }} title={sel ? `Giao dịch ${formatVnDate(sel.valueDate)}: ${num(amountOf(sel))}` : 'Gợi ý đối chiếu'}>
         {!sel ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chọn một giao dịch" /> : (
           <Space direction="vertical" style={{ width: '100%' }}>
-            <div style={{ color: 'rgba(0,0,0,.65)' }}>{sel.description}</div>
+            <div style={{ color: COLOR.textSecondary }}>{sel.description}</div>
             {sel.counterName && <div>Người chuyển/nhận: {sel.counterName}</div>}
             <Space wrap>
               {sel.status === 'new' && matchAllowed && <Button type="primary" onClick={() => setForm({ txn: sel, preset: null })}>{isIn(sel) ? 'Lập Giấy báo Có' : 'Lập Giấy báo Nợ'}</Button>}
@@ -210,35 +210,65 @@ export default function BankTransactionsPage() {
                 {sug.data?.suggestions.map((s) => s.kind === 'voucher' ? (
                   <Card key={`v${s.voucherId}`} size="small" data-testid="suggestion">
                     <div><b>{s.voucherNo ?? 'Chứng từ nháp'}</b> · {formatVnDate(s.date)} · {num(s.amount)}</div>
-                    <div style={{ fontSize: 12, color: 'rgba(0,0,0,.55)' }}>{s.reasons.join('; ')}</div>
+                    <div style={{ fontSize: 12, color: COLOR.textSecondary }}>{s.reasons.join('; ')}</div>
                     <Button size="small" type="primary" style={{ marginTop: 6 }} loading={act.isPending} onClick={() => act.mutate({ id: sel.id, op: 'match', voucherId: s.voucherId })}>Gắn</Button>
                   </Card>
                 ) : (
                   <Card key={`o${s.openItemId}`} size="small" data-testid="suggestion">
                     <div><b>{s.partyName}</b> ({s.partyCode})</div>
                     <div>Hóa đơn {s.invoiceNo ?? ''} · còn {num(D(s.residual).abs().toFixed(0))}{s.dueDate ? ` · hạn ${formatVnDate(s.dueDate)}` : ''}</div>
-                    <div style={{ fontSize: 12, color: 'rgba(0,0,0,.55)' }}>{s.reasons.join('; ')}</div>
+                    <div style={{ fontSize: 12, color: COLOR.textSecondary }}>{s.reasons.join('; ')}</div>
                     <Button size="small" type="primary" style={{ marginTop: 6 }} onClick={() => setForm({ txn: sel, preset: { partyCode: s.partyCode, openItemId: s.openItemId } })}>{isIn(sel) ? 'Lập Giấy báo Có' : 'Lập Giấy báo Nợ'}</Button>
                   </Card>))}
               </>)}
           </Space>)}
-      </Card>
+      </Section>
     </div>
   );
 
   return (
     <div>
-      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }} wrap>
-        <h2 style={{ margin: 0 }}>Giao dịch ngân hàng</h2>
-        <Space wrap>
-          <Select style={{ width: 240 }} allowClear placeholder="Tài khoản ngân hàng" aria-label="Tài khoản ngân hàng" value={f.accountId || undefined} onChange={(v: number | undefined) => setF({ ...f, accountId: v ?? 0 })}
-            options={(accounts.data ?? []).map((a) => ({ value: a.id, label: `${a.account_no}${a.account_name ? ` – ${a.account_name}` : ''}` }))} />
-          <Select style={{ width: 150 }} aria-label="Trạng thái" value={f.status} onChange={(v) => setF({ ...f, status: v })} options={[{ value: '', label: 'Mọi trạng thái' }, ...Object.entries(STATUS).map(([value, s]) => ({ value, label: s.label }))]} />
-          <DatePicker.RangePicker format="DD/MM/YYYY" value={f.from && f.to ? [dayjs(f.from), dayjs(f.to)] : null} onChange={(r) => setF({ ...f, from: r?.[0]?.format('YYYY-MM-DD') ?? '', to: r?.[1]?.format('YYYY-MM-DD') ?? '' })} />
-          <Input.Search style={{ width: 200 }} allowClear placeholder="Tìm diễn giải, tham chiếu" defaultValue={f.q} onSearch={(q) => setF({ ...f, q })} />
-          {can('bank_feed.create') && <Button onClick={() => setImporting(true)}>Nhập sao kê</Button>}
-        </Space>
-      </Space>
+      <PageHeader
+        title="Giao dịch ngân hàng"
+        description="Hộp thư giao dịch từ webhook / sao kê, gợi ý đối chiếu và lập Giấy báo Có/Nợ"
+        extra={can('bank_feed.create') ? <Button onClick={() => setImporting(true)}>Nhập sao kê</Button> : null}
+      >
+        <Toolbar>
+          <Select
+            style={{ width: 240 }}
+            allowClear
+            placeholder="Tài khoản ngân hàng"
+            aria-label="Tài khoản ngân hàng"
+            value={f.accountId || undefined}
+            onChange={(v: number | undefined) => setF({ ...f, accountId: v ?? 0 })}
+            options={(accounts.data ?? []).map((a) => ({ value: a.id, label: `${a.account_no}${a.account_name ? ` – ${a.account_name}` : ''}` }))}
+          />
+          <Select
+            style={{ width: 150 }}
+            aria-label="Trạng thái"
+            value={f.status}
+            onChange={(v) => setF({ ...f, status: v })}
+            options={[{ value: '', label: 'Mọi trạng thái' }, ...Object.entries(STATUS).map(([value, s]) => ({ value, label: s.label }))]}
+          />
+          <DatePicker.RangePicker
+            format="DD/MM/YYYY"
+            value={f.from && f.to ? [dayjs(f.from), dayjs(f.to)] : null}
+            onChange={(r) => setF({ ...f, from: r?.[0]?.format('YYYY-MM-DD') ?? '', to: r?.[1]?.format('YYYY-MM-DD') ?? '' })}
+          />
+          <Input.Search
+            style={{ width: 200 }}
+            allowClear
+            placeholder="Tìm diễn giải, tham chiếu"
+            defaultValue={f.q}
+            onSearch={(q) => setF({ ...f, q })}
+          />
+          {list.data && (
+            <span style={{ marginLeft: 'auto', color: COLOR.textSecondary, fontSize: 13 }}>
+              {formatVnNumber(String(list.data.length))} giao dịch
+            </span>
+          )}
+        </Toolbar>
+      </PageHeader>
       <Tabs items={[{ key: 'txn', label: 'Giao dịch', children: txnTab }, { key: 'recon', label: 'Đối chiếu sổ phụ', children: <ReconTab accountId={accountId} /> }]} />
       <VoucherModal txn={form?.txn ?? null} preset={form?.preset ?? null} onClose={() => setForm(null)} onDone={() => { setForm(null); setSel(null); refresh(); void qc.invalidateQueries({ queryKey: ['bank-recon'] }); }} />
       <ImportModal open={importing} accountId={accountId} onClose={() => setImporting(false)} onDone={() => { setImporting(false); refresh(); }} />

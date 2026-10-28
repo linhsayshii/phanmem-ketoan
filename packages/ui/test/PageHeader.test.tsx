@@ -31,6 +31,13 @@ describe('PageHeader và Toolbar', () => {
     expect(screen.getByText('Nháp')).toBeDefined();
   });
 
+  it('gốc luôn có lớp kt-page-header, giữ thêm className truyền vào', () => {
+    const { container } = render(<PageHeader title="A" className="x" />);
+    expect(container.querySelector('header')?.className).toBe('kt-page-header x');
+    const { container: c2 } = render(<PageHeader title="B" />);
+    expect(c2.querySelector('header')?.className).toBe('kt-page-header');
+  });
+
   it('Toolbar gom các control con với kiểu flex', () => {
     const { container } = render(
       <Toolbar>

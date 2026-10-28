@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Descriptions, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { formatVnDate } from '@kt/domain';
-import { useHotkeys } from '@kt/ui';
+import { PageHeader, Section, useHotkeys } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { useBankAccounts } from './BankTransactions.js';
@@ -57,39 +57,40 @@ export default function BankFeedsPage() {
 
   return (
     <div>
-      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>Kết nối ngân hàng</h2>
-        {can('bank_feed.create') && <Button type="primary" onClick={openAdd}>Thêm kết nối (Insert)</Button>}
-      </Space>
-      <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Dán địa chỉ webhook và khóa vào trang cấu hình SePay hoặc Casso. Khóa chỉ hiện một lần khi tạo hoặc đổi mã; mất khóa thì đổi mã mới." />
-      <Table<Feed> rowKey="id" size="small" loading={feeds.isLoading} dataSource={feeds.data ?? []} pagination={false} locale={{ emptyText: 'Chưa có kết nối nào' }}
-        columns={[
-          { title: 'Tài khoản ngân hàng', dataIndex: 'bankAccountId', render: (id: number) => accLabel(id) },
-          { title: 'Nhà cung cấp', dataIndex: 'provider', width: 120, render: (p: Feed['provider']) => PROVIDER[p] },
-          { title: 'Xác thực', dataIndex: 'authKind', width: 130, render: (a: Feed['authKind']) => AUTH[a] },
-          { title: 'Nhận gần nhất', dataIndex: 'lastReceivedAt', width: 150, render: (t: string | null) => (t ? formatVnDate(t.slice(0, 10)) : <Tag>Chưa nhận</Tag>) },
-          { title: 'Hoạt động', dataIndex: 'isActive', width: 100, render: (a: boolean, r) => <Switch checked={a} disabled={!canUpdate} aria-label={`Hoạt động kết nối ${r.id}`} onChange={(isActive) => toggle.mutate({ id: r.id, isActive })} /> },
-          { title: '', width: 220, render: (_, r) => (
-            <Space>
-              {canUpdate && <Popconfirm title="Đổi mã mới?" description="Mã cũ ngừng dùng được ngay; phải cập nhật lại bên SePay/Casso." okText="Đổi mã" cancelText="Không" onConfirm={() => rotate.mutate(r.id)}><Button size="small">Đổi mã</Button></Popconfirm>}
-              {can('bank_feed.delete') && <Popconfirm title="Xóa kết nối này?" okText="Xóa" cancelText="Không" onConfirm={() => del.mutate(r.id)}><Button size="small" danger>Xóa</Button></Popconfirm>}
-            </Space>) },
-        ]} />
+      <PageHeader
+        title="Kết nối ngân hàng"
+        description="Webhook nhận biến động số dư tự động (SePay, Casso) và mẫu cột sao kê Excel"
+        extra={can('bank_feed.create') ? <Button type="primary" onClick={openAdd}>Thêm kết nối (Insert)</Button> : null}
+      />
+      <Alert type="info" showIcon style={{ marginBottom: 16 }} message="Dán địa chỉ webhook và khóa vào trang cấu hình SePay hoặc Casso. Khóa chỉ hiện một lần khi tạo hoặc đổi mã; mất khóa thì đổi mã mới." />
+      <Section title="Danh sách kết nối" bodyPadding={0} style={{ marginBottom: 16 }}>
+        <Table<Feed> rowKey="id" size="small" loading={feeds.isLoading} dataSource={feeds.data ?? []} pagination={false} locale={{ emptyText: 'Chưa có kết nối nào' }}
+          columns={[
+            { title: 'Tài khoản ngân hàng', dataIndex: 'bankAccountId', render: (id: number) => accLabel(id) },
+            { title: 'Nhà cung cấp', dataIndex: 'provider', width: 120, render: (p: Feed['provider']) => PROVIDER[p] },
+            { title: 'Xác thực', dataIndex: 'authKind', width: 130, render: (a: Feed['authKind']) => AUTH[a] },
+            { title: 'Nhận gần nhất', dataIndex: 'lastReceivedAt', width: 150, render: (t: string | null) => (t ? formatVnDate(t.slice(0, 10)) : <Tag>Chưa nhận</Tag>) },
+            { title: 'Hoạt động', dataIndex: 'isActive', width: 100, render: (a: boolean, r) => <Switch checked={a} disabled={!canUpdate} aria-label={`Hoạt động kết nối ${r.id}`} onChange={(isActive) => toggle.mutate({ id: r.id, isActive })} /> },
+            { title: '', width: 220, render: (_, r) => (
+              <Space>
+                {canUpdate && <Popconfirm title="Đổi mã mới?" description="Mã cũ ngừng dùng được ngay; phải cập nhật lại bên SePay/Casso." okText="Đổi mã" cancelText="Không" onConfirm={() => rotate.mutate(r.id)}><Button size="small">Đổi mã</Button></Popconfirm>}
+                {can('bank_feed.delete') && <Popconfirm title="Xóa kết nối này?" okText="Xóa" cancelText="Không" onConfirm={() => del.mutate(r.id)}><Button size="small" danger>Xóa</Button></Popconfirm>}
+              </Space>) },
+          ]} />
+      </Section>
 
-      <Space style={{ width: '100%', justifyContent: 'space-between', margin: '24px 0 12px' }}>
-        <h3 style={{ margin: 0 }}>Mẫu cột sao kê</h3>
-        {canUpdate && <Button onClick={() => openFmt({})}>Thêm mẫu</Button>}
-      </Space>
-      <Table<Format> rowKey="id" size="small" loading={formats.isLoading} dataSource={formats.data ?? []} pagination={false} locale={{ emptyText: 'Chưa có mẫu cột sao kê' }}
-        columns={[
-          { title: 'Tên mẫu', dataIndex: 'name' }, { title: 'Ngân hàng', dataIndex: 'bankCode', width: 110 },
-          { title: 'Dòng tiêu đề', dataIndex: 'headerRow', width: 110, align: 'right' }, { title: 'Ngày', dataIndex: 'dateCol', width: 70 },
-          { title: 'Diễn giải', dataIndex: 'descriptionCol', width: 90 },
-          { title: 'Ghi có / Ghi nợ / Có dấu', width: 170, render: (_, r) => [r.amountInCol, r.amountOutCol, r.signedAmountCol].map((c) => c ?? '–').join(' / ') },
-          { title: '', width: 150, render: (_, r) => canUpdate && (
-            <Space><Button size="small" onClick={() => openFmt(r)}>Sửa</Button>
-              <Popconfirm title="Xóa mẫu này?" okText="Xóa" cancelText="Không" onConfirm={() => delFmt.mutate(r.id)}><Button size="small" danger>Xóa</Button></Popconfirm></Space>) },
-        ]} />
+      <Section title="Mẫu cột sao kê" bodyPadding={0} extra={canUpdate && <Button onClick={() => openFmt({})}>Thêm mẫu</Button>}>
+        <Table<Format> rowKey="id" size="small" loading={formats.isLoading} dataSource={formats.data ?? []} pagination={false} locale={{ emptyText: 'Chưa có mẫu cột sao kê' }}
+          columns={[
+            { title: 'Tên mẫu', dataIndex: 'name' }, { title: 'Ngân hàng', dataIndex: 'bankCode', width: 110 },
+            { title: 'Dòng tiêu đề', dataIndex: 'headerRow', width: 110, align: 'right' }, { title: 'Ngày', dataIndex: 'dateCol', width: 70 },
+            { title: 'Diễn giải', dataIndex: 'descriptionCol', width: 90 },
+            { title: 'Ghi có / Ghi nợ / Có dấu', width: 170, render: (_, r) => [r.amountInCol, r.amountOutCol, r.signedAmountCol].map((c) => c ?? '–').join(' / ') },
+            { title: '', width: 150, render: (_, r) => canUpdate && (
+              <Space><Button size="small" onClick={() => openFmt(r)}>Sửa</Button>
+                <Popconfirm title="Xóa mẫu này?" okText="Xóa" cancelText="Không" onConfirm={() => delFmt.mutate(r.id)}><Button size="small" danger>Xóa</Button></Popconfirm></Space>) },
+          ]} />
+      </Section>
 
       <Modal title="Thêm kết nối ngân hàng" open={adding} okText="Tạo kết nối" cancelText="Hủy" confirmLoading={create.isPending} destroyOnHidden onCancel={() => setAdding(false)} onOk={() => form.submit()}>
         <Form form={form} layout="vertical" onKeyDown={(e: React.KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); form.submit(); } }} onFinish={(v: Record<string, unknown>) => create.mutate(Object.fromEntries(Object.entries(v).filter(([, x]) => x !== '' && x !== undefined)))}>

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Card, DatePicker, Input, Modal, Popconfirm, Space, Table, Tag, message } from 'antd';
+import { Alert, Button, DatePicker, Input, Modal, Popconfirm, Space, Table, Tag, theme, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber, parseVnNumber } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, VnNumberInput, type LookupRow } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, PageHeader, Section, Toolbar, VnNumberInput, type LookupRow } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor } from '../lookups.js';
@@ -121,66 +121,183 @@ export default function CashCountPage() {
   const fmtDiff = (c: Count) => (D(c.difference).isZero() ? '0' : `${D(c.difference).gt(0) ? 'Thừa' : 'Thiếu'} ${show(D(c.difference).abs().toFixed(), c.currency)}`);
 
   const columns = useMemo(() => columnsFor(cur), [cur]);
-  const diffColor = sign < 0 ? '#cf1322' : sign > 0 ? '#d46b08' : undefined;
+  const { token } = theme.useToken();
+  const diffColor = sign < 0 ? token.colorError : sign > 0 ? token.colorWarning : undefined;
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Kiểm kê quỹ</h2>
-        {current && <Button onClick={startNew}>Kiểm kê mới</Button>}
-      </Space>
+    <>
+      <PageHeader
+        title="Kiểm kê quỹ"
+        description="Kiểm đếm tiền mặt theo mệnh giá, đối chiếu số dư sổ quỹ và xử lý chênh lệch"
+        extra={
+          <>
+            {current && <Button onClick={startNew}>Kiểm kê mới</Button>}
+            {mayCreate && !current && (
+              <Button type="primary" disabled={!canSave} loading={save.isPending} onClick={() => save.mutate()}>
+                Lưu kiểm kê (Ctrl+S)
+              </Button>
+            )}
+          </>
+        }
+      >
+        <Toolbar>
+          <Space size={6} align="center">
+            <label htmlFor="cc-date">Ngày kiểm kê</label>
+            <DatePicker
+              id="cc-date"
+              format="DD/MM/YYYY"
+              allowClear={false}
+              disabled={!!current}
+              value={dayjs(current?.countDate ?? date)}
+              onChange={(d) => d && setDate(d.format('YYYY-MM-DD'))}
+            />
+          </Space>
+          <Space size={6} align="center">
+            <label htmlFor="cc-account">Tài khoản quỹ</label>
+            <LookupSelect
+              id="cc-account"
+              catalog="account"
+              fetcher={accountFetcher}
+              placeholder="Chọn tài khoản quỹ (F4)"
+              style={{ width: 280 }}
+              disabled={!!current}
+              value={(current?.accountCode ?? accountCode) || null}
+              onChange={(code) => setAccountCode(code ?? '')}
+            />
+          </Space>
+          <Space size={6} align="center">
+            <label htmlFor="cc-currency">Loại tiền</label>
+            <LookupSelect
+              id="cc-currency"
+              catalog="currency"
+              style={{ width: 140 }}
+              disabled={!!current}
+              value={cur}
+              onChange={(code) => changeCurrency(code ?? 'VND')}
+            />
+          </Space>
+        </Toolbar>
+      </PageHeader>
 
-      <Space wrap size="middle" align="end">
-        <Space direction="vertical" size={2}><label htmlFor="cc-date">Ngày kiểm kê</label>
-          <DatePicker id="cc-date" format="DD/MM/YYYY" allowClear={false} disabled={!!current} value={dayjs(current?.countDate ?? date)} onChange={(d) => d && setDate(d.format('YYYY-MM-DD'))} /></Space>
-        <Space direction="vertical" size={2}><label htmlFor="cc-account">Tài khoản quỹ</label>
-          <LookupSelect id="cc-account" catalog="account" fetcher={accountFetcher} placeholder="Chọn tài khoản quỹ (F4)" style={{ width: 300 }} disabled={!!current}
-            value={(current?.accountCode ?? accountCode) || null} onChange={(code) => setAccountCode(code ?? '')} /></Space>
-        <Space direction="vertical" size={2}><label htmlFor="cc-currency">Loại tiền</label>
-          <LookupSelect id="cc-currency" catalog="currency" style={{ width: 160 }} disabled={!!current} value={cur} onChange={(code) => changeCurrency(code ?? 'VND')} /></Space>
-        {mayCreate && !current && <Button type="primary" disabled={!canSave} loading={save.isPending} onClick={() => save.mutate()}>Lưu kiểm kê (Ctrl+S)</Button>}
-      </Space>
-
-      {balance.error && <Alert type="error" showIcon message={(balance.error as Error).message} />}
+      {balance.error && (
+        <Alert type="error" showIcon message={(balance.error as Error).message} style={{ marginBottom: 16 }} />
+      )}
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <div style={{ flex: '1 1 460px', maxWidth: 620 }}>
-          <KeyboardGrid<Row> rows={rows} columns={columns} onRowsChange={setRows} addRowTemplate={blank} readOnly={!!current} height={Math.min(480, 64 + Math.max(rows.length, 3) * 42)} />
-        </div>
-        <Card size="small" title="Kết quả kiểm kê" style={{ flex: '1 1 360px', maxWidth: 480 }}>
+        <Section title="Bảng kê mệnh giá" bodyPadding={0} style={{ flex: '1 1 460px', maxWidth: 620 }}>
+          <KeyboardGrid<Row>
+            rows={rows}
+            columns={columns}
+            onRowsChange={setRows}
+            addRowTemplate={blank}
+            readOnly={!!current}
+            height={Math.min(480, 64 + Math.max(rows.length, 3) * 42)}
+          />
+        </Section>
+        <Section title="Kết quả kiểm kê" style={{ flex: '1 1 360px', maxWidth: 480 }}>
           <Space direction="vertical" style={{ width: '100%' }} size={8}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Số dư theo sổ (cuối ngày {formatVnDate(current?.countDate ?? date)})</span>
-              <b data-testid="cc-book">{book === null ? '…' : show(book, cur)}</b></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Kiểm kê thực tế</span><b data-testid="cc-counted">{show(counted, cur)}</b></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Chênh lệch (thực tế - sổ)</span>
-              <span><b data-testid="cc-diff" style={diffColor ? { color: diffColor } : undefined}>{diff === null ? '…' : show(diff, cur)}</b>{' '}
-                {diff !== null && <Tag color={sign < 0 ? 'error' : sign > 0 ? 'warning' : 'success'}>{sign < 0 ? 'Thiếu' : sign > 0 ? 'Thừa' : 'Khớp'}</Tag>}</span></div>
-            <Input.TextArea aria-label="Thành viên kiểm kê" placeholder={'Thành viên kiểm kê, mỗi dòng một người: Họ tên, chức danh'} rows={3} disabled={!!current} value={membersTxt} onChange={(e) => setMembersTxt(e.target.value)} />
-            <Input aria-label="Ghi chú" placeholder="Ghi chú (lý do chênh lệch...)" disabled={!!current} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} />
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Số dư theo sổ (cuối ngày {formatVnDate(current?.countDate ?? date)})</span>
+              <b className="kt-num" data-testid="cc-book">{book === null ? '…' : show(book, cur)}</b>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Kiểm kê thực tế</span>
+              <b className="kt-num" data-testid="cc-counted">{show(counted, cur)}</b>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Chênh lệch (thực tế - sổ)</span>
+              <span>
+                <b className="kt-num" data-testid="cc-diff" style={diffColor ? { color: diffColor } : undefined}>
+                  {diff === null ? '…' : show(diff, cur)}
+                </b>{' '}
+                {diff !== null && (
+                  <Tag color={sign < 0 ? 'error' : sign > 0 ? 'warning' : 'success'}>
+                    {sign < 0 ? 'Thiếu' : sign > 0 ? 'Thừa' : 'Khớp'}
+                  </Tag>
+                )}
+              </span>
+            </div>
+            <Input.TextArea
+              aria-label="Thành viên kiểm kê"
+              placeholder={'Thành viên kiểm kê, mỗi dòng một người: Họ tên, chức danh'}
+              rows={3}
+              disabled={!!current}
+              value={membersTxt}
+              onChange={(e) => setMembersTxt(e.target.value)}
+            />
+            <Input
+              aria-label="Ghi chú"
+              placeholder="Ghi chú (lý do chênh lệch...)"
+              disabled={!!current}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              maxLength={2000}
+            />
             {current && (
               <Space wrap>
-                {settled(current)
-                  ? <Alert type="success" showIcon message={<>Đã xử lý bằng <Link to="/chung-tu/$type/$id" params={{ type: voucherType, id: current.voucherId! }}>{voucherType === 'PT' ? 'Phiếu thu' : 'Phiếu chi'} {current.voucherNo ?? '(nháp)'}</Link></>} />
-                  : !D(current.difference).isZero() && can('cash_count.update') && can('voucher.create') && <Button type="primary" onClick={openSettle}>Xử lý chênh lệch</Button>}
-                {can('cash_count.view') && <Button onClick={() => window.open(`/api/cash-counts/${current.id}/print?format=pdf`, '_blank')}>In bảng kiểm kê</Button>}
-                {!settled(current) && can('cash_count.delete') && <Popconfirm title="Xóa kiểm kê quỹ này?" okText="Xóa" cancelText="Không" onConfirm={() => remove.mutate(current.id)}><Button danger>Xóa</Button></Popconfirm>}
+                {settled(current) ? (
+                  <Alert
+                    type="success"
+                    showIcon
+                    message={
+                      <>
+                        Đã xử lý bằng{' '}
+                        <Link to="/chung-tu/$type/$id" params={{ type: voucherType, id: current.voucherId! }}>
+                          {voucherType === 'PT' ? 'Phiếu thu' : 'Phiếu chi'} {current.voucherNo ?? '(nháp)'}
+                        </Link>
+                      </>
+                    }
+                  />
+                ) : (
+                  !D(current.difference).isZero() &&
+                  can('cash_count.update') &&
+                  can('voucher.create') && (
+                    <Button type="primary" onClick={openSettle}>
+                      Xử lý chênh lệch
+                    </Button>
+                  )
+                )}
+                {can('cash_count.view') && (
+                  <Button onClick={() => window.open(`/api/cash-counts/${current.id}/print?format=pdf`, '_blank')}>
+                    In bảng kiểm kê
+                  </Button>
+                )}
+                {!settled(current) && can('cash_count.delete') && (
+                  <Popconfirm
+                    title="Xóa kiểm kê quỹ này?"
+                    okText="Xóa"
+                    cancelText="Không"
+                    onConfirm={() => remove.mutate(current.id)}
+                  >
+                    <Button danger>Xóa</Button>
+                  </Popconfirm>
+                )}
               </Space>
             )}
           </Space>
-        </Card>
+        </Section>
       </div>
 
-      <Table<Count> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 10, hideOnSinglePage: true }} title={() => <b>Các lần kiểm kê gần đây</b>}
-        rowClassName={(c) => (c.id === current?.id ? 'ant-table-row-selected' : '')} onRow={(c) => ({ onClick: () => openSaved(c), style: { cursor: 'pointer' } })}
-        columns={[
-          { title: 'Số', dataIndex: 'id', width: 70 },
-          { title: 'Ngày kiểm kê', dataIndex: 'countDate', width: 130, render: (d: string) => formatVnDate(d) },
-          { title: 'Tài khoản', dataIndex: 'accountCode', width: 110 },
-          { title: 'Loại tiền', dataIndex: 'currency', width: 90 },
-          { title: 'Thực tế', dataIndex: 'countedTotal', align: 'right', render: (v: string, c) => show(v, c.currency) },
-          { title: 'Chênh lệch', align: 'right', render: (_, c) => fmtDiff(c) },
-          { title: 'Xử lý', render: (_, c) => (settled(c) ? <Tag color="success">{c.voucherNo ?? 'Chứng từ nháp'}</Tag> : D(c.difference).isZero() ? '' : <Tag>Chưa xử lý</Tag>) },
-        ]} />
+      <Section title="Các lần kiểm kê gần đây" bodyPadding={0} style={{ marginTop: 16 }}>
+        <Table<Count>
+          size="small"
+          rowKey="id"
+          loading={list.isLoading}
+          dataSource={list.data ?? []}
+          pagination={{ pageSize: 10, hideOnSinglePage: true }}
+          rowClassName={(c) => (c.id === current?.id ? 'ant-table-row-selected' : '')}
+          onRow={(c) => ({ onClick: () => openSaved(c), style: { cursor: 'pointer' } })}
+          columns={[
+            { title: 'Số', dataIndex: 'id', width: 70 },
+            { title: 'Ngày kiểm kê', dataIndex: 'countDate', width: 130, render: (d: string) => formatVnDate(d) },
+            { title: 'Tài khoản', dataIndex: 'accountCode', width: 110 },
+            { title: 'Loại tiền', dataIndex: 'currency', width: 90 },
+            { title: 'Thực tế', dataIndex: 'countedTotal', align: 'right', className: 'kt-num', render: (v: string, c) => show(v, c.currency) },
+            { title: 'Chênh lệch', align: 'right', className: 'kt-num', render: (_, c) => fmtDiff(c) },
+            { title: 'Xử lý', render: (_, c) => (settled(c) ? <Tag color="success">{c.voucherNo ?? 'Chứng từ nháp'}</Tag> : D(c.difference).isZero() ? '' : <Tag>Chưa xử lý</Tag>) },
+          ]}
+        />
+      </Section>
 
       <Modal title="Xử lý chênh lệch kiểm kê quỹ" open={settleOpen} onCancel={() => setSettleOpen(false)} okText="Lập chứng từ" cancelText="Hủy"
         confirmLoading={settle.isPending} onOk={() => current && settle.mutate(current.id)} destroyOnHidden>
@@ -195,6 +312,6 @@ export default function CashCountPage() {
           {settleErr && <Alert type="error" showIcon message={settleErr} />}
         </Space>}
       </Modal>
-    </Space>
+    </>
   );
 }

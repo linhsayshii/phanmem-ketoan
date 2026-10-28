@@ -15,7 +15,7 @@ export interface PageHeaderProps {
 
 export function PageHeader({ title, tags, description, extra, children, style, className }: PageHeaderProps) {
   return (
-    <header className={className} style={{ marginBottom: 16, ...style }}>
+    <header className={className ? `kt-page-header ${className}` : 'kt-page-header'} style={{ marginBottom: 16, ...style }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: children ? 12 : 0 }}>
         <div>
           {tags ? (
