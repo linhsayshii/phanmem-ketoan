@@ -51,6 +51,7 @@ export interface AccountTable {
   id: Generated<number>; tenant_id: string; regime: string; code: string; name: string; name_en: string | null;
   parent_id: number | null; is_group: Generated<boolean>; root_type: string; normal_balance: string;
   track_currency: Generated<boolean>; subledger_kind: string | null; reconcile: Generated<boolean>; is_active: Generated<boolean>;
+  translation_status: Generated<string | null>;
 }
 export interface CoaTemplateTable {
   regime: string; code: string; name: string; name_en: string | null; parent_code: string | null; is_group: boolean;
@@ -316,12 +317,13 @@ export interface ClosingRunTable {
 // Mẫu báo cáo hệ thống (toàn cục) và bản của công ty; source/side/formula: xem packages/domain/src/reportFormula.ts.
 export interface ReportTemplateTable {
   regime: string; report_code: string; line_code: string; label: string; parent_line_code: string | null; source: string; side: string; formula: string | null;
-  sort_order: number; is_bold: Generated<boolean>; negate: Generated<boolean>; note_ref: string | null;
+  sort_order: number; is_bold: Generated<boolean>; negate: Generated<boolean>; note_ref: string | null; label_en: Generated<string | null>;
 }
 export interface ReportDefTable { id: Generated<string>; tenant_id: string; regime: string; report_code: string; name: string; form_no: string; issued_by: string }
 export interface ReportLineTable {
   id: Generated<number>; tenant_id: string; report_def_id: string; line_code: string; label: string; parent_line_code: string | null; source: string; side: string; formula: string | null;
   sort_order: number; is_bold: Generated<boolean>; negate: Generated<boolean>; note_ref: string | null;
+  label_en: Generated<string | null>; translation_status: Generated<string | null>;
 }
 
 // sql chỉ chủ sở hữu CSDL (migration/seed) ghi được; app_user chỉ UPDATE các cột thông điệp (xem 0014).
