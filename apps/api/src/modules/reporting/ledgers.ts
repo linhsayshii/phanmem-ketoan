@@ -2,7 +2,7 @@ import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
 import { D, sensitiveDenial, sum, SENSITIVE_FLAGS_ALL, ZERO, type Decimal } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
-import { withSalary } from '../payroll/accounts.js';
+import { isSalaryCode, SALARY_HIDDEN, withSalary } from '../payroll/accounts.js';
 
 type Trx = Transaction<Database>;
 export interface Side { debit: string; credit: string }
@@ -84,7 +84,22 @@ export async function generalJournal(trx: Trx, f: { from: string; to: string }, 
 
 // Mỗi cặp đối ứng cho một dòng sổ ở mỗi bên khớp tiền tố: cặp Nợ 1122 / Có 1121 trong sổ 112 cho một dòng Nợ (đối ứng 1121) và một dòng Có (đối ứng 1122).
 // Chiều phân tích lấy từ đúng dòng chứng từ gốc của bên đó (debit_line_id / credit_line_id).
-async function pairRows(trx: Trx, regime: string, prefix: string, f: { from: string; to: string }, filters: Filters = {}) {
+// hideSalary (thiếu view_salary): cặp ghép mỗi dòng 334/BH theo nhân viên với bên kia (LU: Có 334 từng người; chi lương: Nợ 334 từng người), nên các dòng có TK đối ứng lương
+// gộp theo (chứng từ, bên, TK, TK đối ứng, chiều) thành một dòng tổng và mất diễn giải (có thể ghi tên người); tổng và số dư không đổi.
+async function pairRows(trx: Trx, regime: string, prefix: string, f: { from: string; to: string }, filters: Filters = {}, hideSalary = false) {
+  const rows = await rawPairRows(trx, regime, prefix, f, filters);
+  if (!hideSalary) return rows;
+  const out: typeof rows = []; const groups = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) {
+    if (!isSalaryCode(regime, r.counterAccountCode)) { out.push(r); continue; }
+    const k = JSON.stringify([r.voucherId, r.postingDate, D(r.debit).isZero(), r.lineAccountCode, r.counterAccountCode, r.partyCode, r.costItemCode, r.projectCode, r.departmentCode]);
+    const g = groups.get(k);
+    if (g) { g.debit = D(g.debit).plus(r.debit).toString(); g.credit = D(g.credit).plus(r.credit).toString(); continue; }
+    const row = { ...r, description: SALARY_HIDDEN }; groups.set(k, row); out.push(row);
+  }
+  return out;
+}
+async function rawPairRows(trx: Trx, regime: string, prefix: string, f: { from: string; to: string }, filters: Filters) {
   return (await sql<{ postingDate: string; voucherId: string; voucherNo: string; description: string | null; counterAccountCode: string; debit: string; credit: string; partyCode: string | null; partyName: string | null; costItemCode: string | null; projectCode: string | null; departmentCode: string | null; lineAccountCode: string }>`
     WITH pr AS (
       SELECT p.voucher_id, p.posting_date, ad.code AS dcode, ac.code AS ccode, p.amount, p.debit_line_id, p.credit_line_id
@@ -103,12 +118,12 @@ async function pairRows(trx: Trx, regime: string, prefix: string, f: { from: str
     ORDER BY s.posting_date, v.voucher_type, v.seq_no, v.id, ln.line_no, s.counter, s.ord`.execute(trx)).rows;
 }
 
-export async function accountLedger(trx: Trx, tenantId: string, f: { accountCode: string; from: string; to: string; mode: 'voucher' | 'subaccount' | 't' }) {
+export async function accountLedger(trx: Trx, tenantId: string, f: { accountCode: string; from: string; to: string; mode: 'voucher' | 'subaccount' | 't' }, hideSalary = false) {
   const regime = await regimeOf(trx, f);
   const accs = await accountsUnder(trx, regime, f.accountCode);
   const opens = await openingNets(trx, tenantId, regime, f.accountCode, f.from);
   const openNet = sum(opens.values());
-  const rows = await pairRows(trx, regime, f.accountCode, f);
+  const rows = await pairRows(trx, regime, f.accountCode, f, {}, hideSalary);
   const totalDebit = sum(rows.map((r) => r.debit)); const totalCredit = sum(rows.map((r) => r.credit));
   const base = { opening: side(openNet), totalDebit: totalDebit.toString(), totalCredit: totalCredit.toString(), closing: side(openNet.plus(totalDebit).minus(totalCredit)) };
   if (f.mode === 'subaccount') {
@@ -128,7 +143,7 @@ export async function accountLedger(trx: Trx, tenantId: string, f: { accountCode
 }
 
 export async function accountDetail(trx: Trx, tenantId: string, f: { accountCode: string; from: string; to: string; partyCode?: string | undefined; costItemCode?: string | undefined; projectCode?: string | undefined; departmentCode?: string | undefined; employeeCode?: string | undefined;
-  contractCode?: string | undefined; costObjectCode?: string | undefined }) {
+  contractCode?: string | undefined; costObjectCode?: string | undefined }, hideSalary = false) {
   const regime = await regimeOf(trx, f);
   await accountsUnder(trx, regime, f.accountCode);
   // Mã lọc không có trong danh mục thì báo lỗi, không lặng lẽ bỏ bộ lọc (sẽ ra sổ của mọi đối tượng).
@@ -144,7 +159,7 @@ export async function accountDetail(trx: Trx, tenantId: string, f: { accountCode
     costObjectId: (await id('cost_object', f.costObjectCode)) as number | undefined };
   const byDim = [filters.costItemId, filters.projectId, filters.departmentId, filters.employeeId, filters.contractId, filters.costObjectId].some((x) => x !== undefined);
   const openNet = byDim ? await openingFromLines(trx, regime, f.accountCode, f.from, filters) : await openingNet(trx, tenantId, regime, f.accountCode, f.from, { partyId: filters.partyId });
-  const rows = await pairRows(trx, regime, f.accountCode, f, filters);
+  const rows = await pairRows(trx, regime, f.accountCode, f, filters, hideSalary);
   let run = openNet;
   return { opening: side(openNet), rows: rows.map((r) => { run = run.plus(r.debit).minus(r.credit); return { ...r, running: side(run) }; }),
     totalDebit: sum(rows.map((r) => r.debit)).toString(), totalCredit: sum(rows.map((r) => r.credit)).toString(), closing: side(run) };

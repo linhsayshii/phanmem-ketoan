@@ -1,11 +1,11 @@
 import type { Kysely, Transaction } from 'kysely';
 import type { Database } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
-import { isSalaryCode, salaryAccountIds } from './accounts.js';
+import { isSalaryCode, SALARY_HIDDEN, salaryAccountIds } from './accounts.js';
 
 type Trx = Kysely<Database> | Transaction<Database>;
 type Auth = { sensitive: Set<string> };
-interface SalaryLine { accountCode: string; debit: string; credit: string; amountCurrency?: string | null | undefined; employeeCode?: string | null | undefined; settle?: unknown }
+interface SalaryLine { accountCode: string; debit: string; credit: string; amountCurrency?: string | null | undefined; employeeCode?: string | null | undefined; description?: string | null | undefined; settle?: unknown }
 interface SalaryDto { id: string; totalDebit: string; lines: SalaryLine[] }
 
 // Mã tài khoản lương trong các dòng của chứng từ (theo hệ tài khoản của năm tài chính chứng từ); rỗng khi người gọi có view_salary hoặc chứng từ không có dòng lương.
@@ -15,18 +15,19 @@ async function salaryCodesOf(trx: Trx, auth: Auth, dto: SalaryDto): Promise<Set<
   return new Set(dto.lines.map((l) => l.accountCode).filter((c) => isSalaryCode(regime, c)));
 }
 
-// Thiếu view_salary: che số tiền, nhân viên và kế hoạch đối trừ của các dòng trên tài khoản lương (phải trả người lao động, KPCĐ, BHXH, BHYT, BHTN) ở chứng từ mọi loại; các dòng khác giữ nguyên.
+// Thiếu view_salary: che số tiền, nhân viên, diễn giải (chi lương ghi tên từng người) và kế hoạch đối trừ của các dòng trên tài khoản lương (phải trả người lao động, KPCĐ, BHXH, BHYT, BHTN) ở chứng từ mọi loại; các dòng khác giữ nguyên.
 // Tổng tiền của chứng từ cũng bị che (null) vì gồm số lương. salaryRedacted cho giao diện biết dòng nào là số che chứ không phải số 0.
 export async function redactSalary<T extends SalaryDto>(trx: Trx, auth: Auth, dto: T): Promise<T & { salaryRedacted?: true }> {
   const hidden = await salaryCodesOf(trx, auth, dto);
   if (!hidden.size) return dto;
-  const lines = dto.lines.map((l) => (hidden.has(l.accountCode) ? { ...l, debit: '0', credit: '0', amountCurrency: l.amountCurrency == null ? l.amountCurrency : '0', employeeCode: null, settle: undefined } : l));
+  const lines = dto.lines.map((l) => (hidden.has(l.accountCode) ? { ...l, debit: '0', credit: '0', amountCurrency: l.amountCurrency == null ? l.amountCurrency : '0', employeeCode: null, ...(l.description != null && { description: SALARY_HIDDEN }), settle: undefined } : l));
   return { ...dto, lines, totalDebit: null as never, salaryRedacted: true };
 }
 
-// Chứng từ có dòng lương thì thiếu view_salary là 403 cho thao tác không thể làm trên bản che: in (mẫu in cộng tiền theo dòng) và sửa nháp cả bộ dòng (lưu lại bản che sẽ ghi đè số lương bằng 0).
+// Chứng từ có dòng lương thì thiếu view_salary là 403 cho thao tác không thể làm trên bản che: in (mẫu in cộng tiền theo dòng), sửa nháp cả bộ dòng (lưu lại bản che sẽ ghi đè số lương bằng 0)
+// và sửa chiều/diễn giải dòng của chứng từ đã ghi sổ (đổi nhân viên của dòng 334 trên bản che).
 export async function assertNoSalaryLines(trx: Trx, auth: Auth, dto: SalaryDto): Promise<void> {
-  if ((await salaryCodesOf(trx, auth, dto)).size) throw new AppError('FORBIDDEN', 'Không có quyền xem lương', 403);
+  if ((await salaryCodesOf(trx, auth, dto)).size) throw new AppError('SALARY_FORBIDDEN', 'Không có quyền xem lương', 403);
 }
 
 // Danh sách chứng từ: tổng tiền của chứng từ có dòng trên tài khoản lương bị che (null) khi thiếu view_salary.

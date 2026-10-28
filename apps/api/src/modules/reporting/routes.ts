@@ -45,15 +45,16 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     if (req.query.format === 'json') return app.withTenant(req, (trx) => generalJournal(trx, req.query, JOURNAL_JSON_LIMIT), READ_SNAPSHOT);
     return printDoc(req, reply, req.query.format, req.query, `nhat-ky-chung-${req.query.from}-${req.query.to}`, (trx, regime) => journalDoc(trx, req.auth!.tenantId!, regime, req.query));
   });
-  // Cờ nhạy cảm (công nợ, giá vốn) kiểm tra trong cùng giao dịch với truy vấn sổ.
+  // Cờ nhạy cảm (công nợ, giá vốn) kiểm tra trong cùng giao dịch với truy vấn sổ. Thiếu view_salary: dòng đối ứng lương gộp theo chứng từ (không theo nhân viên).
+  const hideSalary = (req: FastifyRequest) => !req.auth!.sensitive.has('view_salary');
   app.get('/api/reports/ledgers/account', { preHandler: view, schema: { querystring: z.object({ ...range, accountCode: z.string().min(1), mode: z.enum(['voucher', 'subaccount', 't']).default('voucher'), format }).refine(ordered, orderedMsg) } }, async (req, reply) => {
-    if (req.query.format === 'json') return app.withTenant(req, async (trx) => { await assertCanView(trx, req.auth!, req.query); return accountLedger(trx, req.auth!.tenantId!, req.query); }, READ_SNAPSHOT);
+    if (req.query.format === 'json') return app.withTenant(req, async (trx) => { await assertCanView(trx, req.auth!, req.query); return accountLedger(trx, req.auth!.tenantId!, req.query, hideSalary(req)); }, READ_SNAPSHOT);
     // Bản in luôn là Sổ Cái theo chứng từ (mẫu S03b), không theo `mode` của màn hình.
-    return printDoc(req, reply, req.query.format, req.query, `so-cai-${req.query.accountCode}-${req.query.from}-${req.query.to}`, async (trx, regime) => { await assertCanView(trx, req.auth!, req.query); return ledgerDoc(trx, req.auth!.tenantId!, regime, req.query); });
+    return printDoc(req, reply, req.query.format, req.query, `so-cai-${req.query.accountCode}-${req.query.from}-${req.query.to}`, async (trx, regime) => { await assertCanView(trx, req.auth!, req.query); return ledgerDoc(trx, req.auth!.tenantId!, regime, req.query, hideSalary(req)); });
   });
   app.get('/api/reports/ledgers/detail', { preHandler: view, schema: { querystring: z.object({ ...range, accountCode: z.string().min(1), partyCode: z.string().optional(), costItemCode: z.string().optional(), projectCode: z.string().optional(), departmentCode: z.string().optional(), employeeCode: z.string().optional(), contractCode: z.string().optional(), costObjectCode: z.string().optional(), format }).refine(ordered, orderedMsg) } }, async (req, reply) => {
-    if (req.query.format === 'json') return app.withTenant(req, async (trx) => { await assertCanView(trx, req.auth!, req.query); return accountDetail(trx, req.auth!.tenantId!, req.query); }, READ_SNAPSHOT);
-    return printDoc(req, reply, req.query.format, req.query, `so-chi-tiet-${req.query.accountCode}-${req.query.from}-${req.query.to}`, async (trx, regime) => { await assertCanView(trx, req.auth!, req.query); return detailDoc(trx, req.auth!.tenantId!, regime, req.query); });
+    if (req.query.format === 'json') return app.withTenant(req, async (trx) => { await assertCanView(trx, req.auth!, req.query); return accountDetail(trx, req.auth!.tenantId!, req.query, hideSalary(req)); }, READ_SNAPSHOT);
+    return printDoc(req, reply, req.query.format, req.query, `so-chi-tiet-${req.query.accountCode}-${req.query.from}-${req.query.to}`, async (trx, regime) => { await assertCanView(trx, req.auth!, req.query); return detailDoc(trx, req.auth!.tenantId!, regime, req.query, hideSalary(req)); });
   });
   app.get('/api/reports/ledgers/trial-balance', { preHandler: view, schema: { querystring: z.object({ ...range, level: z.coerce.number().int().min(1).max(6).optional(), splitParty: z.enum(['true', 'false']).default('true'), format }).refine(ordered, orderedMsg) } }, async (req, reply) => {
     assertAllSensitive(req.auth!); // mọi tài khoản, kể cả công nợ và giá vốn

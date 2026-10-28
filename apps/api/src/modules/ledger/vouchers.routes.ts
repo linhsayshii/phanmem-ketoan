@@ -135,7 +135,8 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.put('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.update'), schema: { params: idParam, body: z.union([S.voucherInput.extend({ version: z.number().int() }), metaBody]) } }, async (req) => {
     const { version, ...input } = req.body;
     return app.withOverride(req, async (trx) => {
-      if ('voucherType' in input) await assertNoSalaryLines(trx, req.auth!, await S.getVoucher(trx, req.params.id)); // sửa cả bộ dòng trên bản che sẽ ghi đè số lương
+      // sửa cả bộ dòng (nháp) hoặc chiều của dòng (đã ghi sổ) trên bản che: ghi đè số lương, đổi nhân viên dòng 334; chỉ sửa diễn giải đầu chứng từ thì được
+      if ('voucherType' in input || input.lines?.length) await assertNoSalaryLines(trx, req.auth!, await S.getVoucher(trx, req.params.id));
       return redactCost(trx, req.auth!, 'voucherType' in input ? await S.updateDraft(trx, req.params.id, version, input, req.auth!) : await S.updatePostedMeta(trx, req.params.id, version, input));
     });
   });

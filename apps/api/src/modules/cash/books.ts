@@ -4,7 +4,7 @@ import { D, formatVnDate, formatVnNumber, ZERO, type Decimal } from '@kt/domain'
 import { AppError } from '../../plugins/errors.js';
 import { getSettings } from '../core/settings.js';
 import * as S from '../ledger/vouchers.service.js';
-import { isSalaryCode, salaryAccountIds } from '../payroll/accounts.js';
+import { isSalaryCode, SALARY_HIDDEN, salaryAccountIds } from '../payroll/accounts.js';
 import { accountsUnder, dayBefore, regimeOf } from '../reporting/ledgers.js';
 import { companyInfo } from '../reporting/print/bookSet.js';
 import { bookFormFor } from '../reporting/print/forms.js';
@@ -122,7 +122,6 @@ export async function cashBook(trx: Trx, p: { kind: 'cash' | 'bank'; accountCode
     if (ids.length) for (const r of await trx.selectFrom('voucher_line').select('voucher_id').distinct().where('voucher_id', 'in', ordered.map((a) => a.meta.voucherId)).where('account_id', 'in', ids)
       .where('posting_date', '>=', p.from).where('posting_date', '<=', p.to).execute()) hidden.add(r.voucher_id);
   }
-  const SALARY_HIDDEN = 'Đã ẩn do thiếu quyền xem lương';
   let run = opening.net; let runCur = opening.cur; let totalIn = ZERO; let totalOut = ZERO; let totalInCur = ZERO; let totalOutCur = ZERO;
   const rows: BookRow[] = ordered.map((a) => {
     run = run.plus(a.in).minus(a.out); runCur = runCur.plus(a.inCur).minus(a.outCur);

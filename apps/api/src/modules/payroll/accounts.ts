@@ -14,6 +14,8 @@ export function payrollAccountMaps(regime: string): PayrollAccountMap[] {
   return m;
 }
 export const isSalaryCode = (regime: string, code: string): boolean => payrollAccountMaps(regime).some((m) => isSalaryAccount(m, code));
+// Diễn giải thay thế ở sổ và chứng từ khi thiếu view_salary (diễn giải lương có thể ghi tên nhân viên).
+export const SALARY_HIDDEN = 'Đã ẩn do thiếu quyền xem lương';
 // Gắn cờ salary cho tài khoản của một hệ (đầu vào của sensitiveDenial/assertSensitive).
 export const withSalary = <T extends { code: string }>(regime: string, rows: T[]): (T & { salary: boolean })[] => rows.map((r) => ({ ...r, salary: isSalaryCode(regime, r.code) }));
 

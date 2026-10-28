@@ -129,3 +129,49 @@ describe('sổ chi tiết lọc theo nhân viên (employeeCode)', () => {
     expect(Number(all.totalCredit)).toBeGreaterThan(Number(a.totalCredit));
   });
 });
+
+// QĐ #981–#983: cặp đối ứng ghép từng dòng 334 theo nhân viên với bên kia, nên sổ 6421/111 của người thiếu view_salary gộp đối ứng lương theo chứng từ và che diễn giải.
+describe('sổ cái, sổ chi tiết TK không phải lương: đối ứng lương gộp theo chứng từ khi thiếu view_salary', () => {
+  type Book = { rows: { voucherId: string; counterAccountCode: string; debit: string; credit: string; description: string | null }[]; totalDebit: string; totalCredit: string; closing: object };
+  const book = async (path: 'detail' | 'account', code: string, from: string, to: string, c: string) => {
+    const r = await get(`/api/reports/ledgers/${path}?accountCode=${code}&from=${from}&to=${to}`, c); expect(r.statusCode, r.body).toBe(200); return r.json() as Book;
+  };
+  it('bảng nhiều người (LU, chi lương) và bảng một người: không còn số, tên theo từng người; tổng và số dư không đổi; đủ cờ thấy đủ', async () => {
+    const pc = (date: string, description: string, lines: object[]) => post('/api/vouchers', { voucherType: 'PC', postingDate: date, documentDate: date, description, autoPost: true, lines });
+    await voucher('PKT', '2026-06-30', [{ accountCode: '6421', debit: '4100000' }, { accountCode: '334', credit: '1700000', employeeCode: 'NV1' }, { accountCode: '334', credit: '2400000', employeeCode: 'NV2' }]);
+    const p6 = await pc('2026-06-30', 'Chi lương tháng 6', [{ accountCode: '334', debit: '1700000', employeeCode: 'NV1', description: 'Chi lương T6: Nhân viên 1' },
+      { accountCode: '334', debit: '2400000', employeeCode: 'NV2', description: 'Chi lương T6: Nhân viên 2' }, { accountCode: '111', credit: '4100000' }]);
+    expect(p6.statusCode, p6.body).toBe(201);
+    const p7 = await pc('2026-07-31', 'Chi lương tháng 7 Nhân viên 1', [{ accountCode: '334', debit: '3300000', employeeCode: 'NV1', description: 'Chi lương T7: Nhân viên 1' }, { accountCode: '111', credit: '3300000' }]);
+    expect(p7.statusCode, p7.body).toBe(201);
+    for (const path of ['detail', 'account'] as const) for (const code of ['6421', '111']) {
+      const f = await book(path, code, '2026-06-01', '2026-06-30', salary); const n = await book(path, code, '2026-06-01', '2026-06-30', none);
+      expect(f.rows.filter((r) => r.counterAccountCode === '334').map((r) => r.debit === '0' ? r.credit : r.debit).sort(), `${path} ${code} đủ cờ`).toEqual(['1700000', '2400000']);
+      const s = n.rows.filter((r) => r.counterAccountCode === '334');
+      expect(s.map((r) => [r.debit === '0' ? r.credit : r.debit, r.description]), `${path} ${code} thiếu cờ`).toEqual([['4100000', 'Đã ẩn do thiếu quyền xem lương']]);
+      expect(JSON.stringify(n)).not.toMatch(/1700000|2400000|Nhân viên/);
+      expect([n.totalDebit, n.totalCredit, n.closing]).toEqual([f.totalDebit, f.totalCredit, f.closing]);
+    }
+    const html = await get('/api/reports/ledgers/detail?accountCode=6421&from=2026-06-01&to=2026-06-30&format=html', none);
+    expect(html.statusCode).toBe(200); expect(html.body).toContain('4.100.000'); expect(html.body).not.toMatch(/1\.700\.000|2\.400\.000/);
+    // Bảng một người: số chi là thực lĩnh của người đó (như sổ quỹ, QĐ #936), nhưng diễn giải có tên bị che ở sổ và ở dòng 334 của chứng từ.
+    const one = await book('detail', '111', '2026-07-01', '2026-07-31', none);
+    expect(one.rows.map((r) => [r.credit, r.description])).toEqual([['3300000', 'Đã ẩn do thiếu quyền xem lương']]);
+    const v7 = (await get(`/api/vouchers/${p7.json().id}`, none)).json() as { lines: { accountCode: string; description: string | null }[] };
+    expect(JSON.stringify(v7.lines)).not.toContain('Nhân viên 1');
+    expect((await get(`/api/vouchers/${p7.json().id}`, salary)).body).toContain('Chi lương T7: Nhân viên 1');
+  });
+
+  it('sửa chiều dòng của chứng từ lương đã ghi sổ (thân chỉ meta): 403 SALARY_FORBIDDEN khi thiếu view_salary; chỉ sửa diễn giải đầu chứng từ thì được và phản hồi vẫn che', async () => {
+    const v = await voucher('PC', '2026-08-05', [{ accountCode: '334', debit: '5100000', employeeCode: 'NV1' }, { accountCode: '111', credit: '5100000' }]);
+    const cur = (await get(`/api/vouchers/${v.id}`, salary)).json() as { version: number; lines: { lineNo: number; accountCode: string }[] };
+    const lineNo = cur.lines.find((l) => l.accountCode === '334')!.lineNo;
+    const bad = await put(`/api/vouchers/${v.id}`, { version: cur.version, lines: [{ lineNo, employeeCode: 'NV2' }] }, none);
+    expect(bad.statusCode, bad.body).toBe(403); expect(bad.json().error.code).toBe('SALARY_FORBIDDEN');
+    const head = await put(`/api/vouchers/${v.id}`, { version: cur.version, description: 'Sửa đầu chứng từ' }, none);
+    expect(head.statusCode, head.body).toBe(200); expect(head.json().lines.find((l: { accountCode: string }) => l.accountCode === '334')).toMatchObject({ debit: '0', employeeCode: null });
+    const after = (await get(`/api/vouchers/${v.id}`, salary)).json() as { lines: { accountCode: string; employeeCode: string | null }[] };
+    expect(after.lines.find((l) => l.accountCode === '334')!.employeeCode).toBe('NV1');
+    expect((await put(`/api/vouchers/${v.id}`, { version: cur.version + 1, lines: [{ lineNo, employeeCode: 'NV2' }] }, salary)).statusCode).toBe(200);
+  });
+});
