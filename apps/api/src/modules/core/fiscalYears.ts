@@ -7,6 +7,7 @@ import { AppError } from '../../plugins/errors.js';
 import { generateAccounts } from '../coa/service.js';
 import { loadClosingTemplate } from '../ledger/closing.js';
 import { copyReportTemplates } from '../reporting/financial.js';
+import { BOOK_REGIMES, isRegimeReady, type BookRegime } from '@kt/coa-data';
 
 export const fiscalYearBody = z.object({
   fiscalYear: z.number().int().min(2000).max(2100), dateFrom: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-01$/, 'Ngày bắt đầu phải là ngày đầu tháng (YYYY-MM-01)'),
@@ -26,6 +27,11 @@ export async function createFiscalYear(trx: Transaction<Database>, tenantId: str
   try { periods = buildFiscalPeriods({ fiscalYear: input.fiscalYear, dateFrom: input.dateFrom, months: input.months, regime: input.regime as Regime }); }
   catch (e) { throw new AppError('VALIDATION', (e as Error).message, 400); }
   await trx.insertInto('fiscal_period').values(periods.map((p) => ({ tenant_id: tenantId, fiscal_year: p.fiscalYear, period_no: p.periodNo, date_from: p.dateFrom, date_to: p.dateTo, regime: p.regime }))).execute();
+  // GĐ7 nhóm 6b: TT58, TT152 không có hệ thống tài khoản; ghi sổ đơn ở modules/hkdbooks nên chỉ tạo kỳ, không sinh tài khoản, sơ đồ kết chuyển, báo cáo.
+  if ((BOOK_REGIMES as string[]).includes(input.regime)) {
+    if (!isRegimeReady(input.regime as BookRegime)) throw new AppError('COA_TEMPLATE_PENDING', `Chế độ ${input.regime} chưa đủ dữ liệu pháp lý để dùng (xem Hệ thống > Chế độ kế toán)`, 409);
+    return periods.length;
+  }
   const hasAccounts = await trx.selectFrom('account').select('id').where('regime', '=', input.regime).limit(1).executeTakeFirst();
   if (!hasAccounts) await generateAccounts(trx, tenantId, input.regime as Regime);
   // Sơ đồ kết chuyển mặc định của chế độ này nạp khi công ty chưa có bước nào của chế độ đó; không bao giờ xóa sơ đồ chế độ khác (năm cũ còn cần kết chuyển).
