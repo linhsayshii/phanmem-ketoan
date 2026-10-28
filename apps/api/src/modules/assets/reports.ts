@@ -65,7 +65,7 @@ export async function assetRegister(trx: Trx, tenantId: string, q: { from: strin
   for (const h of held) {
     const a = h.a; const key = a.categoryCode ?? '';
     const g = groups.get(key) ?? groups.set(key, { categoryCode: key, categoryName: a.categoryName ?? '(Chưa phân loại)', rows: [], totalCost: '0', totalAnnual: '0' }).get(key)!;
-    const r = rate(a); const annual = r ? D(h.cost).times(r).div(100).toDecimalPlaces(0).toString() : '0'; const dec = h.decs[0];
+    const r = rate(a); const annual = r ? D(h.cost).times(12).div(a.lifeUnits!).toDecimalPlaces(0).toString() : '0'; const dec = h.decs[0]; // mức năm = nguyên giá × 12 / số tháng (khớp lịch khấu hao); chỉ tỷ lệ in ra mới làm tròn 2 chữ số lẻ
     g.rows.push({ stt: g.rows.length + 1, assetId: a.id, assetCode: a.code, incVoucherNo: h.inc.voucherNo, incDate: h.inc.date, name: [a.name, a.spec].filter(Boolean).join(', '), country: a.country, useDate: a.useDate, cardNo: a.cardNo ?? a.code,
       cost: h.cost, ratePct: r, annualDepreciation: annual,
       accumulatedAtDecrease: dec ? String(dec.data['accumulated'] ?? '0') : null, decVoucherNo: dec?.voucherNo ?? null, decDate: dec?.date ?? null, decReason: dec ? reasonOf(dec.data) : null });

@@ -158,6 +158,16 @@ describe('sổ, thẻ, bảng và báo cáo tài sản', () => {
     expect(await identity()).toMatchObject({ decreased: '0', initial: '12000000' });
   });
 
+  // GĐ7 gói 2 (phụ lục B, TB3): mức khấu hao năm tính từ nguyên giá × 12 / số tháng, không qua tỷ lệ đã làm tròn 2 chữ số lẻ.
+  it('sổ TSCĐ: mức khấu hao năm = nguyên giá × 12 / số tháng (1 tỷ, 84 tháng = 142.857.143, không phải 142.900.000 theo tỷ lệ 14,29%)', async () => {
+    const t = await tenant();
+    await t.card('fixed', 'TS84', '1000000000', 84);
+    const r = await t.ok(t.call('GET', '/api/asset-reports/register?kind=fixed&from=2026-01-01&to=2026-12-31'));
+    const row = r.groups[0].rows[0];
+    expect([row.cost, row.ratePct, row.annualDepreciation]).toEqual(['1000000000', '14.29', '142857143']);
+    expect(r.groups[0].totalAnnual).toBe('142857143');
+  });
+
   it('chỉ report.view: JSON được, html/pdf/xlsx 403', async () => {
     const t = await tenant();
     const roles = (await t.ok(t.call('GET', '/api/roles'))) as { id: string; code: string }[];
