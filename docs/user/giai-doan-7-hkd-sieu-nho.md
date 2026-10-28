@@ -42,6 +42,12 @@ Cách tính chính:
 - B02-DNSN: 01 = doanh thu và thu nhập, 02 = chi phí, 03 = 01 - 02, 10 = thuế TNDN (tính như Sổ chi tiết doanh thu, chi phí), 20 = 03 - 10, so với năm trước.
 - Sổ vật tư: đơn giá xuất kho bình quân từng tháng = (giá trị tồn đầu tháng + giá trị nhập trong tháng) / (số lượng tồn đầu tháng + số lượng nhập trong tháng).
 
+## Hạn chế cần biết
+
+- **Thuế còn phải nộp đầu kỳ tính lại bằng tỷ lệ hiện hành.** Số thuế phát sinh của các kỳ trước được tính lại theo tỷ lệ thuế và phương pháp nộp thuế đang khai báo cho năm, không theo tỷ lệ tại thời điểm đó. Nếu đổi tỷ lệ giữa năm, số "còn phải nộp đầu kỳ" của kỳ sau đổi theo và bản in kỳ cũ có thể khác bản đã in trước đó. Cần đổi tỷ lệ thì nên đổi đầu năm, hoặc nhập số dư đầu kỳ bằng tay.
+- **Sổ chưa áp cờ dữ liệu nhạy cảm và chưa khóa kỳ.** Người có quyền xem sổ hộ kinh doanh thấy mọi sổ; người có quyền sửa, xóa sửa được bút ghi ở mọi ngày. Hãy cấp quyền `sohkd.*` cẩn thận.
+- **Kiểm tra tệp PDF hóa đơn chỉ là lớp phụ.** Phần mềm chặn PDF có mã chạy ngầm bằng cách dò nội dung thô của tệp; không thay cho phần mềm diệt virus và không phát hiện nội dung nén hoặc mã hóa.
+
 ## Chưa có
 
 Tờ khai 01/CNKD (chưa có văn bản gốc của mẫu), tự tính thuế theo ngành nghề và ngưỡng doanh thu của hộ kinh doanh (chờ Nghị định 68/2026), hóa đơn từ máy tính tiền, chứng từ 01-TT, 02-TT, 01-VT, 02-VT của Thông tư 58, B01-DNSN và các sổ S4a, S4b, S4d. Chi tiết: mục "GĐ7 nhóm 6 — Chờ người dùng" trong `docs/TIEP-THEO.md`.

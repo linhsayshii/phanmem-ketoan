@@ -54,7 +54,7 @@ Quy tắc:
 - Người được ủy quyền phải có quyền duyệt và cờ xem số liệu của chính họ (ủy quyền không cấp thêm quyền hay cờ nhạy cảm), và không bị giới hạn theo chi nhánh (người bị giới hạn chi nhánh không còn quyền duyệt).
 - Không tự ủy quyền cho mình; không ủy quyền vòng (A cho B, B cho C, C cho A trong khoảng ngày chồng nhau); ủy quyền chỉ một bước, người nhận không ủy quyền tiếp.
 - Không tự duyệt: người được ủy quyền không duyệt thay đề nghị do chính người ủy quyền lập, cũng không duyệt đề nghị do chính mình lập. Một người (kể cả khi duyệt thay) không duyệt hai bước của cùng một đề nghị: người ủy quyền đã duyệt bước trước thì người được ủy quyền không duyệt bước sau thay họ, và ngược lại.
-- Người ủy quyền hoặc quản trị (quyền sửa tùy chọn hệ thống) thu hồi được bất cứ lúc nào; thu hồi có hiệu lực ngay. Ủy quyền hết hạn tự mất hiệu lực. Quản trị xem mọi ủy quyền của công ty và lập thay người khác (qua API).
+- Người ủy quyền hoặc quản trị (quyền sửa tùy chọn hệ thống) thu hồi được bất cứ lúc nào; thu hồi có hiệu lực ngay. Ủy quyền hết hạn tự mất hiệu lực. Quản trị xem mọi ủy quyền của công ty; lập thay người khác (qua API) cần quyền quản lý người dùng và người nhận không được là chính người lập.
 - Lập, thu hồi ủy quyền đều ghi Nhật ký kiểm toán.
 
 ## Quyền

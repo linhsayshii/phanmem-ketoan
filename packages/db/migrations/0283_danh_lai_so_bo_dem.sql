@@ -1,4 +1,4 @@
--- 0283_danh_lai_so_du_bo_dem.sql: GĐ7 gói 3 (sửa) — renumber_vouchers (thân từ 0280) tạo trước bộ đếm cho mọi branch_id còn trên chứng từ, không chỉ bộ phận đang is_branch.
+-- 0283_danh_lai_so_bo_dem.sql: GĐ7 gói 3 (sửa) — renumber_vouchers (thân từ 0280) tạo trước bộ đếm cho mọi branch_id còn trên chứng từ, không chỉ bộ phận đang is_branch.
 CREATE OR REPLACE FUNCTION public.renumber_vouchers(p_tenant uuid, p_type text, p_year integer)
  RETURNS integer
  LANGUAGE plpgsql
