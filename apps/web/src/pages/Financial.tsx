@@ -3,9 +3,10 @@ import { Alert, Button, Checkbox, DatePicker, Drawer, Input, Modal, Select, Spac
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import dayjs from 'dayjs';
-import { D, formatVnDate, formatVnNumber } from '@kt/domain';
+import { D, formatVnDate, formatVnNumber, type PrintLang } from '@kt/domain';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
+import { PrintLangSelect } from './PrintLangSelect.js';
 
 interface FiscalYear { fiscalYear: number; regime: string; dateFrom: string; dateTo: string }
 interface Row { lineCode: string; label: string; parentLineCode: string | null; isBold: boolean; negate: boolean; noteRef: string | null; source: string; formula: string | null; current: string; previous: string | null }
@@ -92,7 +93,7 @@ export default function FinancialPage() {
   const [yearNo, setYearNo] = useState<number | undefined>();
   const [code, setCode] = useState('B01');
   const [custom, setCustom] = useState<{ year: number; from: string; to: string } | null>(null);
-  const [compare, setCompare] = useState(false);
+  const [compare, setCompare] = useState(false); const [printLang, setPrintLang] = useState<PrintLang>('vi');
   const [drill, setDrill] = useState<Row | null>(null);
   const [editing, setEditing] = useState(false);
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<FiscalYear[]>('/api/fiscal-years') });
@@ -126,8 +127,9 @@ export default function FinancialPage() {
           : <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(range.from), dayjs(range.to)]} onChange={(r) => r?.[0] && r[1] && setCustom({ year: fy.fiscalYear, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />)}
         {!isB01 && <span><Switch checked={compare} onChange={setCompare} /> So sánh năm trước</span>}
         {can('report.print') && range && <>
-          <Button disabled={!report.data} onClick={() => { window.open(`/api/reports/financial/${code}?${query({ ...range, format: 'pdf' })}`, '_blank'); }}>In PDF</Button>
-          <Button disabled={!report.data} onClick={() => { window.open(`/api/reports/financial/${code}?${query({ ...range, format: 'xlsx' })}`, '_blank'); }}>Xuất Excel</Button></>}
+          <PrintLangSelect value={printLang} onChange={setPrintLang} />
+          <Button disabled={!report.data} onClick={() => { window.open(`/api/reports/financial/${code}?${query({ ...range, format: 'pdf', lang: printLang })}`, '_blank'); }}>In PDF</Button>
+          <Button disabled={!report.data} onClick={() => { window.open(`/api/reports/financial/${code}?${query({ ...range, format: 'xlsx', lang: printLang })}`, '_blank'); }}>Xuất Excel</Button></>}
         {can('report_def.update') && fy && <>
           <Button onClick={() => setEditing(true)}>Sửa công thức</Button>
           <Button loading={reload.isPending} onClick={() => Modal.confirm({ title: `Nạp lại mẫu ${code}?`, content: 'Báo cáo này được thay bằng mẫu hệ thống; các báo cáo khác của công ty giữ nguyên.', okText: 'Nạp lại mẫu', cancelText: 'Hủy', onOk: () => reload.mutateAsync().catch(() => undefined) })}>Nạp lại mẫu</Button></>}

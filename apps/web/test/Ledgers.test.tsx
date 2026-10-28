@@ -37,7 +37,7 @@ describe('In cả bộ sổ năm', () => {
     await userEvent.click(screen.getByRole('checkbox', { name: /B01/ }));
     await userEvent.click(screen.getByRole('button', { name: 'In' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(sent()).toEqual({ fiscalYear: 2026, include: ['B01'], format: 'pdf' });
+    expect(sent()).toEqual({ fiscalYear: 2026, include: ['B01'], format: 'pdf', lang: 'vi' });
   });
 
   it('người thiếu cờ bỏ tích mục còn lại thì không còn gì để in: nút In bị khóa', async () => {
