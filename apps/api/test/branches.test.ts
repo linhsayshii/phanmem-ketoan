@@ -21,7 +21,7 @@ async function login(username: string) {
 }
 async function makeUser(name: string, branches: ('HO' | number)[]) {
   const username = `${name}${Date.now()}`.toLowerCase();
-  const { id } = await ok('POST', '/api/users', owner, { username, fullName: name, password: TEST_PASSWORD, roleCode: 'ketoan_truong', sensitiveFlags: ['view_cost', 'view_receivable', 'view_payable'] });
+  const { id } = await ok('POST', '/api/users', owner, { username, fullName: name, password: TEST_PASSWORD, roleCode: 'ketoan_truong', sensitiveFlags: ['view_cost', 'view_receivable', 'view_payable', 'view_salary'] });
   await ok('PUT', `/api/users/${id}/branch-scope`, owner, { branches });
   return { id: id as string, cookie: await login(username) };
 }
