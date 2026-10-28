@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Alert, Button, DatePicker, InputNumber, Space, Tabs, Tag } from 'antd';
+import { Alert, Button, DatePicker, InputNumber, Tabs, Tag } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useRememberedFilter } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, PageHeader, Toolbar, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -70,36 +70,44 @@ export default function StockReportsPage() {
   const dated = tab === 'expiry' || tab === 'reconcile';
 
   const body = () => {
-    if (!url) return <Alert type="info" showIcon message="Chọn mã hàng (F4) để xem thẻ kho" />;
-    if (data.error) return <Alert type="error" showIcon message={(data.error as Error).message} />;
-    if (!data.data) return <Alert type="info" message="Đang tải…" />;
+    if (!url) return <Alert type="info" showIcon message="Chọn mã hàng (F4) để xem thẻ kho" style={{ marginBottom: 12 }} />;
+    if (data.error) return <Alert type="error" showIcon message={(data.error as Error).message} style={{ marginBottom: 12 }} />;
+    if (!data.data) return <Alert type="info" message="Đang tải…" style={{ marginBottom: 12 }} />;
     const d = data.data;
     return (
-      <Space direction="vertical" style={{ width: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {(d.banners?.messages ?? []).map((m) => <Alert key={m} type="warning" showIcon message={m} />)}
         {d.truncated && <Alert type="warning" showIcon message="Kết quả bị cắt bớt vì quá nhiều dòng; hãy thu hẹp bộ lọc hoặc xuất Excel." />}
         {tab === 'reconcile' && (d.ok ? <Alert type="success" showIcon message="Không có chênh lệch giữa thẻ kho, sổ chi tiết giá vốn và sổ cái." /> : <Alert type="error" showIcon message={`Có ${rows.length} dòng chênh lệch.`} />)}
         {tab === 'reconcile' && (d.notes ?? []).slice(0, 3).map((n) => <Alert key={n.message} type="info" showIcon message={n.message} />)}
-        <KeyboardGrid<Row> rows={rows} columns={COLUMNS[tab]} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly height="calc(100vh - 340px)" />
-      </Space>);
+        <KeyboardGrid<Row> rows={rows} columns={COLUMNS[tab]} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly height="calc(100vh - 260px)" />
+      </div>);
   };
 
   const tabs: { key: TabKey; label: string; sensitive?: boolean }[] = [{ key: 'summary', label: 'Nhập - Xuất - Tồn', sensitive: true }, { key: 'card', label: 'Thẻ kho' }, { key: 'ledger', label: 'Sổ chi tiết', sensitive: true },
     { key: 'in', label: 'Bảng kê nhập', sensitive: true }, { key: 'out', label: 'Bảng kê xuất', sensitive: true }, { key: 'expiry', label: 'Hạn dùng' }, { key: 'reconcile', label: 'Đối chiếu kế toán - kho', sensitive: true }];
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Báo cáo kho</h2>
-        {dated ? <DatePicker format="DD/MM/YYYY" allowClear={false} aria-label="Tính đến ngày" value={dayjs(f.asOf)} onChange={(d) => d && setF({ ...f, asOf: d.format('YYYY-MM-DD') })} />
-          : <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />}
-        {tab !== 'reconcile' && <LookupSelect catalog="item" aria-label="Mã hàng" placeholder="Mã hàng (F4)" style={{ width: 220 }} value={f.item || null} onChange={(code) => setF({ ...f, item: code ?? '' })} />}
-        {tab !== 'reconcile' && <LookupSelect catalog="warehouse" aria-label="Kho" placeholder="Kho (F4)" style={{ width: 180 }} value={f.warehouse || null} onChange={(code) => setF({ ...f, warehouse: code ?? '' })} />}
-        {tab === 'expiry' && <InputNumber aria-label="Số ngày tới hạn" addonBefore="Trong" addonAfter="ngày" min={0} max={3650} value={f.days} onChange={(v) => setF({ ...f, days: v ?? 30 })} />}
-        {can('report.print') && <><Button disabled={!url} onClick={() => printAs('pdf')}>In PDF</Button><Button disabled={!url} onClick={() => printAs('xlsx')}>Xuất Excel</Button></>}
-        {!cost && <Tag>Không có quyền xem giá vốn: ẩn các báo cáo có giá trị</Tag>}
-      </Space>
-      <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={tabs.filter((t) => cost || !t.sensitive).map((t) => ({ key: t.key, label: t.label }))} />
+    <>
+      <PageHeader
+        title="Báo cáo kho"
+        extra={can('report.print') ? (
+          <>
+            <Button disabled={!url} onClick={() => printAs('pdf')}>In PDF</Button>
+            <Button disabled={!url} onClick={() => printAs('xlsx')}>Xuất Excel</Button>
+          </>
+        ) : undefined}
+      >
+        <Toolbar>
+          {dated ? <DatePicker format="DD/MM/YYYY" allowClear={false} aria-label="Tính đến ngày" value={dayjs(f.asOf)} onChange={(d) => d && setF({ ...f, asOf: d.format('YYYY-MM-DD') })} />
+            : <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />}
+          {tab !== 'reconcile' && <LookupSelect catalog="item" aria-label="Mã hàng" placeholder="Mã hàng (F4)" style={{ width: 220 }} value={f.item || null} onChange={(code) => setF({ ...f, item: code ?? '' })} />}
+          {tab !== 'reconcile' && <LookupSelect catalog="warehouse" aria-label="Kho" placeholder="Kho (F4)" style={{ width: 180 }} value={f.warehouse || null} onChange={(code) => setF({ ...f, warehouse: code ?? '' })} />}
+          {tab === 'expiry' && <InputNumber aria-label="Số ngày tới hạn" addonBefore="Trong" addonAfter="ngày" min={0} max={3650} value={f.days} onChange={(v) => setF({ ...f, days: v ?? 30 })} />}
+          {!cost && <Tag style={{ marginRight: 0 }}>Không có quyền xem giá vốn: ẩn các báo cáo có giá trị</Tag>}
+        </Toolbar>
+      </PageHeader>
+      <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={tabs.filter((t) => cost || !t.sensitive).map((t) => ({ key: t.key, label: t.label }))} style={{ marginBottom: 12 }} />
       {body()}
-    </Space>
+    </>
   );
 }

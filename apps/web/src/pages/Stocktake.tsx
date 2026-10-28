@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, DatePicker, Input, Popconfirm, Space, Table, Tag, message } from 'antd';
+import { Alert, Button, DatePicker, Input, Popconfirm, Space, Table, Tag, theme, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber, parseVnNumber } from '@kt/domain';
-import { KeyboardGrid, LookupSelect } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, PageHeader, Toolbar, Section } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { PickDialog, quickAdd } from './voucherCommon.js';
@@ -73,6 +73,7 @@ export default function StocktakePage() {
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  const { token } = theme.useToken();
   const columns = useMemo<ColDef<Row>[]>(() => {
     const right = { cellClass: 'ag-right-aligned-cell', headerClass: 'ag-right-aligned-header' };
     return [
@@ -84,58 +85,86 @@ export default function StocktakePage() {
       { field: 'countedQty', headerName: 'Số đếm', width: 120, ...right, valueFormatter: (p) => qtyText(p.value as string),
         valueParser: (p) => { const t = String(p.newValue ?? '').trim(); if (t === '') return ''; const n = parseVnNumber(t); return n !== null && QTY_RE.test(n) ? n : p.oldValue; } },
       { colId: 'diff', headerName: 'Chênh lệch', width: 120, editable: false, ...right, valueGetter: (p) => (p.data ? diffOf(p.data)?.toFixed() ?? '' : ''), valueFormatter: (p) => qtyText(p.value as string),
-        cellStyle: (p) => (p.value && D(p.value as string).lt(0) ? { color: '#cf1322' } : p.value && D(p.value as string).gt(0) ? { color: '#d46b08' } : null) },
+        cellStyle: (p) => (p.value && D(p.value as string).lt(0) ? { color: token.colorError } : p.value && D(p.value as string).gt(0) ? { color: token.colorWarning } : null) },
       { field: 'reason', headerName: 'Lý do chênh lệch', width: 230, cellEditor: 'agSelectCellEditor', cellEditorParams: { values: Object.keys(REASON_LABEL) }, valueFormatter: (p) => REASON_LABEL[(p.value as string) ?? ''] ?? '' },
     ];
-  }, []);
+  }, [token.colorError, token.colorWarning]);
 
   const diffs = rows.map(diffOf).filter((d) => d !== null && !d.isZero());
   const surplus = diffs.filter((d) => d!.gt(0)).length; const shortage = diffs.length - surplus;
   const lookRow = look === null ? null : rows[look];
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <Space wrap><h2 style={{ margin: 0 }}>Kiểm kê kho</h2>{current && <Button onClick={() => { setCurrent(null); setRows([]); }}>Kiểm kê mới</Button>}</Space>
-      {!current && can('stocktake.create') && (
-        <Space wrap align="end" size="middle">
-          <Space direction="vertical" size={2}><label htmlFor="st-date">Ngày kiểm kê</label>
-            <DatePicker id="st-date" format="DD/MM/YYYY" allowClear={false} value={dayjs(date)} onChange={(d) => d && setDate(d.format('YYYY-MM-DD'))} /></Space>
-          <Space direction="vertical" size={2}><label htmlFor="st-wh">Kho</label>
-            <LookupSelect id="st-wh" catalog="warehouse" quickAddFields={quickAdd} placeholder="Chọn kho (F4)" style={{ width: 260 }} value={warehouse} onChange={setWarehouse} /></Space>
-          <Button type="primary" disabled={!warehouse} loading={create.isPending} onClick={() => create.mutate()}>Lập biên bản kiểm kê</Button>
-        </Space>
-      )}
+    <>
+      <PageHeader
+        title="Kiểm kê kho"
+        tags={current ? <Tag color={STATUS[current.status].color} style={{ marginRight: 0 }}>{STATUS[current.status].label}</Tag> : undefined}
+        description={current ? `Biên bản số ${current.no} · Kho ${current.warehouseCode} - ${current.warehouseName} · Ngày ${formatVnDate(current.docDate)}` : 'Đối chiếu tồn sổ với số lượng thực tế tại kho và lập chứng từ xử lý chênh lệch'}
+        extra={<>
+          {current && <Button onClick={() => { setCurrent(null); setRows([]); }}>Kiểm kê mới</Button>}
+          {!current && can('stocktake.create') && (
+            <Button type="primary" disabled={!warehouse} loading={create.isPending} onClick={() => create.mutate()}>
+              Lập biên bản kiểm kê
+            </Button>
+          )}
+          {current && editable && <Button type="primary" loading={save.isPending} onClick={() => save.mutate()}>Lưu (Ctrl+S)</Button>}
+          {current && editable && can('stock_voucher.create') && can('stock_voucher.post') && (
+            <Popconfirm title="Lập và ghi sổ phiếu nhập/xuất điều chỉnh?" description="Chỉ một lần; phiếu ghi sổ theo giá tạm tính." okText="Điều chỉnh" cancelText="Không" onConfirm={() => adjust.mutate()}>
+              <Button loading={adjust.isPending} disabled={!diffs.length}>Điều chỉnh chênh lệch</Button>
+            </Popconfirm>
+          )}
+          {current?.status === 'adjusted' && can('stocktake.update') && can('stock_voucher.create') && can('stock_voucher.post') && (
+            <Popconfirm title="Mở lại biên bản?" description="Phiếu điều chỉnh được bỏ ghi sổ và hủy (kỳ đã khóa thì đảo)." okText="Mở lại" cancelText="Không" onConfirm={() => reopen.mutate()}>
+              <Button loading={reopen.isPending}>Mở lại</Button>
+            </Popconfirm>
+          )}
+          {current && can('stocktake.view') && <Button onClick={() => window.open(`/api/stocktakes/${current.id}/print?format=pdf`, '_blank')}>In biên bản</Button>}
+          {current && editable && can('stocktake.delete') && (
+            <Popconfirm title="Xóa biên bản kiểm kê này?" okText="Xóa" cancelText="Không" onConfirm={() => remove.mutate(current.id)}>
+              <Button danger>Xóa</Button>
+            </Popconfirm>
+          )}
+        </>}
+      >
+        {!current && (
+          <Toolbar>
+            <Space size={6} align="center">
+              <label htmlFor="st-date">Ngày kiểm kê</label>
+              <DatePicker id="st-date" format="DD/MM/YYYY" allowClear={false} value={dayjs(date)} onChange={(d) => d && setDate(d.format('YYYY-MM-DD'))} />
+            </Space>
+            <Space size={6} align="center">
+              <label htmlFor="st-wh">Kho</label>
+              <LookupSelect id="st-wh" catalog="warehouse" quickAddFields={quickAdd} placeholder="Chọn kho (F4)" style={{ width: 260 }} value={warehouse} onChange={setWarehouse} />
+            </Space>
+          </Toolbar>
+        )}
+      </PageHeader>
       {current && (
         <>
-          <Space wrap>
-            <b>Biên bản số {current.no}</b><span>Kho {current.warehouseCode} - {current.warehouseName}</span><span>Ngày {formatVnDate(current.docDate)}</span>
-            <Tag color={STATUS[current.status].color}>{STATUS[current.status].label}</Tag>
-            {editable && <Button type="primary" loading={save.isPending} onClick={() => save.mutate()}>Lưu (Ctrl+S)</Button>}
-            {editable && can('stock_voucher.create') && can('stock_voucher.post') && (
-              <Popconfirm title="Lập và ghi sổ phiếu nhập/xuất điều chỉnh?" description="Chỉ một lần; phiếu ghi sổ theo giá tạm tính." okText="Điều chỉnh" cancelText="Không" onConfirm={() => adjust.mutate()}>
-                <Button loading={adjust.isPending} disabled={!diffs.length}>Điều chỉnh chênh lệch</Button></Popconfirm>)}
-            {current.status === 'adjusted' && can('stocktake.update') && can('stock_voucher.create') && can('stock_voucher.post') && (
-              <Popconfirm title="Mở lại biên bản?" description="Phiếu điều chỉnh được bỏ ghi sổ và hủy (kỳ đã khóa thì đảo)." okText="Mở lại" cancelText="Không" onConfirm={() => reopen.mutate()}>
-                <Button loading={reopen.isPending}>Mở lại</Button></Popconfirm>)}
-            {can('stocktake.view') && <Button onClick={() => window.open(`/api/stocktakes/${current.id}/print?format=pdf`, '_blank')}>In biên bản</Button>}
-            {editable && can('stocktake.delete') && <Popconfirm title="Xóa biên bản kiểm kê này?" okText="Xóa" cancelText="Không" onConfirm={() => remove.mutate(current.id)}><Button danger>Xóa</Button></Popconfirm>}
-          </Space>
-          {current.status === 'adjusted' && <Alert type="success" showIcon message={<>Đã điều chỉnh bằng: {current.adjustVouchers.map((v) => <Link key={v.id} style={{ marginRight: 8 }} to="/chung-tu/$type/$id" params={{ type: v.voucherType, id: v.id }}>{v.voucherType} {v.voucherNo ?? ''}</Link>)}</>} />}
-          {editable && <Input aria-label="Ghi chú" placeholder="Ý kiến giải quyết số chênh lệch" value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} />}
-          <div>Chênh lệch: <b data-testid="st-surplus">{surplus}</b> dòng thừa, <b data-testid="st-shortage">{shortage}</b> dòng thiếu. Tồn sổ lấy cuối ngày kiểm kê; số đếm theo ĐVT cơ sở; dòng chưa đếm bị bỏ qua.</div>
-          <KeyboardGrid<Row> rows={rows} columns={columns} onRowsChange={setRows} addRowTemplate={blank} readOnly={!editable} height={Math.min(560, 90 + Math.max(rows.length, 4) * 42)}
-            onLookup={(col, row) => { if (editable && col === 'itemCode') setLook(row); }} />
-          <PickDialog open={look !== null} catalog="item" fetcher={async (q) => api<{ id: number; code: string; name: string }[]>(`/api/lookups/items?q=${encodeURIComponent(q)}`)}
-            onPick={(code) => { if (look !== null && lookRow) setRows(rows.map((r, i) => (i === look ? { ...r, itemCode: code } : r))); }} onClose={() => setLook(null)} />
+          {current.status === 'adjusted' && (
+            <Alert type="success" showIcon style={{ marginBottom: 12 }} message={<>Đã điều chỉnh bằng: {current.adjustVouchers.map((v) => <Link key={v.id} style={{ marginRight: 8 }} to="/chung-tu/$type/$id" params={{ type: v.voucherType, id: v.id }}>{v.voucherType} {v.voucherNo ?? ''}</Link>)}</>} />
+          )}
+          <Section title="Số liệu kiểm kê">
+            {editable && <Input aria-label="Ghi chú" placeholder="Ý kiến giải quyết số chênh lệch" value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} style={{ marginBottom: 8 }} />}
+            <div style={{ marginBottom: 8 }}>
+              Chênh lệch: <b data-testid="st-surplus" className="kt-num">{surplus}</b> dòng thừa, <b data-testid="st-shortage" className="kt-num">{shortage}</b> dòng thiếu. Tồn sổ lấy cuối ngày kiểm kê; số đếm theo ĐVT cơ sở; dòng chưa đếm bị bỏ qua.
+            </div>
+            <KeyboardGrid<Row> rows={rows} columns={columns} onRowsChange={setRows} addRowTemplate={blank} readOnly={!editable} height={Math.min(560, 90 + Math.max(rows.length, 4) * 42)}
+              onLookup={(col, row) => { if (editable && col === 'itemCode') setLook(row); }} />
+            <PickDialog open={look !== null} catalog="item" fetcher={async (q) => api<{ id: number; code: string; name: string }[]>(`/api/lookups/items?q=${encodeURIComponent(q)}`)}
+              onPick={(code) => { if (look !== null && lookRow) setRows(rows.map((r, i) => (i === look ? { ...r, itemCode: code } : r))); }} onClose={() => setLook(null)} />
+          </Section>
         </>
       )}
-      <Table<Doc> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 10, hideOnSinglePage: true }} title={() => <b>Các biên bản kiểm kê gần đây</b>}
-        rowClassName={(d) => (d.id === current?.id ? 'ant-table-row-selected' : '')} onRow={(d) => ({ onClick: () => open(d), style: { cursor: 'pointer' } })}
-        columns={[
-          { title: 'Số', dataIndex: 'no', width: 70 }, { title: 'Ngày kiểm kê', dataIndex: 'docDate', width: 130, render: (d: string) => formatVnDate(d) },
-          { title: 'Kho', dataIndex: 'warehouseCode', width: 110 }, { title: 'Số dòng', width: 90, align: 'right', render: (_, d) => d.lines.length },
-          { title: 'Trạng thái', render: (_, d) => <Tag color={STATUS[d.status].color}>{STATUS[d.status].label}</Tag> },
-        ]} />
-    </Space>
+      <Section title="Các biên bản kiểm kê gần đây" style={{ marginTop: 12 }} bodyPadding={0}>
+        <Table<Doc> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 10, hideOnSinglePage: true }}
+          rowClassName={(d) => (d.id === current?.id ? 'ant-table-row-selected' : '')} onRow={(d) => ({ onClick: () => open(d), style: { cursor: 'pointer' } })}
+          columns={[
+            { title: 'Số', dataIndex: 'no', width: 70, className: 'kt-num' }, { title: 'Ngày kiểm kê', dataIndex: 'docDate', width: 130, render: (d: string) => formatVnDate(d) },
+            { title: 'Kho', dataIndex: 'warehouseCode', width: 110 }, { title: 'Số dòng', width: 90, align: 'right', render: (_, d) => d.lines.length, className: 'kt-num' },
+            { title: 'Trạng thái', render: (_, d) => <Tag color={STATUS[d.status].color}>{STATUS[d.status].label}</Tag> },
+          ]} />
+      </Section>
+    </>
   );
 }

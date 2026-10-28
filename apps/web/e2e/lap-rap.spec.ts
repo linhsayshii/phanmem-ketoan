@@ -46,6 +46,6 @@ test('lập Phiếu lắp ráp bằng bàn phím, ghi sổ F9, thấy bút toán
   await expect(page).toHaveURL(/LR\/[0-9a-f-]{36}$/);
   await page.keyboard.press('F9');
   await expect(page.locator('.ant-message').getByText('Đã ghi sổ')).toBeVisible();
-  await expect(page.locator('.ant-card-head-title')).toContainText(/LR\d+/);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/LR\d+/);
   await expect(page.getByTestId('ledger-lines')).toContainText('TP-E2E');
 });

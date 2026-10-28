@@ -190,3 +190,59 @@ Mọi màn của phân hệ Bán hàng (`Orders` báo giá/đơn bán, `InvoiceF
 
 - `Loans` ("Khế ước vay"), `Contracts` ("Hợp đồng"), `ContractReports` ("Báo cáo hợp đồng, vụ việc"), `ProjectAlloc` ("Phân bổ chi phí vào vụ việc"): như tác vụ 10. Danh sách và chi tiết (nếu có hai khung) mỗi khung một `Section`. Tiêu đề phụ trong khung chi tiết là `title` của `Section`, không dùng `<h3>`.
 - Spec chạy: `khe-uoc`, `hop-dong`, `theo-doi-hop-dong`, `phan-bo-vu-viec`.
+
+## Tác vụ 12: Công nợ (agy)
+
+- `ArapReports` ("Báo cáo công nợ"), `Settlement` ("Đối trừ chứng từ"), `FxTools` ("Công cụ tỷ giá"): `<h2>` và hàng `Space` đầu trang thành `PageHeader`, chữ h1 giữ nguyên. Nút chính (Đối trừ, Đánh giá lại, In/Xuất) vào `extra`. Tham số (đối tượng, tài khoản, kỳ) vào `Toolbar`. Bảng kết quả đặt trong `Section` (bodyPadding 0) hoặc ngay dưới đầu trang. Khối phụ (ví dụ hai bảng chứng từ phải thu/phải trả của đối trừ) mỗi bảng một `Section` có tiêu đề theo nhãn hiện có.
+- Không đổi cách tính tuổi nợ, đối trừ, chênh lệch tỷ giá. Cờ `view_receivable`/`view_payable` giữ nguyên điều kiện hiển thị.
+- Spec dùng heading theo tên (`cong-no:37`, `doi-tru:39`, `ty-gia:32`).
+- Spec chạy: `cong-no`, `doi-tru`, `ty-gia`.
+
+## Tác vụ 13: Thuế (agy)
+
+- `InvoiceRegister` ("Bảng kê hóa đơn"), `VatReturn` ("Tờ khai thuế GTGT"), `CitEstimate` ("Tạm tính thuế TNDN quý"), `CitReturn` ("Quyết toán thuế TNDN (03/TNDN)"), `SigningSetup` ("Cài đặt ký số"), `DeclaredInvoices` (chưa có tiêu đề: đặt theo mục menu): `<h2>` thành `PageHeader`, chữ h1 giữ nguyên. Nút chính (Lập tờ khai, Chốt, Ký, Xuất XML) vào `extra`, một primary. Tham số kỳ vào `Toolbar`.
+- `VatReturn`: `<h3>` "Tờ khai bổ sung đã chốt" thành `title` của một `Section`. Bảng chỉ tiêu tờ khai giữ nguyên cột, mã chỉ tiêu, cách tính.
+- `SigningSetup`: `Card` thành `Section`.
+- Không đổi mã chỉ tiêu, công thức, nội dung XML.
+- Spec dùng heading theo tên (`bang-ke-thue:30`, `to-khai-gtgt:23`, `thue-tndn:25,43`, `ky-so:21,35`).
+- Spec chạy: `bang-ke-thue`, `to-khai-gtgt`, `thue-tndn`, `ky-so`, `phan-bo-thue`.
+
+## Tác vụ 14: Tổng hợp (agy)
+
+- `PeriodClose` (`Typography.Title` "Quy trình cuối kỳ"), `Closing` ("Kết chuyển cuối kỳ"), `Amortization` ("Phân bổ doanh thu nhận trước"): tiêu đề thành `PageHeader`, chữ h1 giữ nguyên. `Closing`: bốn `Card` thành `Section`.
+- `Periods` (chưa có tiêu đề: "Kỳ kế toán" theo mục menu), `SuggestEntry` (thành phần trong form chứng từ, không phải trang: giữ nguyên, chỉ đổi màu chữ phụ sang `COLOR.textSecondary` nếu có).
+- `ImportVouchers`, `OpeningBalance`, `OpeningStock`, `AssetOpening`: `Card` có title thành `PageHeader` (h1 = chữ title cũ: "Nhập chứng từ từ Excel", "Số dư đầu kỳ", "Tồn kho đầu kỳ", "Số dư đầu kỳ tài sản"), `extra` của Card thành `extra` của `PageHeader`. Lưới số dư dưới đầu trang, cao vừa trang.
+- E2E: `nhap-chung-tu.spec.ts:34`, `so-du-dau-ky.spec.ts:31`, `ton-dau-ky.spec.ts:27`, `tai-san-dau-ky.spec.ts:23` đổi `page.locator('.ant-card-head-title', { hasText: X })` thành `page.getByRole('heading', { level: 1, name: X })`.
+- Spec dùng heading theo tên (`cuoi-ky:26`, `phan-bo-doanh-thu:20`).
+- Spec chạy: `phieu-ke-toan`, `nhap-chung-tu`, `cuoi-ky`, `so-du-dau-ky`, `ton-dau-ky`, `tai-san-dau-ky`, `phan-bo-doanh-thu`.
+
+## Tác vụ 15: Phê duyệt (agy)
+
+- `Approvals`: hai chế độ trong cùng tệp, mỗi chế độ một `PageHeader` (h1 "Đề nghị thanh toán, tạm ứng", "Quy trình phê duyệt"). `Card` thành `Section`. Nút Duyệt/Từ chối/Duyệt hàng loạt giữ nguyên tên và điều kiện quyền.
+- `ApprovalDelegations` ("Ủy quyền duyệt"): `PageHeader`, nút Thêm vào `extra`, bảng ngay dưới.
+- Spec dùng heading theo tên (`phe-duyet:25,36`, `phe-duyet-hang-loat:55`).
+- Spec chạy: `phe-duyet`, `phe-duyet-hang-loat`.
+
+## Tác vụ 16: Báo cáo (Sonnet, Claude Opus rà)
+
+- Rủi ro cao (mẫu B01/B02/B03, sổ theo hình thức), nên giao Sonnet, không giao agy.
+- `Ledgers` ("Sổ sách kế toán"), `BookForms` ("Hình thức sổ kế toán"), `CashBooks` ("Sổ quỹ và tiền gửi"), `Financial` ("Báo cáo tài chính"), `Analytics` ("Phân tích tài chính"), `Budget` ("Ngân sách"), `HkdBooks` ("Sổ hộ kinh doanh, doanh nghiệp siêu nhỏ"): `<h2>` thành `PageHeader`, chữ h1 giữ nguyên. In/Xuất Excel/Xuất PDF vào `extra`. Tham số (kỳ, tài khoản, mẫu, ngôn ngữ in `PrintLangSelect`) vào `Toolbar`.
+- Phần thân báo cáo (bảng chỉ tiêu B01/B02/B03, mẫu sổ S03a…, sổ HKD) giữ nguyên cấu trúc, cột, mã số, thứ tự dòng, định dạng số. Chỉ bọc trong `Section` (bodyPadding 0) nếu cần.
+- `HkdBooks`: `<h3>` tiêu đề từng mẫu sổ (ví dụ "SỔ DOANH THU BÁN HÀNG HÓA, DỊCH VỤ") giữ là heading (`hkd-sieu-nho:64` tìm theo tên), chỉ h2 trang thành h1.
+- `Analytics`: sáu `Card` chỉ số dùng `StatStrip` hoặc `Section` theo nhóm.
+- Spec chạy: `in-so`, `so-quy`, `hinh-thuc-so`, `bo-so-hinh-thuc`, `phan-tich`, `ngan-sach`, `hkd-sieu-nho`, `song-ngu`.
+
+## Tác vụ 17: Hệ thống
+
+### 17a. Trang cài đặt (agy)
+
+- `Company`, `CompanyWizard` ("Tạo công ty mới"), `AuditLog`, `ApiKeys` ("Khóa API"), `Regimes` ("Chế độ kế toán"), `EnglishNames` ("Tên tiếng Anh"), `Branches` ("Chi nhánh"), `NumberingBranch`, `Dedupe` ("Khử trùng chứng từ"), `DataCheck` ("Soát lỗi dữ liệu"), `Export` ("Xuất dữ liệu cho cơ quan thẩm quyền"), `Assistant` ("Trợ lý"): tiêu đề (h2, `Typography.Title`, title của `Card` ngoài cùng) thành `PageHeader`. Trang chưa có tiêu đề thì đặt theo mục menu. `Card` bên trong thành `Section`.
+- `Assistant`: `Typography.Title` "Trợ lý" thành h1 (`tro-ly:23`). Giữ mọi phím tắt và luồng chạy bút toán định kỳ.
+- Spec dùng heading theo tên (`khoa-api:15`, `song-ngu:17`, `chi-nhanh:22`, `hkd-sieu-nho:17`, `tro-ly:23`).
+- Spec chạy: `cong-ty`, `khoa-api`, `chi-nhanh`, `khu-trung`, `tro-ly`, `song-ngu`, `hkd-sieu-nho`.
+
+### 17b. Đăng nhập, chọn công ty, người dùng (Sonnet, Claude Opus rà)
+
+- `Login`, `SelectTenant`: thẻ giữa màn hình theo token (`COLOR.bgLayout` nền, `COLOR.surface` thẻ), tên sản phẩm phía trên, nút Đăng nhập primary rộng hết thẻ. Giữ nhãn trường, thông báo lỗi, luồng chuyển trang. Mọi spec đăng nhập qua `e2e/helpers`, nên giữ nhãn và tên nút.
+- `Users`: `PageHeader` "Người dùng", nút Thêm người dùng vào `extra`, bảng ngay dưới. Không đổi quyền, vai trò, cờ dữ liệu nhạy cảm.
+- Spec chạy: toàn bộ (đăng nhập dùng chung), ít nhất `phieu-thu`, `cong-ty`, `chi-nhanh`.

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Card, Col, DatePicker, Form, Input, Modal, Row, Select, Space, Table, Tag, message } from 'antd';
+import { Alert, Button, Col, DatePicker, Form, Input, Modal, Row, Select, Space, Table, Tag, message } from 'antd';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { ColDef, GridApi } from 'ag-grid-community';
 import dayjs, { type Dayjs } from 'dayjs';
 import { canTransition, D, decideEdit, formatVnDate, formatVnNumber, parseVnNumber, todayVn, type StockVoucherType, type VoucherState, type VoucherTypeDef } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useUnsavedChanges } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, PageHeader, Section, useUnsavedChanges } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { staleText } from './CostingRun.js';
@@ -187,41 +187,49 @@ export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: str
 
   const title = `${def.name}${kindLabel(type, stockKind) ? ` - ${kindLabel(type, stockKind)}` : ''}`;
   return (
-    <Card title={<Space><span>{title} {v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}</span><Tag>{STATE_LABEL[state]}</Tag></Space>}
-      extra={<Space>
-        {mayEdit && <Button onClick={() => save.mutate(false)} type="primary" loading={save.isPending} disabled={!ready}>Lưu (Ctrl+S)</Button>}
-        {mayEdit && mayPost && <Button onClick={() => save.mutate(true)} disabled={!ready || save.isPending}>Ghi sổ (F9)</Button>}
-        {!isNew && mayUnpost && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'unpost' }))}>Bỏ ghi sổ</Button>}
-        {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo} ngày ${formatVnDate(p)}` }); })}>Đảo</Button>}
-        {!isNew && editable && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy phiếu?', content: 'Số phiếu (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
-        {!isNew && can('voucher.print') && <Button href={`/api/vouchers/${id}/print?format=pdf`} target="_blank">In</Button>}
-      </Space>}>
+    <>
+      <PageHeader
+        title={`${title} ${v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}`}
+        tags={<Tag style={{ marginRight: 0 }}>{STATE_LABEL[state]}</Tag>}
+        extra={<>
+          {mayEdit && <Button onClick={() => save.mutate(false)} type="primary" loading={save.isPending} disabled={!ready}>Lưu (Ctrl+S)</Button>}
+          {mayEdit && mayPost && <Button onClick={() => save.mutate(true)} disabled={!ready || save.isPending}>Ghi sổ (F9)</Button>}
+          {!isNew && mayUnpost && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'unpost' }))}>Bỏ ghi sổ</Button>}
+          {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo} ngày ${formatVnDate(p)}` }); })}>Đảo</Button>}
+          {!isNew && editable && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy phiếu?', content: 'Số phiếu (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
+          {!isNew && can('voucher.print') && <Button href={`/api/vouchers/${id}/print?format=pdf`} target="_blank">In</Button>}
+        </>}
+      />
       {v.error && <Alert type="error" showIcon message={(v.error as Error).message} style={{ marginBottom: 12 }} />}
       {posted && stale.length > 0 && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={stale.map((x) => staleText(x)).join('; ')} />}
       {posted && !withPrice && <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Phiếu ghi sổ theo giá tạm tính; giá vốn thật được xác định khi tính giá vốn cuối kỳ." />}
-      <Form form={form} layout="vertical" disabled={!editable} onValuesChange={() => setDirty(true)}
-        initialValues={{ postingDate: dayjs(todayVn()), documentDate: dayjs(todayVn()), stockKind: kinds.some((k) => k.code === wanted) ? wanted : kinds[0]!.code }}>
-        <Row gutter={12}>
-          <Col span={4}><Form.Item label="Ngày hạch toán" name="postingDate" rules={[{ required: true, message: 'Nhập ngày hạch toán' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={4}><Form.Item label="Ngày chứng từ" name="documentDate" rules={[{ required: true, message: 'Nhập ngày chứng từ' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={6}><Form.Item label="Loại nghiệp vụ" name="stockKind" rules={[{ required: true }]}><Select options={kinds.map((k) => ({ value: k.code, label: k.label }))} /></Form.Item></Col>
-          <Col span={5}><Form.Item label={transfer ? 'Kho xuất (F4)' : 'Kho (F4)'} name="warehouseCode" rules={[{ required: true, message: 'Chọn kho' }]}><LookupSelect catalog="warehouse" quickAddFields={quickAdd} /></Form.Item></Col>
-          {transfer && <Col span={5}><Form.Item label="Kho nhận (F4)" name="destWarehouseCode" rules={[{ required: true, message: 'Chọn kho nhận' }]}><LookupSelect catalog="warehouse" /></Form.Item></Col>}
-          {!transfer && <Col span={8}><Form.Item label="Đối tượng" name="partyCode"><LookupSelect catalog="party" quickAddFields={quickAdd} allowClear /></Form.Item></Col>}
-          <Col span={6}><Form.Item label={type === 'PNK' ? 'Người giao' : 'Người nhận'} name="personName"><Input maxLength={200} /></Form.Item></Col>
-          <Col span={18}><Form.Item label="Diễn giải" name="description"><Input /></Form.Item></Col>
-        </Row>
-      </Form>
-      <KeyboardGrid<StockRow> rows={rows} columns={columns} readOnly={!editable} onRowsChange={changeRows} addRowTemplate={emptyStockRow}
-        onLookup={(col, row) => { lookupCol.current = col; onLookup(col, row); }} height={300} onGridApi={(a) => { gridApi.current = a; }} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24, marginTop: 8, flexWrap: 'wrap' }}>
-        <span data-testid="on-hand">{codes.length > 0 && warehouse ? <>Tồn khả dụng tại kho {warehouse}: {codes.map((c, i) => <span key={c} style={{ marginRight: 12 }}>{c}: <b>{stocks[i]?.data ? formatVnNumber(stocks[i]!.data!.quantity, D(stocks[i]!.data!.quantity).decimalPlaces()) : '...'}</b> {info[c]?.baseUom ?? ''}</span>)}</> : null}</span>
-        <b>{withPrice ? `Cộng: ${formatVnNumber(total)}` : posted || savedTotal !== '0' ? `Giá trị giá tạm tính: ${formatVnNumber(savedTotal)}` : ''}</b>
-      </div>
-      {(v.data?.ledgerLines.length ?? 0) > 0 && <Table size="small" style={{ marginTop: 12 }} pagination={false} rowKey="lineNo" dataSource={v.data!.ledgerLines} data-testid="ledger-lines" columns={[
-        { title: 'Tài khoản', dataIndex: 'accountCode', width: 110 }, { title: 'Tên tài khoản', dataIndex: 'accountName' }, { title: 'Hàng', dataIndex: 'itemCode', width: 120, render: (s: string | null) => s ?? '' },
-        { title: 'Kho', dataIndex: 'warehouseCode', width: 100, render: (s: string | null) => s ?? '' },
-        { title: 'Nợ', dataIndex: 'debit', align: 'right', width: 140, render: money }, { title: 'Có', dataIndex: 'credit', align: 'right', width: 140, render: money }]} />}
+      <Section title="Thông tin chung">
+        <Form form={form} layout="vertical" disabled={!editable} onValuesChange={() => setDirty(true)}
+          initialValues={{ postingDate: dayjs(todayVn()), documentDate: dayjs(todayVn()), stockKind: kinds.some((k) => k.code === wanted) ? wanted : kinds[0]!.code }}>
+          <Row gutter={12}>
+            <Col span={4}><Form.Item label="Ngày hạch toán" name="postingDate" rules={[{ required: true, message: 'Nhập ngày hạch toán' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
+            <Col span={4}><Form.Item label="Ngày chứng từ" name="documentDate" rules={[{ required: true, message: 'Nhập ngày chứng từ' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
+            <Col span={6}><Form.Item label="Loại nghiệp vụ" name="stockKind" rules={[{ required: true }]}><Select options={kinds.map((k) => ({ value: k.code, label: k.label }))} /></Form.Item></Col>
+            <Col span={5}><Form.Item label={transfer ? 'Kho xuất (F4)' : 'Kho (F4)'} name="warehouseCode" rules={[{ required: true, message: 'Chọn kho' }]}><LookupSelect catalog="warehouse" quickAddFields={quickAdd} /></Form.Item></Col>
+            {transfer && <Col span={5}><Form.Item label="Kho nhận (F4)" name="destWarehouseCode" rules={[{ required: true, message: 'Chọn kho nhận' }]}><LookupSelect catalog="warehouse" /></Form.Item></Col>}
+            {!transfer && <Col span={8}><Form.Item label="Đối tượng" name="partyCode"><LookupSelect catalog="party" quickAddFields={quickAdd} allowClear /></Form.Item></Col>}
+            <Col span={6}><Form.Item label={type === 'PNK' ? 'Người giao' : 'Người nhận'} name="personName"><Input maxLength={200} /></Form.Item></Col>
+            <Col span={18}><Form.Item label="Diễn giải" name="description"><Input /></Form.Item></Col>
+          </Row>
+        </Form>
+      </Section>
+      <Section title="Chi tiết" style={{ marginTop: 12 }}>
+        <KeyboardGrid<StockRow> rows={rows} columns={columns} readOnly={!editable} onRowsChange={changeRows} addRowTemplate={emptyStockRow}
+          onLookup={(col, row) => { lookupCol.current = col; onLookup(col, row); }} height={300} onGridApi={(a) => { gridApi.current = a; }} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24, marginTop: 8, flexWrap: 'wrap' }}>
+          <span data-testid="on-hand">{codes.length > 0 && warehouse ? <>Tồn khả dụng tại kho {warehouse}: {codes.map((c, i) => <span key={c} style={{ marginRight: 12 }}>{c}: <b className="kt-num">{stocks[i]?.data ? formatVnNumber(stocks[i]!.data!.quantity, D(stocks[i]!.data!.quantity).decimalPlaces()) : '...'}</b> {info[c]?.baseUom ?? ''}</span>)}</> : null}</span>
+          <b className="kt-num">{withPrice ? `Cộng: ${formatVnNumber(total)}` : posted || savedTotal !== '0' ? `Giá trị giá tạm tính: ${formatVnNumber(savedTotal)}` : ''}</b>
+        </div>
+        {(v.data?.ledgerLines.length ?? 0) > 0 && <Table size="small" style={{ marginTop: 12 }} pagination={false} rowKey="lineNo" dataSource={v.data!.ledgerLines} data-testid="ledger-lines" columns={[
+          { title: 'Tài khoản', dataIndex: 'accountCode', width: 110, className: 'kt-num' }, { title: 'Tên tài khoản', dataIndex: 'accountName' }, { title: 'Hàng', dataIndex: 'itemCode', width: 120, render: (s: string | null) => s ?? '' },
+          { title: 'Kho', dataIndex: 'warehouseCode', width: 100, render: (s: string | null) => s ?? '' },
+          { title: 'Nợ', dataIndex: 'debit', align: 'right', width: 140, render: money, className: 'kt-num' }, { title: 'Có', dataIndex: 'credit', align: 'right', width: 140, render: money, className: 'kt-num' }]} />}
+      </Section>
       <PickDialog open={lookupRow !== null} catalog={lookupCol.current === 'uomCode' ? 'uom' : lookupCol.current === 'debitAccountCode' ? 'account' : lookupCol.current === 'assetCode' ? 'asset' : 'item'} fetcher={lookupCol.current === 'debitAccountCode' ? accountPick : lookupCol.current === 'assetCode' ? assetPick : lookupCol.current === 'itemCode' ? async (q) => (await api<{ id: number; code: string; name: string }[]>(`/api/lookups/items?q=${encodeURIComponent(q)}`)) : undefined as never}
         onPick={(code) => { if (lookupCol.current !== 'itemCode') { const f = lookupCol.current; changeRows(rowsRef.current.map((r, i) => (i === lookupRow ? { ...r, [f]: code } : r))); } else pick(code); }} onClose={() => setLookupRow(null)} />
       <Modal open={!!reverse} title="Lập chứng từ đảo" okText="Lập chứng từ đảo" cancelText="Không" destroyOnHidden onCancel={() => setReverse(null)}
@@ -234,6 +242,6 @@ export default function StockVoucher({ def, id }: { def: VoucherTypeDef; id: str
           <Input id="reverse-desc" value={reverse.description} maxLength={500} onChange={(e) => setReverse({ ...reverse, description: e.target.value })} />
         </Space>}
       </Modal>
-    </Card>
+    </>
   );
 }

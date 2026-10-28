@@ -4,7 +4,7 @@ import { Button, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Tab
 import dayjs from 'dayjs';
 import type { ColDef } from 'ag-grid-community';
 import { D, formatVnNumber, parseVnNumber } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useHotkeys } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, PageHeader, Toolbar, Section, COLOR, useHotkeys } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -60,18 +60,28 @@ export default function PriceListsPage() {
   }, [editing, form]);
   useHotkeys({ Insert: () => { if (can('price_list.create') && !editing) void open('new'); } });
   return (<>
-    <Space style={{ marginBottom: 12 }} wrap>
-      <h2 style={{ margin: 0 }}>Bảng giá</h2>
-      <Select allowClear placeholder="Loại bảng giá" value={kind} options={KIND} onChange={setKind} style={{ width: 180 }} aria-label="Loại bảng giá" />
-      {can('price_list.create') && <Button type="primary" onClick={() => void open('new')}>Thêm (Insert)</Button>}
-    </Space>
-    <Table<Head> size="small" rowKey="id" dataSource={list.data ?? []} pagination={false} columns={[
-      { title: 'Mã', dataIndex: 'code', width: 120 }, { title: 'Tên bảng giá', dataIndex: 'name' }, { title: 'Loại', dataIndex: 'kind', render: kindLabel, width: 130 },
-      { title: 'Tiền', dataIndex: 'currencyCode', width: 70 }, { title: 'Nhóm đối tượng', dataIndex: 'partyGroupCode', width: 140 },
-      { title: 'Hiệu lực', width: 200, render: (_v, r) => `${dayjs(r.validFrom).format('DD/MM/YYYY')} - ${r.validTo ? dayjs(r.validTo).format('DD/MM/YYYY') : 'không giới hạn'}` },
-      { title: 'Ưu tiên', dataIndex: 'priority', align: 'right', width: 90 }, { title: 'Số dòng giá', dataIndex: 'lineCount', align: 'right', width: 110 },
-      { title: '', width: 120, render: (_v, r) => (<Space size={0}>{canEdit && <Button type="link" size="small" onClick={() => void open(r.id)}>Sửa</Button>}
-        {can('price_list.delete') && <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: `Xóa bảng giá ${r.code}?`, okText: 'Xóa', cancelText: 'Hủy', onOk: () => del.mutateAsync(r.id) })}>Xóa</Button>}</Space>) }]} />
+    <PageHeader
+      title="Bảng giá"
+      extra={can('price_list.create') && <Button type="primary" onClick={() => void open('new')}>Thêm (Insert)</Button>}
+    >
+      <Toolbar>
+        <Select allowClear placeholder="Loại bảng giá" value={kind} options={KIND} onChange={setKind} style={{ width: 180 }} aria-label="Loại bảng giá" />
+        {list.data !== undefined && (
+          <span style={{ marginLeft: 'auto', color: COLOR.textSecondary, fontSize: 13 }}>
+            {formatVnNumber(String(list.data.length))} bảng giá
+          </span>
+        )}
+      </Toolbar>
+    </PageHeader>
+    <Section bodyPadding={0}>
+      <Table<Head> size="small" rowKey="id" dataSource={list.data ?? []} pagination={false} columns={[
+        { title: 'Mã', dataIndex: 'code', width: 120 }, { title: 'Tên bảng giá', dataIndex: 'name' }, { title: 'Loại', dataIndex: 'kind', render: kindLabel, width: 130 },
+        { title: 'Tiền', dataIndex: 'currencyCode', width: 70 }, { title: 'Nhóm đối tượng', dataIndex: 'partyGroupCode', width: 140 },
+        { title: 'Hiệu lực', width: 200, render: (_v, r) => `${dayjs(r.validFrom).format('DD/MM/YYYY')} - ${r.validTo ? dayjs(r.validTo).format('DD/MM/YYYY') : 'không giới hạn'}` },
+        { title: 'Ưu tiên', dataIndex: 'priority', align: 'right', width: 90, className: 'kt-num' }, { title: 'Số dòng giá', dataIndex: 'lineCount', align: 'right', width: 110, className: 'kt-num' },
+        { title: '', width: 120, render: (_v, r) => (<Space size={0}>{canEdit && <Button type="link" size="small" onClick={() => void open(r.id)}>Sửa</Button>}
+          {can('price_list.delete') && <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: `Xóa bảng giá ${r.code}?`, okText: 'Xóa', cancelText: 'Hủy', onOk: () => del.mutateAsync(r.id) })}>Xóa</Button>}</Space>) }]} />
+    </Section>
     <Modal title={editing === 'new' ? 'Thêm bảng giá' : 'Sửa bảng giá'} open={editing !== null} onCancel={() => setEditing(null)} onOk={() => form.submit()} okText="Lưu (Ctrl+S)" cancelText="Hủy" width={900} destroyOnHidden forceRender>
       <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v)}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', columnGap: 16 }}>

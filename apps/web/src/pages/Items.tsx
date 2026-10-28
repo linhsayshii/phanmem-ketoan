@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Form, Input, Modal, Select, Space, Table, Tabs, message } from 'antd';
 import type { ColDef, ICellRendererParams } from 'ag-grid-community';
 import { formatVnNumber } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, VnNumberInput, useHotkeys, useRememberedFilter } from '@kt/ui';
+import { COLOR, KeyboardGrid, LookupSelect, PageHeader, Toolbar, VnNumberInput, useHotkeys, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { FieldFor, isIntKey, type Def } from './Catalog.js';
@@ -69,15 +69,24 @@ export default function ItemsPage() {
   if (!def) return null;
   const field = (c: (typeof cols)[number]) => <FieldFor key={c.key} c={c} catalog="item" canQuickAdd={can('catalog.create')} />;
   const isNew = editing === 'new';
+  const count = rows.data?.rows?.length;
   return (
     <>
-      <Space style={{ marginBottom: 12 }} wrap>
-        <h2 style={{ margin: 0 }}>Vật tư hàng hóa</h2>
-        <Input.Search placeholder="Tìm mã, tên, mã vạch…" value={qText} onChange={(e) => setQText(e.target.value)} onSearch={(q) => setFilter({ ...filter, q })} style={{ width: 280 }} allowClear />
-        <Select value={filter.active} options={ACTIVE_OPTIONS} onChange={(active: Active) => setFilter({ ...filter, active })} style={{ width: 140 }} aria-label="Trạng thái" />
-        {can('item.create') && <Button type="primary" onClick={add}>Thêm (Insert)</Button>}
-      </Space>
-      <KeyboardGrid<Row> rows={rows.data?.rows ?? []} columns={columns} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly height="calc(100vh - 200px)" />
+      <PageHeader
+        title="Vật tư hàng hóa"
+        extra={can('item.create') && <Button type="primary" onClick={add}>Thêm (Insert)</Button>}
+      >
+        <Toolbar>
+          <Input.Search placeholder="Tìm mã, tên, mã vạch…" value={qText} onChange={(e) => setQText(e.target.value)} onSearch={(q) => setFilter({ ...filter, q })} style={{ width: 280 }} allowClear />
+          <Select value={filter.active} options={ACTIVE_OPTIONS} onChange={(active: Active) => setFilter({ ...filter, active })} style={{ width: 140 }} aria-label="Trạng thái" />
+          {count !== undefined && (
+            <span style={{ marginLeft: 'auto', color: COLOR.textSecondary, fontSize: 13 }}>
+              {formatVnNumber(String(count))} mặt hàng
+            </span>
+          )}
+        </Toolbar>
+      </PageHeader>
+      <KeyboardGrid<Row> rows={rows.data?.rows ?? []} columns={columns} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly height="calc(100vh - 190px)" />
       <Modal title={isNew ? 'Thêm vật tư hàng hóa' : 'Sửa vật tư hàng hóa'} open={!!editing} onCancel={() => setEditing(null)} onOk={() => form.submit()} width={820} destroyOnHidden forceRender>
         <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v)}>
           <Tabs items={[

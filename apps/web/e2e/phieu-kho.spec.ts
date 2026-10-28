@@ -43,7 +43,7 @@ test('lập Phiếu nhập kho bằng bàn phím, ghi sổ F9, thấy tồn và 
   await expect(page.locator('.ag-center-cols-container [col-id="itemCode"]', { hasText: 'HANG-E2E' }).first()).toBeVisible();
   await page.keyboard.press('F9');
   await expect(page.locator('.ant-message').getByText('Đã ghi sổ')).toBeVisible();
-  await expect(page.locator('.ant-card-head-title')).toContainText(/PNK\d+/);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/PNK\d+/);
   await expect(page.getByTestId('ledger-lines')).toContainText('156');
   await expect(page.getByTestId('on-hand')).toContainText('HANG-E2E');
 });

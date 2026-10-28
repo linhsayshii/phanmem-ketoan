@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Card, Col, DatePicker, Dropdown, Form, Input, Modal, Row, Segmented, Space, Table, Tag, message } from 'antd';
+import { Alert, Button, Col, DatePicker, Dropdown, Form, Input, Modal, Row, Segmented, Space, Table, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
 import dayjs, { type Dayjs } from 'dayjs';
 import { canTransition, D, decideEdit, formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, todayVn, type VoucherState, type VoucherTypeDef } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useUnsavedChanges } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, PageHeader, Section, useUnsavedChanges } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { STATE_LABEL } from './VoucherList.js';
@@ -145,39 +145,55 @@ export default function AssemblyVoucher({ def, id }: { def: VoucherTypeDef; id: 
   const compCols = useMemo(() => cols(!assembling), [assembling]);
 
   return (
-    <Card title={<Space><span>{def.name} - {assembling ? 'Lắp ráp' : 'Tháo dỡ'} {v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}</span><Tag>{STATE_LABEL[state]}</Tag></Space>}
-      extra={<Space>
-        {mayEdit && <Button onClick={() => save.mutate(false)} type="primary" loading={save.isPending} disabled={!ready}>Lưu (Ctrl+S)</Button>}
-        {mayEdit && mayPost && <Button onClick={() => save.mutate(true)} disabled={!ready || save.isPending}>Ghi sổ (F9)</Button>}
-        {!isNew && mayUnpost && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'unpost' }))}>Bỏ ghi sổ</Button>}
-        {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo}` }); })}>Đảo</Button>}
-        {!isNew && editable && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy phiếu?', content: 'Số phiếu (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
-        {!isNew && can('voucher.print') && <Dropdown trigger={['click']} menu={{ items: [{ key: '02-VT', label: <a href={`/api/vouchers/${id}/print?format=pdf&form=02-VT`} target="_blank" rel="noreferrer">Phiếu xuất kho (vật tư đem lắp, tháo)</a> }, { key: '01-VT', label: <a href={`/api/vouchers/${id}/print?format=pdf&form=01-VT`} target="_blank" rel="noreferrer">Phiếu nhập kho (thành phẩm, linh kiện)</a> }] }}><Button>In ▾</Button></Dropdown>}
-      </Space>}>
+    <>
+      <PageHeader
+        title={`${def.name} - ${assembling ? 'Lắp ráp' : 'Tháo dỡ'} ${v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}`}
+        tags={<Tag style={{ marginRight: 0 }}>{STATE_LABEL[state]}</Tag>}
+        extra={<>
+          {mayEdit && <Button onClick={() => save.mutate(false)} type="primary" loading={save.isPending} disabled={!ready}>Lưu (Ctrl+S)</Button>}
+          {mayEdit && mayPost && <Button onClick={() => save.mutate(true)} disabled={!ready || save.isPending}>Ghi sổ (F9)</Button>}
+          {!isNew && mayUnpost && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'unpost' }))}>Bỏ ghi sổ</Button>}
+          {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo}` }); })}>Đảo</Button>}
+          {!isNew && editable && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy phiếu?', content: 'Số phiếu (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
+          {!isNew && can('voucher.print') && <Dropdown trigger={['click']} menu={{ items: [{ key: '02-VT', label: <a href={`/api/vouchers/${id}/print?format=pdf&form=02-VT`} target="_blank" rel="noreferrer">Phiếu xuất kho (vật tư đem lắp, tháo)</a> }, { key: '01-VT', label: <a href={`/api/vouchers/${id}/print?format=pdf&form=01-VT`} target="_blank" rel="noreferrer">Phiếu nhập kho (thành phẩm, linh kiện)</a> }] }}><Button>In ▾</Button></Dropdown>}
+        </>}
+      />
       {v.error && <Alert type="error" showIcon message={(v.error as Error).message} style={{ marginBottom: 12 }} />}
       {posted && <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Phiếu ghi sổ theo giá tạm tính; khi tính giá vốn, giá hàng nhập được cập nhật theo giá gán của hàng xuất và Phiếu giá vốn ghi phần chênh lệch." />}
-      <Form form={form} layout="vertical" disabled={!editable} onValuesChange={() => setDirty(true)} initialValues={{ postingDate: dayjs(todayVn()), documentDate: dayjs(todayVn()) }}>
-        <Row gutter={12}>
-          <Col span={4}><Form.Item label="Ngày hạch toán" name="postingDate" rules={[{ required: true, message: 'Nhập ngày hạch toán' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={4}><Form.Item label="Ngày chứng từ" name="documentDate" rules={[{ required: true, message: 'Nhập ngày chứng từ' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={5}><Form.Item label="Kho (F4)" name="warehouseCode" rules={[{ required: true, message: 'Chọn kho' }]}><LookupSelect catalog="warehouse" quickAddFields={quickAdd} /></Form.Item></Col>
-          <Col span={5}><Form.Item label="Nghiệp vụ"><Segmented value={mode} disabled={!isNew || !editable} onChange={(m) => { setMode(m as Mode); setDirty(true); }}
-            options={[{ value: 'assembly', label: 'Lắp ráp' }, { value: 'disassembly', label: 'Tháo dỡ' }]} /></Form.Item></Col>
-          <Col span={6}><Form.Item label="Người lập" name="personName"><Input maxLength={200} /></Form.Item></Col>
-          <Col span={12}><Form.Item label="Diễn giải" name="description"><Input /></Form.Item></Col>
-          <Col span={6}><Form.Item label="Chi phí phát sinh (đ)" name="extraCost" tooltip="Ghi Có tài khoản chi phí, cộng vào giá trị hàng nhập kho"><Input inputMode="numeric" /></Form.Item></Col>
-          <Col span={6}><Form.Item label="TK ghi Có chi phí" name="extraCostAccountCode" tooltip="Bỏ trống: dùng TK 154"><Input placeholder="154" /></Form.Item></Col>
-        </Row>
-      </Form>
-      <Row gutter={12}>
-        <Col span={12}><b>Thành phẩm {assembling ? '(nhập kho)' : '(xuất kho)'}</b>
-          <KeyboardGrid<Row> rows={outputs} columns={outCols} readOnly={!editable} onRowsChange={setOut} addRowTemplate={blank} height={220} onLookup={onLookup('out')} /></Col>
-        <Col span={12}><b>Linh kiện {assembling ? '(xuất kho)' : '(nhập kho)'}</b>
-          <KeyboardGrid<Row> rows={components} columns={compCols} readOnly={!editable} onRowsChange={setComp} addRowTemplate={blank} height={220} onLookup={onLookup('comp')} /></Col>
+      <Section title="Thông tin chung">
+        <Form form={form} layout="vertical" disabled={!editable} onValuesChange={() => setDirty(true)} initialValues={{ postingDate: dayjs(todayVn()), documentDate: dayjs(todayVn()) }}>
+          <Row gutter={12}>
+            <Col span={4}><Form.Item label="Ngày hạch toán" name="postingDate" rules={[{ required: true, message: 'Nhập ngày hạch toán' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
+            <Col span={4}><Form.Item label="Ngày chứng từ" name="documentDate" rules={[{ required: true, message: 'Nhập ngày chứng từ' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
+            <Col span={5}><Form.Item label="Kho (F4)" name="warehouseCode" rules={[{ required: true, message: 'Chọn kho' }]}><LookupSelect catalog="warehouse" quickAddFields={quickAdd} /></Form.Item></Col>
+            <Col span={5}><Form.Item label="Nghiệp vụ"><Segmented value={mode} disabled={!isNew || !editable} onChange={(m) => { setMode(m as Mode); setDirty(true); }}
+              options={[{ value: 'assembly', label: 'Lắp ráp' }, { value: 'disassembly', label: 'Tháo dỡ' }]} /></Form.Item></Col>
+            <Col span={6}><Form.Item label="Người lập" name="personName"><Input maxLength={200} /></Form.Item></Col>
+            <Col span={12}><Form.Item label="Diễn giải" name="description"><Input /></Form.Item></Col>
+            <Col span={6}><Form.Item label="Chi phí phát sinh (đ)" name="extraCost" tooltip="Ghi Có tài khoản chi phí, cộng vào giá trị hàng nhập kho"><Input inputMode="numeric" /></Form.Item></Col>
+            <Col span={6}><Form.Item label="TK ghi Có chi phí" name="extraCostAccountCode" tooltip="Bỏ trống: dùng TK 154"><Input placeholder="154" /></Form.Item></Col>
+          </Row>
+        </Form>
+      </Section>
+      <Row gutter={12} style={{ marginTop: 12 }}>
+        <Col span={12}>
+          <Section title={`Thành phẩm ${assembling ? '(nhập kho)' : '(xuất kho)'}`} bodyPadding={0}>
+            <KeyboardGrid<Row> rows={outputs} columns={outCols} readOnly={!editable} onRowsChange={setOut} addRowTemplate={blank} height={220} onLookup={onLookup('out')} />
+          </Section>
+        </Col>
+        <Col span={12}>
+          <Section title={`Linh kiện ${assembling ? '(xuất kho)' : '(nhập kho)'}`} bodyPadding={0}>
+            <KeyboardGrid<Row> rows={components} columns={compCols} readOnly={!editable} onRowsChange={setComp} addRowTemplate={blank} height={220} onLookup={onLookup('comp')} />
+          </Section>
+        </Col>
       </Row>
-      {(v.data?.ledgerLines.length ?? 0) > 0 && <Table size="small" style={{ marginTop: 12 }} pagination={false} rowKey="lineNo" dataSource={v.data!.ledgerLines} data-testid="ledger-lines" columns={[
-        { title: 'Tài khoản', dataIndex: 'accountCode', width: 110 }, { title: 'Tên tài khoản', dataIndex: 'accountName' }, { title: 'Hàng', dataIndex: 'itemCode', width: 120, render: (s: string | null) => s ?? '' },
-        { title: 'Nợ', dataIndex: 'debit', align: 'right', width: 140, render: money }, { title: 'Có', dataIndex: 'credit', align: 'right', width: 140, render: money }]} />}
+      {(v.data?.ledgerLines.length ?? 0) > 0 && (
+        <Section title="Hạch toán" style={{ marginTop: 12 }} bodyPadding={0}>
+          <Table size="small" pagination={false} rowKey="lineNo" dataSource={v.data!.ledgerLines} data-testid="ledger-lines" columns={[
+            { title: 'Tài khoản', dataIndex: 'accountCode', width: 110, className: 'kt-num' }, { title: 'Tên tài khoản', dataIndex: 'accountName' }, { title: 'Hàng', dataIndex: 'itemCode', width: 120, render: (s: string | null) => s ?? '' },
+            { title: 'Nợ', dataIndex: 'debit', align: 'right', width: 140, render: money, className: 'kt-num' }, { title: 'Có', dataIndex: 'credit', align: 'right', width: 140, render: money, className: 'kt-num' }]} />
+        </Section>
+      )}
       <PickDialog open={look !== null} catalog={look?.col === 'uomCode' ? 'uom' : 'item'}
         fetcher={look?.col === 'itemCode' ? async (q) => api<{ id: number; code: string; name: string }[]>(`/api/lookups/items?q=${encodeURIComponent(q)}`) : undefined as never}
         onPick={pickCode} onClose={() => setLook(null)} />
@@ -191,6 +207,6 @@ export default function AssemblyVoucher({ def, id }: { def: VoucherTypeDef; id: 
           <Input id="reverse-desc" value={reverse.description} maxLength={500} onChange={(e) => setReverse({ ...reverse, description: e.target.value })} />
         </Space>}
       </Modal>
-    </Card>
+    </>
   );
 }

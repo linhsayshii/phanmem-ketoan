@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Alert, Button, Select, Space, Table, Tag } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
-import { LookupSelect, useHotkeys } from '@kt/ui';
+import { LookupSelect, PageHeader, Toolbar, Section, useHotkeys } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { fetchVoucherNos } from './settleCommon.js';
@@ -65,68 +65,78 @@ export default function CostingRunPage() {
   const staleFrom = stale.data?.[0]?.staleFrom;
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <h2 style={{ margin: 0 }}>Tính giá vốn</h2>
-      <span>Tính giá xuất kho thực tế theo phương pháp của từng kho (bình quân cuối kỳ, bình quân tức thời, nhập trước xuất trước, đích danh). Phần chênh so với giá tạm tính đã ghi ở phiếu xuất được ghi bằng một Chứng từ giá vốn (GV) ngày cuối kỳ; tính lại thì đảo chứng từ cũ và sinh chứng từ mới.</span>
+    <>
+      <PageHeader
+        title="Tính giá vốn"
+        description="Tính giá xuất kho thực tế theo phương pháp của từng kho (bình quân cuối kỳ, bình quân tức thời, nhập trước xuất trước, đích danh). Phần chênh so với giá tạm tính đã ghi ở phiếu xuất được ghi bằng một Chứng từ giá vốn (GV) ngày cuối kỳ; tính lại thì đảo chứng từ cũ và sinh chứng từ mới."
+        extra={can('costing.run') && (
+          <Button type="primary" disabled={!ready} loading={run.isPending} onClick={start}>
+            Tính giá vốn (F9)
+          </Button>
+        )}
+      >
+        {can('costing.run') && (
+          <Toolbar>
+            <Select<number> aria-label="Năm tài chính" style={{ width: 130 }} value={year?.fiscalYear ?? null} options={fy.map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear}` }))}
+              onChange={(v) => { setYearNo(v); setFromNo(null); setToNo(null); }} />
+            <Select<number> aria-label="Từ kỳ" style={{ width: 190 }} virtual={false} value={pFrom?.periodNo ?? null} options={periodOpt} onChange={(v) => { setFromNo(v); if ((toNo ?? 0) < v) setToNo(v); }} />
+            <Select<number> aria-label="Đến kỳ" style={{ width: 190 }} virtual={false} value={pTo?.periodNo ?? null} options={periodOpt.filter((o) => o.value >= (pFrom?.periodNo ?? 0))} onChange={setToNo} />
+            <div style={{ width: 200 }}><LookupSelect catalog="warehouse" includeInactive value={warehouseCode} onChange={(c) => setWarehouseCode(c || null)} allowClear placeholder="Tất cả kho" aria-label="Kho" /></div>
+            <div style={{ width: 220 }}><LookupSelect catalog="item" includeInactive value={itemCode} onChange={(c) => setItemCode(c || null)} allowClear placeholder="Tất cả hàng" aria-label="Hàng" /></div>
+            <Select<string> aria-label="Phương pháp" style={{ width: 240 }} value={method} onChange={setMethod}
+              options={Object.entries(METHOD_LABEL).map(([value, label]) => ({ value, label: value === 'warehouse' ? 'Theo phương pháp của kho' : label }))} />
+          </Toolbar>
+        )}
+      </PageHeader>
+
       {staleFrom && (
-        <Alert type="warning" showIcon message={stale.data!.length === 1 ? staleText(stale.data![0]!) : `${stale.data!.length} cặp hàng – kho có giá vốn chưa cập nhật`}
+        <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={stale.data!.length === 1 ? staleText(stale.data![0]!) : `${stale.data!.length} cặp hàng – kho có giá vốn chưa cập nhật`}
           description={<span>{stale.data!.length > 1 && <>{stale.data!.slice(0, 8).map((s) => staleText(s)).join('; ')}{stale.data!.length > 8 ? `; và ${stale.data!.length - 8} cặp khác` : ''}. </>}Hãy tính lại giá vốn từ kỳ đó.</span>} />
       )}
-      {can('costing.run') && (
-        <Space wrap align="end">
-          <Select<number> aria-label="Năm tài chính" style={{ width: 130 }} value={year?.fiscalYear ?? null} options={fy.map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear}` }))}
-            onChange={(v) => { setYearNo(v); setFromNo(null); setToNo(null); }} />
-          <Select<number> aria-label="Từ kỳ" style={{ width: 190 }} virtual={false} value={pFrom?.periodNo ?? null} options={periodOpt} onChange={(v) => { setFromNo(v); if ((toNo ?? 0) < v) setToNo(v); }} />
-          <Select<number> aria-label="Đến kỳ" style={{ width: 190 }} virtual={false} value={pTo?.periodNo ?? null} options={periodOpt.filter((o) => o.value >= (pFrom?.periodNo ?? 0))} onChange={setToNo} />
-          <div style={{ width: 200 }}><LookupSelect catalog="warehouse" includeInactive value={warehouseCode} onChange={(c) => setWarehouseCode(c || null)} allowClear placeholder="Tất cả kho" aria-label="Kho" /></div>
-          <div style={{ width: 220 }}><LookupSelect catalog="item" includeInactive value={itemCode} onChange={(c) => setItemCode(c || null)} allowClear placeholder="Tất cả hàng" aria-label="Hàng" /></div>
-          <Select<string> aria-label="Phương pháp" style={{ width: 240 }} value={method} onChange={setMethod}
-            options={Object.entries(METHOD_LABEL).map(([value, label]) => ({ value, label: value === 'warehouse' ? 'Theo phương pháp của kho' : label }))} />
-          <Button type="primary" disabled={!ready} loading={run.isPending} onClick={start}>Tính giá vốn (F9)</Button>
-        </Space>
-      )}
-      {err && <Alert type="error" showIcon message={err} />}
+      {err && <Alert type="error" showIcon style={{ marginBottom: 12 }} message={err} />}
       {out && (out.r.unchanged
-        ? <Alert type="info" showIcon message={`Giá vốn không đổi (${out.r.summary.items} cặp hàng – kho, ${out.r.summary.moves} phát sinh): không sinh chứng từ`} />
-        : <Alert type="success" showIcon message={`Đã tính giá vốn ${out.r.summary.items} cặp hàng – kho, ${out.r.summary.moves} phát sinh${out.r.summary.delta !== null ? `, chênh lệch ${money(out.r.summary.delta)}` : ''}`}
+        ? <Alert type="info" showIcon style={{ marginBottom: 12 }} message={`Giá vốn không đổi (${out.r.summary.items} cặp hàng – kho, ${out.r.summary.moves} phát sinh): không sinh chứng từ`} />
+        : <Alert type="success" showIcon style={{ marginBottom: 12 }} message={`Đã tính giá vốn ${out.r.summary.items} cặp hàng – kho, ${out.r.summary.moves} phát sinh${out.r.summary.delta !== null ? `, chênh lệch ${money(out.r.summary.delta)}` : ''}`}
           description={out.r.voucherIds.length ? <span>Chứng từ giá vốn: {out.r.voucherIds.map((id, i) => <span key={id}>{i > 0 && ', '}<a href={`/chung-tu/GV/${id}`} target="_blank" rel="noopener noreferrer">{out.nos[i] ?? id}</a></span>)}</span> : 'Giá thực tế bằng giá tạm tính: không cần chứng từ giá vốn'} />)}
-      {!!out?.r.summary.errors.length && <Alert type="warning" showIcon message={`${out.r.summary.errors.length} cảnh báo khi tính giá vốn`}
+      {!!out?.r.summary.errors.length && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`${out.r.summary.errors.length} cảnh báo khi tính giá vốn`}
         description={<ul style={{ margin: 0, paddingLeft: 18 }}>{out.r.summary.errors.slice(0, 20).map((e) => <li key={`${e.code}${e.moveId}`}>{ERROR_LABEL[e.code] ?? e.code}: {e.detail}</li>)}</ul>} />}
 
-      <b>Kết quả gán giá{shownRun ? ` – lần chạy ${formatVnDate(shownRun.periodFrom)} – ${formatVnDate(shownRun.periodTo)}` : ''}</b>
-      {!seeCost ? <Alert type="info" showIcon message="Không có quyền xem giá vốn: không xem được kết quả gán giá" />
-        : <Table<Assignment> size="small" rowKey="moveId" loading={detail.isLoading} dataSource={detail.data?.assignments ?? []} pagination={{ pageSize: 20, hideOnSinglePage: true }}
-          locale={{ emptyText: shownId ? 'Lần chạy này không gán giá mới' : 'Chưa tính giá vốn lần nào' }} scroll={{ x: 1340 }}
-          columns={[
-            { title: 'Ngày', dataIndex: 'postingDate', width: 100, render: formatVnDate },
-            { title: 'Chứng từ', width: 130, render: (_, a) => <a href={`/chung-tu/${a.voucherType}/${a.voucherId}`} target="_blank" rel="noopener noreferrer">{a.voucherNo ?? a.voucherType}</a> },
-            { title: 'Hàng', width: 240, render: (_, a) => `${a.itemCode} – ${a.itemName}`, ellipsis: true },
-            { title: 'Kho', dataIndex: 'warehouseCode', width: 100 },
-            { title: 'Chiều', width: 70, render: (_, a) => (a.direction === 'out' ? 'Xuất' : 'Nhập') },
-            { title: 'Số lượng', dataIndex: 'quantity', align: 'right', width: 110, render: (v: string) => formatVnNumber(v, 4) },
-            { title: 'Đơn giá vốn', dataIndex: 'unitCost', align: 'right', width: 120, render: (v: string) => formatVnNumber(v, 4) },
-            { title: 'Giá tạm tính', dataIndex: 'booked', align: 'right', width: 130, render: money },
-            { title: 'Giá vốn', dataIndex: 'amount', align: 'right', width: 130, render: money },
-            { title: 'Chênh lệch', dataIndex: 'delta', align: 'right', width: 120, render: money },
-            { title: 'Chứng từ GV', dataIndex: 'gvNo', width: 120, render: (v: string | null, a) => (v ?? '') + (a.isCurrent ? '' : ' (đã thay)') },
-          ]} />}
+      <Section title={`Kết quả gán giá${shownRun ? ` – lần chạy ${formatVnDate(shownRun.periodFrom)} – ${formatVnDate(shownRun.periodTo)}` : ''}`} bodyPadding={0}>
+        {!seeCost ? <Alert type="info" showIcon message="Không có quyền xem giá vốn: không xem được kết quả gán giá" style={{ margin: 12 }} />
+          : <Table<Assignment> size="small" rowKey="moveId" loading={detail.isLoading} dataSource={detail.data?.assignments ?? []} pagination={{ pageSize: 20, hideOnSinglePage: true }}
+            locale={{ emptyText: shownId ? 'Lần chạy này không gán giá mới' : 'Chưa tính giá vốn lần nào' }} scroll={{ x: 1340 }}
+            columns={[
+              { title: 'Ngày', dataIndex: 'postingDate', width: 100, render: formatVnDate },
+              { title: 'Chứng từ', width: 130, render: (_, a) => <a href={`/chung-tu/${a.voucherType}/${a.voucherId}`} target="_blank" rel="noopener noreferrer">{a.voucherNo ?? a.voucherType}</a> },
+              { title: 'Hàng', width: 240, render: (_, a) => `${a.itemCode} – ${a.itemName}`, ellipsis: true },
+              { title: 'Kho', dataIndex: 'warehouseCode', width: 100 },
+              { title: 'Chiều', width: 70, render: (_, a) => (a.direction === 'out' ? 'Xuất' : 'Nhập') },
+              { title: 'Số lượng', dataIndex: 'quantity', align: 'right', width: 110, render: (v: string) => formatVnNumber(v, 4), className: 'kt-num' },
+              { title: 'Đơn giá vốn', dataIndex: 'unitCost', align: 'right', width: 120, render: (v: string) => formatVnNumber(v, 4), className: 'kt-num' },
+              { title: 'Giá tạm tính', dataIndex: 'booked', align: 'right', width: 130, render: money, className: 'kt-num' },
+              { title: 'Giá vốn', dataIndex: 'amount', align: 'right', width: 130, render: money, className: 'kt-num' },
+              { title: 'Chênh lệch', dataIndex: 'delta', align: 'right', width: 120, render: money, className: 'kt-num' },
+              { title: 'Chứng từ GV', dataIndex: 'gvNo', width: 120, render: (v: string | null, a) => (v ?? '') + (a.isCurrent ? '' : ' (đã thay)') },
+            ]} />}
+      </Section>
 
-      <b>Nhật ký lần chạy</b>
-      {runs.error && <Alert type="error" showIcon message={(runs.error as Error).message} />}
-      <Table<RunRow> size="small" rowKey="id" loading={runs.isLoading} dataSource={runs.data ?? []} pagination={{ pageSize: 10, hideOnSinglePage: true }} locale={{ emptyText: 'Chưa tính giá vốn lần nào' }}
-        scroll={{ x: 1000 }} onRow={(r) => ({ onClick: () => setSelected(r.id), style: { cursor: 'pointer', ...(r.id === shownId ? { background: 'var(--ant-color-primary-bg, #e6f4ff)' } : {}) } })}
-        columns={[
-          { title: 'Lúc chạy', dataIndex: 'createdAt', width: 150, render: (v: string) => new Date(v).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' }) },
-          { title: 'Kỳ', width: 210, render: (_, r) => `${formatVnDate(r.periodFrom)} – ${formatVnDate(r.periodTo)}` },
-          { title: 'Kho', dataIndex: 'warehouseCode', width: 100, render: (v: string | null) => v ?? 'Tất cả' },
-          { title: 'Hàng', dataIndex: 'itemCode', width: 110, render: (v: string | null) => v ?? 'Tất cả' },
-          { title: 'Phương pháp', dataIndex: 'method', width: 160, render: (v: string) => METHOD_LABEL[v] ?? v },
-          { title: 'Cặp hàng – kho', dataIndex: 'items', align: 'right', width: 110 },
-          { title: 'Chênh lệch', dataIndex: 'delta', align: 'right', width: 120, render: money },
-          { title: 'Chứng từ GV', dataIndex: 'voucherNos', render: (v: string[]) => v.join(', ') },
-          { title: 'Kết quả', width: 140, render: (_, r) => <Space size={4}>{r.unchanged ? <Tag>Không đổi</Tag> : <Tag color="green">Đã điều chỉnh</Tag>}{r.errors > 0 && <Tag color="orange">{r.errors} cảnh báo</Tag>}</Space> },
-          { title: 'Người chạy', dataIndex: 'createdBy', width: 140, render: (v: string | null) => v ?? '' },
-        ]} />
-    </Space>
+      <Section title="Nhật ký lần chạy" style={{ marginTop: 16 }} bodyPadding={0}>
+        {runs.error && <Alert type="error" showIcon message={(runs.error as Error).message} style={{ margin: 12 }} />}
+        <Table<RunRow> size="small" rowKey="id" loading={runs.isLoading} dataSource={runs.data ?? []} pagination={{ pageSize: 10, hideOnSinglePage: true }} locale={{ emptyText: 'Chưa tính giá vốn lần nào' }}
+          scroll={{ x: 1000 }} rowClassName={(r) => (r.id === shownId ? 'ant-table-row-selected' : '')} onRow={(r) => ({ onClick: () => setSelected(r.id), style: { cursor: 'pointer' } })}
+          columns={[
+            { title: 'Lúc chạy', dataIndex: 'createdAt', width: 150, render: (v: string) => new Date(v).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' }) },
+            { title: 'Kỳ', width: 210, render: (_, r) => `${formatVnDate(r.periodFrom)} – ${formatVnDate(r.periodTo)}` },
+            { title: 'Kho', dataIndex: 'warehouseCode', width: 100, render: (v: string | null) => v ?? 'Tất cả' },
+            { title: 'Hàng', dataIndex: 'itemCode', width: 110, render: (v: string | null) => v ?? 'Tất cả' },
+            { title: 'Phương pháp', dataIndex: 'method', width: 160, render: (v: string) => METHOD_LABEL[v] ?? v },
+            { title: 'Cặp hàng – kho', dataIndex: 'items', align: 'right', width: 110, className: 'kt-num' },
+            { title: 'Chênh lệch', dataIndex: 'delta', align: 'right', width: 120, render: money, className: 'kt-num' },
+            { title: 'Chứng từ GV', dataIndex: 'voucherNos', render: (v: string[]) => v.join(', ') },
+            { title: 'Kết quả', width: 140, render: (_, r) => <Space size={4}>{r.unchanged ? <Tag>Không đổi</Tag> : <Tag color="green">Đã điều chỉnh</Tag>}{r.errors > 0 && <Tag color="orange">{r.errors} cảnh báo</Tag>}</Space> },
+            { title: 'Người chạy', dataIndex: 'createdBy', width: 140, render: (v: string | null) => v ?? '' },
+          ]} />
+      </Section>
+    </>
   );
 }
