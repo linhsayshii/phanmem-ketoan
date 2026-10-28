@@ -70,7 +70,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.get('/api/cash-flow-codes', { preHandler: app.requireAuth, schema: { querystring: z.object({ date: S.dateIso }) } }, async (req) =>
     app.withTenant(req, async (trx) => cashFlowCodes(trx, (await S.periodOf(trx, req.query.date, 'PKT')).regime)));
   app.get('/api/vouchers', { preHandler: app.requirePermission('voucher.view'), schema: { querystring: z.object({ type: z.string().optional(), from: S.dateIso.optional(), to: S.dateIso.optional(),
-      state: z.enum(['draft', 'posted', 'reversed', 'cancelled']).optional(), q: z.string().optional(), partyCode: z.string().optional(), page: z.coerce.number().int().min(1).default(1), size: z.coerce.number().int().min(1).max(500).default(50) }) } },
+      state: z.enum(['draft', 'posted', 'reversed', 'cancelled']).optional(), q: z.string().optional(), partyCode: z.string().optional(), branch: z.string().regex(/^(HO|\d+)$/).optional(), page: z.coerce.number().int().min(1).default(1), size: z.coerce.number().int().min(1).max(500).default(50) }) } },
     async (req) => app.withTenant(req, async (trx) => {
       const out = await S.listVouchers(trx, req.query);
       // phiếu kho: tổng tiền là giá trị tồn kho, che khi thiếu view_cost (không quét dòng từng phiếu)

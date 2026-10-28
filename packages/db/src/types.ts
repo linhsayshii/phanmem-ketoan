@@ -245,7 +245,8 @@ export interface VoucherLineTable {
   extra_dims: ColumnType<Record<string, unknown>, string | undefined, string>; description: string | null; due_date: DateOnly | null; bank_account_id: number | null;
   cash_flow_code: string | null; // mã chỉ tiêu B03 (dòng tiền), 0066
 }
-export interface VoucherCounterTable { tenant_id: string; voucher_type: string; fiscal_year: number; last_no: Generated<number> }
+export interface VoucherCounterTable { tenant_id: string; voucher_type: string; fiscal_year: number; branch_key: Generated<number>; last_no: Generated<number> }
+export interface VoucherNumberingSettingTable { tenant_id: string; per_branch: Generated<boolean>; hq_code: Generated<string>; updated_at: Generated<string> }
 export interface VoucherLineHistoryTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; version: number;
   header: JSONColumnType<unknown>; lines: JSONColumnType<unknown>; archived_at: Generated<string>; archived_by: string | null;
@@ -664,7 +665,11 @@ export interface ApprovalRequestTable {
   state: Generated<string>; flow_id: number | null; steps: ColumnType<ApprovalStepSnapshot[], string | undefined, string>; current_step: Generated<number>; reject_reason: string | null; voucher_id: string | null;
   submitted_at: Timestamp | null; decided_at: Timestamp | null; created_at: Generated<Timestamp>;
 }
-export interface ApprovalStepLogTable { id: Generated<number>; tenant_id: string; request_id: string; step_no: number; action: string; actor_id: string; note: string | null; created_at: Generated<Timestamp> }
+export interface ApprovalStepLogTable { id: Generated<number>; tenant_id: string; request_id: string; step_no: number; action: string; actor_id: string; note: string | null; on_behalf_of: string | null; created_at: Generated<Timestamp> }
+export interface ApprovalDelegationTable {
+  id: Generated<number>; tenant_id: string; delegator_id: string; delegate_id: string; date_from: string; date_to: string; reason: string | null; created_by: string;
+  created_at: Generated<Timestamp>; revoked_at: Timestamp | null; revoked_by: string | null;
+}
 export interface ApprovalAttachmentTable {
   id: Generated<string>; tenant_id: string; request_id: string; file_name: string; mime: string; bytes: number; storage_key: string; uploaded_by: string; uploaded_at: Generated<Timestamp>;
 }
@@ -674,12 +679,14 @@ export interface Database {
   approval_request: ApprovalRequestTable;
   approval_step_log: ApprovalStepLogTable;
   approval_attachment: ApprovalAttachmentTable;
+  approval_delegation: ApprovalDelegationTable;
   user_branch_scope: UserBranchScopeTable;
   branch_consolidation_setting: BranchConsolidationSettingTable;
   recurring_entry: RecurringEntryTable;
   recurring_entry_line: RecurringEntryLineTable;
   recurring_run: RecurringRunTable;
   assistant_recognition_log: AssistantRecognitionLogTable;
+  voucher_numbering_setting: VoucherNumberingSettingTable;
 }
 
 // GĐ7 nhóm 5: đa chi nhánh (0240). voucher.branch_id, department.tax_code đọc/ghi qua sql trong modules/branch.

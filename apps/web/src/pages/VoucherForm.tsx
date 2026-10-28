@@ -11,6 +11,7 @@ import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { assetPick, contractFetcher, contractPick, costObjectPick, isAssetAccount, isContractAccount, isCostAccount, accountFetcherFor, bankAccountFetcher, cashFlowFetcherFor, regimeFor, type FiscalYearRef } from '../lookups.js';
 import { STATE_LABEL, typeLabel } from './VoucherList.js';
+import { VoucherBranchField } from './VoucherBranchField.js';
 import { SettleDialog, type SettleEntry, type SettleTarget } from './settleCommon.js';
 import { Attachments, iso, quickAdd, reportError, text } from './voucherCommon.js';
 import { SuggestEntryButton, type SuggestFields, type SuggestLine } from './SuggestEntry.js';
@@ -155,6 +156,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const declRef = useRef(declRows); const declBaseline = useRef(JSON.stringify(declRows)); const [declDirty, setDeclDirty] = useState(false);
   const changeDecl = useCallback((rows: DeclRow[]) => { declRef.current = rows; setDeclRows(rows); setDeclDirty(JSON.stringify(rows) !== declBaseline.current); }, []);
   const confirmIfDirty = useUnsavedChanges((formDirty || rowsDirty || declDirty) && (editable || metaOnly));
+  const branchPick = useRef<'HO' | number>(); // chi nhánh chọn khi lập mới, khác chi nhánh làm việc
   const lastCash = useRef('0'); const autoAccount = useRef<string>(); const lastParty = useRef<string | null>(null);
   const cashSide = eff.cashSide && eff.moneyKind ? (eff.cashSide === 'in' ? 'debit' : 'credit') : undefined;
 
@@ -215,7 +217,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const cashFlowFetcher = useMemo(() => cashFlowFetcherFor(postingIso), [postingIso]);
   const t = totals(lines); const balanced = isBalanced(cleanLines(lines).map((l) => ({ debit: l.debit, credit: l.credit })));
 
-  const invalidate = (voucherId = id) => Promise.all([qc.invalidateQueries({ queryKey: ['voucher', voucherId] }), qc.invalidateQueries({ queryKey: ['vouchers'] }), qc.invalidateQueries({ queryKey: ['cash-balance'] })]);
+  const invalidate = (voucherId = id) => Promise.all([qc.invalidateQueries({ queryKey: ['voucher', voucherId] }), qc.invalidateQueries({ queryKey: ['voucher-branch'] }), qc.invalidateQueries({ queryKey: ['vouchers'] }), qc.invalidateQueries({ queryKey: ['cash-balance'] })]);
   const conflict = useRef<{ destroy(): void } | null>(null);
   const onErr = (e: unknown) => {
     if (e instanceof ApiError && e.code === 'VERSION_CONFLICT') { // người khác đã sửa: không tự tải lại (mất chữ đang nhập), để người dùng chọn
@@ -239,11 +241,17 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
       const rows = cleanLines(linesRef.current);
       if (!isBalanced(rows)) throw new Error(`Chứng từ chưa cân: tổng Nợ ${formatVnNumber(sum(rows.map((l) => l.debit)).toString())} khác tổng Có ${formatVnNumber(sum(rows.map((l) => l.credit)).toString())}`);
     }
+    if (isNew && branchPick.current !== undefined) { // chi nhánh khác chi nhánh làm việc: lập nháp, gắn chi nhánh rồi mới ghi sổ (chứng từ đã ghi sổ không đổi được chi nhánh)
+      const draft = await api<Voucher>('/api/vouchers', { method: 'POST', json: { ...body(f), idempotencyKey } });
+      await api(`/api/vouchers/${draft.id}/branch`, { method: 'PUT', json: { branch: branchPick.current } });
+      return postAfter ? api<Voucher>(`/api/vouchers/${draft.id}/post`, { method: 'POST', json: {} }) : draft;
+    }
     if (isNew) return api<Voucher>('/api/vouchers', { method: 'POST', json: { ...body(f), idempotencyKey, ...(postAfter ? { autoPost: true } : {}) } });
     // sửa chứng từ đã ghi sổ: định vị dòng theo lineNo của máy chủ, không theo vị trí trên lưới
     const meta = linesRef.current.filter((l) => l.lineNo !== undefined).map((l) => ({ lineNo: l.lineNo!, description: l.description, departmentCode: l.departmentCode, projectCode: l.projectCode, costItemCode: l.costItemCode, costObjectCode: l.costObjectCode ?? null,
       dueDate: l.dueDate ?? null, cashFlowCode: l.cashFlowCode || null }));
     const saved = await api<Voucher>(`/api/vouchers/${id}`, { method: 'PUT', json: editable ? { ...body(f), version: v.data!.version } : { version: v.data!.version, description: f.description ?? null, lines: meta } });
+    if (editable && branchPick.current !== undefined) await api(`/api/vouchers/${id}/branch`, { method: 'PUT', json: { branch: branchPick.current } }); // sau lần lưu nội dung: đổi chi nhánh làm tăng phiên bản
     if (!postAfter) return saved;
     // đã lưu mà ghi sổ lỗi (chứng từ lệch, kỳ khóa...): tải lại để version khớp với bản vừa lưu, lần Ctrl+S sau không bị VERSION_CONFLICT
     return api<Voucher>(`/api/vouchers/${id}/post`, { method: 'POST', json: {} }).catch((e: unknown) => { invalidate(); throw e; });
@@ -254,7 +262,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     onSuccess: async (r, postAfter) => {
       void message.success(postAfter ? 'Đã ghi sổ' : 'Đã lưu');
       for (const w of r.warnings ?? []) void message.warning({ content: w.message, duration: 10 }); // ví dụ CASH_NEGATIVE: ghi sổ được nhưng tồn quỹ âm
-      setFormDirty(false); setRowsDirty(false); setDeclDirty(false); // đã lưu: chuyển trang không hỏi bỏ thay đổi
+      branchPick.current = undefined; setFormDirty(false); setRowsDirty(false); setDeclDirty(false); // đã lưu: chuyển trang không hỏi bỏ thay đổi
       if (isNew) toVoucher({ ...r, voucherType: r.voucherType ?? eff.code });
       await invalidate(r.id); // luôn tải lại: một lần tải đang chạy từ trước khi ghi sổ không được ghi đè trạng thái mới
     } });
@@ -404,7 +412,8 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
         <Row gutter={12}>
           <Col span={4}><Form.Item label="Ngày hạch toán" name="postingDate" rules={[{ required: true, message: 'Nhập ngày hạch toán' }]}><DatePicker format="DD/MM/YYYY" disabled={!editable} /></Form.Item></Col>
           <Col span={4}><Form.Item label="Ngày chứng từ" name="documentDate" rules={[{ required: true, message: 'Nhập ngày chứng từ' }]}><DatePicker format="DD/MM/YYYY" disabled={!editable} /></Form.Item></Col>
-          {!eff.header.includes('party') && <Col span={16} />}
+          <Col span={4}><VoucherBranchField voucherId={isNew ? undefined : id} editable={editable} onPick={(b) => { branchPick.current = b; setFormDirty(true); }} /></Col>
+          {!eff.header.includes('party') && <Col span={12} />}
           {eff.header.map((h) => <Fragment key={h}>{headerField(h)}</Fragment>)}
           <Col span={24}><Form.Item label={sideIn ? 'Lý do nộp' : sideOut ? 'Lý do chi' : 'Diễn giải'} name="description"><Input disabled={locked} /></Form.Item></Col>
         </Row>

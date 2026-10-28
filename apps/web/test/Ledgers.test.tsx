@@ -60,6 +60,41 @@ describe('In cả bộ sổ năm', () => {
   });
 });
 
+describe('In cả bộ sổ năm theo hình thức sổ', () => {
+  const fetchMock = vi.fn();
+  beforeEach(() => {
+    me.sensitive = ['view_receivable', 'view_payable', 'view_cost', 'view_salary'];
+    fetchMock.mockResolvedValue({ ok: true, blob: async () => new Blob(['x']) });
+    vi.stubGlobal('fetch', fetchMock);
+    URL.createObjectURL = vi.fn(() => 'blob:x'); URL.revokeObjectURL = vi.fn(); HTMLAnchorElement.prototype.click = vi.fn();
+  });
+  afterEach(() => { vi.unstubAllGlobals(); fetchMock.mockReset(); apiMock.mockReset(); });
+  const open = async (bookForm: string) => {
+    apiMock.mockImplementation(async (path: string) => (path.endsWith('/book-form') ? { bookForm } : [{ fiscalYear: 2026, regime: 'TT99' }]));
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><BookSetModal open onClose={vi.fn()} /></QueryClientProvider>);
+    await screen.findByText('Năm 2026 (TT99)');
+  };
+
+  it('Nhật ký chung: nhãn như cũ, không có ghi chú hình thức', async () => {
+    await open('NKC');
+    expect(screen.getByRole('checkbox', { name: 'Sổ Nhật ký chung' })).toBeInTheDocument();
+    expect(screen.queryByTestId('book-form-note')).not.toBeInTheDocument();
+  });
+  it.each([
+    ['CTGS', 'Sổ đăng ký Chứng từ ghi sổ và từng Chứng từ ghi sổ', 'Sổ Cái theo Chứng từ ghi sổ', 'hình thức Chứng từ ghi sổ'],
+    ['NKSC', 'Sổ Nhật ký – Sổ Cái', 'không in riêng', 'hình thức Nhật ký – Sổ Cái'],
+    ['NKCT', 'Nhật ký – Chứng từ (mỗi tài khoản ghi Có một bảng kê)', 'Sổ Cái (mọi tài khoản', 'hình thức Nhật ký – Chứng từ'],
+  ])('%s: nhãn hai mục đầu và ghi chú đổi theo hình thức; khóa gửi lên vẫn là journal, ledgers', async (form, journal, ledgers, note) => {
+    await open(form!);
+    expect(await screen.findByRole('checkbox', { name: new RegExp(journal!.replace(/[()]/g, '\\$&')) })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: new RegExp(ledgers!.replace(/[()]/g, '\\$&')) })).toBeInTheDocument();
+    expect(await screen.findByTestId('book-form-note')).toHaveTextContent(note!);
+    await userEvent.click(screen.getByRole('button', { name: 'In' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body).include).toEqual(['journal', 'ledgers', 'trial']);
+  });
+});
+
 describe('Sổ sách: Nhật ký chung', () => {
   const renderPage = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><LedgersPage /></QueryClientProvider>);
   const journal = (truncated: boolean) => ({ rows: [], totalDebit: '0', totalCredit: '0', truncated });

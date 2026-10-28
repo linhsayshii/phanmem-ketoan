@@ -40,6 +40,16 @@ const Grid = <T extends object>({ rows, columns }: { rows: T[]; columns: ColDef<
 
 const BOOKS = [{ value: 'journal', label: 'Sổ Nhật ký chung' }, { value: 'ledgers', label: 'Sổ Cái (mọi tài khoản có số liệu)' }, { value: 'trial', label: 'Bảng cân đối số phát sinh' },
   { value: 'B01', label: 'B01 - Báo cáo tình hình tài chính' }, { value: 'B02', label: 'B02 - Kết quả hoạt động kinh doanh' }, { value: 'B03', label: 'B03 - Lưu chuyển tiền tệ' }];
+// Hình thức sổ của năm (GĐ7) đổi cách in hai mục đầu của bộ sổ; khóa gửi lên máy chủ không đổi.
+export type BookFormKey = 'NKC' | 'CTGS' | 'NKSC' | 'NKCT';
+export const BOOK_FORM_NAME: Record<BookFormKey, string> = { NKC: 'Nhật ký chung', CTGS: 'Chứng từ ghi sổ', NKSC: 'Nhật ký – Sổ Cái', NKCT: 'Nhật ký – Chứng từ' };
+export const bookLabels = (form: BookFormKey): { journal: string; ledgers: string; note: string | null } => ({
+  NKC: { journal: 'Sổ Nhật ký chung', ledgers: 'Sổ Cái (mọi tài khoản có số liệu)', note: null },
+  CTGS: { journal: 'Sổ đăng ký Chứng từ ghi sổ và từng Chứng từ ghi sổ', ledgers: 'Sổ Cái theo Chứng từ ghi sổ (mọi tài khoản có số liệu)',
+    note: 'Sổ Cái chỉ gồm chứng từ đã được gom vào Chứng từ ghi sổ; còn chứng từ chưa gom thì bản in có cảnh báo.' },
+  NKSC: { journal: 'Sổ Nhật ký – Sổ Cái', ledgers: 'Sổ Cái (đã gồm trong Nhật ký – Sổ Cái, không in riêng)', note: 'Nhật ký – Sổ Cái thay cho cả Nhật ký và Sổ Cái, nên mục Sổ Cái không in thêm sổ nào.' },
+  NKCT: { journal: 'Nhật ký – Chứng từ (mỗi tài khoản ghi Có một bảng kê)', ledgers: 'Sổ Cái (mọi tài khoản có số liệu)', note: 'Nhật ký – Chứng từ là bảng kê chung theo bên Có, chưa chia cột theo mẫu S07–S10-DN.' },
+}[form]);
 const FULL_BOOK_KEYS = ['journal', 'ledgers', 'trial']; // in mọi tài khoản, gồm công nợ và giá vốn: cần đủ bốn cờ nhạy cảm
 const fileKind = { pdf: 'PDF', xlsx: 'Excel' } as const;
 
@@ -52,6 +62,9 @@ export function BookSetModal({ open, onClose }: { open: boolean; onClose(): void
   const [format, setFormat] = useState<'pdf' | 'xlsx'>('pdf');
   const [busy, setBusy] = useState(false); const [lang, setLang] = useState<PrintLang>('vi');
   const fiscalYear = year ?? years.data?.at(-1)?.fiscalYear;
+  const bf = useQuery({ queryKey: ['book-form', fiscalYear], queryFn: () => api<{ bookForm: BookFormKey }>(`/api/fiscal-years/${fiscalYear}/book-form`), enabled: open && !!fiscalYear });
+  const form: BookFormKey = bf.data?.bookForm && bf.data.bookForm in BOOK_FORM_NAME ? bf.data.bookForm : 'NKC';
+  const labels = bookLabels(form);
   const fullBooks = SENSITIVE_FLAGS_ALL.every((f) => me?.sensitive.includes(f));
   const picked = fullBooks ? include : include.filter((x) => !FULL_BOOK_KEYS.includes(x)); // ô bị khóa không còn được tích nên không gửi lên (máy chủ trả 403)
   const run = async () => {
@@ -69,7 +82,8 @@ export function BookSetModal({ open, onClose }: { open: boolean; onClose(): void
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
         <Select style={{ width: 200 }} placeholder="Năm tài chính" value={fiscalYear} onChange={setYear} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
         <Checkbox.Group value={picked} onChange={(v) => setInclude(v as string[])} style={{ display: 'grid', gap: 4 }}
-          options={BOOKS.map((b) => ({ ...b, disabled: !fullBooks && FULL_BOOK_KEYS.includes(b.value) }))} />
+          options={BOOKS.map((b) => ({ ...b, label: b.value === 'journal' ? labels.journal : b.value === 'ledgers' ? labels.ledgers : b.label, disabled: !fullBooks && FULL_BOOK_KEYS.includes(b.value) }))} />
+        {form !== 'NKC' && <Alert type="info" showIcon data-testid="book-form-note" message={`Năm ${fiscalYear} ghi sổ theo hình thức ${BOOK_FORM_NAME[form]}`} description={`${labels.note ?? ''} Đổi hình thức ở Báo cáo > Hình thức sổ.`.trim()} />}
         {!fullBooks && <Alert type="info" showIcon message="Nhật ký chung, Sổ Cái và Bảng cân đối số phát sinh cả năm cần đủ các quyền xem công nợ phải thu, phải trả và giá vốn." />}
         <Radio.Group optionType="button" value={format} onChange={(e) => setFormat(e.target.value as 'pdf' | 'xlsx')} options={Object.entries(fileKind).map(([value, label]) => ({ value, label }))} />
         <PrintLangSelect value={lang} onChange={setLang} />

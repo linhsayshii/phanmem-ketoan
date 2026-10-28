@@ -40,6 +40,23 @@ Người đề nghị **hủy** được đề nghị nháp hoặc đang chờ d
 - Duyệt xong bước cuối: trạng thái **Đã duyệt**, phần mềm lập Phiếu chi / Giấy báo Nợ nháp: Nợ TK của đề nghị (kèm đối tượng), Có TK tiền; diễn giải gồm số đề nghị và lý do; tệp đính kèm được chép sang chứng từ gốc của phiếu. Đề nghị có đường dẫn đến phiếu. Kế toán kiểm tra rồi ghi sổ như phiếu lập tay.
 - Trạng thái: Nháp → Chờ duyệt → Đã duyệt / Từ chối / Đã hủy. Mọi thay đổi đều ghi Nhật ký kiểm toán.
 
+## Duyệt hàng loạt
+
+Ở tab **Chờ tôi duyệt** (màn hình rộng), đánh dấu nhiều đề nghị rồi bấm **Duyệt n đề nghị đã chọn** và xác nhận (tối đa 100 đề nghị mỗi lần). Mỗi đề nghị được duyệt riêng theo đúng quy tắc duyệt từng cái; đề nghị không duyệt được (đã được duyệt, sai bước, thiếu quyền xem số liệu...) được liệt kê kèm lý do và không ảnh hưởng các đề nghị khác. Đề nghị bước cuối duyệt xong vẫn sinh phiếu chi nháp như thường. Từ chối hàng loạt có ở API (`/api/approvals/batch/reject`, cần nhập một lý do chung); trên màn hình, từ chối từng đề nghị.
+
+Báo lỗi hàng loạt không nêu tên quyền xem số liệu bị thiếu: đề nghị bạn không có quyền xem chỉ báo "Bạn không duyệt được đề nghị này".
+
+## Ủy quyền duyệt khi vắng mặt
+
+**Phê duyệt > Ủy quyền duyệt** (hoặc liên kết ở trang Đề nghị): chọn người được ủy quyền, khoảng ngày (tối đa 366 ngày) và lý do (không bắt buộc). Trong khoảng ngày đó người được ủy quyền thấy trong **Chờ tôi duyệt** các đề nghị đang ở bước của bạn (cột **Duyệt thay** ghi tên bạn) và duyệt hoặc từ chối thay bạn. Nhật ký của đề nghị ghi cả hai người, vd. "an (thay binh): Duyệt bước 1".
+
+Quy tắc:
+- Người được ủy quyền phải có quyền duyệt và cờ xem số liệu của chính họ (ủy quyền không cấp thêm quyền hay cờ nhạy cảm), và không bị giới hạn theo chi nhánh (người bị giới hạn chi nhánh không còn quyền duyệt).
+- Không tự ủy quyền cho mình; không ủy quyền vòng (A cho B, B cho C, C cho A trong khoảng ngày chồng nhau); ủy quyền chỉ một bước, người nhận không ủy quyền tiếp.
+- Không tự duyệt: người được ủy quyền không duyệt thay đề nghị do chính người ủy quyền lập, cũng không duyệt đề nghị do chính mình lập. Một người (kể cả khi duyệt thay) không duyệt hai bước của cùng một đề nghị: người ủy quyền đã duyệt bước trước thì người được ủy quyền không duyệt bước sau thay họ, và ngược lại.
+- Người ủy quyền hoặc quản trị (quyền sửa tùy chọn hệ thống) thu hồi được bất cứ lúc nào; thu hồi có hiệu lực ngay. Ủy quyền hết hạn tự mất hiệu lực. Quản trị xem mọi ủy quyền của công ty và lập thay người khác (qua API).
+- Lập, thu hồi ủy quyền đều ghi Nhật ký kiểm toán.
+
 ## Quyền
 
 | Quyền | Mặc định |
@@ -57,4 +74,4 @@ Trang Phê duyệt dùng được trên màn hình hẹp: menu trái tự thu g�
 
 Ứng dụng di động riêng (của bên thứ ba) gọi API `/api/mobile/v1` bằng **khóa API phạm vi "Ứng dụng di động"** (menu Hệ thống → Khóa API) hoặc phiên đăng nhập. Khóa chỉ cho xem báo cáo tóm tắt (B01, B02, số dư tiền, doanh thu chi phí kỳ) và duyệt/từ chối đề nghị, theo quyền hiện hành của người tạo khóa; không lập chứng từ, không vào chức năng quản trị. Mất điện thoại: thu hồi khóa ngay ở trang Khóa API. Tài liệu kỹ thuật: `docs/dev/api-mobile.md`.
 
-Chưa có: gửi thông báo qua email hoặc thông báo đẩy; duyệt hàng loạt; đề nghị thanh toán gắn hóa đơn mua hoặc đối trừ công nợ tự động (kế toán chọn đối trừ trên phiếu chi nháp).
+Chưa có: gửi thông báo qua email hoặc thông báo đẩy; duyệt hàng loạt trên điện thoại (chỉ duyệt từng đề nghị); từ chối hàng loạt trên màn hình; đề nghị thanh toán gắn hóa đơn mua hoặc đối trừ công nợ tự động (kế toán chọn đối trừ trên phiếu chi nháp).

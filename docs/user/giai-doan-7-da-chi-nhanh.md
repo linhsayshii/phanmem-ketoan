@@ -21,6 +21,22 @@ Thẻ **Chi nhánh làm việc**: chọn đơn vị mà chứng từ bạn lập
 - Chứng từ lập trước khi có chi nhánh thuộc trụ sở chính.
 - Đổi chi nhánh của một chứng từ: chỉ khi chứng từ còn nháp. Chứng từ đã ghi sổ phải **Bỏ ghi sổ** rồi đổi. Mỗi lần đổi được ghi vào Nhật ký kiểm toán.
 
+### Chi nhánh trên chứng từ và danh sách
+
+- Công ty đã khai báo chi nhánh thì mọi phiếu có ô **Chi nhánh** ở phần đầu. Phiếu mới mặc định là chi nhánh làm việc của bạn; chọn chi nhánh khác để lập thẳng cho chi nhánh đó (không cần đổi chi nhánh làm việc). Chi nhánh được gắn khi bấm Lưu (Ctrl+S) hoặc Ghi sổ (F9). Người bị giới hạn chi nhánh chỉ thấy các đơn vị trong phạm vi của mình.
+- Phiếu nháp đổi chi nhánh ngay trên ô này rồi lưu. Phiếu đã ghi sổ chỉ hiện tên chi nhánh, không đổi được.
+- Danh sách chứng từ có cột **Chi nhánh** (trụ sở chính hiện là "Trụ sở chính") và bộ lọc **Chi nhánh** (nhớ theo người dùng). Công ty chưa có chi nhánh thì không hiện cột và bộ lọc.
+
+### Đánh số chứng từ theo chi nhánh
+
+Mặc định **tắt**: mọi chi nhánh dùng chung một dãy số theo loại chứng từ và năm. Bật ở **Sổ cái > Kỳ kế toán > Loại chứng từ và đánh số** (công tắc **Đánh số theo chi nhánh**, cần quyền sửa tùy chọn hệ thống; chỉ hiện khi công ty đã có chi nhánh).
+
+- Bật: mỗi chi nhánh có một dãy số riêng, bắt đầu từ 1 mỗi năm tài chính, theo từng loại chứng từ. Trụ sở chính có dãy riêng với **mã trụ sở chính** (mặc định `TSC`; chỉ chữ, số và . _ /, tối đa 20 ký tự, không trùng mã chi nhánh nào).
+- Số chứng từ có mã chi nhánh: nếu tiền tố của loại chứng từ có `{BR}` thì mã đứng ở vị trí đó (vd. tiền tố `PKT{YY}/{BR}/` cho `PKT26/HN/00001`); nếu không thì mã đứng đầu (vd. `HN-PKT26-00001`). Mã chi nhánh là Mã ở danh mục Chi nhánh; sửa mã chi nhánh chỉ ảnh hưởng số cấp từ đó về sau.
+- Chứng từ đảo cùng dãy với chứng từ gốc; chứng từ kết chuyển (KC) thuộc dãy trụ sở chính. Số vẫn cấp khi ghi sổ, ghi sổ lỗi hoặc hủy chứng từ nháp không tiêu số; số không bao giờ trùng trong cùng loại chứng từ và năm. Hai chi nhánh ghi sổ cùng lúc không chờ nhau.
+- **Bật hoặc tắt giữa năm không đổi số đã cấp.** Trụ sở chính nối tiếp bộ đếm cũ của công ty; chi nhánh bắt đầu từ 1. Muốn dãy số liền nhau từng chi nhánh cả năm (kể cả chứng từ cũ), chạy **Đánh lại số theo ngày**: khi bật, việc đánh lại số làm riêng từng chi nhánh theo ngày ghi sổ; khi tắt, đánh lại cả năm thành một dãy.
+- Xem trước số tiếp theo ở bảng loại chứng từ tính theo chi nhánh làm việc của bạn.
+
 ## 3. Phân quyền theo chi nhánh
 
 Menu **Hệ thống → Người dùng**, cột **Phạm vi chi nhánh**: nhấn nút để chọn các đơn vị (trụ sở chính và/hoặc chi nhánh) người dùng được phép. Để trống là toàn công ty. Không tự đặt phạm vi cho chính mình.
@@ -59,6 +75,5 @@ Chưa có. Báo cáo tài chính hợp nhất của công ty mẹ và công ty c
 
 ## 7. Chưa làm
 
-- Đánh số chứng từ riêng theo chi nhánh: mọi chi nhánh dùng chung dãy số theo loại chứng từ và năm.
-- Ô chi nhánh trên form và cột chi nhánh trên danh sách chứng từ (đổi chi nhánh làm việc trước khi lập).
+- Thứ tự `seq_no` (dùng để sắp chứng từ cùng ngày khi tính giá vốn và băm chuỗi) không còn duy nhất toàn công ty khi bật đánh số theo chi nhánh; thứ tự cùng ngày giữa hai chi nhánh cùng loại chứng từ phân định theo mã nội bộ của chứng từ (sổ cái, hash chuỗi và các sổ đã sắp theo mã này; tính giá vốn xếp tiếp theo số dòng và mã phát sinh kho).
 - Số dư đầu kỳ theo chi nhánh: chứng từ số dư đầu kỳ thuộc chi nhánh làm việc của người nhập.

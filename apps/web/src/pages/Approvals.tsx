@@ -17,8 +17,9 @@ export interface Request {
   id: string; kind: 'payment' | 'advance'; kindLabel: string; requestNo: string; requestDate: string; requesterName: string; partyCode: string | null; partyName: string | null; payeeName: string; reason: string;
   currencyCode: string; amountCurrency: string; fxRate: string | null; amount: string; accountCode: string; payMethod: 'cash' | 'bank'; bankAccountNo: string | null; dueDate: string | null;
   state: State; steps: Step[]; currentStep: number; rejectReason: string | null; voucherId: string | null; voucherNo: string | null; voucherType: string | null;
+  via?: string | null; // hộp duyệt: người đã ủy quyền cho mình duyệt đề nghị này
 }
-interface Detail extends Request { canAct: boolean; log: { stepNo: number; action: string; note: string | null; at: string; username: string }[]; attachments: { id: string; fileName: string; bytes: number }[] }
+interface Detail extends Request { canAct: boolean; log: { stepNo: number; action: string; note: string | null; at: string; username: string; onBehalfOf?: string | null }[]; attachments: { id: string; fileName: string; bytes: number }[] }
 type State = 'draft' | 'submitted' | 'approved' | 'rejected' | 'cancelled';
 type Box = 'mine' | 'inbox' | 'all';
 
@@ -134,7 +135,7 @@ function RequestDrawer({ id, onClose, onEdit }: { id: string | null; onClose(): 
               <Button>Đính kèm tệp</Button>
             </Upload>
           )}
-          <Timeline items={r.log.map((l) => ({ color: l.action === 'reject' ? 'red' : l.action === 'approve' ? 'green' : 'blue', children: `${dayjs(l.at).format('DD/MM/YYYY HH:mm')} ${l.username}: ${ACTION[l.action] ?? l.action}${l.stepNo ? ` bước ${l.stepNo}` : ''}${l.note ? ` – ${l.note}` : ''}` }))} />
+          <Timeline items={r.log.map((l) => ({ color: l.action === 'reject' ? 'red' : l.action === 'approve' ? 'green' : 'blue', children: `${dayjs(l.at).format('DD/MM/YYYY HH:mm')} ${l.username}${l.onBehalfOf ? ` (thay ${l.onBehalfOf})` : ''}: ${ACTION[l.action] ?? l.action}${l.stepNo ? ` bước ${l.stepNo}` : ''}${l.note ? ` – ${l.note}` : ''}` }))} />
           {r.canAct && (
             <Card size="small" title="Quyết định của bạn">
               <Input.TextArea rows={2} placeholder="Ghi chú (không bắt buộc)" value={note} onChange={(e) => setNote(e.target.value)} style={{ marginBottom: 8 }} />
@@ -170,20 +171,46 @@ function RequestList({ box, onOpen }: { box: Box; onOpen(id: string): void }) {
   const [state, setState] = useState<State | undefined>();
   const q = useQuery({ queryKey: ['approvals', box, state], queryFn: () => api<Request[]>(`/api/approvals?box=${box}${state ? `&state=${state}` : ''}`) });
   const empty = box === 'inbox' ? 'Không có đề nghị nào chờ bạn duyệt' : 'Chưa có đề nghị nào';
+  const qc = useQueryClient();
+  const [picked, setPicked] = useState<string[]>([]);
+  const [result, setResult] = useState<{ approved: number; failed: number; rows: { id: string; ok: boolean; message?: string }[] } | null>(null);
+  const batch = useMutation({
+    mutationFn: (ids: string[]) => api<{ approved: number; failed: number; results: { id: string; ok: boolean; message?: string }[] }>('/api/approvals/batch/approve', { method: 'POST', json: { ids } }),
+    onError: fail,
+    onSuccess: (r) => { setPicked([]); setResult({ approved: r.approved, failed: r.failed, rows: r.results }); void qc.invalidateQueries({ queryKey: ['approvals'] }); },
+  });
+  const byId = new Map((q.data ?? []).map((r) => [r.id, r]));
   return (
     <div>
+      {box === 'inbox' && screens.md && (
+        <Space style={{ marginBottom: 12 }} wrap>
+          <Popconfirm title={`Duyệt ${picked.length} đề nghị đã chọn?`} description="Mỗi đề nghị được duyệt riêng; đề nghị lỗi không ảnh hưởng các đề nghị khác." okText="Duyệt" cancelText="Không" disabled={!picked.length}
+            onConfirm={() => batch.mutate(picked)}>
+            <Button type="primary" disabled={!picked.length} loading={batch.isPending}>{picked.length ? `Duyệt ${picked.length} đề nghị đã chọn` : 'Duyệt các đề nghị đã chọn'}</Button>
+          </Popconfirm>
+          <Link to="/phe-duyet/uy-quyen">Ủy quyền duyệt</Link>
+        </Space>
+      )}
+      <Modal title="Kết quả duyệt hàng loạt" open={!!result} footer={<Button type="primary" onClick={() => setResult(null)}>Đóng</Button>} onCancel={() => setResult(null)}>
+        {result && <>
+          <Alert type={result.failed ? 'warning' : 'success'} showIcon message={`Đã duyệt ${result.approved} đề nghị${result.failed ? `, ${result.failed} đề nghị không duyệt được` : ''}`} style={{ marginBottom: 8 }} />
+          {result.rows.filter((x) => !x.ok).map((x) => <div key={x.id}>{byId.get(x.id)?.requestNo ?? x.id}: {x.message}</div>)}
+        </>}
+      </Modal>
       {box !== 'inbox' && (
         <Select aria-label="Lọc trạng thái" allowClear placeholder="Mọi trạng thái" style={{ width: 180, marginBottom: 12 }} value={state} onChange={setState}
           options={Object.entries(STATE).map(([value, s]) => ({ value, label: s.label }))} />
       )}
       {screens.md ? (
         <Table<Request> rowKey="id" size="small" loading={q.isLoading} dataSource={q.data ?? []} pagination={{ pageSize: 50, hideOnSinglePage: true }} locale={{ emptyText: empty }}
-          onRow={(r) => ({ onClick: () => onOpen(r.id), onKeyDown: (e) => { if (e.key === 'Enter') onOpen(r.id); }, tabIndex: 0, style: { cursor: 'pointer' } })}
+          {...(box === 'inbox' ? { rowSelection: { selectedRowKeys: picked, onChange: (k: React.Key[]) => setPicked(k as string[]), columnTitle: 'Chọn' } } : {})}
+          onRow={(r) => ({ onClick: (e) => { if (!(e.target as HTMLElement).closest('.ant-table-selection-column')) onOpen(r.id); }, onKeyDown: (e) => { if (e.key === 'Enter') onOpen(r.id); }, tabIndex: 0, style: { cursor: 'pointer' } })}
           columns={[
             { title: 'Số', dataIndex: 'requestNo', width: 150 },
             { title: 'Ngày', dataIndex: 'requestDate', width: 100, render: fmtDate },
             { title: 'Loại', dataIndex: 'kindLabel', width: 160 },
             { title: 'Người đề nghị', dataIndex: 'requesterName', width: 130 },
+            ...(box === 'inbox' ? [{ title: 'Duyệt thay', dataIndex: 'via', width: 120, render: (v: string | null | undefined) => (v ? <Tag color="purple">{v}</Tag> : '') }] : []),
             { title: 'Người nhận', dataIndex: 'payeeName' },
             { title: 'Lý do', dataIndex: 'reason', ellipsis: true },
             { title: 'Số tiền', width: 170, align: 'right', render: (_, r) => money(r) },
@@ -219,6 +246,7 @@ export default function ApprovalsPage() {
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8 }} wrap>
         <h2 style={{ margin: 0 }}>Đề nghị thanh toán, tạm ứng</h2>
         <Space wrap>
+          {can('approval_request.approve') && <Link to="/phe-duyet/uy-quyen">Ủy quyền duyệt</Link>}
           {can('setting.update') && <Link to="/phe-duyet/quy-trinh">Quy trình phê duyệt</Link>}
           {can('approval_request.create') && <Button type="primary" onClick={() => setEditing({ r: null })}>Lập đề nghị (Insert)</Button>}
         </Space>

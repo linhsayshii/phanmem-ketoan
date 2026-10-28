@@ -77,7 +77,7 @@ export async function generalJournal(trx: Trx, f: { from: string; to: string } &
            a.code AS "accountCode", a.name AS "accountName", l.debit::text AS debit, l.credit::text AS credit
     FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
     WHERE ${where}
-    ORDER BY v.posting_date, v.voucher_type, v.seq_no, l.line_no ${limit === undefined ? sql`` : sql`LIMIT ${limit + 1}`}`.execute(trx); // đọc dư một dòng để biết có bị cắt không
+    ORDER BY v.posting_date, v.voucher_type, v.seq_no, v.id, l.line_no ${limit === undefined ? sql`` : sql`LIMIT ${limit + 1}`}`.execute(trx); // đọc dư một dòng để biết có bị cắt không
   const truncated = limit !== undefined && rows.rows.length > limit;
   const shown = truncated ? rows.rows.slice(0, limit) : rows.rows;
   // Bị cắt thì tổng vẫn là tổng cả khoảng (không phải tổng các dòng đang hiện).

@@ -69,7 +69,7 @@ export interface VoucherDto {
   invoices: VoucherInvoiceDto[];
 }
 export interface VoucherListRow {
-  id: string; voucherType: string; voucherNo: string | null; postingDate: string; state: string; description: string | null; partyName: string | null; totalDebit: string;
+  id: string; voucherType: string; voucherNo: string | null; postingDate: string; state: string; description: string | null; partyName: string | null; totalDebit: string; branchCode: string | null;
 }
 
 type Trx = Transaction<Database>;
@@ -512,21 +512,23 @@ export async function deleteDraft(trx: Trx, id: string): Promise<void> {
   if (!(await trx.deleteFrom('voucher').where('id', '=', id).returning('id').executeTakeFirst())) throw new AppError('VOUCHER_NOT_FOUND', 'Không tìm thấy chứng từ', 404);
 }
 // Cột của một dòng danh sách chứng từ: dùng chung cho danh sách và cho màn khử trùng (dòng theo danh sách id).
-const LIST_COLUMNS = ['v.id', 'v.voucher_type as voucherType', 'v.voucher_no as voucherNo', 'v.posting_date as postingDate', 'v.state', 'v.description', 'p.name as partyName',
+const LIST_COLUMNS = ['v.id', 'v.voucher_type as voucherType', 'v.voucher_no as voucherNo', 'v.posting_date as postingDate', 'v.state', 'v.description', 'p.name as partyName', 'd.code as branchCode',
   sql<string>`(SELECT coalesce(sum(debit),0) FROM voucher_line l WHERE l.voucher_id = v.id AND l.posting_date = v.posting_date)`.as('totalDebit')] as const;
 export async function voucherListRowsByIds(trx: Trx, ids: string[]): Promise<Map<string, VoucherListRow>> {
   if (!ids.length) return new Map();
-  const rows = await trx.selectFrom('voucher as v').leftJoin('party as p', 'p.id', 'v.party_id').where('v.id', 'in', ids).select(LIST_COLUMNS).execute();
+  const rows = await trx.selectFrom('voucher as v').leftJoin('party as p', 'p.id', 'v.party_id').leftJoin('department as d', (j) => j.on(sql<boolean>`d.id = v.branch_id`)).where('v.id', 'in', ids).select(LIST_COLUMNS).execute();
   return new Map(rows.map((r) => [r.id, r]));
 }
-export async function listVouchers(trx: Trx, f: { type?: string | undefined; from?: string | undefined; to?: string | undefined; state?: string | undefined; q?: string | undefined; partyCode?: string | undefined; page: number; size: number }): Promise<{ rows: VoucherListRow[]; total: number }> {
-  let q = trx.selectFrom('voucher as v').leftJoin('party as p', 'p.id', 'v.party_id');
+export async function listVouchers(trx: Trx, f: { type?: string | undefined; from?: string | undefined; to?: string | undefined; state?: string | undefined; q?: string | undefined; partyCode?: string | undefined; branch?: string | undefined; page: number; size: number }): Promise<{ rows: VoucherListRow[]; total: number }> {
+  let q = trx.selectFrom('voucher as v').leftJoin('party as p', 'p.id', 'v.party_id').leftJoin('department as d', (j) => j.on(sql<boolean>`d.id = v.branch_id`));
   const types = f.type?.split(',').map((t) => t.trim()).filter(Boolean) ?? []; // type nhận danh sách mã cách nhau dấu phẩy
   if (types.length) q = q.where('v.voucher_type', 'in', types);
   if (f.from) q = q.where('v.posting_date', '>=', f.from);
   if (f.to) q = q.where('v.posting_date', '<=', f.to);
   if (f.state) q = q.where('v.state', '=', f.state);
   if (f.partyCode) q = q.where('p.code', '=', f.partyCode);
+  if (f.branch === 'HO') q = q.where(sql<boolean>`v.branch_id IS NULL`); // trụ sở chính
+  else if (f.branch) q = q.where(sql<boolean>`v.branch_id = ${Number(f.branch)}`);
   if (f.q) { const like = likePattern(f.q); q = q.where((eb) => eb.or([eb('v.voucher_no', 'ilike', like), eb('v.description', 'ilike', like), eb('p.name', 'ilike', like)])); }
   const total = Number((await q.select(sql<string>`count(*)`.as('n')).executeTakeFirstOrThrow()).n);
   const rows = await q.select(LIST_COLUMNS)

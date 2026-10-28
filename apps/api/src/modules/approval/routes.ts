@@ -7,12 +7,21 @@ import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
 import { isoDate } from '../reporting/routes.js';
+import { createDelegation, delegateCandidates, delegationInput, listDelegations, revokeDelegation } from './delegation.js';
 import {
   approveRequest, BOXES, cancelRequest, createRequest, decisionInput, flowInput, getRequest, getRequestRow, inboxCount, listFlows, listRequests, rejectInput, rejectRequest, requestInput, saveFlow,
   submitRequest, updateRequest,
 } from './service.js';
 
 const idParam = z.object({ id: z.string().uuid() });
+const BATCH_MAX = 100;
+const batchIds = z.array(z.string().uuid()).min(1, 'Chọn ít nhất một đề nghị').max(BATCH_MAX, `Tối đa ${BATCH_MAX} đề nghị mỗi lần`).refine((a) => new Set(a).size === a.length, 'Có đề nghị bị chọn trùng');
+type BatchResult = { id: string; ok: true; state: string } | { id: string; ok: false; code: string; message: string };
+// Kết quả từng đề nghị: lỗi quyền không nêu cờ nhạy cảm nào bị thiếu (danh sách duyệt không lộ cờ).
+const batchError = (id: string, e: unknown): BatchResult => {
+  if (e instanceof AppError) return e.code === 'FORBIDDEN' ? { id, ok: false, code: 'FORBIDDEN', message: 'Bạn không duyệt được đề nghị này' } : { id, ok: false, code: e.code, message: e.message };
+  throw e;
+};
 const STATES = ['draft', 'submitted', 'approved', 'rejected', 'cancelled'] as const;
 
 // Duyệt bước cuối sinh phiếu và chép tệp đính kèm: tệp đã chép bị xóa nếu giao dịch hỏng (không để tệp mồ côi). Dùng chung cho web và mobile.
@@ -62,6 +71,34 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     approveWithFiles(app, req, req.params.id, req.body.note ?? null));
   app.post('/api/approvals/:id/reject', { preHandler: perm('approval_request.approve'), schema: { params: idParam, body: rejectInput } }, async (req) => {
     await app.withTenant(req, (trx) => rejectRequest(trx, req.auth!, req.params.id, req.body.reason));
+    return { ok: true };
+  });
+
+  // ---- Duyệt hàng loạt: từng đề nghị một giao dịch riêng (đề nghị lỗi không kéo các đề nghị khác), trả kết quả từng đề nghị ----
+  app.post('/api/approvals/batch/approve', { preHandler: perm('approval_request.approve'), schema: { body: z.object({ ids: batchIds, note: z.string().trim().max(1000).optional() }) } }, async (req) => {
+    const results: BatchResult[] = [];
+    for (const id of req.body.ids) {
+      try { results.push({ id, ok: true, state: (await approveWithFiles(app, req, id, req.body.note ?? null)).state }); } catch (e) { results.push(batchError(id, e)); }
+    }
+    return { results, approved: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length };
+  });
+  app.post('/api/approvals/batch/reject', { preHandler: perm('approval_request.approve'), schema: { body: z.object({ ids: batchIds, reason: rejectInput.shape.reason }) } }, async (req) => {
+    const results: BatchResult[] = [];
+    for (const id of req.body.ids) {
+      try { await app.withTenant(req, (trx) => rejectRequest(trx, req.auth!, id, req.body.reason)); results.push({ id, ok: true, state: 'rejected' }); } catch (e) { results.push(batchError(id, e)); }
+    }
+    return { results, rejected: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length };
+  });
+
+  // ---- Ủy quyền duyệt khi vắng mặt ----
+  // Mọi người dùng có quyền duyệt xem/lập/thu hồi ủy quyền của mình; quản trị (setting.update) xem mọi ủy quyền và lập/thu hồi thay người khác.
+  app.get('/api/approval-delegations', { preHandler: perm('approval_request.approve'), schema: { querystring: z.object({ scope: z.enum(['mine', 'all']).default('mine') }) } }, async (req) =>
+    app.withTenant(req, (trx) => listDelegations(trx, req.auth!, req.query.scope), READ_SNAPSHOT));
+  app.get('/api/approval-delegations/candidates', { preHandler: perm('approval_request.approve') }, async (req) => app.withTenant(req, (trx) => delegateCandidates(trx, req.auth!), READ_SNAPSHOT));
+  app.post('/api/approval-delegations', { preHandler: perm('approval_request.approve'), schema: { body: delegationInput } }, async (req, reply) =>
+    reply.status(201).send(await app.withTenant(req, (trx) => createDelegation(trx, req.auth!, req.body))));
+  app.post('/api/approval-delegations/:id/revoke', { preHandler: perm('approval_request.approve'), schema: { params: z.object({ id: z.coerce.number().int().positive() }) } }, async (req) => {
+    await app.withTenant(req, (trx) => revokeDelegation(trx, req.auth!, req.params.id));
     return { ok: true };
   });
 
