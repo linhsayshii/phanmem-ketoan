@@ -3,6 +3,7 @@ import { Spin } from 'antd';
 import { AppLayout } from './layout/AppLayout.js';
 import { MENU } from './layout/menu.js';
 import { useAuth } from './auth.js';
+import DashboardPage from './pages/Dashboard.js';
 import LoginPage from './pages/Login.js';
 import SelectTenantPage from './pages/SelectTenant.js';
 import UsersPage from './pages/Users.js';
@@ -92,7 +93,7 @@ const requireMe = async () => {
 };
 export const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', beforeLoad: requireMe,
   component: () => { const { loading } = useAuth(); return loading ? <Spin /> : <AppLayout menu={MENU} />; } });
-const homeRoute = createRoute({ getParentRoute: () => appRoute, path: '/', component: () => <div>Chọn chức năng ở menu trái.</div> });
+const homeRoute = createRoute({ getParentRoute: () => appRoute, path: '/', component: DashboardPage });
 const usersRoute = createRoute({ getParentRoute: () => appRoute, path: '/he-thong/nguoi-dung', component: UsersPage });
 const companyRoute = createRoute({ getParentRoute: () => appRoute, path: '/he-thong/cong-ty', component: CompanyPage });
 const auditRoute = createRoute({ getParentRoute: () => appRoute, path: '/he-thong/nhat-ky', component: AuditLogPage });
