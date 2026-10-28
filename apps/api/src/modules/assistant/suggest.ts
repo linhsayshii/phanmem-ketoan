@@ -55,7 +55,8 @@ export async function suggestEntry(trx: Trx, auth: Auth, input: SuggestInput): P
   const lines = (await sql<{ voucher_id: string; account_code: string; regime: string; subledger_kind: string | null; debit: string; credit: string; party_code: string | null; item_code: string | null }>`
     SELECT l.voucher_id, a.code AS account_code, a.regime, a.subledger_kind, l.debit::text AS debit, l.credit::text AS credit, p.code AS party_code, i.code AS item_code
     FROM voucher_line l JOIN account a ON a.id = l.account_id LEFT JOIN party p ON p.id = l.party_id LEFT JOIN item i ON i.id = l.item_id
-    WHERE l.voucher_id = ANY(${ids}::uuid[]) AND l.posting_date >= ${minDate}::date`.execute(trx)).rows;
+    WHERE l.voucher_id = ANY(${ids}::uuid[]) AND l.posting_date >= ${minDate}::date
+    ORDER BY l.voucher_id, l.line_no`.execute(trx)).rows; // thứ tự dòng theo chứng từ gốc: không phụ thuộc thứ tự lưu trữ
 
   // Tài khoản hiện dùng được ở kỳ của ngày xét (chế độ kế toán của kỳ chứa asOf; không có kỳ thì chế độ mới nhất của công ty): chữ ký có tài khoản không còn trong hệ thống bị bỏ.
   const reg = (await sql<{ regime: string }>`SELECT regime FROM fiscal_period WHERE period_no BETWEEN 1 AND 15 AND date_from <= ${asOf}::date AND date_to >= ${asOf}::date LIMIT 1`.execute(trx)).rows[0]?.regime

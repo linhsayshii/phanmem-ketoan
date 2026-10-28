@@ -37,7 +37,7 @@ describe('POST /api/assistant/suggest-entry', () => {
     expect(j.suggestions.map((s: Json) => [s.signature, s.score])).toEqual([['C:1111|N:6422', 16.5], ['C:1111|N:242', 5], ['C:1111|N:632', 1], ['C:5113|N:131', 1]]);
     expect(j.suggestions[0]).toMatchObject({ support: 3, samePartyCount: 3, lastUsed: '2026-05-10', confidence: 0.7 }); // 16,5 / 23,5
     expect(j.suggestions[0].reasons[0]).toBe('Đã dùng 3 lần cho cùng đối tượng NCC001');
-    expect(j.suggestions[0].lines).toEqual([{ side: 'credit', accountCode: '1111', accountName: expect.any(String) }, { side: 'debit', accountCode: '6422', accountName: expect.any(String) }]);
+    expect(j.suggestions[0].lines).toEqual([{ side: 'debit', accountCode: '6422', accountName: expect.any(String) }, { side: 'credit', accountCode: '1111', accountName: expect.any(String) }]) // đúng thứ tự dòng của chứng từ gốc;
     expect(j.considered).toBe(6); // 6 chứng từ PKT đã ghi sổ; bản nháp không học
   });
   it('số tiền gần bằng (±10%) cộng thêm 0,5 mỗi chứng từ', async () => {
