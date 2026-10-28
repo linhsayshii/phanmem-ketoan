@@ -117,7 +117,7 @@ describe('chính sách branch_scope trên bảng con của chứng từ', () => 
   });
 });
 
-// Phân hệ có quyền không nằm trong BRANCH_SCOPED_PERMISSIONS (lương, giá thành, hợp đồng, phê duyệt, hóa đơn điện tử, ngân hàng, kết chuyển, tài sản): người dùng bị giới hạn không có đường API vào,
+// Phân hệ có quyền không nằm trong BRANCH_SCOPED_PERMISSIONS (lương, giá thành, hợp đồng, phê duyệt, hóa đơn điện tử, ngân hàng, kết chuyển, tài sản, bút toán định kỳ recurring.*): người dùng bị giới hạn không có đường API vào,
 // và chứng từ tự sinh phần lớn thuộc trụ sở chính. Bảng có voucher_id nullable (lớp giá, gán giá) mang cả dòng không thuộc chứng từ nào.
 const EXEMPT = ['amortization_line', 'approval_request', 'asset_event', 'bank_transaction', 'cash_count', 'closing_run', 'contract_milestone', 'cost_run', 'einvoice', 'inbound_invoice',
-  'ledger_voucher_set_item', 'payroll_payment_batch', 'payroll_run', 'payroll_run_voucher', 'period_run', 'project_alloc_run', 'settlement_plan', 'stock_cost_assignment', 'stock_cost_layer'];
+  'ledger_voucher_set_item', 'payroll_payment_batch', 'payroll_run', 'payroll_run_voucher', 'period_run', 'project_alloc_run', 'recurring_run', 'settlement_plan', 'stock_cost_assignment', 'stock_cost_layer'];
