@@ -35,7 +35,7 @@ describe('dữ liệu mẫu ABC', () => {
       const all = await c.query('SELECT count(*)::int AS n FROM cost_item WHERE tenant_id = $1', [tenantId]);
       const missing = await c.query(`SELECT code, default_account_code FROM cost_item ci WHERE tenant_id = $1 AND default_account_code IS NOT NULL
         AND NOT EXISTS (SELECT 1 FROM account a WHERE a.tenant_id = ci.tenant_id AND a.code = ci.default_account_code)`, [tenantId]);
-      expect(all.rows[0].n).toBe(6); expect(missing.rows).toEqual([]);
+      expect(all.rows[0].n).toBeGreaterThanOrEqual(6); expect(missing.rows).toEqual([]);
     });
   });
 

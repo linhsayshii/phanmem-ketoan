@@ -199,7 +199,7 @@ describe('soát lỗi GĐ2: cờ nhạy cảm trên quy tắc', () => {
     const reason = 'Bỏ qua do thiếu quyền xem công nợ';
     const why = 'Bỏ qua do thiếu quyền xem giá vốn';
     const cost = ['SO_DU_SAI_LOAI', 'KHO_LECH_SO_CAI', 'KHO_TON_0_CON_GIA_TRI', 'KHO_XUAT_CHUA_GIA_VON',
-      'GIA_THANH_CAN_CHAY_LAI', 'GIA_THANH_154_CON_DU', 'GIA_THANH_THIEU_DINH_MUC', 'GIA_THANH_621_622_627_CON_DU', 'GIA_THANH_DAU_RA_KHONG_MA_HANG'].map((code) => ({ code, reason: why })); // SO_DU_SAI_LOAI in số dư nên có thể lộ giá vốn; ba quy tắc kho (GĐ3) in giá trị tồn
+      'GIA_THANH_CAN_CHAY_LAI', 'GIA_THANH_154_CON_DU', 'GIA_THANH_THIEU_DINH_MUC', 'GIA_THANH_621_622_627_CON_DU', 'GIA_THANH_DAU_RA_KHONG_MA_HANG', 'VU_VIEC_CHI_PHI_CHUNG_CHUA_PHAN_BO'].map((code) => ({ code, reason: why })); // SO_DU_SAI_LOAI in số dư nên có thể lộ giá vốn; ba quy tắc kho (GĐ3) in giá trị tồn
     // Sáu quy tắc lương (GĐ6) cần view_salary mà các ca dưới không cấp, trừ ca cuối.
     const salary = ['LUONG_THIEU_MST', 'LUONG_THIEU_TK_NH', 'LUONG_NV_NGHI_VAN_TINH', 'LUONG_CAN_TINH_LAI', 'LUONG_LECH_SO_CAI', 'LUONG_BH_VUOT_TRAN'].map((code) => ({ code, reason: 'Bỏ qua do thiếu quyền xem lương' }));
     const byCode = (a: { code: string }, b: { code: string }) => a.code.localeCompare(b.code);
