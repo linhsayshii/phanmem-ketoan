@@ -100,6 +100,64 @@ beforeAll(async () => {
 });
 afterAll(async () => { await ctx.close(); });
 
+// Rà soát toàn nhánh GĐ6 (QĐ #980–#989), chạy trước bộ quét route (bộ đó gọi cả route ghi, hủy hạch toán, xóa tham số): quét thêm nhật ký kiểm toán, sổ cái/sổ chi tiết của TK không phải lương và bước cuối kỳ với lương/giá thành thật.
+describe('quét nhật ký kiểm toán, sổ sách và cuối kỳ', () => {
+  const others = (flag: string) => ['view_receivable', 'view_payable', 'view_cost', 'view_salary'].filter((f) => f !== flag);
+  // Số theo từng nhân viên: dòng 334 của LU (lương, khấu trừ) và chứng từ chi lương (thực lĩnh), cùng mọi giá trị bảng lương.
+  const perEmployee = async () => [...new Set((await sql<{ v: string }>`SELECT (l.debit + l.credit)::text AS v FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id
+      WHERE l.tenant_id = ${tenantId}::uuid AND l.employee_id IS NOT NULL AND v.state = 'posted'`.execute(ctx.t.admin)).rows.map((r) => r.v))].filter((x) => /^\d{6,}$/.test(x));
+  let emp: string[] = [];
+  beforeAll(async () => {
+    const pay = await ok('POST', `/api/payroll/runs/${ids.runs}/pay-voucher`, { kind: 'cash', date: '2026-10-31' });
+    await ok('POST', `/api/vouchers/${pay.voucherId}/post`, {});
+    await ok('POST', '/api/tncn/returns', { formCode: '05/KK-TNCN', year: 2026, periodKind: 'month', period: 10 });
+    emp = await perEmployee(); expect(emp.length).toBeGreaterThanOrEqual(6); // 2 người × (lương, khấu trừ, thực lĩnh)
+  });
+
+  it('thiếu view_salary: sổ 6421, 111, 3335, 3388 (JSON, HTML, mọi kiểu sổ cái) không có số theo nhân viên; tổng và số dư như người đủ cờ; đủ cờ thấy số từng người', async () => {
+    const cookie = await userWith(others('view_salary'));
+    const q = 'from=2026-10-01&to=2026-10-31';
+    for (const code of ['6421', '111', '3335', '3388']) for (const url of [`/api/reports/ledgers/detail?accountCode=${code}&${q}`, `/api/reports/ledgers/account?accountCode=${code}&${q}`,
+      `/api/reports/ledgers/account?accountCode=${code}&${q}&mode=t`, `/api/reports/ledgers/account?accountCode=${code}&${q}&mode=subaccount`, `/api/reports/ledgers/detail?accountCode=${code}&${q}&format=html`]) {
+      const n = await call('GET', url, undefined, cookie); const f = await call('GET', url);
+      expect(n.statusCode, `${url}: ${n.body.slice(0, 200)}`).toBe(200);
+      const html = url.includes('format=html'); const fmt = (s: string) => (html ? Number(s).toLocaleString('vi-VN') : s);
+      expect(emp.filter((s) => (html ? n.body.includes(fmt(s)) : has(n.body, s))), url).toEqual([]);
+      if (!html) { const a = n.json(); const b = f.json(); expect([a.totalDebit, a.totalCredit, a.closing], url).toEqual([b.totalDebit, b.totalCredit, b.closing]); }
+    }
+    const full = (await call('GET', `/api/reports/ledgers/detail?accountCode=6421&${q}`)).body;
+    expect(emp.filter((s) => has(full, s)).length, 'đủ cờ: sổ 6421 có đối ứng 334 từng người').toBeGreaterThanOrEqual(2);
+  });
+
+  it('nhật ký kiểm toán: thiếu view_salary không thấy số lương (tờ khai 05/KK-TNCN, dòng chứng từ lương); thiếu view_cost không thấy lần chạy giá thành và hỏi thẳng là 403', async () => {
+    const noSalary = await userWith(others('view_salary'));
+    const all = await call('GET', '/api/audit?size=500', undefined, noSalary); expect(all.statusCode).toBe(200);
+    const param = JSON.stringify(fx.params); // tham số lương (giảm trừ gia cảnh...) không phải số lương, nhật ký của chúng không che
+    expect(leaks(all.body, 'view_salary').filter((x) => !param.includes(x)), 'danh sách chung').toEqual([]);
+    const tr = await call('GET', '/api/audit?entity=tax_return&size=500', undefined, noSalary); expect(tr.statusCode).toBe(200);
+    expect(tr.json().rows).toEqual([]); expect(leaks(tr.body, 'view_salary')).toEqual([]);
+    expect((await call('GET', '/api/audit?entity=tax_return&size=500')).json().rows.length, 'đủ cờ thấy tờ khai TNCN').toBeGreaterThan(0);
+    const noCost = await userWith(others('view_cost'));
+    const c = await call('GET', '/api/audit?size=500', undefined, noCost); expect(c.statusCode).toBe(200);
+    expect((c.json().rows as Json[]).filter((r) => r.entity === 'cost_run' || r.entity === 'project_alloc_run')).toEqual([]);
+    for (const e of ['cost_run', 'project_alloc_run']) {
+      const r = await call('GET', `/api/audit?entity=${e}`, undefined, noCost); expect(r.statusCode, e).toBe(403); expect(r.json().error.code).toBe('FORBIDDEN');
+    }
+    expect((await call('GET', '/api/audit?entity=cost_run')).json().rows.length, 'đủ cờ thấy lần chạy giá thành').toBeGreaterThan(0);
+  });
+
+  it('cuối kỳ: kỳ có bảng lương/chi phí giá thành thì bước lương đòi view_salary, bước giá thành đòi view_cost (403, không ghi nhật ký)', async () => {
+    const steps = async () => Number((await sql<{ n: string }>`SELECT count(*) AS n FROM audit_event WHERE tenant_id = ${tenantId}::uuid`.execute(ctx.t.admin)).rows[0]!.n);
+    const noSalary = await userWith(others('view_salary')); const noCost = await userWith(others('view_cost'));
+    const before = await steps();
+    const s = await call('POST', '/api/period-close/run', { fiscalYear: 2026, periodNo: 10, step: 'payroll' }, noSalary);
+    expect(s.statusCode, s.body).toBe(403); expect(s.json().error.code).toBe('SALARY_FORBIDDEN'); expect(leaks(s.body, 'view_salary')).toEqual([]);
+    const c = await call('POST', '/api/period-close/run', { fiscalYear: 2026, periodNo: 3, step: 'product_cost' }, noCost);
+    expect(c.statusCode, c.body).toBe(403); expect(c.json().error.code).toBe('FORBIDDEN'); expect(leaks(c.body, 'view_cost')).toEqual([]);
+    expect(await steps()).toBe(before);
+  });
+});
+
 describe('quét cờ nhạy cảm', () => {
   it('liệt kê được route của các tiền tố cần quét', () => {
     const routes = listRoutes(ctx.app.printRoutes({ commonPrefix: false })).filter((r) => SCOPE.test(r.path));
