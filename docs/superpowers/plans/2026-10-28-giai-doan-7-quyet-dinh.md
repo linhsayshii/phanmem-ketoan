@@ -102,3 +102,20 @@ Kế hoạch: `2026-10-28-giai-doan-7-chi-tiet.md`. Số bắt đầu từ 1000 
 1256. `GET /api/regimes` chỉ cần đăng nhập (không quyền riêng) và trang menu không đòi quyền — chỉ là dữ liệu tham chiếu công khai trong mã nguồn, không có dữ liệu công ty — giá phải trả: mọi người dùng thấy trang này.
 1257. E2E chỉ phủ trang Chế độ kế toán; cảnh báo ở màn Tạo công ty (`RegimeNotice`) chưa có spec riêng vì spec phải tạo công ty mới và đổi ngữ cảnh đăng nhập chung của các spec — giá phải trả: cảnh báo ở màn Tạo công ty chỉ được kiểm gián tiếp (cùng thành phần, cùng API).
 1258. Tệp dùng chung đã chạm: `apps/api/src/app.ts` (đăng ký route ở cuối), `apps/web/src/router.tsx` (menu Hệ thống, route cuối), `packages/coa-data/src/index.ts` (xuất `regimes.ts`), `packages/domain/src/period.ts` (`Regime`), `fiscalYears.ts` và `reporting/routes.ts` (enum) — không chạm `periodClose`, costing, payroll, kho.
+
+## Đợt hoàn tất GĐ7 (1310–1599)
+
+Phần còn dở của GĐ7 làm bằng năm gói song song (mỗi gói một worktree, hợp nhất sau), quyết định ghi ở tệp riêng cùng thư mục:
+
+| Gói | Dải QĐ | Migration | Tệp |
+|---|---|---|---|
+| Bảo mật chi nhánh và cờ nhạy cảm | 1310–1349 | 0260–0263 (+0264 sau rà soát) | `2026-10-28-giai-doan-7-quyet-dinh-bao-mat.md` |
+| Cổng pháp lý và làm tròn tiền | 1350–1399 | 0270 | `...-quyet-dinh-phap-ly.md` |
+| Số chứng từ theo chi nhánh, phê duyệt, bộ sổ năm | 1400–1449 | 0280–0281 (+0282, 0283 sau rà soát) | `...-quyet-dinh-so-chung-tu.md` |
+| Trợ lý AI | 1450–1499 | 0290 | `...-quyet-dinh-tro-ly.md` |
+| Hộ kinh doanh TT152, siêu nhỏ TT58 (từ văn bản gốc) | 1500–1599 | 0251 | `...-quyet-dinh-hkd-sieu-nho.md` |
+
+Quyết định chung của đợt hợp nhất:
+- Các gói tách dải migration/QĐ để hợp nhất không phải đánh lại số; xung đột chỉ ở tệp dùng chung (`types.ts`, `router.tsx`, `regimes.ts`) và được gộp tay.
+- Rà soát toàn nhánh bằng Opus sau hợp nhất tìm ra: ủy quyền duyệt cho phép tự nhận quyền, kiểm soát kho/công nợ bỏ ngỏ dưới RLS chi nhánh, "Chạy ngay" định kỳ ghi sổ không cần `voucher.post`; đã sửa trong đợt sửa cuối (xem các tệp quyết định).
+- Văn bản gốc TT 58/2026, TT 152/2025, TT 202/2014, NQ 204/2025 đã tải từ VPS (`~/legal-docs`); hợp nhất TT 202 chưa làm.
