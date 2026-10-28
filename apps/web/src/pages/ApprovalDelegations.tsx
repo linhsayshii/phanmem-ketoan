@@ -43,10 +43,10 @@ export default function ApprovalDelegationsPage() {
           <Select aria-label="Người được ủy quyền" style={{ width: 260 }} showSearch optionFilterProp="label" loading={candidates.isLoading} placeholder="Chọn người"
             options={(candidates.data ?? []).map((u) => ({ value: u.id, label: `${u.fullName || u.username} (${u.username})` }))} />
         </Form.Item>
+        <Form.Item name="reason" label="Lý do"><Input aria-label="Lý do ủy quyền" maxLength={500} style={{ width: 220 }} placeholder="Đi công tác, nghỉ phép…" /></Form.Item>
         <Form.Item name="range" label="Từ ngày – đến ngày" rules={[{ required: true, message: 'Chọn khoảng ngày' }]}>
           <DatePicker.RangePicker aria-label="Khoảng ngày ủy quyền" format="DD/MM/YYYY" disabledDate={(d) => d.isBefore(dayjs(), 'day')} />
         </Form.Item>
-        <Form.Item name="reason" label="Lý do"><Input aria-label="Lý do ủy quyền" maxLength={500} style={{ width: 220 }} placeholder="Đi công tác, nghỉ phép…" /></Form.Item>
         <Form.Item><Button type="primary" htmlType="submit" loading={create.isPending}>Ủy quyền</Button></Form.Item>
       </Form>
       <Table<Delegation> rowKey="id" size="small" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 50, hideOnSinglePage: true }} locale={{ emptyText: 'Chưa có ủy quyền nào' }}

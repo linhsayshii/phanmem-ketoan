@@ -36,13 +36,19 @@ describe('Ô chi nhánh trên chứng từ', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
 
-  it('chứng từ nháp: đổi chi nhánh gọi PUT /api/vouchers/:id/branch', async () => {
+  it('chứng từ nháp: hiện chi nhánh hiện tại, chọn khác báo qua onPick (lưu cùng nội dung, không gọi PUT ngay), chọn lại chi nhánh cũ thì báo undefined', async () => {
     setup(list);
-    renderField({ voucherId: 'v1', editable: true });
+    const onPick = vi.fn();
+    renderField({ voucherId: 'v1', editable: true, onPick });
     const box = await screen.findByRole('combobox', { name: 'Chi nhánh của chứng từ' });
+    expect(await screen.findByText('HN – Chi nhánh Hà Nội', { selector: '.ant-select-selection-item' })).toBeInTheDocument();
     await userEvent.click(box);
     await userEvent.click(await screen.findByText('Trụ sở chính', { selector: '.ant-select-item-option-content' }));
-    expect(apiMock).toHaveBeenCalledWith('/api/vouchers/v1/branch', { method: 'PUT', json: { branch: 'HO' } });
+    expect(onPick).toHaveBeenLastCalledWith('HO');
+    expect(apiMock).not.toHaveBeenCalledWith(expect.stringContaining('/branch'), expect.objectContaining({ method: 'PUT' }));
+    await userEvent.click(box);
+    await userEvent.click(await screen.findByText('HN – Chi nhánh Hà Nội', { selector: '.ant-select-item-option-content' }));
+    expect(onPick).toHaveBeenLastCalledWith(undefined);
   });
 
   it('chứng từ mới: chọn chi nhánh khác chi nhánh làm việc thì báo qua onPick; chọn lại chi nhánh làm việc thì báo undefined', async () => {

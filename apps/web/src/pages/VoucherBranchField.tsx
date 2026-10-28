@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
-import { Form, Select, Tag, message } from 'antd';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { Form, Select, Tag } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client.js';
 import { HO_LABEL, unitOptions, useBranches, type BranchList } from './branchCommon.js';
 
@@ -9,31 +9,24 @@ export const unitValue = (u: Unit) => String(u);
 export const unitLabel = (list: BranchList | undefined, u: Unit) => (u === 'HO' ? HO_LABEL : (list?.rows.find((r) => r.id === u)?.name ?? `Chi nhánh ${u}`));
 
 // Ô "Chi nhánh" của chứng từ (GĐ7 gói 3). Công ty chưa khai báo chi nhánh thì không hiện.
-// - Chứng từ mới: mặc định chi nhánh làm việc; `onPick` báo lựa chọn để form gắn sau khi lập (chỉ truyền khi khác chi nhánh làm việc).
-// - Chứng từ nháp: đổi tại chỗ (PUT /api/vouchers/:id/branch), có nhật ký kiểm toán.
+// - Chứng từ mới: mặc định chi nhánh làm việc. Chứng từ nháp: mặc định chi nhánh hiện tại của chứng từ.
+// - Chọn khác chi nhánh gốc thì báo `onPick(chi nhánh)`, chọn lại chi nhánh gốc thì `onPick(undefined)`; form gắn chi nhánh khi lưu
+//   (đổi chi nhánh làm tăng phiên bản chứng từ nên phải sau lần lưu nội dung, không tách riêng gây VERSION_CONFLICT hoặc mất phần đang nhập).
 // - Chứng từ đã ghi sổ: chỉ xem (bỏ ghi sổ rồi mới đổi được).
 export function VoucherBranchField({ voucherId, editable, onPick }: { voucherId: string | undefined; editable: boolean; onPick?(branch: Unit | undefined): void }) {
-  const qc = useQueryClient(); const branches = useBranches();
+  const branches = useBranches();
   const working = useQuery({ queryKey: ['me-branch'], queryFn: () => api<{ working: Unit }>('/api/me/branch') });
   const current = useQuery({ queryKey: ['voucher-branch', voucherId], queryFn: () => api<{ branch: Unit }>(`/api/vouchers/${voucherId}/branch`), enabled: !!voucherId });
-  const form = Form.useFormInstance();
-  const change = useMutation({ mutationFn: (branch: Unit) => api(`/api/vouchers/${voucherId}/branch`, { method: 'PUT', json: { branch } }),
-    onError: (e: Error) => { void message.error(e.message); void qc.invalidateQueries({ queryKey: ['voucher-branch', voucherId] }); },
-    onSuccess: () => { void message.success('Đã đổi chi nhánh của chứng từ'); void qc.invalidateQueries({ queryKey: ['voucher-branch', voucherId] }); void qc.invalidateQueries({ queryKey: ['vouchers'] }); } });
-  const value = voucherId ? current.data?.branch : working.data?.working;
-  useEffect(() => { if (!voucherId && value !== undefined) form.setFieldValue('branchUnit', unitValue(value)); }, [voucherId, value, form]);
+  const [local, setLocal] = useState<Unit | undefined>();
+  const base = voucherId ? current.data?.branch : working.data?.working;
+  useEffect(() => { setLocal(undefined); }, [base, voucherId]); // đã lưu và tải lại, hoặc chuyển sang chứng từ khác: bỏ lựa chọn tạm
   if (!branches.data?.rows?.length) return null;
-  const options = unitOptions(branches.data);
-  if (voucherId && !editable) return <Form.Item label="Chi nhánh"><Tag data-testid="voucher-branch">{value === undefined ? '…' : unitLabel(branches.data, value)}</Tag></Form.Item>;
-  const select = (extra: { value?: string | null }) => (
-    <Select aria-label="Chi nhánh của chứng từ" options={options} loading={change.isPending} {...extra}
-      onChange={(v: string) => {
-        const unit: Unit = v === 'HO' ? 'HO' : Number(v);
-        if (voucherId) change.mutate(unit);
-        else onPick?.(unit === working.data?.working ? undefined : unit);
-      }} />
+  const shown = local ?? base;
+  if (voucherId && !editable) return <Form.Item label="Chi nhánh"><Tag data-testid="voucher-branch">{shown === undefined ? '…' : unitLabel(branches.data, shown)}</Tag></Form.Item>;
+  return (
+    <Form.Item label="Chi nhánh">
+      <Select aria-label="Chi nhánh của chứng từ" options={unitOptions(branches.data)} value={shown === undefined ? null : unitValue(shown)}
+        onChange={(v: string) => { const unit: Unit = v === 'HO' ? 'HO' : Number(v); setLocal(unit); onPick?.(unit === base ? undefined : unit); }} />
+    </Form.Item>
   );
-  return voucherId
-    ? <Form.Item label="Chi nhánh">{select({ value: value === undefined ? null : unitValue(value) })}</Form.Item>
-    : <Form.Item label="Chi nhánh" name="branchUnit">{select({})}</Form.Item>;
 }

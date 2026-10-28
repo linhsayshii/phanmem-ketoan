@@ -216,7 +216,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
   const cashFlowFetcher = useMemo(() => cashFlowFetcherFor(postingIso), [postingIso]);
   const t = totals(lines); const balanced = isBalanced(cleanLines(lines).map((l) => ({ debit: l.debit, credit: l.credit })));
 
-  const invalidate = (voucherId = id) => Promise.all([qc.invalidateQueries({ queryKey: ['voucher', voucherId] }), qc.invalidateQueries({ queryKey: ['vouchers'] }), qc.invalidateQueries({ queryKey: ['cash-balance'] })]);
+  const invalidate = (voucherId = id) => Promise.all([qc.invalidateQueries({ queryKey: ['voucher', voucherId] }), qc.invalidateQueries({ queryKey: ['voucher-branch'] }), qc.invalidateQueries({ queryKey: ['vouchers'] }), qc.invalidateQueries({ queryKey: ['cash-balance'] })]);
   const conflict = useRef<{ destroy(): void } | null>(null);
   const onErr = (e: unknown) => {
     if (e instanceof ApiError && e.code === 'VERSION_CONFLICT') { // người khác đã sửa: không tự tải lại (mất chữ đang nhập), để người dùng chọn
@@ -250,6 +250,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     const meta = linesRef.current.filter((l) => l.lineNo !== undefined).map((l) => ({ lineNo: l.lineNo!, description: l.description, departmentCode: l.departmentCode, projectCode: l.projectCode, costItemCode: l.costItemCode, costObjectCode: l.costObjectCode ?? null,
       dueDate: l.dueDate ?? null, cashFlowCode: l.cashFlowCode || null }));
     const saved = await api<Voucher>(`/api/vouchers/${id}`, { method: 'PUT', json: editable ? { ...body(f), version: v.data!.version } : { version: v.data!.version, description: f.description ?? null, lines: meta } });
+    if (editable && branchPick.current !== undefined) await api(`/api/vouchers/${id}/branch`, { method: 'PUT', json: { branch: branchPick.current } }); // sau lần lưu nội dung: đổi chi nhánh làm tăng phiên bản
     if (!postAfter) return saved;
     // đã lưu mà ghi sổ lỗi (chứng từ lệch, kỳ khóa...): tải lại để version khớp với bản vừa lưu, lần Ctrl+S sau không bị VERSION_CONFLICT
     return api<Voucher>(`/api/vouchers/${id}/post`, { method: 'POST', json: {} }).catch((e: unknown) => { invalidate(); throw e; });
@@ -260,7 +261,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
     onSuccess: async (r, postAfter) => {
       void message.success(postAfter ? 'Đã ghi sổ' : 'Đã lưu');
       for (const w of r.warnings ?? []) void message.warning({ content: w.message, duration: 10 }); // ví dụ CASH_NEGATIVE: ghi sổ được nhưng tồn quỹ âm
-      setFormDirty(false); setRowsDirty(false); setDeclDirty(false); // đã lưu: chuyển trang không hỏi bỏ thay đổi
+      branchPick.current = undefined; setFormDirty(false); setRowsDirty(false); setDeclDirty(false); // đã lưu: chuyển trang không hỏi bỏ thay đổi
       if (isNew) toVoucher({ ...r, voucherType: r.voucherType ?? eff.code });
       await invalidate(r.id); // luôn tải lại: một lần tải đang chạy từ trước khi ghi sổ không được ghi đè trạng thái mới
     } });
@@ -394,7 +395,7 @@ function VoucherEditor({ def, id }: { def: VoucherTypeDef; id: string }) {
         <Row gutter={12}>
           <Col span={4}><Form.Item label="Ngày hạch toán" name="postingDate" rules={[{ required: true, message: 'Nhập ngày hạch toán' }]}><DatePicker format="DD/MM/YYYY" disabled={!editable} /></Form.Item></Col>
           <Col span={4}><Form.Item label="Ngày chứng từ" name="documentDate" rules={[{ required: true, message: 'Nhập ngày chứng từ' }]}><DatePicker format="DD/MM/YYYY" disabled={!editable} /></Form.Item></Col>
-          <Col span={4}><VoucherBranchField voucherId={isNew ? undefined : id} editable={editable} onPick={(b) => { branchPick.current = b; }} /></Col>
+          <Col span={4}><VoucherBranchField voucherId={isNew ? undefined : id} editable={editable} onPick={(b) => { branchPick.current = b; setFormDirty(true); }} /></Col>
           {!eff.header.includes('party') && <Col span={12} />}
           {eff.header.map((h) => <Fragment key={h}>{headerField(h)}</Fragment>)}
           <Col span={24}><Form.Item label={sideIn ? 'Lý do nộp' : sideOut ? 'Lý do chi' : 'Diễn giải'} name="description"><Input disabled={locked} /></Form.Item></Col>

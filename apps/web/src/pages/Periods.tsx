@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
+import { NumberingBranchPanel } from './NumberingBranch.js';
 
 interface PeriodRow {
   fiscalYear: number; periodNo: number; dateFrom: string; dateTo: string; regime: string; status: 'open' | 'soft_locked' | 'hard_locked';
@@ -42,6 +43,7 @@ function VoucherTypesTab({ year }: { year: number | undefined }) {
     content: 'Số chứng từ được cấp lại liền nhau theo ngày ghi sổ. Chỉ chạy được khi mọi kỳ của năm còn mở; có kỳ đã khóa thì bị từ chối.', onOk: () => renumber.mutateAsync(r.code).catch(() => undefined) });
   return (
     <>
+      <NumberingBranchPanel />
       <Table<VoucherTypeRow> rowKey="code" size="small" pagination={false} loading={types.isFetching || renumber.isPending} dataSource={types.data ?? []} columns={[
         { title: 'Mã', dataIndex: 'code', width: 90 },
         { title: 'Tên', dataIndex: 'name' },
