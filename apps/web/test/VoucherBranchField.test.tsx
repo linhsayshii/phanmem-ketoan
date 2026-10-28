@@ -17,7 +17,7 @@ const setup = (branches: object, voucherBranch: 'HO' | number = 5) => apiMock.mo
   return {};
 });
 const renderField = (props: { voucherId?: string; editable: boolean; onPick?: (b: 'HO' | number | undefined) => void }) =>
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Form layout="vertical"><VoucherBranchField voucherId={props.voucherId} editable={props.editable} onPick={props.onPick} /></Form></QueryClientProvider>);
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Form layout="vertical"><VoucherBranchField voucherId={props.voucherId} editable={props.editable} {...(props.onPick && { onPick: props.onPick })} /></Form></QueryClientProvider>);
 
 describe('Ô chi nhánh trên chứng từ', () => {
   afterEach(() => { cleanup(); apiMock.mockReset(); });
