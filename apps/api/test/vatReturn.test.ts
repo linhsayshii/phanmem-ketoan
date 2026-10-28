@@ -10,7 +10,7 @@ afterAll(async () => { await ctx.close(); });
 
 type Res = { statusCode: number; body: string; json: () => any }; // eslint-disable-line @typescript-eslint/no-explicit-any
 const err = (r: Res) => [r.statusCode, r.json().error?.code];
-interface Ret { id: number; revision: number; status: string; templateVersion: string; values: Record<string, string>; overrides: Record<string, string>; hints: Record<string, string>; warnings: string[] }
+interface Ret { acknowledgedGates?: string[]; id: number; revision: number; status: string; templateVersion: string; values: Record<string, string>; overrides: Record<string, string>; hints: Record<string, string>; warnings: string[] }
 const M = (x: number) => String(x * 1_000_000);
 
 // Mỗi kiểm thử một công ty: năm 2026 theo TT133, khai thuế theo tháng (mặc định).
@@ -268,5 +268,35 @@ describe('tờ khai 01/GTGT', () => {
     const [a, b] = await Promise.all([t.call('POST', '/api/tax/vat-returns', t.month(9)), t.call('POST', '/api/tax/vat-returns', t.month(9))]);
     expect([a.statusCode, b.statusCode].sort()).toEqual([201, 409]);
     expect(err([a, b].find((r) => r.statusCode === 409)!)).toEqual([409, 'TAX_RETURN_DRAFT_EXISTS']);
+  });
+  // GĐ7 gói 2 (C3): cổng 01GTGT_TT89_rate8 = false không còn là cảnh báo suông.
+  it('hóa đơn bán ra 8%: chốt phải xác nhận rõ (409 VAT_RATE8_UNVERIFIED), xác nhận được lưu; kỳ không có 8% chốt bình thường', async () => {
+    const t = await tenant();
+    await t.invoice('HDB', '2026-07-10', M(300), 'V8', '08');
+    const r = await t.create(t.month(7));
+    const no = await t.call('POST', `/api/tax/vat-returns/${r.id}/finalize`);
+    expect(err(no)).toEqual([409, 'VAT_RATE8_UNVERIFIED']);
+    expect((await t.call('GET', `/api/tax/vat-returns/${r.id}`)).json().status).toBe('draft');
+    expect((await t.call('POST', `/api/tax/vat-returns/${r.id}/finalize`, { acknowledge: [] })).statusCode).toBe(409);
+    const ok = await t.call('POST', `/api/tax/vat-returns/${r.id}/finalize`, { acknowledge: ['rate8_unverified'] });
+    expect(ok.statusCode, ok.body).toBe(200); expect(ok.json().acknowledgedGates).toEqual(['rate8_unverified']);
+    await sql`UPDATE tenant SET tax_code = '0101234567', address = 'Số 1' WHERE id = ${t.tenantId}::uuid`.execute(ctx.t.admin);
+    const xml = await t.call('GET', `/api/tax/vat-returns/${r.id}/xml`); expect(xml.statusCode, xml.body).toBe(200); // đã xác nhận: xuất được
+    const audit = await sql<{ n: string }>`SELECT count(*)::text AS n FROM audit_event WHERE tenant_id = ${t.tenantId}::uuid AND entity = 'tax_return' AND entity_id = ${String(r.id)} AND after::text LIKE '%rate8_unverified%'`.execute(ctx.t.admin);
+    expect(Number(audit.rows[0]!.n)).toBeGreaterThan(0);
+    const u = await tenant();
+    await u.invoice('HDB', '2026-07-10', M(300), 'V10', '10');
+    const clean = await u.finalize((await u.create(u.month(7))).id);
+    expect(clean.acknowledgedGates).toEqual([]);
+  });
+
+  it('tờ khai chốt khi chưa có xác nhận (dữ liệu cũ) có hóa đơn 8%: xuất XML bị chặn', async () => {
+    const t = await tenant();
+    await t.invoice('HDB', '2026-07-10', M(300), 'V8', '08');
+    const r = await t.create(t.month(7));
+    await t.call('POST', `/api/tax/vat-returns/${r.id}/finalize`, { acknowledge: ['rate8_unverified'] });
+    await sql`ALTER TABLE tax_return DISABLE TRIGGER trg_tax_return_final`.execute(ctx.t.admin);
+    try { await sql`UPDATE tax_return SET acknowledged_gates = '{}' WHERE id = ${r.id}`.execute(ctx.t.admin); } finally { await sql`ALTER TABLE tax_return ENABLE TRIGGER trg_tax_return_final`.execute(ctx.t.admin); }
+    expect(err(await t.call('GET', `/api/tax/vat-returns/${r.id}/xml`))).toEqual([409, 'VAT_RATE8_UNVERIFIED']);
   });
 });

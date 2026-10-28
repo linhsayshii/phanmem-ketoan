@@ -124,6 +124,18 @@ describe('Tờ khai thuế GTGT', () => {
     expect(calls().some(([u, i]) => u === '/api/tax/vat-returns/1' && i?.method === 'PUT')).toBe(true);
   });
 
+  // GĐ7 gói 2 (C3): hóa đơn 8% khi cổng rate8 chưa mở → hộp xác nhận rõ, gửi lại kèm acknowledge.
+  it('chốt gặp 409 VAT_RATE8_UNVERIFIED: hỏi xác nhận rồi gửi lại với acknowledge rate8_unverified', async () => {
+    finalizeError = new ApiError('VAT_RATE8_UNVERIFIED', 'Kỳ này có hóa đơn bán ra thuế suất 8%', 409);
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'Chốt' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Chốt' })); // hộp xác nhận chốt
+    expect((await screen.findAllByText('Hóa đơn bán ra 8% chưa có chỉ tiêu trong mẫu')).length).toBeGreaterThan(0);
+    finalizeError = null;
+    await userEvent.click(screen.getByRole('button', { name: 'Xác nhận và chốt' }));
+    await vi.waitFor(() => expect(calls().filter(([u, i]) => u === '/api/tax/vat-returns/1/finalize' && i?.method === 'POST').at(-1)![1]!.json).toEqual({ acknowledge: ['rate8_unverified'] }));
+  });
+
   it('kỳ trước 01/7/2026: hiện thông báo VAT_TEMPLATE_UNAVAILABLE của máy chủ, không dựng bảng', async () => {
     tplError = new ApiError('VAT_TEMPLATE_UNAVAILABLE', 'Không có mẫu tờ khai 01/GTGT áp dụng cho tháng 6/2026', 409);
     renderPage();

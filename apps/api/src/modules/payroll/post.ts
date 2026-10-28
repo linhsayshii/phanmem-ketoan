@@ -91,7 +91,9 @@ async function buildLines(trx: Trx, tenantId: string, run: Run, regime: string):
     add(ee.si.plus(ee.hi).plus(ee.ui).plus(v('pit')).plus(v('other_withholding')), { accountCode: m.payable, employeeCode: l.employeeCode, description: `Khấu trừ bảo hiểm, thuế TNCN và khấu trừ khác ${run.name}` });
     tot.si = tot.si.plus(er.si).plus(ee.si); tot.hi = tot.hi.plus(er.hi).plus(ee.hi); tot.ui = tot.ui.plus(er.ui).plus(ee.ui); tot.union = tot.union.plus(er.union);
     let routedSum = D(0);
-    for (const c of routed) { routedSum = routedSum.plus(v(c.code)); add(v(c.code).neg(), { accountCode: c.account, employeeCode: l.employeeCode, description: `${c.name} ${run.name}` }); }
+    // Cột khấu trừ có thể làm tròn lẻ (round > 0): mỗi giá trị làm tròn về đồng (nửa xa 0, như other_withholding) TRƯỚC khi cộng và ghi Có, để chứng từ chỉ có số nguyên;
+    // phần chênh do làm tròn giữa tổng other_withholding và tổng các giá trị đã làm tròn dồn vào tot.other (Có/Nợ 3388) nên Nợ 334 luôn bằng Có.
+    for (const c of routed) { const x = v(c.code).toDecimalPlaces(0); routedSum = routedSum.plus(x); add(x.neg(), { accountCode: c.account, employeeCode: l.employeeCode, description: `${c.name} ${run.name}` }); }
     tot.pit = tot.pit.plus(v('pit')); tot.other = tot.other.plus(v('other_withholding')).minus(routedSum);
   }
   if (missing.size) throw new AppError('ACCOUNT_MISSING', `Chưa có tài khoản chi phí lương cho bộ phận: ${[...missing].join(', ')}. Khai ở Tài khoản chi phí lương theo bộ phận hoặc tài khoản mặc định của công ty`, 400, { departments: [...missing] });

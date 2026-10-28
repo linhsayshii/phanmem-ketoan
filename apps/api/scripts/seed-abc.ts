@@ -525,7 +525,7 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
       if (m % 3 === 0) await log('vat_offset', runSummary(await runVatOffset(trx, ctx, offsetInput.parse({ date: lastDay(m) }))));
       if (m === 9 || m === 12) { // quý 1, 2 thuộc mẫu TT 80/2021 chưa có (01GTGT_TT80 = false): không lập
         const r = await createReturn(trx, ctx, returnInput.parse({ year: FY, periodKind: 'quarter', period: m / 3 }));
-        await finalizeReturn(trx, ctx, r.id);
+        await finalizeReturn(trx, ctx, r.id, ["rate8_unverified"]); // dữ liệu mẫu có hóa đơn 8%: xác nhận cổng chưa đối chiếu (GĐ7 gói 2)
       }
     } });
   }

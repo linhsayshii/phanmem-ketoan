@@ -35,6 +35,14 @@ const REPORT_HEADER = 'line_code,label,parent_line_code,source,side,formula,is_b
 const SOURCES: string[] = ['balance', 'movement', 'pair', 'lines']; const SIDES: string[] = ['debit', 'credit', 'net_debit', 'net_credit'];
 export function reportStatus(): ReportStatus { return JSON.parse(readFileSync(dataPath('reports', 'status.json'), 'utf8')) as ReportStatus; }
 export function isReportComplete(regime: Regime, code: string): boolean { return reportStatus()[regime.toLowerCase() as 'tt99' | 'tt133']?.[code] === true; }
+// Chỉ tiêu để 0 cố định và cách lấy số gần đúng của B01/B02/B03 (data/reports/approximations.json); chế độ hoặc báo cáo không có mục thì rỗng.
+export interface ReportApprox { fixedZero: string[]; approx: string[] }
+export function reportApproximations(regime: string, code: string): ReportApprox {
+  const all = JSON.parse(readFileSync(dataPath('reports', 'approximations.json'), 'utf8')) as Record<string, Record<string, ReportApprox> | string>;
+  const byRegime = all[regime];
+  const r = typeof byRegime === 'object' && Object.hasOwn(byRegime, code) ? byRegime[code] : undefined;
+  return r ?? { fixedZero: [], approx: [] };
+}
 // onlyComplete: chỉ các bộ đã đối chiếu văn bản gốc (status.json = true); bộ chờ văn bản có dòng ví dụ định dạng, không được thành mẫu của công ty.
 export function loadReportTemplates(opts: { onlyComplete?: boolean } = {}): ReportTemplateRow[] {
   const out: ReportTemplateRow[] = []; const en = readI18n('report-labels-en.json');

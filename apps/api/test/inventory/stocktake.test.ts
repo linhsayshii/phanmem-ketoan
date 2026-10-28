@@ -11,7 +11,7 @@ async function tenant(regime = 'TT133') {
   const { cookie, tenantId } = await bootstrapTenant(ctx, { code: `KK${Date.now()}${n++}` });
   const call = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, payload?: object, as = cookie) => ctx.app.inject({ method, url, headers: { cookie: as }, ...(payload ? { payload } : {}) });
   const cat = async (name: string, payload: object) => { const r = await call('POST', `/api/catalogs/${name}`, payload); expect(r.statusCode, r.body).toBe(201); };
-  expect((await call('POST', '/api/fiscal-years', { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime })).statusCode).toBe(201);
+  expect((await call('POST', '/api/fiscal-years', { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime, confirmRegimeOverride: true })).statusCode).toBe(201);
   await cat('party', { code: 'NCC1', name: 'Nhà cung cấp một', is_vendor: true });
   await cat('warehouse', { code: 'K1', name: 'Kho một', costing_method: 'avg_period' });
   await cat('item', { code: 'A', name: 'Hàng A', base_uom_code: 'CAI', kind: 'goods', tracking: 'none', inventory_account_code: regime === 'TT200' ? '1561' : '156' });

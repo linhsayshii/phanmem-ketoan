@@ -96,14 +96,31 @@ export async function saveMilestones(trx: Trx, tenantId: string, contractId: num
     const miss = taxCodes.find((x) => !found.has(x));
     if (miss) throw new AppError('LOOKUP_NOT_FOUND', `Không có mã thuế "${miss}"`, 404);
   }
+  // Đợt theo tỷ lệ (không nhập số tiền): làm tròn từng đợt riêng thì tổng có thể lệch giá trị hợp đồng vài đơn vị nhỏ nhất (50% + 50% của 100.000.001 ra 100.000.002).
+  // Khi các tỷ lệ cộng đúng 100% thì đợt cuối (theo STT) nhận phần dư = giá trị hợp đồng trừ các đợt theo tỷ lệ còn lại; đợt theo tỷ lệ đã lập hóa đơn giữ số đã lập.
+  const byPercent = b.milestones.map((m, i) => ({ m, i })).filter(({ m }) => m.amount == null && m.percent).sort((x, y) => x.m.seq - y.m.seq);
+  const forced = new Map<number, string>(); // chỉ số trong b.milestones → số tiền
+  if (byPercent.length && D(c.value).gt(0) && byPercent.reduce((t, { m }) => t.plus(m.percent!), D(0)).eq(100)) {
+    const free = byPercent.filter(({ m }) => !(m.id !== undefined && old.get(m.id)?.voucher_id));
+    const last = free.at(-1);
+    if (last) {
+      let others = D(0);
+      for (const { m, i } of byPercent) {
+        if (i === last.i) continue;
+        const kept = m.id !== undefined && old.get(m.id)?.voucher_id ? old.get(m.id)!.amount : D(c.value).times(m.percent!).div(100).toDecimalPlaces(dp, Decimal.ROUND_HALF_UP).toFixed(dp);
+        others = others.plus(kept); forced.set(i, D(kept).toFixed(dp));
+      }
+      forced.set(last.i, D(c.value).minus(others).toFixed(dp));
+    }
+  }
   const keep = new Set<number>();
-  for (const m of b.milestones) {
+  for (const [idx, m] of b.milestones.entries()) {
     const n = `Đợt ${m.seq}`;
     let amount = m.amount ?? null;
     if (amount === null) {
       if (!m.percent) throw new AppError('VALIDATION', `${n}: nhập số tiền hoặc tỷ lệ`, 400);
       if (!D(c.value).gt(0)) throw new AppError('VALIDATION', `${n}: hợp đồng chưa có giá trị để tính số tiền theo tỷ lệ`, 400);
-      amount = D(c.value).times(m.percent).div(100).toDecimalPlaces(dp, Decimal.ROUND_HALF_UP).toFixed(dp);
+      amount = forced.get(idx) ?? D(c.value).times(m.percent).div(100).toDecimalPlaces(dp, Decimal.ROUND_HALF_UP).toFixed(dp);
       if (!D(amount).gt(0)) throw new AppError('VALIDATION', `${n}: số tiền theo tỷ lệ bằng 0`, 400);
     }
     if (isVnd ? !VND_AMOUNT_RE.test(D(amount).toFixed()) : D(amount).decimalPlaces() > dp) throw new AppError('VALIDATION', `${n}: số tiền ${isVnd ? 'VND phải là số nguyên' : `tối đa ${dp} chữ số thập phân`}`, 400);

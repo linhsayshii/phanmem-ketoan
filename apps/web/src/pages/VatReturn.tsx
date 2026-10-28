@@ -8,7 +8,7 @@ import { D, formatVnNumber } from '@kt/domain';
 import { VnNumberInput, useHotkeys, useRememberedFilter, useUnsavedChanges } from '@kt/ui';
 import { ApiError, api } from '../api/client.js';
 import { useAuth } from '../auth.js';
-import { downloadSignedVatReturn, signDocument } from '../signing/signXml.js';
+import { downloadSignedVatReturn, signDocumentConfirmed } from '../signing/signXml.js';
 
 // Tờ khai thuế GTGT 01/GTGT: bảng chỉ tiêu dựng từ mẫu dữ liệu của máy chủ (/api/tax/vat-template), không viết cứng danh sách chỉ tiêu.
 // Chỉ tiêu nhập tay (manual, carry) và chỉ tiêu cho ghi đè (overridable) sửa được khi còn nháp; chỉ tiêu tính (hóa đơn, công thức) chỉ đọc. Đã chốt thì khóa toàn bộ.
@@ -16,7 +16,7 @@ type Kind = 'month' | 'quarter';
 export interface TemplateLine { code: string; label: string; section: string; kind: 'flag' | 'carry' | 'invoice' | 'formula' | 'manual'; invoice?: { direction: 'purchase' | 'sale'; groups: string[]; field: 'base' | 'tax'; importOnly?: boolean };
   formula?: string; clamp?: string; overridable?: boolean; note?: string }
 interface Template { version: string; validFrom: string; source: string; lines: TemplateLine[] }
-export interface TaxReturn { id: number; formCode: string; templateVersion: string; periodKind: Kind; year: number; period: number; revision: number; status: 'draft' | 'final'; values: Record<string, string>; overrides: Record<string, string>; createdAt: string; finalizedAt: string | null;
+export interface TaxReturn { id: number; formCode: string; templateVersion: string; periodKind: Kind; year: number; period: number; revision: number; status: 'draft' | 'final'; values: Record<string, string>; overrides: Record<string, string>; createdAt: string; finalizedAt: string | null; acknowledgedGates?: string[];
   discovery?: { year: number; periodKind: Kind; period: number } | null } // discovery: kỳ phát hiện sai sót của tờ khai bổ sung đã chốt, do máy chủ tính
 interface Preview { hints: Record<string, string>; warnings: string[]; carryLocked: boolean; changed: Changed[] }
 interface Changed { code: string; stored: string | null; fresh: string | null }
@@ -68,7 +68,7 @@ export default function VatReturnPage() {
   const prev = useQuery({ queryKey: ['vat-hints', cur?.id, cur?.values], enabled: !!cur && isDraft, queryFn: () => api<Preview>(`/api/tax/vat-returns/${cur!.id}/hints`), retry: false,
     placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[1] === cur?.id ? prev : undefined) }); // giữ cờ khóa [22] khi tải lại sau lưu
   const xmlFormats = useQuery({ queryKey: ['xml-formats'], enabled: can('tax.view'), queryFn: () => api<{ id: string; verified: boolean }[]>('/api/tax/xml-formats'), retry: false });
-  const xmlUnverified = xmlFormats.data?.find((x) => x.id === 'htkk-01gtgt')?.verified === false;
+  const xmlUnverified = xmlFormats.data?.find((x) => x.id === 'htkk-01gtgt')?.verified !== true; // chưa tải được danh sách thì cũng cảnh báo (như 03/TNDN)
   const hints = prev.data?.hints ?? {}; const warnings = prev.data?.warnings ?? [];
   const carryLocked = prev.data?.carryLocked === true; // kỳ trước đã có tờ khai lần đầu đã chốt: máy chủ bỏ [22] nhập tay
   const reset = () => { setEdits({}); setOvr({}); setStale(null); };
@@ -89,14 +89,20 @@ export default function VatReturnPage() {
   const create = useMutation({ mutationFn: (revision?: number) => api<TaxReturn>('/api/tax/vat-returns', { method: 'POST', json: { year: f.year, periodKind: kind, period, ...(revision !== undefined ? { revision } : {}) } }),
     onError: async (e) => { if (e instanceof ApiError && e.code === 'TAX_RETURN_DRAFT_EXISTS') { await refresh(); setSelId((e.details as { id?: number } | undefined)?.id ?? null); } fail(e); },
     onSuccess: async (r) => { await refresh(); setSelId(r.id); } });
-  const finalize = useMutation({ mutationFn: async () => { if (dirty) await api(`/api/tax/vat-returns/${cur!.id}`, { method: 'PUT', json: payload() }); return api<TaxReturn>(`/api/tax/vat-returns/${cur!.id}/finalize`, { method: 'POST' }); },
-    onError: (e) => { if (e instanceof ApiError && e.code === 'TAX_RETURN_STALE') { setStale((e.details as { changed: Changed[] }).changed); void refresh(); } else fail(e); },
+  const finalize = useMutation({ mutationFn: async (acknowledge: string[] = []) => { if (dirty) await api(`/api/tax/vat-returns/${cur!.id}`, { method: 'PUT', json: payload() }); return api<TaxReturn>(`/api/tax/vat-returns/${cur!.id}/finalize`, { method: 'POST', json: { acknowledge } }); },
+    onError: (e) => {
+      if (e instanceof ApiError && e.code === 'TAX_RETURN_STALE') { setStale((e.details as { changed: Changed[] }).changed); void refresh(); }
+      else if (e instanceof ApiError && e.code === 'VAT_RATE8_UNVERIFIED') Modal.confirm({ title: 'Hóa đơn bán ra 8% chưa có chỉ tiêu trong mẫu', width: 560,
+        content: 'Mẫu 01/GTGT TT 89/2026 không có dòng 8% và văn bản chưa nói khai ở chỉ tiêu nào: phần mềm tạm gộp vào [32]/[33] (thuế suất 10%). Hãy lập kèm Mẫu số 01 Phụ lục II NĐ 174/2025/NĐ-CP. Xác nhận bạn đã xử lý cách khai này để chốt; xác nhận được ghi nhật ký.',
+        okText: 'Xác nhận và chốt', cancelText: 'Hủy', onOk: () => finalize.mutateAsync(['rate8_unverified']).catch(() => undefined) });
+      else fail(e);
+    },
     onSuccess: async () => { reset(); await refresh(); void message.success('Đã chốt tờ khai'); } });
   const del = useMutation({ mutationFn: () => api(`/api/tax/vat-returns/${cur!.id}`, { method: 'DELETE' }), onError: fail, onSuccess: async () => { reset(); setSelId(null); await refresh(); void message.success('Đã xóa tờ khai nháp'); } });
   const offset = useMutation({ mutationFn: () => api<OffsetResult>('/api/tax/vat-offset', { method: 'POST', json: { date: offsetDate } }), onError: fail, onSuccess: (r) => { setOffsetRes(r); void qc.invalidateQueries({ queryKey: ['vat-hints'] }); } });
 
   const recalc = () => { if (cur && isDraft && !save.isPending && can('tax_return.update')) save.mutate(); };
-  const confirmFinalize = () => Modal.confirm({ title: 'Chốt tờ khai?', content: `${dirty ? 'Các thay đổi chưa lưu sẽ được lưu và tính lại trước khi chốt. ' : ''}Tờ khai đã chốt khóa số liệu; muốn sửa phải lập tờ khai bổ sung.`, okText: 'Chốt', cancelText: 'Hủy', onOk: () => finalize.mutateAsync().catch(() => undefined) });
+  const confirmFinalize = () => Modal.confirm({ title: 'Chốt tờ khai?', content: `${dirty ? 'Các thay đổi chưa lưu sẽ được lưu và tính lại trước khi chốt. ' : ''}Tờ khai đã chốt khóa số liệu; muốn sửa phải lập tờ khai bổ sung.`, okText: 'Chốt', cancelText: 'Hủy', onOk: () => finalize.mutateAsync([]).catch(() => undefined) });
   useHotkeys({ 'Ctrl+s': recalc, F9: recalc });
   const onKeyDown = (e: KeyboardEvent) => {
     const t = e.target; if (!(t instanceof HTMLInputElement)) return;
@@ -158,7 +164,7 @@ export default function VatReturnPage() {
   const [signing, setSigning] = useState('');
   const signXml = async () => {
     if (!cur) return;
-    try { const sid = await signDocument({ docKind: 'vat_return', docRef: String(cur.id) }, setSigning); await downloadSignedVatReturn(cur.id, sid); void message.success('Đã ký số và tải XML'); }
+    try { const sid = await signDocumentConfirmed({ docKind: 'vat_return', docRef: String(cur.id) }, setSigning); await downloadSignedVatReturn(cur.id, sid); void message.success('Đã ký số và tải XML'); }
     catch (e) { void message.error((e as Error).message); } finally { setSigning(''); }
   };
   const setPeriod = (next: { year?: number; period?: number }) => guard(() => { setSelId(null); setF({ ...f, ...next }); });

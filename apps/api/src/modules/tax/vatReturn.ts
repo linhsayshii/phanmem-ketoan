@@ -44,7 +44,9 @@ const manualOf = (t: VatTemplate, values: Record<string, string>) =>
 export const diffValues = (stored: Record<string, string>, fresh: Record<string, string>) =>
   [...new Set([...Object.keys(stored), ...Object.keys(fresh)])].filter((k) => stored[k] !== fresh[k]).map((code) => ({ code, stored: stored[code] ?? null, fresh: fresh[code] ?? null }));
 
-interface Computed { version: string; values: Record<string, string>; hints: Record<string, string>; warnings: string[]; carryLocked: boolean }
+// gates: cổng pháp lý còn false mà kỳ này đụng tới (hiện chỉ 'rate8_unverified': có hóa đơn bán ra 8%, 01GTGT_TT89_rate8 = false). Chốt tờ khai, xuất XML và ký số bị chặn trừ khi người chốt đã xác nhận (acknowledged_gates).
+export const GATE_RATE8 = 'rate8_unverified';
+interface Computed { version: string; values: Record<string, string>; hints: Record<string, string>; warnings: string[]; carryLocked: boolean; gates: string[] }
 // explicitManual: manual do người dùng gửi trong yêu cầu này (không phải đọc lại từ values đã lưu); chỉ khi đó mới cảnh báo [22] nhập tay không dùng.
 async function compute(trx: Trx, q: PeriodQ, manual: Record<string, string>, overrides: Record<string, string>, explicitManual: boolean): Promise<Computed> {
   const s = specOf(q); const t = await templateFor(trx, s.from, s.label);
@@ -124,13 +126,13 @@ async function compute(trx: Trx, q: PeriodQ, manual: Record<string, string>, ove
       : 'Gợi ý của phần mềm: thuế nhóm 01 cộng thuế nhóm 03 phân bổ theo tỷ lệ doanh thu chịu thuế; sửa khi cần';
     if (sharedTax && !D(sharedTax).isZero()) warnings.push(`Chỉ tiêu [${l.code}] phân bổ thuế đầu vào dùng chung theo tỷ lệ doanh thu là gợi ý của phần mềm, không phải số của văn bản; kiểm tra trước khi chốt`);
   }
-  return { version: t.version, values, hints, warnings, carryLocked: !!prev };
+  return { version: t.version, values, hints, warnings, carryLocked: !!prev, gates: group08 && !isVatRate8Verified() ? [GATE_RATE8] : [] };
 }
 
-const COLS = ['id', 'form_code', 'template_version', 'period_kind', 'year', 'period', 'revision', 'status', 'values', 'overrides', 'created_at', 'finalized_at'] as const;
-interface Row { id: number; form_code: string; template_version: string; period_kind: string; year: number; period: number; revision: number; status: string; values: Record<string, string>; overrides: Record<string, string>; created_at: string; finalized_at: string | null }
+const COLS = ['id', 'form_code', 'template_version', 'period_kind', 'year', 'period', 'revision', 'status', 'values', 'overrides', 'created_at', 'finalized_at', 'acknowledged_gates'] as const;
+interface Row { id: number; form_code: string; template_version: string; period_kind: string; year: number; period: number; revision: number; status: string; values: Record<string, string>; overrides: Record<string, string>; created_at: string; finalized_at: string | null; acknowledged_gates: string[] }
 const dto = (r: Row) => ({ id: r.id, formCode: r.form_code, templateVersion: r.template_version, periodKind: r.period_kind as PeriodKind, year: r.year, period: r.period, revision: r.revision, status: r.status,
-  values: r.values, overrides: r.overrides, createdAt: r.created_at, finalizedAt: r.finalized_at });
+  values: r.values, overrides: r.overrides, createdAt: r.created_at, finalizedAt: r.finalized_at, acknowledgedGates: r.acknowledged_gates });
 export type TaxReturnDto = ReturnType<typeof dto>;
 
 async function rowOf(trx: Trx, id: number, forUpdate = false): Promise<Row> {
@@ -200,14 +202,27 @@ export async function deleteReturn(trx: Trx, tenantId: string, id: number) {
 
 // Chốt khóa đúng số người dùng đã thấy: tính lại theo sổ hiện tại để kiểm; lệch số đã lưu thì 409 TAX_RETURN_STALE (không ghi gì), người dùng lưu lại nháp để tính lại
 // và kiểm tra rồi mới chốt. Khớp thì chỉ đổi trạng thái (trigger chặn sửa, xóa từ đó).
-export async function finalizeReturn(trx: Trx, ctx: { tenantId: string; userId: string }, id: number) {
+export const finalizeInput = z.object({ acknowledge: z.array(z.enum([GATE_RATE8])).max(5).default([]) });
+export async function finalizeReturn(trx: Trx, ctx: { tenantId: string; userId: string }, id: number, acknowledge: string[] = []) {
   const r = await draftOf(trx, ctx.tenantId, id);
   const c = await compute(trx, qOf(r), manualOf(loadVatTemplate(r.template_version as VatTemplate['version']), r.values), r.overrides, false);
   const changed = diffValues(r.values, c.values);
   if (changed.length || c.version !== r.template_version)
     throw new AppError('TAX_RETURN_STALE', `Số liệu sổ đã thay đổi kể từ lần tính trước (${changed.map((x) => `[${x.code}]`).join(', ') || 'mẫu tờ khai'}): lưu lại nháp để tính lại và kiểm tra trước khi chốt`, 409, { changed });
-  await trx.updateTable('tax_return').set({ status: 'final', finalized_by: ctx.userId, finalized_at: sql<string>`now()` }).where('id', '=', id).execute();
+  // Cổng pháp lý còn false: không chốt im lặng. Người chốt phải xác nhận rõ (acknowledge); xác nhận được lưu trên tờ khai và ghi audit_event (trigger audit).
+  const open = c.gates.filter((g) => !acknowledge.includes(g));
+  if (open.includes(GATE_RATE8)) throw new AppError('VAT_RATE8_UNVERIFIED', 'Kỳ này có hóa đơn bán ra thuế suất 8% nhưng mẫu 01/GTGT TT 89/2026 không có dòng 8% và văn bản chưa nói khai ở chỉ tiêu nào: phần mềm tạm gộp vào [32]/[33] (thuế suất 10%). Chỉ chốt khi bạn đã xác nhận cách khai (gửi acknowledge: ["rate8_unverified"]) và lập kèm Mẫu số 01 Phụ lục II NĐ 174/2025/NĐ-CP', 409, { gates: open });
+  await trx.updateTable('tax_return').set({ status: 'final', finalized_by: ctx.userId, finalized_at: sql<string>`now()`, acknowledged_gates: c.gates }).where('id', '=', id).execute();
   return { ...(await getReturn(trx, id)), hints: c.hints, warnings: c.warnings, carryLocked: c.carryLocked };
+}
+
+// Xuất XML, ký số: tờ khai đã chốt mà kỳ vẫn đụng cổng chưa xác nhận (vd. tờ khai chốt trước khi có cổng này) thì 409.
+export async function assertGatesAcknowledged(trx: Trx, id: number): Promise<void> {
+  if (isVatRate8Verified()) return;
+  const r = await rowOf(trx, id);
+  const c = await compute(trx, qOf(r), manualOf(loadVatTemplate(r.template_version as VatTemplate['version']), r.values), r.overrides, false);
+  const open = c.gates.filter((g) => !r.acknowledged_gates.includes(g));
+  if (open.length) throw new AppError('VAT_RATE8_UNVERIFIED', 'Tờ khai có hóa đơn 8% chưa xác nhận cách khai (cổng 01GTGT_TT89_rate8 = false): không xuất XML hay ký số; lập tờ khai bổ sung và xác nhận khi chốt', 409, { gates: open });
 }
 
 // Mẫu chỉ tiêu áp dụng cho kỳ (màn hình dựng bảng từ đây, không viết cứng danh sách chỉ tiêu). Kỳ trước 01/7/2026 chưa có mẫu: 409 VAT_TEMPLATE_UNAVAILABLE.

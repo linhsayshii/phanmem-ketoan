@@ -1,0 +1,27 @@
+{
+  "_note": "Hiệu lực và cổng dữ liệu của ba chế độ kế toán doanh nghiệp có hệ thống tài khoản (TT99, TT133, TT200). Tạo năm tài chính tra tệp này theo ngày đầu năm tài chính: chế độ chưa sẵn sàng (gates.* = false) hoặc ngày đầu năm ngoài [effectiveFrom, effectiveTo] thì 409, người dùng có quyền xác nhận rõ (confirmRegimeOverride, ghi audit_event). TT58 và TT152 ở regimes/status.json. TT99: gates lấy từ coa/tt99.status.json và reports/status.json (không lặp ở đây).",
+  "TT99": {
+    "label": "TT 99/2025/TT-BTC",
+    "effectiveFrom": "2026-01-01", "effectiveTo": null, "effectiveVerified": false,
+    "gates": null,
+    "missing": [],
+    "source": "Đặc tả mục 10: TT 99/2025/TT-BTC thay TT 200 cho năm tài chính bắt đầu từ 01/01/2026. Ngày chưa đối chiếu lại điều khoản thi hành trong văn bản gốc TT 99/2025 (chưa có ở legal-docs-gd7): mục Chờ người dùng."
+  },
+  "TT133": {
+    "label": "TT 133/2016/TT-BTC (DNNVV)",
+    "effectiveFrom": null, "effectiveTo": null, "effectiveVerified": false,
+    "gates": { "coa": true, "reports": true },
+    "missing": [],
+    "source": "Đặc tả mục 10: TT 133/2016 còn hiệu lực (trong lộ trình sửa), không giới hạn ngày: không chặn theo ngày."
+  },
+  "TT200": {
+    "label": "TT 200/2014/TT-BTC (dữ liệu 2025 trở về trước)",
+    "effectiveFrom": null, "effectiveTo": "2025-12-31", "effectiveVerified": false,
+    "gates": { "coa": false, "reports": false },
+    "missing": [
+      "Văn bản gốc TT 200/2014/TT-BTC để đối chiếu Phụ lục 1 (hệ thống tài khoản đang lấy từ SUNSOFT OrgDMTK_200, chưa đối chiếu)",
+      "Mẫu B01, B02, B03 của TT 200 (chưa có định nghĩa báo cáo) và quy tắc tỷ giá (fxRules_TT200 = false)"
+    ],
+    "source": "Đặc tả mục 10: TT 99/2025 thay TT 200 từ năm tài chính 01/01/2026, TT 200 chỉ còn cho dữ liệu 2025 trở về trước. Ngày chưa đối chiếu văn bản gốc."
+  }
+}

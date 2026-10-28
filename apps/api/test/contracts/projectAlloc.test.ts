@@ -60,24 +60,24 @@ beforeAll(async () => {
 afterAll(async () => { await ctx.close(); });
 
 describe('phân bổ chi phí chung vào vụ việc (TT99)', () => {
-  it('doanh thu thuần: cân, Σ phân bổ = chi phí chung, chưa phân bổ về 0, tổng công ty không đổi, làm tròn dồn vụ việc cuối; chạy lại unchanged', async () => {
+  it('doanh thu thuần: cân, Σ phân bổ = chi phí chung, chưa phân bổ về 0, tổng công ty không đổi, làm tròn phần dư theo phần lẻ lớn nhất; chạy lại unchanged', async () => {
     const before = await A.pnl('2026-03-01', '2026-03-31');
     expect(before.unassigned).toMatchObject({ selling: M(1), admin: '2000001' });
     const pv = await A.ok(A.call('POST', '/api/projects/alloc/preview', { kind: 'alloc', year: 2026, month: 3, params: { basis: 'revenue' } }));
     expect(pv.accounts).toEqual([{ code: '6411', name: expect.any(String), pool: M(1) }, { code: '6421', name: expect.any(String), pool: '2000001' }]);
     expect(pv.result.map((r: Json) => [r.projectCode, r.ratio, r.amounts, r.total])).toEqual([
-      ['P1', '60.0000', { 6411: '600000', 6421: '1200000' }, '1800000'], ['P2', '40.0000', { 6411: '400000', 6421: '800001' }, '1200001']]);
+      ['P1', '60.0000', { 6411: '600000', 6421: '1200001' }, '1800001'], ['P2', '40.0000', { 6411: '400000', 6421: '800000' }, '1200000']]);
     const r = await A.run('alloc', 3, { basis: 'revenue' });
     expect(r).toMatchObject({ status: 'posted', unchanged: false, stale: false });
     expect(await A.lines(r.voucherId)).toEqual([['6411', '600000', '0', 'P1', null], ['6411', '400000', '0', 'P2', null], ['6411', '0', M(1), null, null],
-      ['6421', '1200000', '0', 'P1', null], ['6421', '800001', '0', 'P2', null], ['6421', '0', '2000001', null, null]]);
+      ['6421', '1200001', '0', 'P1', null], ['6421', '800000', '0', 'P2', null], ['6421', '0', '2000001', null, null]]);
     const v = await A.ok(A.call('GET', `/api/vouchers/${r.voucherId}`));
     expect(v).toMatchObject({ voucherType: 'PB', state: 'posted' });
     const after = await A.pnl('2026-03-01', '2026-03-31');
     expect(after.unassigned).toMatchObject({ selling: '0', admin: '0' });
     expect(after.totals).toEqual(before.totals); // tổng công ty không đổi
-    expect(after.rows.find((x: Json) => x.code === 'P1')).toMatchObject({ selling: '600000', admin: '1200000' });
-    expect(after.rows.find((x: Json) => x.code === 'P2')).toMatchObject({ selling: '400000', admin: '1300001' });
+    expect(after.rows.find((x: Json) => x.code === 'P1')).toMatchObject({ selling: '600000', admin: '1200001' });
+    expect(after.rows.find((x: Json) => x.code === 'P2')).toMatchObject({ selling: '400000', admin: '1300000' });
     expect(await A.net('64', '2026-03-01', '2026-03-31')).toBe('3500001');
     expect(await A.net('64', '2026-03-01', '2026-03-31', null)).toBe('0');
     // Chạy lại không đổi: không chứng từ mới.
@@ -94,7 +94,7 @@ describe('phân bổ chi phí chung vào vụ việc (TT99)', () => {
     expect(r).toMatchObject({ unchanged: false, reversedVoucherIds: [old] });
     expect((await A.ok(A.call('GET', `/api/vouchers/${old}`))).state).toBe('reversed');
     expect((await A.pnl('2026-03-01', '2026-03-31')).unassigned).toMatchObject({ selling: '0', admin: '0' });
-    expect(await A.net('6421', '2026-03-01', '2026-03-31', 'P1')).toBe('1380000'); // 2.300.001 × 60% làm tròn xuống
+    expect(await A.net('6421', '2026-03-01', '2026-03-31', 'P1')).toBe('1380001'); // 2.300.001 × 60% = 1.380.000,6: phần dư làm tròn theo phần lẻ lớn nhất
     // Chi phí trực tiếp: P1 = giá vốn 10 triệu, P2 = 6421 trực tiếp 500.000 (bỏ chính PB).
     const dc = await A.ok(A.call('POST', '/api/projects/alloc/preview', { kind: 'alloc', year: 2026, month: 3, params: { basis: 'direct_cost' } }));
     expect(dc.result.map((x: Json) => [x.projectCode, x.basis])).toEqual([['P1', M(10)], ['P2', '500000']]);
@@ -120,7 +120,7 @@ describe('phân bổ chi phí chung vào vụ việc (TT99)', () => {
     expect(r).toMatchObject({ status: 'posted', unchanged: false, reversedVoucherIds: [] });
     // Bản đảo ngày 05/4 trả phần chung về tháng 4; PB mới ghi lại tháng 3: lũy kế tháng 3–4 chưa phân bổ = 0, đúng một lần phân bổ.
     expect(await A.net('64', '2026-03-01', '2026-04-30', null)).toBe('0');
-    expect(await A.net('64', '2026-03-01', '2026-04-30', 'P1')).toBe('1980000');
+    expect(await A.net('64', '2026-03-01', '2026-04-30', 'P1')).toBe('1980001');
     // Tháng 4 chỉ có bản đảo của PB: không có chi phí chung (bản đảo không bị phân bổ lại).
     const apr = await A.ok(A.call('POST', '/api/projects/alloc/preview', { kind: 'alloc', year: 2026, month: 4, params: {} }));
     expect([apr.accounts, apr.lines]).toEqual([[], []]);

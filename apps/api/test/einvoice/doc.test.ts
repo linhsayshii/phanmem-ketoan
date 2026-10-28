@@ -31,6 +31,20 @@ async function tenant() {
 }
 
 describe('buildEInvoiceDoc', () => {
+  // GĐ7 gói 2 (C2): NQ 204/2025 hết hiệu lực 31/12/2026 (tham số vat_reduced_rate): không dựng/gửi hóa đơn điện tử 8% ngoài thời hạn.
+  it('thuế suất 8% chỉ phát hành được đến hết 31/12/2026; 10% và các mã khác không bị ảnh hưởng', async () => {
+    const t = await tenant();
+    const item = (code: string) => [{ description: 'Dịch vụ', accountCode: '5113', amountCurrency: '1000000', taxCodes: [code] }];
+    const last = await t.create('HDB', item('V8'), { invoiceDate: '2026-12-31' });
+    expect((await t.build(await t.einvoice(last.id))).taxGroups).toEqual([{ taxRate: '8', base: '1000000', tax: '80000' }]);
+    const late = await t.create('HDB', item('V8'), { invoiceDate: '2027-01-01' });
+    await expect(t.build(await t.einvoice(late.id))).rejects.toMatchObject({ code: 'VAT_RATE_NOT_EFFECTIVE', status: 409 });
+    const ten = await t.create('HDB', item('V10'), { invoiceDate: '2027-01-01' });
+    expect((await t.build(await t.einvoice(ten.id))).taxGroups[0]).toMatchObject({ taxRate: '10' });
+    const early = await t.create('HDB', item('V8'), { invoiceDate: '2025-06-30' }); // trước 01/07/2025 cũng chưa được giảm
+    await expect(t.build(await t.einvoice(early.id))).rejects.toMatchObject({ code: 'VAT_RATE_NOT_EFFECTIVE' });
+  });
+
   it('HDB 2 dòng 10% + 1 dòng 8%: taxGroups khớp voucher_invoice, totals.total = Σ dòng + thuế, tiền bằng chữ tiếng Việt', async () => {
     const t = await tenant();
     const v = await t.create('HDB', [

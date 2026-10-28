@@ -169,7 +169,7 @@ describe('chứng từ', () => {
   });
 
   it('một công ty nhiều hệ tài khoản: mã tài khoản tra theo chế độ của kỳ chứa ngày ghi sổ', async () => {
-    const fy = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT200' } });
+    const fy = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT200', confirmRegimeOverride: true } });
     expect(fy.statusCode, fy.body).toBe(201);
     // Mã 1111 và 5113 có ở cả hai hệ. (Chứng từ DK ở kỳ 0 không lập qua API chứng từ nữa: xem openingBalance.test.ts.)
     const a = await create(pkt('2026-12-31', [L('1111', '5'), L('5113', '0', '5')], { autoPost: true }));

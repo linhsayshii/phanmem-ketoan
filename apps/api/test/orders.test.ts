@@ -32,6 +32,16 @@ const login = async (perms: string[], flags: string[]) => {
 };
 
 describe('báo giá, đơn hàng, hợp đồng', () => {
+  // GĐ7 gói 2 (phụ lục B, T1): tổng đơn (SQL) làm tròn như hóa đơn sinh từ đơn (thành tiền dòng làm tròn trước, rồi chiết khấu làm tròn): 1 × 1.234.565 chiết khấu 10% = 1.111.108.
+  it('tổng đơn trong danh sách khớp số trên hóa đơn sinh từ đơn (làm tròn hai bước)', async () => {
+    const q = await mk(order({}, { quantity: '1', unitPrice: '1234565', discountRate: '10' }));
+    const row = ((await call('GET', '/api/orders')).json() as { id: string; total: string }[]).find((x) => x.id === q.id)!;
+    expect(row.total).toBe('1111108');
+    const inv = await call('POST', `/api/orders/${q.id}/convert`, { to: 'BH', lines: [{ lineNo: 1, quantity: '1' }] });
+    expect(inv.statusCode, inv.body).toBe(200);
+    expect(JSON.stringify(inv.json())).toContain('1111108');
+  });
+
   it('đánh số riêng theo loại; báo giá thành đơn bán; chuyển BH một phần 40/100 rồi phần còn lại', async () => {
     const q = await mk(order());
     expect(q.docNo).toMatch(/^BG-2026-\d{4}$/);

@@ -11,7 +11,7 @@ import { BranchFilter } from './branchCommon.js';
 
 interface FiscalYear { fiscalYear: number; regime: string; dateFrom: string; dateTo: string }
 interface Row { lineCode: string; label: string; parentLineCode: string | null; isBold: boolean; negate: boolean; noteRef: string | null; source: string; formula: string | null; current: string; previous: string | null }
-interface Report { reportCode: string; name: string; formNo: string; issuedBy: string; regime: string; period: { from: string; to: string }; previousNote?: 'REGIME_CHANGED'; rows: Row[] }
+interface Report { reportCode: string; name: string; formNo: string; issuedBy: string; regime: string; period: { from: string; to: string }; previousNote?: 'REGIME_CHANGED'; approximations?: { fixedZero: string[]; approx: string[] }; rows: Row[] }
 interface DrillRow { kind?: 'reval_net'; accountCode: string; accountName: string; counterAccountCode?: string; partyCode: string | null; amount: string }
 interface LedgerRow { postingDate: string; voucherId: string; voucherNo: string; description: string | null; counterAccountCode: string; debit: string; credit: string }
 interface EditLine { key: number; lineCode: string; label: string; parentLineCode: string | null; source: string; side: string; formula: string | null; isBold: boolean; negate: boolean; noteRef: string | null }
@@ -141,6 +141,9 @@ export default function FinancialPage() {
       {report.data && <div><b>{report.data.name}</b> - Mẫu số {report.data.formNo}<div style={{ color: '#888' }}>{report.data.issuedBy}</div></div>}
       {missing && <Alert type="info" showIcon message={`Chưa có định nghĩa ${code} cho ${fy?.regime}. ${can('report_def.update') ? 'Bấm "Sửa công thức" để định nghĩa các chỉ tiêu.' : 'Liên hệ người quản trị để định nghĩa.'}`} />}
       {report.data?.previousNote && <Alert type="warning" showIcon message={REGIME_NOTE} />}
+      {!!(report.data?.approximations?.fixedZero.length || report.data?.approximations?.approx.length) && <Alert type="info" showIcon message="Báo cáo có chỉ tiêu để 0 cố định hoặc lấy số gần đúng"
+        description={<ul style={{ margin: 0, paddingLeft: 18 }}>{!!report.data?.approximations?.fixedZero.length && <li>Chỉ tiêu luôn bằng 0 (chưa có dữ liệu nguồn trong sổ cái, nhập tay nếu có): {report.data.approximations.fixedZero.join(', ')}</li>}
+          {report.data?.approximations?.approx.map((t) => <li key={t}>{t}</li>)}</ul>} />}
       {report.error && !missing && <Alert type="error" showIcon message={(report.error as Error).message} />}
       {report.data && (
         <Table<Row> size="small" bordered rowKey="lineCode" pagination={false} loading={report.isFetching} dataSource={rows} scroll={{ y: 'calc(100vh - 360px)' }} columns={[

@@ -85,7 +85,7 @@ describe('tờ khai quyết toán thuế TNDN 03/TNDN', () => {
 
     // Ký số qua phiên ký (khóa thử): cit_return dựng XML 03/TNDN, tải bản đã ký.
     await ok(t.call('POST', '/api/signing/profiles', { kind: 'fake', label: 'Thử' }), 201);
-    const s = await ok(t.call('POST', '/api/signing/sessions', { docKind: 'cit_return', docRef: String(r.id) }), 201);
+    const s = await ok(t.call('POST', '/api/signing/sessions', { docKind: 'cit_return', docRef: String(r.id), acknowledgeUnverified: true }), 201);
     expect((await ok(t.call('POST', `/api/signing/sessions/${s.id}/poll`))).status).toBe('signed');
     const signed = await t.call('GET', `/api/cit/returns/${r.id}/xml?signedSession=${s.id}`);
     expect(signed.statusCode, signed.body).toBe(200); expect(signed.body).toContain('Signature'); expect(String(signed.headers['content-disposition'])).toContain('_signed.xml');

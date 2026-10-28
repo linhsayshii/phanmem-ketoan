@@ -22,7 +22,7 @@ const voucher = async (type: 'PKT' | 'PC', date: string, lines: object[], autoPo
 beforeAll(async () => {
   ctx = await createTestApp(); ({ cookie: owner } = await bootstrapTenant(ctx, { code: `SA${Date.now()}` }));
   for (const [fiscalYear, regime] of [[2024, 'TT133'], [2025, 'TT200'], [2026, 'TT99']] as const)
-    expect((await post('/api/fiscal-years', { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime })).statusCode).toBe(201);
+    expect((await post('/api/fiscal-years', { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime, confirmRegimeOverride: true })).statusCode).toBe(201);
   none = await userWith('ketoan_truong', []); salary = await userWith('ketoan_truong', ['view_salary']);
 }, 60_000);
 afterAll(async () => { await ctx.close(); });

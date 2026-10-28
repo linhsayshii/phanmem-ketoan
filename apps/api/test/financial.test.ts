@@ -216,9 +216,9 @@ describe('mẫu hệ thống sao chép vào công ty', () => {
     await ctx.t.admin.insertInto('report_template').values(rows).execute();
     try {
       const { cookie: c } = await bootstrapTenant(ctx, { code: `FT${Date.now()}` });
-      expect((await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT200' } })).statusCode).toBe(201);
+      expect((await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT200', confirmRegimeOverride: true } })).statusCode).toBe(201);
       const list = await get('/api/reports/financial?regime=TT200', c);
-      expect(list.json().map((x: { reportCode: string; formNo: string; name: string }) => [x.reportCode, x.formNo])).toEqual([['B01', 'B01-DN'], ['B02', 'B02-DN']]);
+      expect(list.json().map((x: { reportCode: string; formNo: string; name: string }) => [x.reportCode, x.formNo])).toEqual([['B01', ''], ['B02', '']]); // TT200 chưa có văn bản gốc: không có số mẫu
       expect(list.json()[0].name).toBe('Bảng cân đối kế toán');
       expect((await get('/api/report-defs/B02?regime=TT200', c)).json().lines.map((l: { lineCode: string }) => l.lineCode)).toEqual(['01', '02']);
       // Sửa cả hai báo cáo rồi nạp lại B02: B02 về mẫu, B01 giữ bản đã sửa.
@@ -228,7 +228,7 @@ describe('mẫu hệ thống sao chép vào công ty', () => {
       expect((await get('/api/report-defs/B02?regime=TT200', c)).json().lines.map((l: { lineCode: string }) => l.lineCode)).toEqual(['01', '02']);
       expect((await get('/api/report-defs/B01?regime=TT200', c)).json().lines.map((l: { lineCode: string }) => l.lineCode)).toEqual(['X']);
       // Năm tài chính sau không ghi đè định nghĩa đã có của hệ đó.
-      expect((await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT200' } })).statusCode).toBe(201);
+      expect((await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT200', confirmRegimeOverride: true } })).statusCode).toBe(201);
       expect((await get('/api/report-defs/B01?regime=TT200', c)).json().lines.map((l: { lineCode: string }) => l.lineCode)).toEqual(['X']);
     } finally { await sql`DELETE FROM report_template WHERE regime = 'TT200'`.execute(ctx.t.admin); }
   });
@@ -237,7 +237,7 @@ describe('mẫu hệ thống sao chép vào công ty', () => {
 describe('một công ty giữ nhiều hệ tài khoản', () => {
   it('báo cáo của năm TT133 không lẫn tài khoản TT200 của năm sau, kể cả khi khoảng ngày vắt sang năm sau', async () => {
     const { cookie: c } = await bootstrapTenant(ctx, { code: `FM${Date.now()}` });
-    const fy = (fiscalYear: number, regime: string) => ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime } });
+    const fy = (fiscalYear: number, regime: string) => ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime, confirmRegimeOverride: true } });
     expect((await fy(2026, 'TT133')).statusCode).toBe(201); expect((await fy(2027, 'TT200')).statusCode).toBe(201);
     // Cùng mã tài khoản (1111, 5113, 911, 131...) tồn tại ở cả hai hệ: tiền tố không được quét sang hệ khác.
     await ok(pkt('2026-05-01', [{ accountCode: '1111', debit: '100' }, { accountCode: '5113', credit: '100' }], c));
@@ -257,7 +257,7 @@ describe('một công ty giữ nhiều hệ tài khoản', () => {
   });
   it('cột so sánh để trống (previous null, previousNote REGIME_CHANGED) khi ngày so sánh thuộc kỳ của chế độ khác', async () => {
     const { cookie: c } = await bootstrapTenant(ctx, { code: `FN${Date.now()}` });
-    const fy = (fiscalYear: number, regime: string) => ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime } });
+    const fy = (fiscalYear: number, regime: string) => ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime, confirmRegimeOverride: true } });
     expect((await fy(2026, 'TT133')).statusCode).toBe(201); expect((await fy(2027, 'TT200')).statusCode).toBe(201);
     await ok(pkt('2026-05-01', [{ accountCode: '1111', debit: '100' }, { accountCode: '5113', credit: '100' }], c));
     await ok(pkt('2027-05-01', [{ accountCode: '1111', debit: '40' }, { accountCode: '5113', credit: '40' }], c));

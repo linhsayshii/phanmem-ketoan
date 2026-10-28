@@ -8,7 +8,7 @@ import { formatVnNumber } from '@kt/domain';
 import { VnNumberInput, useHotkeys, useRememberedFilter, useUnsavedChanges } from '@kt/ui';
 import { ApiError, api } from '../api/client.js';
 import { useAuth } from '../auth.js';
-import { downloadSigned, signDocument } from '../signing/signXml.js';
+import { downloadSigned, signDocumentConfirmed } from '../signing/signXml.js';
 
 // Tờ khai quyết toán thuế TNDN 03/TNDN (TT 89/2026): lưới chỉ tiêu dựng từ mẫu dữ liệu của máy chủ (/api/cit/template), không viết cứng.
 // Chỉ tiêu cho ghi đè (overridable) sửa được khi còn nháp; mọi giá trị nhập lưu ở overrides, máy chủ tính lại công thức. Đã chốt thì khóa toàn bộ.
@@ -115,7 +115,7 @@ export default function CitReturnPage() {
   };
   const signXml = async () => {
     if (!cur) return;
-    try { const sid = await signDocument({ docKind: 'cit_return', docRef: String(cur.id) }, setSigning); await downloadSigned(`/api/cit/returns/${cur.id}/xml`, sid, 'to-khai-03-tndn_signed.xml'); void message.success('Đã ký số và tải XML'); }
+    try { const sid = await signDocumentConfirmed({ docKind: 'cit_return', docRef: String(cur.id) }, setSigning); await downloadSigned(`/api/cit/returns/${cur.id}/xml`, sid, 'to-khai-03-tndn_signed.xml'); void message.success('Đã ký số và tải XML'); }
     catch (e) { void message.error((e as Error).message); } finally { setSigning(''); }
   };
 

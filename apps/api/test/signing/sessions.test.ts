@@ -65,12 +65,23 @@ async function tenant() {
 const agentProfile = (k = good) => ({ kind: 'local_agent', label: 'Tiện ích', certB64: k.certDer.toString('base64') });
 
 describe('ký số: hồ sơ và phiên', () => {
+  // GĐ7 gói 2 (TB4): XML của định dạng verified = false không ký im lặng.
+  it('XML chưa kiểm chứng với HTKK: tạo phiên bị chặn 409 XML_FORMAT_UNVERIFIED; xác nhận rõ thì ký được và có audit_event', async () => {
+    const t = await tenant(); const ref = await t.ret();
+    expect((await t.call('POST', '/api/signing/profiles', agentProfile())).statusCode).toBe(201);
+    expect(err(await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref }))).toEqual([409, 'XML_FORMAT_UNVERIFIED']);
+    expect(err(await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref, acknowledgeUnverified: false }))).toEqual([409, 'XML_FORMAT_UNVERIFIED']);
+    const s = await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref, acknowledgeUnverified: true }); expect(s.statusCode, s.body).toBe(201);
+    const a = await sql<{ n: string }>`SELECT count(*)::text AS n FROM audit_event WHERE action = 'sign_unverified_xml' AND entity_id = ${s.json().id as string}`.execute(ctx.t.admin);
+    expect(a.rows[0]!.n).toBe('1');
+  });
+
   it('local_agent: chữ ký sai khóa → 400 SIGNATURE_INVALID (phiên vẫn pending); đúng khóa → signed, tải XML đã ký, tờ khai tải được qua signedSession', async () => {
     const t = await tenant(); const ref = await t.ret();
     const p = await t.call('POST', '/api/signing/profiles', agentProfile()); expect(p.statusCode, p.body).toBe(201);
     expect(p.json()).toMatchObject({ kind: 'local_agent', isDefault: true, hasCredentials: false, expired: false });
     expect(p.json().certSubject).toContain('CN=Nguoi ky');
-    const s = await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref }); expect(s.statusCode, s.body).toBe(201);
+    const s = await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref, acknowledgeUnverified: true }); expect(s.statusCode, s.body).toBe(201);
     const sess = s.json() as { id: string; digestB64: string; mode: string; agentUrl: string };
     expect(sess).toMatchObject({ status: 'pending', mode: 'client', agentUrl: 'http://127.0.0.1:18765' });
     expect(err(await t.call('POST', `/api/signing/sessions/${sess.id}/complete`, { signatureB64: signDigest(other.keyPem, sess.digestB64) }))).toEqual([400, 'SIGNATURE_INVALID']);
@@ -98,15 +109,15 @@ describe('ký số: hồ sơ và phiên', () => {
   it('người dùng khác trong cùng công ty không thấy hồ sơ/phiên (404), danh sách riêng; xóa hồ sơ có phiên → 409', async () => {
     const t = await tenant(); const ref = await t.ret();
     const p = (await t.call('POST', '/api/signing/profiles', agentProfile())).json() as { id: number };
-    const s = (await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref })).json() as { id: string };
+    const s = (await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref, acknowledgeUnverified: true })).json() as { id: string };
     expect((await t.call2('GET', '/api/signing/profiles')).json()).toEqual([]);
     expect(err(await t.call2('GET', `/api/signing/sessions/${s.id}`))).toEqual([404, 'SIGNING_SESSION_NOT_FOUND']);
     expect(err(await t.call2('POST', `/api/signing/sessions/${s.id}/complete`, { signatureB64: 'A'.repeat(120) }))).toEqual([404, 'SIGNING_SESSION_NOT_FOUND']);
     expect(err(await t.call2('GET', `/api/signing/sessions/${s.id}/result`))).toEqual([404, 'SIGNING_SESSION_NOT_FOUND']);
-    expect(err(await t.call2('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref, profileId: p.id }))).toEqual([404, 'SIGNING_PROFILE_NOT_FOUND']);
+    expect(err(await t.call2('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref, profileId: p.id, acknowledgeUnverified: true }))).toEqual([404, 'SIGNING_PROFILE_NOT_FOUND']);
     expect(err(await t.call2('DELETE', `/api/signing/profiles/${p.id}`))).toEqual([404, 'SIGNING_PROFILE_NOT_FOUND']);
     expect(err(await t.call2('POST', `/api/signing/profiles/${p.id}/default`))).toEqual([404, 'SIGNING_PROFILE_NOT_FOUND']);
-    expect(err(await t.call2('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref }))).toEqual([409, 'SIGNING_PROFILE_MISSING']);
+    expect(err(await t.call2('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref, acknowledgeUnverified: true }))).toEqual([409, 'SIGNING_PROFILE_MISSING']);
     expect(err(await t.call('DELETE', `/api/signing/profiles/${p.id}`))).toEqual([409, 'SIGNING_PROFILE_IN_USE']);
   });
 
@@ -126,12 +137,12 @@ describe('ký số: hồ sơ và phiên', () => {
   it('chứng thư hết hạn → 409 CERTIFICATE_EXPIRED khi tạo phiên; phiên quá hạn → 409 SIGNING_SESSION_EXPIRED', async () => {
     const t = await tenant(); const ref = await t.ret();
     const p = (await t.call('POST', '/api/signing/profiles', agentProfile())).json() as { id: number };
-    const s = (await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref })).json() as { id: string; digestB64: string };
+    const s = (await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref, acknowledgeUnverified: true })).json() as { id: string; digestB64: string };
     await sql`UPDATE signing_session SET expires_at = now() - interval '1 minute' WHERE id = ${s.id}::uuid`.execute(ctx.t.admin);
     expect((await t.call('GET', `/api/signing/sessions/${s.id}`)).json().status).toBe('expired');
     expect(err(await t.call('POST', `/api/signing/sessions/${s.id}/complete`, { signatureB64: signDigest(good.keyPem, s.digestB64) }))).toEqual([409, 'SIGNING_SESSION_EXPIRED']);
     await sql`UPDATE signing_profile SET cert_not_after = now() - interval '1 day' WHERE id = ${p.id}`.execute(ctx.t.admin);
-    expect(err(await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref }))).toEqual([409, 'CERTIFICATE_EXPIRED']);
+    expect(err(await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref, acknowledgeUnverified: true }))).toEqual([409, 'CERTIFICATE_EXPIRED']);
     // chứng thư đã hết hạn lúc thêm hồ sơ vẫn nhận được (hiển thị expired), nhưng không ký được
     const e = await t.call('POST', '/api/signing/profiles', { ...agentProfile(old), label: 'Cũ' });
     expect(e.statusCode, e.body).toBe(201);
@@ -141,13 +152,13 @@ describe('ký số: hồ sơ và phiên', () => {
     const t = await tenant();
     await t.call('POST', '/api/signing/profiles', agentProfile());
     const ref = await t.ret(false);
-    expect(err(await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref }))[0]).toBe(409);
+    expect(err(await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref, acknowledgeUnverified: true }))[0]).toBe(409);
   });
 
   it('fake: /poll ký và hoàn tất; /complete bị từ chối (đúng chế độ)', async () => {
     const t = await tenant(); const ref = await t.ret();
     expect((await t.call('POST', '/api/signing/profiles', { kind: 'fake', label: 'Thử' })).statusCode).toBe(201);
-    const s = (await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref })).json() as { id: string; mode: string };
+    const s = (await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref, acknowledgeUnverified: true })).json() as { id: string; mode: string };
     expect(s.mode).toBe('server');
     expect(err(await t.call('POST', `/api/signing/sessions/${s.id}/complete`, { signatureB64: 'A'.repeat(120) }))).toEqual([409, 'SIGNING_MODE_MISMATCH']);
     expect((await t.call('POST', `/api/signing/sessions/${s.id}/poll`)).json().status).toBe('signed');
@@ -172,7 +183,7 @@ describe('ký số: hồ sơ và phiên', () => {
     expect(JSON.stringify(ev.rows)).not.toContain('BiMat-123');
     expect(ev.rows[0]!.after.credentials).toBe('***');
     smartReady = false;
-    const s = (await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref })).json() as { id: string; mode: string; digestB64: string };
+    const s = (await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref, acknowledgeUnverified: true })).json() as { id: string; mode: string; digestB64: string };
     expect(s.mode).toBe('server');
     expect(Buffer.from(lastDigest, 'base64').toString('hex')).toBe(Buffer.from(s.digestB64, 'base64').toString('hex'));
     expect((await t.call('POST', `/api/signing/sessions/${s.id}/poll`)).json().status).toBe('pending');
@@ -191,7 +202,7 @@ describe('ký số: hồ sơ và phiên', () => {
   it('hoàn tất hai lần song song: đúng một lần thành công, lần kia 409 (không ghi đè)', async () => {
     const t = await tenant(); const ref = await t.ret();
     await t.call('POST', '/api/signing/profiles', agentProfile());
-    const sess = (await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref })).json() as { id: string; digestB64: string };
+    const sess = (await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref, acknowledgeUnverified: true })).json() as { id: string; digestB64: string };
     const body = { signatureB64: signDigest(good.keyPem, sess.digestB64) };
     const rs = await Promise.all([t.call('POST', `/api/signing/sessions/${sess.id}/complete`, body), t.call('POST', `/api/signing/sessions/${sess.id}/complete`, body)]);
     expect(rs.map((r) => r.statusCode).sort(), rs.map((r) => r.body).join('|')).toEqual([200, 409]);
@@ -216,7 +227,7 @@ describe('ký số: hồ sơ và phiên', () => {
     const t = await tenant(); const ref = await t.ret();
     await t.call('POST', '/api/signing/profiles', { kind: 'smartca', label: 'S', baseUrl: smartUrl, spId: 'sp', spPassword: 'pw', userId: 'u' });
     smartReady = false; smartDown = false;
-    const s = (await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref })).json() as { id: string };
+    const s = (await t.call('POST', '/api/signing/sessions', { docKind: 'vat_return', docRef: ref, acknowledgeUnverified: true })).json() as { id: string };
     smartDown = true;
     expect(err(await t.call('POST', `/api/signing/sessions/${s.id}/poll`))).toEqual([502, 'SMARTCA_UNREACHABLE']);
     smartDown = false; smartReady = true;

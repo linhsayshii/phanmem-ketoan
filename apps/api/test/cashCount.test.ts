@@ -187,7 +187,7 @@ describe('kiểm kê quỹ', () => {
     expect((await t.call('POST', `/api/cash-counts/${c.id}/settle`, {})).statusCode).toBe(201);
 
     const { cookie } = await bootstrapTenant(ctx, { code: `KK200${Date.now()}${n++}` });
-    const fy = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT200' } });
+    const fy = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT200', confirmRegimeOverride: true } });
     expect(fy.statusCode, fy.body).toBe(201);
     const k = await ctx.app.inject({ method: 'POST', url: '/api/cash-counts', headers: { cookie }, payload: { countDate: '2026-01-05', accountCode: '1111', denominations: [{ value: '100000', qty: 3 }] } });
     expect(k.statusCode, k.body).toBe(201);

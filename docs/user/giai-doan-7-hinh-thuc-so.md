@@ -28,7 +28,7 @@ Xóa Chứng từ ghi sổ chỉ gỡ nhóm, không động đến chứng từ 
 Chọn tài khoản ghi Có: bảng kê liệt kê từng chứng từ có phát sinh Có tài khoản đó, mỗi cột là một tài khoản Nợ đối ứng, cuối bảng có tổng từng cột. Đây là bảng kê chung theo bên Có, chưa chia cột theo mẫu S07–S10-DN của từng tài khoản.
 
 ## Lưu ý về số mẫu
-Mẫu S02a, S02b, S02c1-DN chỉ in cho chế độ TT99 và TT200 và chưa đối chiếu với văn bản gốc; các chế độ khác và hai sổ Nhật ký – Sổ Cái, Nhật ký – Chứng từ in không có dòng "Mẫu số" cho đến khi đối chiếu xong.
+Mẫu S02a, S02b, S02c1-DN chưa đối chiếu với văn bản gốc nên từ giai đoạn 7 (gói pháp lý) mọi chế độ in các sổ này không có dòng "Mẫu số"; hai sổ Nhật ký – Sổ Cái, Nhật ký – Chứng từ cũng in không có số mẫu cho đến khi đối chiếu xong.
 
 ## In và xuất
 Mỗi sổ có nút **In PDF** và **Xuất Excel** theo đúng khoảng ngày, tài khoản đang xem (cần quyền in sổ sách, báo cáo).

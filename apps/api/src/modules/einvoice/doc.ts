@@ -2,6 +2,7 @@ import type { Transaction } from 'kysely';
 import type { Database } from '@kt/db';
 import { amountInWords, D, vndInWords } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
+import { isReducedVatRateEffective } from '../core/legal.js';
 import type { EInvoiceDoc, EInvoiceLine, EInvoiceTaxGroup, OriginalRef } from './providers/types.js';
 
 type Trx = Transaction<Database>;
@@ -62,6 +63,11 @@ export async function buildEInvoiceDoc(trx: Trx, einvoiceId: number): Promise<EI
       taxRate, taxAmount: tax.toFixed(dp), total: base.plus(tax).toFixed(dp) };
   });
   if (!foreign) for (const r of invs) addGroup(taxRateOf(r.tax_code_id === null ? undefined : byId.get(r.tax_code_id), 'Bảng kê hóa đơn'), num(r.base_amount), num(r.tax_amount));
+  // Thuế suất GTGT giảm (8%, NQ 204/2025) chỉ dùng trong thời gian hiệu lực của tham số vat_reduced_rate. Hóa đơn đã cấp mã không hủy được (TT 91/2026 Điều 10), nên chặn trước khi gửi.
+  // Hóa đơn điều chỉnh, thay thế của hóa đơn gốc đã lập đúng hạn giữ thuế suất của hóa đơn gốc nên không chặn.
+  const issueDate = e.issue_date ?? head?.invoice_date ?? v.document_date;
+  if (e.relation === 'original') for (const rate of groups.keys()) if (!(await isReducedVatRateEffective(trx, rate, issueDate)))
+    throw new AppError('VAT_RATE_NOT_EFFECTIVE', `Thuế suất GTGT ${rate}% (giảm theo NQ 204/2025/QH15) không còn hiệu lực tại ngày hóa đơn ${issueDate}: chọn thuế suất đang áp dụng (mã thuế) rồi mới phát hành hóa đơn điện tử`, 409, { taxRate: rate, issueDate });
   const taxGroups = toGroups(groups, dp);
   const beforeTax = taxGroups.reduce((s, g) => s.plus(g.base), D(0));
   const tax = taxGroups.reduce((s, g) => s.plus(g.tax), D(0));
@@ -80,7 +86,7 @@ export async function buildEInvoiceDoc(trx: Trx, einvoiceId: number): Promise<EI
 
   return {
     transactionUuid: e.transaction_uuid, formNo: series.form_no, serial: series.serial, providerTemplate: series.provider_template,
-    issueDate: e.issue_date ?? head?.invoice_date ?? v.document_date, currency, fxRate: foreign ? D(v.fx_rate ?? 1).toString() : '1',
+    issueDate, currency, fxRate: foreign ? D(v.fx_rate ?? 1).toString() : '1',
     paymentMethod: 'TM/CK', // chứng từ chưa lưu hình thức thanh toán: dùng giá trị gộp mà hóa đơn điện tử cho phép
     seller: { name: tenant.name, taxCode: tenant.tax_code, address: tenant.address, email: tenant.email, phone: tenant.phone },
     buyer: { name: head?.party_name || party?.name || '', taxCode: head?.party_tax_code ?? party?.tax_code ?? null, address: head?.party_address ?? party?.invoice_address ?? party?.address ?? null,

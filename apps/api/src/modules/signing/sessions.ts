@@ -26,7 +26,9 @@ export const profileInput = z.discriminatedUnion('kind', [
     userId: text(50).min(1), serial: text(100).optional(), isDefault: z.boolean().default(false) }),
 ]);
 export type ProfileInput = z.infer<typeof profileInput>;
-export const sessionInput = z.object({ docKind: z.enum(['vat_return', 'cit_return', 'error_notice', '05kk_tncn', '05qtt_tncn']), docRef: text(50).min(1), profileId: z.number().int().positive().optional() });
+export const sessionInput = z.object({ docKind: z.enum(['vat_return', 'cit_return', 'error_notice', '05kk_tncn', '05qtt_tncn']), docRef: text(50).min(1), profileId: z.number().int().positive().optional(),
+  // true: người dùng xác nhận ký XML của định dạng chưa kiểm chứng với HTKK (verified = false); phiên ký và xác nhận được ghi audit_event.
+  acknowledgeUnverified: z.boolean().optional() });
 
 type ProfileRow = Selectable<Database['signing_profile']>;
 export const profileDto = (r: ProfileRow) => ({ id: r.id, kind: r.kind as SigningKind, label: r.label, certSubject: r.cert_subject, certSerial: r.cert_serial, certNotAfter: new Date(r.cert_not_after).toISOString(),
@@ -82,11 +84,11 @@ export const smartcaCfgOf = (p: ProfileRow): SmartCaCfg => {
 };
 
 // Nguồn XML cần ký theo loại chứng từ: tờ khai 01/GTGT, tờ khai 03/TNDN. Thông báo 04/SS chưa có bộ dựng XML: báo rõ thay vì ký giả.
-async function documentXml(trx: Trx, ctx: SessionCtx, kind: string, ref: string): Promise<string> {
+async function documentXml(trx: Trx, ctx: SessionCtx, kind: string, ref: string): Promise<{ xml: string; verified: boolean }> {
   if (kind !== 'vat_return' && kind !== 'cit_return') throw new AppError('SIGNING_DOC_UNSUPPORTED', `Chưa có XML để ký cho loại chứng từ "${kind}"`, 400);
   if (kind === 'vat_return' ? !ctx.permissions.has('tax_return.view') || !ctx.permissions.has('tax.view') : !ctx.permissions.has('cit.view')) throw new AppError('FORBIDDEN', 'Thiếu quyền xem tờ khai thuế', 403);
   if (!/^\d{1,9}$/.test(ref)) throw new AppError('SIGNING_DOC_INVALID', 'Mã tờ khai không hợp lệ', 400);
-  return (kind === 'vat_return' ? await renderReturnXml(trx, ctx.tenantId, Number(ref)) : await renderCitXml(trx, ctx.tenantId, Number(ref))).xml;
+  return kind === 'vat_return' ? await renderReturnXml(trx, ctx.tenantId, Number(ref)) : await renderCitXml(trx, ctx.tenantId, Number(ref));
 }
 
 export interface SessionCtx { tenantId: string; userId: string; permissions: Set<string> }
@@ -101,8 +103,11 @@ export async function createSession(trx: Trx, ctx: SessionCtx, pol: SigningPolic
   if (!profile) { if (b.profileId) throw profileNotFound(); throw new AppError('SIGNING_PROFILE_MISSING', 'Chưa có hồ sơ ký số: thêm chứng thư ở Cài đặt ký số', 409); }
   if (profile.kind === 'fake') assertFakeAllowed(pol);
   if (new Date(profile.cert_not_after).getTime() <= Date.now()) throw new AppError('CERTIFICATE_EXPIRED', 'Chứng thư số đã hết hạn, không ký được', 409);
-  const xml = await documentXml(trx, ctx, b.docKind, b.docRef);
+  const { xml, verified } = await documentXml(trx, ctx, b.docKind, b.docRef);
+  // XML của định dạng chưa đối chiếu tệp HTKK thật (tên thẻ, mã mẫu là giả định): ký rồi nộp có thể bị eTax từ chối. Chặn trừ khi người ký xác nhận rõ, và ghi nhật ký.
+  if (!verified && !b.acknowledgeUnverified) throw new AppError('XML_FORMAT_UNVERIFIED', 'Định dạng XML của tờ khai này chưa kiểm chứng với tệp HTKK thật (tên thẻ, mã mẫu là giả định của phần mềm). Nạp thử vào HTKK trước; nếu vẫn muốn ký, xác nhận ký bản chưa kiểm chứng', 409);
   const id = (await sql<{ id: string }>`SELECT gen_random_uuid() AS id`.execute(trx)).rows[0]!.id;
+  if (!verified) await sql`INSERT INTO audit_event(tenant_id, user_id, action, entity, entity_id, after) VALUES (${ctx.tenantId}::uuid, ${ctx.userId}::uuid, 'sign_unverified_xml', 'signing_session', ${id}, ${JSON.stringify({ docKind: b.docKind, docRef: b.docRef })}::jsonb)`.execute(trx);
   const signingTime = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 19); // GMT+7, không hậu tố múi giờ (xml-hoa-don.md)
   const p = prepareEnveloped(xml, profile.cert_der, { signingTime, signatureId: `sig-${id}` });
   const row = await trx.insertInto('signing_session').values({ id, tenant_id: ctx.tenantId, user_id: ctx.userId, profile_id: profile.id, doc_kind: b.docKind, doc_ref: b.docRef,

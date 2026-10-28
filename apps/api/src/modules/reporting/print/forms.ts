@@ -2,23 +2,17 @@ export interface FormRef { formNo: string; issuedBy: string }
 const ISSUED: Record<string, string> = {
   TT99: 'Ban hành theo Thông tư số 99/2025/TT-BTC ngày 27/10/2025 của Bộ Tài chính',
   TT133: 'Ban hành theo Thông tư số 133/2016/TT-BTC ngày 26/8/2016 của Bộ Tài chính',
-  TT200: 'Ban hành theo Thông tư số 200/2014/TT-BTC ngày 22/12/2014 của Bộ Tài chính',
+  // TT200: không có mục vì chưa có văn bản gốc (ngày ban hành 22/12/2014 cũng chưa đối chiếu): sổ, báo cáo TT200 in không có "Mẫu số" và "Ban hành theo" (GĐ7 gói 2, quyết định 1351).
 };
-// Mẫu số theo phụ lục: DN = TT99/TT200, DNN = TT133. Phiếu kế toán không có mẫu bắt buộc: dùng số nội bộ "PKT".
-// Các mã TT133 (S38/S20-DNN, S06/S04-DNN) phải đối chiếu lại với Phụ lục 4 TT 133/2016 trước khi phát hành; sửa bảng này là đủ, không sửa mã in.
-const FORMS: Record<string, Record<string, string>> = {
-  PKT: { TT99: 'PKT', TT133: 'PKT', TT200: 'PKT' },
-  S03a: { TT99: 'S03a-DN', TT133: 'S03a-DNN', TT200: 'S03a-DN' },
-  S03b: { TT99: 'S03b-DN', TT133: 'S03b-DNN', TT200: 'S03b-DN' },
-  S38: { TT99: 'S38-DN', TT133: 'S20-DNN', TT200: 'S38-DN' },
-  // Hình thức Chứng từ ghi sổ (TT99/TT200 theo yêu cầu nghiệp vụ GĐ7; CHƯA đối chiếu văn bản gốc, TT133 chưa có mục). Nhật ký – Sổ Cái và Nhật ký – Chứng từ cố ý không có mục: chưa đối chiếu được số mẫu nên in để trống.
-  S02a: { TT99: 'S02a-DN', TT200: 'S02a-DN' },
-  S02b: { TT99: 'S02b-DN', TT200: 'S02b-DN' },
-  S02c1: { TT99: 'S02c1-DN', TT200: 'S02c1-DN' },
-  S06: { TT99: 'S06-DN', TT133: 'S06-DNN', TT200: 'S06-DN' },
-  B01: { TT99: 'B01-DN', TT133: 'B01a-DNN', TT200: 'B01-DN' },
-  B02: { TT99: 'B02-DN', TT133: 'B02-DNN', TT200: 'B02-DN' },
-  B03: { TT99: 'B03-DN', TT133: 'B03-DNN', TT200: 'B03-DN' },
+// Mẫu số theo phụ lục: DN = TT99, DNN = TT133. Phiếu kế toán không có mẫu bắt buộc: dùng số nội bộ "PKT".
+// CHỈ giữ mục đã đối chiếu văn bản gốc. Đã bỏ (chưa có bằng chứng, GĐ7 gói 2, quyết định 1350): Nhật ký chung S03a, Sổ Cái S03b, S38/S20-DNN, Bảng cân đối số phát sinh S06 (TT99 "S06-DN" và TT133 "S06-DNN" trùng sổ chi tiết vật liệu), S02a/S02b/S02c1 và mọi mục TT200.
+// Không có mục thì sổ in không có "Mẫu số"; kiểm thử forms.test.ts chặn trùng số mẫu giữa các khóa trong cùng chế độ.
+export const FORMS: Record<string, Record<string, string>> = {
+  PKT: { TT99: 'PKT', TT133: 'PKT' },
+  // B01/B02/B03: TT99 Phụ lục IV (B01-DN, B02-DN, B03-DN), TT133 Phụ lục 2 (B01a-DNN, B02-DNN, B03-DNN), cùng nguồn với packages/coa-data/data/reports/status.json. TT200 không có mục.
+  B01: { TT99: 'B01-DN', TT133: 'B01a-DNN' },
+  B02: { TT99: 'B02-DN', TT133: 'B02-DNN' },
+  B03: { TT99: 'B03-DN', TT133: 'B03-DNN' },
   // Chứng từ tiền mặt: chép từ mẫu trong văn bản gốc của TT 133/2016 và TT 99/2025 (~/legal-docs); TT200 và TT58 chưa có văn bản gốc đối chiếu nên không có mục (xem voucherFormFor).
   // Sổ quỹ tiền mặt và Sổ tiền gửi ngân hàng: TT133 mẫu S04a-DNN, S05-DNN (Phụ lục 4); TT99 mẫu S07-DN, S08-DN (danh mục sổ). TT200 và TT58 chưa có văn bản gốc đối chiếu nên không có mục (xem bookFormFor).
   'so-quy': { TT99: 'S07-DN', TT133: 'S04a-DNN' },
@@ -53,7 +47,9 @@ const VOUCHER_LEGEND: Record<string, string> = {
   TT133: '(Ban hành theo Thông tư số 133/2016/TT-BTC ngày 26/8/2016 của Bộ Tài chính)',
 };
 export function formNoFor(regime: string, key: string): FormRef {
-  return { formNo: FORMS[key]?.[regime] ?? key, issuedBy: ISSUED[regime] ?? '' };
+  const formNo = Object.hasOwn(FORMS, key) ? FORMS[key]![regime] : undefined;
+  // Không có số mẫu đã đối chiếu thì để trống cả "Ban hành theo": không dùng mã khóa nội bộ làm số mẫu.
+  return formNo ? { formNo, issuedBy: ISSUED[regime] ?? '' } : { formNo: '', issuedBy: '' };
 }
 
 // Mẫu chứng từ có trong văn bản gốc của chế độ; null thì in không có dòng "Mẫu số" (mẫu nội bộ như Giấy báo, Ủy nhiệm chi, hoặc chế độ chưa có văn bản gốc).

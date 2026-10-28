@@ -23,7 +23,7 @@ export const PARTIES = ['KH001', 'KH002', 'NCC001'];
 
 export async function setupLedgerTenant(ctx: TestApp, code: string, regime: 'TT133' | 'TT99' | 'TT200' = 'TT133') {
   const b = await bootstrapTenant(ctx, { code });
-  const fy = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: b.cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime } });
+  const fy = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: b.cookie }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime, confirmRegimeOverride: true } });
   if (fy.statusCode !== 201) throw new Error(`tạo năm tài chính thất bại: ${fy.body}`);
   for (const [c, n] of [['KH001', 'Khách 1'], ['KH002', 'Khách 2'], ['NCC001', 'NCC 1']]) {
     const p = await ctx.app.inject({ method: 'POST', url: '/api/catalogs/party', headers: { cookie: b.cookie }, payload: { code: c, name: n, is_customer: true, is_vendor: true } });
