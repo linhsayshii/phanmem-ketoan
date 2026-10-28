@@ -681,3 +681,21 @@ export interface Database {
 // GĐ7 nhóm 5: đa chi nhánh (0240). voucher.branch_id, department.tax_code đọc/ghi qua sql trong modules/branch.
 export interface UserBranchScopeTable { id: Generated<number>; tenant_id: string; user_id: string; branch_id: number | null }
 export interface BranchConsolidationSettingTable { tenant_id: string; internal_prefixes: string[]; updated_at: Generated<string> }
+
+// GĐ7 nhóm 6b: sổ hộ kinh doanh, doanh nghiệp siêu nhỏ (0251). Không qua sổ cái bút toán kép.
+export interface BookGroupTable { id: Generated<number>; tenant_id: string; code: string; name: string; vat_rate: Numeric | null; income_rate: Numeric | null; is_active: Generated<boolean> }
+export interface BookYearSettingTable { tenant_id: string; fiscal_year: number; tax_method: string; income_tax_rate: Numeric | null }
+export interface BookEntryTable {
+  id: Generated<number>; tenant_id: string; entry_date: DateOnly; doc_no: string | null; description: string; kind: string; amount: Numeric; group_id: number | null; expense_cat: string | null;
+  tax_type: string | null; opening_ref: string | null; money_account: string | null; created_by: string; created_at: Generated<Timestamp>;
+}
+export interface BookStockItemTable { id: Generated<number>; tenant_id: string; code: string; name: string; unit: string; warehouse: string | null }
+export interface BookStockMoveTable {
+  id: Generated<number>; tenant_id: string; item_id: number; move_date: DateOnly; doc_no: string | null; description: string; direction: string; quantity: Numeric; unit_price: Numeric | null; created_by: string; created_at: Generated<Timestamp>;
+}
+export interface BookOtherTaxTable {
+  id: Generated<number>; tenant_id: string; entry_date: DateOnly; description: string; tax_kind: string; quantity: Numeric | null; abs_rate: Numeric | null; unit_price: Numeric | null; rate_pct: Numeric | null; other_amount: Numeric | null; created_by: string; created_at: Generated<Timestamp>;
+}
+export interface Database {
+  book_group: BookGroupTable; book_year_setting: BookYearSettingTable; book_entry: BookEntryTable; book_stock_item: BookStockItemTable; book_stock_move: BookStockMoveTable; book_other_tax: BookOtherTaxTable;
+}

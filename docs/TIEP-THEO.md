@@ -205,15 +205,16 @@ Chi tiết và lý do trong sổ quyết định `2026-10-22-giai-doan-3-quyet-d
 
 ## GĐ7 nhóm 6 — Chờ người dùng
 
-Hộ kinh doanh (TT 152/2025) và doanh nghiệp siêu nhỏ (TT 58/2026): đã dựng khung (chế độ `TT152`, `TT58`, trang Hệ thống > Chế độ kế toán, cổng `packages/coa-data/data/regimes/status.json` mọi phần `false`). Không tải được văn bản gốc từ VPS (thuvienphapluat.vn, luatvietnam.vn trả 403; chỉ có bài viết thứ cấp của MISA AMIS, Nhanh.vn lưu ở `~/legal-docs/tt58-2026/`, `~/legal-docs/tt152-2025/`, không đủ cột sổ, chỉ tiêu, danh mục tài khoản). Việc cần người dùng, chép vào `~/legal-docs/<tên>/`:
+Hộ kinh doanh (TT 152/2025) và doanh nghiệp siêu nhỏ (TT 58/2026): đã nhập từ văn bản gốc (`~/Documents/PetProject/legal-docs-gd7/`), dựng sổ và báo cáo (`apps/api/src/modules/hkdbooks`, trang `/so-hkd`, `packages/coa-data/data/books`), cả hai `ready=true` kèm giới hạn. Mô hình ghi sổ đơn (không qua sổ cái kép), xem `2026-10-28-giai-doan-7-quyet-dinh-hkd-sieu-nho.md` (1500–1516). Phần còn thiếu thật sự:
 
 | Việc cần làm | Vì sao | Hiện tại khi chưa có |
 |---|---|---|
-| Văn bản gốc TT 152/2025/TT-BTC (31/12/2025) kèm phụ lục mẫu sổ S1a, S2a, S2b, S2c, S2d, S2e, S3a-HKD và hướng dẫn ghi từng cột (Công báo chính phủ hoặc vbpl.vn), chép vào `~/legal-docs/tt152-2025/` | Trang luật chặn tải tự động; không chép mẫu sổ từ trí nhớ | Chế độ TT152 không tạo được năm tài chính (409 `COA_TEMPLATE_PENDING`); chưa có sổ HKD |
-| Văn bản gốc TT 58/2026/TT-BTC (25/5/2026, Công báo số 323 ngày 11/6/2026) kèm phụ lục sổ S1-DNSN, S2a-d, S3a-b, S4a-d-DNSN, mẫu B01-DNSN, B02-DNSN, hướng dẫn lập chỉ tiêu, hệ thống tài khoản (nếu có), chép vào `~/legal-docs/tt58-2026/` | Như trên | Chế độ TT58 không tạo được năm tài chính; chưa có B01/B02-DNSN |
-| Mẫu 01/CNKD hiện hành và văn bản ban hành mẫu (TT 89/2026/TT-BTC hoặc văn bản thay thế), NĐ 68/2026/NĐ-CP, NĐ 141/2026/NĐ-CP (ngưỡng doanh thu 1 tỷ, tỷ lệ thuế theo ngành), chép vào `~/legal-docs/hkd-thue/` | Ngưỡng, tỷ lệ, chỉ tiêu tờ khai chỉ nhập từ văn bản gốc | Chưa có tờ khai 01/CNKD và tính thuế HKD |
+| Mẫu 01/CNKD hiện hành và văn bản ban hành mẫu (TT 89/2026/TT-BTC hoặc văn bản thay thế), chép vào `~/legal-docs/hkd-thue/` | Không có văn bản gốc, không bịa chỉ tiêu tờ khai | Chưa có tờ khai 01/CNKD |
+| NĐ 68/2026/NĐ-CP (ngưỡng doanh thu, cách xác định doanh thu, tỷ lệ thuế theo ngành) và đối chiếu NĐ 141/2026/NĐ-CP | Ngưỡng, tỷ lệ chỉ nhập từ văn bản gốc | Người dùng tự khai tỷ lệ thuế từng nhóm; không tự tính thuế theo ngành, không cảnh báo ngưỡng 1 tỷ đồng |
 | Quy định hóa đơn từ máy tính tiền của hộ kinh doanh (nếu cần dựng khung dữ liệu) | Chưa có nguồn | Không dựng khung |
-| Quyết định mô hình: HKD và siêu nhỏ ghi sổ theo nhóm thuế, không dùng hệ thống tài khoản (theo nguồn thứ cấp); cần quyết định có dựng động cơ sổ riêng (bảng giao dịch HKD, không qua sổ cái bút toán kép) khi đã có văn bản | Ảnh hưởng kiến trúc lớn (sổ cái kép bất biến) | Chỉ có khung cấu hình và cảnh báo |
+| Quyết định: dựng B01-DNSN (cần S4a công nợ, S4b TSCĐ, S4d vốn chủ sở hữu và chỉ tiêu "Tài sản khác" từ mô-đun số dư riêng) hay chấp nhận doanh nghiệp siêu nhỏ lập B01 ngoài phần mềm | Sổ ghi đơn không bảo đảm tổng tài sản = tổng nguồn vốn (200 = 500) | B01-DNSN, S4a, S4b, S4d đã nhập định nghĩa cột nhưng chưa dựng (`built=false`); chứng từ 01-TT, 02-TT, 01-VT, 02-VT của TT 58 chưa nhập mẫu in |
+| Kế toán xác nhận: tháng dương lịch làm kỳ tính đơn giá xuất kho bình quân; cách đọc S3b theo số dư ròng; đặt số dư tiền ở cột 1 của sổ tiền | Thông tư không nêu rõ kỳ tính, cột đặt số dư, và công thức S3b có thể ra hai số | Dùng cách đọc ghi ở quyết định 1506, 1507, 1508 |
+
 ## GĐ7 nhóm 5 (đa chi nhánh): chờ người dùng
 | Việc cần người dùng | Lý do | Ảnh hưởng nếu chưa có |
 | Văn bản gốc Thông tư 202/2014/TT-BTC (lập và trình bày BCTC hợp nhất, phụ lục mẫu B01-DN/HN, B02-DN/HN, B03-DN/HN) và Thông tư 43/2026/TT-BTC sửa đổi, chép vào `~/legal-docs/tt202-2014/` | thuvienphapluat.vn, vbpl.vn chặn tải tự động (403); không dựng mẫu hợp nhất từ trí nhớ | Chưa có BCTC hợp nhất nhiều pháp nhân (`packages/coa-data/data/consolidation/status.json` `complete=false`); chỉ có BCTC tổng hợp các chi nhánh trong một công ty |

@@ -1,0 +1,34 @@
+{
+  "regime": "TT152",
+  "source": "Thông tư 152/2025/TT-BTC ngày 31/12/2025 (bản scan ký số Bộ Tài chính 06/01/2026), chương II mục 1 đến 3. Cột và dòng từng mẫu đối chiếu với ảnh trang 3, 4, 5, 6, 8, 9, 11, 12; phương pháp ghi sổ đối chiếu với văn bản OCR.",
+  "issuedBy": "(Kèm theo Thông tư số 152/2025/TT-BTC ngày 31 tháng 12 năm 2025 của Bộ trưởng Bộ Tài chính)",
+  "methods": [
+    { "code": "exempt", "article": "Điều 4", "label": "Không chịu thuế GTGT, không nộp thuế TNCN", "books": ["S1a-HKD"] },
+    { "code": "percent", "article": "Điều 5", "label": "Thuế GTGT và thuế TNCN theo tỷ lệ % trên doanh thu", "books": ["S2a-HKD"] },
+    { "code": "income", "article": "Điều 6", "label": "Thuế GTGT theo tỷ lệ % trên doanh thu, thuế TNCN trên thu nhập tính thuế", "books": ["S2b-HKD", "S2c-HKD", "S2d-HKD", "S2e-HKD"] }
+  ],
+  "extraBooks": ["S3a-HKD"],
+  "books": [
+    { "code": "S1a-HKD", "name": "Sổ doanh thu bán hàng hóa, dịch vụ", "article": "Điều 4 khoản 1", "built": true, "verified": true,
+      "columns": [{ "key": "date", "label": "Ngày tháng", "ref": "A", "type": "date" }, { "key": "desc", "label": "Diễn giải", "ref": "B" }, { "key": "amount", "label": "Số tiền", "ref": "1", "type": "number" }] },
+    { "code": "S2a-HKD", "name": "Sổ doanh thu bán hàng hóa, dịch vụ", "article": "Điều 5 khoản 2.1", "built": true, "verified": true,
+      "columns": [{ "key": "docNo", "label": "Chứng từ: Số hiệu", "ref": "A" }, { "key": "date", "label": "Chứng từ: Ngày tháng", "ref": "B", "type": "date" }, { "key": "desc", "label": "Diễn giải", "ref": "C" }, { "key": "amount", "label": "Số tiền", "ref": "1", "type": "number" }] },
+    { "code": "S2b-HKD", "name": "Sổ doanh thu bán hàng hóa, dịch vụ", "article": "Điều 6 khoản 2.2.1", "built": true, "verified": true,
+      "columns": [{ "key": "docNo", "label": "Chứng từ: Số hiệu", "ref": "A" }, { "key": "date", "label": "Chứng từ: Ngày tháng", "ref": "B", "type": "date" }, { "key": "desc", "label": "Diễn giải", "ref": "C" }, { "key": "amount", "label": "Số tiền", "ref": "1", "type": "number" }] },
+    { "code": "S2c-HKD", "name": "Sổ chi tiết doanh thu, chi phí", "article": "Điều 6 khoản 2.2.2", "built": true, "verified": true,
+      "columns": [{ "key": "docNo", "label": "Chứng từ: Số hiệu", "ref": "A" }, { "key": "date", "label": "Chứng từ: Ngày tháng", "ref": "B", "type": "date" }, { "key": "desc", "label": "Diễn giải", "ref": "C" }, { "key": "amount", "label": "Số tiền", "ref": "1", "type": "number" }] },
+    { "code": "S2d-HKD", "name": "Sổ chi tiết vật liệu, dụng cụ, sản phẩm, hàng hóa", "article": "Điều 6 khoản 2.2.3", "built": true, "verified": true,
+      "columns": [{ "key": "docNo", "label": "Chứng từ: Số hiệu", "ref": "A" }, { "key": "date", "label": "Chứng từ: Ngày, tháng", "ref": "B", "type": "date" }, { "key": "desc", "label": "Diễn giải", "ref": "C" }, { "key": "unit", "label": "Đơn vị tính", "ref": "D" }, { "key": "price", "label": "Đơn giá", "ref": "1", "type": "number", "scale": 4 },
+        { "key": "inQty", "label": "Nhập: Số lượng", "ref": "2", "type": "number", "scale": 4 }, { "key": "inAmt", "label": "Nhập: Thành tiền", "ref": "3", "type": "number" }, { "key": "outQty", "label": "Xuất: Số lượng", "ref": "4", "type": "number", "scale": 4 }, { "key": "outAmt", "label": "Xuất: Thành tiền", "ref": "5", "type": "number" },
+        { "key": "stockQty", "label": "Tồn: Số lượng", "ref": "6", "type": "number", "scale": 4 }, { "key": "stockAmt", "label": "Tồn: Thành tiền", "ref": "7", "type": "number" }, { "key": "note", "label": "Ghi chú", "ref": "8" }] },
+    { "code": "S2e-HKD", "name": "Sổ chi tiết tiền", "article": "Điều 6 khoản 2.2.4", "built": true, "verified": true,
+      "columns": [{ "key": "docNo", "label": "Chứng từ: Số hiệu", "ref": "A" }, { "key": "date", "label": "Chứng từ: Ngày tháng", "ref": "B", "type": "date" }, { "key": "desc", "label": "Diễn giải", "ref": "C" }, { "key": "in", "label": "Thu/Gửi vào", "ref": "1", "type": "number" }, { "key": "out", "label": "Chi/Rút ra", "ref": "2", "type": "number" }] },
+    { "code": "S3a-HKD", "name": "Sổ theo dõi nghĩa vụ thuế khác", "article": "Điều 7", "built": true, "verified": true,
+      "formulas": { "5": "1 x 3 x 4", "6": "1 x 2", "7": "5 + 6", "8": "1 x 2", "9": "1 x 3 x 4", "10": "1 x 3 x 4" },
+      "columns": [{ "key": "date", "label": "Ngày tháng ghi sổ", "ref": "A", "type": "date" }, { "key": "desc", "label": "Diễn giải", "ref": "B" }, { "key": "qty", "label": "Lượng hàng hóa, dịch vụ chịu thuế", "ref": "1", "type": "number", "scale": 4 }, { "key": "absRate", "label": "Mức thuế tuyệt đối", "ref": "2", "type": "number" }, { "key": "unitPrice", "label": "Giá tính thuế/01 đơn vị hàng hóa, dịch vụ", "ref": "3", "type": "number" }, { "key": "rate", "label": "Thuế suất", "ref": "4", "type": "number", "scale": 4 },
+        { "key": "pct", "label": "Thuế XK, NK, TTĐB: áp dụng phương pháp tính thuế theo tỷ lệ %", "ref": "5", "type": "number" }, { "key": "abs", "label": "Thuế XK, NK, TTĐB: áp dụng phương pháp tính thuế tuyệt đối (nếu có)", "ref": "6", "type": "number" }, { "key": "xnk", "label": "Thuế XK, NK, TTĐB: số thuế phải nộp", "ref": "7", "type": "number" },
+        { "key": "env", "label": "Thuế bảo vệ môi trường", "ref": "8", "type": "number" }, { "key": "res", "label": "Thuế tài nguyên", "ref": "9", "type": "number" }, { "key": "land", "label": "Thuế sử dụng đất", "ref": "10", "type": "number" }] }
+  ],
+  "reports": [],
+  "notApplicable": ["Hệ thống tài khoản: thông tư không quy định", "Báo cáo tài chính: thông tư không quy định (chỉ hướng dẫn ghi sổ, Điều 1 khoản 1)"]
+}

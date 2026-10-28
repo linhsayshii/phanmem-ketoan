@@ -11,8 +11,8 @@ export const REGIMES = [
   { value: 'TT99', label: 'TT99' },
   { value: 'TT133', label: 'TT 133/2016/TT-BTC (DNNVV)' },
   { value: 'TT200', label: 'TT 200/2014/TT-BTC (dữ liệu 2025 trở về trước)' },
-  { value: 'TT58', label: 'TT 58/2026/TT-BTC (doanh nghiệp siêu nhỏ) - chờ văn bản gốc' },
-  { value: 'TT152', label: 'TT 152/2025/TT-BTC (hộ kinh doanh) - chờ văn bản gốc' },
+  { value: 'TT58', label: 'TT 58/2026/TT-BTC (doanh nghiệp siêu nhỏ), ghi sổ theo nhóm thuế' },
+  { value: 'TT152', label: 'TT 152/2025/TT-BTC (hộ kinh doanh), ghi sổ theo nhóm thuế' },
 ];
 
 export default function CompanyWizard() {
