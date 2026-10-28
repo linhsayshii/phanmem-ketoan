@@ -3,16 +3,20 @@ import type { Database } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
 import { assetRunStale, periodSpan } from '../assets/periodRun.js';
 import { loanInterestStale } from '../loans/interest.js';
+import { payrollRunStale } from '../payroll/periodStep.js';
+import { costRunStale } from '../costing/periodStep.js';
 
 // Quy trình cuối kỳ: thứ tự cố định; trạng thái từng bước suy ra từ nhật ký period_close_log (mỗi lần chạy thành công một dòng).
 type Trx = Transaction<Database>;
-// Giá vốn đứng đầu: tài sản, CCDC xuất từ kho trong kỳ nhận giá vốn từ bước này, nên khấu hao, phân bổ chạy sau không phải chạy lại mỗi tháng.
+// Lương đứng đầu (chi phí lương vào giá thành), rồi CCDC, trả trước, khấu hao, lãi vay; giá vốn sau cùng nhóm này để nhận chi phí đó, rồi giá thành sản phẩm (D5).
 export const CLOSE_STEPS = [
-  { key: 'costing', name: 'Tính giá vốn', permission: 'costing.run' },
+  { key: 'payroll', name: 'Tính lương và hạch toán', permission: 'payroll.post', optional: true },
   { key: 'tool', name: 'Phân bổ công cụ dụng cụ', permission: 'asset.run' },
   { key: 'prepaid', name: 'Phân bổ chi phí trả trước', permission: 'asset.run' },
   { key: 'depreciation', name: 'Khấu hao TSCĐ', permission: 'asset.run' },
   { key: 'loan_interest', name: 'Lãi vay', permission: 'loan.run' },
+  { key: 'costing', name: 'Tính giá vốn', permission: 'costing.run' },
+  { key: 'product_cost', name: 'Giá thành sản phẩm', permission: 'cost_run.run', optional: true },
   { key: 'amortization', name: 'Phân bổ doanh thu nhận trước', permission: 'amortization.run' },
   { key: 'fx_outflow', name: 'Tỷ giá xuất quỹ', permission: 'fx.run' },
   { key: 'fx_revaluation', name: 'Đánh giá lại ngoại tệ', permission: 'fx.run', optional: true },
@@ -40,7 +44,8 @@ export async function logCloseStep(trx: Trx, ctx: { tenantId: string; userId: st
 
 type Log = { step: string; ran_at: string; ok: boolean; summary: { skipped?: boolean; unchanged?: boolean; errors?: number; voucherIds?: string[] }; user: string | null };
 
-export async function closeStatus(trx: Trx, fiscalYear: number, periodNo: number) {
+/** Thiếu cờ view_salary (bước lương) hoặc view_cost (bước giá thành): bước chỉ trả trạng thái chung, không chứng từ, không số liệu hay lỗi chi tiết. */
+export async function closeStatus(trx: Trx, tenantId: string, fiscalYear: number, periodNo: number, can: { salary: boolean; cost: boolean }) {
   const { span } = await periodSpan(trx, fiscalYear, periodNo);
   const logs = (await sql<Log>`SELECT l.step, l.ran_at::text AS ran_at, l.ok, l.summary, u.full_name AS "user" FROM period_close_log l LEFT JOIN app_user u ON u.id = l.user_id
     WHERE l.fiscal_year = ${fiscalYear} AND l.period_no = ${periodNo} ORDER BY l.ran_at, l.id`.execute(trx)).rows;
@@ -60,6 +65,7 @@ export async function closeStatus(trx: Trx, fiscalYear: number, periodNo: number
   for (const [i, def] of CLOSE_STEPS.entries()) {
     const l = last.get(def.key);
     let status: StepStatus = 'pending'; let reason: string | null = null;
+    const masked = (def.key === 'payroll' && !can.salary) || (def.key === 'product_cost' && !can.cost);
     const f = failed.get(def.key);
     if (f) reason = `Lần chạy gần nhất lỗi (${f.summary.errors ?? 0} mục), chưa tính là xong`;
     if (l) {
@@ -70,12 +76,14 @@ export async function closeStatus(trx: Trx, fiscalYear: number, periodNo: number
         else if (def.key === 'tool' || def.key === 'prepaid' || def.key === 'depreciation') {
           const r = await assetRunStale(trx, def.key, fiscalYear, periodNo); if (r.stale) { status = 'rerun'; reason = r.reason; }
         } else if (def.key === 'loan_interest' && await loanInterestStale(trx, fiscalYear, periodNo)) { status = 'rerun'; reason = 'Lãi vay tính lại hiện nay khác lần chạy'; }
+        else if (def.key === 'payroll') { const r = await payrollRunStale(trx, tenantId, span, !masked); if (r.stale) { status = 'rerun'; reason = r.reason; } }
+        else if (def.key === 'product_cost') { const r = await costRunStale(trx, span); if (r.stale) { status = 'rerun'; reason = r.reason; } }
         else if (def.key === 'costing' && staleCosting) { status = 'rerun'; reason = 'Kho còn phát sinh chưa cập nhật giá vốn trong kỳ'; }
       }
     }
-    if (f) { status = l ? 'rerun' : 'pending'; reason = `Lần chạy gần nhất lỗi (${f.summary.errors ?? 0} mục), chưa tính là xong`; }
-    steps.push({ key: def.key, name: def.name, failed: !!f, permission: def.permission, optional: 'optional' in def, status, lastRunAt: l ? new Date(l.ran_at).toISOString() : null, reason, lastUser: l?.user ?? null,
-      vouchers: (l?.summary.voucherIds ?? []).map((id) => ({ id, voucherNo: nos.get(id)?.voucher_no ?? null, voucherType: nos.get(id)?.voucher_type ?? null })) });
+    if (f) { status = l ? 'rerun' : 'pending'; reason = masked ? 'Lần chạy gần nhất chưa hoàn tất' : def.key === 'payroll' ? `Còn ${f.summary.errors ?? 0} bảng lương chưa tính hoặc cần tính lại, chưa tính là xong` : `Lần chạy gần nhất lỗi (${f.summary.errors ?? 0} mục), chưa tính là xong`; }
+    steps.push({ key: def.key, name: def.name, failed: !!f, permission: def.permission, optional: 'optional' in def, masked, status, lastRunAt: l ? new Date(l.ran_at).toISOString() : null, reason, lastUser: l?.user ?? null,
+      vouchers: masked ? [] : (l?.summary.voucherIds ?? []).map((id) => ({ id, voucherNo: nos.get(id)?.voucher_no ?? null, voucherType: nos.get(id)?.voucher_type ?? null })) });
   }
   return { steps, nextStep: steps.find((s) => s.status !== 'done' && s.status !== 'skipped_empty')?.key ?? null };
 }

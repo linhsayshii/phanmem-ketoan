@@ -19,12 +19,12 @@ describe('Xuất dữ liệu cho cơ quan thẩm quyền', () => {
   it('người thiếu cờ nhạy cảm: báo cờ còn thiếu và khóa nút xuất (tránh 403)', () => {
     me.sensitive = ['view_receivable'];
     render(<ExportPage />);
-    expect(screen.getByText(/còn thiếu: view_payable, view_cost/)).toBeInTheDocument();
+    expect(screen.getByText(/còn thiếu: view_payable, view_cost, view_salary/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Xuất gói dữ liệu' })).toBeDisabled();
   });
 
-  it('người đủ ba cờ: gửi khoảng ngày lên máy chủ, tải xong mới thu hồi đường dẫn tạm', async () => {
-    me.sensitive = ['view_receivable', 'view_payable', 'view_cost'];
+  it('người đủ bốn cờ: gửi khoảng ngày lên máy chủ, tải xong mới thu hồi đường dẫn tạm', async () => {
+    me.sensitive = ['view_receivable', 'view_payable', 'view_cost', 'view_salary'];
     render(<ExportPage />);
     await userEvent.click(screen.getByRole('button', { name: 'Xuất gói dữ liệu' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());

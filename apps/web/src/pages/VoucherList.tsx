@@ -10,7 +10,9 @@ import { api } from '../api/client.js';
 import { kindsOf } from './stockCalc.js';
 import { useAuth } from '../auth.js';
 
-interface Row { id: string; voucherType: string; voucherNo: string | null; postingDate: string; state: string; description: string | null; partyName: string | null; totalDebit: string }
+interface Row { id: string; voucherType: string; voucherNo: string | null; postingDate: string; state: string; description: string | null; partyName: string | null; totalDebit: string | null }
+// null: chứng từ có dòng lương, người xem thiếu view_salary (API che tổng tiền).
+export const totalText = (v: string | null) => (v === null ? '—' : formatVnNumber(v));
 export const STATE_LABEL: Record<string, string> = { draft: 'Nháp', posted: 'Đã ghi sổ', reversed: 'Đã đảo', cancelled: 'Đã hủy' };
 export const STATE_COLOR: Record<string, string> = { draft: 'default', posted: 'green', reversed: 'orange', cancelled: 'red' };
 // Tên gọi trên menu và tiêu đề: bỏ phần chú thích trong ngoặc, vd. "Giấy báo Nợ (in Ủy nhiệm chi)" -> "Giấy báo Nợ".
@@ -38,7 +40,8 @@ function VoucherList({ def }: { def: VoucherTypeDef }) {
     { field: 'postingDate', headerName: 'Ngày', width: 110, valueFormatter: (p) => formatVnDate(p.value as string) },
     { field: 'voucherNo', headerName: 'Số', width: 130, valueFormatter: (p) => (p.value as string | null) ?? '(nháp)' },
     { field: 'description', headerName: 'Diễn giải', flex: 1 }, { field: 'partyName', headerName: 'Đối tượng', width: 200 },
-    { field: 'totalDebit', headerName: 'Số tiền', width: 140, cellClass: 'ag-right-aligned-cell', valueFormatter: (p) => formatVnNumber(p.value as string) },
+    { field: 'totalDebit', headerName: 'Số tiền', width: 140, cellClass: 'ag-right-aligned-cell', valueFormatter: (p) => totalText(p.value as string | null),
+      headerTooltip: 'Dấu — là chứng từ có dòng lương, đã ẩn do thiếu quyền xem lương' },
     { field: 'state', headerName: 'Trạng thái', width: 120, cellRenderer: (p: { value: string }) => <Tag color={STATE_COLOR[p.value] ?? 'default'}>{STATE_LABEL[p.value]}</Tag> },
   ] satisfies ColDef<Row>[]).map((c): ColDef<Row> => ({ ...c, editable: false, suppressKeyboardEvent: openOnEnter, onCellDoubleClicked: (e) => { if (e.data) open(e.data.id); } })), [open]);
   return (

@@ -47,10 +47,19 @@ import arapRoutes from './modules/arap/routes.js';
 import taxRoutes from './modules/tax/routes.js';
 import invoiceRoutes from './modules/invoices/routes.js';
 import orderRoutes from './modules/orders/routes.js';
+import contractRoutes from './modules/contracts/routes.js';
 import assetRoutes from './modules/assets/routes.js';
 import loanRoutes from './modules/loans/routes.js';
 import einvoiceRoutes from './modules/einvoice/routes.js';
 import signingRoutes from './modules/signing/routes.js';
+import payrollRoutes from './modules/payroll/routes.js';
+import payrollProfileRoutes from './modules/payroll/profileRoutes.js';
+import attendanceRoutes from './modules/payroll/attendanceRoutes.js';
+import payrollRunRoutes from './modules/payroll/runRoutes.js';
+import payrollReportRoutes from './modules/payroll/reportRoutes.js';
+import payrollPaymentRoutes from './modules/payroll/paymentRoutes.js';
+import tncnRoutes from './modules/payroll/tncnRoutes.js';
+import costingRoutes from './modules/costing/routes.js';
 import inboundRoutes from './modules/inbound/routes.js';
 import openingAssetRoutes from './modules/assets/openingAssets.js';
 import bankRoutes from './modules/bank/routes.js';
@@ -112,6 +121,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(taxRoutes);
   await app.register(invoiceRoutes);
   await app.register(orderRoutes);
+  await app.register(contractRoutes);
   await app.register(assetRoutes);
   await app.register(loanRoutes);
   await app.register(einvoiceRoutes);
@@ -120,6 +130,14 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(openingAssetRoutes);
   await app.register(bankRoutes);
   await app.register(bankWebhookRoutes); // công khai, có parser thân thô riêng
+  await app.register(payrollRoutes);
+  await app.register(payrollProfileRoutes);
+  await app.register(attendanceRoutes);
+  await app.register(payrollRunRoutes);
+  await app.register(payrollReportRoutes);
+  await app.register(payrollPaymentRoutes);
+  await app.register(tncnRoutes);
+  await app.register(costingRoutes);
   await app.register(extRoutes); // khóa API (phiên) và /api/ext/v1 (Bearer kt_…, parser XML riêng)
   app.get('/api/health', async () => ({ ok: true }));
   return app;

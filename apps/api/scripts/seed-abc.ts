@@ -5,6 +5,9 @@
 // Phần kho (GĐ3): hàng HANG-A..D ở bốn kho theo bốn phương pháp giá vốn, tính tay ở expected-gd3-abc.json (kiểm ở test/inventory/sample-abc-kho.test.ts).
 // Phần tài sản (GĐ4): 4 TSCĐ (2 đầu kỳ, 1 mua bằng HĐ, 1 XDCB; đánh giá lại tháng 6, thanh lý tháng 9), 2 CCDC (1 xuất kho, 1 mua dùng ngay, ghi giảm một phần), 1 chi phí trả trước,
 // 1 khế ước vay VND đổi lãi suất giữa năm; các bước tài sản và lãi vay chạy mỗi cuối tháng theo thứ tự Quy trình cuối kỳ. Tính tay ở expected-gd4-abc.json (kiểm ở test/assets/sample-abc-tai-san.test.ts).
+// Phần lương, giá thành, hợp đồng (GĐ6): 20 nhân viên của bảng lương mẫu (test/fixtures/payroll-20.json), bảng lương tháng 10-12/2026 hạch toán ở bước "Tính lương" cuối tháng, chi lương tháng 10;
+// bộ phận SX tập hợp 154 vào đối tượng SP-E (nhập kho thành phẩm + giá thành tháng 10-12); hợp đồng bán HD-DT-01 3 đợt (đợt 1 lập HĐ); phân bổ chi phí chung tháng 10 vào hai vụ việc.
+// Tham số lương là dữ liệu minh họa của chính dữ liệu mẫu, nhập ở đây (không qua seed_tenant_defaults, D15). Tính tay ở test/expected-gd6-abc.json (kiểm ở test/sample-abc-gd6.test.ts).
 import '../src/env.js';
 import pg from 'pg';
 import { sql, type Kysely, type Transaction } from 'kysely';
@@ -39,6 +42,19 @@ import { createFeed, feedInput } from '../src/modules/bank/feeds.js';
 import { mapSepay } from '../src/modules/bank/webhook.js';
 import { matchToVoucher } from '../src/modules/bank/match.js';
 import { createVoucher, voucherInput } from '../src/modules/ledger/vouchers.service.js';
+import { allowanceInput, addAllowance, addDependent, addSalary, dependentInput, profileInput, saveProfile, salaryInput } from '../src/modules/payroll/profiles.js';
+import { saveCells } from '../src/modules/payroll/attendance.js';
+import { calculateRun, createRun, runCreateInput, setManualValues } from '../src/modules/payroll/runs.js';
+import { paramInput, saveParam } from '../src/modules/payroll/params.js';
+import { costAccountsInput, saveCostAccounts } from '../src/modules/payroll/costAccounts.js';
+import { runPayrollStep } from '../src/modules/payroll/periodStep.js';
+import { createPayVoucher } from '../src/modules/payroll/payments.js';
+import { costObjectInput, createCostObject } from '../src/modules/costing/objects.js';
+import { costNormInput, createCostNorm } from '../src/modules/costing/norms.js';
+import { runCostStep } from '../src/modules/costing/periodStep.js';
+import { contractInput, saveContract } from '../src/modules/orders/service.js';
+import { invoiceFromMilestoneInput, invoiceMilestone, milestonesInput, saveMilestones } from '../src/modules/contracts/milestone.js';
+import { allocInput, runProjectAlloc } from '../src/modules/contracts/projectAlloc.js';
 import { offsetInput, runVatOffset } from '../src/modules/tax/vatOffset.js';
 import { createReturn, finalizeReturn, returnInput } from '../src/modules/tax/vatReturn.js';
 
@@ -134,6 +150,46 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
   await allocate(await idOf('TS-001'), '6422', 'HC');
   await allocate(await idOf('TS-002'), '6421', 'KD');
   const newCard = async (b: object, expenseAccountCode: string, departmentCode: string) => { const a = await saveAsset(trx, tenantId, null, assetInput.parse(b)); await allocate(a.id, expenseAccountCode, departmentCode); return a.id; };
+
+  // ---- Danh mục và cấu hình GĐ6: lương, giá thành, hợp đồng ----
+  type FxEmployee = { code: string; name: string; department: 'SX' | 'BH' | 'QL'; startDate?: string; endDate?: string; input: {
+    segments: { monthlySalary: string; paidDays: string }[]; insurance: { si: boolean; hi: boolean; ui: boolean; occupational: boolean }; taxResidency: 'resident' | 'non_resident'; contractType: 'long' | 'short' | 'none';
+    siSalary?: string; allowances?: { code: string; amount: string; taxable: boolean; siBase: boolean }[]; dependents?: { from: string; to?: string | null }[]; manual?: Record<string, string>; otHours?: Record<string, string> } };
+  const fx = JSON.parse(readFileSync(new URL('../test/fixtures/payroll-20.json', import.meta.url), 'utf8')) as { source: string; params: Record<string, unknown>; employees: FxEmployee[] };
+  const idOfRow = async (table: 'department' | 'project' | 'cost_item' | 'cost_object' | 'employee', code: string) =>
+    Number((await sql<{ id: string }>`SELECT id::text FROM ${sql.table(table)} WHERE tenant_id = ${tenantId}::uuid AND code = ${code}`.execute(trx)).rows[0]!.id);
+  // Số công chuẩn 26 ngày/tháng, 8 giờ/ngày là cài đặt công ty; tham số lương (biểu thuế, bảo hiểm, làm thêm) là dữ liệu minh họa, ghi nguồn đúng như tệp bảng lương mẫu.
+  await c.query(`INSERT INTO tenant_setting(tenant_id, key, value) VALUES ($1, 'payroll_standard_days_per_month', '"26"'), ($1, 'payroll_standard_hours_per_day', '"8"') ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value`, [tenantId]);
+  for (const [code, value] of Object.entries(fx.params)) await saveParam(trx, tenantId, paramInput.parse({ code, validFrom: day(1, 1), value, source: fx.source }));
+  await c.query(`INSERT INTO department(tenant_id, code, name) VALUES ($1, 'SX', 'Phân xưởng sản xuất (minh họa giá thành)')`, [tenantId]);
+  await c.query(`INSERT INTO cost_item(tenant_id, code, name, default_account_code, cost_element) VALUES ($1, 'CP_NC', 'Nhân công trực tiếp', '154', 'labor')`, [tenantId]);
+  await c.query(`INSERT INTO item(tenant_id, code, name, kind, base_uom_id, tracking, inventory_account_id, revenue_account_id) VALUES ($1, 'SP-E', 'Sản phẩm E (thành phẩm, minh họa giá thành)', 'finished', ${uomId('CAI')}, 'none', ${acc('155')}, ${acc('5111')})`, [tenantId]);
+  await c.query(`INSERT INTO warehouse(tenant_id, code, name, costing_method, inventory_account_id, kind) VALUES ($1, 'KHO6', 'Kho 6 (thành phẩm, bình quân cuối kỳ)', 'avg_period', ${acc('155')}, 'normal')`, [tenantId]);
+  await createCostObject(trx, tenantId, costObjectInput.parse({ code: 'SP-E', name: 'Sản phẩm E', kind: 'product', itemCode: 'SP-E', method: 'simple' }));
+  await createCostNorm(trx, tenantId, costNormInput.parse({ itemCode: 'SP-E', validFrom: day(1, 1), note: 'Định mức minh họa: 2 HANG-A cho 1 sản phẩm E, hao hụt 5%', lines: [{ itemCode: 'HANG-A', quantity: '2', lossPercent: '5' }] }));
+  // Bộ phận trong bảng lương mẫu: SX (sản xuất trực tiếp → 154, khoản mục CP_NC, đối tượng SP-E), BH → phòng kinh doanh (6421), QL → phòng hành chính (6422).
+  const deptCode = { SX: 'SX', BH: 'KD', QL: 'HC' } as const;
+  await saveCostAccounts(trx, tenantId, costAccountsInput.parse({ items: [
+    { departmentId: await idOfRow('department', 'SX'), kind: 'payroll', role: 'direct', costItemId: await idOfRow('cost_item', 'CP_NC'), costObjectId: await idOfRow('cost_object', 'SP-E') },
+    { departmentId: await idOfRow('department', 'KD'), kind: 'payroll', role: 'selling' }, { departmentId: await idOfRow('department', 'HC'), kind: 'payroll', role: 'admin' }] }));
+  const empId = new Map<string, number>();
+  for (const e of fx.employees) {
+    const id = Number((await sql<{ id: string }>`INSERT INTO employee(tenant_id, code, name, department_id) VALUES (${tenantId}::uuid, ${e.code}, ${e.name}, ${await idOfRow('department', deptCode[e.department])}) RETURNING id::text`.execute(trx)).rows[0]!.id);
+    empId.set(e.code, id);
+    const i = e.input;
+    await saveProfile(trx, tenantId, id, profileInput.parse({ taxResidency: i.taxResidency, contractType: i.contractType, region: 'I', siSalary: i.siSalary ?? null, startDate: e.code === 'NV10' ? day(10, 14) : (e.startDate ?? null), endDate: e.endDate ?? null,
+      siParticipates: i.insurance.si, hiParticipates: i.insurance.hi, uiParticipates: i.insurance.ui, occupationalParticipates: i.insurance.occupational,
+      defaultProjectId: e.code === 'NV03' ? await idOfRow('project', 'DA01') : e.code === 'NV04' ? await idOfRow('project', 'DA02') : null }));
+    for (const [k, s] of i.segments.entries()) await addSalary(trx, tenantId, id, salaryInput.parse({ validFrom: i.segments.length > 1 && k === 1 ? day(10, 16) : `${FY - 2}-01-01`, monthlySalary: s.monthlySalary }));
+    for (const a of i.allowances ?? []) await addAllowance(trx, tenantId, id, allowanceInput.parse({ code: a.code, name: a.code, amount: a.amount, taxable: a.taxable, siBase: a.siBase }));
+    for (const [k, d] of (i.dependents ?? []).entries()) await addDependent(trx, tenantId, id, dependentInput.parse({ name: `Người phụ thuộc ${k + 1}`, relationship: 'child', fromMonth: d.from.slice(0, 7), toMonth: d.to ? d.to.slice(0, 7) : null }));
+  }
+  // Hợp đồng bán 120 triệu (đào tạo, không chịu thuế GTGT) 3 đợt 40/40/20%; đợt 1 lập hóa đơn tháng 5 và thu tiền ngay.
+  const contractId = ((await saveContract(trx, tenantId, null, contractInput.parse({ code: 'HD-DT-01', name: 'Hợp đồng đào tạo kế toán doanh nghiệp', partyCode: 'KH006', kind: 'sale', signedDate: day(4, 20), validFrom: day(5, 1), validTo: `${FY + 1}-03-31`,
+    value: M(120), accountCode: '5113', taxCode: 'KCT' }))) as { id: number }).id;
+  await saveMilestones(trx, tenantId, contractId, milestonesInput.parse({ milestones: [
+    { seq: 1, description: 'Tạm ứng 40% khi ký hợp đồng', dueDate: day(5, 15), percent: '40', taxCode: 'KCT' }, { seq: 2, description: 'Nghiệm thu giữa kỳ 40%', dueDate: day(9, 30), percent: '40', taxCode: 'KCT' },
+    { seq: 3, description: 'Quyết toán 20%', dueDate: `${FY + 1}-03-31`, percent: '20', taxCode: 'KCT' }] }));
 
   // ---- Công cụ ghi chứng từ qua dịch vụ ----
   const post = (id: string) => postWithCashCheck(trx, tenantId, id);
@@ -392,16 +448,73 @@ async function seedYear(c: pg.Client, tenantId: string, userId: string): Promise
   at(day(7, 20), async () => { await decreaseTool(trx, ctx, await idOf('CC-002'), toolDecreaseInput.parse({ date: day(7, 20), quantity: '1', counterAccountCode: '811', reason: 'Hỏng 1 ghế, không sửa được' })); });
   at(day(9, 15), async () => { await decreaseAsset(trx, ctx, await idOf('TS-002'), decreaseInput.parse({ date: day(9, 15), reason: 'liquidation', counterAccountCode: '811' })); });
 
+  // ---- Lương, giá thành, hợp đồng, phân bổ vụ việc (GĐ6) ----
+  // Chấm công: tháng 10 theo bảng lương mẫu (NV10 vào làm 14/10, NV12 đổi lương 16/10, làm thêm giờ NV13, NV14); tháng 11, 12 đủ 26 công (NV16 20 công), không làm thêm giờ.
+  const cell = (employeeId: number, d: string, kind: string, qty = '1') => ({ employeeId, date: d, entries: [{ kind: kind as 'work_day', qty }] });
+  const attendance = (m: number) => {
+    const out: ReturnType<typeof cell>[] = [];
+    for (const e of fx.employees) {
+      if (m > 10 && e.code === 'NV11') continue; // nghỉ việc 09/10
+      const id = empId.get(e.code)!;
+      const segs = m === 10 ? e.input.segments.map((s, k) => ({ days: Number(s.paidDays), start: e.code === 'NV10' ? 14 : e.code === 'NV12' ? [1, 16][k]! : 1 })) : [{ days: e.code === 'NV16' ? 20 : 26, start: 1 }];
+      for (const s of segs) { let d = s.start; for (let k = 0; k < Math.floor(s.days); k++) out.push(cell(id, day(m, d++), 'work_day')); if (s.days % 1) out.push(cell(id, day(m, d), 'half_day')); }
+      if (m === 10) [['weekday', 'ot_weekday_hour'], ['rest', 'ot_rest_hour'], ['holiday', 'ot_holiday_hour']].forEach(([k, kind], n) => { const q = e.input.otHours?.[k!]; if (q && q !== '0') out.push(cell(id, day(m, 27 + n), kind!, q)); });
+    }
+    return out;
+  };
+  // Tạm ứng cho NV11 trước khi nghỉ việc; bảng lương tháng 10 trừ lương 1.000.000 (cột advance) → LU ghi Có 141 theo nhân viên, 141 của NV11 về 0 (#971).
+  at(day(10, 2), () => voucher({ voucherType: 'PC', postingDate: day(10, 2), documentDate: day(10, 2), description: 'Tạm ứng cho anh Dương Văn Minh (NV11)', personName: 'Dương Văn Minh', purpose: 'chi_tam_ung',
+    lines: [L('141', M(1), '0', { employeeCode: 'NV11' }), L('1111', '0', M(1))] }));
+  const payrollRunId: Record<number, number> = {};
+  const finishedQty: Record<number, string> = { 10: '500', 11: '600', 12: '800' };
+  for (const m of [10, 11, 12]) {
+    at(day(m, 26), async () => {
+      await saveCells(trx, tenantId, { year: FY, month: m }, attendance(m));
+      const run = await createRun(trx, tenantId, runCreateInput.parse({ year: FY, month: m }));
+      if (m === 10) for (const e of fx.employees) if (e.input.manual) await setManualValues(trx, tenantId, run.id, empId.get(e.code)!, e.input.manual);
+      await calculateRun(trx, tenantId, run.id);
+      payrollRunId[m] = run.id;
+    });
+    // Nhập kho thành phẩm SP-E theo giá tạm 200.000/cái; giá thành tháng (bước Giá thành) điều chỉnh lớp giá nhập, giá vốn ghi Nợ 155 / Có 154 phần chênh.
+    at(day(m, 28), async () => { await stockDoc({ voucherType: 'PNK', stockKind: 'finished', postingDate: day(m, 28), warehouseCode: 'KHO6', description: `Nhập kho thành phẩm SP-E tháng ${m}`,
+      items: [{ itemCode: 'SP-E', uomCode: 'CAI', quantity: finishedQty[m]!, unitPrice: '200000' }] }); });
+  }
+  // Chi lương tháng 10 bằng giấy báo Nợ từ Vietcombank (ghi sổ); lương tháng 11, 12 còn phải trả cuối năm.
+  at(day(11, 5), async () => {
+    const bankAccountId = Number((await sql<{ id: string }>`SELECT id::text FROM bank_account WHERE tenant_id = ${tenantId}::uuid AND account_no = ${VCB}`.execute(trx)).rows[0]!.id);
+    const p = await createPayVoucher(trx, ctx, payrollRunId[10]!, 'pay', { kind: 'bank', bankAccountId, date: day(11, 5) });
+    await post(p.voucherId);
+  });
+  at(day(5, 15), async () => { // đợt 1 hợp đồng HD-DT-01: lập hóa đơn từ đợt, ghi sổ, thu đủ ngày 30/5
+    const m1 = (await sql<{ id: string }>`SELECT id::text FROM contract_milestone WHERE contract_id = ${contractId}::bigint AND seq = 1`.execute(trx)).rows[0]!.id;
+    const r = await invoiceMilestone(trx, ctx, contractId, Number(m1), invoiceFromMilestoneInput.parse({ postingDate: day(5, 15), invoiceGroupCode: 'KCT', formNo: '1', serial: 'C26TAC', invoiceNo: '0000001' }));
+    await post(r.invoice.id);
+    ref['HDB-HD-DT-01'] = r.invoice.id;
+  });
+  at(day(5, 30), async () => receipt('BC', 'KH006', day(5, 30), M(48), await item(ref['HDB-HD-DT-01']!), 'Thu tiền đợt 1 hợp đồng HD-DT-01'));
+
   // Cuối tháng: phân bổ doanh thu nhận trước, tính lại tỷ giá xuất quỹ, (tháng 12) đối trừ tự động và đánh giá lại, cuối quý khấu trừ thuế và (quý 3, 4) lập, chốt tờ khai.
   for (let m = 1; m <= 12; m++) {
     events.push({ key: `${lastDay(m)}~`, run: async () => {
-      // Quy trình cuối kỳ theo thứ tự cố định (CLOSE_STEPS): giá vốn, CCDC, chi phí trả trước, khấu hao, lãi vay rồi các bước còn lại; mỗi lần chạy ghi nhật ký như route.
+      // Quy trình cuối kỳ theo thứ tự cố định (CLOSE_STEPS): lương, CCDC, chi phí trả trước, khấu hao, lãi vay, giá vốn, giá thành rồi các bước còn lại; mỗi lần chạy ghi nhật ký như route.
       const log = (step: CloseStepKey, summary: Record<string, unknown>, ok = true) => logCloseStep(trx, ctx, { fiscalYear: FY, periodNo: m, step, ok, summary });
-      const co = await costing(day(m, 1), lastDay(m)); // giá vốn kho từng tháng (GV chỉ lập khi giá tính khác giá ghi tạm)
-      await log('costing', { ...runSummary(co), errors: co.summary.errors.length }, !co.summary.errors.length);
+      const span = { from: day(m, 1), to: lastDay(m) };
+      if (m >= 10) await log('payroll', runSummary(await runPayrollStep(trx, ctx, span))); // bảng lương tháng 10-12 đã tính ở ngày 26: hạch toán LU
+      else await log('payroll', { skipped: true }); // chưa có bảng lương
       for (const kind of ['tool', 'prepaid', 'depreciation'] as const)
         await logCloseStep(trx, ctx, { fiscalYear: FY, periodNo: m, step: kind, ok: true, summary: runSummary(await runAssetPeriod(trx, ctx, { kind, fiscalYear: FY, periodNo: m })) });
       await logCloseStep(trx, ctx, { fiscalYear: FY, periodNo: m, step: 'loan_interest', ok: true, summary: runSummary(await runLoanInterest(trx, ctx, { fiscalYear: FY, periodNo: m })) });
+      const co = await costing(day(m, 1), lastDay(m)); // giá vốn kho từng tháng (GV chỉ lập khi giá tính khác giá ghi tạm)
+      await log('costing', { ...runSummary(co), errors: co.summary.errors.length }, !co.summary.errors.length);
+      if (m < 10) await log('product_cost', { skipped: true }); // công ty mẫu thương mại, chỉ SP-E (minh họa) có chi phí sản xuất từ tháng 10
+      else {
+        // Giá thành rồi giá vốn lần hai (nhận lớp giá nhập mới: Nợ 155 / Có 154), giá thành chạy lại không đổi để bước không bị đánh dấu chạy lại.
+        await log('product_cost', runSummary(await runCostStep(trx, ctx, span, true)));
+        const co2 = await costing(day(m, 1), lastDay(m));
+        await log('costing', { ...runSummary(co2), errors: co2.summary.errors.length }, !co2.summary.errors.length);
+        await log('product_cost', runSummary(await runCostStep(trx, ctx, span, true)));
+      }
+      if (m === 10) await runProjectAlloc(trx, ctx, allocInput.parse({ kind: 'alloc', year: FY, month: m, params: { basis: 'direct_cost' } })); // chi phí bán hàng, quản lý chưa gắn vụ việc → DA01, DA02 theo chi phí trực tiếp
       const am = await runAmortization(trx, ctx, runInput.parse({ fiscalYear: FY, periodNo: m }));
       await log('amortization', { ...runSummary({ voucherIds: am.created.map((x) => x.voucherId), reversedVoucherIds: am.reversedVoucherIds, unchanged: !am.created.length && am.unchanged > 0 }), skippedSchedules: am.skipped.length });
       if (m === 12) await autoSettle(trx, auth, autoInput.parse({ accountCode: '131', partyCode: 'KH001', date: lastDay(m) }));

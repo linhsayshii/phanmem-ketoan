@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import { D, formatVnDate } from '@kt/domain';
+import { formulaSafe as fs } from '../../../lib/formulaSafe.js';
 import type { ReportDoc } from './html.js';
 
 // Tiền đi qua API dạng chuỗi thập phân: chỉ thành ô số khi khứ hồi qua Number() không đổi;
@@ -18,12 +19,12 @@ export async function renderReportXlsx(docs: ReportDoc[]): Promise<Buffer> {
     // Tên sheet tối đa 31 ký tự, không chứa \ / * ? : [ ], không trùng (không phân biệt hoa thường).
     let name = (d.sheetName ?? d.formNo).replace(/[\\/*?:[\]]/g, '-').slice(0, 28); let k = 1; while (used.has(name.toLowerCase())) name = `${name.slice(0, 25)}(${++k})`; used.add(name.toLowerCase());
     const ws = wb.addWorksheet(name);
-    const val = (c: ReportDoc['columns'][number], v: unknown) => c.type === 'number' ? moneyCell(v, c.scale) : c.type === 'date' && v ? formatVnDate(String(v)) : (v ?? '');
-    ws.addRow([d.company.name]); if (d.formNo) ws.addRow([`Mẫu số ${d.formNo} – ${d.issuedBy}`]); ws.addRow([d.title.toUpperCase()]).font = { bold: true, size: 14 }; ws.addRow([d.subtitle]); for (const t of d.intro ?? []) ws.addRow([t]); ws.addRow([]);
-    const header = ws.addRow(d.columns.map((c) => c.label)); header.font = { bold: true };
+    const val = (c: ReportDoc['columns'][number], v: unknown) => c.type === 'number' ? moneyCell(v, c.scale) : c.type === 'date' && v ? formatVnDate(String(v)) : fs(v ?? '');
+    ws.addRow([fs(d.company.name)]); if (d.formNo) ws.addRow([`Mẫu số ${d.formNo} – ${d.issuedBy}`]); ws.addRow([fs(d.title.toUpperCase())]).font = { bold: true, size: 14 }; ws.addRow([fs(d.subtitle)]); for (const t of d.intro ?? []) ws.addRow([fs(t)]); ws.addRow([]);
+    const header = ws.addRow(d.columns.map((c) => fs(c.label))); header.font = { bold: true };
     for (const r of d.rows) { const row = ws.addRow(d.columns.map((c) => val(c, r[c.key]))); if (r['isBold']) row.font = { bold: true }; }
     if (d.footer) ws.addRow(d.columns.map((c) => val(c, d.footer![c.key]))).font = { bold: true };
-    if (d.outro?.length) { ws.addRow([]); for (const t of d.outro) ws.addRow([t]); }
+    if (d.outro?.length) { ws.addRow([]); for (const t of d.outro) ws.addRow([fs(t)]); }
     d.columns.forEach((c, i) => {
       // Rộng theo ô dài nhất của cột (tiêu đề, dòng, dòng cộng), tối đa 60; số tính thêm dấu phân cách hàng nghìn.
       const shown = (v: unknown) => { const t = String(v ?? ''); return typeof v === 'number' ? t.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : t; };

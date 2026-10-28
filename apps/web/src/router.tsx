@@ -20,6 +20,10 @@ import AssetReportsPage from './pages/AssetReports.js';
 import AssetCountPage from './pages/AssetCount.js';
 import { PurchaseReportsPage, SalesReportsPage } from './pages/SalesPurchaseReports.js';
 import CostingRunPage from './pages/CostingRun.js';
+import CostObjectsPage from './pages/CostObjects.js';
+import CostNormsPage from './pages/CostNorms.js';
+import CostRunsPage from './pages/CostRuns.js';
+import CostReportsPage from './pages/CostReports.js';
 import AuditLogPage from './pages/AuditLog.js';
 import PeriodsPage from './pages/Periods.js';
 import VoucherListPage, { typeLabel } from './pages/VoucherList.js';
@@ -47,6 +51,17 @@ import SettlementPage from './pages/Settlement.js';
 import FxToolsPage from './pages/FxTools.js';
 import AmortizationPage from './pages/Amortization.js';
 import LoansPage from './pages/Loans.js';
+import ContractsPage from './pages/Contracts.js';
+import ContractReportsPage from './pages/ContractReports.js';
+import ProjectAllocPage from './pages/ProjectAlloc.js';
+import PayrollProfilesPage from './pages/PayrollProfiles.js';
+import AttendancePage from './pages/Attendance.js';
+import PayrollRunsPage from './pages/PayrollRuns.js';
+import PayrollReportsPage from './pages/PayrollReports.js';
+import PayrollStructuresPage from './pages/PayrollStructures.js';
+import PayrollParamsPage from './pages/PayrollParams.js';
+import PayrollPaymentFormatsPage from './pages/PayrollPaymentFormats.js';
+import TncnReturnsPage from './pages/TncnReturns.js';
 import { AssetCategoriesPage, FixedAssetsPage, PrepaidPage, ToolsPage } from './pages/Assets.js';
 import CashBooksPage from './pages/CashBooks.js';
 import CashCountPage from './pages/CashCount.js';
@@ -151,6 +166,25 @@ export const MENU: MenuItem[] = [
     { key: 'asset-reports', label: 'Báo cáo tài sản', to: '/tai-san/bao-cao', permission: 'report.view' },
   ] },
   { key: 'khe-uoc', label: 'Khế ước vay', to: '/khe-uoc', permission: 'loan.view' },
+  { key: 'hop-dong', label: 'Hợp đồng', to: '/hop-dong', permission: 'order.view' },
+  { key: 'bao-cao-hop-dong', label: 'Báo cáo hợp đồng, vụ việc', to: '/hop-dong/bao-cao', permission: 'contract_track.view' },
+  { key: 'phan-bo-vu-viec', label: 'Phân bổ chi phí vào vụ việc', to: '/hop-dong/phan-bo', permission: 'contract_track.view', flag: 'view_cost' },
+  { key: 'luong', label: 'Lương', to: '/luong', children: [
+    { key: 'ho-so-luong', label: 'Hồ sơ lương', to: '/luong/ho-so', permission: 'payroll.view', flag: 'view_salary' },
+    { key: 'cham-cong', label: 'Chấm công', to: '/luong/cham-cong', permission: 'attendance.view' },
+    { key: 'bang-luong', label: 'Bảng lương', to: '/luong/bang-luong', permission: 'payroll.view', flag: 'view_salary' },
+    { key: 'bao-cao-luong', label: 'Báo cáo lương', to: '/luong/bao-cao', permission: 'payroll.view', flag: 'view_salary' },
+    { key: 'thue-tncn', label: 'Thuế TNCN', to: '/luong/thue-tncn', permission: 'payroll.view', flag: 'view_salary' },
+    { key: 'mau-chi-luong', label: 'Mẫu tệp chi lương', to: '/luong/mau-chi-luong', permission: 'payroll.export', flag: 'view_salary' },
+    { key: 'cau-truc-luong', label: 'Cấu trúc bảng lương', to: '/luong/cau-truc', permission: 'payroll.view', flag: 'view_salary' },
+    { key: 'tham-so-luong', label: 'Tham số lương', to: '/luong/tham-so', permission: 'payroll.view' },
+  ] },
+  { key: 'giathanh', label: 'Giá thành', to: '/gia-thanh', children: [
+    { key: 'doi-tuong-thcp', label: 'Đối tượng tập hợp chi phí', to: '/gia-thanh/doi-tuong', permission: 'costing_obj.view', flag: 'view_cost' },
+    { key: 'dinh-muc-nvl', label: 'Định mức nguyên vật liệu', to: '/gia-thanh/dinh-muc', permission: 'costing_obj.view', flag: 'view_cost' },
+    { key: 'tinh-gia-thanh', label: 'Tính giá thành', to: '/gia-thanh/tinh-gia-thanh', permission: 'cost_run.view', flag: 'view_cost' },
+    { key: 'bao-cao-gia-thanh', label: 'Báo cáo giá thành', to: '/gia-thanh/bao-cao', permission: 'cost_run.view', flag: 'view_cost' },
+  ] },
   { key: 'baocao', label: 'Báo cáo', to: '/bao-cao', children: [
     { key: 'ledgers', label: 'Sổ sách kế toán', to: '/bao-cao/so-sach', permission: 'report.view' },
     { key: 'cashbooks', label: 'Sổ quỹ và tiền gửi', to: '/bao-cao/so-quy', permission: 'report.view' },
@@ -196,7 +230,18 @@ const amortizationRoute = createRoute({ getParentRoute: () => appRoute, path: '/
 const tscdRoute = createRoute({ getParentRoute: () => appRoute, path: '/tai-san/tscd', component: FixedAssetsPage });
 const ccdcRoute = createRoute({ getParentRoute: () => appRoute, path: '/tai-san/ccdc', component: ToolsPage });
 const cpttRoute = createRoute({ getParentRoute: () => appRoute, path: '/tai-san/chi-phi-tra-truoc', component: PrepaidPage });
+const payrollProfilesRoute = createRoute({ getParentRoute: () => appRoute, path: '/luong/ho-so', component: PayrollProfilesPage });
+const attendanceRoute = createRoute({ getParentRoute: () => appRoute, path: '/luong/cham-cong', component: AttendancePage });
+const payrollRunsRoute = createRoute({ getParentRoute: () => appRoute, path: '/luong/bang-luong', component: PayrollRunsPage });
+const payrollReportsRoute = createRoute({ getParentRoute: () => appRoute, path: '/luong/bao-cao', component: PayrollReportsPage });
+const payrollStructuresRoute = createRoute({ getParentRoute: () => appRoute, path: '/luong/cau-truc', component: PayrollStructuresPage });
+const payrollPaymentFormatsRoute = createRoute({ getParentRoute: () => appRoute, path: '/luong/mau-chi-luong', component: PayrollPaymentFormatsPage });
+const payrollParamsRoute = createRoute({ getParentRoute: () => appRoute, path: '/luong/tham-so', component: PayrollParamsPage });
+const tncnReturnsRoute = createRoute({ getParentRoute: () => appRoute, path: '/luong/thue-tncn', component: TncnReturnsPage });
 const loansRoute = createRoute({ getParentRoute: () => appRoute, path: '/khe-uoc', component: LoansPage });
+const contractsRoute = createRoute({ getParentRoute: () => appRoute, path: '/hop-dong', component: ContractsPage });
+const contractReportsRoute = createRoute({ getParentRoute: () => appRoute, path: '/hop-dong/bao-cao', component: ContractReportsPage });
+const projectAllocRoute = createRoute({ getParentRoute: () => appRoute, path: '/hop-dong/phan-bo', component: ProjectAllocPage });
 const assetCatRoute = createRoute({ getParentRoute: () => appRoute, path: '/tai-san/loai', component: AssetCategoriesPage });
 const cashCountRoute = createRoute({ getParentRoute: () => appRoute, path: '/quy/kiem-ke', component: CashCountPage });
 const financialRoute = createRoute({ getParentRoute: () => appRoute, path: '/bao-cao/bao-cao-tai-chinh', component: FinancialPage });
@@ -221,6 +266,10 @@ const salesReportsRoute = createRoute({ getParentRoute: () => appRoute, path: '/
 const purchaseReportsRoute = createRoute({ getParentRoute: () => appRoute, path: '/mua-hang/bao-cao', component: PurchaseReportsPage });
 const stocktakeRoute = createRoute({ getParentRoute: () => appRoute, path: '/kho/kiem-ke', component: StocktakePage });
 const costingRoute = createRoute({ getParentRoute: () => appRoute, path: '/kho/gia-von', component: CostingRunPage });
+const costObjectsRoute = createRoute({ getParentRoute: () => appRoute, path: '/gia-thanh/doi-tuong', component: CostObjectsPage });
+const costNormsRoute = createRoute({ getParentRoute: () => appRoute, path: '/gia-thanh/dinh-muc', component: CostNormsPage });
+const costRunsRoute = createRoute({ getParentRoute: () => appRoute, path: '/gia-thanh/tinh-gia-thanh', component: CostRunsPage });
+const costReportsRoute = createRoute({ getParentRoute: () => appRoute, path: '/gia-thanh/bao-cao', component: CostReportsPage });
 const catalogRoute = createRoute({ getParentRoute: () => appRoute, path: '/danh-muc/$name', component: CatalogPage });
 
 const signingRoute = createRoute({ getParentRoute: () => appRoute, path: '/thue/ky-so', component: SigningSetupPage });
@@ -231,6 +280,6 @@ const apiKeysRoute = createRoute({ getParentRoute: () => appRoute, path: '/he-th
 const inboundInvoicesRoute = createRoute({ getParentRoute: () => appRoute, path: '/hoa-don-dau-vao', component: InboundInvoicesPage });
 const einvoiceNoticeRoute = createRoute({ getParentRoute: () => appRoute, path: '/hoa-don-dien-tu/thong-bao-sai-sot', component: EInvoiceErrorNoticePage });
 const einvoiceConfigRoute = createRoute({ getParentRoute: () => appRoute, path: '/hoa-don-dien-tu/cau-hinh', component: EInvoiceConfigPage });
-export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, bankTransactionsRoute, bankFeedsRoute, apiKeysRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, openingAssetsRoute, periodCloseRoute, closingRoute, amortizationRoute, tscdRoute, ccdcRoute, cpttRoute, assetCatRoute, loansRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, citEstimateRoute, citReturnRoute, signingRoute, einvoicesRoute, inboundInvoicesRoute, einvoiceNoticeRoute, einvoiceConfigRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, stocktakeRoute, stockReportsRoute, assetReportsRoute, assetCountRoute, salesReportsRoute, purchaseReportsRoute, costingRoute, catalogRoute])]);
+export const routeTree = rootRoute.addChildren([loginRoute, selectTenantRoute, newCompanyRoute, appRoute.addChildren([homeRoute, bankTransactionsRoute, bankFeedsRoute, apiKeysRoute, usersRoute, companyRoute, auditRoute, accountsRoute, importRoute, periodsRoute, openingRoute, openingStockRoute, openingAssetsRoute, periodCloseRoute, closingRoute, amortizationRoute, tscdRoute, ccdcRoute, cpttRoute, assetCatRoute, loansRoute, contractsRoute, contractReportsRoute, projectAllocRoute, payrollProfilesRoute, attendanceRoute, payrollRunsRoute, payrollReportsRoute, payrollStructuresRoute, payrollPaymentFormatsRoute, payrollParamsRoute, tncnReturnsRoute, ledgersRoute, cashBooksRoute, arapReportsRoute, invoiceRegisterRoute, vatReturnRoute, citEstimateRoute, citReturnRoute, signingRoute, einvoicesRoute, inboundInvoicesRoute, einvoiceNoticeRoute, einvoiceConfigRoute, settlementRoute, fxToolsRoute, cashCountRoute, financialRoute, dataCheckRoute, dedupeRoute, exportRoute, oldPktListRoute, oldPktRoute, importVouchersRoute, voucherListRoute, voucherRoute, itemsRoute, priceListsRoute, ordersRoute, stocktakeRoute, stockReportsRoute, assetReportsRoute, assetCountRoute, salesReportsRoute, purchaseReportsRoute, costingRoute, costObjectsRoute, costNormsRoute, costRunsRoute, costReportsRoute, catalogRoute])]);
 export const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }

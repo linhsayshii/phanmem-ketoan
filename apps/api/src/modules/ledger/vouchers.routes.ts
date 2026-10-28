@@ -18,6 +18,7 @@ import { renderPdf } from '../reporting/print/pdf.js';
 import { renderVoucherHtml } from '../reporting/print/voucherHtml.js';
 import { assertSensitive } from '../reporting/ledgers.js';
 import { cashFlowCodes } from '../reporting/financial.js';
+import { assertNoSalaryLines, redactSalary, redactSalaryTotals } from '../payroll/redact.js';
 
 const idParam = z.object({ id: z.string().uuid() });
 // Sửa chứng từ đã ghi sổ: phải có diễn giải hoặc ít nhất một dòng cần sửa (thân {} hay chỉ { version } không đổi gì).
@@ -74,13 +75,14 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       const out = await S.listVouchers(trx, req.query);
       // phiếu kho: tổng tiền là giá trị tồn kho, che khi thiếu view_cost (không quét dòng từng phiếu)
       if (!req.auth!.sensitive.has('view_cost')) out.rows = out.rows.map((r) => (createsStockMoves(r.voucherType) ? { ...r, totalDebit: null as never } : r));
+      out.rows = await redactSalaryTotals(trx, req.auth!, out.rows); // chứng từ có dòng lương: tổng tiền che khi thiếu view_salary
       return out;
     }));
   app.get('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.view'), schema: { params: idParam } }, async (req) => app.withTenant(req, async (trx) => {
     await requireStockPerm(trx, req.auth!, req.params.id, 'stock_voucher.view');
     const v = await S.getVoucher(trx, req.params.id);
     await assertVoucherSensitive(trx, req.auth!, v);
-    return v;
+    return redactSalary(trx, req.auth!, v); // dòng lương (334, BH) che số tiền và nhân viên khi thiếu view_salary
   }));
 
   app.get('/api/vouchers/:id/print', { preHandler: app.requirePermission('voucher.print'), schema: { params: idParam, querystring: z.object({ format: z.enum(['html', 'pdf']).default('html'), form: z.string().default('default') }) } }, async (req, reply) => {
@@ -93,6 +95,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       const stockForm = form === '01-VT' || form === '02-VT';
       if (form !== undefined && !allowed.includes(form)) throw new AppError('PRINT_FORM_INVALID', `Mẫu in "${req.query.form}" không dùng được cho chứng từ loại ${v.voucherType}`, 400);
       if (stockForm) await requireStockPerm(trx, req.auth!, v.id, 'stock_voucher.view');
+      await assertNoSalaryLines(trx, req.auth!, v); // mẫu in cộng tiền theo dòng nên chứng từ có dòng lương không in được khi thiếu view_salary
       await assertVoucherSensitive(trx, req.auth!, v, { costOptional: stockForm }); // in không được lộ dòng công nợ, giá vốn mà GET chứng từ chặn (phiếu kho 01-VT, 02-VT chỉ bỏ cột giá trị khi thiếu view_cost)
       const t = await trx.selectFrom('tenant').selectAll().where('id', '=', req.auth!.tenantId!).executeTakeFirstOrThrow();
       // chế độ kế toán gắn với năm tài chính của chứng từ (một công ty có thể giữ nhiều chế độ)
@@ -131,7 +134,11 @@ const routes: FastifyPluginAsyncZod = async (app) => {
 
   app.put('/api/vouchers/:id', { preHandler: app.requirePermission('voucher.update'), schema: { params: idParam, body: z.union([S.voucherInput.extend({ version: z.number().int() }), metaBody]) } }, async (req) => {
     const { version, ...input } = req.body;
-    return app.withOverride(req, async (trx) => redactCost(trx, req.auth!, 'voucherType' in input ? await S.updateDraft(trx, req.params.id, version, input, req.auth!) : await S.updatePostedMeta(trx, req.params.id, version, input)));
+    return app.withOverride(req, async (trx) => {
+      // sửa cả bộ dòng (nháp) hoặc chiều của dòng (đã ghi sổ) trên bản che: ghi đè số lương, đổi nhân viên dòng 334; chỉ sửa diễn giải đầu chứng từ thì được
+      if ('voucherType' in input || input.lines?.length) await assertNoSalaryLines(trx, req.auth!, await S.getVoucher(trx, req.params.id));
+      return redactCost(trx, req.auth!, 'voucherType' in input ? await S.updateDraft(trx, req.params.id, version, input, req.auth!) : await S.updatePostedMeta(trx, req.params.id, version, input));
+    });
   });
 
   app.post('/api/vouchers/:id/post', { preHandler: app.requirePermission('voucher.post'), schema: { params: idParam } }, async (req) => {

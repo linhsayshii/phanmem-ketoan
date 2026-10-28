@@ -37,13 +37,14 @@ export function printShell(title: string, body: string): string {
 
 export function renderVoucherHtml(v: VoucherDto, c: CompanyInfo): string {
   const totalCredit = sum(v.lines.map((l) => l.credit)); // phiếu nháp có thể lệch: không lấy tổng Có theo tổng Nợ
+  const contracts = [...new Set(v.lines.map((l) => l.contractCode).filter(Boolean))].join(', ');
   const rows = v.lines.map((l) => `<tr><td>${l.lineNo}</td><td>${esc(l.description ?? v.description)}</td><td>${esc(l.accountCode)}</td><td>${esc(l.partyCode ?? '')}</td>
       <td class="num">${formatVnNumber(l.debit)}</td><td class="num">${formatVnNumber(l.credit)}</td></tr>`).join('');
   const body = `
     <div class="head"><div><b>${esc(c.name)}</b>${esc(c.address ?? '')}<br>MST: ${esc(c.taxCode ?? '')}</div><div style="text-align:right"><b>Mẫu số ${esc(c.formNo)}</b>${esc(c.issuedBy)}</div></div>
     <h1>PHIẾU KẾ TOÁN</h1>
     <div class="sub">Ngày ${formatVnDate(v.postingDate)} &nbsp;&nbsp; Số: ${esc(v.voucherNo ?? '(chưa cấp số)')}</div>
-    <p>Diễn giải: ${esc(v.description ?? '')}${v.partyName ? ` &nbsp;–&nbsp; Đối tượng: ${esc(v.partyName)}` : ''}</p>
+    <p>Diễn giải: ${esc(v.description ?? '')}${v.partyName ? ` &nbsp;–&nbsp; Đối tượng: ${esc(v.partyName)}` : ''}${contracts ? ` &nbsp;–&nbsp; Hợp đồng: ${esc(contracts)}` : ''}</p>
     <table class="grid"><thead><tr><th>STT</th><th>Diễn giải</th><th>Tài khoản</th><th>Đối tượng</th><th class="num">Số tiền Nợ</th><th class="num">Số tiền Có</th></tr></thead>
     <tbody>${rows}<tr><td colspan="4"><b>Cộng</b></td><td class="num"><b>${formatVnNumber(v.totalDebit)}</b></td><td class="num"><b>${formatVnNumber(totalCredit)}</b></td></tr></tbody></table>
     <p>Kèm theo: ……… chứng từ gốc.</p>

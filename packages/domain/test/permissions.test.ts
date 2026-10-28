@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { flagsForAccounts, PERMISSION_CODES, PERMISSIONS, sensitiveDenial, SENSITIVE_BY_SUBLEDGER } from '../src/index.js';
+import { flagsForAccounts, PERMISSION_CODES, PERMISSIONS, sensitiveDenial, SENSITIVE_BY_SUBLEDGER, SENSITIVE_FLAGS_ALL } from '../src/index.js';
 
 const GD2_CODES = [
   'settlement.view', 'settlement.create', 'settlement.delete', 'fx.run',
@@ -69,5 +69,26 @@ describe('quyền GĐ5', () => {
     expect([group('einvoice.issue'), group('inbound_invoice.view'), group('bank_feed.match'), group('api_key.manage'), group('cit.view'), group('signing.use')])
       .toEqual(['Hóa đơn điện tử', 'Hóa đơn điện tử', 'Ngân hàng', 'Hệ thống', 'Thuế', 'Hệ thống']);
     expect(new Set(PERMISSION_CODES).size).toBe(PERMISSION_CODES.length);
+  });
+});
+
+describe('quyền GĐ6 và cờ view_salary', () => {
+  const GD6 = ['payroll.view', 'payroll.create', 'payroll.update', 'payroll.delete', 'payroll.post', 'payroll.param', 'payroll.pay', 'payroll.export',
+    'attendance.view', 'attendance.create', 'attendance.update', 'attendance.delete', 'costing_obj.view', 'costing_obj.create', 'costing_obj.update', 'costing_obj.delete',
+    'cost_run.view', 'cost_run.run', 'contract_track.view', 'contract_track.run'];
+  it('có đủ mã mới, không trùng', () => {
+    for (const c of GD6) expect(PERMISSION_CODES, c).toContain(c);
+    expect(new Set(PERMISSION_CODES).size).toBe(PERMISSION_CODES.length);
+  });
+  it('view_salary theo cờ salary do API tính từ ánh xạ tài khoản lương của chế độ; mã trùng tên không tự bị che', () => {
+    const none = { sensitive: new Set<string>() };
+    for (const code of ['334', '3341', '3382', '3383', '3384', '3386']) expect(sensitiveDenial(none, { subledger_kind: null, code, salary: true }), code).toBe('Không có quyền xem lương');
+    // không có cờ salary (tài khoản 3386 của TT133 là ký quỹ, 3335 là thuế TNCN) thì không cần view_salary
+    for (const code of ['3381', '3386', '3387', '3335', '1111', '334']) expect(sensitiveDenial(none, { subledger_kind: null, code }), code).toBeNull();
+    expect(sensitiveDenial({ sensitive: new Set(['view_salary']) }, { subledger_kind: null, code: '334', salary: true })).toBeNull();
+    expect(flagsForAccounts([{ subledger_kind: null, code: '3383', salary: true }, { subledger_kind: 'payable', code: '331' }])).toEqual(['view_salary', 'view_payable']);
+  });
+  it('SENSITIVE_FLAGS_ALL gồm cả view_salary (sổ tổng hợp lộ dòng 334)', () => {
+    expect([...SENSITIVE_FLAGS_ALL].sort()).toEqual(['view_cost', 'view_payable', 'view_receivable', 'view_salary']);
   });
 });

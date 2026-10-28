@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseCoaCsv, splitCsvLine, type CoaTemplateRow, type Regime, type Side, type Source } from '@kt/domain';
+import { parseCoaCsv, splitCsvLine, type CoaTemplateRow, type PayrollAccountMap, type Regime, type Side, type Source } from '@kt/domain';
 
 const dataDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
 export const COA_REGIMES: Regime[] = ['TT133', 'TT200', 'TT99'];
@@ -97,6 +97,8 @@ export interface CitTemplateLine { code: string; label: string; section: string;
 export interface CitTemplate { form: '03/TNDN'; version: 'TT89'; source: string; lines: CitTemplateLine[]; notes: string[] }
 const taxStatus = (): Record<string, unknown> => { const p = dataPath('tax', 'status.json'); return existsSync(p) ? (JSON.parse(readFileSync(p, 'utf8')) as Record<string, unknown>) : {}; };
 export function isCitTemplateComplete(version: 'TT89'): boolean { return taxStatus()[`03TNDN_${version}`] === true && existsSync(dataPath('tax', '03tndn-tt89.json')); }
+// Mẫu 05/KK-TNCN, 05/QTT-TNCN (TT 89/2026 Phụ lục I): cổng status.json 05KK_TNCN_TT89, 05QTT_TNCN_TT89; chưa có tệp chỉ tiêu nên false thì API 409 TNCN_TEMPLATE_UNAVAILABLE.
+export function isTncnTemplateComplete(form: '05KK' | '05QTT'): boolean { return taxStatus()[`${form}_TNCN_TT89`] === true; }
 export function loadCitTemplate(version: 'TT89'): CitTemplate {
   if (!isCitTemplateComplete(version)) throw new Error('Chưa có mẫu tờ khai 03/TNDN theo TT 89/2026/TT-BTC đối chiếu văn bản gốc (status.json 03TNDN_TT89)');
   return JSON.parse(readFileSync(dataPath('tax', '03tndn-tt89.json'), 'utf8')) as CitTemplate;
@@ -118,3 +120,8 @@ export function loadTaxXmlFormat(id: string): TaxXmlFormatData { return JSON.par
 // Danh sách BIN ngân hàng công khai của VietQR (tải 2026-10-23), không phải văn bản NAPAS chính thức; xem data/banks/napas-bins.status.json.
 export interface NapasBin { bin: string; code: string; shortName: string; name: string }
 export function loadNapasBins(): NapasBin[] { return JSON.parse(readFileSync(dataPath('banks', 'napas-bins.json'), 'utf8')) as NapasBin[]; }
+
+// Tài khoản lương, bảo hiểm, thuế TNCN theo chế độ (data/payroll/accounts.json, đối chiếu data/coa/*.csv); chế độ chưa có trong tệp thì undefined.
+export function loadPayrollAccounts(regime: Regime): PayrollAccountMap | undefined {
+  return (JSON.parse(readFileSync(dataPath('payroll', 'accounts.json'), 'utf8')) as Partial<Record<string, PayrollAccountMap>>)[regime.toLowerCase()];
+}

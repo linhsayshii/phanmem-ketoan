@@ -96,3 +96,22 @@ Ba thay đổi:
 1. **`scheduleForMany`** (`schedule.ts`): `computeAmounts` nạp thẻ, biến động dừng/tiếp tục, phiên bản lịch hiện hành và dòng lịch bằng vài truy vấn theo lô, gọi `fn_asset_values_at` một lần cho cả kỳ (không còn một lần mỗi thẻ), quyết định trong bộ nhớ (hàm `decide` dùng chung với `scheduleFor` một thẻ) rồi chèn phiên bản mới và dòng lịch theo lô (`unnest`). Chạy kỳ không đổi từ 11,4 giây xuống 0,3 giây ở 600 thẻ. Kỳ đầu của mỗi thẻ vẫn phải dựng và lưu lịch cả đời thẻ (khoảng 180.000 dòng cho 3.000 thẻ: dựng khoảng 4 giây, chèn khoảng 4,5 giây).
 2. **Migration `0077_ghep_cap_tuyen_tinh.sql`**: `fn_build_pairs` nhánh n-n nối Nợ với Có bằng điều kiện giao đoạn nên so từng cặp (6.000 x 3.000 cặp); chứng từ KH 9.000 dòng mất khoảng 8,3 giây ở `post_voucher`. Bản mới cắt trục tại mọi điểm cuối đoạn rồi nối bằng số thứ tự đoạn: 0,3 giây, kết quả ghép và thứ tự không đổi.
 3. Bước còn lại đáng kể ở kỳ thường: tạo chứng từ 9.000 dòng khoảng 3 giây (`insertVoucher`, tra cứu và quy tắc từng dòng), chưa tối ưu.
+
+## Lương và giá thành (GĐ6, `pnpm -F @kt/api perf:payroll`)
+
+Máy đo: 4 CPU Intel Xeon 2,1 GHz, 15 GB RAM, PostgreSQL 16 cục bộ, Node 22. Máy đang dùng chung với agent khác (Task 15 chạy kiểm thử song song; tải trung bình 2,3 đến 3,9 trên 4 CPU trong lúc đo), nên số đo là cận trên; đo lại khi máy rảnh có thể thấp hơn.
+
+Dữ liệu: DB tạm, tất cả sinh bằng API. Lương: 2.000 nhân viên (3 bộ phận, lương 8 đến 47 triệu, tham số minh họa `payroll-20.json`), chấm công 22 ngày công của tháng 10/2026 (44.000 ô), cấu hình tài khoản chi phí theo bộ phận. Giá thành: 200 đối tượng sản phẩm (phương pháp giản đơn), 1 phiếu nhập thành phẩm 200 dòng, 500 phiếu kế toán x 20 dòng chi phí = 10.000 dòng trên 621, 622, 6272 (gắn đối tượng) và 6277 (chung, phân bổ theo nhân công trực tiếp); sinh dữ liệu lương khoảng 15 giây, giá thành khoảng 125 giây. Mỗi bước đo bằng một yêu cầu API; chạy `VACUUM ANALYZE` sau khi sinh dữ liệu.
+
+| Bước | Thời gian (giây) | Ghi chú |
+|---|---|---|
+| Tạo bảng lương | 0,1 | 2.000 nhân viên |
+| Tính lương | 4,3 | |
+| Hạch toán LU | 3,5 | một chứng từ, dòng theo bộ phận và theo nhân viên |
+| Chạy lại hạch toán (không đổi) | 4,1 | `unchanged`, không sinh chứng từ |
+| Thu thập chi phí | 0,1 | 10.000 dòng chi phí (cộng LU của lương), 201 nhóm |
+| Xem trước giá thành | 0,1 | 200 đối tượng |
+| Chạy giá thành (sinh GT) | 1,0 | |
+| Chạy lại giá thành (không đổi) | 0,1 | `unchanged` |
+
+Tiêu chí dưới 15 giây mỗi bước: đạt, không cần tối ưu mã. Nút cổ chai còn lại: tính lương (4,3 giây) và so khớp "chạy lại hạch toán" (4,1 giây, tính lại toàn bộ bảng để so chữ ký), cả hai tuyến tính theo số nhân viên (khoảng 2 ms mỗi nhân viên). Chưa đo bảng lương trên 2.000 nhân viên với cấu trúc công thức nhiều cột tùy chỉnh, và chưa đo lưới bảng lương ở giao diện (500 nhân viên x 40 cột).

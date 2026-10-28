@@ -40,7 +40,7 @@ test('Số dư đầu kỳ: nhập bằng bàn phím, ô TK ngân hàng chỉ d�
     await cell(0, 'accountCode').click(); await type('1121'); await page.keyboard.press('Enter');
     await expect.poll(editingCol).toBe('partyCode'); await page.keyboard.press('Enter');
     await expect.poll(editingCol).toBe('bankAccountNo'); await page.keyboard.type(accountNo); await page.keyboard.press('Enter');
-    await expect.poll(editingCol).toBe('currencyCode'); await page.keyboard.press('Enter');
+    for (const col of ['projectCode', 'contractCode', 'currencyCode']) { await expect.poll(editingCol).toBe(col); await page.keyboard.press('Enter'); } // Vụ việc, Hợp đồng (Task 13c)
     await expect.poll(editingCol).toBe('debit'); await type('5000000'); await page.keyboard.press('Tab');
     await expect.poll(editingCol).toBe('credit'); // Tab giống Enter
     for (const col of ['debitCurrency', 'creditCurrency', 'accountCode']) { await page.keyboard.press('Enter'); await expect.poll(editingCol).toBe(col); } // Enter ở ô cuối thêm dòng mới
@@ -48,7 +48,7 @@ test('Số dư đầu kỳ: nhập bằng bàn phím, ô TK ngân hàng chỉ d�
     // Dòng 2: 1111 (tiền mặt, không theo dõi ngân hàng). Đối tượng rồi nhảy thẳng sang Loại tiền, không dừng ở ô TK ngân hàng
     await expect(cell(1, 'accountCode')).toBeVisible(); await type('1111'); await page.keyboard.press('Enter');
     await expect.poll(editingCol).toBe('partyCode'); await page.keyboard.press('Enter');
-    await expect.poll(editingCol).toBe('currencyCode'); await page.keyboard.press('Enter');
+    for (const col of ['projectCode', 'contractCode', 'currencyCode']) { await expect.poll(editingCol).toBe(col); await page.keyboard.press('Enter'); } // Vụ việc, Hợp đồng (Task 13c)
     await expect.poll(editingCol).toBe('debit'); await type('1000000'); await page.keyboard.press('Enter');
     await expect.poll(editingCol).toBe('credit');
     for (const col of ['debitCurrency', 'creditCurrency', 'accountCode']) { await page.keyboard.press('Enter'); await expect.poll(editingCol).toBe(col); }
@@ -59,7 +59,7 @@ test('Số dư đầu kỳ: nhập bằng bàn phím, ô TK ngân hàng chỉ d�
     await expect.poll(editingCol).toBe('docNo'); await page.keyboard.type('HD-E2E-1'); await page.keyboard.press('Enter');
     await expect.poll(editingCol).toBe('docDate'); await page.keyboard.type('15/12/2025'); await page.keyboard.press('Enter');
     await expect.poll(editingCol).toBe('dueDate'); await page.keyboard.type('15/01/2026'); await page.keyboard.press('Enter');
-    await expect.poll(editingCol).toBe('currencyCode'); await page.keyboard.press('Enter');
+    for (const col of ['projectCode', 'contractCode', 'currencyCode']) { await expect.poll(editingCol).toBe(col); await page.keyboard.press('Enter'); } // Vụ việc, Hợp đồng (Task 13c)
     await expect.poll(editingCol).toBe('debit'); await type('2000000'); await page.keyboard.press('Enter');
     await expect.poll(editingCol).toBe('credit'); await page.keyboard.press('Escape');
     await expect(cell(2, 'docDate')).toHaveText('15/12/2025');

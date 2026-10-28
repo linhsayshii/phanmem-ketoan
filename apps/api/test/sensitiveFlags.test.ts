@@ -3,7 +3,7 @@ import { sql } from 'kysely';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 });
-let ctx: TestApp; let tenantId: string; let owner: string; let none: string; let costOnly: string;
+let ctx: TestApp; let tenantId: string; let owner: string; let none: string; let costOnly: string; let threeOld: string;
 const get = (url: string, c = owner) => ctx.app.inject({ method: 'GET', url, headers: { cookie: c } });
 const post = (url: string, payload: object, c = owner) => ctx.app.inject({ method: 'POST', url, headers: { cookie: c }, payload });
 const pkt = async (date: string, lines: object[]) => { const r = await post('/api/vouchers', { voucherType: 'PKT', postingDate: date, documentDate: date, description: `CT ${date}`, autoPost: true, lines }); expect(r.statusCode, r.body).toBe(201); };
@@ -15,7 +15,7 @@ async function userWith(roleCode: string, sensitiveFlags: string[]) {
   return `sid=${login.cookies.find((x) => x.name === 'sid')!.value}`;
 }
 const codes = async (qs: string, c: string) => { const r = await get(`/api/balances?${qs}`, c); expect(r.statusCode, r.body).toBe(200); return [...new Set((r.json().rows as { accountCode: string }[]).map((x) => x.accountCode))]; };
-const MSG = 'Cần quyền xem công nợ phải thu, phải trả và giá vốn để xem sổ tổng hợp';
+const MSG = 'Cần quyền xem công nợ phải thu, phải trả, giá vốn và lương để xem sổ tổng hợp';
 
 beforeAll(async () => {
   ctx = await createTestApp(); ({ cookie: owner, tenantId } = await bootstrapTenant(ctx, { code: `SF${Date.now()}` }));
@@ -28,6 +28,7 @@ beforeAll(async () => {
   await pkt('2026-01-13', [{ accountCode: '1111', debit: '900' }, { accountCode: '4111', credit: '900' }]);
   none = await userWith('ketoan_vien', []);
   costOnly = await userWith('ketoan_vien', ['view_cost']);
+  threeOld = await userWith('ketoan_vien', ['view_receivable', 'view_payable', 'view_cost']); // thiếu view_salary
 }, 60_000);
 afterAll(async () => { await ctx.close(); });
 
@@ -53,7 +54,7 @@ describe('quyền GĐ3 của công ty mới và cờ view_cost cho tài khoản 
 describe('cờ nhạy cảm bao phủ sổ tổng hợp và số dư', () => {
   const range = 'from=2026-01-01&to=2026-01-31';
   it('Nhật ký chung và Bảng cân đối số phát sinh: thiếu bất kỳ cờ nào là 403 (JSON và bản in); đủ cờ thì xem được', async () => {
-    for (const c of [none, costOnly]) {
+    for (const c of [none, costOnly, threeOld]) {
       for (const url of [`/api/reports/ledgers/general-journal?${range}`, `/api/reports/ledgers/general-journal?${range}&format=html`,
         `/api/reports/ledgers/trial-balance?${range}`, `/api/reports/ledgers/trial-balance?${range}&format=html`, `/api/reports/ledgers/trial-balance?${range}&format=xlsx`]) {
         const r = await get(url, c);
@@ -64,9 +65,10 @@ describe('cờ nhạy cảm bao phủ sổ tổng hợp và số dư', () => {
     expect((await get(`/api/reports/ledgers/trial-balance?${range}&format=html`)).statusCode).toBe(200);
     expect((await get(`/api/reports/ledgers/account?accountCode=1111&${range}`, none)).statusCode).toBe(200); // sổ tài khoản thường vẫn mở
   });
-  it('bộ sổ năm: Bảng cân đối số phát sinh cũng cần đủ ba cờ; báo cáo tài chính thì không', async () => {
+  it('bộ sổ năm: Bảng cân đối số phát sinh cũng cần đủ bốn cờ (ba cờ cũ thiếu view_salary là 403); báo cáo tài chính thì không', async () => {
     expect((await post('/api/print/book-set', { fiscalYear: 2026, include: ['trial'], format: 'xlsx' }, none)).statusCode).toBe(403);
     expect((await post('/api/print/book-set', { fiscalYear: 2026, include: ['B01', 'trial'], format: 'xlsx' }, costOnly)).statusCode).toBe(403);
+    expect((await post('/api/print/book-set', { fiscalYear: 2026, include: ['trial'], format: 'xlsx' }, threeOld)).statusCode).toBe(403);
     expect((await post('/api/print/book-set', { fiscalYear: 2026, include: ['trial'], format: 'xlsx' })).statusCode).toBe(200);
   });
   it('/api/balances bỏ dòng tài khoản bị che: 131 (phải thu), 331 (phải trả), 632 (giá vốn); đủ cờ thì thấy cả', async () => {

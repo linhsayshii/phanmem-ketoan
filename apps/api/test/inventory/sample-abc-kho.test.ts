@@ -11,6 +11,7 @@ const gd2 = JSON.parse(readFileSync(new URL('../../../../packages/db/src/seed/ex
 const gd3 = JSON.parse(readFileSync(new URL('../../../../packages/db/src/seed/expected-gd3-abc.json', import.meta.url), 'utf8'));
 // GĐ4 (tài sản, CCDC, khế ước) cộng thêm vào số dư các tài khoản, thay KTT quý 1 và thêm chứng từ MH, PXK, BN.
 const gd4 = JSON.parse(readFileSync(new URL('../../../../packages/db/src/seed/expected-gd4-abc.json', import.meta.url), 'utf8'));
+const gd6 = JSON.parse(readFileSync(new URL('../expected-gd6-abc.json', import.meta.url), 'utf8')); // GĐ6: giá thành SP-E nhập 155, thêm PNK, BN, GV
 
 let ctx: TestApp; let cookie: string; let tenantId: string;
 beforeAll(async () => {
@@ -29,7 +30,7 @@ describe('Bộ dữ liệu mẫu ABC có kho (GĐ3): bốn phương pháp giá v
     const by: Record<string, bigint> = {};
     for (const x of (await get('/api/balances?asOf=2026-12-31')).rows as { accountCode: string; debit: string; credit: string }[]) by[x.accountCode] = (by[x.accountCode] ?? 0n) + BigInt(x.debit) - BigInt(x.credit);
     for (const [code, d] of Object.entries(gd3.chenhLechSoDuCuoiNam as Record<string, string>))
-      expect((by[code] ?? 0n).toString(), code).toBe((BigInt(gd2.soDuCuoiNam[code] ?? '0') + BigInt(d) + BigInt(gd4.chenhLechSoDuCuoiNam[code] ?? '0')).toString());
+      expect((by[code] ?? 0n).toString(), code).toBe((BigInt(gd2.soDuCuoiNam[code] ?? '0') + BigInt(d) + BigInt(gd4.chenhLechSoDuCuoiNam[code] ?? '0') + BigInt(gd6.chenhLechSoDuCuoiNam[code] ?? '0')).toString());
   });
 
   it('nhập xuất tồn cả năm từng cặp hàng, kho (bình quân cuối kỳ, bình quân tức thời, FIFO, đích danh)', async () => {
@@ -46,7 +47,7 @@ describe('Bộ dữ liệu mẫu ABC có kho (GĐ3): bốn phương pháp giá v
     const rl = await ctx.app.inject({ method: 'POST', url: '/api/report-defs/B01/reload', headers: { cookie }, payload: { regime: 'TT133' } });
     expect(rl.statusCode, rl.body).toBe(200);
     const r = (await get('/api/reports/financial/B01?from=2026-01-01&to=2026-12-31')).rows as { lineCode: string; current: string }[];
-    expect(r.find((x) => x.lineCode === '141')!.current).toBe(gd3.bangCanDoiKho.B01_141);
+    expect(r.find((x) => x.lineCode === '141')!.current).toBe(gd6.bangCanDoiKho.B01_141);
   });
 
   it('thuế GTGT quý 1: KTT 31/03 theo tính tay; 1331 và 33311 cuối năm về 0 như GĐ2', async () => {
@@ -63,12 +64,12 @@ describe('Bộ dữ liệu mẫu ABC có kho (GĐ3): bốn phương pháp giá v
       FROM warehouse w WHERE w.tenant_id = ${tenantId}::uuid`.execute(ctx.t.admin)).rows.filter((r) => r.layers !== r.ledger);
     expect(drift).toEqual([]);
     const gv = (await sql<{ s: string; n: number }>`SELECT state AS s, count(*)::int AS n FROM voucher WHERE tenant_id = ${tenantId}::uuid AND voucher_type = 'GV' GROUP BY 1 ORDER BY 1`.execute(ctx.t.admin)).rows;
-    expect(Object.fromEntries(gv.map((x) => [x.s, x.n]))).toEqual({ posted: gd3.soChungTuThem.gv.total - gd3.soChungTuThem.gv.reversed, reversed: gd3.soChungTuThem.gv.reversed });
+    expect(Object.fromEntries(gv.map((x) => [x.s, x.n]))).toEqual({ posted: gd3.soChungTuThem.gv.total + gd6.soChungTuThem.gv.total - gd3.soChungTuThem.gv.reversed, reversed: gd3.soChungTuThem.gv.reversed });
   });
 
   it('số chứng từ kho theo loại; bất biến cân đối cuối quý 1 và cuối năm', async () => {
     const byType = Object.fromEntries((await sql<{ t: string; n: number }>`SELECT voucher_type AS t, count(*)::int AS n FROM voucher WHERE tenant_id = ${tenantId}::uuid AND voucher_type = ANY(${Object.keys(gd3.soChungTuThem.counts)}::text[]) GROUP BY 1`.execute(ctx.t.admin)).rows.map((x) => [x.t, x.n]));
-    for (const [t, n] of Object.entries(gd3.soChungTuThem.counts as Record<string, number>)) expect(byType[t], t).toBe((gd2.soChungTu.counts[t] ?? 0) + n + (gd4.soChungTuThem.counts[t] ?? 0));
+    for (const [t, n] of Object.entries(gd3.soChungTuThem.counts as Record<string, number>)) expect(byType[t], t).toBe((gd2.soChungTu.counts[t] ?? 0) + n + (gd4.soChungTuThem.counts[t] ?? 0) + (gd6.soChungTuThem.counts[t] ?? 0));
     for (const d of ['2026-01-31', '2026-02-28', '2026-03-31', '2026-06-30', '2026-12-31']) await assertBalanceSheet(ctx, cookie, d);
   });
 });

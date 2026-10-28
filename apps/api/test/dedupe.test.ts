@@ -155,6 +155,13 @@ describe('khử trùng chứng từ', () => {
     expect(JSON.stringify(mine)).not.toMatch(/Nhà cung cấp/);
   });
 
+  it('thiếu view_salary: cặp trên 3385 (BHTN của TT133) bị ẩn, cặp trên 3386 (ký quỹ của TT133, không thuộc nhóm lương) vẫn thấy', async () => {
+    for (const code of ['3385', '3386']) { await mk('PC', '2026-08-01', code === '3385' ? '14001' : '14002', { party: null, debit: code }); await mk('BN', '2026-08-01', code === '3385' ? '14001' : '14002', { party: null, debit: code }); }
+    const mine = (await raw(undefined, truong)).pairs;
+    expect(pairOf(mine, '14001')).toBeUndefined(); expect(pairOf(mine, '14002')).toBeDefined();
+    expect(pairOf(await dups(), '14001')).toBeDefined(); // admin có đủ cờ
+  });
+
   it('cùng khóa có bên: ghi nhận công nợ rồi thanh toán không phải trùng; hai bút toán thanh toán giống nhau thì là trùng', async () => {
     const pkt = async (date: string, amount: string, lines: { accountCode: string; debit: string; credit: string }[]) => {
       const r = await call('POST', '/api/vouchers', { voucherType: 'PKT', postingDate: date, documentDate: date, description: `PKT ${amount}`, partyCode: 'NCC2', autoPost: true,
@@ -174,7 +181,7 @@ describe('khử trùng chứng từ', () => {
 
   it('trần số cặp: lấy thêm một dòng để biết bị cắt; không bị cắt thì truncated = false', async () => {
     for (const amount of ['13001', '13002', '13003']) { await mk('PC', '2026-07-01', amount); await mk('BN', '2026-07-01', amount); }
-    const run = (max: number) => ctx.t.admin.transaction().execute((trx) => findDuplicates(trx, tenantId, { sensitive: new Set(['view_receivable', 'view_payable', 'view_cost']) }, { from: '2026-01-01', to: '2026-12-31' }, max));
+    const run = (max: number) => ctx.t.admin.transaction().execute((trx) => findDuplicates(trx, tenantId, { sensitive: new Set(['view_receivable', 'view_payable', 'view_cost', 'view_salary']) }, { from: '2026-01-01', to: '2026-12-31' }, max));
     const all = await run(1000);
     expect(all.truncated).toBe(false); expect(all.pairs.length).toBeGreaterThanOrEqual(3);
     const cut = await run(2);

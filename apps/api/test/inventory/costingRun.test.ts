@@ -389,3 +389,69 @@ describe('tính giá vốn nhiều kỳ, đảo, phạm vi hẹp, tồn âm', ()
     expect(await t.drift()).toEqual([]);
   }, 60_000);
 });
+
+describe('chứng từ giá vốn giữ chiều phân tích của dòng gốc (GĐ6 D6)', () => {
+  it('chênh giá vốn ghi cùng bộ phận, vụ việc, khoản mục, đối tượng THCP của dòng 632 gốc; Σ theo chiều = giá vốn gán; chạy lại không đổi; đổi chiều dòng gốc thì GV sinh lại', async () => {
+    const t = await tenant();
+    await t.wh('K1', 'avg_period'); await t.item('H1');
+    await t.cat('project', { code: 'VV1', name: 'Vụ việc 1' }); await t.cat('project', { code: 'VV2', name: 'Vụ việc 2' });
+    await t.cat('department', { code: 'PX1', name: 'Phân xưởng 1' }); await t.cat('cost_item', { code: 'KM1', name: 'Khoản mục 1' });
+    expect((await t.call('POST', '/api/costing/objects', { code: 'DT1', name: 'Đối tượng 1', kind: 'project', projectCode: 'VV1' })).statusCode).toBe(201);
+    // Gán chiều cho dòng 632 của phiếu xuất đã ghi sổ (sửa chiều sau ghi sổ).
+    const dims = async (id: string, d: object) => {
+      const v = (await t.call('GET', `/api/vouchers/${id}`)).json() as { version: number; lines: { lineNo: number; accountCode: string }[] };
+      const r = await t.call('PUT', `/api/vouchers/${id}`, { version: v.version, lines: [{ lineNo: v.lines.find((l) => l.accountCode === '632')!.lineNo, ...d }] });
+      expect(r.statusCode, r.body).toBe(200);
+    };
+    await t.pnk('2026-01-02', 'K1', [{ itemCode: 'H1', quantity: '100', unitPrice: '10' }]);
+    const x1 = await t.pxk('2026-01-10', 'K1', [{ itemCode: 'H1', quantity: '60' }]);
+    await t.pnk('2026-01-15', 'K1', [{ itemCode: 'H1', quantity: '50', unitPrice: '12' }]);
+    const x2 = await t.pxk('2026-01-20', 'K1', [{ itemCode: 'H1', quantity: '70' }]);
+    await dims(x1.id, { projectCode: 'VV1', costObjectCode: 'DT1', departmentCode: 'PX1', costItemCode: 'KM1' });
+    await dims(x2.id, { projectCode: 'VV2' });
+    const byDim = async () => (await sql<{ k: string; n: string }>`SELECT concat_ws('/', d.code, p.code, ci.code, co.code) AS k, sum(l.debit - l.credit)::text AS n
+      FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id LEFT JOIN department d ON d.id = l.department_id LEFT JOIN project p ON p.id = l.project_id
+        LEFT JOIN cost_item ci ON ci.id = l.cost_item_id LEFT JOIN cost_object co ON co.id = l.cost_object_id
+      WHERE v.tenant_id = ${t.tenantId}::uuid AND v.state IN ('posted','reversed') AND a.code = '632' GROUP BY 1 HAVING sum(l.debit - l.credit) <> 0 ORDER BY 1`.execute(ctx.t.admin)).rows;
+    const r1 = await t.runOk({ warehouseCode: 'K1' });
+    expect(r1.voucherIds).toHaveLength(1);
+    // bình quân cuối kỳ 1.600 / 150: xuất 60 = 640, xuất 70 = 747 (Σ 1.387)
+    expect(await byDim()).toEqual([{ k: 'PX1/VV1/KM1/DT1', n: '640' }, { k: 'VV2', n: '747' }]);
+    // chỉ xuất 60 có chênh (600 → 640); dòng 156 của GV không mang chiều của dòng 632
+    const gvLines = (await t.call('GET', `/api/vouchers/${r1.voucherIds[0]}`)).json().lines as { accountCode: string; projectCode: string | null; costObjectCode: string | null }[];
+    expect(gvLines.filter((l) => l.accountCode === '632').map((l) => [l.projectCode, l.costObjectCode]).sort()).toEqual([['VV1', 'DT1']]);
+    expect(gvLines.filter((l) => l.accountCode === '156').every((l) => l.projectCode === null && l.costObjectCode === null)).toBe(true);
+    expect(await t.bal('632', 'K1')).toBe('1387'); expect(await t.drift()).toEqual([]);
+
+    const r2 = await t.runOk({ warehouseCode: 'K1' });
+    expect(r2.unchanged).toBe(true); expect(r2.voucherIds).toEqual([]); expect((await t.gvs()).length).toBe(1);
+
+    await dims(x1.id, { projectCode: 'VV2', costObjectCode: null });
+    const r3 = await t.runOk({ warehouseCode: 'K1' });
+    expect(r3.unchanged).toBe(false); expect(r3.voucherIds).toHaveLength(1);
+    expect(await byDim()).toEqual([{ k: 'PX1/VV2/KM1', n: '640' }, { k: 'VV2', n: '747' }]);
+    expect(await t.bal('632', 'K1')).toBe('1387'); expect(await t.drift()).toEqual([]);
+  }, 60_000);
+
+  it('hóa đơn bán hai dòng cùng hàng, cùng kho: dòng hàng thứ k nhận chiều của dòng 632 thứ k', async () => {
+    const t = await tenant();
+    await t.wh('K1', 'avg_period'); await t.cat('item', { code: 'H1', name: 'Hàng H1', base_uom_code: 'CAI', kind: 'goods', revenue_account_code: '5111' });
+    await t.cat('party', { code: 'KH1', name: 'Khách 1', is_customer: true });
+    await t.cat('project', { code: 'VV1', name: 'Vụ việc 1' }); await t.cat('project', { code: 'VV2', name: 'Vụ việc 2' });
+    await t.pnk('2026-01-02', 'K1', [{ itemCode: 'H1', quantity: '100', unitPrice: '10' }]);
+    const sl = (quantity: string) => ({ itemCode: 'H1', uomCode: 'CAI', warehouseCode: 'K1', quantity, unitPrice: '20', amountCurrency: String(Number(quantity) * 20), taxCodes: ['V10'] });
+    const bh = await t.call('POST', '/api/invoices', { voucherType: 'BH', postingDate: '2026-01-10', documentDate: '2026-01-10', partyCode: 'KH1', autoPost: true, items: [sl('20'), sl('40')],
+      invoice: { serial: 'C26TBB', invoiceNo: '1', invoiceDate: '2026-01-10', invoiceGroupCode: '10' } });
+    expect(bh.statusCode, bh.body).toBe(201);
+    const v = (await t.call('GET', `/api/vouchers/${bh.json().id}`)).json() as { version: number; lines: { lineNo: number; accountCode: string; debit: string }[] };
+    const cogs = v.lines.filter((l) => l.accountCode === '632');
+    expect(cogs.map((l) => l.debit)).toEqual(['200', '400']);
+    expect((await t.call('PUT', `/api/vouchers/${bh.json().id}`, { version: v.version, lines: [{ lineNo: cogs[0]!.lineNo, projectCode: 'VV1' }, { lineNo: cogs[1]!.lineNo, projectCode: 'VV2' }] })).statusCode).toBe(200);
+    await t.pnk('2026-01-15', 'K1', [{ itemCode: 'H1', quantity: '50', unitPrice: '16' }]);
+    await t.runOk({ warehouseCode: 'K1' });
+    // bình quân cuối kỳ 1.800 / 150 = 12: dòng 20 → 240, dòng 40 → 480
+    const r = (await sql<{ p: string; n: string }>`SELECT p.code AS p, sum(l.debit - l.credit)::text AS n FROM voucher_line l JOIN voucher vv ON vv.id = l.voucher_id
+      JOIN account a ON a.id = l.account_id JOIN project p ON p.id = l.project_id WHERE vv.tenant_id = ${t.tenantId}::uuid AND vv.state IN ('posted','reversed') AND a.code = '632' GROUP BY 1 ORDER BY 1`.execute(ctx.t.admin)).rows;
+    expect(r).toEqual([{ p: 'VV1', n: '240' }, { p: 'VV2', n: '480' }]);
+  }, 60_000);
+});

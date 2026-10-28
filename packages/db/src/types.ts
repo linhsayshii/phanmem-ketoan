@@ -108,6 +108,7 @@ export interface InvoiceGroupTable {
 }
 export interface CostItemTable {
   id: Generated<number>; tenant_id: string; code: string; name: string; parent_id: number | null; default_account_code: string | null; is_active: Generated<boolean>;
+  cost_element: 'material' | 'labor' | 'overhead' | null; // 0103
 }
 export interface ProjectTable {
   id: Generated<number>; tenant_id: string; code: string; name: string; parent_id: number | null; party_id: string | null;
@@ -133,6 +134,7 @@ export interface StockMoveTable {
 export interface StockCostLayerTable {
   id: Generated<number>; tenant_id: string; move_id: number; item_id: number; warehouse_id: number; lot_no: string | null; kind: string; posting_date: DateOnly;
   qty: Numeric; unit_cost: Numeric; value: Numeric; remaining_qty: Numeric; remaining_value: Numeric; voucher_id: Generated<string | null>; landed: Generated<boolean>;
+  cost_run_id: Generated<number | null>; // lớp giá nhập thành phẩm do chạy giá thành sinh (0106)
 }
 // Chi phí mua hàng (CPM) phân bổ cho dòng nhập (dòng PNK, dòng MH nhập kho cùng hóa đơn).
 export interface LandedCostAllocTable { id: Generated<number>; tenant_id: string; voucher_id: string; receipt_line_id: number | null; receipt_voucher_id: string; receipt_line_no: number; amount: Numeric; basis: string }
@@ -160,6 +162,39 @@ export interface VoucherTable {
   person_name: string | null; person_address: string | null; attachments_count: number | null;
   bank_account_id: number | null; counter_bank_account_id: number | null; party_bank_account_id: string | null; due_date: DateOnly | null; purpose: string | null;
   day_order: Generated<number>; stock_kind: string | null; receipt_state: string | null;
+}
+// Đối tượng tập hợp chi phí (0097): đúng một tham chiếu theo loại.
+export interface CostObjectTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; kind: 'product' | 'project' | 'order' | 'contract';
+  item_id: number | null; project_id: number | null; order_id: string | null; contract_id: number | null; method: string | null; unit: string | null; is_active: Generated<boolean>;
+}
+// 0103: định mức NVL theo sản phẩm (item_id) hoặc đối tượng tập hợp chi phí.
+export interface CostNormTable {
+  id: Generated<number>; tenant_id: string; item_id: number | null; cost_object_id: number | null; valid_from: DateOnly; valid_to: DateOnly | null; note: string | null;
+  created_at: Generated<string>; updated_at: Generated<string>;
+}
+export interface CostNormLineTable { id: Generated<number>; tenant_id: string; norm_id: number; line_no: number; item_id: number; quantity: Numeric; loss_percent: NumericDefault; note: string | null }
+export interface CostRunTable {
+  id: Generated<number>; tenant_id: string; year: number; month: number; status: string; regime: string; params: ColumnType<unknown, string, string>; input_hash: string;
+  voucher_id: string | null; warnings: ColumnType<unknown, string | undefined, string>; run_by: Generated<string | null>; run_at: Timestamp;
+}
+// 0108: phân bổ chi phí chung vào vụ việc (alloc, PB) và kết chuyển giá vốn vụ việc 154 → 632 (cogs, GT).
+export interface ProjectAllocRunTable {
+  id: Generated<number>; tenant_id: string; kind: string; year: number; month: number; status: string; regime: string; params: ColumnType<unknown, string, string>; input_hash: string;
+  result: ColumnType<unknown, string | undefined, string>; voucher_id: string | null; warnings: ColumnType<unknown, string | undefined, string>; run_by: Generated<string | null>; run_at: Timestamp;
+}
+export interface CostRunObjectTable {
+  id: Generated<number>; tenant_id: string; run_id: number; cost_object_id: number; method: string; wip_method: string;
+  completion_material: Numeric | null; completion_labor: Numeric | null; completion_overhead: Numeric | null; completed: boolean | null;
+  overhead_basis: NumericDefault; allocated_overhead: NumericDefault;
+  opening_material: Numeric; opening_labor: Numeric; opening_overhead: Numeric; incurred_material: Numeric; incurred_labor: Numeric; incurred_overhead: Numeric;
+  closing_material: Numeric; closing_labor: Numeric; closing_overhead: Numeric; cost_material: Numeric; cost_labor: Numeric; cost_overhead: Numeric; total_cost: Numeric;
+  completed_qty: NumericDefault; wip_qty: NumericDefault; unit_cost: Numeric | null;
+}
+export interface CostRunOutputTable {
+  id: Generated<number>; tenant_id: string; run_id: number; run_object_id: number; line_no: number; item_id: number | null; qty: Numeric; wip_qty: NumericDefault; coefficient: Numeric | null;
+  standard_material: Numeric | null; standard_labor: Numeric | null; standard_overhead: Numeric | null;
+  cost_material: Numeric; cost_labor: Numeric; cost_overhead: Numeric; total: Numeric; unit_cost: Numeric;
 }
 export interface ContractTable { id: Generated<number>; tenant_id: string; code: string; name: string; party_id: string | null; kind: string }
 export interface AssetCategoryTable {
@@ -204,7 +239,7 @@ export interface VoucherLineTable {
   currency_code: Generated<string>; fx_rate: Numeric | null; amount_currency: NumericDefault;
   debit: NumericDefault; credit: NumericDefault; balance: Generated<string>;
   party_id: string | null; item_id: number | null; warehouse_id: number | null; department_id: number | null; project_id: number | null;
-  cost_item_id: number | null; contract_id: number | null; employee_id: number | null; asset_id: number | null;
+  cost_item_id: number | null; contract_id: number | null; employee_id: number | null; asset_id: number | null; cost_object_id: number | null; // 0097
   // jsonb NOT NULL DEFAULT '{}': Generated<JSONColumnType<...>> không bung được kiểu lồng nên khai báo thẳng ColumnType.
   extra_dims: ColumnType<Record<string, unknown>, string | undefined, string>; description: string | null; due_date: DateOnly | null; bank_account_id: number | null;
   cash_flow_code: string | null; // mã chỉ tiêu B03 (dòng tiền), 0066
@@ -227,7 +262,8 @@ export interface OpeningBalanceTable {
   id: Generated<number>; tenant_id: string; fiscal_year: number; account_id: number; party_id: string | null; bank_account_id: number | null; currency_code: Generated<string>;
   debit: NumericDefault; credit: NumericDefault; debit_currency: NumericDefault; credit_currency: NumericDefault;
   doc_no: string | null; doc_date: DateOnly | null; due_date: DateOnly | null; // số dư công nợ theo từng hóa đơn
-  contract_id: number | null; // khế ước vay (TK 341x, 335)
+  contract_id: number | null; // khế ước vay (TK 341x, 335); hợp đồng bán/mua (0108)
+  project_id: number | null; // vụ việc (0108)
 }
 export interface OpeningStockTable {
   id: Generated<number>; tenant_id: string; fiscal_year: number; item_id: number; warehouse_id: number; lot_no: Generated<string>; expiry_date: DateOnly | null; quantity: Numeric; value: NumericDefault;
@@ -362,6 +398,61 @@ export interface InboundInvoiceLineTable {
   quantity: Numeric | null; unit_price: Numeric | null; discount_amount: Numeric | null; amount: Numeric | null; tax_rate: string | null;
 }
 
+export interface PayrollParamTable {
+  id: Generated<number>; tenant_id: string; code: string; valid_from: DateOnly; valid_to: DateOnly | null; value: JSONColumnType<unknown>; source: string;
+  created_at: Generated<Timestamp>; updated_at: Generated<Timestamp>;
+}
+export interface EmployeePayrollTable {
+  id: Generated<number>; tenant_id: string; employee_id: number; pay_method: Generated<string>;
+  bank_code: string | null; bank_name: string | null; bank_account_no: string | null; bank_account_name: string | null;
+  tax_residency: Generated<string>; contract_type: Generated<string>; start_date: DateOnly | null; end_date: DateOnly | null; region: string | null; si_no: string | null;
+  si_participates: Generated<boolean>; hi_participates: Generated<boolean>; ui_participates: Generated<boolean>; occupational_participates: Generated<boolean>;
+  si_salary: Numeric | null; union_employer: Generated<boolean>; union_member: Generated<boolean>; pit_authorized: Generated<boolean>;
+  default_project_id: number | null; note: string | null; created_at: Generated<Timestamp>; updated_at: Generated<Timestamp>;
+}
+export interface EmployeeAllowanceTable {
+  id: Generated<number>; tenant_id: string; employee_id: number; code: string; name: string; amount: Numeric;
+  taxable: Generated<boolean>; si_base: Generated<boolean>; valid_from: DateOnly | null; valid_to: DateOnly | null;
+}
+export interface EmployeeSalaryHistoryTable {
+  id: Generated<number>; tenant_id: string; employee_id: number; valid_from: DateOnly; monthly_salary: Numeric; note: string | null; created_at: Generated<Timestamp>;
+}
+export interface EmployeeDependentTable {
+  id: Generated<number>; tenant_id: string; employee_id: number; name: string; relationship: string; tax_code: string | null; id_number: string | null;
+  birth_date: DateOnly | null; from_month: string; to_month: string | null; note: string | null;
+}
+export interface EmployeeCostSplitTable { id: Generated<number>; tenant_id: string; employee_id: number; project_id: number; pct: Numeric }
+export interface DepartmentCostAccountTable {
+  id: Generated<number>; tenant_id: string; department_id: number; kind: string; role: string | null; account_code: string | null; cost_item_id: number | null; cost_object_id: number | null;
+}
+export interface AttendanceSheetTable { id: Generated<number>; tenant_id: string; year: number; month: number; department_id: number | null; created_at: Generated<Timestamp> }
+export interface AttendanceEntryTable { id: Generated<number>; tenant_id: string; sheet_id: number; employee_id: number; work_date: DateOnly; kind: string; qty: Numeric }
+export interface PayrollStructureTable {
+  id: Generated<number>; tenant_id: string; code: string; name: string; proration: Generated<string>; columns: JSONColumnType<unknown>; is_default: Generated<boolean>;
+  parent_id: number | null; note: string | null; created_by: Generated<string | null>; created_at: Generated<Timestamp>; updated_at: Generated<Timestamp>;
+}
+export interface PayrollRunTable {
+  id: Generated<number>; tenant_id: string; year: number; month: number; kind: Generated<string>; status: Generated<string>; name: string; department_id: number | null; structure_id: number;
+  input_hash: string | null; calculated_at: Timestamp | null; warnings: ColumnType<unknown, string | undefined, string>; voucher_id: string | null; note: string | null;
+  cost_hash: string | null; // chữ ký cấu hình hạch toán LU (0111, #974)
+  created_by: Generated<string | null>; created_at: Generated<Timestamp>; updated_at: Generated<Timestamp>;
+}
+export interface PayrollLineTable {
+  id: Generated<number>; tenant_id: string; run_id: number; employee_id: number; year: Generated<number>; month: Generated<number>; kind: Generated<string>; run_status: Generated<string>; // chép từ payroll_run bằng trigger
+  gross: NumericDefault; si_emp: NumericDefault; si_er: NumericDefault; pit: NumericDefault; net: NumericDefault; warnings: ColumnType<unknown, string | undefined, string>; input_hash: string | null;
+}
+export interface PayrollRunVoucherTable {
+  id: Generated<number>; tenant_id: string; run_id: number; kind: string; voucher_id: string; lu_voucher_id: string | null; created_by: Generated<string | null>; created_at: Generated<Timestamp>;
+}
+export interface PayrollPaymentFormatTable {
+  id: Generated<number>; tenant_id: string; name: string; file_type: string; delimiter: Generated<string>; utf8_bom: Generated<boolean>; has_header: Generated<boolean>; ascii_only: Generated<boolean>;
+  content_template: Generated<string>; columns: ColumnType<unknown, string, string>; created_by: Generated<string | null>; created_at: Generated<Timestamp>; updated_at: Generated<Timestamp>;
+}
+export interface PayrollPaymentBatchTable {
+  id: Generated<number>; tenant_id: string; run_id: number; format_id: number; bank_account_id: number | null; voucher_id: string | null; file_name: string; content_type: string; file_content: Buffer;
+  total: string; count: number; warnings: ColumnType<unknown, string | undefined, string>; created_by: Generated<string | null>; created_at: Generated<Timestamp>;
+}
+export interface PayrollLineValueTable { id: Generated<number>; tenant_id: string; line_id: number; column_code: string; value: string; manual: Generated<boolean> }
 export interface ApiKeyTable {
   id: Generated<string>; tenant_id: string; user_id: string; name: string; prefix: string; key_hash: string; scopes: string[]; default_warehouse_id: number | null;
   post_sales: Generated<boolean>; expires_at: Timestamp | null; revoked_at: Timestamp | null; last_used_at: Timestamp | null; created_at: Generated<Timestamp>;
@@ -502,6 +593,29 @@ export interface Database {
   inbound_invoice_line: InboundInvoiceLineTable;
   inbound_item_map: InboundItemMapTable;
   api_key: ApiKeyTable;
+  payroll_param: PayrollParamTable;
+  employee_payroll: EmployeePayrollTable;
+  employee_allowance: EmployeeAllowanceTable;
+  employee_salary_history: EmployeeSalaryHistoryTable;
+  employee_dependent: EmployeeDependentTable;
+  employee_cost_split: EmployeeCostSplitTable;
+  department_cost_account: DepartmentCostAccountTable;
+  attendance_sheet: AttendanceSheetTable;
+  attendance_entry: AttendanceEntryTable;
+  payroll_structure: PayrollStructureTable;
+  payroll_run: PayrollRunTable;
+  payroll_line: PayrollLineTable;
+  payroll_line_value: PayrollLineValueTable;
+  payroll_run_voucher: PayrollRunVoucherTable;
+  payroll_payment_format: PayrollPaymentFormatTable;
+  payroll_payment_batch: PayrollPaymentBatchTable;
+  cost_object: CostObjectTable;
+  cost_norm: CostNormTable;
+  cost_norm_line: CostNormLineTable;
+  cost_run: CostRunTable;
+  cost_run_object: CostRunObjectTable;
+  cost_run_output: CostRunOutputTable;
+  project_alloc_run: ProjectAllocRunTable;
   bank_feed: BankFeedTable;
   bank_transaction: BankTransactionTable;
   bank_webhook_log: BankWebhookLogTable;

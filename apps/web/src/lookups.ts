@@ -67,11 +67,19 @@ export const assetFetcher = (kind?: 'fixed' | 'tool' | 'prepaid') => async (q: s
   return r.ok ? ((await r.json()) as LookupRow[]).map(({ id, code, name }) => ({ id, code, name })) : [];
 };
 export const assetPick = assetFetcher();
-// Cột "Khế ước" của dòng chứng từ: TK vay 341x và lãi vay phải trả 335 (khế ước vay).
-// shortcut: nhận diện theo đầu số tài khoản và chỉ tra khế ước vay; thêm hợp đồng bán/mua khi có phân hệ hợp đồng.
+// Cột "Hợp đồng/Khế ước" của dòng chứng từ: dòng TK vay 341x, lãi vay phải trả 335 tra khế ước vay; dòng khác tra hợp đồng bán/mua (GĐ6 Task 13a).
+// shortcut: nhận diện TK vay theo đầu số tài khoản; đổi khi có TK vay đặt ngoài 341/335.
 export const isContractAccount = (code: string | undefined | null): boolean => /^(341|335)/.test(code ?? '');
-export const contractPick = async (q: string, signal: AbortSignal): Promise<LookupRow[]> => {
-  const r = await fetch(`/api/lookups/contracts?q=${encodeURIComponent(q)}&size=50&kind=loan`, { credentials: 'include', signal });
+export const contractFetcher = (kind?: 'sale' | 'purchase' | 'loan') => async (q: string, signal: AbortSignal): Promise<LookupRow[]> => {
+  const r = await fetch(`/api/lookups/contracts?q=${encodeURIComponent(q)}&size=50${kind ? `&kind=${kind}` : ''}`, { credentials: 'include', signal });
+  return r.ok ? ((await r.json()) as (LookupRow & { kind: string })[]).filter((c) => kind || c.kind !== 'loan').map(({ id, code, name }) => ({ id, code, name })) : [];
+};
+export const contractPick = contractFetcher('loan');
+// Cột "Đối tượng THCP" (đối tượng tập hợp chi phí, giá thành) của dòng chứng từ: hiện ở dòng TK chi phí sản xuất 621/622/627 và 154 (TT133 ghi thẳng 154),
+// hoặc mọi dòng khi công ty bật cài đặt costing_enabled. F4 tra đối tượng đang dùng (/api/lookups/cost-objects, quyền voucher.view).
+export const isCostAccount = (code: string | undefined | null): boolean => /^(62[127]|154)/.test(code ?? '');
+export const costObjectPick = async (q: string, signal: AbortSignal): Promise<LookupRow[]> => {
+  const r = await fetch(`/api/lookups/cost-objects?q=${encodeURIComponent(q)}&size=50`, { credentials: 'include', signal });
   return r.ok ? ((await r.json()) as LookupRow[]).map(({ id, code, name }) => ({ id, code, name })) : [];
 };
 // Loại tài sản của phân hệ tài sản cho F4.

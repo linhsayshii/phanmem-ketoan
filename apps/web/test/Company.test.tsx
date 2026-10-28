@@ -35,4 +35,13 @@ describe('Thông tin công ty: tùy chọn hệ thống', () => {
     await userEvent.click(saves[saves.length - 1]!);
     await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/settings', expect.objectContaining({ method: 'PUT', json: expect.objectContaining({ tax_code_lookup: 'vietqr' }) })));
   });
+
+  it('khai giờ chuẩn mỗi ngày; để trống ngày công chuẩn gửi null (không gửi chuỗi rỗng)', async () => {
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><CompanyPage /></QueryClientProvider>);
+    await userEvent.click(await screen.findByRole('tab', { name: 'Tùy chọn hệ thống' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Số giờ làm việc chuẩn mỗi ngày' }), '8');
+    const saves = screen.getAllByRole('button', { name: 'Lưu' });
+    await userEvent.click(saves[saves.length - 1]!);
+    await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/settings', expect.objectContaining({ method: 'PUT', json: expect.objectContaining({ payroll_standard_hours_per_day: '8', payroll_standard_days_per_month: null }) })));
+  });
 });

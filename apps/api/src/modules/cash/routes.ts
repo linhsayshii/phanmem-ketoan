@@ -95,7 +95,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     if (q.format !== 'json' && !auth.permissions.has('report.print')) throw new AppError('FORBIDDEN', 'Thiếu quyền report.print', 403);
     // Tài liệu in dựng trong giao dịch; PDF/Excel dựng ngoài giao dịch (respondReport).
     const built = await app.withTenant(req, async (trx) => {
-      const b = await cashBook(trx, { kind, ...q });
+      const b = await cashBook(trx, { kind, ...q, hideSalary: !auth.sensitive.has('view_salary') });
       // Quyền xem dữ liệu nhạy cảm kiểm theo tài khoản sổ cái thực sự đọc, kể cả khi chỉ truyền số tài khoản ngân hàng.
       await assertCanView(trx, auth, { accountCode: b.accountCode, from: q.from, to: q.to });
       return { b, doc: q.format === 'json' ? null : await bookDoc(trx, auth.tenantId!, await regimeOf(trx, q), b) };

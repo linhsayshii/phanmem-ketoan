@@ -34,11 +34,13 @@ export const convertInput = z.object({
 export const contractInput = z.object({
   code: z.string().trim().min(1).max(50), name: z.string().trim().min(1).max(255), partyCode: z.string().min(1).nullable().optional(), kind: z.enum(['sale', 'purchase']),
   signedDate: dateIso.nullable().optional(), validTo: dateIso.nullable().optional(), value: z.string().regex(VND_AMOUNT_RE, VND_AMOUNT_MSG).default('0'),
-  currencyCode: z.string().length(3).default('VND'), status: z.enum(['draft', 'active', 'expired', 'terminated']).default('active'), note: z.string().max(1000).nullable().optional(),
+  currencyCode: z.string().length(3).default('VND'), status: z.enum(['draft', 'active', 'completed', 'cancelled', 'expired', 'terminated']).default('active'), note: z.string().max(1000).nullable().optional(),
+  // Task 13a: ngày hiệu lực; TK doanh thu/chi phí và mã thuế GTGT mặc định khi lập hóa đơn từ đợt thanh toán.
+  validFrom: dateIso.nullable().optional(), accountCode: z.string().regex(/^[0-9]{3,10}$/, 'Mã tài khoản không hợp lệ').nullable().optional(), taxCode: z.string().min(1).nullable().optional(),
 });
 
 const notFound = () => new AppError('ORDER_NOT_FOUND', 'Không tìm thấy đơn', 404);
-async function idOf(trx: Trx, table: 'item' | 'uom' | 'warehouse' | 'party' | 'contract', code: string, what: string): Promise<string> {
+async function idOf(trx: Trx, table: 'item' | 'uom' | 'warehouse' | 'party' | 'contract' | 'tax_code', code: string, what: string): Promise<string> {
   const r = await sql<{ id: string }>`SELECT id::text FROM ${sql.table(table)} WHERE code = ${code}`.execute(trx);
   if (!r.rows[0]) throw new AppError('NOT_FOUND', `Không tìm thấy ${what} ${code}`, 404);
   return r.rows[0].id;
@@ -191,16 +193,24 @@ export async function convertOrder(trx: Trx, ctx: CreateCtx, id: string, b: z.in
 
 // ---- Hợp đồng ----
 export async function listContracts(trx: Trx, kind?: string) {
-  return (await sql`SELECT c.id::int, c.code, c.name, p.code AS "partyCode", c.kind, c.signed_date::text AS "signedDate", c.valid_to::text AS "validTo", c.value::text, c.currency_code AS "currencyCode", c.status, c.note
-    FROM contract c LEFT JOIN party p ON p.tenant_id = c.tenant_id AND p.id = c.party_id WHERE c.kind <> 'loan' AND (${kind ?? null}::text IS NULL OR c.kind = ${kind ?? null}) ORDER BY c.code`.execute(trx)).rows;
+  return (await sql`SELECT c.id::int, c.code, c.name, p.code AS "partyCode", p.name AS "partyName", c.kind, c.signed_date::text AS "signedDate", c.valid_from::text AS "validFrom", c.valid_to::text AS "validTo", c.value::text, c.currency_code AS "currencyCode", c.status, c.note,
+      c.account_code AS "accountCode", c.tax_code AS "taxCode",
+      -- theo dõi cơ bản đợt thanh toán (Task 13a): tổng tiền đợt (trừ đợt hủy), số đợt và tổng tiền đã lập hóa đơn
+      coalesce(m.total, 0)::text AS "milestoneTotal", coalesce(m.n, 0)::int AS "milestoneCount", coalesce(m.invoiced, 0)::text AS "invoicedTotal", coalesce(m.n_inv, 0)::int AS "invoicedCount"
+    FROM contract c LEFT JOIN party p ON p.tenant_id = c.tenant_id AND p.id = c.party_id
+    LEFT JOIN LATERAL (SELECT sum(amount) FILTER (WHERE status = 'planned') AS total, count(*) FILTER (WHERE status = 'planned') AS n,
+      sum(amount) FILTER (WHERE voucher_id IS NOT NULL) AS invoiced, count(voucher_id) AS n_inv FROM contract_milestone WHERE contract_id = c.id) m ON true WHERE c.kind <> 'loan' AND (${kind ?? null}::text IS NULL OR c.kind = ${kind ?? null}) ORDER BY c.code`.execute(trx)).rows;
 }
 export async function saveContract(trx: Trx, tenantId: string, id: number | null, b: z.infer<typeof contractInput>) {
   const party = b.partyCode ? await idOf(trx, 'party', b.partyCode, 'đối tượng') : null;
+  if (b.taxCode) await idOf(trx, 'tax_code', b.taxCode, 'mã thuế');
   const r = id === null
-    ? await sql<{ id: number }>`INSERT INTO contract(tenant_id, code, name, party_id, kind, signed_date, valid_to, value, currency_code, status, note)
-        VALUES (${tenantId}::uuid, ${b.code}, ${b.name}, ${party}::uuid, ${b.kind}, ${b.signedDate ?? null}::date, ${b.validTo ?? null}::date, ${b.value}::numeric, ${b.currencyCode}, ${b.status}, ${b.note ?? null}) RETURNING id::int`.execute(trx)
-    : await sql<{ id: number }>`UPDATE contract SET code = ${b.code}, name = ${b.name}, party_id = ${party}::uuid, kind = ${b.kind}, signed_date = ${b.signedDate ?? null}::date, valid_to = ${b.validTo ?? null}::date,
-        value = ${b.value}::numeric, currency_code = ${b.currencyCode}, status = ${b.status}, note = ${b.note ?? null} WHERE id = ${id}::bigint AND kind <> 'loan' RETURNING id::int`.execute(trx);
+    ? await sql<{ id: number }>`INSERT INTO contract(tenant_id, code, name, party_id, kind, signed_date, valid_from, valid_to, value, currency_code, status, note, account_code, tax_code)
+        VALUES (${tenantId}::uuid, ${b.code}, ${b.name}, ${party}::uuid, ${b.kind}, ${b.signedDate ?? null}::date, ${b.validFrom ?? null}::date, ${b.validTo ?? null}::date, ${b.value}::numeric, ${b.currencyCode}, ${b.status}, ${b.note ?? null},
+          ${b.accountCode ?? null}, ${b.taxCode ?? null}) RETURNING id::int`.execute(trx)
+    : await sql<{ id: number }>`UPDATE contract SET code = ${b.code}, name = ${b.name}, party_id = ${party}::uuid, kind = ${b.kind}, signed_date = ${b.signedDate ?? null}::date, valid_from = ${b.validFrom ?? null}::date, valid_to = ${b.validTo ?? null}::date,
+        value = ${b.value}::numeric, currency_code = ${b.currencyCode}, status = ${b.status}, note = ${b.note ?? null}, account_code = ${b.accountCode ?? null}, tax_code = ${b.taxCode ?? null}
+        WHERE id = ${id}::bigint AND kind <> 'loan' RETURNING id::int`.execute(trx);
   if (!r.rows[0]) throw new AppError('NOT_FOUND', 'Không tìm thấy hợp đồng', 404);
   return (await listContracts(trx)).find((c) => (c as { id: number }).id === r.rows[0]!.id)!;
 }

@@ -10,6 +10,7 @@ import { assertZipSafe } from '../master/excelSheet.js';
 import { isoDate } from '../reporting/routes.js';
 import { stockGroups, stockIssues, type StockGroup } from '../inventory/openingStock.js';
 import { assetIssues, openingCards, type OpeningCard } from '../assets/openingAssets.js';
+import { isSalaryCode, salaryAccountIds } from '../payroll/accounts.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { getVoucher, postVoucher, type VoucherDto } from './vouchers.service.js';
 
@@ -21,8 +22,10 @@ export const openingRow = z.object({
   debit: vnd.default('0'), credit: vnd.default('0'), debitCurrency: foreign.default('0'), creditCurrency: foreign.default('0'),
   // Số dư công nợ theo từng hóa đơn: số, ngày chứng từ gốc và hạn thanh toán (chỉ tài khoản phải thu/phải trả).
   docNo: z.string().trim().min(1).max(50).nullable().optional(), docDate: isoDate.nullable().optional(), dueDate: isoDate.nullable().optional(),
-  // Khế ước vay của số dư TK 341x (gốc), 335 (lãi phải trả).
+  // Khế ước vay của số dư TK 341x (gốc), 335 (lãi phải trả); hợp đồng bán/mua ở TK khác (Task 13c: số dư theo hợp đồng).
   contractCode: z.string().trim().min(1).max(50).nullable().optional(),
+  // Vụ việc, công trình (Task 13c): dở dang 154, công nợ... theo vụ việc; số dư 154 có vụ việc không thuộc tồn kho đầu kỳ.
+  projectCode: z.string().trim().min(1).max(50).nullable().optional(),
 }).superRefine((r, ctx) => {
   // Mỗi số nhập phải vào được chứng từ: số bị bỏ qua âm thầm (sai bên, dòng VND có nguyên tệ) là mất dữ liệu.
   const [d, c, dc, cc] = [r.debit, r.credit, r.debitCurrency, r.creditCurrency].map((x) => D(x).gt(0));
@@ -54,8 +57,8 @@ export async function openingPeriod(trx: Trx, year: number) {
 
 const openingRows = (trx: Trx, year: number, regime: string) =>
   trx.selectFrom('opening_balance as o').innerJoin('account as a', 'a.id', 'o.account_id').leftJoin('party as p', 'p.id', 'o.party_id')
-    .leftJoin('contract as ct', 'ct.id', 'o.contract_id').leftJoin('bank_account as ba', 'ba.id', 'o.bank_account_id').leftJoin('bank as bk', 'bk.id', 'ba.bank_id')
-    .select(['o.id', 'o.account_id', 'o.party_id', 'o.bank_account_id', 'o.currency_code', 'o.debit', 'o.credit', 'o.debit_currency', 'o.credit_currency', 'o.doc_no', 'o.doc_date', 'o.due_date', 'o.contract_id', 'ct.code as contractCode', 'ct.kind as contractKind',
+    .leftJoin('contract as ct', 'ct.id', 'o.contract_id').leftJoin('project as pj', 'pj.id', 'o.project_id').leftJoin('bank_account as ba', 'ba.id', 'o.bank_account_id').leftJoin('bank as bk', 'bk.id', 'ba.bank_id')
+    .select(['o.id', 'o.account_id', 'o.party_id', 'o.bank_account_id', 'o.currency_code', 'o.debit', 'o.credit', 'o.debit_currency', 'o.credit_currency', 'o.doc_no', 'o.doc_date', 'o.due_date', 'o.contract_id', 'ct.code as contractCode', 'ct.kind as contractKind', 'o.project_id', 'pj.code as projectCode',
       'a.code as accountCode', 'a.name as accountName', 'a.is_group', 'a.is_active', 'a.normal_balance', 'a.subledger_kind', 'a.track_currency', 'a.root_type', 'p.code as partyCode', 'p.name as partyName', 'ba.account_no as bankAccountNo', 'bk.name as bankName'])
     .where('o.fiscal_year', '=', year).where('a.regime', '=', regime).orderBy('a.code').orderBy('p.code').orderBy('ba.account_no').orderBy('o.doc_date').orderBy('o.doc_no').orderBy('o.id').execute();
 type DbRow = Awaited<ReturnType<typeof openingRows>>[number];
@@ -63,7 +66,7 @@ type DbRow = Awaited<ReturnType<typeof openingRows>>[number];
 export async function listOpening(trx: Trx, year: number): Promise<(OpeningRow & { id: number; accountName: string; partyName: string | null; bankName: string | null })[]> {
   const { regime } = await openingPeriod(trx, year);
   return (await openingRows(trx, year, regime)).map((r) => ({ id: r.id, accountCode: r.accountCode, accountName: r.accountName, partyCode: r.partyCode, partyName: r.partyName, bankAccountNo: r.bankAccountNo, bankName: r.bankName,
-    currencyCode: r.currency_code, debit: r.debit, credit: r.credit, debitCurrency: r.debit_currency, creditCurrency: r.credit_currency, docNo: r.doc_no, docDate: r.doc_date, dueDate: r.due_date, contractCode: r.contractCode }));
+    currencyCode: r.currency_code, debit: r.debit, credit: r.credit, debitCurrency: r.debit_currency, creditCurrency: r.credit_currency, docNo: r.doc_no, docDate: r.doc_date, dueDate: r.due_date, contractCode: r.contractCode, projectCode: r.projectCode }));
 }
 
 // 1000 dòng × 15 cột < 65535 tham số bind của PostgreSQL.
@@ -89,11 +92,12 @@ function docProblem(r: OpeningRow, account: { subledger_kind: string | null }, d
   if (r.docDate && r.docDate > dkDate) return { column: 'doc_date', error: new AppError('OPENING_DOC_DATE_AFTER', `Ngày chứng từ ${formatVnDate(r.docDate)} sau ngày số dư đầu kỳ ${formatVnDate(dkDate)}`, 400) };
   return null;
 }
-// Khế ước chỉ gắn vào số dư TK vay (341x) và lãi phải trả (335), phải là khế ước vay.
+// Số dư TK vay (341x) và lãi phải trả (335) chỉ gắn khế ước vay, khế ước vay chỉ gắn hai TK đó; hợp đồng bán/mua gắn TK khác (131, 331, 154...).
 function contractProblem(r: OpeningRow, contract: { kind: string } | null): AppError | null {
-  if (!r.contractCode) return null;
-  if (!contract || contract.kind !== 'loan') return new AppError('OPENING_CONTRACT_NOT_ALLOWED', `${r.contractCode} không phải khế ước vay`, 400);
-  if (!r.accountCode.startsWith('341') && !r.accountCode.startsWith('335')) return new AppError('OPENING_CONTRACT_NOT_ALLOWED', `Tài khoản ${r.accountCode} không theo dõi theo khế ước vay (chỉ 341x, 335)`, 400);
+  if (!r.contractCode || !contract) return null;
+  const loanAcc = r.accountCode.startsWith('341') || r.accountCode.startsWith('335');
+  if (contract.kind === 'loan' && !loanAcc) return new AppError('OPENING_CONTRACT_NOT_ALLOWED', `Tài khoản ${r.accountCode} không theo dõi theo khế ước vay (chỉ 341x, 335)`, 400);
+  if (contract.kind !== 'loan' && loanAcc) return new AppError('OPENING_CONTRACT_NOT_ALLOWED', `${r.contractCode} không phải khế ước vay`, 400);
   return null;
 }
 const banksOf = async (trx: Trx, nos: string[]) =>
@@ -110,16 +114,19 @@ export async function replaceOpening(trx: Trx, tenantId: string, year: number, r
   const banks = await banksOf(trx, uniq(live.map((r) => r.bankAccountNo ?? null)));
   const contractCodes = uniq(live.map((r) => r.contractCode ?? null));
   const contracts = new Map((contractCodes.length ? await trx.selectFrom('contract').select(['id', 'code', 'kind']).where('code', 'in', contractCodes).execute() : []).map((c) => [c.code, c]));
+  const projectCodes = uniq(live.map((r) => r.projectCode ?? null));
+  const projects = new Map((projectCodes.length ? await trx.selectFrom('project').select(['id', 'code']).where('code', 'in', projectCodes).execute() : []).map((p) => [p.code, p.id]));
   const values = live.map((r) => {
     const account = accounts.get(r.accountCode); if (!account) throw notFound('tài khoản', r.accountCode);
     const party_id = r.partyCode ? parties.get(r.partyCode) : null; if (party_id === undefined) throw notFound('đối tượng', r.partyCode!);
     if (!currencies.has(r.currencyCode)) throw notFound('loại tiền', r.currencyCode);
     const bank = r.bankAccountNo ? banks.get(r.bankAccountNo) : undefined; const bad = bankProblem(r, account, bank); if (bad) throw bad;
     const doc = docProblem(r, account, dkDate); if (doc) throw doc.error;
-    const contract = r.contractCode ? contracts.get(r.contractCode) : null; if (contract === undefined) throw notFound('khế ước', r.contractCode!);
+    const contract = r.contractCode ? contracts.get(r.contractCode) : null; if (contract === undefined) throw notFound('hợp đồng, khế ước', r.contractCode!);
+    const project_id = r.projectCode ? projects.get(r.projectCode) : null; if (project_id === undefined) throw notFound('vụ việc', r.projectCode!);
     const cbad = contractProblem(r, contract ?? null); if (cbad) throw cbad;
     return { tenant_id: tenantId, fiscal_year: year, account_id: account.id, party_id, bank_account_id: bank?.id ?? null, currency_code: r.currencyCode, debit: r.debit, credit: r.credit, debit_currency: r.debitCurrency, credit_currency: r.creditCurrency,
-      doc_no: r.docNo ?? null, doc_date: r.docDate ?? null, due_date: r.dueDate ?? null, contract_id: contract?.id ?? null };
+      doc_no: r.docNo ?? null, doc_date: r.docDate ?? null, due_date: r.dueDate ?? null, contract_id: contract?.id ?? null, project_id };
   });
   await trx.deleteFrom('opening_balance').where('fiscal_year', '=', year).execute();
   for (const c of chunks(values)) await trx.insertInto('opening_balance').values(c).execute();
@@ -128,6 +135,8 @@ export async function replaceOpening(trx: Trx, tenantId: string, year: number, r
 
 // Tài khoản nguyên giá, hao mòn có thẻ đầu kỳ thì số dư được tách theo thẻ ở phân hệ tài sản (assetIssues), không còn bị khóa.
 const cardAccounts = (cards: OpeningCard[]) => new Set(cards.flatMap((c) => [c.asset_account_code, ...(c.depreciation_account_code ? [c.depreciation_account_code] : [])]));
+// Số dư TK kho (154) gắn vụ việc là dở dang theo vụ việc, ghi thẳng dòng sổ cái có vụ việc; không đối chiếu với tồn kho đầu kỳ.
+const stockBook = (rows: DbRow[]) => rows.filter((r) => r.project_id === null);
 function issuesOf(rows: DbRow[], covered: Set<string>): OpeningIssue[] {
   const issues: OpeningIssue[] = [];
   for (const r of rows) {
@@ -164,7 +173,7 @@ export async function checkOpening(trx: Trx, year: number): Promise<OpeningIssue
   const { regime } = await openingPeriod(trx, year);
   const rows = await openingRows(trx, year, regime);
   const groups = await stockGroups(trx, year); const cards = await openingCards(trx, year);
-  return [...issuesOf(rows, cardAccounts(cards)), ...stockIssues(rows, groups), ...await stockAccountIssues(trx, regime, groups), ...assetIssues(cards, rows)];
+  return [...issuesOf(rows, cardAccounts(cards)), ...stockIssues(stockBook(rows), groups), ...await stockAccountIssues(trx, regime, groups), ...assetIssues(cards, rows)];
 }
 
 // Chỉ ghi sổ số dư mới bỏ ghi sổ được chứng từ DK của chính nó: cờ app.opening_repost (xem unpost_voucher, 0015) chỉ bật quanh đúng lệnh này rồi đặt lại.
@@ -185,7 +194,7 @@ export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: str
   const rows = await openingRows(trx, year, p0.regime);
   if (!rows.length) throw new AppError('OPENING_EMPTY', 'Chưa nhập số dư đầu kỳ nào', 409);
   const groups = await stockGroups(trx, year); const cards = await openingCards(trx, year);
-  const issues = [...issuesOf(rows, cardAccounts(cards)), ...stockIssues(rows, groups), ...await stockAccountIssues(trx, p0.regime, groups), ...assetIssues(cards, rows)].filter((i) => !i.warning);
+  const issues = [...issuesOf(rows, cardAccounts(cards)), ...stockIssues(stockBook(rows), groups), ...await stockAccountIssues(trx, p0.regime, groups), ...assetIssues(cards, rows)].filter((i) => !i.warning);
   if (issues.length) throw new AppError('OPENING_INVALID', 'Số dư đầu kỳ chưa hợp lệ', 409, issues);
   // DK lập tay cùng năm không bị chiếm (bỏ ghi sổ + xóa dòng) và cũng không có DK thứ hai (số dư cộng đôi); chứng từ đã đảo hoặc hủy thì không tính.
   const dks = await trx.selectFrom('voucher').select(['id', 'state', 'source_doc_type']).where('voucher_type', '=', 'DK').where('fiscal_year', '=', year).where('reversal_of_id', 'is', null)
@@ -203,7 +212,7 @@ export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: str
       currency_code: 'VND', source_doc_type: 'opening_balance', source_doc_id: sql<string>`md5(${`${ctx.tenantId}:opening:${year}`})::uuid`, created_by: ctx.userId }).returning('id').executeTakeFirstOrThrow()).id;
   }
   // Tài khoản kho: dòng sổ cái lấy từ tồn đầu kỳ (theo hàng–kho); số dư từng tài khoản đã được kiểm bằng tổng tồn.
-  const stockCodes = new Set([...groups.map((g) => g.accountCode), ...rows.filter((r) => r.subledger_kind === 'inventory').map((r) => r.accountCode)]);
+  const stockCodes = new Set([...groups.map((g) => g.accountCode), ...stockBook(rows).filter((r) => r.subledger_kind === 'inventory').map((r) => r.accountCode)]);
   // Tài khoản có thẻ tài sản đầu kỳ: mỗi thẻ một dòng gắn asset_id (Nợ nguyên giá/giá trị còn lại, Có hao mòn), phần còn lại của số dư (chỉ 242) giữ một dòng không gắn tài sản.
   const cardLines = new Map<string, { assetId: number; code: string; debit: string; credit: string }[]>();
   for (const c of cards) {
@@ -224,9 +233,9 @@ export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: str
     // có dấu: + Nợ, − Có (dòng VND được trigger đặt lại bằng Nợ − Có)
     amount_currency: D(r.debit_currency).minus(r.credit_currency).toString(), party_id: r.party_id, bank_account_id: r.bank_account_id,
     // số dư công nợ theo hóa đơn: fn_open_items_create lấy số/ngày chứng từ gốc từ extra_dims, hạn từ due_date của dòng
-    description: r.doc_no ? `Số dư ${r.doc_no}` : 'Số dư đầu kỳ', due_date: r.due_date, contract_id: r.contract_id,
+    description: r.doc_no ? `Số dư ${r.doc_no}` : 'Số dư đầu kỳ', due_date: r.due_date, contract_id: r.contract_id, project_id: r.project_id,
     extra_dims: JSON.stringify({ ...(r.doc_no ? { opening_doc_no: r.doc_no } : {}), ...(r.doc_date ? { opening_doc_date: r.doc_date } : {}) }) });
-  const lines: Insertable<Database['voucher_line']>[] = rows.filter((r) => !stockCodes.has(r.accountCode)).flatMap(rowLines);
+  const lines: Insertable<Database['voucher_line']>[] = rows.filter((r) => !stockCodes.has(r.accountCode) || r.project_id !== null).flatMap(rowLines);
   // Dòng kho: sổ cái gộp theo (tài khoản, hàng, kho), bỏ nhóm 0 đồng; dòng hàng chiều nhập (mỗi lô một dòng) để post_voucher sinh phát sinh kho và lớp giá ngày đầu năm.
   const sAcc = new Map((stockCodes.size ? await trx.selectFrom('account').select(['id', 'code']).where('regime', '=', p0.regime).where('code', 'in', [...stockCodes]).execute() : []).map((x) => [x.code, x.id]));
   const byKey = new Map<string, { g: StockGroup; value: Decimal }>();
@@ -359,25 +368,35 @@ async function guardInventory(trx: Trx, auth: { sensitive: Set<string> }, year: 
   if (incoming) throw new AppError('FORBIDDEN', 'Cần cờ xem giá vốn (view_cost) để xem hoặc sửa số dư tài khoản kho và tồn kho đầu kỳ', 403);
 }
 
+// Số dư đầu kỳ của tài khoản lương (334 theo nhân viên, BHXH, BHYT, BHTN, KPCĐ, TNCN theo ánh xạ payrollAccounts) là số lương: thiếu view_salary không xem hay sửa được khi năm đó có số dư loại này
+// (hoặc dòng đang nhập thuộc tài khoản lương). Không che từng dòng vì lưu số dư thay cả bộ dòng: bản che sẽ ghi đè số lương bằng 0.
+async function guardSalary(trx: Trx, auth: { sensitive: Set<string> }, year: number, codes: string[] = []) {
+  if (auth.sensitive.has('view_salary')) return;
+  const { regime } = await openingPeriod(trx, year);
+  const ids = await salaryAccountIds(trx);
+  const book = ids.length ? await trx.selectFrom('opening_balance').select('id').where('fiscal_year', '=', year).where('account_id', 'in', ids).limit(1).executeTakeFirst() : undefined;
+  if (book || codes.some((c) => isSalaryCode(regime, c))) throw new AppError('SALARY_FORBIDDEN', 'Cần cờ xem lương (view_salary) để xem hoặc sửa số dư tài khoản lương, bảo hiểm và thuế TNCN', 403);
+}
+
 const routes: FastifyPluginAsyncZod = async (app) => {
   const yearParam = z.object({ year: z.coerce.number().int().min(2000).max(2100) });
   app.get('/api/opening-balance/template.xlsx', { preHandler: app.requirePermission('opening_balance.view') }, async (_req, reply) =>
     reply.header('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').header('content-disposition', 'attachment; filename="mau_so_du_dau_ky.xlsx"').send(await openingTemplate()));
   app.get('/api/opening-balance/:year', { preHandler: app.requirePermission('opening_balance.view'), schema: { params: yearParam } }, async (req) =>
-    app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); return listOpening(trx, req.params.year); }));
+    app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); await guardSalary(trx, req.auth!, req.params.year); return listOpening(trx, req.params.year); }));
   app.put('/api/opening-balance/:year', { preHandler: app.requirePermission('opening_balance.update'), schema: { params: yearParam, body: z.object({ rows: z.array(openingRow) }) } }, async (req) =>
-    ({ count: await app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year, req.body.rows.map((r) => r.accountCode)); return replaceOpening(trx, req.auth!.tenantId!, req.params.year, req.body.rows); }) }));
+    ({ count: await app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year, req.body.rows.map((r) => r.accountCode)); await guardSalary(trx, req.auth!, req.params.year, req.body.rows.map((r) => r.accountCode)); return replaceOpening(trx, req.auth!.tenantId!, req.params.year, req.body.rows); }) }));
   // Trả cả cảnh báo (phần tử có warning: true, không chặn ghi sổ): mảng không còn phần tử lỗi mới là hợp lệ.
   app.get('/api/opening-balance/:year/check', { preHandler: app.requirePermission('opening_balance.view'), schema: { params: yearParam } }, async (req) =>
-    app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); return checkOpening(trx, req.params.year); }));
+    app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); await guardSalary(trx, req.auth!, req.params.year); return checkOpening(trx, req.params.year); }));
   app.post('/api/opening-balance/:year/post', { preHandler: app.requirePermission('opening_balance.update'), schema: { params: yearParam } }, async (req) => {
-    const dto = await app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); return postOpening(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.params.year); });
+    const dto = await app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); await guardSalary(trx, req.auth!, req.params.year); return postOpening(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.params.year); });
     notifyRecompute(app, req.auth!.tenantId!);
     return dto;
   });
   // Cần cả quyền sửa số dư đầu kỳ lẫn quyền bỏ ghi sổ chứng từ.
   app.post('/api/opening-balance/:year/unpost', { preHandler: [app.requirePermission('opening_balance.update'), app.requirePermission('voucher.unpost')], schema: { params: yearParam } }, async (req) => {
-    const dto = await app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); return unpostOpening(trx, req.auth!.tenantId!, req.params.year); });
+    const dto = await app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); await guardSalary(trx, req.auth!, req.params.year); return unpostOpening(trx, req.auth!.tenantId!, req.params.year); });
     notifyRecompute(app, req.auth!.tenantId!);
     return dto;
   });
@@ -392,6 +411,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       const report = (inserted: number) => ({ total, inserted, errors: errors.slice(0, MAX_ERRORS), errorCount: errors.length });
       if (req.query.mode === 'validate' || errors.length) return report(0);
       await guardInventory(trx, req.auth!, req.params.year, rows.map((r) => r.accountCode));
+      await guardSalary(trx, req.auth!, req.params.year, rows.map((r) => r.accountCode));
       return report(await replaceOpening(trx, req.auth!.tenantId!, req.params.year, rows));
     });
   });

@@ -38,11 +38,13 @@ const THU_CHI_COLUMNS: ColumnDef[] = [
   col('documentDate', 'Ngày chứng từ', 'date'), col('description', 'Diễn giải', 'text'), col('personName', 'Người nộp/nhận', 'text'), col('partyCode', 'Mã đối tượng', 'text'),
   col('bankAccountNo', 'Số tài khoản ngân hàng', 'text'), col('debitAccount', 'Tài khoản Nợ', 'text', true), col('creditAccount', 'Tài khoản Có', 'text', true), col('amount', 'Số tiền (VND)', 'number'),
   col('currency', 'Loại tiền', 'text'), col('fxRate', 'Tỷ giá', 'number'), col('amountCurrency', 'Số tiền nguyên tệ', 'number'), col('lineDescription', 'Diễn giải dòng', 'text'),
+  col('contractCode', 'Mã hợp đồng/khế ước', 'text'),
 ];
 const thuChiSchema = z.object({
   group: z.string().min(1).max(28).refine(noHash, 'Không được bắt đầu bằng #'), type: z.enum(['PT', 'PC', 'BC', 'BN']), postingDate: dateIso, documentDate: dateIso.optional(), description: text(500), personName: text(200), partyCode: text(50),
   bankAccountNo: text(50), debitAccount: z.string().min(1).max(20), creditAccount: z.string().min(1).max(20), amount: money.refine(positive, 'Số tiền phải lớn hơn 0').optional(),
   currency: z.string().length(3).transform((s) => s.toUpperCase()).optional(), fxRate: fxRate.optional(), amountCurrency: z.string().regex(/^\d{1,16}(\.\d{1,4})?$/, 'Số tiền nguyên tệ không hợp lệ').optional(), lineDescription: text(500),
+  contractCode: text(50),
 }).superRefine((r, ctx) => {
   const bad = (path: string, message: string) => ctx.addIssue({ code: 'custom', path: [path], message });
   if (r.currency && r.currency !== 'VND') {
@@ -67,7 +69,8 @@ function buildThuChi(items: Item[], key: string): VoucherInput {
   const h = head(items); const cur = h('currency') ?? 'VND'; const foreign = cur !== 'VND'; const party = h('partyCode');
   const lines: LineInput[] = [];
   for (const { v } of items) {
-    const base = { partyCode: v.partyCode ?? party ?? null, description: v.lineDescription ?? v.description ?? null };
+    // Mã hợp đồng ghi lên cả hai dòng của bút toán (dòng tiền và dòng công nợ/đối ứng).
+    const base = { partyCode: v.partyCode ?? party ?? null, description: v.lineDescription ?? v.description ?? null, contractCode: v.contractCode ?? null };
     // Ngoại tệ: nguyên tệ có dấu (Nợ dương, Có âm); tiền hạch toán VND là cột "Số tiền".
     lines.push({ ...base, accountCode: v.debitAccount!, debit: v.amount!, credit: '0', ...(foreign && { amountCurrency: v.amountCurrency! }) });
     lines.push({ ...base, accountCode: v.creditAccount!, debit: '0', credit: v.amount!, ...(foreign && { amountCurrency: `-${v.amountCurrency!}` }) });
@@ -84,12 +87,12 @@ const BANG_KE_COLUMNS: ColumnDef[] = [
   col('invoiceDate', 'Ngày hóa đơn', 'date', true), col('partyCode', 'Mã đối tượng', 'text', true), col('partyTaxCode', 'Mã số thuế ghi trên hóa đơn', 'text'), col('partyName', 'Tên ghi trên hóa đơn', 'text'),
   col('accountCode', 'Tài khoản chi phí/doanh thu', 'text', true), col('counterAccountCode', 'Tài khoản đối ứng (công nợ/tiền)', 'text'), col('amount', 'Tiền hàng (VND)', 'number', true),
   col('taxCode', 'Mã thuế', 'text'), col('taxAmount', 'Tiền thuế ghi trên hóa đơn (VND)', 'number'), col('invoiceGroupCode', 'Nhóm hóa đơn (kê khai)', 'text', true),
-  col('dueDate', 'Hạn thanh toán', 'date'), col('description', 'Diễn giải', 'text'),
+  col('dueDate', 'Hạn thanh toán', 'date'), col('description', 'Diễn giải', 'text'), col('contractCode', 'Mã hợp đồng', 'text'),
 ];
 const bangKeSchema = z.object({
   group: z.string().max(28).refine(noHash, 'Không được bắt đầu bằng #').optional(), postingDate: dateIso, serial: text(20), invoiceNo: z.string().trim().min(1).max(30), invoiceDate: dateIso, partyCode: z.string().min(1).max(50), partyTaxCode: text(20), partyName: text(200),
   accountCode: z.string().min(1).max(20), counterAccountCode: z.string().max(20).optional(), amount: money, taxCode: text(50), taxAmount: money.optional(), invoiceGroupCode: z.string().min(1).max(50),
-  dueDate: dateIso.optional(), description: text(500),
+  dueDate: dateIso.optional(), description: text(500), contractCode: text(50),
 }).superRefine((r, ctx) => {
   if (r.taxAmount && !r.taxCode) ctx.addIssue({ code: 'custom', path: ['taxCode'], message: 'Có tiền thuế thì phải nhập mã thuế' });
 }).transform((r): Rec => ({ ...r }));
@@ -99,7 +102,7 @@ const buildBangKe = (direction: 'mua' | 'ban') => (items: Item[], key: string): 
   for (const { v } of items) if (v.taxCode && v.taxAmount !== undefined) declared[v.taxCode] = D(declared[v.taxCode] ?? '0').plus(v.taxAmount).toFixed(0);
   return {
     voucherType: direction === 'mua' ? 'HDM' : 'HDB', postingDate: h('postingDate')!, documentDate: h('invoiceDate')!, partyCode: h('partyCode')!, currencyCode: 'VND',
-    ...(h('counterAccountCode') && { counterAccountCode: h('counterAccountCode')! }), ...(h('dueDate') && { dueDate: h('dueDate')! }), description: h('description') ?? null,
+    ...(h('counterAccountCode') && { counterAccountCode: h('counterAccountCode')! }), ...(h('dueDate') && { dueDate: h('dueDate')! }), description: h('description') ?? null, contractCode: h('contractCode') ?? null,
     items: items.map(({ v }) => ({ description: v.description ?? null, accountCode: v.accountCode!, amountCurrency: v.amount!, discountCurrency: '0', taxCodes: v.taxCode ? [v.taxCode] : [] })),
     invoice: {
       invoiceNo: h('invoiceNo')!, invoiceDate: h('invoiceDate')!, invoiceGroupCode: h('invoiceGroupCode')!, ...(h('serial') && { serial: h('serial')! }),
@@ -123,14 +126,14 @@ const SPECS: Record<Kind, Spec> = {
       'Tài khoản công nợ 131, 331 bắt buộc "Mã đối tượng". Ngoại tệ: nhập Loại tiền, Tỷ giá và Số tiền nguyên tệ; cột Số tiền là số tiền VND, bỏ trống thì hệ thống tính = nguyên tệ x tỷ giá, có nhập thì không được lệch quá 1 đồng.'],
   },
   'bang-ke-mua': {
-    columns: BANG_KE_COLUMNS, schema: bangKeSchema, same: ['postingDate', 'serial', 'invoiceNo', 'invoiceDate', 'partyCode', 'partyTaxCode', 'partyName', 'invoiceGroupCode', 'counterAccountCode', 'dueDate'], label: 'bảng kê hóa đơn mua vào',
+    columns: BANG_KE_COLUMNS, schema: bangKeSchema, same: ['postingDate', 'serial', 'invoiceNo', 'invoiceDate', 'partyCode', 'partyTaxCode', 'partyName', 'invoiceGroupCode', 'counterAccountCode', 'dueDate', 'contractCode'], label: 'bảng kê hóa đơn mua vào',
     example: { group: 'M001', postingDate: '2026-01-05', serial: 'AA/26E', invoiceNo: '0000123', invoiceDate: '2026-01-05', partyCode: 'NCC001', partyTaxCode: '0101234567', partyName: 'Công ty ABC', accountCode: '6422', counterAccountCode: '331', amount: '1000000', taxCode: 'V10', taxAmount: '100000', invoiceGroupCode: '01', dueDate: '', description: 'Mua văn phòng phẩm' },
     build: (items, key) => ({ invoice: buildBangKe('mua')(items, key) }),
     help: ['Mỗi dòng là một mức thuế suất của một hóa đơn. Hóa đơn có nhiều mức thuế: các dòng dùng chung "Nhóm" (và cùng số hóa đơn, ký hiệu, ngày); bỏ trống "Nhóm" thì mỗi dòng là một hóa đơn.',
       '"Tiền thuế ghi trên hóa đơn" là số in trên hóa đơn; lệch với số tính theo thuế suất thì chênh lệch dồn vào dòng thuế lớn nhất. Hóa đơn mua trùng (cùng mã số thuế, ký hiệu, số hóa đơn) bị từ chối.'],
   },
   'bang-ke-ban': {
-    columns: BANG_KE_COLUMNS, schema: bangKeSchema, same: ['postingDate', 'serial', 'invoiceNo', 'invoiceDate', 'partyCode', 'partyTaxCode', 'partyName', 'invoiceGroupCode', 'counterAccountCode', 'dueDate'], label: 'bảng kê hóa đơn bán ra',
+    columns: BANG_KE_COLUMNS, schema: bangKeSchema, same: ['postingDate', 'serial', 'invoiceNo', 'invoiceDate', 'partyCode', 'partyTaxCode', 'partyName', 'invoiceGroupCode', 'counterAccountCode', 'dueDate', 'contractCode'], label: 'bảng kê hóa đơn bán ra',
     example: { group: 'B001', postingDate: '2026-01-05', serial: 'C26TAA', invoiceNo: '0000045', invoiceDate: '2026-01-05', partyCode: 'KH001', partyTaxCode: '', partyName: '', accountCode: '5113', counterAccountCode: '131', amount: '2000000', taxCode: 'V10', taxAmount: '200000', invoiceGroupCode: '10', dueDate: '', description: 'Dịch vụ tư vấn' },
     build: (items, key) => ({ invoice: buildBangKe('ban')(items, key) }),
     help: ['Mỗi dòng là một mức thuế suất của một hóa đơn bán ra. Các dòng cùng "Nhóm" gộp thành một hóa đơn; bỏ trống "Nhóm" thì mỗi dòng là một hóa đơn.',

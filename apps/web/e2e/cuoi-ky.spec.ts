@@ -27,7 +27,7 @@ test('Quy trình cuối kỳ: chạy bước, bỏ qua bước tùy chọn, F9 c
   await page.locator('.ant-select', { has: page.getByRole('combobox', { name: 'Chọn kỳ' }) }).click();
   await page.getByTitle(`Tháng ${period}`, { exact: true }).click();
   const rows = page.getByTestId('close-steps');
-  await expect(rows.locator('tbody tr')).toHaveCount(10);
+  await expect(rows.locator('tbody tr')).toHaveCount(12);
 
   // Chạy riêng bước đầu: dòng thành "Đã chạy" (lần đầu "Chạy", các lần sau "Chạy lại")
   const tool = rows.locator('tr', { hasText: 'Phân bổ công cụ dụng cụ' });
@@ -40,6 +40,22 @@ test('Quy trình cuối kỳ: chạy bước, bỏ qua bước tùy chọn, F9 c
     await fx.getByRole('button', { name: 'Bỏ qua' }).click();
     await page.locator('.ant-popover').getByRole('button', { name: 'Bỏ qua' }).click();
     await expect(fx).toContainText('Đã bỏ qua');
+  }
+
+  // Bước lương: CSDL e2e dùng chung có thể còn bảng lương nháp ở kỳ này (spec bảng lương) làm bước chưa xong; chưa chạy thì bỏ qua như bước tùy chọn.
+  if ((await status()).steps.find((x) => x.key === 'payroll')!.status === 'pending') {
+    const payroll = rows.locator('tr', { hasText: 'Tính lương và hạch toán' });
+    await payroll.getByRole('button', { name: 'Bỏ qua' }).click();
+    await page.locator('.ant-popover').getByRole('button', { name: 'Bỏ qua' }).click();
+    await expect(payroll).toContainText('Đã bỏ qua');
+  }
+  // Bước giá thành đã có bộ chạy (Task 11c): có nút chạy. CSDL e2e dùng chung có thể còn chi phí 154 chưa phân loại của spec khác (chạy bước báo 409): bước tùy chọn nên bỏ qua bằng nút.
+  const cost = rows.locator('tr', { hasText: 'Giá thành sản phẩm' });
+  await expect(cost.getByRole('button', { name: /^Chạy/ })).toBeVisible();
+  if ((await status()).steps.find((x) => x.key === 'product_cost')!.status === 'pending') {
+    await cost.getByRole('button', { name: 'Bỏ qua' }).click();
+    await page.locator('.ant-popover').getByRole('button', { name: 'Bỏ qua' }).click();
+    await expect(cost).toContainText('Đã bỏ qua');
   }
 
   // F9 chạy bước kế tiếp cho tới hết

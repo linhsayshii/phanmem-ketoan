@@ -24,8 +24,8 @@ export async function journalDoc(trx: Trx, tenantId: string, regime: string, p: 
     columns: [{ key: 'postingDate', label: 'Ngày ghi sổ', type: 'date', width: '11%' }, { key: 'voucherNo', label: 'Số hiệu', width: '11%' }, { key: 'documentDate', label: 'Ngày CT', type: 'date', width: '11%' }, { key: 'description', label: 'Diễn giải' }, { key: 'accountCode', label: 'TK', width: '8%' }, { key: 'debit', label: 'Số phát sinh Nợ', type: 'number', width: '14%' }, { key: 'credit', label: 'Số phát sinh Có', type: 'number', width: '14%' }],
     rows: j.rows, footer: { description: 'Cộng', debit: j.totalDebit, credit: j.totalCredit } };
 }
-export async function ledgerDoc(trx: Trx, tenantId: string, regime: string, p: { accountCode: string; from: string; to: string }): Promise<ReportDoc> {
-  const l = await accountLedger(trx, tenantId, { ...p, mode: 'voucher' });
+export async function ledgerDoc(trx: Trx, tenantId: string, regime: string, p: { accountCode: string; from: string; to: string }, hideSalary = false): Promise<ReportDoc> {
+  const l = await accountLedger(trx, tenantId, { ...p, mode: 'voucher' }, hideSalary);
   // Một công ty giữ nhiều hệ tài khoản trùng mã: tên lấy đúng hệ của kỳ in.
   const acc = await trx.selectFrom('account').select('name').where('regime', '=', regime).where('code', '=', p.accountCode).executeTakeFirstOrThrow();
   const c = await companyInfo(trx, tenantId, regime, 'S03b');
@@ -33,8 +33,8 @@ export async function ledgerDoc(trx: Trx, tenantId: string, regime: string, p: {
     columns: [{ key: 'postingDate', label: 'Ngày ghi sổ', type: 'date' }, { key: 'voucherNo', label: 'Số hiệu' }, { key: 'description', label: 'Diễn giải' }, { key: 'counterAccountCode', label: 'TK đối ứng' }, { key: 'debit', label: 'Nợ', type: 'number' }, { key: 'credit', label: 'Có', type: 'number' }],
     rows: [{ description: 'Số dư đầu kỳ', debit: l.opening.debit, credit: l.opening.credit, isBold: true }, ...('rows' in l ? l.rows : []) as Record<string, unknown>[], { description: 'Cộng số phát sinh', debit: l.totalDebit, credit: l.totalCredit, isBold: true }, { description: 'Số dư cuối kỳ', debit: l.closing.debit, credit: l.closing.credit, isBold: true }] };
 }
-export async function detailDoc(trx: Trx, tenantId: string, regime: string, p: Parameters<typeof accountDetail>[2]): Promise<ReportDoc> {
-  const l = await accountDetail(trx, tenantId, p); const c = await companyInfo(trx, tenantId, regime, 'S38');
+export async function detailDoc(trx: Trx, tenantId: string, regime: string, p: Parameters<typeof accountDetail>[2], hideSalary = false): Promise<ReportDoc> {
+  const l = await accountDetail(trx, tenantId, p, hideSalary); const c = await companyInfo(trx, tenantId, regime, 'S38');
   return { title: `Sổ chi tiết tài khoản ${p.accountCode}${p.partyCode ? ` – Đối tượng ${p.partyCode}` : ''}`, company: c, formNo: c.formNo, issuedBy: c.issuedBy, subtitle: periodSubtitle(p.from, p.to), sheetName: `S38 ${p.accountCode}`,
     columns: [{ key: 'postingDate', label: 'Ngày', type: 'date' }, { key: 'voucherNo', label: 'Số hiệu' }, { key: 'description', label: 'Diễn giải' }, { key: 'partyCode', label: 'Đối tượng' }, { key: 'counterAccountCode', label: 'TK đối ứng' }, { key: 'debit', label: 'Nợ', type: 'number' }, { key: 'credit', label: 'Có', type: 'number' }],
     rows: [{ description: 'Số dư đầu kỳ', debit: l.opening.debit, credit: l.opening.credit, isBold: true }, ...l.rows as Record<string, unknown>[], { description: 'Cộng số phát sinh', debit: l.totalDebit, credit: l.totalCredit, isBold: true }, { description: 'Số dư cuối kỳ', debit: l.closing.debit, credit: l.closing.credit, isBold: true }] };

@@ -8,6 +8,7 @@ import { assertBalanceSheet } from '../invariants/helpers.js';
 // Kỳ vọng tính tay (trường calc ghi phép tính), không sinh từ mã đang kiểm.
 const read = (f: string) => JSON.parse(readFileSync(new URL(`../../../../packages/db/src/seed/${f}`, import.meta.url), 'utf8'));
 const gd2 = read('expected-gd2-abc.json'); const gd3 = read('expected-gd3-abc.json'); const gd4 = read('expected-gd4-abc.json'); const gd5 = read('expected-gd5-abc.json');
+const gd6 = JSON.parse(readFileSync(new URL('../expected-gd6-abc.json', import.meta.url), 'utf8'));
 
 let ctx: TestApp; let cookie: string; let tenantId: string;
 beforeAll(async () => {
@@ -29,7 +30,7 @@ describe('Bộ dữ liệu mẫu ABC có tài sản, công cụ dụng cụ, kh�
     const by: Record<string, bigint> = {};
     for (const x of (await get('/api/balances?asOf=2026-12-31')).rows as { accountCode: string; debit: string; credit: string }[]) by[x.accountCode] = (by[x.accountCode] ?? 0n) + BigInt(x.debit) - BigInt(x.credit);
     for (const [code, d] of Object.entries(gd4.chenhLechSoDuCuoiNam as Record<string, string>))
-      expect((by[code] ?? 0n).toString(), code).toBe((BigInt(gd2.soDuCuoiNam[code] ?? '0') + BigInt(gd3.chenhLechSoDuCuoiNam[code] ?? '0') + BigInt(d)).toString());
+      expect((by[code] ?? 0n).toString(), code).toBe((BigInt(gd2.soDuCuoiNam[code] ?? '0') + BigInt(gd3.chenhLechSoDuCuoiNam[code] ?? '0') + BigInt(gd6.chenhLechSoDuCuoiNam[code] ?? '0') + BigInt(d)).toString());
   });
 
   it('khấu hao TSCĐ, phân bổ CCDC và chi phí trả trước từng tháng của từng thẻ', async () => {
@@ -78,14 +79,15 @@ describe('Bộ dữ liệu mẫu ABC có tài sản, công cụ dụng cụ, kh�
     expect(line('151')).toBe(gd4.b01['151']);
     expect(line('152')).toBe(gd4.b01['152']); // số dương (dư Có), chỉ tiêu 150 = [151] - [152]
     expect(line('150')).toBe((BigInt(gd4.b01['151']) - BigInt(gd4.b01['152'])).toString());
-    expect(r.find((x) => x.lineCode === '141')!.current).toBe(gd3.bangCanDoiKho.B01_141); // 153 về 0, hàng tồn kho GĐ3 không đổi
+    expect(r.find((x) => x.lineCode === '141')!.current).toBe(gd6.bangCanDoiKho.B01_141); // 153, 154 về 0; hàng tồn kho = GĐ3 + thành phẩm SP-E của GĐ6
   });
 
   it('quy trình cuối kỳ tháng 1-12: mọi bước seed đã chạy đều xong, bước không chạy còn chưa chạy; bảng cân đối cân cuối tháng', async () => {
     for (let m = 1; m <= 12; m++) {
       const st = (await get(`/api/period-close/2026/${m}`)).steps as { key: string; status: string }[];
       const status = Object.fromEntries(st.map((s) => [s.key, s.status]));
-      const want: Record<string, string> = { tool: 'done', prepaid: 'done', depreciation: 'done', loan_interest: 'done', amortization: 'done', costing: 'done', fx_outflow: 'done',
+      const hasPayroll = (gd6.buocCuoiKy.thangCoLuong as number[]).includes(m); // GĐ6: lương và giá thành chạy từ tháng 10
+      const want: Record<string, string> = { payroll: hasPayroll ? 'done' : 'skipped_empty', product_cost: hasPayroll ? 'done' : 'skipped_empty', tool: 'done', prepaid: 'done', depreciation: 'done', loan_interest: 'done', amortization: 'done', costing: 'done', fx_outflow: 'done',
         fx_revaluation: m === 12 ? 'done' : 'skipped_empty', vat_offset: m % 3 === 0 ? 'done' : 'pending', closing: 'pending' };
       expect(status, `tháng ${m}`).toEqual(want);
       await assertBalanceSheet(ctx, cookie, new Date(Date.UTC(2026, m, 0)).toISOString().slice(0, 10));
@@ -95,6 +97,6 @@ describe('Bộ dữ liệu mẫu ABC có tài sản, công cụ dụng cụ, kh�
   it('số chứng từ GĐ4 theo loại', async () => {
     const by = Object.fromEntries((await q<{ t: string; n: number }>(sql`SELECT voucher_type AS t, count(*)::int AS n FROM voucher WHERE tenant_id = ${tenantId}::uuid AND voucher_type = ANY(${Object.keys(gd4.soChungTuThem.counts)}::text[]) GROUP BY 1`)).map((x) => [x.t, x.n]));
     for (const [t, n] of Object.entries(gd4.soChungTuThem.counts as Record<string, number>))
-      expect(by[t], t).toBe((gd2.soChungTu.counts[t] ?? 0) + (gd3.soChungTuThem.counts[t] ?? 0) + (gd5.soChungTuThem[t] ?? 0) + n);
+      expect(by[t], t).toBe((gd2.soChungTu.counts[t] ?? 0) + (gd3.soChungTuThem.counts[t] ?? 0) + (gd5.soChungTuThem[t] ?? 0) + (gd6.soChungTuThem.counts[t] ?? 0) + n);
   });
 });

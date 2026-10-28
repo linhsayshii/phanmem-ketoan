@@ -15,4 +15,10 @@ describe('menu theo quyền', () => {
     const v = visibleMenu(menu, (c) => c === 'period.view');
     expect(v.map((i) => i.key)).toEqual(['a', 'b']); expect(v[1]!.children!.map((i) => i.key)).toEqual(['b1']);
   });
+  it('mục có cờ nhạy cảm chỉ hiện khi người dùng có cờ; không truyền hàm cờ thì không lọc theo cờ', () => {
+    const m: MenuItem[] = [{ key: 'l', label: 'Lương', to: '/l', children: [{ key: 'l1', label: 'Hồ sơ lương', to: '/l/1', permission: 'payroll.view', flag: 'view_salary' }] }];
+    expect(visibleMenu(m, () => true, () => false)).toEqual([]);
+    expect(visibleMenu(m, () => true, (f) => f === 'view_salary').map((i) => i.key)).toEqual(['l']);
+    expect(visibleMenu(m, () => true).map((i) => i.key)).toEqual(['l']);
+  });
 });

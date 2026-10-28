@@ -3,6 +3,7 @@ import type { Database } from '@kt/db';
 import { D, evaluateReport, parseFormula, sum, ZERO, type AccountRef, type Decimal, type Expr, type ReportLineDef, type Resolver, type Side, type Source } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import { assertSensitive, regimeOf } from './ledgers.js';
+import { isSalaryCode } from '../payroll/accounts.js';
 import { formNoFor } from './print/forms.js';
 import { loanLongRows } from '../loans/stats.js';
 
@@ -222,7 +223,7 @@ export async function drillLine(trx: Trx, tenantId: string, q: { reportCode: str
   const out = [...rows.values()].filter((r) => !r.amount.isZero())
     .sort((a, b) => a.accountCode.localeCompare(b.accountCode) || (a.partyCode ?? '').localeCompare(b.partyCode ?? '') || (a.counterAccountCode ?? '').localeCompare(b.counterAccountCode ?? ''));
   // Danh sách theo đối tượng/tài khoản tiết lộ công nợ và giá vốn từng bên: cùng cờ nhạy cảm với sổ sách.
-  for (const r of out) for (const c of r.checks) assertSensitive(auth, { subledger_kind: c.kind, code: c.code });
+  for (const r of out) for (const c of r.checks) assertSensitive(auth, { subledger_kind: c.kind, code: c.code, salary: isSalaryCode(regime, c.code) });
   return { accounts: out.map((r) => ({ ...(r.kind && { kind: r.kind }), accountCode: r.accountCode, accountName: r.accountName, ...(r.counterAccountCode !== undefined && { counterAccountCode: r.counterAccountCode }), partyCode: r.partyCode, amount: r.amount.toString() })) };
 }
 

@@ -209,6 +209,7 @@ Menu Tiện ích > "Soát lỗi dữ liệu" (cần quyền chạy soát lỗi).
 - Bảng quy tắc có công tắc "Bật" và nút "Sửa" cho người có quyền quản lý quy tắc soát lỗi (sửa được tên, mức, thông điệp, hướng dẫn). Quy tắc tùy chỉnh bằng SQL chưa hỗ trợ.
 - Quy tắc của giai đoạn 1: Chứng từ không cân; Chứng từ không có dòng định khoản; Dòng công nợ thiếu đối tượng; Tài khoản tổng hợp trên dòng định khoản; Số dư trái loại dư của tài khoản; Chứng từ chưa ghi sổ trong kỳ đã khóa.
 - Quy tắc thêm ở giai đoạn 2: Công nợ theo khoản lệch số dư sổ cái; Hóa đơn thiếu mã số thuế đối tác; Hóa đơn mua nhập trùng (cả khi nhập hai lần trong cùng một chứng từ); Thuế GTGT trên hóa đơn lệch phát sinh sổ cái; Dòng tiền gửi ngân hàng thiếu tài khoản ngân hàng; Hóa đơn thuế suất 8% ngoài thời gian giảm thuế; Hóa đơn mua từ ngưỡng thanh toán không dùng tiền mặt nhưng trả bằng tiền mặt (ngưỡng 5.000.000 đồng từ 01/7/2025, theo Nghị định 181/2025); Khoản công nợ quá hạn trên 90 ngày.
+- Từ giai đoạn 6 có tổng cộng 50 quy tắc (thêm 14 quy tắc lương, giá thành, vụ việc, hợp đồng; xem tài liệu giai đoạn 6, mục 19). Cờ nhạy cảm nay có bốn: thêm `view_salary` (xem lương) và `view_cost` (xem giá vốn, giá thành); quy tắc về lương cần cờ lương, quy tắc về giá thành cần cờ giá vốn.
 - Quy tắc cần cờ nhạy cảm (công nợ theo khoản và khoản quá hạn cần cờ phải thu và phải trả; số dư trái loại cần cờ giá vốn) được bỏ qua hoàn toàn nếu bạn thiếu cờ. Khi đó hiện cảnh báo "Có quy tắc không được chạy" kèm lý do; kết quả không bị lọc từng dòng.
 
 ## Giới hạn hiện tại

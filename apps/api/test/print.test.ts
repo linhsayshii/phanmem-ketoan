@@ -124,7 +124,7 @@ describe('in sổ: nội dung, hệ tài khoản, quyền', () => {
   });
 
   it('người thiếu quyền report.print xem được JSON nhưng không in được', async () => {
-    const c = await userCookie('xem', ['view_receivable', 'view_payable', 'view_cost']);
+    const c = await userCookie('xem', ['view_receivable', 'view_payable', 'view_cost', 'view_salary']);
     await ctx.t.admin.deleteFrom('role_permission').where('tenant_id', '=', tenant2).where('permission_code', '=', 'report.print').where('role_id', 'in', ctx.t.admin.selectFrom('role').select('id').where('tenant_id', '=', tenant2).where('code', '=', 'xem')).execute();
     const url = '/api/reports/ledgers/general-journal?from=2026-01-01&to=2026-01-31';
     expect((await get(url, c)).statusCode).toBe(200);
@@ -133,7 +133,7 @@ describe('in sổ: nội dung, hệ tài khoản, quyền', () => {
   });
 
   it('bộ sổ năm cần cả report.view lẫn report.print', async () => {
-    const c = await userCookie('ketoan_vien', ['view_receivable', 'view_payable', 'view_cost']);
+    const c = await userCookie('ketoan_vien', ['view_receivable', 'view_payable', 'view_cost', 'view_salary']);
     const body = { fiscalYear: 2026, include: ['trial'], format: 'xlsx' };
     expect((await post('/api/print/book-set', body, c)).statusCode).toBe(200);
     await ctx.t.admin.deleteFrom('role_permission').where('tenant_id', '=', tenant2).where('permission_code', '=', 'report.view').where('role_id', 'in', ctx.t.admin.selectFrom('role').select('id').where('tenant_id', '=', tenant2).where('code', '=', 'ketoan_vien')).execute();

@@ -145,13 +145,15 @@ describe('xuất dữ liệu cho cơ quan thẩm quyền', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
-  it('cần quyền export.authority và đủ ba cờ nhạy cảm (gói gồm Nhật ký chung và Sổ Cái); thiếu thì 403 và không ghi audit', async () => {
+  it('cần quyền export.authority và đủ bốn cờ nhạy cảm (gói gồm Nhật ký chung và Sổ Cái); thiếu thì 403 và không ghi audit', async () => {
     const before = await exportCount();
     const noFlags = await post(exportBody, await userCookie('ketoan_truong', []));
     expect([noFlags.statusCode, noFlags.json().error.code]).toEqual([403, 'FORBIDDEN']); expect(noFlags.json().error.message).toContain('view_receivable');
     const twoFlags = await post(exportBody, await userCookie('ketoan_truong', ['view_receivable', 'view_payable']));
     expect(twoFlags.statusCode).toBe(403); expect(twoFlags.json().error.message).toContain('view_cost');
-    const noPerm = await post(exportBody, await userCookie('ketoan_vien', ['view_receivable', 'view_payable', 'view_cost']));
+    const noSalary = await post(exportBody, await userCookie('ketoan_truong', ['view_receivable', 'view_payable', 'view_cost'])); // ba cờ cũ chưa đủ: Nhật ký chung có dòng 334
+    expect(noSalary.statusCode).toBe(403); expect(noSalary.json().error.message).toContain('view_salary');
+    const noPerm = await post(exportBody, await userCookie('ketoan_vien', ['view_receivable', 'view_payable', 'view_cost', 'view_salary']));
     expect(noPerm.statusCode).toBe(403); expect(noPerm.json().error.message).toContain('export.authority');
     expect((await ctx.app.inject({ method: 'POST', url: '/api/export/authority', payload: exportBody })).statusCode).toBe(401);
     expect(await exportCount()).toBe(before);

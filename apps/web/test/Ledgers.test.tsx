@@ -49,8 +49,8 @@ describe('In cả bộ sổ năm', () => {
     expect(screen.getByRole('button', { name: 'In' })).toBeDisabled();
   });
 
-  it('người đủ ba cờ: gửi cả Nhật ký chung, Sổ Cái; tải xong mới thu hồi đường dẫn tạm', async () => {
-    me.sensitive = ['view_receivable', 'view_payable', 'view_cost'];
+  it('người đủ bốn cờ: gửi cả Nhật ký chung, Sổ Cái; tải xong mới thu hồi đường dẫn tạm', async () => {
+    me.sensitive = ['view_receivable', 'view_payable', 'view_cost', 'view_salary'];
     await renderModal();
     expect(screen.getByRole('checkbox', { name: 'Sổ Nhật ký chung' })).toBeEnabled();
     await userEvent.click(screen.getByRole('button', { name: 'In' }));

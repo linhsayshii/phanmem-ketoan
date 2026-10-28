@@ -1,6 +1,7 @@
 import { CompiledQuery, sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
+import { TS_RULES } from './dataCheckTs.js';
 
 export interface CheckResult { ruleCode: string; ruleName: string; severity: string; message: string; fixHint: string | null; voucherId: string | null; voucherNo: string | null; ref: string | null; detail: string | null }
 
@@ -44,7 +45,9 @@ export async function runDataChecks(trx: Transaction<Database>, f: { from: strin
     const base = { ruleCode: r.code, ruleName: r.name, severity: r.severity, message: r.message, fixHint: r.fix_hint };
     try {
       await sql`SAVEPOINT rule`.execute(trx);
-      const fetched = (await trx.executeQuery<{ voucher_id: string | null; ref: string | null; detail: string | null }>(CompiledQuery.raw(wrap(r.sql), [f.from, f.to]))).rows;
+      // Quy tắc có phép tính bằng mã (dataCheckTs.ts) chạy thay SQL của dòng quy tắc; kết quả cắt cùng giới hạn.
+      const ts = TS_RULES[r.code];
+      const fetched = ts ? (await ts(trx, f, start.tenant)).slice(0, MAX_ROWS + 1) : (await trx.executeQuery<{ voucher_id: string | null; ref: string | null; detail: string | null }>(CompiledQuery.raw(wrap(r.sql), [f.from, f.to]))).rows;
       // Kiểm tra ngay sau câu của quy tắc, trước mọi truy vấn khác: sau set_config công ty khác, RLS đã đọc dữ liệu của công ty đó.
       if ((await sql<{ tenant: string }>`SELECT app_tenant()::text AS tenant`.execute(trx)).rows[0]!.tenant !== start.tenant)
         throw new AppError('RULE_TENANT_CHANGED', `Quy tắc ${r.code} đổi công ty của phiên làm việc; hủy cả lần soát`, 409);

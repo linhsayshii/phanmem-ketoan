@@ -7,22 +7,24 @@ import { D, formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, sum } from
 import { KeyboardGrid, LookupSelect } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
-import { accountFetcherFor, bankAccountFetcher } from '../lookups.js';
+import { accountFetcherFor, bankAccountFetcher, contractFetcher, contractPick, isContractAccount } from '../lookups.js';
 import { parseAmount } from './VoucherForm.js';
 
 // accountName, partyName, bankName và id chỉ để hiển thị; máy chủ không nhận. docNo, docDate, dueDate: số dư công nợ theo từng hóa đơn.
 // badDates: chữ gõ sai ở ô ngày (chưa lưu được), ô báo lỗi tới khi sửa.
 type DateField = 'docDate' | 'dueDate';
 type Row = { accountCode: string; accountName: string; partyCode: string | null; partyName: string | null; bankAccountNo: string | null; bankName: string | null;
-  docNo: string | null; docDate: string | null; dueDate: string | null; currencyCode: string; debit: string; credit: string; debitCurrency: string; creditCurrency: string;
+  docNo: string | null; docDate: string | null; dueDate: string | null; currencyCode: string;
+  debit: string; credit: string; debitCurrency: string; creditCurrency: string;
+  projectCode?: string | null; contractCode?: string | null; // vụ việc; hợp đồng bán/mua hoặc khế ước vay (341x, 335)
   badDates?: Partial<Record<DateField, string>> };
 interface Issue { code: string; message: string; accountCode?: string; partyCode?: string | null; warning?: boolean }
 interface FiscalYear { fiscalYear: number; regime: string; dateFrom: string }
 interface ImportResult { total: number; inserted: number; errors: { row: number; column: string; message: string }[]; errorCount?: number }
 const emptyRow = (): Row => ({ accountCode: '', accountName: '', partyCode: null, partyName: null, bankAccountNo: null, bankName: null, docNo: null, docDate: null, dueDate: null,
-  currencyCode: 'VND', debit: '0', credit: '0', debitCurrency: '0', creditCurrency: '0' });
-const LOOKUP_CATALOG: Record<string, string> = { accountCode: 'account', partyCode: 'party', bankAccountNo: 'bank_account' };
-const NAME_FIELD = { accountCode: 'accountName', partyCode: 'partyName', bankAccountNo: 'bankName' } as const;
+  currencyCode: 'VND', debit: '0', credit: '0', debitCurrency: '0', creditCurrency: '0', projectCode: null, contractCode: null });
+const LOOKUP_CATALOG: Record<string, string> = { accountCode: 'account', partyCode: 'party', bankAccountNo: 'bank_account', projectCode: 'project', contractCode: 'contract' };
+const NAME_FIELD: Record<string, keyof Row | undefined> = { accountCode: 'accountName', partyCode: 'partyName', bankAccountNo: 'bankName' };
 const quickAdd = [{ key: 'code', label: 'Mã' }, { key: 'name', label: 'Tên' }];
 
 // Ô nguyên tệ: tối đa 4 số lẻ, không âm; để trống là 0, chữ sai thì giữ giá trị cũ (như parseAmount của phiếu kế toán).
@@ -50,11 +52,12 @@ const dateCol = (field: DateField, headerName: string, editable: (d: Row | undef
   tooltipValueGetter: (p) => (p.data?.badDates?.[field] ? DATE_ERROR : undefined),
   cellEditorParams: { useFormatter: true } });
 // Đổi mã thì xóa tên cũ (tên đúng chỉ có sau khi lưu hoặc chọn từ danh mục), không để tên của mã trước lại bên cạnh mã mới.
-const codeCol = (field: keyof typeof NAME_FIELD, headerName: string, width: number, after?: (d: Row) => void): ColDef<Row> => ({ field, headerName, width,
+const codeCol = (field: 'accountCode' | 'partyCode' | 'bankAccountNo' | 'projectCode' | 'contractCode', headerName: string, width: number, after?: (d: Row) => void): ColDef<Row> => ({ field, headerName, width,
   valueSetter: (p) => {
     const d = p.data as unknown as Record<string, string | null>; const empty = field === 'accountCode' ? '' : null; // mã đối tượng và tài khoản ngân hàng trống là null, mã tài khoản trống là ''
     if (d[field] === p.newValue) return false;
-    d[field] = (p.newValue as string) || empty; d[NAME_FIELD[field]] = empty; after?.(p.data); return true;
+    const name = NAME_FIELD[field];
+    d[field] = (p.newValue as string) || empty; if (name) d[name] = empty; after?.(p.data); return true;
   } });
 
 // Lỗi 400 của máy chủ chỉ nêu chỉ số dòng gửi lên (đã bỏ dòng trống): đổi sang số dòng trên lưới.
@@ -113,6 +116,7 @@ export default function OpeningBalancePage() {
     if (bad >= 0) throw new Error(`Dòng ${bad + 1}: ${DATE_ERROR}`);
     const keep = rowsRef.current.map((r, i) => [r, i] as const).filter(([r]) => r.accountCode.trim() !== '');
     const body = keep.map(([r]) => ({ accountCode: r.accountCode.trim(), partyCode: r.partyCode || null, bankAccountNo: r.bankAccountNo || null, docNo: r.docNo || null, docDate: r.docDate || null, dueDate: r.dueDate || null, currencyCode: r.currencyCode || 'VND',
+      projectCode: r.projectCode || null, contractCode: r.contractCode || null,
       debit: r.debit || '0', credit: r.credit || '0', debitCurrency: r.debitCurrency || '0', creditCurrency: r.creditCurrency || '0' }));
     try { await api(`/api/opening-balance/${year}`, { method: 'PUT', json: { rows: body } }); }
     catch (e) { throw new Error(explain(e, keep.map(([, i]) => i))); }
@@ -148,6 +152,7 @@ export default function OpeningBalancePage() {
     { ...codeCol('bankAccountNo', 'TK ngân hàng (F4)', 150), editable: (p) => bankCodes.has(p.data?.accountCode ?? ''), tooltipField: 'bankName' },
     { field: 'docNo', headerName: 'Số chứng từ', width: 120, editable: (p) => isArapRow(p.data), valueParser: (p) => String(p.newValue ?? '').trim() || null },
     dateCol('docDate', 'Ngày chứng từ', isArapRow), dateCol('dueDate', 'Hạn thanh toán', isArapRow),
+    codeCol('projectCode', 'Vụ việc (F4)', 110), codeCol('contractCode', 'Hợp đồng/Khế ước (F4)', 150),
     { field: 'currencyCode', headerName: 'Loại tiền', width: 90, valueParser: (p) => String(p.newValue ?? '').trim().toUpperCase() },
     numCol('debit', 'Dư Nợ', false), numCol('credit', 'Dư Có', false), numCol('debitCurrency', 'Dư Nợ NT', true), numCol('creditCurrency', 'Dư Có NT', true),
   ], [bankCodes, resetForAccount, isArapRow]);
@@ -175,17 +180,18 @@ export default function OpeningBalancePage() {
         ? <Alert type="success" showIcon message="Số dư đầu kỳ hợp lệ" style={{ marginBottom: 12 }} />
         : <Alert type="error" showIcon style={{ marginBottom: 12 }} message={`${errors.length} lỗi, chưa ghi sổ được`} description={<ul style={{ margin: 0, paddingLeft: 20 }}>{errors.map((i, k) => <li key={k}>{i.message}</li>)}</ul>} />)}
       {warnings.length > 0 && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`${warnings.length} cảnh báo (vẫn ghi sổ được)`} description={<ul style={{ margin: 0, paddingLeft: 20 }}>{warnings.map((i, k) => <li key={k}>{i.message}</li>)}</ul>} />}
-      <KeyboardGrid<Row> rows={rows} columns={columns} readOnly={!mayEdit} onRowsChange={setAll} addRowTemplate={emptyRow} onLookup={onLookup} height={420} />
+      <KeyboardGrid<Row> rows={rows} columns={columns} readOnly={!mayEdit} onRowsChange={setAll} addRowTemplate={emptyRow} onLookup={onLookup} height={420} allColumns />
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, marginTop: 8 }}>
         <b>Tổng dư Nợ: {formatVnNumber(td.toString())}</b><b>Tổng dư Có: {formatVnNumber(tc.toString())}</b>
         {!td.equals(tc) && <Tag color="red">Chênh lệch {formatVnNumber(td.minus(tc).toString())}</Tag>}
       </div>
       <Modal open={!!lookup} onCancel={() => setLookup(null)} footer={null} title="Chọn từ danh mục" destroyOnHidden afterOpenChange={(o) => { if (o) lookupBox.current?.querySelector('input')?.focus(); }}>
-        {lookup && <div ref={lookupBox}><LookupSelect catalog={LOOKUP_CATALOG[lookup.col]!} style={{ width: '100%' }} {...(lookup.col === 'accountCode' ? { fetcher: accountFetcher } : lookup.col === 'bankAccountNo' ? { fetcher: bankAccountFetcher } : { quickAddFields: quickAdd })}
+        {lookup && <div ref={lookupBox}><LookupSelect catalog={LOOKUP_CATALOG[lookup.col]!} style={{ width: '100%' }} {...(lookup.col === 'accountCode' ? { fetcher: accountFetcher } : lookup.col === 'bankAccountNo' ? { fetcher: bankAccountFetcher }
+            : lookup.col === 'contractCode' ? { fetcher: isContractAccount(rowsRef.current[lookup.row]?.accountCode) ? contractPick : contractFetcher() } : { quickAddFields: quickAdd })}
           onChange={(code, picked) => {
             if (code !== null) {
-              const copy = [...rowsRef.current]; const nameField = NAME_FIELD[lookup.col as keyof typeof NAME_FIELD]; const prev = copy[lookup.row]!.accountCode;
-              copy[lookup.row] = { ...copy[lookup.row]!, [lookup.col]: code, [nameField]: picked?.name ?? null };
+              const copy = [...rowsRef.current]; const nameField = NAME_FIELD[lookup.col]; const prev = copy[lookup.row]!.accountCode;
+              copy[lookup.row] = { ...copy[lookup.row]!, [lookup.col]: code, ...(nameField && { [nameField]: picked?.name ?? null }) };
               if (lookup.col === 'accountCode' && code !== prev) { const d = { ...copy[lookup.row]! }; resetForAccount(d); copy[lookup.row] = d; }
               setAll(copy);
             }
