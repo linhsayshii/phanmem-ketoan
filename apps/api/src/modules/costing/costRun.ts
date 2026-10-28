@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
+import { COA_REGIMES, loadPayrollAccounts } from '@kt/coa-data';
 import {
-  allocateOverhead, costCoefficient, costOrder, costProject, costRatio, costSimple, COST_ELEMENTS, D, Decimal, formatVnDate, ProductCostError,
+  allocateByRatio, allocateOverhead, costCoefficient, costOrder, costProject, costRatio, costSimple, COST_ELEMENTS, D, type Decimal, formatVnDate, ProductCostError,
   type CostBreakdown, type CostElement, type ProductCostResult, type WipMethod,
 } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
@@ -76,7 +77,7 @@ function compute(method: Method, p: { opening: CostBreakdown; incurred: CostBrea
 }
 
 // Phát sinh nhập thành phẩm của tháng nhận giá thành (D4, QĐ #773): PNK "Nhập thành phẩm", không chuyển kho, chưa bị đảo, theo thứ tự ghi sổ
-// (dòng cuối nhận phần dư); cộng phát sinh đã có lớp giá của lần chạy runId (để chạy lại trả lại phần cũ). cur = giá trị nhập hiện tại, mine = phần của lần chạy.
+// (chia theo phần lẻ lớn nhất, bằng nhau thì dòng sau trước); cộng phát sinh đã có lớp giá của lần chạy runId (để chạy lại trả lại phần cũ). cur = giá trị nhập hiện tại, mine = phần của lần chạy.
 async function finishedReceipts(trx: Trx, from: string, to: string, runId: number | null) {
   return (await sql<{ id: number; item_id: number; item_code: string; warehouse_id: number; lot_no: string | null; posting_date: string; qty: string; voucher_no: string | null; line_no: number; cur: string; mine: string }>`
     SELECT m.id, m.item_id, i.code AS item_code, m.warehouse_id, m.lot_no, m.posting_date::text AS posting_date, m.quantity::text AS qty, v.voucher_no, l.line_no,
@@ -205,9 +206,12 @@ export async function prepareCostRun(trx: Trx, year: number, month: number, para
   };
   const elem = (l: CollectLine) => NAME[l.element ?? 'overhead'];
   if (period.regime !== 'TT133') {
+    // TK dở dang theo chế độ là dữ liệu (coa-data/payroll/accounts.json khóa wip), như kết chuyển giá vốn vụ việc (projectAlloc.ts).
+    const wip = COA_REGIMES.includes(period.regime as never) ? loadPayrollAccounts(period.regime as never)?.wip : undefined;
+    if (!wip) throw new AppError('ACCOUNT_MISSING', `Chế độ ${period.regime} chưa có tài khoản chi phí dở dang (coa-data/payroll/accounts.json khóa wip)`, 400);
     for (const o of objects) {
       for (const l of o.lines) add({ accountCode: l.accountCode, ...o.dims, costItemCode: l.costItemCode, description: `Kết chuyển ${elem(l)} — ${o.code}` }, D(l.amount).neg().toFixed(0));
-      for (const e of COST_ELEMENTS) add({ accountCode: '154', ...o.dims, ...(o.itemCode && { itemCode: o.itemCode }), description: `Chi phí sản xuất kinh doanh dở dang (${NAME[e]}) — ${o.code}` }, o.incurred[e]);
+      for (const e of COST_ELEMENTS) add({ accountCode: wip, ...o.dims, ...(o.itemCode && { itemCode: o.itemCode }), description: `Chi phí sản xuất kinh doanh dở dang (${NAME[e]}) — ${o.code}` }, o.incurred[e]);
     }
     for (const l of col.unassigned.lines) if (l.element === 'overhead') add({ accountCode: l.accountCode, costItemCode: l.costItemCode, description: 'Kết chuyển chi phí sản xuất chung phân bổ' }, D(l.amount).neg().toFixed(0));
   }
@@ -289,7 +293,7 @@ export async function runCostRun(trx: Trx, ctx: Ctx, year: number, month: number
 
 /**
  * Giá thành vào kho (D4, QĐ #773): tổng giá thành của từng vật tư đầu ra (cost_run_output) chia cho các dòng nhập thành phẩm của tháng theo số lượng,
- * dòng cuối nhận phần dư. Mỗi dòng nhận lớp 'adjustment' = phần được chia − giá trị nhập hiện tại (gồm lớp cũ), gắn cost_run_id; dòng từng nhận lớp
+ * phần lẻ lớn nhất (bằng nhau thì dòng sau trước). Mỗi dòng nhận lớp 'adjustment' = phần được chia − giá trị nhập hiện tại (gồm lớp cũ), gắn cost_run_id; dòng từng nhận lớp
  * của lần chạy mà nay vật tư không còn là đầu ra thì trả lại phần đó. Không sửa/xóa lớp cũ. Giá vốn (runCosting) ghi Nợ 155 / Có 154 phần chênh;
  * đánh dấu giá vốn chưa cập nhật từ ngày phiếu nhập như sửa giá nhập thành phẩm GĐ3.
  */
@@ -301,8 +305,10 @@ async function applyFinishedCost(trx: Trx, ctx: Ctx, runId: number, p: { from: s
   const target = new Map<number, Decimal>();
   for (const [item, total] of totals) {
     const rs = rows.filter((r) => Number(r.item_id) === item && r.posting_date >= p.from && r.posting_date <= p.date);
-    const q = rs.reduce((s, r) => s.plus(r.qty), D(0)); let left = total;
-    rs.forEach((r, i) => { const v = i === rs.length - 1 ? left : total.times(r.qty).div(q).toDecimalPlaces(0, Decimal.ROUND_HALF_UP); left = left.minus(v); target.set(r.id, v); });
+    if (!rs.length) continue;
+    // Phần lẻ lớn nhất (QĐ #962): không dòng nào lệch quá 1 đồng hay âm; bằng phần lẻ thì dòng sau nhận trước (đảo thứ tự) nên dòng cuối vẫn nhận phần dư như D4.
+    const parts = allocateByRatio(total.toFixed(0), rs.map((r) => r.qty).reverse()).reverse();
+    rs.forEach((r, i) => target.set(r.id, D(parts[i]!)));
   }
   const changes = rows.map((r) => ({ r, after: target.get(r.id) ?? D(r.cur).minus(r.mine) })).filter((x) => !x.after.eq(x.r.cur));
   if (!changes.length) return [];

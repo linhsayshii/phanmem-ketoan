@@ -243,7 +243,7 @@ Chạy lại: sửa chi phí, nhập kho, dở dang đầu hoặc tham số rồ
 
 ### Nhập kho thành phẩm theo giá thành
 
-Khi chạy giá thành, tổng giá thành mỗi sản phẩm được chia cho các dòng phiếu nhập kho thành phẩm (loại "Nhập thành phẩm", không phải chuyển kho) của tháng theo số lượng, dòng cuối nhận phần dư; phần chênh so với giá nhập hiện tại ghi thành lớp điều chỉnh giá nhập. Việc này làm bước tính giá vốn báo "Cần chạy lại" ("Kho còn phát sinh chưa cập nhật giá vốn trong kỳ"): chạy Tính giá vốn thì 155 và giá vốn hàng bán (632) theo giá thành, và 154 còn lại đúng bằng dở dang cuối. Phản hồi chạy liệt kê phiếu và dòng đã điều chỉnh. Đầu ra không có mã hàng (vụ việc, hợp đồng, đơn hàng không nhập kho) không qua kho: kết chuyển 154 sang 632 ở mục 16.
+Khi chạy giá thành, tổng giá thành mỗi sản phẩm được chia cho các dòng phiếu nhập kho thành phẩm (loại "Nhập thành phẩm", không phải chuyển kho) của tháng theo số lượng, phần lẻ đồng chia theo phần lẻ lớn nhất (bằng nhau thì dòng sau nhận trước, nên dòng cuối nhận phần dư), không dòng nào lệch quá 1 đồng; phần chênh so với giá nhập hiện tại ghi thành lớp điều chỉnh giá nhập. Việc này làm bước tính giá vốn báo "Cần chạy lại" ("Kho còn phát sinh chưa cập nhật giá vốn trong kỳ"): chạy Tính giá vốn thì 155 và giá vốn hàng bán (632) theo giá thành, và 154 còn lại đúng bằng dở dang cuối. Phản hồi chạy liệt kê phiếu và dòng đã điều chỉnh. Đầu ra không có mã hàng (vụ việc, hợp đồng, đơn hàng không nhập kho) không qua kho: kết chuyển 154 sang 632 ở mục 16.
 
 Chạy giá thành xong mà thêm hoặc đảo phiếu nhập thành phẩm thì giá thành "Cần chạy lại" để chia lại. Sửa giá nhập tay của dòng đã nhận giá thành thì chưa tự báo: chạy lại giá thành đưa về đúng phần chia (mục 21).
 
