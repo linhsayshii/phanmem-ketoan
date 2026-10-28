@@ -115,6 +115,19 @@ describe('chính sách branch_scope trên bảng con của chứng từ', () => 
     });
     expect(back).toEqual({ state: 'draft', n: 2 });
   });
+  it('kiểm soát toàn công ty: A bỏ ghi sổ phiếu nhập mà B đã xuất (đã tính giá vốn) bị chặn STOCK_CONSUMED dù tồn âm cho phép; không bị lọc bởi RLS chi nhánh', async () => {
+    await ok('POST', '/api/catalogs/warehouse', owner, { code: 'K2', name: 'Kho FIFO', inventory_account_code: '156', costing_method: 'fifo' });
+    const stock = async (body: object) => { const v = await ok('POST', '/api/stock-vouchers', owner, { description: 'Phiếu kho', ...body }); await ok('POST', `/api/vouchers/${v.id}/post`, owner, {}); return v.id as string; };
+    await working(brA);
+    const nhapA = await stock({ voucherType: 'PNK', stockKind: 'purchase', postingDate: '2026-02-01', warehouseCode: 'K2', partyCode: 'NCC1', items: [{ itemCode: 'SP1', uomCode: 'CAI', quantity: '100', unitPrice: '10' }] });
+    await working(brB);
+    await stock({ voucherType: 'PXK', stockKind: 'sale', postingDate: '2026-02-05', warehouseCode: 'K2', items: [{ itemCode: 'SP1', uomCode: 'CAI', quantity: '10' }] });
+    await working('HO');
+    await ok('PUT', '/api/settings', owner, { stock_negative: 'allow' }); // chỉ còn chốt "đã tính giá vốn" ngăn bỏ ghi sổ
+    await ok('POST', '/api/inventory/costing-runs', owner, { periodFrom: '2026-02-01', periodTo: '2026-02-28' });
+    await expect(asScope(String(brA), async (trx) => sql`SELECT unpost_voucher(${nhapA}::uuid)`.execute(trx))).rejects.toThrow(/STOCK_CONSUMED/);
+    await expect(asScope('', async (trx) => sql`SELECT unpost_voucher(${nhapA}::uuid)`.execute(trx))).rejects.toThrow(/STOCK_CONSUMED/);
+  });
 });
 
 // Phân hệ có quyền không nằm trong BRANCH_SCOPED_PERMISSIONS (lương, giá thành, hợp đồng, phê duyệt, hóa đơn điện tử, ngân hàng, kết chuyển, tài sản, bút toán định kỳ recurring.*): người dùng bị giới hạn không có đường API vào,
