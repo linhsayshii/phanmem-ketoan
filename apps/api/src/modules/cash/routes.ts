@@ -3,6 +3,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
 import { AppError } from '../../plugins/errors.js';
+import { effectiveBranch } from '../branch/scope.js';
 import { assertCanView, assertSensitive, regimeOf } from '../reporting/ledgers.js';
 import { isoDate, respondReport } from '../reporting/routes.js';
 import { companyInfo } from '../reporting/print/bookSet.js';
@@ -28,7 +29,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     schema: { querystring: z.object({ accountCode: z.string().min(1), bankAccountNo: optional, currency: optional, asOf: isoDate }) } }, async (req) =>
     app.withTenant(req, async (trx) => {
       await assertCanView(trx, req.auth!, { accountCode: req.query.accountCode, from: req.query.asOf, to: req.query.asOf });
-      return cashBalanceAt(trx, req.query);
+      return cashBalanceAt(trx, { ...req.query, branch: effectiveBranch(req.auth!, undefined) });
     }, READ_SNAPSHOT));
 
   // ---- Tỷ giá ----

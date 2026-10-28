@@ -2,6 +2,7 @@ import { sql, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
 import { D, SENSITIVE_FLAGS_ALL, type Decimal } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
+import { balancesAt, type BranchFilter } from '../branch/scope.js';
 import { evaluateFinancialReport } from '../reporting/financial.js';
 import { actualMatrix, hiddenPrefixes } from './actuals.js';
 import { getBudget, isDebitNormal, yearRegime } from './service.js';
@@ -57,7 +58,8 @@ export function computeRatios(reports: { B01: ReportRow[]; B02: ReportRow[] }): 
 
 const NEED_ALL = SENSITIVE_FLAGS_ALL.filter((f) => f !== 'view_cost');
 // Tổng quan phân tích tài chính của năm tài chính `year` đến hết tháng `month`. Mỗi nhóm số liệu bị che (null) khi thiếu cờ nhạy cảm tương ứng; `hidden` liệt kê các nhóm đó.
-export async function analyticsOverview(trx: Trx, tenantId: string, auth: Auth, year: number, month: number) {
+// `branch`: phạm vi chi nhánh của người gọi (undefined = toàn công ty); số dư, báo cáo B01/B02 và doanh thu/chi phí tính trong phạm vi đó, và so với ngân sách toàn công ty thì bỏ (ngân sách không theo chi nhánh).
+export async function analyticsOverview(trx: Trx, tenantId: string, auth: Auth, year: number, month: number, branch?: BranchFilter | undefined) {
   const regime = await yearRegime(trx, year);
   const periods = (await trx.selectFrom('fiscal_period').select(['period_no', 'date_from', 'date_to']).where('fiscal_year', '=', year).where('period_no', '>=', 1).where('period_no', '<=', 12).orderBy('period_no').execute());
   if (!periods.length) throw new AppError('FISCAL_YEAR_NOT_FOUND', `Chưa mở năm tài chính ${year}`, 404);
@@ -73,7 +75,7 @@ export async function analyticsOverview(trx: Trx, tenantId: string, auth: Auth, 
     const r = await sql<{ cash: string; ar: string; ap: string }>`SELECT
         coalesce(sum(b.debit - b.credit) FILTER (WHERE a.subledger_kind IN ('cash', 'bank') OR starts_with(a.code, '113')), 0)::text AS cash,
         coalesce(sum(b.debit - b.credit) FILTER (WHERE a.subledger_kind = 'receivable'), 0)::text AS ar, coalesce(sum(b.credit - b.debit) FILTER (WHERE a.subledger_kind = 'payable'), 0)::text AS ap
-      FROM fn_balances_at(${tenantId}::uuid, ${p.date_to}::date) b JOIN account a ON a.id = b.account_id WHERE a.regime = ${regime}`.execute(trx);
+      FROM ${balancesAt(tenantId, p.date_to, branch)} b JOIN account a ON a.id = b.account_id WHERE a.regime = ${regime}`.execute(trx);
     bal.push({ cash: r.rows[0]!.cash, receivable: r.rows[0]!.ar, payable: r.rows[0]!.ap });
   }
   const months = periods.map((p, i) => {
@@ -88,7 +90,7 @@ export async function analyticsOverview(trx: Trx, tenantId: string, auth: Auth, 
 
   let ratios: Ratio[] | null = null;
   if (NEED_ALL.every((f) => auth.sensitive.has(f)) && canCost) {
-    const q = { from: periods[0]!.date_from, to: periods[Math.min(month, periods.length) - 1]!.date_to, comparePrevYear: false };
+    const q = { from: periods[0]!.date_from, to: periods[Math.min(month, periods.length) - 1]!.date_to, comparePrevYear: false, branch };
     try {
       const [b01, b02] = [await evaluateFinancialReport(trx, tenantId, { reportCode: 'B01', ...q }), await evaluateFinancialReport(trx, tenantId, { reportCode: 'B02', ...q })];
       ratios = computeRatios({ B01: b01.rows, B02: b02.rows });
@@ -96,7 +98,7 @@ export async function analyticsOverview(trx: Trx, tenantId: string, auth: Auth, 
   }
 
   let budget = null;
-  const ab = await trx.selectFrom('budget').select('id').where('fiscal_year', '=', year).where('status', '=', 'approved').executeTakeFirst();
+  const ab = branch ? undefined : await trx.selectFrom('budget').select('id').where('fiscal_year', '=', year).where('status', '=', 'approved').executeTakeFirst();
   if (ab) {
     const b = await getBudget(trx, ab.id);
     const hide = await hiddenPrefixes(trx, auth, year, b.lines.map((l) => l.accountPrefix));
@@ -108,7 +110,7 @@ export async function analyticsOverview(trx: Trx, tenantId: string, auth: Auth, 
     });
     budget = { id: b.id, name: b.name, version: b.version, hiddenLines: b.lines.length - shown.length, expense: agg(true), revenue: agg(false) };
   }
-  return { fiscalYear: year, month, regime, hidden, months,
+  return { fiscalYear: year, month, regime, hidden, branchLimited: branch !== undefined, months,
     summary: { revenue: sumOf('revenue'), expense: sumOf('expense'), profit: sumOf('profit'), cash: last?.cash ?? '0', receivable: last?.receivable ?? null, payable: last?.payable ?? null },
     ratios, budget };
 }

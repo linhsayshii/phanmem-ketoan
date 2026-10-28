@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Database } from '@kt/db';
 import { D, VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
+import { isSalaryCode } from '../payroll/accounts.js';
 
 type Trx = Transaction<Database>;
 export const MONTHS = ['m01', 'm02', 'm03', 'm04', 'm05', 'm06', 'm07', 'm08', 'm09', 'm10', 'm11', 'm12'] as const;
@@ -140,7 +141,7 @@ export const copyInput = z.object({
 });
 // Ngân sách nháp từ số thực tế năm trước × hệ số: mỗi tài khoản doanh thu/chi phí (loại 5, 6, 7, 8) có phát sinh một dòng, theo kỳ 1..12; số âm lấy 0.
 // Tài khoản bị cờ nhạy cảm che với người gọi được bỏ qua (trả trong `skipped`), không lộ số.
-export async function copyFromActual(trx: Trx, ctx: { tenantId: string; userId: string }, input: z.infer<typeof copyInput>, canSee: (a: { subledger_kind: string | null; code: string }) => boolean) {
+export async function copyFromActual(trx: Trx, ctx: { tenantId: string; userId: string }, input: z.infer<typeof copyInput>, canSee: (a: { subledger_kind: string | null; code: string; salary: boolean }) => boolean) {
   const regime = await yearRegime(trx, input.sourceYear);
   const rows = await sql<{ code: string; subledger_kind: string | null; period_no: number; net: string }>`
     SELECT a.code, a.subledger_kind, v.period_no, sum(CASE WHEN left(a.code, 1) IN ('6', '8') THEN l.debit - l.credit ELSE l.credit - l.debit END)::text AS net
@@ -149,7 +150,7 @@ export async function copyFromActual(trx: Trx, ctx: { tenantId: string; userId: 
     GROUP BY a.code, a.subledger_kind, v.period_no ORDER BY a.code`.execute(trx);
   const by = new Map<string, string[]>(); const skipped = new Set<string>();
   for (const r of rows.rows) {
-    if (!canSee({ subledger_kind: r.subledger_kind, code: r.code })) { skipped.add(r.code); continue; }
+    if (!canSee({ subledger_kind: r.subledger_kind, code: r.code, salary: isSalaryCode(regime, r.code) })) { skipped.add(r.code); continue; }
     const m = by.get(r.code) ?? Array<string>(12).fill('0');
     const v = D(r.net).times(input.factor).toDecimalPlaces(0);
     m[r.period_no - 1] = v.lt(0) ? '0' : v.toString(); by.set(r.code, m);

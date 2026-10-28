@@ -1,6 +1,7 @@
 import { sql, type RawBuilder, type Transaction } from 'kysely';
 import type { Database } from '@kt/db';
 import { D, ZERO } from '@kt/domain';
+import { SALARY_HIDDEN, salaryAccountIds, withSalary } from '../payroll/accounts.js';
 import { assertSensitive } from '../reporting/ledgers.js';
 import { getBudget, isDebitNormal, yearRegime } from './service.js';
 
@@ -24,15 +25,15 @@ export async function hiddenPrefixes(trx: Trx, auth: Auth, year: number, prefixe
   const regime = await yearRegime(trx, year);
   const hidden = new Set<string>();
   for (const p of new Set(prefixes)) {
-    const accs = await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', regime).where(sql<boolean>`starts_with(code, ${p})`).execute();
+    const accs = withSalary(regime, await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', regime).where(sql<boolean>`starts_with(code, ${p})`).execute());
     try { for (const a of accs) assertSensitive(auth, a); } catch { hidden.add(p); }
   }
   return hidden;
 }
 export async function assertPrefixesViewable(trx: Trx, auth: Auth, year: number, prefixes: string[]) {
+  const regime = await yearRegime(trx, year);
   for (const p of new Set(prefixes)) {
-    const regime = await yearRegime(trx, year);
-    for (const a of await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', regime).where(sql<boolean>`starts_with(code, ${p})`).execute()) assertSensitive(auth, a);
+    for (const a of withSalary(regime, await trx.selectFrom('account').select(['code', 'subledger_kind']).where('regime', '=', regime).where(sql<boolean>`starts_with(code, ${p})`).execute())) assertSensitive(auth, a);
   }
 }
 
@@ -79,6 +80,21 @@ export async function budgetDrill(trx: Trx, auth: Auth, id: number, lineId: numb
     SELECT v.id AS voucher_id, v.voucher_no, v.voucher_type, v.posting_date::text, coalesce(l.description, v.description) AS description, a.code AS account_code, (${signedAmount})::text AS amount
     ${matchFrom(b.fiscalYear)} WHERE bl.id = ${lineId} AND ${matchWhere} ${month === null ? sql`` : sql`AND v.period_no = ${month}`}
     ORDER BY v.posting_date, v.voucher_no, l.line_no LIMIT ${DRILL_LIMIT + 1}`.execute(trx);
-  const rows = r.rows.slice(0, DRILL_LIMIT).map((x) => ({ voucherId: x.voucher_id, voucherNo: x.voucher_no, voucherType: x.voucher_type, postingDate: x.posting_date, description: x.description, accountCode: x.account_code, amount: x.amount }));
+  let rows = r.rows.slice(0, DRILL_LIMIT).map((x) => ({ voucherId: x.voucher_id, voucherNo: x.voucher_no, voucherType: x.voucher_type, postingDate: x.posting_date, description: x.description, accountCode: x.account_code, amount: x.amount }));
+  // Thiếu view_salary: dòng của chứng từ có dòng lương (LU, chi lương, nộp bảo hiểm: một dòng cho mỗi nhân viên) gộp một dòng theo (chứng từ, tài khoản) và bỏ diễn giải, như sổ sách (hideSalary).
+  if (!auth.sensitive.has('view_salary') && rows.length) {
+    const salaryIds = await salaryAccountIds(trx);
+    const withSalaryLines = salaryIds.length ? new Set((await sql<{ id: string }>`SELECT DISTINCT voucher_id::text AS id FROM voucher_line WHERE voucher_id = ANY (${[...new Set(rows.map((x) => x.voucherId))]}::uuid[]) AND account_id = ANY (${salaryIds}::bigint[])`.execute(trx)).rows.map((x) => x.id)) : new Set<string>();
+    if (withSalaryLines.size) {
+      const out: typeof rows = []; const groups = new Map<string, (typeof rows)[number]>();
+      for (const x of rows) {
+        if (!withSalaryLines.has(x.voucherId)) { out.push(x); continue; }
+        const k = `${x.voucherId}|${x.accountCode}`; const g = groups.get(k);
+        if (g) { g.amount = D(g.amount).plus(x.amount).toString(); continue; }
+        const row = { ...x, description: SALARY_HIDDEN }; groups.set(k, row); out.push(row);
+      }
+      rows = out;
+    }
+  }
   return { lineId, month, truncated: r.rows.length > DRILL_LIMIT, rows };
 }

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
 import { D } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
+import { effectiveBranch } from '../branch/scope.js';
 import { cashBalanceAt } from '../cash/books.js';
 import { extAuthHook } from '../ext/auth.js';
 import { evaluateFinancialReport } from '../reporting/financial.js';
@@ -63,15 +64,16 @@ const routes: FastifyPluginAsyncZod = async (app) => {
 
   // B01/B02 tóm tắt: các chỉ tiêu in đậm (tổng, nhóm chính) của báo cáo đầy đủ cùng kỳ.
   app.get('/reports/financial/:code', { ...report, schema: { params: z.object({ code: z.enum(['B01', 'B02']) }), querystring: range } }, async (req) => {
-    const r = await app.withTenant(req, (trx) => evaluateFinancialReport(trx, req.auth!.tenantId!, { reportCode: req.params.code, from: req.query.from, to: req.query.to, comparePrevYear: false }), READ_SNAPSHOT);
+    const r = await app.withTenant(req, (trx) => evaluateFinancialReport(trx, req.auth!.tenantId!, { reportCode: req.params.code, from: req.query.from, to: req.query.to, comparePrevYear: false, branch: effectiveBranch(req.auth!, undefined) }), READ_SNAPSHOT);
     return { reportCode: r.reportCode, name: r.name, regime: r.regime, period: r.period, rows: r.rows.filter((x) => x.isBold).map((x) => ({ lineCode: x.lineCode, label: x.label, current: x.current, previous: x.previous })) };
   });
 
   // Số dư tiền tại ngày: tiền mặt (111), tiền gửi ngân hàng (112).
   app.get('/reports/cash', { ...report, schema: { querystring: z.object({ asOf: isoDate }) } }, async (req) =>
     app.withTenant(req, async (trx) => {
-      const cash = (await cashBalanceAt(trx, { accountCode: '111', asOf: req.query.asOf })).balance;
-      const bank = (await cashBalanceAt(trx, { accountCode: '112', asOf: req.query.asOf })).balance;
+      const branch = effectiveBranch(req.auth!, undefined); // người bị giới hạn chi nhánh chỉ thấy số của phạm vi mình
+      const cash = (await cashBalanceAt(trx, { accountCode: '111', asOf: req.query.asOf, branch })).balance;
+      const bank = (await cashBalanceAt(trx, { accountCode: '112', asOf: req.query.asOf, branch })).balance;
       return { asOf: req.query.asOf, cash, bank, total: D(cash).plus(bank).toFixed(0) };
     }, READ_SNAPSHOT));
 

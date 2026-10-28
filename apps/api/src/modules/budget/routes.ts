@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { READ_SNAPSHOT } from '@kt/db';
 import { sensitiveDenial } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
+import { effectiveBranch } from '../branch/scope.js';
 import { getSetting, putSetting, settingInput } from './alert.js';
 import { analyticsOverview } from './analytics.js';
 import { budgetDrill, budgetReport } from './actuals.js';
@@ -66,6 +67,6 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.get('/api/analytics/overview', { preHandler: app.requirePermission('report.view'), schema: { querystring: z.object({ year: z.coerce.number().int().min(2000).max(2100), month: month.default(12) }) } }, async (req) =>
-    app.withTenant(req, (trx) => analyticsOverview(trx, req.auth!.tenantId!, req.auth!, req.query.year, req.query.month), READ_SNAPSHOT));
+    app.withTenant(req, (trx) => analyticsOverview(trx, req.auth!.tenantId!, req.auth!, req.query.year, req.query.month, effectiveBranch(req.auth!, undefined)), READ_SNAPSHOT));
 };
 export default routes;

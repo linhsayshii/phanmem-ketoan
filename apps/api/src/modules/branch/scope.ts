@@ -67,3 +67,17 @@ export const branchWhere = (f: BranchFilter | undefined, alias = 'v') => f
 export const balancesAt = (tenantId: string, date: string, f: BranchFilter | undefined) => f
   ? sql`fn_balances_at_branch(${tenantId}::uuid, ${date}::date, ${f.ids}::bigint[], ${f.headOffice}::boolean)`
   : sql`fn_balances_at(${tenantId}::uuid, ${date}::date)`;
+// Như balancesAt nhưng công ty lấy từ phiên (app_tenant()), cho truy vấn không có sẵn tenantId.
+export const balancesAtApp = (date: string, f: BranchFilter | undefined) => f
+  ? sql`fn_balances_at_branch(app_tenant(), ${date}::date, ${f.ids}::bigint[], ${f.headOffice}::boolean)`
+  : sql`fn_balances_at(app_tenant(), ${date}::date)`;
+
+// Kiểm soát nghiệp vụ của cả công ty (quỹ âm, vượt ngân sách) chạy dưới phiên bị giới hạn chi nhánh: tạm bỏ phạm vi trong lúc tính (công ty vẫn cách ly bằng tenant_isolation) rồi trả lại.
+// Hàm nhận `restricted` để bỏ số tiền toàn công ty khỏi thông báo trả cho người bị giới hạn. Lỗi nghiệp vụ (409 chặn ghi sổ) ném ra sau khi đã trả phạm vi.
+export async function withCompanyScope<T>(trx: Trx, fn: (restricted: boolean) => Promise<T>): Promise<T> {
+  const prev = (await sql<{ s: string }>`SELECT fn_branch_scope_suspend() AS s`.execute(trx)).rows[0]!.s;
+  try { return await fn(prev !== ''); } finally {
+    // Lỗi SQL làm giao dịch hỏng thì cả giao dịch hoàn tác, bỏ qua lỗi trả phạm vi để không che lỗi gốc.
+    await sql`SELECT fn_branch_scope_restore(${prev})`.execute(trx).catch(() => undefined);
+  }
+}

@@ -6,6 +6,7 @@ import { AppError } from '../../plugins/errors.js';
 import { getSettings } from '../core/settings.js';
 import * as S from '../ledger/vouchers.service.js';
 import { isSalaryCode, SALARY_HIDDEN, salaryAccountIds } from '../payroll/accounts.js';
+import { balancesAtApp, withCompanyScope, type BranchFilter } from '../branch/scope.js';
 import { accountsUnder, dayBefore, regimeOf } from '../reporting/ledgers.js';
 import { companyInfo } from '../reporting/print/bookSet.js';
 import { bookFormFor } from '../reporting/print/forms.js';
@@ -23,7 +24,7 @@ async function findBank(trx: Trx, accountNo: string): Promise<BankRef> {
   if (!r) throw new AppError('BANK_ACCOUNT_NOT_FOUND', `Không có tài khoản ngân hàng ${accountNo}`, 404);
   return { id: r.id, accountNo: r.account_no, glAccountCode: r.gl_account_code, currencyCode: r.currency_code, accountName: r.account_name, branch: r.branch, bankName: r.bank_name };
 }
-interface Scope { regime: string; prefix: string; bankId?: number | 'none' | undefined; currency?: string | undefined }
+interface Scope { regime: string; prefix: string; bankId?: number | 'none' | undefined; currency?: string | undefined; branch?: BranchFilter | undefined }
 // Điều kiện trên dòng chứng từ `l` (bí danh account `a`). Mọi nhánh lọc theo chế độ của năm đang xem: đổi chế độ thì số dư năm mới vào bằng DK trên hệ tài khoản mới,
 // dòng của tài khoản ngân hàng ở hệ cũ không được cộng thêm lần nữa.
 const lineScope = (s: Scope) => s.bankId === undefined ? sql`a.regime = ${s.regime} AND starts_with(a.code, ${s.prefix})`
@@ -35,7 +36,7 @@ const currencyOf = (s: Scope) => (s.currency ? sql`AND l.currency_code = ${s.cur
 async function netAt(trx: Trx, s: Scope, asOf: string): Promise<{ net: Decimal; cur: Decimal }> {
   if (s.bankId === undefined) {
     const r = await sql<{ net: string; cur: string }>`SELECT coalesce(sum(b.debit - b.credit), 0)::text AS net, coalesce(sum(b.debit_cur - b.credit_cur), 0)::text AS cur
-      FROM fn_balances_at(app_tenant(), ${asOf}::date) b JOIN account a ON a.id = b.account_id
+      FROM ${balancesAtApp(asOf, s.branch)} b JOIN account a ON a.id = b.account_id
       WHERE a.regime = ${s.regime} AND starts_with(a.code, ${s.prefix}) ${s.currency ? sql`AND b.currency_code = ${s.currency}` : sql``}`.execute(trx);
     return { net: D(r.rows[0]!.net), cur: D(r.rows[0]!.cur) };
   }
@@ -52,7 +53,7 @@ const foreign = (d: Decimal) => d.toFixed(4);
 export interface CashBalance { debit: string; credit: string; balance: string; balanceCurrency: string }
 // Số dư tại ngày: debit/credit là số dư Nợ/Có (một bên bằng 0), balance = Nợ - Có (âm là quỹ âm). balanceCurrency là số dư nguyên tệ của `currency`
 // (VND: bằng balance); không chỉ định loại tiền thì '0' vì cộng nhiều loại tiền không có nghĩa. Kiểm kê quỹ (Task 9) gọi hàm này trực tiếp trong giao dịch của nó.
-export async function cashBalanceAt(trx: Trx, p: { accountCode: string; bankAccountNo?: string | undefined; currency?: string | undefined; asOf: string }): Promise<CashBalance> {
+export async function cashBalanceAt(trx: Trx, p: { accountCode: string; bankAccountNo?: string | undefined; currency?: string | undefined; asOf: string; branch?: BranchFilter | undefined }): Promise<CashBalance> {
   const regime = await regimeOf(trx, { from: p.asOf, to: p.asOf });
   await accountsUnder(trx, regime, p.accountCode);
   let bankId: number | undefined;
@@ -61,7 +62,7 @@ export async function cashBalanceAt(trx: Trx, p: { accountCode: string; bankAcco
     if (!b.glAccountCode.startsWith(p.accountCode)) throw new AppError('BANK_ACCOUNT_GL_MISMATCH', `Tài khoản ngân hàng ${b.accountNo} thuộc TK ${b.glAccountCode}, không thuộc TK ${p.accountCode}`, 400);
     bankId = b.id;
   }
-  const { net, cur } = await netAt(trx, { regime, prefix: p.accountCode, bankId, currency: p.currency }, p.asOf);
+  const { net, cur } = await netAt(trx, { regime, prefix: p.accountCode, bankId, currency: p.currency, branch: p.branch }, p.asOf);
   return { debit: net.gt(0) ? vnd(net) : '0', credit: net.lt(0) ? vnd(net.neg()) : '0', balance: vnd(net), balanceCurrency: !p.currency ? '0' : isForeign(p.currency) ? foreign(cur) : vnd(cur) };
 }
 
@@ -201,7 +202,9 @@ function firstNegative(keys: string[], base: Base[], tail: Tail[], date: string)
 // Sau khi ghi sổ / bỏ ghi sổ / đảo (trong cùng giao dịch, thấy cả dòng của chính chứng từ): quỹ hoặc tài khoản ngân hàng mà chứng từ làm GIẢM và có ngày nào từ ngày hạch toán trở đi số dư cuối ngày âm.
 // Ghi sổ và chứng từ đảo (đã ghi sổ trong reverse_voucher) giảm quỹ khi dòng của chúng làm giảm; bỏ ghi sổ lấy dòng ra khỏi sổ nên giảm quỹ khi dòng đó là thu vào.
 // Chứng từ chỉ thu thêm vào quỹ đang âm từ trước không bị chặn. Tiền VND xét theo VND, ngoại tệ xét theo nguyên tệ.
-async function cashNegativeWarnings(trx: Trx, voucherId: string, action: CashAction): Promise<CashWarning[]> {
+// Tính trên toàn công ty dù người ghi sổ bị giới hạn chi nhánh (quỹ dùng chung; số dư chi nhánh khác không nằm trong tầm nhìn của họ nên số tiền không nêu trong thông báo, xem 0261).
+const cashNegativeWarnings = (trx: Trx, voucherId: string, action: CashAction): Promise<CashWarning[]> => withCompanyScope(trx, (restricted) => cashNegativeWarningsIn(trx, voucherId, action, restricted));
+async function cashNegativeWarningsIn(trx: Trx, voucherId: string, action: CashAction, redact: boolean): Promise<CashWarning[]> {
   const v = await trx.selectFrom('voucher').select('posting_date').where('id', '=', voucherId).executeTakeFirstOrThrow();
   const date = v.posting_date;
   const mine = (await sql<{ accountId: number; code: string; kind: string; currency: string; bankAccountId: number | null; net: string; cur: string }>`
@@ -222,7 +225,7 @@ async function cashNegativeWarnings(trx: Trx, voucherId: string, action: CashAct
   const out: CashWarning[] = []; const when = formatVnDate(date);
   const show = (currency: string, bal: Decimal) => currency === 'VND' ? `${formatVnNumber(bal.abs().toString())} đ` : `${formatVnNumber(bal.abs().toString(), 2)} ${currency}`;
   const warn = (label: string, currency: string, f: { day: string; bal: Decimal }) => out.push({ code: 'CASH_NEGATIVE',
-    message: `${VERB[action]} làm ${label} âm ${show(currency, f.bal)} tại ngày ${formatVnDate(f.day)}${f.day === date ? '' : ` (chứng từ hạch toán ngày ${when})`}` });
+    message: `${VERB[action]} làm ${label} âm${redact ? '' : ` ${show(currency, f.bal)}`} tại ngày ${formatVnDate(f.day)}${f.day === date ? '' : ` (chứng từ hạch toán ngày ${when})`}` });
 
   const dropping = [...accs.values()].filter((a) => decrease(a.currency, a.net, a.cur));
   if (dropping.length) {
@@ -265,7 +268,7 @@ export async function postWithCashCheck(trx: Trx, tenantId: string, id: string):
   await lockCashAccounts(trx, id);
   const dto = await S.postVoucher(trx, id);
   const out: S.VoucherDto & { warnings?: (CashWarning | BudgetWarning)[] } = applyMode(mode, dto, await cashNegativeWarnings(trx, id, 'post'));
-  const budget = await budgetCheck(trx, id); // GĐ7: cảnh báo/chặn vượt ngân sách (tắt mặc định)
+  const budget = await withCompanyScope(trx, () => budgetCheck(trx, id)); // GĐ7: cảnh báo/chặn vượt ngân sách (tắt mặc định)
   return budget.length ? { ...out, warnings: [...(out.warnings ?? []), ...budget] } : out;
 }
 // Bỏ ghi sổ chứng từ thu tiền làm các ngày sau có thể bị âm quỹ: cùng phép kiểm tra, dòng chứng từ bị lấy khỏi sổ.
