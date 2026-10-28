@@ -102,7 +102,7 @@ describe('in sổ: nội dung, hệ tài khoản, quyền', () => {
 
   it('BCTC: in theo định nghĩa của công ty (thụt lề, số đầu năm), báo cáo chưa định nghĩa báo 404', async () => {
     const r = await get('/api/reports/financial/B01?from=2026-01-01&to=2026-01-31&format=html');
-    expect(r.statusCode, r.body).toBe(200);
+    expect(r.statusCode, r.body).toBe(200); expect(r.body).toContain('Cách lấy số gần đúng'); // GĐ7 gói 2: chú thích dòng gần đúng của B01 TT133
     expect(r.body).toContain('B01a-DNN'); expect(r.body).toContain('BÁO CÁO TÌNH HÌNH TÀI CHÍNH'); expect(r.body).toContain('Tại ngày 31/01/2026'); expect(r.body).toContain('Số đầu năm');
     expect(r.body).toContain('        Tiền mặt'); // dòng cấp 3 thụt hai bậc; khoảng trắng thường sẽ bị trình duyệt gộp mất
     expect(r.body).toContain('(100.000)'); // 1111 dư Có vì chưa có số dư đầu: số âm in trong ngoặc, khớp màn hình

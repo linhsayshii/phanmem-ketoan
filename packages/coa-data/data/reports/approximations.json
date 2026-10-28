@@ -1,0 +1,56 @@
+{
+  "_note": "Chỉ tiêu B01/B02/B03 mà phần mềm để 0 cố định (fixedZero: công thức là 0, kế toán nhập tay hoặc không có tài khoản tương ứng) và cách lấy số gần đúng (approx). In kèm báo cáo để người đọc không tưởng báo cáo đã đầy đủ. Mỗi dòng fixedZero phải có công thức 0 trong CSV của báo cáo (kiểm thử coa-data). Nguồn: ghi chú trong status.json (cùng người nhập), không phải nguồn pháp lý mới.",
+  "TT99": {
+    "B01": {
+      "fixedZero": ["112", "124", "125", "126", "165", "216", "236", "237", "238", "251", "266", "271", "273", "337", "341"],
+      "approx": [
+        "Phân loại ngắn hạn, dài hạn theo hạn thanh toán còn lại của từng khoản (12 tháng sau ngày báo cáo), không xét chu kỳ kinh doanh thông thường dài hơn 12 tháng",
+        "Tài khoản dùng chung cho ngắn hạn và dài hạn được đưa hết vào dòng ngắn hạn",
+        "Dòng 112 (tương đương tiền) để 0 vì cần kỳ hạn gốc của 1281, 1288; dòng 341 để 0 vì cổ phiếu ưu đãi lấy ở 41112",
+        "Nếu chưa kết chuyển thì tổng tài sản lệch nguồn vốn bằng lãi lỗ chưa kết chuyển"
+      ]
+    },
+    "B02": {
+      "fixedZero": ["21", "24", "70", "71"],
+      "approx": [
+        "Dòng 21 và 24 để 0 vì không có tài khoản chi tiết; dòng 70, 71 (lãi trên cổ phiếu) để 0, kế toán nhập tay",
+        "Dòng 22 và 23 trình bày số thuần chênh lệch đánh giá lại ngoại tệ cuối kỳ"
+      ]
+    },
+    "B03": {
+      "fixedZero": [],
+      "approx": [
+        "Báo cáo lưu chuyển tiền tệ theo phương pháp trực tiếp: dòng tiền không gắn mã luồng tiền được phân loại theo cặp đối ứng tài khoản",
+        "Dòng 33, 34 gom 3411, 343, 171 và dòng 07 gom 338 (gồm 3387, 3388), thô hơn văn bản",
+        "Tiền thu thanh lý qua 711 nằm ở dòng 06",
+        "Chênh lệch chưa phân loại hiện ở 50 + 60 + 61 khác 70"
+      ]
+    }
+  },
+  "TT133": {
+    "B01": {
+      "fixedZero": [],
+      "approx": [
+        "Dòng 110 chỉ lấy 111 + 112, không tách tiền gửi kỳ hạn gốc dưới 3 tháng của 1281, 1288",
+        "Dòng 122 lấy 1281; 1288 nằm ở dòng 134 theo văn bản; dòng 316 không tách cổ phiếu ưu đãi",
+        "Dòng 415 lấy TK 413 vì văn bản không nêu tài khoản"
+      ]
+    },
+    "B02": {
+      "fixedZero": [],
+      "approx": [
+        "Dòng 31 và 32 lấy gộp 711 và 811; văn bản yêu cầu loại phần thanh lý TSCĐ và trình bày chênh lệch thuần mà sổ cái không tách được",
+        "Dòng 02 theo cặp N511/C111,112,131; dòng 23 theo cặp N635/C111,112,335"
+      ]
+    },
+    "B03": {
+      "fixedZero": [],
+      "approx": [
+        "Báo cáo lưu chuyển tiền tệ theo phương pháp trực tiếp: dòng tiền không gắn mã luồng tiền được phân loại theo cặp đối ứng tài khoản",
+        "Dòng 61 chỉ lấy chênh lệch tỷ giá qua TK 413 nên gần 0; phần ghi qua 515/635 nằm ở dòng 25 và 04",
+        "Dòng 04 (lãi vay trả) không thấy khoản chi qua N335/N242, các khoản này rơi vào dòng 02; chi mua TSCĐ qua N331 rơi vào dòng 02 thay vì 21",
+        "Dòng 07 liệt kê 3331-3339 trừ 3334 và gồm N3388 mà văn bản xếp ở dòng 35; tiền thu thanh lý qua 711 nằm ở dòng 06; cổ tức chi qua 3388 nằm ở dòng 07"
+      ]
+    }
+  }
+}

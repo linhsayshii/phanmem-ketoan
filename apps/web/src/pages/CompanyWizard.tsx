@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Button, Card, DatePicker, Form, Input, InputNumber, Select, Steps, message } from 'antd';
+import { Button, Card, DatePicker, Form, Input, InputNumber, Modal, Select, Steps, message } from 'antd';
 import dayjs from 'dayjs';
 import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { api } from '../api/client.js';
+import { ApiError, api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { RegimeNotice } from './Regimes.js';
 
@@ -36,10 +36,18 @@ export default function CompanyWizard() {
       )}
       {step === 1 && (
         <Form layout="vertical" initialValues={{ fiscalYear: 2026, dateFrom: dayjs('2026-01-01'), months: 12, regime: 'TT133' }}
-          onFinish={async (v) => { try {
-            await api('/api/fiscal-years', { method: 'POST', json: { ...v, dateFrom: (v.dateFrom as dayjs.Dayjs).format('YYYY-MM-DD') } });
-            void message.success('Đã tạo năm tài chính'); void navigate({ to: '/' });
-          } catch (e) { void message.error((e as Error).message); } }}>
+          onFinish={async (v) => {
+            const send = async (confirmRegimeOverride: boolean) => {
+              await api('/api/fiscal-years', { method: 'POST', json: { ...v, dateFrom: (v.dateFrom as dayjs.Dayjs).format('YYYY-MM-DD'), ...(confirmRegimeOverride && { confirmRegimeOverride: true }) } });
+              void message.success('Đã tạo năm tài chính'); void navigate({ to: '/' });
+            };
+            try { await send(false); } catch (e) {
+              // Chế độ chưa đối chiếu hoặc ngoài hiệu lực (REGIME_NOT_READY, REGIME_NOT_EFFECTIVE): hỏi xác nhận rõ, ghi nhật ký; chế độ chưa có dữ liệu (COA_TEMPLATE_PENDING) không xác nhận được.
+              if (e instanceof ApiError && (e.code === 'REGIME_NOT_READY' || e.code === 'REGIME_NOT_EFFECTIVE'))
+                Modal.confirm({ title: 'Tạo năm tài chính theo chế độ này?', width: 520, content: e.message, okText: 'Vẫn tạo', cancelText: 'Chọn lại', onOk: async () => { try { await send(true); } catch (e2) { void message.error((e2 as Error).message); } } });
+              else void message.error((e as Error).message);
+            }
+          }}>
           <Form.Item label="Năm tài chính" name="fiscalYear" rules={[{ required: true }]}><InputNumber min={2000} max={2100} /></Form.Item>
           <Form.Item label="Ngày bắt đầu" name="dateFrom" rules={[{ required: true }]}><DatePicker format="DD/MM/YYYY" disabledDate={(d) => d.date() !== 1} /></Form.Item>
           <Form.Item label="Số tháng (năm đầu tối đa 15)" name="months" rules={[{ required: true }]}><InputNumber min={1} max={15} /></Form.Item>

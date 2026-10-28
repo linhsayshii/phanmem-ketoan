@@ -1,5 +1,21 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { accountingRegimeRules, checkRegimeForYear } from '../src/index.js';
+import { accountingRegimeRules, checkRegimeForYear, dataPath, reportApproximations } from '../src/index.js';
+
+// GĐ7 gói 2 (TB5): chỉ tiêu để 0 cố định in kèm báo cáo phải đúng với CSV (cột 6 là công thức).
+describe('reports/approximations.json', () => {
+  it('mọi chỉ tiêu fixedZero có trong báo cáo và công thức là 0', () => {
+    for (const [regime, dir] of [['TT99', 'tt99'], ['TT133', 'tt133']] as const) for (const code of ['B01', 'B02', 'B03']) {
+      const lines = readFileSync(dataPath('reports', dir, `${code}.csv`), 'utf8').split('\n').slice(1).filter(Boolean);
+      for (const lc of reportApproximations(regime, code).fixedZero) {
+        const row = lines.find((l) => l.startsWith(`${lc},`)); expect(row, `${regime} ${code} ${lc}`).toBeTruthy();
+        expect(row!.replace(/"[^"]*"/g, 'X').split(',')[5], `${regime} ${code} ${lc}: công thức`).toBe('0');
+      }
+    }
+    expect(reportApproximations('TT200', 'B01')).toEqual({ fixedZero: [], approx: [] });
+    expect(reportApproximations('TT99', 'B01').fixedZero).toContain('112');
+  });
+});
 
 // GĐ7 gói 2 (C4): hiệu lực và cổng của TT99, TT133, TT200 là dữ liệu (data/regimes/accounting.json), không viết cứng ở mã.
 describe('regimes/accounting.json: hiệu lực và cổng TT99, TT133, TT200', () => {

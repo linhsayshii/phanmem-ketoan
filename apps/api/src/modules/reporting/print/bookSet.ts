@@ -61,7 +61,9 @@ export async function financialDoc(trx: Trx, tenantId: string, regime: string, p
   const amount = (x: { formula: string | null; negate: boolean }, v: string | null) => (v === null || !x.formula ? null : x.negate ? D(v).neg().toString() : v);
   return { title: r.name, company: c, formNo: r.formNo, issuedBy: r.issuedBy, subtitle: isB01 ? `Tại ngày ${formatVnDate(p.to)}` : periodSubtitle(p.from, p.to), sheetName: r.formNo,
     columns: [{ key: 'label', label: 'Chỉ tiêu' }, { key: 'lineCode', label: 'Mã số', align: 'center' }, { key: 'noteRef', label: 'Thuyết minh', align: 'center' }, { key: 'current', label: isB01 ? 'Số cuối kỳ' : 'Năm nay', type: 'number' }, { key: 'previous', label: isB01 ? 'Số đầu năm' : 'Năm trước', type: 'number' }],
-    rows: r.rows.map((x) => ({ ...x, label: `${' '.repeat(4 * depth(x.parentLineCode))}${x.label}`, current: amount(x, x.current), previous: amount(x, x.previous) })), signatures: ['Người lập biểu', 'Kế toán trưởng', 'Người đại diện theo pháp luật'] };
+    rows: r.rows.map((x) => ({ ...x, label: `${' '.repeat(4 * depth(x.parentLineCode))}${x.label}`, current: amount(x, x.current), previous: amount(x, x.previous) })), signatures: ['Người lập biểu', 'Kế toán trưởng', 'Người đại diện theo pháp luật'],
+    // Chú thích của phần mềm (không phải của mẫu): chỉ tiêu để 0 cố định và cách lấy số gần đúng, để người đọc không tưởng báo cáo đã đầy đủ.
+    outro: [...(r.approximations.fixedZero.length ? [`Chú thích của phần mềm: các chỉ tiêu ${r.approximations.fixedZero.join(', ')} luôn bằng 0 vì chưa có dữ liệu nguồn trong sổ cái; nhập tay nếu có phát sinh.`] : []), ...r.approximations.approx.map((t) => `Cách lấy số gần đúng: ${t}.`)] };
 }
 export async function bookSetDocs(trx: Trx, tenantId: string, year: number, include: string[]): Promise<ReportDoc[]> {
   const ps = await trx.selectFrom('fiscal_period').select(['date_from', 'date_to', 'regime']).where('fiscal_year', '=', year).where('period_no', '>=', 1).orderBy('period_no').execute();

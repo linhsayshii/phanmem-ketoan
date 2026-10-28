@@ -4,6 +4,7 @@ import { D, evaluateReport, parseFormula, sum, ZERO, type AccountRef, type Decim
 import { AppError } from '../../plugins/errors.js';
 import { assertSensitive, regimeOf } from './ledgers.js';
 import { isSalaryCode } from '../payroll/accounts.js';
+import { reportApproximations } from '@kt/coa-data';
 import { formNoFor } from './print/forms.js';
 import { loanLongRows } from '../loans/stats.js';
 import { balancesAt, branchWhere, type BranchFilter } from '../branch/scope.js';
@@ -190,7 +191,10 @@ export async function evaluateFinancialReport(trx: Trx, tenantId: string, q: { r
   const prevRegime = compareTo === null ? null : await regimeAt(trx, compareTo);
   const changed = prevRegime !== null && prevRegime !== regime;
   const previous = compareTo === null || changed ? null : await run(q.reportCode === 'B01' ? q.from : shiftYear(q.from, -1), compareTo);
-  return { reportCode: def.report_code, name: def.name, formNo: def.form_no, issuedBy: def.issued_by, regime, period: { from: q.from, to: q.to }, ...(changed && { previousNote: 'REGIME_CHANGED' as const }),
+  // Chỉ tiêu để 0 cố định / lấy số gần đúng (data/reports/approximations.json): chỉ báo dòng còn công thức 0 trong định nghĩa của công ty (công ty đã sửa công thức thì không báo nữa).
+  const ap = reportApproximations(regime, def.report_code); const zero = new Set(lines.filter((l) => !l.formula || l.formula.trim() === '0').map((l) => l.line_code));
+  const approximations = { fixedZero: ap.fixedZero.filter((c) => zero.has(c)), approx: ap.approx };
+  return { reportCode: def.report_code, name: def.name, formNo: def.form_no, issuedBy: def.issued_by, regime, period: { from: q.from, to: q.to }, approximations, ...(changed && { previousNote: 'REGIME_CHANGED' as const }),
     rows: lines.map((l) => ({ lineCode: l.line_code, label: l.label, parentLineCode: l.parent_line_code, isBold: l.is_bold, negate: l.negate, noteRef: l.note_ref, source: l.source, formula: l.formula,
       current: (current.get(l.line_code) ?? ZERO).toString(), previous: previous ? (previous.get(l.line_code) ?? ZERO).toString() : null })) };
 }
