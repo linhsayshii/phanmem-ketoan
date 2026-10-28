@@ -195,7 +195,7 @@ export async function submitRequest(trx: Trx, auth: Auth, id: string) {
   assertOwnDraft(auth, r);
   const flow = await trx.selectFrom('approval_flow').select(['id', 'name']).where('kind', '=', r.kind).where('is_active', '=', true).where('min_amount', '<=', r.amount)
     .orderBy('min_amount', 'desc').limit(1).executeTakeFirst();
-  if (!flow) throw new AppError('APPROVAL_FLOW_NOT_FOUND', `Chưa có quy trình phê duyệt cho ${KIND_LABEL[r.kind as keyof typeof KIND_LABEL].toLowerCase()} số tiền ${D(r.amount).toFixed(0)}; liên hệ quản trị để cấu hình`, 409);
+  if (!flow) throw new AppError('APPROVAL_FLOW_MISSING', `Chưa có quy trình phê duyệt cho ${KIND_LABEL[r.kind as keyof typeof KIND_LABEL].toLowerCase()} số tiền ${D(r.amount).toFixed(0)}; liên hệ quản trị để cấu hình`, 409);
   const steps = (await listFlows(trx)).find((f) => f.id === flow.id)!.steps;
   await trx.updateTable('approval_request').set({ state: 'submitted', flow_id: flow.id, steps: JSON.stringify(steps), current_step: 1, submitted_at: new Date().toISOString() }).where('id', '=', id).execute();
   await log(trx, auth.tenantId!, id, 0, 'submit', auth.userId, null);

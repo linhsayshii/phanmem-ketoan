@@ -47,7 +47,7 @@ async function dimIds(trx: Trx, lines: LineIn[]) {
     const rows = await sql<{ id: string; code: string }>`SELECT id::text, code FROM ${sql.table(t)} WHERE code IN (${sql.join(codes)})`.execute(trx);
     for (const r of rows.rows) out[t].set(r.code, Number(r.id));
     const bad = codes.find((c) => !out[t].has(c));
-    if (bad) throw new AppError('BUDGET_DIM_NOT_FOUND', `${label[t]} ${bad} không có trong danh mục`, 400);
+    if (bad) throw new AppError('BUDGET_DIM_INVALID', `${label[t]} ${bad} không có trong danh mục`, 400);
   }
   return out;
 }
@@ -56,7 +56,7 @@ export async function replaceLines(trx: Trx, tenantId: string, budgetId: number,
   const regime = await yearRegime(trx, year);
   for (const p of new Set(lines.map((l) => l.accountPrefix))) {
     const ok = await sql`SELECT 1 FROM account WHERE regime = ${regime} AND starts_with(code, ${p}) LIMIT 1`.execute(trx);
-    if (!ok.rows.length) throw new AppError('ACCOUNT_NOT_FOUND', `Không có tài khoản nào bắt đầu bằng ${p} trong hệ tài khoản ${regime}`, 400);
+    if (!ok.rows.length) throw new AppError('BUDGET_ACCOUNT_INVALID', `Không có tài khoản nào bắt đầu bằng ${p} trong hệ tài khoản ${regime}`, 400);
   }
   const dims = await dimIds(trx, lines);
   await trx.deleteFrom('budget_line').where('budget_id', '=', budgetId).execute();

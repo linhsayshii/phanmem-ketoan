@@ -28,8 +28,8 @@ describe('ngân sách: lập, sửa, duyệt', () => {
   it('lập ngân sách nháp; tiền tố không có tài khoản, mã bộ phận lạ, số tiền lẻ bị từ chối', async () => {
     const base = { fiscalYear: 2026, name: 'Ngân sách 2026', lines: [{ accountPrefix: '642', months: months({ 1: '1200', 2: '800' }) }, { accountPrefix: '6422', departmentCode: 'KD', months: months({ 2: '400' }) }, { accountPrefix: '511', months: months({ 1: '4000' }) }] };
     const bad = (lines: object[]) => call('POST', '/api/budgets', { ...base, lines });
-    expect((await bad([{ accountPrefix: '999', months: months({}) }])).json().error.code).toBe('ACCOUNT_NOT_FOUND');
-    expect((await bad([{ accountPrefix: '642', departmentCode: 'ZZZ', months: months({}) }])).json().error.code).toBe('BUDGET_DIM_NOT_FOUND');
+    expect((await bad([{ accountPrefix: '999', months: months({}) }])).json().error.code).toBe('BUDGET_ACCOUNT_INVALID');
+    expect((await bad([{ accountPrefix: '642', departmentCode: 'ZZZ', months: months({}) }])).json().error.code).toBe('BUDGET_DIM_INVALID');
     expect((await bad([{ accountPrefix: '642', months: months({ 1: '10.5' }) }])).statusCode).toBe(400);
     expect((await call('POST', '/api/budgets', { ...base, fiscalYear: 2030 })).json().error.code).toBe('FISCAL_YEAR_NOT_FOUND');
     const r = await call('POST', '/api/budgets', base); expect(r.statusCode, r.body).toBe(201);

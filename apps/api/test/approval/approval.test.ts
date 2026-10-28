@@ -49,7 +49,7 @@ describe('đề nghị thanh toán / tạm ứng', () => {
     expect((await t.call('PUT', `/api/approval-flows/${adv.id}`, body)).statusCode).toBe(200);
     const a = await create(payment({ kind: 'advance', partyCode: null, payeeName: 'A' }));
     const r = await t.call('POST', `/api/approvals/${a.id}/submit`, {}, t.users.requester.cookie);
-    expect(r.statusCode).toBe(409); expect(r.json().error.code).toBe('APPROVAL_FLOW_NOT_FOUND');
+    expect(r.statusCode).toBe(409); expect(r.json().error.code).toBe('APPROVAL_FLOW_MISSING');
     expect((await t.call('PUT', `/api/approval-flows/${adv.id}`, { ...body, isActive: true })).statusCode).toBe(200);
     // Trùng hạn mức với quy trình đang dùng cùng loại: 409.
     const dup = await t.call('POST', '/api/approval-flows', { ...body, isActive: true });
