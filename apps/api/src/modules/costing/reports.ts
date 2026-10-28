@@ -217,7 +217,8 @@ export async function normCompare(trx: Trx, q: Scope): Promise<Report> {
       FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id JOIN account a ON a.id = l.account_id
       LEFT JOIN cost_object o ON o.id = COALESCE(l.cost_object_id, (SELECT x.id FROM cost_object x WHERE x.kind = 'project' AND x.project_id = l.project_id),
         (SELECT x.id FROM cost_object x WHERE x.kind = 'contract' AND x.contract_id = l.contract_id))
-      WHERE v.state IN ('posted','reversed') AND NOT v.is_closing AND v.source_doc_type IS DISTINCT FROM 'cost_run' AND l.posting_date BETWEEN ${from}::date AND ${to}::date
+      WHERE v.state IN ('posted','reversed') AND NOT v.is_closing AND v.source_doc_type IS DISTINCT FROM 'cost_run' AND v.source_doc_type IS DISTINCT FROM 'opening_balance'
+        AND l.posting_date BETWEEN ${from}::date AND ${to}::date
         AND a.regime = ${regime} AND a.code LIKE '621%' AND l.item_id IS NOT NULL),
     tot AS (SELECT voucher_id, item_id, sum(amt) AS t FROM ln GROUP BY 1, 2),
     mv AS (SELECT voucher_id, item_id, sum(CASE WHEN direction = 'out' THEN quantity ELSE -quantity END) AS q FROM stock_move WHERE voucher_id IN (SELECT voucher_id FROM ln) GROUP BY 1, 2)

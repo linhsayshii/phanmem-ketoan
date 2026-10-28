@@ -155,4 +155,55 @@ describe('nhập kho thành phẩm theo giá thành TT133 (154 tập hợp thẳ
     expect(await bal('632', '2025-02-01', '2025-02-28')).toBe('160000');
     expect(await bal('155', '2025-01-01', '2025-02-28')).toBe('240000');
   });
+
+  // QĐ #960: GV mỗi ngày gộp mọi chênh lệch, nên chênh lệch giá xuất NVL (Nợ 154 đối tượng / Có 152) nằm chung chứng từ với Nợ 155 / Có 154 của thành phẩm
+  // và Nợ 632 / Có 155 của hàng bán. Tập hợp chỉ được bỏ dòng 154 của lớp điều chỉnh giá nhập thành phẩm, không bỏ cả dòng NVL.
+  it('giá vốn → giá thành → giá vốn lại → giá thành lại hội tụ: NVL không mất chênh lệch giá xuất, 154 = dở dang, không "Cần chạy lại"', async () => {
+    await ok('POST', '/api/catalogs/warehouse', { code: 'K3', name: 'Kho vật tư bình quân kỳ', inventory_account_code: '152', costing_method: 'avg_period' });
+    await stock({ voucherType: 'PNK', stockKind: 'purchase', postingDate: '2025-05-02', warehouseCode: 'K3', partyCode: 'NCC1', items: [{ itemCode: 'NVL1', uomCode: 'CAI', quantity: '100', unitPrice: '10000' }] });
+    const pxk = await stock({ voucherType: 'PXK', stockKind: 'production', postingDate: '2025-05-05', warehouseCode: 'K3', items: [{ itemCode: 'NVL1', uomCode: 'CAI', quantity: '60' }] });
+    const v = await ok('GET', `/api/vouchers/${pxk.id}`);
+    const l154 = (v.lines as Json[]).find((l) => l.accountCode.startsWith('154'))!;
+    await ok('PUT', `/api/vouchers/${pxk.id}`, { version: v.version, lines: [{ lineNo: l154.lineNo, costObjectCode: 'SP1', costItemCode: 'KM-NVL' }] });
+    await stock({ voucherType: 'PNK', stockKind: 'purchase', postingDate: '2025-05-06', warehouseCode: 'K3', partyCode: 'NCC1', items: [{ itemCode: 'NVL1', uomCode: 'CAI', quantity: '100', unitPrice: '12000' }] });
+    await pkt('2025-05-10', [L('154', '100000', '0', { costObjectCode: 'SP1', costItemCode: 'KM-NC' }), L('1111', '0', '100000')]);
+    await stock({ voucherType: 'PNK', stockKind: 'finished', postingDate: '2025-05-20', warehouseCode: 'K2', items: [{ itemCode: 'TP1', uomCode: 'CAI', quantity: '10', unitPrice: '100000' }] });
+    await stock({ voucherType: 'PXK', stockKind: 'sale', postingDate: '2025-05-31', warehouseCode: 'K2', items: [{ itemCode: 'TP1', uomCode: 'CAI', quantity: '4' }] });
+    // NVL bình quân cả kỳ (100 × 10.000 + 100 × 12.000) ÷ 200 = 11.000 → xuất 60 = 660.000; giá thành = 660.000 + 100.000 = 760.000 (không dở dang).
+    // Giá tạm thành phẩm 1.000.000 > giá thành: lớp −240.000, GV Nợ 154 / Có 155 nằm chung chứng từ với Nợ 154 / Có 152 của NVL.
+    const want = { incurred: { material: '660000', labor: '100000', overhead: '0' }, total: '760000' };
+    await costing('2025-05-01', '2025-05-31');
+    expect((await costRun(2025, 5)).objects[0]).toMatchObject(want);
+    await costing('2025-05-01', '2025-05-31'); // đảo GV cũ, GV mới gồm cả NVL, thành phẩm, hàng bán
+    expect((await ok('GET', '/api/costing/collect?year=2025&month=5')).objects.find((o: Json) => o.code === 'SP1').total).toMatchObject({ material: '660000', labor: '100000', unclassified: '0' });
+    expect((await ok('GET', '/api/costing/runs/2025/5')).stale).toBe(false);
+    expect(await costRun(2025, 5)).toMatchObject({ unchanged: true, objects: [want] });
+    // 154 tháng 5: PXK 600.000 + GV NVL 60.000 + nhân công 100.000 − PNK 1.000.000 + GV thành phẩm 240.000 = 0 = dở dang cuối.
+    expect(await bal('154', '2025-05-01', '2025-05-31')).toBe('0');
+    expect((await costing('2025-05-01', '2025-05-31')).unchanged).toBe(true);
+  });
+});
+
+// QĐ #961: DK số dư đầu kỳ ghi ngày kỳ 0 (ngày trước đầu năm tài chính đầu tiên), không phải chi phí phát sinh: tập hợp bỏ DK như lãi lỗ vụ việc (contracts/pnl.ts).
+// Chỉ lộ ở Tập hợp chi phí của tháng trước năm đầu (tháng đó không chạy được giá thành: PERIOD_NOT_FOUND); tháng 1 vẫn chạy được, không "Cần chạy lại".
+describe('số dư đầu kỳ 154 theo vụ việc không vào tập hợp chi phí (TT133)', () => {
+  it('DK năm 2025 (ngày 31/12/2024) không vào tập hợp tháng 12/2024 và tháng 1/2025; giá thành tháng 1 chạy được, không "Cần chạy lại"', async () => {
+    const { cookie: c } = await bootstrapTenant(ctx, { code: `GD${Date.now()}` });
+    await ok('POST', '/api/fiscal-years', { fiscalYear: 2025, dateFrom: '2025-01-01', months: 12, regime: 'TT133' }, c);
+    await ok('POST', '/api/catalogs/cost_item', { code: 'KM-NC', name: 'Nhân công', cost_element: 'labor' }, c);
+    await ok('POST', '/api/catalogs/project', { code: 'VV9', name: 'Vụ việc 9' }, c);
+    await ok('POST', '/api/costing/objects', { code: 'CT9', name: 'Công trình 9', kind: 'project', projectCode: 'VV9', method: 'project' }, c);
+    const row = (accountCode: string, debit: string, credit: string, more: object = {}) => ({ accountCode, currencyCode: 'VND', debit, credit, debitCurrency: '0', creditCurrency: '0', partyCode: null, ...more });
+    await ok('PUT', '/api/opening-balance/2025', { rows: [row('154', '500000', '0', { projectCode: 'VV9' }), row('4111', '0', '500000')] }, c);
+    await ok('POST', '/api/opening-balance/2025/post', undefined, c);
+    await ok('POST', '/api/vouchers', { voucherType: 'PKT', postingDate: '2025-01-15', documentDate: '2025-01-15', description: 'Chi phí sản xuất', autoPost: true,
+      lines: [L('154', '200000', '0', { projectCode: 'VV9', costItemCode: 'KM-NC' }), L('1111', '0', '200000')] }, c);
+    const dec = await ok('GET', '/api/costing/collect?year=2024&month=12', undefined, c);
+    expect([dec.objects.find((o: Json) => o.code === 'CT9').amount, dec.unassigned.amount]).toEqual(['0', '0']);
+    const jan = await ok('GET', '/api/costing/collect?year=2025&month=1', undefined, c);
+    expect(jan.objects.find((o: Json) => o.code === 'CT9').total).toMatchObject({ labor: '200000', unclassified: '0' });
+    const r = await ok('POST', '/api/costing/runs', { year: 2025, month: 1, params: {} }, c);
+    expect(r.objects.find((o: Json) => o.code === 'CT9')).toMatchObject({ incurred: { material: '0', labor: '200000', overhead: '0' } });
+    expect((await ok('GET', '/api/costing/runs/2025/1', undefined, c)).stale).toBe(false);
+  });
 });
