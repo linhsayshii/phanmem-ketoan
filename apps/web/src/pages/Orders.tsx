@@ -5,7 +5,7 @@ import { Button, DatePicker, Form, Input, Modal, Space, Table, Tag, message } fr
 import dayjs from 'dayjs';
 import type { ColDef } from 'ag-grid-community';
 import { D, formatVnNumber, parseVnNumber } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useHotkeys } from '@kt/ui';
+import { EmptyState, KeyboardGrid, LookupSelect, PageHeader, Section, useHotkeys } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -71,23 +71,27 @@ export default function OrdersPage() {
   useHotkeys({ Insert: () => { if (can('order.create') && !editing && !conv) void open('new'); } });
   const toType = kind === 'purchase_order' ? 'MH' : 'BH';
   return (<>
-    <Space style={{ marginBottom: 12 }} wrap>
-      <h2 style={{ margin: 0 }}>{TITLE[kind]}</h2>
-      {can('order.create') && <Button type="primary" onClick={() => void open('new')}>Thêm (Insert)</Button>}
-    </Space>
-    <Table<Row> size="small" rowKey="id" dataSource={list.data ?? []} pagination={false} columns={[
-      { title: 'Số', dataIndex: 'docNo', width: 140 }, { title: 'Ngày', dataIndex: 'docDate', width: 110, render: (d: string) => dayjs(d).format('DD/MM/YYYY') },
-      { title: 'Mã đối tượng', dataIndex: 'partyCode', width: 130 }, { title: 'Tên đối tượng', dataIndex: 'partyName' },
-      { title: 'Giá trị', dataIndex: 'total', align: 'right', width: 140, render: (t: string) => formatVnNumber(t, 0) },
-      { title: 'Trạng thái', dataIndex: 'status', width: 150, render: (s: string) => <Tag color={STATUS[s]?.color ?? 'default'}>{STATUS[s]?.label ?? s}</Tag> },
-      { title: '', width: 420, render: (_v, r) => { const live = ['draft', 'confirmed', 'partial'].includes(r.status); return (<Space size={0} wrap>
-        {can('order.view') && <Button type="link" size="small" onClick={() => void open(r.id)}>{can('order.update') && ['draft', 'confirmed'].includes(r.status) ? 'Sửa' : 'Xem'}</Button>}
-        {can('order.update') && r.status === 'draft' && <Button type="link" size="small" onClick={() => act.mutate({ id: r.id, what: 'confirm' })}>Duyệt</Button>}
-        {can('order.update') && kind === 'quote' && ['draft', 'confirmed'].includes(r.status) && <Button type="link" size="small" onClick={() => toSale.mutate(r.id)}>Thành đơn bán</Button>}
-        {can('order.update') && can('voucher.create') && live && <Button type="link" size="small" onClick={() => void startConvert(r.id, toType)}>{toType === 'BH' ? 'Lập BH nháp' : 'Lập MH nháp'}</Button>}
-        {can('order.update') && ['draft', 'confirmed'].includes(r.status) && <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: `Hủy ${r.docNo}?`, okText: 'Hủy đơn', cancelText: 'Không', onOk: () => act.mutateAsync({ id: r.id, what: 'cancel' }) })}>Hủy</Button>}
-        {can('order.delete') && r.status === 'draft' && <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: `Xóa ${r.docNo}?`, okText: 'Xóa', cancelText: 'Hủy', onOk: () => act.mutateAsync({ id: r.id, what: 'delete' }) })}>Xóa</Button>}
-      </Space>); } }]} />
+    <PageHeader
+      title={TITLE[kind]}
+      extra={can('order.create') ? <Button type="primary" onClick={() => void open('new')}>Thêm (Insert)</Button> : undefined}
+    />
+    <Section bodyPadding={0}>
+      <Table<Row> size="small" rowKey="id" dataSource={list.data ?? []} pagination={false} loading={list.isLoading}
+        locale={{ emptyText: <EmptyState title={`Chưa có ${TITLE[kind].toLowerCase()}`} /> }}
+        columns={[
+          { title: 'Số', dataIndex: 'docNo', width: 140 }, { title: 'Ngày', dataIndex: 'docDate', width: 110, render: (d: string) => dayjs(d).format('DD/MM/YYYY') },
+          { title: 'Mã đối tượng', dataIndex: 'partyCode', width: 130 }, { title: 'Tên đối tượng', dataIndex: 'partyName' },
+          { title: 'Giá trị', dataIndex: 'total', align: 'right', width: 140, render: (t: string) => <span className="kt-num">{formatVnNumber(t, 0)}</span> },
+          { title: 'Trạng thái', dataIndex: 'status', width: 150, render: (s: string) => <Tag color={STATUS[s]?.color ?? 'default'}>{STATUS[s]?.label ?? s}</Tag> },
+          { title: '', width: 420, render: (_v, r) => { const live = ['draft', 'confirmed', 'partial'].includes(r.status); return (<Space size={0} wrap>
+            {can('order.view') && <Button type="link" size="small" onClick={() => void open(r.id)}>{can('order.update') && ['draft', 'confirmed'].includes(r.status) ? 'Sửa' : 'Xem'}</Button>}
+            {can('order.update') && r.status === 'draft' && <Button type="link" size="small" onClick={() => act.mutate({ id: r.id, what: 'confirm' })}>Duyệt</Button>}
+            {can('order.update') && kind === 'quote' && ['draft', 'confirmed'].includes(r.status) && <Button type="link" size="small" onClick={() => toSale.mutate(r.id)}>Thành đơn bán</Button>}
+            {can('order.update') && can('voucher.create') && live && <Button type="link" size="small" onClick={() => void startConvert(r.id, toType)}>{toType === 'BH' ? 'Lập BH nháp' : 'Lập MH nháp'}</Button>}
+            {can('order.update') && ['draft', 'confirmed'].includes(r.status) && <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: `Hủy ${r.docNo}?`, okText: 'Hủy đơn', cancelText: 'Không', onOk: () => act.mutateAsync({ id: r.id, what: 'cancel' }) })}>Hủy</Button>}
+            {can('order.delete') && r.status === 'draft' && <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: `Xóa ${r.docNo}?`, okText: 'Xóa', cancelText: 'Hủy', onOk: () => act.mutateAsync({ id: r.id, what: 'delete' }) })}>Xóa</Button>}
+          </Space>); } }]} />
+    </Section>
     <Modal title={editing === 'new' ? `Thêm ${TITLE[kind].toLowerCase()}` : TITLE[kind]} open={editing !== null} onCancel={() => setEditing(null)} onOk={() => form.submit()} okText="Lưu (Ctrl+S)" cancelText="Đóng" okButtonProps={{ disabled: locked || !can('order.update') && editing !== 'new' }} width={1000} destroyOnHidden forceRender>
       <Form form={form} layout="vertical" disabled={locked} onFinish={(v) => save.mutate(v)}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', columnGap: 16 }}>

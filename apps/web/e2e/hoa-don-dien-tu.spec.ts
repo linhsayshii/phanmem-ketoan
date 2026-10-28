@@ -72,8 +72,8 @@ test('Hóa đơn điện tử: cấu hình nhà cung cấp giả lập và ký h
   // Phát hành bằng nút; "Bỏ ghi sổ" còn trước khi phát hành, mất sau đó
   await expect(page.getByRole('button', { name: 'Bỏ ghi sổ' })).toBeVisible();
   await page.getByRole('button', { name: /Phát hành HĐĐT/ }).click();
-  await expect(page.locator('.ant-card-head-title')).toContainText('Đã phát hành');
-  await expect(page.locator('.ant-card-head-title')).toContainText(/1C26TAA \d{7}/);
+  await expect(page.locator('.kt-page-header')).toContainText('Đã phát hành');
+  await expect(page.locator('.kt-page-header')).toContainText(/1C26TAA \d{7}/);
   await expect(page.getByRole('button', { name: 'Bỏ ghi sổ' })).toHaveCount(0);
   const einv = (await (await request.get(`/api/vouchers/${id}/einvoice`)).json() as { einvoice: { id: number; invoiceNo: string } }).einvoice;
   const no = einv.invoiceNo;

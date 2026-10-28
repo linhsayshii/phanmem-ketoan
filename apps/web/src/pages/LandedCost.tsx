@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Card, Col, DatePicker, Form, Input, Modal, Row, Select, Space, Table, Tabs, Tag, message } from 'antd';
+import { Alert, Button, Col, DatePicker, Form, Input, Modal, Row, Select, Space, Table, Tabs, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
 import dayjs, { type Dayjs } from 'dayjs';
 import { allocateLandedCost, canTransition, D, decideEdit, formatVnDate, formatVnNumber, parseVnNumber, sum, todayVn, VND_AMOUNT_RE, type LandedCostBasis, type VoucherState, type VoucherTypeDef } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useUnsavedChanges } from '@kt/ui';
+import { COLOR, KeyboardGrid, LookupSelect, PageHeader, Section, useUnsavedChanges } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor } from '../lookups.js';
@@ -31,7 +31,7 @@ const BASIS_LABEL: Record<LandedCostBasis, string> = { value: 'Theo giá trị',
 const fmt = (s: string | null | undefined): string => (!s || D(s).isZero() ? '' : formatVnNumber(s, D(s).decimalPlaces()));
 const moneyCol = (field: 'amount' | 'vatAmount', headerName: string): ColDef<CostRow> => ({ field, headerName, width: 150, cellClass: 'ag-right-aligned-cell', cellEditorParams: { useFormatter: true },
   valueFormatter: (p) => fmt(p.value as string), valueParser: (p) => { const t = String(p.newValue ?? '').trim(); if (t === '') return ''; const n = parseVnNumber(t); return n !== null && VND_AMOUNT_RE.test(n) ? n : p.oldValue; } });
-const muted = { color: 'rgba(0,0,0,.45)' };
+const muted = { color: COLOR.textSecondary };
 
 export default function LandedCost({ def, id }: { def: VoucherTypeDef; id: string }) {
   const isNew = id === 'moi';
@@ -195,30 +195,38 @@ export default function LandedCost({ def, id }: { def: VoucherTypeDef; id: strin
     : <div style={muted}>Bút toán hiện sau khi lưu: Nợ tài khoản kho của từng dòng nhập, Nợ 1331 thuế GTGT / Có tài khoản thanh toán.</div>;
 
   return (
-    <Card title={<Space><span>{def.name} {v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}</span><Tag>{STATE_LABEL[state]}</Tag></Space>}
-      extra={<Space>
-        {mayEdit && <Button onClick={() => save.mutate(false)} type="primary" loading={save.isPending} disabled={!ready}>Lưu (Ctrl+S)</Button>}
-        {mayEdit && mayPost && <Button onClick={() => save.mutate(true)} disabled={!ready || save.isPending}>Ghi sổ (F9)</Button>}
-        {!isNew && mayUnpost && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'unpost' }))}>Bỏ ghi sổ</Button>}
-        {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo} ngày ${formatVnDate(p)}` }); })}>Đảo</Button>}
-        {!isNew && editable && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy chứng từ?', content: 'Số chứng từ (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
-      </Space>}>
+    <>
+      <PageHeader
+        title={`${def.name} ${v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}`}
+        tags={<Tag style={{ marginRight: 0 }}>{STATE_LABEL[state]}</Tag>}
+        extra={<>
+          {mayEdit && <Button onClick={() => save.mutate(false)} type="primary" loading={save.isPending} disabled={!ready}>Lưu (Ctrl+S)</Button>}
+          {mayEdit && mayPost && <Button onClick={() => save.mutate(true)} disabled={!ready || save.isPending}>Ghi sổ (F9)</Button>}
+          {!isNew && mayUnpost && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'unpost' }))}>Bỏ ghi sổ</Button>}
+          {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo} ngày ${formatVnDate(p)}` }); })}>Đảo</Button>}
+          {!isNew && editable && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy chứng từ?', content: 'Số chứng từ (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
+        </>}
+      />
       {v.error && <Alert type="error" showIcon message={(v.error as Error).message} style={{ marginBottom: 12 }} />}
-      <Form form={form} layout="vertical" disabled={!editable} onValuesChange={() => setDirty(true)} initialValues={{ postingDate: dayjs(todayVn()), documentDate: dayjs(todayVn()), basis: 'value' }}>
-        <Row gutter={12}>
-          <Col span={4}><Form.Item label="Ngày hạch toán" name="postingDate" rules={[{ required: true, message: 'Nhập ngày hạch toán' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={4}><Form.Item label="Ngày chứng từ" name="documentDate" rules={[{ required: true, message: 'Nhập ngày chứng từ' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={8}><Form.Item label="Đối tượng" name="partyCode" tooltip="Nhà cung cấp dịch vụ (vận chuyển, bốc xếp...); dòng chi phí không ghi đối tượng thì lấy đối tượng này"><LookupSelect catalog="party" quickAddFields={quickAdd} allowClear /></Form.Item></Col>
-          <Col span={8}><Form.Item label="Phân bổ" name="basis" rules={[{ required: true }]}><Select options={(Object.keys(BASIS_LABEL) as LandedCostBasis[]).map((b) => ({ value: b, label: BASIS_LABEL[b] }))} /></Form.Item></Col>
-          <Col span={24}><Form.Item label="Diễn giải" name="description"><Input maxLength={500} /></Form.Item></Col>
-        </Row>
-      </Form>
-      <Tabs size="small" items={[
-        { key: 'receipts', label: `Phiếu nhập (${picked.length})`, forceRender: true, children: receiptTab }, { key: 'costs', label: 'Chi phí', forceRender: true, children: costTab },
-        { key: 'alloc', label: 'Phân bổ', forceRender: true, children: allocTab }, { key: 'invoices', label: 'Hóa đơn', forceRender: true, children: <DeclaredInvoices rows={decl} onRowsChange={setDeclRows} editable={editable} /> },
-        { key: 'ledger', label: 'Hạch toán', forceRender: true, children: ledgerTab },
-      ]} />
-      {!isNew && <Attachments voucherId={id} canEdit={can('voucher.update')} />}
+      <Section title="Thông tin chung">
+        <Form form={form} layout="vertical" disabled={!editable} onValuesChange={() => setDirty(true)} initialValues={{ postingDate: dayjs(todayVn()), documentDate: dayjs(todayVn()), basis: 'value' }}>
+          <Row gutter={12}>
+            <Col span={4}><Form.Item label="Ngày hạch toán" name="postingDate" rules={[{ required: true, message: 'Nhập ngày hạch toán' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
+            <Col span={4}><Form.Item label="Ngày chứng từ" name="documentDate" rules={[{ required: true, message: 'Nhập ngày chứng từ' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
+            <Col span={8}><Form.Item label="Đối tượng" name="partyCode" tooltip="Nhà cung cấp dịch vụ (vận chuyển, bốc xếp...); dòng chi phí không ghi đối tượng thì lấy đối tượng này"><LookupSelect catalog="party" quickAddFields={quickAdd} allowClear /></Form.Item></Col>
+            <Col span={8}><Form.Item label="Phân bổ" name="basis" rules={[{ required: true }]}><Select options={(Object.keys(BASIS_LABEL) as LandedCostBasis[]).map((b) => ({ value: b, label: BASIS_LABEL[b] }))} /></Form.Item></Col>
+            <Col span={24}><Form.Item label="Diễn giải" name="description"><Input maxLength={500} /></Form.Item></Col>
+          </Row>
+        </Form>
+      </Section>
+      <Section title="Chi tiết" style={{ marginTop: 12 }}>
+        <Tabs size="small" items={[
+          { key: 'receipts', label: `Phiếu nhập (${picked.length})`, forceRender: true, children: receiptTab }, { key: 'costs', label: 'Chi phí', forceRender: true, children: costTab },
+          { key: 'alloc', label: 'Phân bổ', forceRender: true, children: allocTab }, { key: 'invoices', label: 'Hóa đơn', forceRender: true, children: <DeclaredInvoices rows={decl} onRowsChange={setDeclRows} editable={editable} /> },
+          { key: 'ledger', label: 'Hạch toán', forceRender: true, children: ledgerTab },
+        ]} />
+      </Section>
+      {!isNew && <Section style={{ marginTop: 12 }}><Attachments voucherId={id} canEdit={can('voucher.update')} /></Section>}
       <PickDialog open={!!lookup} catalog={lookup?.col === 'partyCode' ? 'party' : 'account'} {...(lookup?.col === 'accountCode' ? { fetcher: accountFetcher } : {})}
         onPick={(code) => { if (lookup) { const copy = [...costsRef.current]; copy[lookup.row] = { ...copy[lookup.row]!, [lookup.col]: code }; setCostRows(copy); } }} onClose={() => setLookup(null)} />
       <Modal open={!!reverse} title="Lập chứng từ đảo" okText="Lập chứng từ đảo" cancelText="Không" destroyOnHidden onCancel={() => setReverse(null)}
@@ -231,6 +239,6 @@ export default function LandedCost({ def, id }: { def: VoucherTypeDef; id: strin
           <Input id="reverse-desc" value={reverse.description} maxLength={500} onChange={(e) => setReverse({ ...reverse, description: e.target.value })} />
         </Space>}
       </Modal>
-    </Card>
+    </>
   );
 }

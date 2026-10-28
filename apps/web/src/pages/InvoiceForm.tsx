@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Card, Checkbox, Col, DatePicker, Form, Input, Modal, Row, Select, Space, Spin, Table, Tabs, Tag, message } from 'antd';
+import { Alert, Button, Checkbox, Col, DatePicker, Form, Input, Modal, Row, Select, Space, Spin, Table, Tabs, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
 import dayjs, { type Dayjs } from 'dayjs';
 import { canTransition, D, decideEdit, formatVnDate, formatVnNumber, parseVnNumber, sum, todayVn, VND_AMOUNT_RE, voucherTypeDef, type VoucherState, type VoucherTypeDef } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, VnNumberInput, VietQr, useUnsavedChanges, type LookupRow } from '@kt/ui';
+import { COLOR, KeyboardGrid, LookupSelect, PageHeader, Section, VnNumberInput, VietQr, useUnsavedChanges, type LookupRow } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { StatusTags, isLive, reportEInvoiceError, showWarnings, type EInvoice, type Series } from './einvoiceCommon.js';
@@ -346,17 +346,17 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
     <KeyboardGrid<InvRow> rows={rows} columns={columns} readOnly={!editable} onRowsChange={changeRows} addRowTemplate={emptyInvRow} onLookup={onLookup} height={300} />
     {amortLink && <div style={{ marginTop: 8 }}>Có dòng hạch toán vào TK 3387: <a href={amortLink} target="_blank" rel="noopener noreferrer">Tạo lịch phân bổ</a></div>}
     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, marginTop: 8 }}>
-      <span>Tiền hàng (sau chiết khấu): <b>{fmt(goods)}</b></span><span>Tiền thuế: <b>{fmt(taxTotal)}</b></span><b>Cộng: {fmt(sum([goods, taxTotal]).toFixed())}{isVnd ? '' : ` ${currency}`}</b>
+      <span>Tiền hàng (sau chiết khấu): <b className="kt-num">{fmt(goods)}</b></span><span>Tiền thuế: <b className="kt-num">{fmt(taxTotal)}</b></span><b className="kt-num">Cộng: {fmt(sum([goods, taxTotal]).toFixed())}{isVnd ? '' : ` ${currency}`}</b>
     </div>
   </>);
   const taxTab = (
     <Table size="small" rowKey="code" pagination={false} dataSource={preview.byCode} locale={{ emptyText: 'Chưa có dòng nào dùng mã thuế' }} columns={[
-      { title: 'Mã thuế', dataIndex: 'code', width: 140, render: (_: unknown, r) => <span>{r.code} <span style={{ color: 'rgba(0,0,0,.45)' }}>{r.name}</span></span> },
+      { title: 'Mã thuế', dataIndex: 'code', width: 140, render: (_: unknown, r) => <span>{r.code} <span style={{ color: COLOR.textSecondary }}>{r.name}</span></span> },
       { title: 'Số dòng', dataIndex: 'lines', width: 90, align: 'right' },
       { title: 'Thuế tính (đồng)', dataIndex: 'computed', width: 150, align: 'right', render: (s: string) => formatVnNumber(s) },
       { title: 'Thuế ghi trên hóa đơn (đồng)', width: 230, render: (_: unknown, r) => <VnNumberInput aria-label={`Thuế ghi trên hóa đơn ${r.code}`} disabled={!editable} value={declared[r.code] ?? null}
         onChange={(s) => { setDeclared((d) => ({ ...d, [r.code]: s ?? '' })); setDirty(true); }} /> },
-      { title: 'Chênh lệch / dung sai', width: 200, render: (_: unknown, r) => (r.declared === '' ? <span style={{ color: 'rgba(0,0,0,.45)' }}>Chưa nhập</span>
+      { title: 'Chênh lệch / dung sai', width: 200, render: (_: unknown, r) => (r.declared === '' ? <span style={{ color: COLOR.textSecondary }}>Chưa nhập</span>
         : <Space size={4}><span>{formatVnNumber(r.diff)} / ±{r.allowed}</span><Tag color={r.ok ? 'green' : 'red'} style={{ marginRight: 0 }}>{r.ok ? 'Trong dung sai' : 'Quá dung sai'}</Tag></Space>) },
     ]} />
   );
@@ -395,45 +395,56 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
         ...(isVnd ? [] : [{ title: `Nguyên tệ (${currency})`, dataIndex: 'amountCurrency', align: 'right' as const, width: 150, render: (s: string) => money(s) }]),
       ]} />
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, marginTop: 8 }}>
-        <b>Tổng Nợ: {formatVnNumber(ledgerDebit)}</b><b>Tổng Có: {formatVnNumber(ledgerCredit)}</b>
+        <b className="kt-num">Tổng Nợ: {formatVnNumber(ledgerDebit)}</b><b className="kt-num">Tổng Có: {formatVnNumber(ledgerCredit)}</b>
       </div>
-      <div style={{ color: 'rgba(0,0,0,.45)', marginTop: 4 }}>Bút toán xem trước, tính trên màn hình; máy chủ tính lại khi lưu và ghi sổ.</div>
+      <div style={{ color: COLOR.textSecondary, marginTop: 4 }}>Bút toán xem trước, tính trên màn hình; máy chủ tính lại khi lưu và ghi sổ.</div>
     </div>
   );
 
   if (mismatch) return <Spin />; // đang chuyển sang đường dẫn đúng loại của chứng từ
   return (
-    <Card title={<Space><span>{typeLabel(eff)} {v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}</span><Tag>{STATE_LABEL[state]}</Tag>{einv && <><StatusTags e={einv} /><b>{einv.formNo}{einv.serial} {einv.invoiceNo ?? ''}</b></>}</Space>}
-      extra={<Space>
-        {mayEdit && <Button onClick={() => save.mutate(false)} type="primary" loading={save.isPending} disabled={!ready}>Lưu (Ctrl+S)</Button>}
-        {mayEdit && mayPost && <Button onClick={() => save.mutate(true)} disabled={!ready || save.isPending}>Ghi sổ (F9)</Button>}
-        {mayIssue && <Button type="primary" loading={issue.isPending} onClick={() => issue.mutate()}>Phát hành HĐĐT (Ctrl+Shift+E)</Button>}
-        {!isNew && mayUnpost && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'unpost' }))}>Bỏ ghi sổ</Button>}
-        {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo} ngày ${formatVnDate(p)}` }); })}>Đảo</Button>}
-        {!isNew && editable && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy chứng từ?', content: 'Số chứng từ (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
-        {!isNew && posted && ['HDB', 'BH'].includes(eff.code) && <Button loading={qrMut.isPending} onClick={() => qrMut.mutate()}>Mã QR thanh toán</Button>}
-        {!isNew && can('voucher.print') && <Button href={`/api/vouchers/${id}/print?format=pdf`} target="_blank">In</Button>}
-      </Space>}>
+    <>
+      <PageHeader
+        title={`${typeLabel(eff)} ${v.data?.voucherNo ?? (isNew ? '(mới)' : '(chưa cấp số)')}`}
+        tags={<>
+          <Tag style={{ marginRight: 0 }}>{STATE_LABEL[state]}</Tag>
+          {einv && <><StatusTags e={einv} /><b>{einv.formNo}{einv.serial} {einv.invoiceNo ?? ''}</b></>}
+        </>}
+        extra={<>
+          {mayEdit && <Button onClick={() => save.mutate(false)} type="primary" loading={save.isPending} disabled={!ready}>Lưu (Ctrl+S)</Button>}
+          {mayEdit && mayPost && <Button onClick={() => save.mutate(true)} disabled={!ready || save.isPending}>Ghi sổ (F9)</Button>}
+          {mayIssue && <Button type="primary" loading={issue.isPending} onClick={() => issue.mutate()}>Phát hành HĐĐT (Ctrl+Shift+E)</Button>}
+          {!isNew && mayUnpost && <Button onClick={() => confirmIfDirty(() => action.mutate({ act: 'unpost' }))}>Bỏ ghi sổ</Button>}
+          {!isNew && mayReverse && v.data && <Button onClick={() => confirmIfDirty(() => { const p = v.data!.postingDate; const today = todayVn(); setReverse({ date: dayjs(today >= p ? today : p), description: `Đảo chứng từ ${v.data!.voucherNo} ngày ${formatVnDate(p)}` }); })}>Đảo</Button>}
+          {!isNew && editable && canTransition(state, 'discard') && can('voucher.delete') && <Button danger onClick={() => Modal.confirm({ title: 'Hủy chứng từ?', content: 'Số chứng từ (nếu có) được giữ lại.', onOk: () => action.mutate({ act: 'discard' }) })}>Hủy</Button>}
+          {!isNew && posted && ['HDB', 'BH'].includes(eff.code) && <Button loading={qrMut.isPending} onClick={() => qrMut.mutate()}>Mã QR thanh toán</Button>}
+          {!isNew && can('voucher.print') && <Button href={`/api/vouchers/${id}/print?format=pdf`} target="_blank">In</Button>}
+        </>}
+      />
       {v.error && <Alert type="error" showIcon message={(v.error as Error).message} style={{ marginBottom: 12 }} />}
       {preview.error && <Alert type="error" showIcon message={`${preview.error.message} (${preview.error.code})`} style={{ marginBottom: 12 }} />}
       <Form form={form} layout="vertical" disabled={!editable} onValuesChange={() => setDirty(true)}
         initialValues={{ postingDate: dayjs(todayVn()), documentDate: dayjs(todayVn()), invoiceDate: dayjs(todayVn()), currencyCode: 'VND' }}>
-        <Row gutter={12}>
-          <Col span={4}><Form.Item label="Ngày hạch toán" name="postingDate" rules={[{ required: true, message: 'Nhập ngày hạch toán' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={4}><Form.Item label="Ngày chứng từ" name="documentDate" rules={[{ required: true, message: 'Nhập ngày chứng từ' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={8}><Form.Item label="Đối tượng" name="partyCode" rules={[{ required: true, message: 'Chọn đối tượng' }]}><LookupSelect catalog="party" quickAddFields={quickAdd} onChange={onPartyChange} /></Form.Item></Col>
-          <Col span={4}><Form.Item label="Loại tiền" name="currencyCode"><LookupSelect catalog="currency" /></Form.Item></Col>
-          {!isVnd && <Col span={4}><Form.Item label="Tỷ giá" name="fxRate" rules={[{ required: true, message: 'Nhập tỷ giá' }]}><VnNumberInput scale={10} /></Form.Item></Col>}
-          <Col span={4}><Form.Item label="Hạn thanh toán" name="dueDate"><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
-          <Col span={6}><Form.Item label="Hợp đồng (F4)" name="contractCode"><LookupSelect catalog="contract" fetcher={contracts} allowClear /></Form.Item></Col>
-          <Col span={18}><Form.Item label="Diễn giải" name="description"><Input /></Form.Item></Col>
-        </Row>
-        <Tabs size="small" items={[
-          { key: 'goods', label: 'Hàng tiền', forceRender: true, children: goodsTab }, { key: 'tax', label: 'Thuế', forceRender: true, children: taxTab },
-          { key: 'invoice', label: 'Hóa đơn', forceRender: true, children: mst }, { key: 'ledger', label: 'Hạch toán', forceRender: true, children: ledgerTab },
-        ]} />
+        <Section title="Thông tin chung">
+          <Row gutter={12}>
+            <Col span={4}><Form.Item label="Ngày hạch toán" name="postingDate" rules={[{ required: true, message: 'Nhập ngày hạch toán' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
+            <Col span={4}><Form.Item label="Ngày chứng từ" name="documentDate" rules={[{ required: true, message: 'Nhập ngày chứng từ' }]}><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
+            <Col span={8}><Form.Item label="Đối tượng" name="partyCode" rules={[{ required: true, message: 'Chọn đối tượng' }]}><LookupSelect catalog="party" quickAddFields={quickAdd} onChange={onPartyChange} /></Form.Item></Col>
+            <Col span={4}><Form.Item label="Loại tiền" name="currencyCode"><LookupSelect catalog="currency" /></Form.Item></Col>
+            {!isVnd && <Col span={4}><Form.Item label="Tỷ giá" name="fxRate" rules={[{ required: true, message: 'Nhập tỷ giá' }]}><VnNumberInput scale={10} /></Form.Item></Col>}
+            <Col span={4}><Form.Item label="Hạn thanh toán" name="dueDate"><DatePicker format="DD/MM/YYYY" /></Form.Item></Col>
+            <Col span={6}><Form.Item label="Hợp đồng (F4)" name="contractCode"><LookupSelect catalog="contract" fetcher={contracts} allowClear /></Form.Item></Col>
+            <Col span={18}><Form.Item label="Diễn giải" name="description"><Input /></Form.Item></Col>
+          </Row>
+        </Section>
+        <Section style={{ marginTop: 12 }}>
+          <Tabs size="small" items={[
+            { key: 'goods', label: 'Hàng tiền', forceRender: true, children: goodsTab }, { key: 'tax', label: 'Thuế', forceRender: true, children: taxTab },
+            { key: 'invoice', label: 'Hóa đơn', forceRender: true, children: mst }, { key: 'ledger', label: 'Hạch toán', forceRender: true, children: ledgerTab },
+          ]} />
+        </Section>
       </Form>
-      {!isNew && <Attachments voucherId={id} canEdit={can('voucher.update')} />}
+      {!isNew && <Section style={{ marginTop: 12 }}><Attachments voucherId={id} canEdit={can('voucher.update')} /></Section>}
       <PickDialog open={!!lookup} catalog={lookup ? LOOKUP_CATALOG[lookup.col]! : 'account'} withQuickAdd={!!lookup && ['departmentCode', 'projectCode', 'costItemCode'].includes(lookup.col)}
         {...(lookup?.col === 'accountCode' ? { fetcher: accountFetcher } : lookup?.col === 'taxCodes' ? { fetcher: taxes } : lookup?.col === 'vatImportCode' ? { fetcher: vatTaxes } : lookup?.col === 'assetCode' ? { fetcher: assetPick } : {})} onPick={pick} onClose={() => setLookup(null)} />
       <Modal open={!!qr} title="Mã QR thanh toán" footer={null} destroyOnHidden onCancel={() => setQr(null)}>{qr && <VietQr {...qr} />}</Modal>
@@ -446,9 +457,9 @@ export default function InvoiceEditor({ def, id }: { def: VoucherTypeDef; id: st
             onChange={(d) => d && setReverse({ ...reverse, date: d })} />
           <label htmlFor="reverse-desc">Diễn giải chứng từ đảo</label>
           <Input id="reverse-desc" value={reverse.description} maxLength={500} onChange={(e) => setReverse({ ...reverse, description: e.target.value })} />
-          <span style={{ color: 'rgba(0,0,0,.45)' }}>Chứng từ đảo ghi sổ ngay; chứng từ gốc chuyển sang trạng thái Đã đảo.</span>
+          <span style={{ color: COLOR.textSecondary }}>Chứng từ đảo ghi sổ ngay; chứng từ gốc chuyển sang trạng thái Đã đảo.</span>
         </Space>}
       </Modal>
-    </Card>
+    </>
   );
 }

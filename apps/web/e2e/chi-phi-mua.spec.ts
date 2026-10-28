@@ -53,8 +53,8 @@ test('Chi phí mua hàng: chọn phiếu nhập, nhập chi phí bằng bàn ph�
 
   await page.keyboard.press('F9');
   await expect(page.locator('.ant-message').getByText('Đã ghi sổ')).toBeVisible();
-  await expect(page.locator('.ant-card-head-title')).toContainText(/CPM\d+/);
-  await expect(page.locator('.ant-card-head-title')).toContainText('Đã ghi sổ');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/CPM\d+/);
+  await expect(page.locator('.kt-page-header')).toContainText('Đã ghi sổ');
   await page.getByRole('tab', { name: 'Hạch toán' }).click();
   const ledger = page.getByTestId('ledger-lines');
   await expect(ledger).toContainText('156'); await expect(ledger).toContainText('1331'); await expect(ledger).toContainText('132.000');
@@ -85,6 +85,6 @@ test('Mua hàng nhập khẩu: cột thuế nhập khẩu, TTĐB, GTGT hàng nh�
 
   await page.keyboard.press('F9');
   await expect(page.locator('.ant-message').getByText('Đã ghi sổ')).toBeVisible();
-  await expect(page.locator('.ant-card-head-title')).toContainText(/MH\d+/);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/MH\d+/);
   await expect(page.getByRole('checkbox', { name: 'Hàng nhập khẩu' })).toBeChecked();
 });

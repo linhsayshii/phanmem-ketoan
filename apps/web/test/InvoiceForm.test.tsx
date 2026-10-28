@@ -15,9 +15,10 @@ vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: mocks.ApiErro
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: () => true }) }));
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => mocks.navigate, useParams: () => ({}) }));
 // lưới AG Grid không chạy trong jsdom: mô phỏng đúng cách nó làm việc (ghi thẳng vào đối tượng dòng, rồi báo mảng mới); phím và ô sửa được kiểm bằng Playwright (e2e/hoa-don.spec.ts)
-vi.mock('@kt/ui', async () => {
+vi.mock('@kt/ui', async (importOriginal) => {
   const { createElement: h } = await import('react');
   return {
+    ...(await importOriginal<object>()),
     KeyboardGrid: (p: typeof mocks.grid.props) => { mocks.grid.props = p; return null; },
     LookupSelect: (p: { catalog: string; onChange?: (c: string | null, r: object | null) => void }) =>
       h('input', { 'aria-label': `lookup-${p.catalog}`, onChange: (e: { target: { value: string } }) => p.onChange?.(e.target.value || null, mocks.lookupRows[e.target.value] ?? null) }),

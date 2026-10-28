@@ -149,3 +149,17 @@ Chia hai phần, làm tuần tự: 3a (Claude Sonnet, rủi ro cao vì mọi lo�
 ## Tác vụ 5: Bán hàng (gộp vào tác vụ 4)
 
 Mọi màn của phân hệ Bán hàng (`Orders` báo giá/đơn bán, `InvoiceForm` BH/TLB/HDB/GGB, `SalesPurchaseReports` bán) là cùng component với Mua hàng. Tác vụ 4 đổi chúng cùng lúc, nên gộp thành một commit "Mua hàng, bán hàng". Không còn việc riêng.
+
+## Tác vụ 6: Hóa đơn điện tử (agy)
+
+- `EInvoices`, `InboundInvoices`, `EInvoiceErrorNotice`: thay `<h2>` và hàng `Space` đầu trang bằng `PageHeader` (h1 giữ nguyên chữ: "Hóa đơn điện tử", "Hóa đơn đầu vào", "Thông báo hóa đơn điện tử có sai sót (04/SS-HĐĐT)…"). Nút thao tác chính vào `extra`, một primary. Bộ lọc vào `Toolbar`, kèm chữ xám "{n} hóa đơn" nếu có danh sách. Bảng/lưới đặt trong `Section` (bodyPadding 0) hoặc ngay dưới đầu trang.
+- `EInvoiceConfig`: `PageHeader` "Cấu hình hóa đơn điện tử". Hai `Card` thành hai `Section` ("Nhà cung cấp hóa đơn điện tử", "Ký hiệu hóa đơn"), nút thêm ở `extra` của từng khối. Giữ `data-add-series`. Mỗi khối là một vùng thao tác riêng, nên mỗi khối được giữ một nút primary của nó.
+- Spec dùng heading theo tên (`hoa-don-dien-tu.spec.ts:32,83,115`, `hoa-don-dau-vao.spec.ts:23`), nên h1 phải giữ đúng chữ.
+- Spec chạy: `hoa-don-dien-tu`, `hoa-don-dau-vao`.
+
+## Tác vụ 7: Kho (agy)
+
+- Form chứng từ `StockVoucher` (phiếu nhập, xuất, chuyển kho) và `AssemblyVoucher` (lắp ráp, tháo dỡ): theo mẫu `VoucherForm` (commit 7121077). Bỏ `Card`. `PageHeader` title = chữ hiện ở `Card` title, bỏ Tag (h1). `tags` = Tag trạng thái. `extra` = các nút giữ thứ tự, Lưu (Ctrl+S) là primary. Đầu phiếu đặt trong `Section` "Thông tin chung". Lưới dòng đặt trong `Section` "Chi tiết" (`AssemblyVoucher`: hai khối "Thành phẩm"/"Linh kiện" hoặc theo nhãn hiện có), bodyPadding 0.
+- Trang danh sách và công cụ `Items`, `PriceLists`, `Stocktake`, `CostingRun`, `StockReports`: `<h2>` thành `PageHeader` (giữ đúng chữ h1: "Vật tư hàng hóa", "Bảng giá", "Kiểm kê kho", "Tính giá vốn", "Báo cáo kho"). Nút chính vào `extra`. Bộ lọc vào `Toolbar`, kèm chữ xám đếm dòng nếu là danh sách. Lưới chính cao `calc(100vh - …)` cho vừa trang. Khối phụ dùng `Section`.
+- E2E: `phieu-kho.spec.ts:46` và `lap-rap.spec.ts:49` đổi `.ant-card-head-title` thành `page.getByRole('heading', { level: 1 })`. Trang danh sách phiếu kho dùng `VoucherList` hoặc trang riêng; h1 "Phiếu nhập kho" (`phieu-kho.spec.ts:21`) và "Phiếu lắp ráp, tháo dỡ" (`lap-rap.spec.ts:25`) phải còn.
+- Spec chạy: `vthh`, `bang-gia`, `phieu-kho`, `lap-rap`, `kiem-ke-kho`, `gia-von`, `bao-cao-kho`.

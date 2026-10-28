@@ -46,7 +46,7 @@ test('Mua hàng hóa nhập kho cùng hóa đơn: lập bằng bàn phím, ghi s
 
   await page.keyboard.press('F9');
   await expect(page.locator('.ant-message').getByText('Đã ghi sổ')).toBeVisible();
-  await expect(page.locator('.ant-card-head-title')).toContainText(/MH\d+/);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/MH\d+/);
   expect(await onHand()).toBe(before + 10);
   expect(iso).toMatch(/^2026-11-/);
 });

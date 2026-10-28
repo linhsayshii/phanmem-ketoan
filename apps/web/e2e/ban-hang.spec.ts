@@ -47,6 +47,6 @@ test('Bán hàng hóa kiêm phiếu xuất: lập bằng bàn phím, ghi sổ, t
 
   await page.keyboard.press('F9');
   await expect(page.locator('.ant-message').getByText('Đã ghi sổ')).toBeVisible();
-  await expect(page.locator('.ant-card-head-title')).toContainText(/BH\d+/);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/BH\d+/);
   expect(await onHand()).toBe(before - 5);
 });

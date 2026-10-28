@@ -76,7 +76,7 @@ test('Hóa đơn bán dịch vụ: nhập bằng bàn phím, thuế tự tính, 
   await expect(page.locator('.ag-center-cols-container [col-id="accountCode"]', { hasText: '5113' })).toBeVisible();
   await page.keyboard.press('F9');
   await expect(page.locator('.ant-message').getByText('Đã ghi sổ')).toBeVisible();
-  await expect(page.locator('.ant-card-head-title')).toContainText(/HDB\d+/);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/HDB\d+/);
   await expect(page.getByRole('button', { name: 'Đảo' })).toBeVisible();
   const id = /HDB\/([0-9a-f-]{36})$/.exec(page.url())![1];
   const saved = await (await request.get(`/api/invoices/${id}`)).json() as { voucherNo: string; state: string; invoices: { invoiceGroupCode: string; taxAmount: string; baseAmount: string; partyTaxCode: string }[] };

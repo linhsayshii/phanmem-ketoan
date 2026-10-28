@@ -11,7 +11,11 @@ const mocks = vi.hoisted(() => {
 vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: mocks.ApiError }));
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: (c: string) => mocks.perms.has(c) }) }));
 // lưới AG Grid và ô tra danh mục nặng trong jsdom và không thuộc điều đang kiểm tra (nút theo quyền/trạng thái tải); đường nhập phím được kiểm bằng trình duyệt
-vi.mock('@kt/ui', () => ({ KeyboardGrid: (p: { rows: Record<string, unknown>[]; columns: { field?: string; editable?: unknown; valueSetter?: unknown; valueParser?: unknown; valueFormatter?: unknown }[] }) => { mocks.grid.columns = p.columns; mocks.grid.rows = p.rows; return null; }, LookupSelect: () => null }));
+vi.mock('@kt/ui', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  KeyboardGrid: (p: { rows: Record<string, unknown>[]; columns: { field?: string; editable?: unknown; valueSetter?: unknown; valueParser?: unknown; valueFormatter?: unknown }[] }) => { mocks.grid.columns = p.columns; mocks.grid.rows = p.rows; return null; },
+  LookupSelect: () => null,
+}));
 
 vi.setConfig({ testTimeout: 30_000 });
 const years = [{ fiscalYear: 2026, regime: 'TT133', dateFrom: '2026-01-01' }];

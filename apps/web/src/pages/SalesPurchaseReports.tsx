@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
-import { Alert, Button, DatePicker, Select, Space, Tag } from 'antd';
+import { Alert, Button, DatePicker, Select, Tag } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnNumber } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useRememberedFilter } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, PageHeader, Toolbar, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -40,22 +40,30 @@ export function TradeReportsPage({ kind }: { kind: Kind }) {
   const printAs = (format: 'pdf' | 'xlsx') => window.open(`${url}&format=${format}`, '_blank');
 
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>{title}</h2>
-        <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
-        <Select aria-label="Nhóm theo" style={{ width: 200 }} value={GROUPS[kind].some((g) => g.value === f.groupBy) ? f.groupBy : 'party'} options={GROUPS[kind].map((g) => ({ ...g, label: `Theo ${g.label.toLowerCase()}` }))} onChange={(v) => setF({ ...f, groupBy: v })} />
-        <LookupSelect catalog="item" aria-label="Mã hàng" placeholder="Mã hàng (F4)" style={{ width: 200 }} value={f.item || null} onChange={(code) => setF({ ...f, item: code ?? '' })} />
-        {can('report.print') && <><Button onClick={() => printAs('pdf')}>In PDF</Button><Button onClick={() => printAs('xlsx')}>Xuất Excel</Button></>}
-        {data.data?.costHidden && <Tag>{kind === 'sales' ? 'Không có quyền xem giá vốn: ẩn cột giá vốn và lãi gộp' : 'Không có quyền xem giá vốn: ẩn cột chi phí mua'}</Tag>}
-      </Space>
-      {data.error ? <Alert type="error" showIcon message={(data.error as Error).message} /> : !data.data ? <Alert type="info" message="Đang tải…" /> : (
-        <Space direction="vertical" style={{ width: '100%' }}>
+    <>
+      <PageHeader
+        title={title}
+        extra={can('report.print') ? (
+          <>
+            <Button onClick={() => printAs('pdf')}>In PDF</Button>
+            <Button onClick={() => printAs('xlsx')}>Xuất Excel</Button>
+          </>
+        ) : undefined}
+      >
+        <Toolbar>
+          <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
+          <Select aria-label="Nhóm theo" style={{ width: 200 }} value={GROUPS[kind].some((g) => g.value === f.groupBy) ? f.groupBy : 'party'} options={GROUPS[kind].map((g) => ({ ...g, label: `Theo ${g.label.toLowerCase()}` }))} onChange={(v) => setF({ ...f, groupBy: v })} />
+          <LookupSelect catalog="item" aria-label="Mã hàng" placeholder="Mã hàng (F4)" style={{ width: 200 }} value={f.item || null} onChange={(code) => setF({ ...f, item: code ?? '' })} />
+          {data.data?.costHidden && <Tag style={{ marginRight: 0 }}>{kind === 'sales' ? 'Không có quyền xem giá vốn: ẩn cột giá vốn và lãi gộp' : 'Không có quyền xem giá vốn: ẩn cột chi phí mua'}</Tag>}
+        </Toolbar>
+      </PageHeader>
+      {data.error ? <Alert type="error" showIcon message={(data.error as Error).message} style={{ marginBottom: 12 }} /> : !data.data ? <Alert type="info" message="Đang tải…" style={{ marginBottom: 12 }} /> : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {(data.data.banners?.messages ?? []).map((m) => <Alert key={m} type="warning" showIcon message={m} />)}
           {data.data.truncated && <Alert type="warning" showIcon message="Kết quả bị cắt bớt vì quá nhiều dòng; hãy thu hẹp bộ lọc hoặc xuất Excel." />}
-          <KeyboardGrid<Row> rows={rows} columns={columns} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly height="calc(100vh - 300px)" />
-        </Space>)}
-    </Space>
+          <KeyboardGrid<Row> rows={rows} columns={columns} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly height="calc(100vh - 260px)" />
+        </div>)}
+    </>
   );
 }
 export const SalesReportsPage = () => <TradeReportsPage kind="sales" />;
