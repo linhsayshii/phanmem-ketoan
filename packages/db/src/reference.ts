@@ -31,11 +31,11 @@ export async function syncReferenceData(adminUrl: string): Promise<void> {
     const tpl = loadReportTemplates({ onlyComplete: true });
     for (const r of tpl) {
       await client.query(
-        `INSERT INTO report_template(regime, report_code, line_code, label, parent_line_code, source, side, formula, sort_order, is_bold, negate, note_ref)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        `INSERT INTO report_template(regime, report_code, line_code, label, parent_line_code, source, side, formula, sort_order, is_bold, negate, note_ref, label_en)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
          ON CONFLICT (regime, report_code, line_code) DO UPDATE SET label = EXCLUDED.label, parent_line_code = EXCLUDED.parent_line_code, source = EXCLUDED.source, side = EXCLUDED.side,
-           formula = EXCLUDED.formula, sort_order = EXCLUDED.sort_order, is_bold = EXCLUDED.is_bold, negate = EXCLUDED.negate, note_ref = EXCLUDED.note_ref`,
-        [r.regime, r.reportCode, r.lineCode, r.label, r.parentLineCode, r.source, r.side, r.formula, r.sortOrder, r.isBold, r.negate, r.noteRef]);
+           formula = EXCLUDED.formula, sort_order = EXCLUDED.sort_order, is_bold = EXCLUDED.is_bold, negate = EXCLUDED.negate, note_ref = EXCLUDED.note_ref, label_en = EXCLUDED.label_en`,
+        [r.regime, r.reportCode, r.lineCode, r.label, r.parentLineCode, r.source, r.side, r.formula, r.sortOrder, r.isBold, r.negate, r.noteRef, r.labelEn]);
     }
     await client.query(
       `DELETE FROM report_template WHERE (regime, report_code, line_code) NOT IN (SELECT a, b, c FROM unnest($1::text[], $2::text[], $3::text[]) AS t(a, b, c))`,

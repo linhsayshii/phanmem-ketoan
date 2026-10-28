@@ -22,6 +22,18 @@ Kế hoạch: `2026-10-28-giai-doan-7-chi-tiet.md`. Số bắt đầu từ 1000 
 
 ## Nhóm 2 — Song ngữ (1050–1099)
 
+1050. Số giữ định dạng Việt ở mọi ngôn ngữ (1.234.567, ngày dd/mm/yyyy) — sổ nộp cơ quan Việt Nam và Excel đã theo ô số; đổi dấu theo ngôn ngữ làm lệch đối chiếu với màn hình — người đọc nước ngoài phải quen dấu chấm hàng nghìn. (4)
+1051. `translation_status` ('draft' | 'reviewed') là cờ dịch thuật, không phải dữ liệu pháp lý; mọi bản in có `lang` khác `vi` đều ghi "Bản dịch tham khảo, không phải bản dịch chính thức" — tránh hiểu nhầm bản dịch là văn bản chính thức — dòng chú thích chiếm một dòng cuối bảng. (1, 4)
+1052. Trạng thái do trigger `fn_translation_status` đặt: có bản dịch mà chưa nêu trạng thái là 'draft', xóa bản dịch thì về NULL; sửa chữ không tự hạ 'reviewed' về 'draft' — mọi đường ghi (PATCH tài khoản cũ, nạp mẫu, màn hình mới) nhất quán mà không sửa từng chỗ ghi — người sửa chữ qua đường cũ phải tự đặt lại trạng thái. (1)
+1053. Dịch ở lớp sau (`localizeDoc`) trên tài liệu đã dựng tiếng Việt, nhận loại sổ qua khóa cột — hàm dựng sổ (`bookSet.ts`) do nhóm 1 cũng sửa nên không đụng, hợp nhất dễ — đổi tên khóa cột ở nhóm khác sẽ làm bản dịch rơi về tiếng Việt (kiểm thử `inferKind` bắt). (4)
+1054. Từ điển nhãn là một bảng `EN` khóa theo câu tiếng Việt đúng như builder in ra; câu không có thì rơi về tiếng Việt, không báo lỗi — thiếu bản dịch không được làm hỏng bản in — nhãn mới thêm ở sổ sau phải nhớ thêm vào bảng. (4)
+1055. Tên tiếng Anh mẫu hệ thống chỉ nạp cho tài khoản cấp 1 và chỉ tiêu có thuật ngữ chuẩn, đều ghi 'draft'; phần chưa chắc để trống (bản in rơi về tiếng Việt). Tên theo chế độ ghi đè bằng khóa `TT99:112` — không đoán nghĩa tài khoản chi tiết — bản in song ngữ còn nhiều tên Việt xen lẫn, kế toán nhập tay tiếp. (2)
+1056. `saveReportDef` (xóa rồi chèn lại dòng) giữ `label_en` và trạng thái theo mã dòng khi đầu vào không có `labelEn`; có `labelEn` (kể cả null) thì ghi theo đầu vào — màn hình công thức không biết tiếng Anh nên không được làm mất bản dịch — đổi mã dòng ở màn hình công thức làm mất bản dịch của dòng đó. (3)
+1057. `fill-from-template` chỉ điền ô trống, không ghi đè; công ty mới đã nhận tên khi tạo tài khoản/nạp mẫu nên lệnh chủ yếu dành cho công ty có từ trước — tránh mất tên đã sửa tay — mẫu hệ thống cập nhật sau không tự lan vào công ty. (5)
+1058. Dùng quyền có sẵn `account.view/update` và `report_def.view/update` cho trang Tên tiếng Anh, không thêm quyền mới — tên tiếng Anh là thuộc tính của danh mục đó — không tách riêng được quyền chỉ dịch. (5)
+1059. JSON của các báo cáo không đổi và không thêm trường tiếng Anh (`lang` chỉ ảnh hưởng bản in); trường bổ sung tùy chọn để sau — giữ hợp đồng API cho màn hình và tích hợp — lưới trên màn hình chưa hiện tên tiếng Anh. (5)
+
+
 ## Nhóm 3 — Ngân sách và phân tích (1100–1149)
 
 1100. Ngân sách là bảng riêng `budget` (năm × phiên bản × tên, trạng thái draft → approved → superseded) và `budget_line` (tiền tố tài khoản + khoản mục/bộ phận/dự án tùy chọn + 12 cột `m01..m12` NUMERIC(20,0)) thay vì JSON — lý do: ràng buộc và khóa ngoại tổng hợp, audit từng dòng; đổi lại đọc/ghi 12 cột thay vì mảng. (T1)
@@ -41,3 +53,13 @@ Kế hoạch: `2026-10-28-giai-doan-7-chi-tiet.md`. Số bắt đầu từ 1000 
 ## Nhóm 5 — Đa chi nhánh (1200–1249)
 
 ## Nhóm 6 — HKD và siêu nhỏ (1250–1299)
+
+1250. Không tải được văn bản gốc TT 152/2025 và TT 58/2026 nên chỉ dựng khung, mọi cổng pháp lý `false` — thuvienphapluat.vn và luatvietnam.vn trả 403 từ VPS; không tìm được bản Công báo. Nguồn đã đọc: https://nhanh.vn/toan-van-thong-tu-1522025ttbtc-huong-dan-che-do-ke-toan-cua-ho-kinh-doanh-ca-nhan-kinh-doanh-n168240.html (thứ cấp, tải 28/10/2026, lưu `~/legal-docs/tt152-2025/`), https://amis.misa.vn/264117/thong-tu-58-2026-tt-btc-cho-dn-sieu-nho/ (thứ cấp, tải 28/10/2026, lưu `~/legal-docs/tt58-2026/`) — nguồn thứ cấp không có cột sổ, chỉ tiêu B01/B02-DNSN, danh mục tài khoản — giá phải trả: HKD và siêu nhỏ chưa dùng được cho kế toán thật đến khi người dùng cung cấp văn bản. (QĐ nhóm 6)
+1251. Thêm mã chế độ `TT152` cho hộ kinh doanh, giữ `TT58` có sẵn cho siêu nhỏ — `TT58` đã có trong CHECK và kiểu `Regime` từ GĐ0, chỉ thiếu HKD — giá phải trả: nếu sau này TT152 và TT58 dùng chung mô hình sổ thì phải gộp lại.
+1252. Migration 0250 sửa CHECK bằng khối `DO` tìm ràng buộc theo định nghĩa (chứa `regime` và `'TT58'`) thay vì tên cứng — tên ràng buộc do PostgreSQL tự đặt ở nhiều bảng — giá phải trả: nếu ai đặt CHECK `regime` với tập khác thì không được sửa tự động.
+1253. Tạo năm tài chính TT152/TT58 bị chặn bằng cơ chế sẵn có `COA_TEMPLATE_PENDING` (409, giao dịch lùi, không để lại kỳ) chứ không thêm cờ chặn riêng — hệ thống tài khoản chưa có mẫu nên không thể ghi sổ; nới lỏng sau khi có mẫu — giá phải trả: thông báo lỗi nói về "mẫu hệ thống tài khoản", trong khi HKD có thể không dùng tài khoản.
+1254. Danh mục sổ theo nguồn thứ cấp (S1a…S2e-HKD, S1…S4d-DNSN, B01/B02-DNSN) chỉ lưu trong `status.json` để hiển thị có nhãn "chưa đối chiếu văn bản gốc", không thành dữ liệu mẫu in — tránh coi tên sổ thứ cấp là mẫu pháp lý (S3a-HKD không có tên trong nguồn nên để `null`) — giá phải trả: người dùng thấy danh mục nhưng chưa in được sổ nào.
+1255. Không nhập ngưỡng doanh thu (500 triệu, 1 tỷ, 3 tỷ), tỷ lệ thuế, nhóm hộ — các số này mâu thuẫn giữa nguồn thứ cấp (500 triệu theo bài Nhanh.vn, 1 tỷ theo NĐ 141/2026 trong ghi chú nghiên cứu) và NĐ 68/2026, NĐ 141/2026 chưa có văn bản gốc — giá phải trả: chưa có gợi ý nhóm hộ.
+1256. `GET /api/regimes` chỉ cần đăng nhập (không quyền riêng) và trang menu không đòi quyền — chỉ là dữ liệu tham chiếu công khai trong mã nguồn, không có dữ liệu công ty — giá phải trả: mọi người dùng thấy trang này.
+1257. E2E chỉ phủ trang Chế độ kế toán; cảnh báo ở màn Tạo công ty (`RegimeNotice`) chưa có spec riêng vì spec phải tạo công ty mới và đổi ngữ cảnh đăng nhập chung của các spec — giá phải trả: cảnh báo ở màn Tạo công ty chỉ được kiểm gián tiếp (cùng thành phần, cùng API).
+1258. Tệp dùng chung đã chạm: `apps/api/src/app.ts` (đăng ký route ở cuối), `apps/web/src/router.tsx` (menu Hệ thống, route cuối), `packages/coa-data/src/index.ts` (xuất `regimes.ts`), `packages/domain/src/period.ts` (`Regime`), `fiscalYears.ts` và `reporting/routes.ts` (enum) — không chạm `periodClose`, costing, payroll, kho.

@@ -24,7 +24,7 @@ export async function copyReportTemplates(trx: Trx, tenantId: string, regime: st
     const f = formNoFor(regime, c);
     const def = await trx.insertInto('report_def').values({ tenant_id: tenantId, regime, report_code: c, name: REPORT_NAMES[c]?.[regime] ?? c, form_no: f.formNo, issued_by: f.issuedBy }).returning('id').executeTakeFirstOrThrow();
     await trx.insertInto('report_line').values(tpl.filter((x) => x.report_code === c).map((t) => ({ tenant_id: tenantId, report_def_id: def.id, line_code: t.line_code, label: t.label, parent_line_code: t.parent_line_code,
-      source: t.source, side: t.side, formula: t.formula, sort_order: t.sort_order, is_bold: t.is_bold, negate: t.negate, note_ref: t.note_ref }))).execute();
+      source: t.source, side: t.side, formula: t.formula, sort_order: t.sort_order, is_bold: t.is_bold, negate: t.negate, note_ref: t.note_ref, label_en: t.label_en }))).execute();
   }
   return tpl.length;
 }
@@ -226,7 +226,7 @@ export async function drillLine(trx: Trx, tenantId: string, q: { reportCode: str
   return { accounts: out.map((r) => ({ ...(r.kind && { kind: r.kind }), accountCode: r.accountCode, accountName: r.accountName, ...(r.counterAccountCode !== undefined && { counterAccountCode: r.counterAccountCode }), partyCode: r.partyCode, amount: r.amount.toString() })) };
 }
 
-export interface ReportLineInput { lineCode: string; label: string; parentLineCode: string | null; source: Source; side: Side; formula: string | null; isBold: boolean; negate: boolean; noteRef: string | null }
+export interface ReportLineInput { lineCode: string; label: string; parentLineCode: string | null; source: Source; side: Side; formula: string | null; isBold: boolean; negate: boolean; noteRef: string | null; labelEn?: string | null | undefined; translationStatus?: string | null | undefined }
 
 // Lưu toàn bộ dòng của một báo cáo. Kiểm tra trước khi ghi: cú pháp công thức, dòng [x] tồn tại, không vòng lặp (chạy thử với bộ giải trả 0), mã dòng không trùng, dòng cha tồn tại.
 export async function saveReportDef(trx: Trx, tenantId: string, regime: string, reportCode: string, lines: ReportLineInput[]): Promise<void> {
@@ -243,8 +243,10 @@ export async function saveReportDef(trx: Trx, tenantId: string, regime: string, 
   const f = formNoFor(regime, reportCode);
   const d = await trx.insertInto('report_def').values({ tenant_id: tenantId, regime, report_code: reportCode, name: REPORT_NAMES[reportCode]?.[regime] ?? reportCode, form_no: f.formNo, issued_by: f.issuedBy })
     .onConflict((oc) => oc.columns(['tenant_id', 'regime', 'report_code']).doUpdateSet({ name: sql`report_def.name` })).returning('id').executeTakeFirstOrThrow(); // cập nhật giả để RETURNING trả id của định nghĩa đã có
+  // Tên tiếng Anh sửa riêng ở màn hình Tên tiếng Anh: màn hình công thức không gửi thì giữ bản cũ theo mã dòng.
+  const oldEn = new Map((await trx.selectFrom('report_line').select(['line_code', 'label_en', 'translation_status']).where('report_def_id', '=', d.id).execute()).map((x) => [x.line_code, x]));
   await trx.deleteFrom('report_line').where('report_def_id', '=', d.id).execute();
-  if (lines.length) await trx.insertInto('report_line').values(lines.map((l, i) => ({ tenant_id: tenantId, report_def_id: d.id, line_code: l.lineCode, label: l.label, parent_line_code: l.parentLineCode, source: l.source, side: l.side,
+  if (lines.length) await trx.insertInto('report_line').values(lines.map((l, i) => ({ label_en: l.labelEn === undefined ? oldEn.get(l.lineCode)?.label_en ?? null : l.labelEn, translation_status: l.labelEn === undefined ? oldEn.get(l.lineCode)?.translation_status ?? null : l.translationStatus ?? null, tenant_id: tenantId, report_def_id: d.id, line_code: l.lineCode, label: l.label, parent_line_code: l.parentLineCode, source: l.source, side: l.side,
     formula: l.formula, sort_order: i + 1, is_bold: l.isBold, negate: l.negate, note_ref: l.noteRef }))).execute();
 }
 
