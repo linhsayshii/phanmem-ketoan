@@ -4,6 +4,8 @@ import { D, formatVnDate } from '@kt/domain';
 import { AppError } from '../../../plugins/errors.js';
 import { accountDetail, accountLedger, generalJournal, trialBalance } from '../ledgers.js';
 import { evaluateFinancialReport } from '../financial.js';
+import { getBookForm } from '../bookForms.js';
+import { ctgsLedgerDoc, formJournalDocs } from './bookFormDocs.js';
 import { formNoFor } from './forms.js';
 import { periodSubtitle, type ReportDoc } from './html.js';
 import type { CompanyInfo } from './voucherHtml.js';
@@ -63,10 +65,11 @@ export async function bookSetDocs(trx: Trx, tenantId: string, year: number, incl
   const ps = await trx.selectFrom('fiscal_period').select(['date_from', 'date_to', 'regime']).where('fiscal_year', '=', year).where('period_no', '>=', 1).orderBy('period_no').execute();
   if (!ps.length) throw new AppError('PERIOD_NOT_FOUND', `Không có năm tài chính ${year}`, 404);
   const from = ps[0]!.date_from; const to = ps.at(-1)!.date_to; const regime = ps[0]!.regime; const docs: ReportDoc[] = [];
-  if (include.includes('journal')) docs.push(await journalDoc(trx, tenantId, regime, { from, to }));
-  if (include.includes('ledgers')) {
+  const form = await getBookForm(trx, year); // hình thức sổ của năm: chỉ đổi cách trình bày Nhật ký/Sổ Cái, số liệu vẫn từ sổ cái
+  if (include.includes('journal')) docs.push(...(form === 'NKC' ? [await journalDoc(trx, tenantId, regime, { from, to })] : await formJournalDocs(trx, tenantId, regime, form, { from, to, fiscalYear: year })));
+  if (include.includes('ledgers') && form !== 'NKSC') { // Nhật ký – Sổ Cái là một sổ duy nhất, không in Sổ Cái riêng
     const tb = await trialBalance(trx, tenantId, { from, to, splitParty: false });
-    for (const r of tb.rows.filter((x) => !x.isGroup)) docs.push(await ledgerDoc(trx, tenantId, regime, { accountCode: r.accountCode, from, to }));
+    for (const r of tb.rows.filter((x) => !x.isGroup)) docs.push(form === 'CTGS' ? await ctgsLedgerDoc(trx, tenantId, regime, { accountCode: r.accountCode, from, to }) : await ledgerDoc(trx, tenantId, regime, { accountCode: r.accountCode, from, to }));
   }
   if (include.includes('trial')) docs.push(await trialBalanceDoc(trx, tenantId, regime, { from, to, splitParty: true }));
   for (const code of ['B01', 'B02', 'B03']) if (include.includes(code)) { try { docs.push(await financialDoc(trx, tenantId, regime, { reportCode: code, from, to })); } catch (e) { if ((e as { code?: string }).code !== 'REPORT_NOT_FOUND') throw e; } }

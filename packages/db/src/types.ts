@@ -411,6 +411,9 @@ export interface EinvoiceFakeStoreTable {
   id: Generated<number>; tenant_id: string; transaction_uuid: string; serial: string; invoice_no: string; issue_date: DateOnly; cqt_code: string | null; cancelled: Generated<boolean>; created_at: Generated<string>;
 }
 
+export interface FiscalYearSettingTable { tenant_id: string; fiscal_year: number; book_form: Generated<string>; updated_at: Generated<string> }
+export interface LedgerVoucherSetTable { id: Generated<number>; tenant_id: string; fiscal_year: number; set_no: number; set_date: DateOnly; description: string; date_from: DateOnly; date_to: DateOnly; voucher_type: string | null; created_by: string; created_at: Generated<string> }
+export interface LedgerVoucherSetItemTable { tenant_id: string; set_id: number; voucher_id: string }
 export interface Database {
   tenant: TenantTable;
   app_user: AppUserTable;
@@ -513,4 +516,7 @@ export interface Database {
   einvoice_error_notice_line: EinvoiceErrorNoticeLineTable;
   einvoice_log: EinvoiceLogTable;
   einvoice_fake_store: EinvoiceFakeStoreTable;
+  fiscal_year_setting: FiscalYearSettingTable;
+  ledger_voucher_set: LedgerVoucherSetTable;
+  ledger_voucher_set_item: LedgerVoucherSetItemTable;
 }

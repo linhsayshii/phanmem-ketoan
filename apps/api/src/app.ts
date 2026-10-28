@@ -41,6 +41,7 @@ import balanceRoutes from './modules/ledger/balances.js';
 import closingRoutes from './modules/ledger/closing.js';
 import periodCloseRoutes from './modules/ledger/periodClose.routes.js';
 import reportingRoutes from './modules/reporting/routes.js';
+import bookFormRoutes from './modules/reporting/bookFormRoutes.js';
 import cashRoutes from './modules/cash/routes.js';
 import toolsRoutes from './modules/tools/routes.js';
 import arapRoutes from './modules/arap/routes.js';
@@ -121,6 +122,7 @@ export async function buildApp(opts: { db: Kysely<Database>; config: Config; bos
   await app.register(bankRoutes);
   await app.register(bankWebhookRoutes); // công khai, có parser thân thô riêng
   await app.register(extRoutes); // khóa API (phiên) và /api/ext/v1 (Bearer kt_…, parser XML riêng)
+  await app.register(bookFormRoutes); // GĐ7: hình thức sổ
   app.get('/api/health', async () => ({ ok: true }));
   return app;
 }
