@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, DatePicker, Descriptions, Drawer, Form, Input, Modal, Select, Space, Table, Tag, message } from 'antd';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber } from '@kt/domain';
-import { useRememberedFilter } from '@kt/ui';
+import { COLOR, EmptyState, PageHeader, Section, Toolbar, useRememberedFilter } from '@kt/ui';
 import { api, apiBlob } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { ORPHAN_ACTIONS, RELATION_LABEL, STATUS_LABEL, StatusTags, canCancel, cqtPending, reportEInvoiceError, showWarnings, symbolOf, type EInvoice, type EInvoiceLog } from './einvoiceCommon.js';
@@ -114,29 +114,37 @@ export default function EInvoicesPage() {
     return out;
   };
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <h2 style={{ margin: 0 }}>Hóa đơn điện tử</h2>
-      <Space wrap>
-        <Select aria-label="Trạng thái" style={{ width: 170 }} value={f.status} onChange={(v) => setF({ ...f, status: v })} options={[{ value: '', label: 'Mọi trạng thái' }, ...Object.entries(STATUS_LABEL).filter(([k]) => k !== 'draft').map(([value, label]) => ({ value, label }))]} />
-        <DatePicker.RangePicker aria-label="Khoảng ngày" format="DD/MM/YYYY" value={f.from && f.to ? [dayjs(f.from), dayjs(f.to)] : null} onChange={(v) => setF({ ...f, from: v?.[0]?.format('YYYY-MM-DD') ?? '', to: v?.[1]?.format('YYYY-MM-DD') ?? '' })} />
-        <Input.Search aria-label="Tìm số hóa đơn hoặc khách hàng" allowClear placeholder="Số hóa đơn, khách hàng" style={{ width: 240 }} defaultValue={f.q} onSearch={(v) => setF({ ...f, q: v.trim() })} />
-        <Select aria-label="Cần đảo" style={{ width: 230 }} value={f.needsReversal ? 'yes' : 'all'} onChange={(v) => setF({ ...f, needsReversal: v === 'yes' })} options={[{ value: 'all', label: 'Tất cả hóa đơn' }, { value: 'yes', label: 'Chỉ hóa đơn cần đảo chứng từ gốc' }]} />
-        <Button onClick={refresh}>Làm mới</Button>
-      </Space>
-      {list.error && <Alert type="error" showIcon message={(list.error as Error).message} />}
-      <Table<EInvoice> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 50, showSizeChanger: false }} locale={{ emptyText: 'Chưa có hóa đơn điện tử' }}
-        onRow={(r) => ({ onDoubleClick: () => setOpenId(r.id), style: { cursor: 'pointer' } })} columns={[
-          { title: 'Ký hiệu', width: 120, render: (_v, r) => symbolOf(r) }, { title: 'Số', dataIndex: 'invoiceNo', width: 110, render: (v: string | null) => v ?? <i>Chưa có</i> },
-          { title: 'Ngày', dataIndex: 'issueDate', width: 105, render: (v: string | null) => (v ? formatVnDate(v) : '') }, { title: 'Khách hàng', dataIndex: 'buyerName', ellipsis: true },
-          { title: 'Loại', dataIndex: 'relation', width: 130, render: (v: string) => RELATION_LABEL[v] },
-          { title: 'MST', dataIndex: 'buyerTaxCode', width: 120 },
-          { title: 'Tiền trước thuế', dataIndex: 'beforeTax', width: 130, align: 'right', render: (v: string | null) => (v ? formatVnNumber(v) : '') },
-          { title: 'Thuế', dataIndex: 'tax', width: 110, align: 'right', render: (v: string | null) => (v ? formatVnNumber(v) : '') },
-          { title: 'Tổng', dataIndex: 'total', width: 130, align: 'right', render: (v: string | null) => (v ? formatVnNumber(v) : '') },
-          { title: 'Trạng thái', width: 260, render: (_v, r) => <StatusTags e={r} /> }, { title: 'Mã CQT', dataIndex: 'cqtCode', width: 160, ellipsis: true },
-          { title: '', width: 80, render: (_v, r) => <Button type="link" size="small" onClick={() => setOpenId(r.id)}>Chi tiết</Button> }]} />
+    <>
+      <PageHeader
+        title="Hóa đơn điện tử"
+        description="Tra cứu, phát hành lại, tra mã cơ quan thuế, điều chỉnh, thay thế và hủy hóa đơn điện tử"
+        extra={<Button onClick={refresh}>Làm mới</Button>}
+      >
+        <Toolbar>
+          <Select aria-label="Trạng thái" style={{ width: 170 }} value={f.status} onChange={(v) => setF({ ...f, status: v })} options={[{ value: '', label: 'Mọi trạng thái' }, ...Object.entries(STATUS_LABEL).filter(([k]) => k !== 'draft').map(([value, label]) => ({ value, label }))]} />
+          <DatePicker.RangePicker aria-label="Khoảng ngày" format="DD/MM/YYYY" value={f.from && f.to ? [dayjs(f.from), dayjs(f.to)] : null} onChange={(v) => setF({ ...f, from: v?.[0]?.format('YYYY-MM-DD') ?? '', to: v?.[1]?.format('YYYY-MM-DD') ?? '' })} />
+          <Input.Search aria-label="Tìm số hóa đơn hoặc khách hàng" allowClear placeholder="Số hóa đơn, khách hàng" style={{ width: 240 }} defaultValue={f.q} onSearch={(v) => setF({ ...f, q: v.trim() })} />
+          <Select aria-label="Cần đảo" style={{ width: 230 }} value={f.needsReversal ? 'yes' : 'all'} onChange={(v) => setF({ ...f, needsReversal: v === 'yes' })} options={[{ value: 'all', label: 'Tất cả hóa đơn' }, { value: 'yes', label: 'Chỉ hóa đơn cần đảo chứng từ gốc' }]} />
+          {list.data && <span style={{ color: COLOR.textSecondary, marginLeft: 'auto' }}>{formatVnNumber(String(list.data.length))} hóa đơn</span>}
+        </Toolbar>
+      </PageHeader>
+      {list.error && <Alert type="error" showIcon message={(list.error as Error).message} style={{ marginBottom: 12 }} />}
+      <Section bodyPadding={0}>
+        <Table<EInvoice> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 50, showSizeChanger: false }}
+          locale={{ emptyText: <EmptyState title="Chưa có hóa đơn điện tử" /> }}
+          onRow={(r) => ({ onDoubleClick: () => setOpenId(r.id), style: { cursor: 'pointer' } })} columns={[
+            { title: 'Ký hiệu', width: 120, render: (_v, r) => symbolOf(r) }, { title: 'Số', dataIndex: 'invoiceNo', width: 110, render: (v: string | null) => v ?? <i>Chưa có</i> },
+            { title: 'Ngày', dataIndex: 'issueDate', width: 105, render: (v: string | null) => (v ? formatVnDate(v) : '') }, { title: 'Khách hàng', dataIndex: 'buyerName', ellipsis: true },
+            { title: 'Loại', dataIndex: 'relation', width: 130, render: (v: string) => RELATION_LABEL[v] },
+            { title: 'MST', dataIndex: 'buyerTaxCode', width: 120 },
+            { title: 'Tiền trước thuế', dataIndex: 'beforeTax', width: 130, align: 'right', render: (v: string | null) => (v ? formatVnNumber(v) : '') },
+            { title: 'Thuế', dataIndex: 'tax', width: 110, align: 'right', render: (v: string | null) => (v ? formatVnNumber(v) : '') },
+            { title: 'Tổng', dataIndex: 'total', width: 130, align: 'right', render: (v: string | null) => (v ? formatVnNumber(v) : '') },
+            { title: 'Trạng thái', width: 260, render: (_v, r) => <StatusTags e={r} /> }, { title: 'Mã CQT', dataIndex: 'cqtCode', width: 160, ellipsis: true },
+            { title: '', width: 80, render: (_v, r) => <Button type="link" size="small" onClick={() => setOpenId(r.id)}>Chi tiết</Button> }]} />
+      </Section>
       <DetailDrawer id={openId} onClose={() => setOpenId(null)} act={actions} />
       <ActionDialog dlg={dlg} onClose={() => setDlg(null)} onDone={(r) => { setDlg(null); void message.success(dlg?.kind === 'cancel' ? 'Đã hủy hóa đơn' : `Đã lập hóa đơn ${r.invoiceNo ?? ''}`); refresh(); }} />
-    </Space>
+    </>
   );
 }

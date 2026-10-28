@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
+import { Alert, Button, Form, Input, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { parseInvoiceSymbol } from '@kt/domain';
-import { useHotkeys } from '@kt/ui';
+import { EmptyState, PageHeader, Section, useHotkeys } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import type { Series } from './einvoiceCommon.js';
@@ -23,8 +23,10 @@ function ProviderCard({ providers, canEdit }: { providers: Provider[]; canEdit: 
   const del = useMutation({ mutationFn: (id: number) => api(`/api/einvoice/providers/${id}`, { method: 'DELETE' }), onSuccess: () => { void qc.invalidateQueries({ queryKey: ['einvoice-providers'] }); void message.success('Đã xóa nhà cung cấp'); }, onError: (e) => void message.error((e as Error).message) });
   const test = useMutation({ mutationFn: (id: number) => api<{ ok: boolean; message: string }>(`/api/einvoice/providers/${id}/test`, { method: 'POST' }), onSuccess: (r, id) => setTested((t) => ({ ...t, [id]: r })), onError: (e) => void message.error((e as Error).message) });
   return (
-    <Card size="small" title="Nhà cung cấp hóa đơn điện tử" extra={canEdit && <Button type="primary" onClick={() => open('new')}>Thêm nhà cung cấp</Button>}>
-      <Table<Provider> size="small" rowKey="id" pagination={false} dataSource={providers} locale={{ emptyText: 'Chưa có nhà cung cấp' }} columns={[
+    <Section title="Nhà cung cấp hóa đơn điện tử" bodyPadding={0} extra={canEdit ? <Button type="primary" onClick={() => open('new')}>Thêm nhà cung cấp</Button> : undefined}>
+      <Table<Provider> size="small" rowKey="id" pagination={false} dataSource={providers}
+        locale={{ emptyText: <EmptyState title="Chưa có nhà cung cấp" /> }}
+        columns={[
         { title: 'Loại', dataIndex: 'code', width: 160, render: (c: string) => CODES.find((x) => x.value === c)?.label ?? c }, { title: 'Tên', dataIndex: 'name' }, { title: 'Địa chỉ máy chủ', dataIndex: 'baseUrl' },
         { title: 'Tên đăng nhập', dataIndex: 'username', width: 150 }, { title: 'Mật khẩu', dataIndex: 'hasSecret', width: 100, render: (b: boolean) => (b ? 'Đã đặt' : 'Chưa đặt') }, { title: 'MST người bán', dataIndex: 'sellerTaxCode', width: 140 },
         { title: 'Đang dùng', dataIndex: 'isActive', width: 100, render: (b: boolean) => (b ? <Tag color="green">Đang dùng</Tag> : <Tag>Ngừng</Tag>) },
@@ -44,7 +46,7 @@ function ProviderCard({ providers, canEdit }: { providers: Provider[]; canEdit: 
           <Form.Item name="isActive" label="Đang dùng" valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>
-    </Card>
+    </Section>
   );
 }
 
@@ -59,8 +61,10 @@ function SeriesCard({ providers, series, canEdit }: { providers: Provider[]; ser
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['einvoice-series'] }); setEditing(null); void message.success('Đã lưu ký hiệu hóa đơn'); }, onError: (e) => void message.error((e as Error).message) });
   const del = useMutation({ mutationFn: (id: number) => api(`/api/einvoice/series/${id}`, { method: 'DELETE' }), onSuccess: () => { void qc.invalidateQueries({ queryKey: ['einvoice-series'] }); void message.success('Đã xóa ký hiệu'); }, onError: (e) => void message.error((e as Error).message) });
   return (
-    <Card size="small" title="Ký hiệu hóa đơn" extra={canEdit && <Button type="primary" data-add-series disabled={!providers.length} onClick={() => open('new')}>Thêm ký hiệu (Insert)</Button>}>
-      <Table<Series> size="small" rowKey="id" pagination={false} dataSource={series} locale={{ emptyText: providers.length ? 'Chưa có ký hiệu hóa đơn' : 'Thêm nhà cung cấp trước' }} columns={[
+    <Section title="Ký hiệu hóa đơn" bodyPadding={0} extra={canEdit ? <Button type="primary" data-add-series disabled={!providers.length} onClick={() => open('new')}>Thêm ký hiệu (Insert)</Button> : undefined}>
+      <Table<Series> size="small" rowKey="id" pagination={false} dataSource={series}
+        locale={{ emptyText: <EmptyState title={providers.length ? 'Chưa có ký hiệu hóa đơn' : 'Thêm nhà cung cấp trước'} /> }}
+        columns={[
         { title: 'Ký hiệu mẫu số', dataIndex: 'formNo', width: 130 }, { title: 'Ký hiệu', dataIndex: 'serial', width: 120 }, { title: 'Năm', dataIndex: 'year', width: 80 },
         { title: 'Loại', dataIndex: 'kind', width: 190, render: (k: string) => (k === 'cash_register' ? 'Máy tính tiền' : 'Thông thường') }, { title: 'Nhà cung cấp', dataIndex: 'providerId', render: (id: number) => providers.find((p) => p.id === id)?.name ?? id },
         { title: 'Mã mẫu của nhà cung cấp', dataIndex: 'providerTemplate', width: 190 }, { title: 'Đang dùng', dataIndex: 'isActive', width: 100, render: (b: boolean) => (b ? <Tag color="green">Đang dùng</Tag> : <Tag>Ngừng</Tag>) }, { title: 'Ghi chú', dataIndex: 'note' },
@@ -81,7 +85,7 @@ function SeriesCard({ providers, series, canEdit }: { providers: Provider[]; ser
           <Form.Item name="isActive" label="Đang dùng" valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>
-    </Card>
+    </Section>
   );
 }
 
@@ -92,11 +96,16 @@ export default function EInvoiceConfigPage() {
   const canEdit = can('einvoice.config');
   useHotkeys({ Insert: () => { /* mở hộp thoại thêm ký hiệu: nút "Thêm ký hiệu" */ document.querySelector<HTMLButtonElement>('[data-add-series]')?.click(); } });
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <h2 style={{ margin: 0 }}>Cấu hình hóa đơn điện tử</h2>
-      {(providers.error || series.error) && <Alert type="error" showIcon message={((providers.error ?? series.error) as Error).message} />}
-      <ProviderCard providers={providers.data ?? []} canEdit={canEdit} />
-      <SeriesCard providers={providers.data ?? []} series={series.data ?? []} canEdit={canEdit} />
-    </Space>
+    <>
+      <PageHeader
+        title="Cấu hình hóa đơn điện tử"
+        description="Quản lý thông tin kết nối nhà cung cấp hóa đơn điện tử và các dải ký hiệu hóa đơn phát hành"
+      />
+      {(providers.error || series.error) && <Alert type="error" showIcon message={((providers.error ?? series.error) as Error).message} style={{ marginBottom: 12 }} />}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <ProviderCard providers={providers.data ?? []} canEdit={canEdit} />
+        <SeriesCard providers={providers.data ?? []} series={series.data ?? []} canEdit={canEdit} />
+      </div>
+    </>
   );
 }

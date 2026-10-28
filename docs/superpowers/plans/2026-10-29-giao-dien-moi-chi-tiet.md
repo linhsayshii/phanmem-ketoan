@@ -163,3 +163,30 @@ Mọi màn của phân hệ Bán hàng (`Orders` báo giá/đơn bán, `InvoiceF
 - Trang danh sách và công cụ `Items`, `PriceLists`, `Stocktake`, `CostingRun`, `StockReports`: `<h2>` thành `PageHeader` (giữ đúng chữ h1: "Vật tư hàng hóa", "Bảng giá", "Kiểm kê kho", "Tính giá vốn", "Báo cáo kho"). Nút chính vào `extra`. Bộ lọc vào `Toolbar`, kèm chữ xám đếm dòng nếu là danh sách. Lưới chính cao `calc(100vh - …)` cho vừa trang. Khối phụ dùng `Section`.
 - E2E: `phieu-kho.spec.ts:46` và `lap-rap.spec.ts:49` đổi `.ant-card-head-title` thành `page.getByRole('heading', { level: 1 })`. Trang danh sách phiếu kho dùng `VoucherList` hoặc trang riêng; h1 "Phiếu nhập kho" (`phieu-kho.spec.ts:21`) và "Phiếu lắp ráp, tháo dỡ" (`lap-rap.spec.ts:25`) phải còn.
 - Spec chạy: `vthh`, `bang-gia`, `phieu-kho`, `lap-rap`, `kiem-ke-kho`, `gia-von`, `bao-cao-kho`.
+
+## Tác vụ 8: Tài sản (agy)
+
+- `Assets` (TSCĐ, CCDC, chi phí trả trước, loại tài sản dùng chung một tệp): `<h2>` thành `PageHeader`. Chữ h1 giữ nguyên `KIND_LABEL[kind]` ("Tài sản cố định", "Công cụ dụng cụ"…) và "Loại tài sản". Nút Thêm vào `extra`. Bộ lọc vào `Toolbar`, kèm chữ xám đếm dòng. Lưới/bảng đặt trong `Section` (bodyPadding 0) hoặc ngay dưới, cao vừa trang. Hộp thoại thẻ tài sản (`assetDialogs`, Tabs trong modal) giữ nguyên, chỉ đổi màu chữ phụ sang `COLOR.textSecondary` nếu có.
+- `AssetCount` (Kiểm kê tài sản): theo mẫu `CashCount` (commit a9126c9). `PageHeader` có extra "Kiểm kê mới"/"Lưu…". Tham số trong `Toolbar`. Lưới và kết quả trong `Section`. Danh sách lần kiểm kê trong `Section`.
+- `AssetReports`: `PageHeader` "Báo cáo tài sản", extra In/Xuất nếu có. Tham số trong `Toolbar`. Tabs giữ nguyên dưới đầu trang.
+- Spec dùng heading theo tên (`tai-san:30`, `ccdc:24`, `kiem-ke-tai-san:28`, `bao-cao-tai-san:29`), nên h1 phải giữ đúng chữ.
+- Spec chạy: `tai-san`, `ccdc`, `kiem-ke-tai-san`, `bao-cao-tai-san`.
+
+## Tác vụ 9: Lương (agy)
+
+- Mỗi trang `PayrollProfiles`, `Attendance`, `PayrollRuns`, `PayrollRunImport`, `PayrollReports`, `TncnReturns`, `PayrollPaymentFormats`, `PayrollPaymentFile`, `PayrollStructures`, `PayrollParams`: `<h2>` thành `PageHeader`. Chữ h1 giữ nguyên ("Hồ sơ lương", "Bảng chấm công", "Bảng lương", "Báo cáo lương", "Thuế thu nhập cá nhân", "Mẫu tệp chi lương", "Cấu trúc bảng lương", "Tham số lương"). Trang chưa có tiêu đề thì đặt tên theo mục menu. Nút chính vào `extra`. Bộ lọc/tham số vào `Toolbar`.
+- Bố cục danh sách và chi tiết (`PayrollProfiles`: danh sách nhân viên `data-testid="employee-list"` và chi tiết; `PayrollRuns`: danh sách kỳ lương và chi tiết `data-testid="run-detail"`): mỗi khung là một `Section`. `<h3>` của khung chi tiết thành `title` của `Section`. Tag trạng thái (`data-testid="run-status"`, `run-stale`) và nút ở `extra`, hoặc giữ ngay dưới tiêu đề. Giữ mọi `data-testid`.
+- Không đổi công thức, cột, cờ quyền lương (dữ liệu nhạy cảm chặn ở API, giao diện giữ nguyên điều kiện hiển thị).
+- Spec dùng heading theo tên (`cham-cong:33`, `bang-luong:64,147`, `luong-ho-so:27`), nên h1 phải giữ đúng chữ.
+- Spec chạy: `luong-ho-so`, `cham-cong`, `bang-luong`, `bao-cao-luong`, `tncn`, `chi-luong`, `chi-luong-lo`.
+
+## Tác vụ 10: Giá thành (agy)
+
+- `CostObjects`, `CostNorms`, `CostRuns`, `CostReports`: `<h2>` thành `PageHeader`, chữ h1 giữ nguyên ("Đối tượng tập hợp chi phí", "Định mức nguyên vật liệu", "Tính giá thành", "Báo cáo giá thành"). Nút chính vào `extra` (In/Xuất ở báo cáo). Tham số kỳ, đối tượng vào `Toolbar`. Lưới/bảng trong `Section` hoặc ngay dưới, cao vừa trang. Khối kết quả phụ (cảnh báo, bút toán) dùng `Section` có tiêu đề.
+- Không đổi phương pháp tính, cột, số liệu.
+- Spec chạy: `doi-tuong-gia-thanh`, `chay-gia-thanh`, `bao-cao-gia-thanh`.
+
+## Tác vụ 11: Hợp đồng, khế ước (agy)
+
+- `Loans` ("Khế ước vay"), `Contracts` ("Hợp đồng"), `ContractReports` ("Báo cáo hợp đồng, vụ việc"), `ProjectAlloc` ("Phân bổ chi phí vào vụ việc"): như tác vụ 10. Danh sách và chi tiết (nếu có hai khung) mỗi khung một `Section`. Tiêu đề phụ trong khung chi tiết là `title` của `Section`, không dùng `<h3>`.
+- Spec chạy: `khe-uoc`, `hop-dong`, `theo-doi-hop-dong`, `phan-bo-vu-viec`.

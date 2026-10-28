@@ -4,7 +4,7 @@ import { Alert, Button, DatePicker, Form, Input, Modal, Select, Space, Table, Ta
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate } from '@kt/domain';
-import { KeyboardGrid, useHotkeys } from '@kt/ui';
+import { EmptyState, KeyboardGrid, PageHeader, Section, useHotkeys } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { symbolOf, type EInvoice } from './einvoiceCommon.js';
@@ -74,15 +74,22 @@ export default function EInvoiceErrorNoticePage() {
 
   useHotkeys({ Insert: () => { if (editing === null && canEdit) open('new'); } });
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <Space style={{ justifyContent: 'space-between', width: '100%' }}><h2 style={{ margin: 0 }}>Thông báo hóa đơn điện tử có sai sót (04/SS-HĐĐT)</h2>
-        {canEdit && <Button type="primary" onClick={() => open('new')}>Lập thông báo (Insert)</Button>}</Space>
-      {list.error && <Alert type="error" showIcon message={(list.error as Error).message} />}
-      <Table<Notice> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={false} locale={{ emptyText: 'Chưa có thông báo sai sót' }} columns={[
-        { title: 'Ngày thông báo', dataIndex: 'noticeDate', width: 130, render: (v: string) => formatVnDate(v) }, { title: 'Loại', dataIndex: 'noticeKind', width: 280, render: (k: 'self' | 'tax_notice') => KIND_LABEL[k] },
-        { title: 'Số hóa đơn', render: (_v, r) => r.lines.map((l) => `${l.formNo}${l.serial} ${l.invoiceNo}`).join('; ') },
-        { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (s: string) => (s === 'sent' ? <Tag color="green">Đã gửi</Tag> : <Tag>Nháp</Tag>) },
-        { title: '', width: 160, render: (_v, r) => <Space size={0}><Button type="link" size="small" onClick={() => open(r)}>Mở</Button>{canEdit && r.status === 'draft' && <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: 'Xóa thông báo nháp?', okText: 'Xóa', cancelText: 'Hủy', onOk: () => del.mutateAsync(r.id) })}>Xóa</Button>}</Space> }]} />
+    <>
+      <PageHeader
+        title="Thông báo hóa đơn điện tử có sai sót (04/SS-HĐĐT)"
+        description="Lập và gửi thông báo hóa đơn điện tử có sai sót tới cơ quan thuế"
+        extra={canEdit ? <Button type="primary" onClick={() => open('new')}>Lập thông báo (Insert)</Button> : undefined}
+      />
+      {list.error && <Alert type="error" showIcon message={(list.error as Error).message} style={{ marginBottom: 12 }} />}
+      <Section bodyPadding={0}>
+        <Table<Notice> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={false}
+          locale={{ emptyText: <EmptyState title="Chưa có thông báo sai sót" /> }}
+          columns={[
+            { title: 'Ngày thông báo', dataIndex: 'noticeDate', width: 130, render: (v: string) => formatVnDate(v) }, { title: 'Loại', dataIndex: 'noticeKind', width: 280, render: (k: 'self' | 'tax_notice') => KIND_LABEL[k] },
+            { title: 'Số hóa đơn', render: (_v, r) => r.lines.map((l) => `${l.formNo}${l.serial} ${l.invoiceNo}`).join('; ') },
+            { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (s: string) => (s === 'sent' ? <Tag color="green">Đã gửi</Tag> : <Tag>Nháp</Tag>) },
+            { title: '', width: 160, render: (_v, r) => <Space size={0}><Button type="link" size="small" onClick={() => open(r)}>Mở</Button>{canEdit && r.status === 'draft' && <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: 'Xóa thông báo nháp?', okText: 'Xóa', cancelText: 'Hủy', onOk: () => del.mutateAsync(r.id) })}>Xóa</Button>}</Space> }]} />
+      </Section>
       <Modal title={editing === 'new' ? 'Lập thông báo sai sót' : 'Thông báo sai sót'} open={editing !== null} onCancel={() => setEditing(null)} width={1100} destroyOnHidden forceRender
         footer={<Space>
           {editing && editing !== 'new' && <><Button onClick={() => print(editing.id, 'html')}>In (HTML)</Button><Button onClick={() => print(editing.id, 'pdf')}>In (PDF)</Button></>}
@@ -106,6 +113,6 @@ export default function EInvoiceErrorNoticePage() {
           options={(issued.data ?? []).map((e) => ({ value: e.id, label: `${symbolOf(e)} ${e.invoiceNo ?? ''} - ${e.issueDate ? formatVnDate(e.issueDate) : ''} - ${e.buyerName ?? ''}` }))}
           onChange={(id: number) => { const e = issued.data?.find((x) => x.id === id); if (e && pickRow !== null) setLines(lines.map((l, i) => (i === pickRow ? { ...l, ...fromInvoice(e) } : l))); setPickRow(null); }} />
       </Modal>
-    </Space>
+    </>
   );
 }

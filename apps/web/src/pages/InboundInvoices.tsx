@@ -5,7 +5,7 @@ import { Alert, Button, Checkbox, DatePicker, Descriptions, Drawer, Form, Input,
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useHotkeys, useRememberedFilter } from '@kt/ui';
+import { COLOR, EmptyState, KeyboardGrid, LookupSelect, PageHeader, Section, Toolbar, useHotkeys, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor } from '../lookups.js';
@@ -158,40 +158,56 @@ export default function InboundInvoicesPage() {
   const mayEdit = can('inbound_invoice.update') && can('voucher.create');
   useHotkeys({ Insert: () => { document.querySelector<HTMLInputElement>('.inbound-drop input[type=file]')?.click(); } });
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <h2 style={{ margin: 0 }}>Hóa đơn đầu vào</h2>
+    <>
+      <PageHeader
+        title="Hóa đơn đầu vào"
+        description="Nhận tệp XML hoặc zip từ người bán, kiểm tra tính hợp lệ và lập chứng từ mua hàng"
+        extra={can('inbound_invoice.create') ? (
+          <Button type="primary" onClick={() => document.querySelector<HTMLInputElement>('.inbound-drop input[type=file]')?.click()}>
+            Tải lên (Insert)
+          </Button>
+        ) : undefined}
+      >
+        <Toolbar>
+          <Select aria-label="Trạng thái" allowClear placeholder="Trạng thái" style={{ width: 170 }} value={f.status || undefined} onChange={(v) => setF({ ...f, status: v ?? '' })}
+            options={Object.entries(STATUS).map(([value, s]) => ({ value, label: s.label }))} />
+          <DatePicker.RangePicker format="DD/MM/YYYY" value={f.from && f.to ? [dayjs(f.from), dayjs(f.to)] : null} onChange={(r) => setF({ ...f, from: r?.[0]?.format('YYYY-MM-DD') ?? '', to: r?.[1]?.format('YYYY-MM-DD') ?? '' })} />
+          <Input.Search aria-label="Tìm hóa đơn" allowClear placeholder="Người bán, MST, số hóa đơn" style={{ width: 280 }} defaultValue={f.q} onSearch={(q) => setF({ ...f, q })} />
+          {list.data && <span style={{ color: COLOR.textSecondary, marginLeft: 'auto' }}>{formatVnNumber(String(list.data.length))} hóa đơn</span>}
+        </Toolbar>
+      </PageHeader>
       {can('inbound_invoice.create') && (
-        <div className="inbound-drop">
+        <div className="inbound-drop" style={{ marginBottom: 12 }}>
           <Upload.Dragger multiple accept=".xml,.zip" showUploadList={false} disabled={upload.isPending}
             beforeUpload={(file, all) => { if (file === all[0]) upload.mutate(all as unknown as File[]); return false; }}>
             <p style={{ margin: 0 }}>Kéo thả hoặc bấm để chọn nhiều tệp hóa đơn XML hoặc zip (phím Insert)</p>
           </Upload.Dragger>
         </div>)}
       {results.length > 0 && (
-        <Table size="small" pagination={false} rowKey="file" dataSource={results} title={() => 'Kết quả tải lên'} columns={[
-          { title: 'Tệp', dataIndex: 'file', ellipsis: true },
-          { title: 'Kết quả', dataIndex: 'status', width: 100, render: (s: Result['status']) => <Tag color={RESULT_LABEL[s].color}>{RESULT_LABEL[s].label}</Tag> },
-          { title: 'Ghi chú', width: 360, render: (_: unknown, r: Result) => r.error?.message ?? (r.status === 'duplicate' ? 'Hóa đơn đã có trong hệ thống' : '') },
-          { title: '', width: 70, render: (_: unknown, r: Result) => (r.id ? <Button type="link" size="small" onClick={() => setDetail(r.id!)}>Xem</Button> : null) },
-        ]} />)}
-      <Space wrap>
-        <Select aria-label="Trạng thái" allowClear placeholder="Trạng thái" style={{ width: 170 }} value={f.status || undefined} onChange={(v) => setF({ ...f, status: v ?? '' })}
-          options={Object.entries(STATUS).map(([value, s]) => ({ value, label: s.label }))} />
-        <DatePicker.RangePicker format="DD/MM/YYYY" value={f.from && f.to ? [dayjs(f.from), dayjs(f.to)] : null} onChange={(r) => setF({ ...f, from: r?.[0]?.format('YYYY-MM-DD') ?? '', to: r?.[1]?.format('YYYY-MM-DD') ?? '' })} />
-        <Input.Search aria-label="Tìm hóa đơn" allowClear placeholder="Người bán, MST, số hóa đơn" style={{ width: 280 }} defaultValue={f.q} onSearch={(q) => setF({ ...f, q })} />
-      </Space>
-      <Table size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 50, hideOnSinglePage: true }} onRow={(r) => ({ onDoubleClick: () => setDetail(r.id) })} columns={[
-        { title: 'Ngày HĐ', dataIndex: 'issueDate', width: 100, render: (v: string | null) => (v ? formatVnDate(v) : '') },
-        { title: 'Ký hiệu', dataIndex: 'serial', width: 90 }, { title: 'Số HĐ', dataIndex: 'invoiceNo', width: 100 },
-        { title: 'Người bán', dataIndex: 'sellerName', ellipsis: true, render: (v: string | null, r) => (<span>{v}{r.sellerTaxCode ? <span style={{ color: 'var(--ant-color-text-secondary)' }}> ({r.sellerTaxCode})</span> : null}</span>) },
-        { title: 'Tổng tiền', dataIndex: 'total', width: 120, align: 'right', render: (v: string | null, r) => (v === null ? '' : `${formatVnNumber(v)}${r.currency && r.currency !== 'VND' ? ` ${r.currency}` : ''}`) },
-        { title: 'Chữ ký', dataIndex: 'signature', width: 110, render: (s: Row['signature']) => <Tooltip title={SIG[s].tip}><Tag color={SIG[s].color}>{SIG[s].label}</Tag></Tooltip> },
-        { title: 'Trạng thái', dataIndex: 'status', width: 150, render: (s: string, r) => (<Space size={4}><Tag color={STATUS[s]?.color ?? 'default'}>{STATUS[s]?.label ?? s}</Tag>{r.blocked && <Tag color="red">Bị chặn</Tag>}{r.warningCount > 0 && <Tooltip title="Có cảnh báo: mở chi tiết để xem"><Tag color="gold">{r.warningCount}</Tag></Tooltip>}</Space>) },
-        { title: '', width: 150, render: (_: unknown, r) => (<Space size={0}><Button type="link" size="small" onClick={() => setDetail(r.id)}>Chi tiết</Button>
-          {r.voucherId && <Button type="link" size="small" onClick={() => void nav({ to: '/chung-tu/$type/$id', params: { type: r.voucherType ?? 'HDM', id: r.voucherId! } })}>Chứng từ</Button>}</Space>) },
-      ]} />
+        <Section title="Kết quả tải lên" bodyPadding={0} style={{ marginBottom: 12 }}>
+          <Table size="small" pagination={false} rowKey="file" dataSource={results} columns={[
+            { title: 'Tệp', dataIndex: 'file', ellipsis: true },
+            { title: 'Kết quả', dataIndex: 'status', width: 100, render: (s: Result['status']) => <Tag color={RESULT_LABEL[s].color}>{RESULT_LABEL[s].label}</Tag> },
+            { title: 'Ghi chú', width: 360, render: (_: unknown, r: Result) => r.error?.message ?? (r.status === 'duplicate' ? 'Hóa đơn đã có trong hệ thống' : '') },
+            { title: '', width: 70, render: (_: unknown, r: Result) => (r.id ? <Button type="link" size="small" onClick={() => setDetail(r.id!)}>Xem</Button> : null) },
+          ]} />
+        </Section>)}
+      <Section bodyPadding={0}>
+        <Table size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 50, hideOnSinglePage: true }}
+          locale={{ emptyText: <EmptyState title="Chưa có hóa đơn đầu vào" /> }}
+          onRow={(r) => ({ onDoubleClick: () => setDetail(r.id) })} columns={[
+            { title: 'Ngày HĐ', dataIndex: 'issueDate', width: 100, render: (v: string | null) => (v ? formatVnDate(v) : '') },
+            { title: 'Ký hiệu', dataIndex: 'serial', width: 90 }, { title: 'Số HĐ', dataIndex: 'invoiceNo', width: 100 },
+            { title: 'Người bán', dataIndex: 'sellerName', ellipsis: true, render: (v: string | null, r) => (<span>{v}{r.sellerTaxCode ? <span style={{ color: COLOR.textSecondary }}> ({r.sellerTaxCode})</span> : null}</span>) },
+            { title: 'Tổng tiền', dataIndex: 'total', width: 120, align: 'right', render: (v: string | null, r) => (v === null ? '' : `${formatVnNumber(v)}${r.currency && r.currency !== 'VND' ? ` ${r.currency}` : ''}`) },
+            { title: 'Chữ ký', dataIndex: 'signature', width: 110, render: (s: Row['signature']) => <Tooltip title={SIG[s].tip}><Tag color={SIG[s].color}>{SIG[s].label}</Tag></Tooltip> },
+            { title: 'Trạng thái', dataIndex: 'status', width: 150, render: (s: string, r) => (<Space size={4}><Tag color={STATUS[s]?.color ?? 'default'}>{STATUS[s]?.label ?? s}</Tag>{r.blocked && <Tag color="red">Bị chặn</Tag>}{r.warningCount > 0 && <Tooltip title="Có cảnh báo: mở chi tiết để xem"><Tag color="gold">{r.warningCount}</Tag></Tooltip>}</Space>) },
+            { title: '', width: 150, render: (_: unknown, r) => (<Space size={0}><Button type="link" size="small" onClick={() => setDetail(r.id)}>Chi tiết</Button>
+              {r.voucherId && <Button type="link" size="small" onClick={() => void nav({ to: '/chung-tu/$type/$id', params: { type: r.voucherType ?? 'HDM', id: r.voucherId! } })}>Chứng từ</Button>}</Space>) },
+          ]} />
+      </Section>
       <DetailDrawer id={detail} mayEdit={mayEdit} onClose={() => setDetail(null)} onVoucher={(id) => setConvert(id)} onIgnore={(id) => ignore.mutate(id)} />
       <VoucherDialog id={convert} onClose={() => setConvert(null)} onDone={(vid, type) => { setConvert(null); setDetail(null); refresh(); void nav({ to: '/chung-tu/$type/$id', params: { type, id: vid } }); }} />
-    </Space>
+    </>
   );
 }

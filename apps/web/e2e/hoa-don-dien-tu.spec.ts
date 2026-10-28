@@ -124,5 +124,5 @@ test('Hóa đơn điện tử: cấu hình nhà cung cấp giả lập và ký h
   await expect(nd.getByRole('button', { name: 'Gửi', exact: true })).toBeVisible();
   await nd.getByRole('button', { name: 'Gửi', exact: true }).click();
   await expect(page.locator('.ant-message').getByText('Đã gửi thông báo')).toBeVisible();
-  await expect(page.locator('tbody tr.ant-table-row', { hasText: 'Đã gửi' })).toBeVisible();
+  await expect(page.locator('tbody tr.ant-table-row').filter({ hasText: no }).filter({ hasText: 'Đã gửi' })).toBeVisible();
 });
