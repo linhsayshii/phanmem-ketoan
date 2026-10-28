@@ -179,6 +179,43 @@ describe('chạy bút toán định kỳ', () => {
   });
 });
 
+describe('quyền ghi sổ và cờ nhạy cảm của người chạy (rà soát toàn nhánh)', () => {
+  it('Chạy ngay mẫu tự ghi sổ đòi voucher.post của người chạy; không có thì 403 và không sinh chứng từ', async () => {
+    await sql`DELETE FROM role_permission WHERE tenant_id = ${tenantId}::uuid AND permission_code = 'voucher.post' AND role_id = (SELECT id FROM role WHERE tenant_id = ${tenantId}::uuid AND code = 'ketoan_vien')`.execute(ctx.t.admin);
+    const kv = await userWith('ketoan_vien', []);
+    const e = await create('CT-QP1', { autoPost: true, startDate: '2026-08-01' });
+    const r = await call('POST', '/api/recurring-entries/run', { entryId: e.id, upTo: '2026-08-31' }, kv);
+    expect(r.statusCode, r.body).toBe(403);
+    expect(await vouchersOf(e.id)).toHaveLength(0);
+    expect((await call('POST', '/api/recurring-entries/run', { entryId: e.id, upTo: '2026-08-31', dryRun: true }, kv)).statusCode).toBe(200); // chỉ liệt kê: không ghi sổ nên không cần quyền
+  });
+  it('worker: người lập mẫu mất quyền voucher.post thì chứng từ chỉ để nháp, ghi lý do POST_DENIED', async () => {
+    const ktt = await userWith('ketoan_truong', []);
+    const e = await (async () => { const r = await call('POST', '/api/recurring-entries', template('CT-QP2', { autoPost: true, startDate: '2026-09-01' }), ktt); expect(r.statusCode, r.body).toBe(201); return r.json() as Json; })();
+    await sql`DELETE FROM role_permission WHERE tenant_id = ${tenantId}::uuid AND permission_code = 'voucher.post' AND role_id = (SELECT id FROM role WHERE tenant_id = ${tenantId}::uuid AND code = 'ketoan_truong')`.execute(ctx.t.admin);
+    try {
+      const out = await runRecurring(ctx.t.db, tenantId, { trigger: 'worker', upTo: '2026-09-30', entryId: e.id });
+      expect(out.map((i) => i.status)).toEqual(['created']);
+      expect((await vouchersOf(e.id))[0]!.state).toBe('draft');
+      const run = await sql<{ reason_code: string }>`SELECT reason_code FROM recurring_run WHERE entry_id = ${e.id}::uuid`.execute(ctx.t.admin);
+      expect(run.rows[0]!.reason_code).toBe('POST_DENIED');
+    } finally {
+      await sql`INSERT INTO role_permission(tenant_id, role_id, permission_code) SELECT ${tenantId}::uuid, id, 'voucher.post' FROM role WHERE tenant_id = ${tenantId}::uuid AND code = 'ketoan_truong' ON CONFLICT DO NOTHING`.execute(ctx.t.admin);
+    }
+  });
+  it('thiếu cờ nhạy cảm: không xóa được mẫu 632 và nhật ký chạy bị che message', async () => {
+    const noCost = await userWith('ketoan_truong', []);
+    const e = await create('CT-QP3', { startDate: '2026-10-01', lines: [line('632', '500', '0', { partyCode: 'KHONGCO' }), line('1111', '0', '500')] });
+    const r = await run({ entryId: e.id, upTo: '2026-10-31' });
+    expect(r.items[0]).toMatchObject({ status: 'error' });
+    const seen = (await call('GET', `/api/recurring-runs?entryId=${e.id}`, undefined, noCost)).json() as Json[];
+    expect(seen).toHaveLength(1); expect(seen[0]!.message).toBeNull();
+    expect(((await call('GET', `/api/recurring-runs?entryId=${e.id}`)).json() as Json[])[0]!.message).toBeTruthy();
+    expect((await call('DELETE', `/api/recurring-entries/${e.id}`, undefined, noCost)).statusCode).toBe(403);
+    expect((await call('DELETE', `/api/recurring-entries/${e.id}`)).statusCode).toBe(204);
+  });
+});
+
 describe('bất biến: chứng từ định kỳ không bao giờ lệch Nợ/Có', () => {
   it('mẫu cân sinh chứng từ cân bằng đúng số; mẫu lệch bị từ chối từ lúc lập (decimal.js, biên 16 chữ số)', async () => {
     const acct = fc.constantFrom('6422', '242', '5113', '33311');

@@ -74,16 +74,16 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.put('/api/recurring-entries/:id', { preValidation: rmanage, schema: { params: uuid, body: recurringInput } }, async (req) => app.withTenant(req, (trx) => updateEntry(trx, ctx(req), req.params.id, req.body)));
   app.post('/api/recurring-entries/:id/status', { preValidation: rmanage, schema: { params: uuid, body: z.object({ status: z.enum(['active', 'paused', 'ended']) }) } }, async (req) =>
     app.withTenant(req, async (trx) => { await getEntry(trx, req.params.id, req.auth!); return setStatus(trx, req.params.id, req.body.status); }));
-  app.delete('/api/recurring-entries/:id', { preValidation: rmanage, schema: { params: uuid } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteEntry(trx, req.params.id)); return reply.status(204).send(); });
+  app.delete('/api/recurring-entries/:id', { preValidation: rmanage, schema: { params: uuid } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteEntry(trx, req.params.id, { sensitive: req.auth!.sensitive })); return reply.status(204).send(); });
   app.get('/api/recurring-runs', { preValidation: rview, schema: { querystring: z.object({ entryId: z.string().uuid().optional(), status: z.enum(['created', 'skipped', 'error']).optional(), limit: z.coerce.number().int().min(1).max(500).default(100) }) } }, async (req) =>
-    app.withTenant(req, (trx) => listRuns(trx, req.query), READ_SNAPSHOT));
+    app.withTenant(req, (trx) => listRuns(trx, req.query, { sensitive: req.auth!.sensitive }), READ_SNAPSHOT));
   // "Chạy ngay": sinh chứng từ NHÁP cho các kỳ đã đến hạn (mặc định đến hôm nay; tối đa 45 ngày sau). dryRun chỉ liệt kê kỳ sẽ sinh.
   app.post('/api/recurring-entries/run', { preValidation: [rmanage, app.requirePermission('voucher.create')], schema: { body: z.object({ upTo: dateIso.optional(), entryId: z.string().uuid().optional(), dryRun: z.boolean().default(false) }) } }, async (req) => {
     const today = todayVn(); const limit = new Date(Date.parse(today) + MAX_RUN_AHEAD_DAYS * 86_400_000).toISOString().slice(0, 10);
     const upTo = req.body.upTo ?? today;
     if (upTo > limit) throw new AppError('RECURRING_RUN_AHEAD', `Chỉ chạy trước tối đa ${MAX_RUN_AHEAD_DAYS} ngày`, 400);
     const items = await runRecurring(app.db, req.auth!.tenantId!, {
-      upTo, ...(req.body.entryId && { entryId: req.body.entryId }), dryRun: req.body.dryRun, trigger: 'manual', userId: req.auth!.userId, auth: { sensitive: req.auth!.sensitive },
+      upTo, ...(req.body.entryId && { entryId: req.body.entryId }), dryRun: req.body.dryRun, trigger: 'manual', userId: req.auth!.userId, canPost: req.auth!.permissions.has('voucher.post'), auth: { sensitive: req.auth!.sensitive },
       session: { ip: req.ip, ...branchSessionVars(req.auth!) },
     });
     return { upTo, dryRun: req.body.dryRun, items, created: items.filter((i) => i.status === 'created').length, skipped: items.filter((i) => i.status === 'skipped').length, errors: items.filter((i) => i.status === 'error').length };

@@ -144,26 +144,37 @@ export async function setStatus(trx: Trx, id: string, status: 'active' | 'paused
   if (!r) throw notFound();
   return getEntry(trx, id);
 }
-export async function deleteEntry(trx: Trx, id: string) {
+export async function deleteEntry(trx: Trx, id: string, auth?: { sensitive: Set<string> }) {
+  if (auth && await trx.selectFrom('recurring_entry').select('id').where('id', '=', id).executeTakeFirst()) await assertTemplateAllowed(trx, auth, await linesOf(trx, id));
   const made = await trx.selectFrom('recurring_run').select('id').where('entry_id', '=', id).where('status', '=', 'created').limit(1).executeTakeFirst();
   if (made) throw new AppError('RECURRING_HAS_RUNS', 'Mẫu đã sinh chứng từ: không xóa, hãy chuyển sang trạng thái Đã kết thúc', 409);
   const r = await trx.deleteFrom('recurring_entry').where('id', '=', id).returning('id').executeTakeFirst();
   if (!r) throw notFound();
 }
-export async function listRuns(trx: Trx, f: { entryId?: string | undefined; status?: string | undefined; limit: number }) {
+export async function listRuns(trx: Trx, f: { entryId?: string | undefined; status?: string | undefined; limit: number }, auth?: { sensitive: Set<string> }) {
   let q = trx.selectFrom('recurring_run as r').innerJoin('recurring_entry as e', 'e.id', 'r.entry_id').leftJoin('voucher as v', 'v.id', 'r.voucher_id')
     .select(['r.id', 'r.entry_id', 'e.code as entry_code', 'e.name as entry_name', 'r.period_key', 'r.occurrence_date', 'r.status', 'r.reason_code', 'r.message', 'r.voucher_id', 'r.trigger', 'r.run_at', 'v.voucher_no', 'v.state as voucher_state'])
     .orderBy('r.run_at', 'desc').orderBy('r.id', 'desc').limit(f.limit);
   if (f.entryId) q = q.where('r.entry_id', '=', f.entryId);
   if (f.status) q = q.where('r.status', '=', f.status);
-  return (await q.execute()).map((r) => ({ id: r.id, entryId: r.entry_id, entryCode: r.entry_code, entryName: r.entry_name, periodKey: r.period_key, date: r.occurrence_date, status: r.status, reasonCode: r.reason_code,
-    message: r.message, voucherId: r.voucher_id, voucherNo: r.voucher_no, voucherState: r.voucher_state, trigger: r.trigger, runAt: r.run_at }));
+  const rows = await q.execute();
+  // Thông báo lỗi có thể nêu số liệu của mẫu: che với người thiếu cờ nhạy cảm của tài khoản trong mẫu.
+  const hidden = new Set<string>();
+  if (auth) for (const eid of new Set(rows.map((r) => r.entry_id))) if (await deniedReason(trx, auth, await linesOf(trx, eid))) hidden.add(eid);
+  return rows.map((r) => ({ id: r.id, entryId: r.entry_id, entryCode: r.entry_code, entryName: r.entry_name, periodKey: r.period_key, date: r.occurrence_date, status: r.status, reasonCode: r.reason_code,
+    message: hidden.has(r.entry_id) ? null : r.message, voucherId: r.voucher_id, voucherNo: r.voucher_no, voucherState: r.voucher_state, trigger: r.trigger, runAt: r.run_at }));
 }
 
 export interface RunItem { entryId: string; entryCode: string; periodKey: string; date: string; status: 'created' | 'skipped' | 'error' | 'exists' | 'planned'; voucherId?: string | null; reasonCode?: string; message?: string }
-export interface RunOptions { auth?: { sensitive: Set<string> }; upTo?: string; entryId?: string; dryRun?: boolean; trigger: 'worker' | 'manual'; userId?: string; session?: { ip?: string; branchScope?: string; branchDefault?: string } }
+export interface RunOptions { auth?: { sensitive: Set<string> }; canPost?: boolean; upTo?: string; entryId?: string; dryRun?: boolean; trigger: 'worker' | 'manual'; userId?: string; session?: { ip?: string; branchScope?: string; branchDefault?: string } }
 
 const interpolate = (text: string, o: Occurrence) => text.replaceAll('{THANG}', String(o.month).padStart(2, '0')).replaceAll('{QUY}', String(Math.ceil(o.month / 3))).replaceAll('{NAM}', String(o.year));
+
+async function userCanPost(trx: Trx, tenantId: string, userId: string): Promise<boolean> {
+  const r = await sql<{ ok: boolean }>`SELECT EXISTS (SELECT 1 FROM tenant_user tu JOIN role_permission rp ON rp.tenant_id = tu.tenant_id AND rp.role_id = tu.role_id
+    WHERE tu.tenant_id = ${tenantId}::uuid AND tu.user_id = ${userId}::uuid AND tu.is_active AND rp.permission_code = 'voucher.post') AS ok`.execute(trx);
+  return r.rows[0]!.ok;
+}
 
 // Ghi nhận kỳ không sinh được (bỏ qua hoặc lỗi) mà không đè kỳ đã sinh chứng từ.
 async function recordFailure(db: Kysely<Database>, tc: { tenantId: string; userId: string }, e: Entry, o: Occurrence, status: 'skipped' | 'error', reasonCode: string, message: string, o2: RunOptions) {
@@ -189,6 +200,8 @@ export async function runRecurring(db: Kysely<Database>, tenantId: string, o: Ru
     const any = await withTenant(db, { ...o.session, tenantId, userId: o.userId ?? '' }, (trx) => trx.selectFrom('recurring_entry').select('id').where('id', '=', o.entryId!).executeTakeFirst());
     throw any ? new AppError('RECURRING_NOT_ACTIVE', 'Mẫu không ở trạng thái Đang chạy', 409) : notFound();
   }
+  // "Chạy ngay" mẫu tự ghi sổ là ghi sổ dưới tên người chạy: phải có voucher.post (dryRun chỉ liệt kê nên không cần).
+  if (!o.dryRun && o.trigger === 'manual' && o.canPost === false && entries.some((x) => x.auto_post)) throw new AppError('FORBIDDEN', 'Chạy mẫu tự ghi sổ cần quyền voucher.post', 403);
   const out: RunItem[] = [];
   for (const e of entries) {
     const userId = o.userId ?? e.created_by;
@@ -230,7 +243,12 @@ export async function runRecurring(db: Kysely<Database>, tenantId: string, o: Ru
         if (r.kind === 'skip') { await recordFailure(db, tc, e, occ, 'skipped', r.code, r.message, o); out.push({ ...item, status: 'skipped', reasonCode: r.code, message: r.message }); continue; }
         item.status = 'created'; item.voucherId = r.voucherId;
         // Ghi sổ (chỉ khi mẫu cấu hình rõ) ở giao dịch riêng sau khi nháp đã lưu: ghi sổ lỗi (âm quỹ, kỳ đổi trạng thái...) vẫn giữ bản nháp để người dùng xử lý.
-        if (e.auto_post) {
+        // Worker chạy dưới tên người lập mẫu: kiểm người đó còn hoạt động và còn voucher.post lúc chạy, thiếu thì chỉ để nháp.
+        const mayPost = !e.auto_post ? false : o.trigger === 'manual' ? o.canPost !== false : await withTenant(db, { ...o.session, ...tc }, (trx) => userCanPost(trx, tenantId, e.created_by));
+        if (e.auto_post && !mayPost) {
+          item.message = 'Đã lập nháp, chưa ghi sổ: người lập mẫu không còn quyền voucher.post';
+          await withTenant(db, { ...o.session, ...tc }, (trx) => trx.updateTable('recurring_run').set({ reason_code: 'POST_DENIED', message: item.message!.slice(0, 500) }).where('entry_id', '=', e.id).where('period_key', '=', occ.periodKey).execute());
+        } else if (e.auto_post) {
           try { await withTenant(db, { ...o.session, ...tc }, (trx) => postWithCashCheck(trx, tenantId, r.voucherId)); }
           catch (pe) {
             item.message = `Đã lập nháp nhưng chưa ghi sổ được: ${pe instanceof Error ? pe.message : String(pe)}`;
