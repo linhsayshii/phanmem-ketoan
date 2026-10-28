@@ -245,7 +245,8 @@ export interface VoucherLineTable {
   extra_dims: ColumnType<Record<string, unknown>, string | undefined, string>; description: string | null; due_date: DateOnly | null; bank_account_id: number | null;
   cash_flow_code: string | null; // mã chỉ tiêu B03 (dòng tiền), 0066
 }
-export interface VoucherCounterTable { tenant_id: string; voucher_type: string; fiscal_year: number; last_no: Generated<number> }
+export interface VoucherCounterTable { tenant_id: string; voucher_type: string; fiscal_year: number; branch_key: Generated<number>; last_no: Generated<number> }
+export interface VoucherNumberingSettingTable { tenant_id: string; per_branch: Generated<boolean>; hq_code: Generated<string>; updated_at: Generated<string> }
 export interface VoucherLineHistoryTable {
   id: Generated<number>; tenant_id: string; voucher_id: string; version: number;
   header: JSONColumnType<unknown>; lines: JSONColumnType<unknown>; archived_at: Generated<string>; archived_by: string | null;
@@ -676,6 +677,7 @@ export interface Database {
   approval_attachment: ApprovalAttachmentTable;
   user_branch_scope: UserBranchScopeTable;
   branch_consolidation_setting: BranchConsolidationSettingTable;
+  voucher_numbering_setting: VoucherNumberingSettingTable;
 }
 
 // GĐ7 nhóm 5: đa chi nhánh (0240). voucher.branch_id, department.tax_code đọc/ghi qua sql trong modules/branch.

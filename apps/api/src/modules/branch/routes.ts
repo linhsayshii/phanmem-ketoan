@@ -20,6 +20,11 @@ async function assertBranch(trx: Trx, id: number) {
   const r = await sql<{ id: number }>`SELECT id FROM department WHERE id = ${id} AND is_branch`.execute(trx);
   if (!r.rows[0]) throw new AppError('BRANCH_NOT_FOUND', `Không có chi nhánh ${id}`, 404);
 }
+// Bật đánh số theo chi nhánh: mã chi nhánh nằm trong số chứng từ nên không được trùng mã trụ sở chính (GĐ7 gói 3).
+async function assertCodeNotHq(trx: Trx, code: string) {
+  const r = await sql<{ hq_code: string }>`SELECT hq_code FROM voucher_numbering_setting WHERE per_branch AND hq_code = ${code}`.execute(trx);
+  if (r.rows[0]) throw new AppError('NUMBERING_CODE_CONFLICT', `Mã ${code} trùng mã trụ sở chính trong cấu hình đánh số theo chi nhánh`, 409);
+}
 async function parentId(trx: Trx, code: string | null): Promise<number | null> {
   if (!code) return null;
   const r = await trx.selectFrom('department').select('id').where('code', '=', code).executeTakeFirst();
@@ -38,14 +43,14 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   }));
   app.post('/api/branches', { preHandler: app.requirePermission('catalog.create'), schema: { body: branchBody } }, async (req, reply) => {
     const b = req.body;
-    const r = await app.withTenant(req, async (trx) => sql<{ id: number }>`INSERT INTO department (tenant_id, code, name, tax_code, parent_id, is_branch, is_active)
-      VALUES (${req.auth!.tenantId!}::uuid, ${b.code}, ${b.name}, ${b.taxCode}, ${await parentId(trx, b.parentCode)}, true, ${b.isActive}) RETURNING id`.execute(trx));
+    const r = await app.withTenant(req, async (trx) => { await assertCodeNotHq(trx, b.code); return sql<{ id: number }>`INSERT INTO department (tenant_id, code, name, tax_code, parent_id, is_branch, is_active)
+      VALUES (${req.auth!.tenantId!}::uuid, ${b.code}, ${b.name}, ${b.taxCode}, ${await parentId(trx, b.parentCode)}, true, ${b.isActive}) RETURNING id`.execute(trx); });
     return reply.status(201).send({ id: r.rows[0]!.id });
   });
   app.put('/api/branches/:id', { preHandler: app.requirePermission('catalog.update'), schema: { params: z.object({ id: z.coerce.number().int().positive() }), body: branchBody } }, async (req) =>
     app.withTenant(req, async (trx) => {
       await assertBranch(trx, req.params.id);
-      const b = req.body; const parent = await parentId(trx, b.parentCode);
+      const b = req.body; await assertCodeNotHq(trx, b.code); const parent = await parentId(trx, b.parentCode);
       if (parent === req.params.id) throw new AppError('VALIDATION', 'Đơn vị cấp trên không được là chính chi nhánh', 400);
       await sql`UPDATE department SET code = ${b.code}, name = ${b.name}, tax_code = ${b.taxCode}, parent_id = ${parent}, is_active = ${b.isActive} WHERE id = ${req.params.id}`.execute(trx);
       return { ok: true };
