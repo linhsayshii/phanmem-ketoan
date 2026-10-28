@@ -12,6 +12,7 @@ interface ApiKey {
 }
 const SCOPE_LABEL: Record<string, string> = {
   'items.read': 'Đọc danh mục hàng hóa', 'stock.read': 'Đọc tồn kho', 'sales.write': 'Lập bán hàng và thu tiền', 'inbound_invoice.write': 'Gửi hóa đơn đầu vào (XML)',
+  mobile: 'Ứng dụng di động: xem báo cáo tóm tắt, duyệt đề nghị',
 };
 const STATUS: Record<ApiKey['status'], { label: string; color: string }> = { active: { label: 'Hoạt động', color: 'green' }, revoked: { label: 'Đã thu hồi', color: 'red' }, expired: { label: 'Hết hạn', color: 'default' } };
 const fmtTime = (t: string | null) => (t ? new Date(t).toLocaleString('vi-VN') : null);

@@ -6,7 +6,7 @@ import { AppError } from '../../plugins/errors.js';
 
 type Trx = Transaction<Database>;
 
-export const SCOPES = ['items.read', 'stock.read', 'sales.write', 'inbound_invoice.write'] as const;
+export const SCOPES = ['items.read', 'stock.read', 'sales.write', 'inbound_invoice.write', 'mobile'] as const;
 export type Scope = (typeof SCOPES)[number];
 
 // Quyền của từng phạm vi (quyền hiệu lực = quyền vai trò hiện hành của người tạo ∩ các quyền này).
@@ -16,6 +16,8 @@ const SCOPE_PERMS: Record<Scope, string[]> = {
   'stock.read': ['stock_voucher.view'],
   'sales.write': ['voucher.create', 'stock_voucher.create', 'settlement.create'],
   'inbound_invoice.write': ['inbound_invoice.create'],
+  // GĐ7: ứng dụng di động /api/mobile/v1 — xem báo cáo tóm tắt, duyệt đề nghị; không lập chứng từ.
+  mobile: ['report.view', 'approval_request.approve'],
 };
 export const scopePermissions = (scopes: readonly string[], postSales: boolean): Set<string> => {
   const out = new Set<string>();
