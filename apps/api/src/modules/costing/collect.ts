@@ -23,6 +23,16 @@ const group = (lines: CollectLine[]): CollectGroup => ({
   amount: sum(lines.map((l) => l.amount)).toFixed(0), lines,
 });
 
+// TT133: dòng 154 (alias l, v) là giá thành ra/điều chỉnh, không phải phát sinh — dùng chung với lãi lỗ vụ việc/hợp đồng (contracts/pnl.ts, QĐ #990).
+// Không phải GV: dòng Có 154 của chứng từ có Nợ 155/157/632 (nhập thành phẩm, xuất bán thẳng).
+// GV gộp mọi chênh lệch của ngày: chỉ bỏ dòng 154 (hàng, kho) của lớp điều chỉnh giá nhập PNK thành phẩm ghi ở GV này (bản đảo: ở GV gốc), không bỏ chênh lệch xuất NVL cùng chứng từ (QĐ #960).
+export const tt133WipOut = sql`((l.credit > 0 AND v.source_doc_type IS DISTINCT FROM 'costing_run' AND EXISTS (SELECT 1 FROM voucher_line y JOIN account ya ON ya.id = y.account_id
+    WHERE y.voucher_id = l.voucher_id AND y.debit > 0 AND (ya.code LIKE '155%' OR ya.code LIKE '157%' OR ya.code LIKE '632%')))
+  OR (v.source_doc_type = 'costing_run' AND EXISTS (SELECT 1 FROM stock_cost_layer c
+    JOIN stock_move m ON m.tenant_id = c.tenant_id AND m.id = c.move_id JOIN voucher pv ON pv.tenant_id = m.tenant_id AND pv.id = m.voucher_id
+    WHERE c.kind = 'adjustment' AND c.voucher_id IN (v.id, v.reversal_of_id) AND c.item_id = l.item_id AND c.warehouse_id = l.warehouse_id
+      AND pv.voucher_type = 'PNK' AND pv.stock_kind = 'finished')))`;
+
 export async function collectCosts(trx: Trx, q: { year: number; month: number; objectId?: number | undefined }): Promise<CollectResult> {
   const mm = String(q.month).padStart(2, '0');
   const from = `${q.year}-${mm}-01`; const to = `${q.year}-${mm}-${String(new Date(Date.UTC(q.year, q.month, 0)).getUTCDate()).padStart(2, '0')}`;
@@ -45,13 +55,7 @@ export async function collectCosts(trx: Trx, q: { year: number; month: number; o
     WHERE v.state IN ('posted','reversed') AND NOT v.is_closing AND v.source_doc_type IS DISTINCT FROM 'cost_run' AND v.source_doc_type IS DISTINCT FROM 'opening_balance'
       AND l.posting_date BETWEEN ${from}::date AND ${to}::date AND a.regime = ${regime}
       AND (${sql.join(accounts.map((c) => sql`starts_with(a.code, ${c})`), sql` OR `)})
-      AND NOT (${tt133}::boolean AND l.credit > 0 AND v.source_doc_type IS DISTINCT FROM 'costing_run' AND EXISTS (SELECT 1 FROM voucher_line y JOIN account ya ON ya.id = y.account_id
-        WHERE y.voucher_id = l.voucher_id AND y.debit > 0 AND (ya.code LIKE '155%' OR ya.code LIKE '157%' OR ya.code LIKE '632%')))
-      -- GV gộp mọi chênh lệch của ngày: chỉ bỏ dòng 154 (hàng, kho) của lớp điều chỉnh giá nhập PNK thành phẩm ghi ở GV này (bản đảo: ở GV gốc), không bỏ chênh lệch xuất NVL cùng chứng từ (QĐ #960).
-      AND NOT (${tt133}::boolean AND v.source_doc_type = 'costing_run' AND EXISTS (SELECT 1 FROM stock_cost_layer c
-        JOIN stock_move m ON m.tenant_id = c.tenant_id AND m.id = c.move_id JOIN voucher pv ON pv.tenant_id = m.tenant_id AND pv.id = m.voucher_id
-        WHERE c.kind = 'adjustment' AND c.voucher_id IN (v.id, v.reversal_of_id) AND c.item_id = l.item_id AND c.warehouse_id = l.warehouse_id
-          AND pv.voucher_type = 'PNK' AND pv.stock_kind = 'finished'))
+      AND NOT (${tt133}::boolean AND ${tt133WipOut})
     GROUP BY 1, 2, 3, 4, 5
     HAVING sum(l.debit - l.credit) <> 0
     ORDER BY 2, 3 NULLS FIRST`.execute(trx)).rows.map((r) => ({ ...r, amount: D(r.amount).toFixed(0) }));

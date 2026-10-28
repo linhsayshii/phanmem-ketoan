@@ -6,14 +6,15 @@ import { AppError } from '../../plugins/errors.js';
 import { companyInfo } from '../reporting/print/bookSet.js';
 import { periodSubtitle, type ReportColumn, type ReportDoc } from '../reporting/print/html.js';
 import { regimeOf } from '../reporting/ledgers.js';
+import { tt133WipOut } from '../costing/collect.js';
 
 // Lãi lỗ theo hợp đồng (contract_id, trừ khế ước vay) hoặc vụ việc (project_id, cộng dồn cây cha – con) trong khoảng ngày (GĐ6 Task 13b, QĐ #820–#839).
 // Nhóm tài khoản theo chế độ là dữ liệu (coa-data/payroll/accounts.json khóa pnl, D2): doanh thu 511, giảm trừ 521 (TT133 ghi thẳng Nợ 511), giá vốn 632,
 // chi phí sản xuất 621/622/623/627 (TT133: 154), bán hàng 641 (TT133: 6421), quản lý doanh nghiệp 642 (TT133: 6422).
 // Lãi lỗ = doanh thu thuần − giá vốn − chi phí bán hàng − chi phí quản lý gắn chiều. Chi phí sản xuất gắn chiều chỉ để xem (đi vào giá vốn qua 154 → 155/632,
 // trừ thêm sẽ tính trùng). Dòng không gắn chiều gom vào "unassigned": phần 641/642 của nó là chi phí chung chưa phân bổ (phân bổ PB là Task 13c).
-// Bỏ chứng từ kết chuyển (is_closing: KC sang 911, 621→154) và số dư đầu kỳ; chi phí sản xuất bỏ chứng từ giá thành (cost_run) và, ở TT133, dòng Có 154 của
-// chứng từ nhập thành phẩm/xuất bán (như tập hợp chi phí, costing/collect.ts). Chứng từ đã đảo và chứng từ đảo đều tính (triệt tiêu nhau).
+// Bỏ chứng từ kết chuyển (is_closing: KC sang 911, 621→154) và số dư đầu kỳ; chi phí sản xuất bỏ chứng từ giá thành (cost_run) và, ở TT133, dòng 154 giá thành ra/điều chỉnh
+// theo từng dòng như tập hợp chi phí (tt133WipOut, costing/collect.ts, QĐ #990). Chứng từ đã đảo và chứng từ đảo đều tính (triệt tiêu nhau).
 type Trx = Transaction<Database>;
 const GROUPS: PnlGroup[] = ['revenue', 'deduction', 'cogs', 'production', 'selling', 'admin'];
 export interface PnlAmounts { revenue: string; deduction: string; netRevenue: string; cogs: string; grossProfit: string; selling: string; admin: string; profit: string; production: string }
@@ -51,9 +52,7 @@ export async function sums(trx: Trx, by: 'contract' | 'project', regime: string,
     WHERE v.state IN ('posted', 'reversed') AND NOT v.is_closing AND v.source_doc_type IS DISTINCT FROM 'opening_balance'
       AND l.posting_date BETWEEN ${from}::date AND ${to}::date AND a.regime = ${regime} AND x.grp IS NOT NULL
       ${excludeAlloc ? sql`AND NOT (v.source_doc_type IS NOT DISTINCT FROM 'project_alloc' AND v.voucher_type = 'PB')` : sql``}
-      AND NOT (x.grp = 'production' AND (v.source_doc_type IS NOT DISTINCT FROM 'cost_run' OR (${regime === 'TT133'}::boolean AND l.credit > 0 AND EXISTS (
-        SELECT 1 FROM voucher_line y JOIN account ya ON ya.id = y.account_id WHERE y.voucher_id = l.voucher_id AND y.debit > 0
-          AND (ya.code LIKE '155%' OR ya.code LIKE '157%' OR ya.code LIKE '632%')))))
+      AND NOT (x.grp = 'production' AND (v.source_doc_type IS NOT DISTINCT FROM 'cost_run' OR (${regime === 'TT133'}::boolean AND ${tt133WipOut})))
     GROUP BY 1, 2`.execute(trx)).rows;
   const out = new Map<number | null, Sums>();
   for (const r of rows) {
