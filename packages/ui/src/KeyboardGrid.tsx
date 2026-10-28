@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef, type GetRowIdParams, type GridApi } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry, type ColDef, type GetRowIdParams, type GridApi } from 'ag-grid-community';
+import { gridTheme, GRID_LOCALE_VI } from './theme.js';
 import { gridKeyAction, isImeComposing, nextCellOnEnter, type GridKeyAction } from '@kt/domain';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -79,7 +80,7 @@ export function KeyboardGrid<T extends object>({ rows, columns, onRowsChange, ad
 
   return (
     <div style={{ height }}>
-      <AgGridReact<T> theme={themeQuartz} {...(animateRows === undefined ? {} : { animateRows })} rowData={rows} {...(pinnedBottomRows ? { pinnedBottomRowData: pinnedBottomRows } : {})} getRowId={getRowId} columnDefs={colDefs} suppressColumnVirtualisation={!!allColumns} singleClickEdit stopEditingWhenCellsLoseFocus suppressClickEdit={false}
+      <AgGridReact<T> theme={gridTheme} localeText={GRID_LOCALE_VI} {...(animateRows === undefined ? {} : { animateRows })} rowData={rows} {...(pinnedBottomRows ? { pinnedBottomRowData: pinnedBottomRows } : {})} getRowId={getRowId} columnDefs={colDefs} suppressColumnVirtualisation={!!allColumns} singleClickEdit stopEditingWhenCellsLoseFocus suppressClickEdit={false}
         onGridReady={(e) => { apiRef.current = e.api; onGridApi?.(e.api); }}
         onCellValueChanged={(e) => { const copy = [...rowsRef.current]; copy[e.rowIndex ?? 0] = e.data as T; emit(copy); }}
         defaultColDef={defaultColDef} />

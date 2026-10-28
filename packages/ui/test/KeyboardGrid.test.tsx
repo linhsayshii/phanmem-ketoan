@@ -51,3 +51,10 @@ describe('KeyboardGrid: cột sửa được theo dòng', () => {
     await waitFor(() => expect(editing()).toEqual(['1', 'code']));
   });
 });
+
+describe('KeyboardGrid: lưới rỗng', () => {
+  it('lưới rỗng hiện chữ tiếng Việt', async () => {
+    const { findByText } = render(<Harness initial={[]} />);
+    expect(await findByText('Không có dữ liệu')).toBeInTheDocument();
+  });
+});

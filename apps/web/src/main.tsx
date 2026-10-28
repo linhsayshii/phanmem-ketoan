@@ -8,12 +8,13 @@ import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
 import 'antd/dist/reset.css';
 import { AuthProvider } from './auth.js';
+import { appTheme } from '@kt/ui';
 import { router } from './router.js';
 
 dayjs.locale('vi');
 const qc = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ConfigProvider locale={viVN}><QueryClientProvider client={qc}><AuthProvider><RouterProvider router={router} /></AuthProvider></QueryClientProvider></ConfigProvider>
+    <ConfigProvider locale={viVN} theme={appTheme}><QueryClientProvider client={qc}><AuthProvider><RouterProvider router={router} /></AuthProvider></QueryClientProvider></ConfigProvider>
   </React.StrictMode>,
 );
