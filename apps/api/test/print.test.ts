@@ -16,10 +16,10 @@ beforeAll(async () => {
 afterAll(async () => { await ctx.close(); });
 
 describe('in sổ', () => {
-  it('Nhật ký chung HTML có mẫu số S03a-DNN, tên công ty, số tiền; PDF hợp lệ', async () => {
+  it('Nhật ký chung HTML không có số mẫu chưa đối chiếu (S03a-DNN), có tên công ty, số tiền; PDF hợp lệ', async () => {
     const h = await ctx.app.inject({ method: 'GET', url: '/api/reports/ledgers/general-journal?from=2026-01-01&to=2026-01-31&format=html', headers: { cookie } });
     expect(h.body).not.toContain('<td class="num">0</td>'); // dòng dữ liệu: số 0 để trống như sổ giấy; dòng cộng giữ nguyên
-    expect(h.body).toContain('S03a-DNN'); expect(h.body).toContain('Công ty TNHH In Thử'); expect(h.body).toContain('SỔ NHẬT KÝ CHUNG'); expect(h.body).toContain('2.500.000'); expect(h.body).toContain('Phạm Thị D');
+    expect(h.body).not.toContain('S03a-DNN'); expect(h.body).not.toContain('Mẫu số'); expect(h.body).toContain('Công ty TNHH In Thử'); expect(h.body).toContain('SỔ NHẬT KÝ CHUNG'); expect(h.body).toContain('2.500.000'); expect(h.body).toContain('Phạm Thị D');
     const p = await ctx.app.inject({ method: 'GET', url: '/api/reports/ledgers/general-journal?from=2026-01-01&to=2026-01-31&format=pdf', headers: { cookie } });
     expect(p.rawPayload.subarray(0, 4).toString()).toBe('%PDF');
     expect(p.headers['content-disposition']).toBe(`inline; filename*=UTF-8''${encodeURIComponent('nhat-ky-chung-2026-01-01-2026-01-31.pdf')}`);
@@ -82,20 +82,20 @@ describe('in sổ: nội dung, hệ tài khoản, quyền', () => {
     restricted = await userCookie('ketoan_truong', []);
   });
 
-  it('Sổ Cái: tên tài khoản theo đúng hệ của kỳ, diễn giải được thoát ký tự, có mẫu S03b-DNN', async () => {
+  it('Sổ Cái: tên tài khoản theo đúng hệ của kỳ, diễn giải được thoát ký tự, không in số mẫu chưa đối chiếu', async () => {
     const r = await get('/api/reports/ledgers/account?accountCode=6421&from=2026-01-01&to=2026-01-31&format=html');
     expect(r.statusCode, r.body).toBe(200);
-    expect(r.body).toContain('S03b-DNN'); expect(r.body).toContain('SỔ CÁI – TÀI KHOẢN 6421 – CHI PHÍ BÁN HÀNG'); expect(r.body).not.toContain('NHÂN VIÊN QUẢN LÍ');
+    expect(r.body).not.toContain('S03b-DNN'); expect(r.body).toContain('SỔ CÁI – TÀI KHOẢN 6421 – CHI PHÍ BÁN HÀNG'); expect(r.body).not.toContain('NHÂN VIÊN QUẢN LÍ');
     expect(r.body).toContain('&lt;script&gt;'); expect(r.body).not.toContain('<script>alert');
     expect(r.body).toContain('Số dư đầu kỳ'); expect(r.body).toContain('Số dư cuối kỳ'); expect(r.body).toContain('100.000');
     // Tên tài khoản ở TT133 và TT200 khác nhau: trong năm 2027 (TT200) cùng mã in tên của hệ TT200.
     const y = await get('/api/reports/ledgers/account?accountCode=6421&from=2027-01-01&to=2027-01-31&format=html');
-    expect(y.body).toContain('CHI PHÍ NHÂN VIÊN QUẢN LÍ'); expect(y.body).toContain('S03b-DN');
+    expect(y.body).toContain('CHI PHÍ NHÂN VIÊN QUẢN LÍ'); expect(y.body).not.toContain('S03b-DN');
   });
 
-  it('Sổ chi tiết theo đối tượng in mẫu S20-DNN; mã đối tượng sai báo 404', async () => {
+  it('Sổ chi tiết theo đối tượng không in số mẫu chưa đối chiếu (S20-DNN); mã đối tượng sai báo 404', async () => {
     const r = await get('/api/reports/ledgers/detail?accountCode=131&partyCode=KH001&from=2026-01-01&to=2026-01-31&format=html');
-    expect(r.statusCode, r.body).toBe(200); expect(r.body).toContain('S20-DNN'); expect(r.body).toContain('Đối tượng KH001'); expect(r.body).toContain('500.000');
+    expect(r.statusCode, r.body).toBe(200); expect(r.body).not.toContain('S20-DNN'); expect(r.body).toContain('Đối tượng KH001'); expect(r.body).toContain('500.000');
     const bad = await get('/api/reports/ledgers/detail?accountCode=131&partyCode=KHONGCO&from=2026-01-01&to=2026-01-31&format=html');
     expect([bad.statusCode, bad.json().error.code]).toEqual([404, 'LOOKUP_NOT_FOUND']);
   });

@@ -218,7 +218,7 @@ describe('mẫu hệ thống sao chép vào công ty', () => {
       const { cookie: c } = await bootstrapTenant(ctx, { code: `FT${Date.now()}` });
       expect((await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie: c }, payload: { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT200' } })).statusCode).toBe(201);
       const list = await get('/api/reports/financial?regime=TT200', c);
-      expect(list.json().map((x: { reportCode: string; formNo: string; name: string }) => [x.reportCode, x.formNo])).toEqual([['B01', 'B01-DN'], ['B02', 'B02-DN']]);
+      expect(list.json().map((x: { reportCode: string; formNo: string; name: string }) => [x.reportCode, x.formNo])).toEqual([['B01', ''], ['B02', '']]); // TT200 chưa có văn bản gốc: không có số mẫu
       expect(list.json()[0].name).toBe('Bảng cân đối kế toán');
       expect((await get('/api/report-defs/B02?regime=TT200', c)).json().lines.map((l: { lineCode: string }) => l.lineCode)).toEqual(['01', '02']);
       // Sửa cả hai báo cáo rồi nạp lại B02: B02 về mẫu, B01 giữ bản đã sửa.
