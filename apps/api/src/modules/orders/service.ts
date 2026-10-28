@@ -139,7 +139,8 @@ export type OrderDto = Awaited<ReturnType<typeof getOrder>>;
 export async function listOrders(trx: Trx, q: { kind?: string | undefined; status?: string | undefined; q?: string | undefined }) {
   const r = await sql<{ id: string; kind: string; docNo: string; docDate: string; status: string; partyCode: string; partyName: string; total: string }>`
     SELECT o.id::text, o.kind, o.doc_no AS "docNo", o.doc_date::text AS "docDate", o.status, p.code AS "partyCode", p.name AS "partyName",
-      coalesce((SELECT sum(round(l.quantity * l.unit_price * (1 - l.discount_rate / 100), CASE WHEN o.currency_code = 'VND' THEN 0 ELSE 4 END)) FROM doc_order_line l WHERE l.tenant_id = o.tenant_id AND l.order_id = o.id), 0)::text AS total
+      -- cùng công thức làm tròn hai bước với hóa đơn sinh từ đơn (thành tiền dòng làm tròn rồi chiết khấu làm tròn): tổng đơn khớp tổng hóa đơn
+      coalesce((SELECT sum(round(l.quantity * l.unit_price, CASE WHEN o.currency_code = 'VND' THEN 0 ELSE 4 END) - round(round(l.quantity * l.unit_price, CASE WHEN o.currency_code = 'VND' THEN 0 ELSE 4 END) * l.discount_rate / 100, CASE WHEN o.currency_code = 'VND' THEN 0 ELSE 4 END)) FROM doc_order_line l WHERE l.tenant_id = o.tenant_id AND l.order_id = o.id), 0)::text AS total
     FROM doc_order o JOIN party p ON p.tenant_id = o.tenant_id AND p.id = o.party_id
     WHERE (${q.kind ?? null}::text IS NULL OR o.kind = ${q.kind ?? null}) AND (${q.status ?? null}::text IS NULL OR o.status = ${q.status ?? null})
       AND (${q.q ?? null}::text IS NULL OR o.doc_no ILIKE '%' || ${q.q ?? null} || '%' OR p.name ILIKE '%' || ${q.q ?? null} || '%')

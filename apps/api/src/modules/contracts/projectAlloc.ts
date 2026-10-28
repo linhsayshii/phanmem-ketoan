@@ -3,7 +3,7 @@ import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
 import { COA_REGIMES, loadPayrollAccounts } from '@kt/coa-data';
-import { D, Decimal, formatVnDate, sum } from '@kt/domain';
+import { allocateByRatio, D, Decimal, formatVnDate, sum } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import * as S from '../ledger/vouchers.service.js';
 import { pnlGroups, sums } from './pnl.js';
@@ -97,11 +97,11 @@ async function prepareAlloc(trx: Trx, year: number, month: number, params: z.inf
   const rows: AllocRow[] = bases.map((b) => ({ projectCode: b.code, projectName: b.name, basis: b.basis.toFixed(), ratio: b.basis.div(total).times(100).toFixed(4), amounts: {}, total: '0' }));
   const lines: Line[] = []; const desc = `Phân bổ chi phí chung kỳ ${mmyyyy(year, month)}`;
   for (const a of pools) {
-    const pool = D(a.pool); let given = D(0);
+    const pool = D(a.pool);
+    // Phần dư làm tròn chia theo phần lẻ lớn nhất (như lương, TSCĐ, giá thành), không dồn hết vào vụ việc cuối; tổng đúng quỹ.
+    const parts = allocateByRatio(pool.toFixed(0), bases.map((b) => b.basis.toString()));
     rows.forEach((r, i) => {
-      // Làm tròn xuống từng vụ việc, vụ việc cuối nhận phần dư (không âm vì các phần trước đều ≤ phần chính xác).
-      const amt = i === rows.length - 1 ? pool.minus(given) : pool.times(bases[i]!.basis).div(total).toDecimalPlaces(0, Decimal.ROUND_DOWN);
-      given = given.plus(amt);
+      const amt = D(parts[i]!);
       if (amt.isZero()) return;
       r.amounts[a.code] = amt.toFixed(0); r.total = D(r.total).plus(amt).toFixed(0);
       lines.push({ accountCode: a.code, debit: amt.toFixed(0), credit: '0', projectCode: r.projectCode, description: `${desc} cho vụ việc ${r.projectCode}` });

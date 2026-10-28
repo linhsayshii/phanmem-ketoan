@@ -149,10 +149,10 @@ export async function ledger154(trx: Trx, tenantId: string, q: Scope) {
 export async function expenseSummary(trx: Trx, q: z.infer<typeof reportScope> & { toMonth?: number | undefined }): Promise<Report> {
   const last = q.toMonth ?? q.month;
   const groups = new Map<string, { id: number | null; code: string; name: string; lines: Map<string, CollectLine> }>();
-  const collected = new Map<number, number>(); // tháng → tổng chi phí tập hợp (để đối chiếu lần chạy)
+  const collected = new Map<number, string>(); // tháng → tổng chi phí tập hợp (để đối chiếu lần chạy)
   for (let m = q.month; m <= last; m++) {
     const c = await collectCosts(trx, { year: q.year, month: m, objectId: q.objectId });
-    collected.set(m, sum([...c.objects.map((o) => o.amount), c.unassigned.amount]).toNumber());
+    collected.set(m, sum([...c.objects.map((o) => o.amount), c.unassigned.amount]).toFixed(0));
     for (const g of [...c.objects.map((o) => ({ id: o.id as number | null, code: o.code, name: o.name, lines: o.lines })), { id: null, code: '', name: 'Chưa gắn đối tượng', lines: c.unassigned.lines }]) {
       if (g.id === null && q.objectId !== undefined) continue;
       const cur = groups.get(String(g.id)) ?? groups.set(String(g.id), { id: g.id, code: g.code, name: g.name, lines: new Map() }).get(String(g.id))!;
@@ -176,7 +176,7 @@ export async function expenseSummary(trx: Trx, q: z.infer<typeof reportScope> & 
   if (q.objectId === undefined) {
     const runs = (await sql<{ month: number; s: string }>`SELECT r.month, sum(o.incurred_material + o.incurred_labor + o.incurred_overhead)::text AS s FROM cost_run r JOIN cost_run_object o ON o.run_id = r.id
       WHERE r.year = ${q.year} AND r.month BETWEEN ${q.month} AND ${last} GROUP BY 1`.execute(trx)).rows;
-    if (runs.length) items.push({ label: `Chi phí tập hợp = phát sinh theo lần chạy giá thành (${runs.length} tháng đã chạy)`, report: sum(runs.map((r) => String(collected.get(r.month) ?? 0))), ledger: sum(runs.map((r) => r.s)) });
+    if (runs.length) items.push({ label: `Chi phí tập hợp = phát sinh theo lần chạy giá thành (${runs.length} tháng đã chạy)`, report: sum(runs.map((r) => collected.get(r.month) ?? '0')), ledger: sum(runs.map((r) => r.s)) });
   }
   const span = last === q.month ? `Tháng ${mmyyyy(q.year, q.month)}` : `Từ tháng ${mmyyyy(q.year, q.month)} đến tháng ${mmyyyy(q.year, last)}`;
   return {
