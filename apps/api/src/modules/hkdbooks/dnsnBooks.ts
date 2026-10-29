@@ -1,4 +1,4 @@
-import { D, formatVnDate, vnd, type Decimal } from '@kt/domain';
+import { D, formatVnDate, formatVnNumber, vnd, type Decimal } from '@kt/domain';
 import { loadBookSet } from '@kt/coa-data';
 import { AppError } from '../../plugins/errors.js';
 import type { ReportColumn, ReportDoc } from '../reporting/print/html.js';
@@ -12,6 +12,8 @@ export type DebtSide = 'recv' | 'pay';
 export interface DnsnFilter extends BookFilter { party?: string | undefined; sides?: DebtSide[] | undefined }
 const sheetSafe = (s: string) => s.replace(/[:\\/?*[\]]/g, ' ').slice(0, 28);
 const viSort = (a: string, b: string) => a.localeCompare(b, 'vi');
+// Cột diễn giải, tên tài sản cần rộng hơn cột số để chữ không xuống dòng từng từ (xem bản in PDF, QĐ 1774).
+const widen = (cols: ReportColumn[], widths: Record<string, string>): ReportColumn[] => cols.map((c) => (widths[c.key] ? { ...c, width: widths[c.key]! } : c));
 
 // ---- S4a: sổ chi tiết thanh toán công nợ, mỗi đối tượng một sổ ----
 interface Debt { id: number; date: string; docNo: string | null; desc: string; party: string; side: 'recv' | 'pay'; kind: string; nature: string; amount: Decimal }
@@ -44,7 +46,7 @@ async function s4a(trx: Trx, tenantId: string, f: DnsnFilter): Promise<ReportDoc
       rows.push({ docNo: e.docNo, date: e.date, desc: e.desc, [col]: S(e.amount), ...(e.side === 'recv' ? { recvLeft: S(recv) } : { payLeft: S(pay) }) });
     }
     rows.push({ desc: 'Cộng số phát sinh trong kỳ', recv: S(tot.recv), recvPaid: S(tot.recvPaid), pay: S(tot.pay), payPaid: S(tot.payPaid), isBold: true }, { desc: 'Số dư cuối kỳ', recvLeft: S(recv), payLeft: S(pay), isBold: true });
-    docs.push(fr.doc(rows, { sheetName: sheetSafe(`S4a ${idx + 1} ${party}`), intro: [`Đối tượng: ${party}`, 'Đơn vị tính: đồng Việt Nam'] }));
+    docs.push(fr.doc(rows, { sheetName: sheetSafe(`S4a ${idx + 1} ${party}`), intro: [`Đối tượng: ${party}`, 'Đơn vị tính: đồng Việt Nam'] }, widen(fr.doc([]).columns, { docNo: '8%', date: '9%', desc: '23%' })));
   });
   if (!docs.length) docs.push(fr.doc([], { intro: ['Chưa có khoản công nợ nào.'] }));
   return docs;
@@ -85,7 +87,7 @@ async function s4b(trx: Trx, tenantId: string, f: DnsnFilter): Promise<ReportDoc
     }
     // Dòng Cộng của mẫu: các ô Tháng, năm đưa vào sử dụng, Nguyên giá (cột 1) và ba cột ghi giảm đánh dấu x (không ghi); chỉ cột 2, 3, 4 để trống (bản .docx của thông tư). Tỷ lệ khấu hao (cột 2) không cộng được nên để trống.
     rows.push({ name: 'Cộng', dep: S(tot.dep), accDep: S(tot.acc), isBold: true });
-    return fr.doc(rows, { sheetName: sheetSafe(`S4b ${idx + 1} ${type}`), intro: [`Loại tài sản: ${type}`, 'Khấu hao tính tròn tháng theo tỷ lệ hằng năm, từ tháng đưa vào sử dụng, thôi từ tháng ghi giảm.'] });
+    return fr.doc(rows, { sheetName: sheetSafe(`S4b ${idx + 1} ${type}`), intro: [`Loại tài sản: ${type}`, 'Khấu hao tính tròn tháng theo tỷ lệ hằng năm, từ tháng đưa vào sử dụng, thôi từ tháng ghi giảm.'] }, widen(fr.doc([]).columns, { name: '16%', decReason: '10%' }));
   });
   if (!docs.length) docs.push(fr.doc([], { intro: ['Chưa có tài sản cố định nào.'] }));
   return docs;
@@ -168,13 +170,14 @@ export async function b01Position(trx: Trx, cut: Cut, yearStart: string, method:
   for (const e of debts) { const k = `${e.party}\u0000${e.side}`; byParty.set(k, (byParty.get(k) ?? D(0)).plus(signed(e))); }
   const negative = [...byParty.entries()].filter(([, v]) => v.isNegative()).map(([k]) => k.split('\u0000')[0]!);
   if (negative.length) notes.push(`Sổ S4a có đối tượng dư âm (đã thu, đã trả vượt số phải thu, phải trả): ${[...new Set(negative)].join(', ')}. Số âm được cộng trừ thẳng vào mã 120, 310, 320; cần rà soát.`);
-  let l120 = sideBal('recv', false); const l310 = sideBal('pay', false); let l320 = sideBal('pay', true);
-  // Thuế GTGT: khấu trừ (S3b-DNSN) hay theo tỷ lệ % (sổ doanh thu)
-  const vat = isDeductVat(method) ? vatDeductNet(ents) : await taxPayable(trx, 'vat', cut, yearStart, method, rate);
-  if (vat.isNegative()) l120 = l120.plus(vat.neg()); else l320 = l320.plus(vat);
+  let l120 = sideBal('recv', false); const l310 = sideBal('pay', false); let l320 = sideBal('pay', true); let l150 = D(0);
+  // Thuế GTGT: khấu trừ (S3b-DNSN) hay theo tỷ lệ % (sổ doanh thu). Số âm: phương pháp khấu trừ là thuế GTGT còn được khấu trừ (mã 120, hướng dẫn mã 120);
+  // theo tỷ lệ % không có thuế đầu vào được khấu trừ, số âm là thuế đã nộp lớn hơn phải nộp, tức tài sản khác (mã 150, QĐ 1772).
+  const deduct = isDeductVat(method);
+  const vat = deduct ? vatDeductNet(ents) : await taxPayable(trx, 'vat', cut, yearStart, method, rate);
+  if (!vat.isNegative()) l320 = l320.plus(vat); else if (deduct) l120 = l120.plus(vat.neg()); else l150 = l150.plus(vat.neg());
   // Thuế TNDN: nộp thừa so với phải nộp là tài sản khác (hướng dẫn mã 150)
   const cit = await taxPayable(trx, 'income', cut, yearStart, method, rate);
-  let l150 = D(0);
   if (cit.isNegative()) l150 = l150.plus(cit.neg()); else l320 = l320.plus(cit);
   const other = upTo((await trx.selectFrom('book_other_asset').selectAll().where('entry_date', '<=', cut.open).execute()).map((r) => ({ date: r.entry_date, kind: r.kind, amount: D(r.amount) })), cut);
   l150 = other.reduce((a, r) => (r.kind === 'decrease' ? a.minus(r.amount) : a.plus(r.amount)), l150);
@@ -215,10 +218,10 @@ export async function b01(trx: Trx, tenantId: string, f: DnsnFilter): Promise<Re
   const notes: string[] = [...new Set([...cur.notes, ...prev.notes])];
   const diff = tc['200'].minus(tc['500']); const diffPrev = tp['200'].minus(tp['500']);
   if (!diff.isZero() || !diffPrev.isZero()) {
-    notes.unshift(`Tổng tài sản (mã 200) và tổng nguồn vốn (mã 500) chưa bằng nhau: số cuối năm lệch ${S(diff)} đồng, số đầu năm lệch ${S(diffPrev)} đồng (200 trừ 500). Sổ ghi đơn của doanh nghiệp siêu nhỏ không có bút toán đối ứng nên phần mềm không tự bảo đảm cân đối; rà soát số dư đầu kỳ của S4a, S4b, S4d, tài sản khác và các sổ khác, các bút chưa ghi sổ, rồi lập lại.`);
+    notes.unshift(`Tổng tài sản (mã 200) và tổng nguồn vốn (mã 500) chưa bằng nhau: số cuối năm lệch ${formatVnNumber(diff)} đồng, số đầu năm lệch ${formatVnNumber(diffPrev)} đồng (200 trừ 500). Sổ ghi đơn của doanh nghiệp siêu nhỏ không có bút toán đối ứng nên phần mềm không tự bảo đảm cân đối; rà soát số dư đầu kỳ của S4a, S4b, S4d, tài sản khác và các sổ khác, các bút chưa ghi sổ, rồi lập lại.`);
   }
   if (profitFlagFor(method)) {
-    const p = await b02(trx, tenantId, { from: yearStart, to: f.to }); const net = String((p.rows.find((r) => r.code === '20') as Row | undefined)?.cur ?? '0');
+    const p = await b02(trx, tenantId, { from: yearStart, to: f.to }); const net = formatVnNumber(String((p.rows.find((r) => r.code === '20') as Row | undefined)?.cur ?? '0'));
     notes.push(`Lợi nhuận sau thuế TNDN của năm theo B02-DNSN (mã 20) là ${net} đồng. Số này chỉ nằm trong mã 420 khi bạn đã ghi tăng vào Sổ theo dõi vốn chủ sở hữu (S4d); phần mềm không tự kết chuyển.`);
   }
   if (rate === null && profitFlagFor(method)) notes.push('Chưa khai thuế suất TNDN trên thu nhập tính thuế cho năm này (Cài đặt năm): thuế TNDN phải nộp tạm tính 0.');

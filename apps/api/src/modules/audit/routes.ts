@@ -68,6 +68,10 @@ const routes: FastifyPluginAsyncZod = async (app) => {
             AND o.id::text IN (coalesce(a.after, a.before)->>'debit_item_id', coalesce(a.after, a.before)->>'credit_item_id')))
           OR (a.entity = 'approval_request' AND coalesce(a.after, a.before)->>'account_code' = ANY(${hidden.codes}::text[])))`);
       }
+      // Sổ công nợ S4a của hộ kinh doanh, doanh nghiệp siêu nhỏ (book_debt): cùng một bảng cho cả hai bên nên che theo cột side của dòng trước/sau (sửa đổi bên cũng bị che).
+      for (const [side, flag] of [['recv', 'view_receivable'], ['pay', 'view_payable']] as const) {
+        if (!has(flag)) base = base.where(sql<boolean>`NOT (a.entity = 'book_debt' AND (coalesce(a.before->>'side', '') = ${side} OR coalesce(a.after->>'side', '') = ${side}))`);
+      }
       if (!has('view_salary')) {
         // Tờ khai 05/KK-TNCN, 05/QTT-TNCN lưu bảng kê từng người (tên, MST, thu nhập, thuế) trong values; tax_return còn chứa tờ khai GTGT, TNDN nên chỉ bỏ hai mẫu này.
         base = base.where(sql<boolean>`NOT (a.entity = 'tax_return' AND coalesce(a.after, a.before)->>'form_code' = ANY(${Object.keys(TNCN_FORMS)}::text[]))`);
