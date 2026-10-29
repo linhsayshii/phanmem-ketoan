@@ -1,0 +1,461 @@
+{
+ "form": "Phụ lục 1 TT 45/2013/TT-BTC",
+ "validFrom": "2013-06-10",
+ "validTo": "2026-12-31",
+ "source": "Thông tư 45/2013/TT-BTC ngày 25/4/2013 Phụ lục I \"Khung thời gian trích khấu hao các loại tài sản cố định\", Công báo số 277 + 278 ngày 19-05-2013 trang 53-55 (congbao.chinhphu.vn, văn bản 4118; tải 2026-10-29), đối chiếu ảnh trang 110 dpi. Hiệu lực từ 10/6/2013 (Điều 14 khoản 1). Các văn bản sửa đổi: TT 147/2016/TT-BTC, TT 28/2017/TT-BTC (Công báo 305+306 ngày 02-5-2017, đã đọc: bãi bỏ khoản 1 Điều 1 TT 147, sửa Điều 4 khoản 2 điểm đ), TT 30/2025/TT-BTC và QĐ 3165/QĐ-BTC (đã đọc: thêm Điều 9 khoản 12, đính chính căn cứ ban hành), QĐ 1173/QĐ-BTC ngày 21/5/2013 (đính chính Điều 9 khoản 11) đều không sửa Phụ lục 1 theo các văn bản đã đọc; TT 147/2016 và QĐ 1173/QĐ-BTC chưa tải được bản gốc từ nguồn chính thức, nội dung biết qua QĐ 1760/QĐ-BTC và các trang thứ cấp. QĐ 1760/QĐ-BTC ngày 01/7/2026 (Công báo số 404 ngày 17-07-2026 trang 105-106): TT 45/2013 (đã sửa đổi) tiếp tục có hiệu lực, áp dụng từ kỳ tính thuế thu nhập doanh nghiệp năm 2025 cho đến khi có văn bản thay thế, bãi bỏ nhưng không quá ngày 31/12/2026.",
+ "rules": [
+  "Điều 10 khoản 1: TSCĐ còn mới (chưa qua sử dụng) phải căn cứ khung tại Phụ lục 1 để xác định thời gian trích khấu hao.",
+  "Điều 10 khoản 2: TSCĐ đã qua sử dụng, thời gian = Giá trị hợp lý / Giá bán TSCĐ cùng loại mới 100% x Thời gian trích khấu hao của TSCĐ mới cùng loại xác định theo Phụ lục 1 (khung không áp trực tiếp).",
+  "Điều 10 khoản 3 điểm a: muốn thời gian khác khung phải lập phương án thay đổi thời gian trích khấu hao và giải trình."
+ ],
+ "frames": [
+  {
+   "code": "A.1",
+   "group": "A",
+   "groupLabel": "Máy móc, thiết bị động lực",
+   "label": "Máy phát động lực",
+   "minYears": 8,
+   "maxYears": 15
+  },
+  {
+   "code": "A.2",
+   "group": "A",
+   "groupLabel": "Máy móc, thiết bị động lực",
+   "label": "Máy phát điện, thủy điện, nhiệt điện, phong điện, hỗn hợp khí",
+   "minYears": 7,
+   "maxYears": 20
+  },
+  {
+   "code": "A.3",
+   "group": "A",
+   "groupLabel": "Máy móc, thiết bị động lực",
+   "label": "Máy biến áp và thiết bị nguồn điện",
+   "minYears": 7,
+   "maxYears": 15
+  },
+  {
+   "code": "A.4",
+   "group": "A",
+   "groupLabel": "Máy móc, thiết bị động lực",
+   "label": "Máy móc, thiết bị động lực khác",
+   "minYears": 6,
+   "maxYears": 15
+  },
+  {
+   "code": "B.1",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy công cụ",
+   "minYears": 7,
+   "maxYears": 15
+  },
+  {
+   "code": "B.2",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy móc thiết bị dùng trong ngành khai khoáng",
+   "minYears": 5,
+   "maxYears": 15
+  },
+  {
+   "code": "B.3",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy kéo",
+   "minYears": 6,
+   "maxYears": 15
+  },
+  {
+   "code": "B.4",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy dùng cho nông, lâm nghiệp",
+   "minYears": 6,
+   "maxYears": 15
+  },
+  {
+   "code": "B.5",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy bơm nước và xăng dầu",
+   "minYears": 6,
+   "maxYears": 15
+  },
+  {
+   "code": "B.6",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Thiết bị luyện kim, gia công bề mặt chống gỉ và ăn mòn kim loại",
+   "minYears": 7,
+   "maxYears": 15
+  },
+  {
+   "code": "B.7",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Thiết bị chuyên dùng sản xuất các loại hóa chất",
+   "minYears": 6,
+   "maxYears": 15
+  },
+  {
+   "code": "B.8",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy móc, thiết bị chuyên dùng sản xuất vật liệu xây dựng, đồ sành sứ, thủy tinh",
+   "minYears": 10,
+   "maxYears": 20
+  },
+  {
+   "code": "B.9",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Thiết bị chuyên dùng sản xuất các linh kiện và điện tử, quang học, cơ khí chính xác",
+   "minYears": 5,
+   "maxYears": 15
+  },
+  {
+   "code": "B.10",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy móc, thiết bị dùng trong các ngành sản xuất da, in văn phòng phẩm và văn hóa phẩm",
+   "minYears": 7,
+   "maxYears": 15
+  },
+  {
+   "code": "B.11",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy móc, thiết bị dùng trong ngành dệt",
+   "minYears": 10,
+   "maxYears": 15
+  },
+  {
+   "code": "B.12",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy móc, thiết bị dùng trong ngành may mặc",
+   "minYears": 5,
+   "maxYears": 10
+  },
+  {
+   "code": "B.13",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy móc, thiết bị dùng trong ngành giấy",
+   "minYears": 5,
+   "maxYears": 15
+  },
+  {
+   "code": "B.14",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy móc, thiết bị sản xuất, chế biến lương thực, thực phẩm",
+   "minYears": 7,
+   "maxYears": 15
+  },
+  {
+   "code": "B.15",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy móc, thiết bị điện ảnh, y tế",
+   "minYears": 6,
+   "maxYears": 15
+  },
+  {
+   "code": "B.16",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy móc, thiết bị viễn thông, thông tin, điện tử, tin học và truyền hình",
+   "minYears": 3,
+   "maxYears": 15
+  },
+  {
+   "code": "B.17",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy móc, thiết bị sản xuất dược phẩm",
+   "minYears": 6,
+   "maxYears": 10
+  },
+  {
+   "code": "B.18",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy móc, thiết bị công tác khác",
+   "minYears": 5,
+   "maxYears": 12
+  },
+  {
+   "code": "B.19",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy móc, thiết bị dùng trong ngành lọc hóa dầu",
+   "minYears": 10,
+   "maxYears": 20
+  },
+  {
+   "code": "B.20",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy móc, thiết bị dùng trong thăm dò khai thác dầu khí",
+   "minYears": 7,
+   "maxYears": 10
+  },
+  {
+   "code": "B.21",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Máy móc thiết bị xây dựng",
+   "minYears": 8,
+   "maxYears": 15
+  },
+  {
+   "code": "B.22",
+   "group": "B",
+   "groupLabel": "Máy móc, thiết bị công tác",
+   "label": "Cần cẩu",
+   "minYears": 10,
+   "maxYears": 20
+  },
+  {
+   "code": "C.1",
+   "group": "C",
+   "groupLabel": "Dụng cụ làm việc đo lường, thí nghiệm",
+   "label": "Thiết bị đo lường, thử nghiệm các đại lượng cơ học, âm học và nhiệt học",
+   "minYears": 5,
+   "maxYears": 10
+  },
+  {
+   "code": "C.2",
+   "group": "C",
+   "groupLabel": "Dụng cụ làm việc đo lường, thí nghiệm",
+   "label": "Thiết bị quang học và quang phổ",
+   "minYears": 6,
+   "maxYears": 10
+  },
+  {
+   "code": "C.3",
+   "group": "C",
+   "groupLabel": "Dụng cụ làm việc đo lường, thí nghiệm",
+   "label": "Thiết bị điện và điện tử",
+   "minYears": 5,
+   "maxYears": 10
+  },
+  {
+   "code": "C.4",
+   "group": "C",
+   "groupLabel": "Dụng cụ làm việc đo lường, thí nghiệm",
+   "label": "Thiết bị đo và phân tích lý hóa",
+   "minYears": 6,
+   "maxYears": 10
+  },
+  {
+   "code": "C.5",
+   "group": "C",
+   "groupLabel": "Dụng cụ làm việc đo lường, thí nghiệm",
+   "label": "Thiết bị và dụng cụ đo phóng xạ",
+   "minYears": 6,
+   "maxYears": 10
+  },
+  {
+   "code": "C.6",
+   "group": "C",
+   "groupLabel": "Dụng cụ làm việc đo lường, thí nghiệm",
+   "label": "Thiết bị chuyên ngành đặc biệt",
+   "minYears": 5,
+   "maxYears": 10
+  },
+  {
+   "code": "C.7",
+   "group": "C",
+   "groupLabel": "Dụng cụ làm việc đo lường, thí nghiệm",
+   "label": "Các thiết bị đo lường, thí nghiệm khác",
+   "minYears": 6,
+   "maxYears": 10
+  },
+  {
+   "code": "C.8",
+   "group": "C",
+   "groupLabel": "Dụng cụ làm việc đo lường, thí nghiệm",
+   "label": "Khuôn mẫu dùng trong công nghiệp đúc",
+   "minYears": 2,
+   "maxYears": 5
+  },
+  {
+   "code": "D.1",
+   "group": "D",
+   "groupLabel": "Thiết bị và phương tiện vận tải",
+   "label": "Phương tiện vận tải đường bộ",
+   "minYears": 6,
+   "maxYears": 10
+  },
+  {
+   "code": "D.2",
+   "group": "D",
+   "groupLabel": "Thiết bị và phương tiện vận tải",
+   "label": "Phương tiện vận tải đường sắt",
+   "minYears": 7,
+   "maxYears": 15
+  },
+  {
+   "code": "D.3",
+   "group": "D",
+   "groupLabel": "Thiết bị và phương tiện vận tải",
+   "label": "Phương tiện vận tải đường thủy",
+   "minYears": 7,
+   "maxYears": 15
+  },
+  {
+   "code": "D.4",
+   "group": "D",
+   "groupLabel": "Thiết bị và phương tiện vận tải",
+   "label": "Phương tiện vận tải đường không",
+   "minYears": 8,
+   "maxYears": 20
+  },
+  {
+   "code": "D.5",
+   "group": "D",
+   "groupLabel": "Thiết bị và phương tiện vận tải",
+   "label": "Thiết bị vận chuyển đường ống",
+   "minYears": 10,
+   "maxYears": 30
+  },
+  {
+   "code": "D.6",
+   "group": "D",
+   "groupLabel": "Thiết bị và phương tiện vận tải",
+   "label": "Phương tiện bốc dỡ, nâng hàng",
+   "minYears": 6,
+   "maxYears": 10
+  },
+  {
+   "code": "D.7",
+   "group": "D",
+   "groupLabel": "Thiết bị và phương tiện vận tải",
+   "label": "Thiết bị và phương tiện vận tải khác",
+   "minYears": 6,
+   "maxYears": 10
+  },
+  {
+   "code": "E.1",
+   "group": "E",
+   "groupLabel": "Dụng cụ quản lý",
+   "label": "Thiết bị tính toán, đo lường",
+   "minYears": 5,
+   "maxYears": 8
+  },
+  {
+   "code": "E.2",
+   "group": "E",
+   "groupLabel": "Dụng cụ quản lý",
+   "label": "Máy móc, thiết bị thông tin, điện tử và phần mềm tin học phục vụ quản lý",
+   "minYears": 3,
+   "maxYears": 8
+  },
+  {
+   "code": "E.3",
+   "group": "E",
+   "groupLabel": "Dụng cụ quản lý",
+   "label": "Phương tiện và dụng cụ quản lý khác",
+   "minYears": 5,
+   "maxYears": 10
+  },
+  {
+   "code": "G.1",
+   "group": "G",
+   "groupLabel": "Nhà cửa, vật kiến trúc",
+   "label": "Nhà cửa loại kiên cố",
+   "minYears": 25,
+   "maxYears": 50
+  },
+  {
+   "code": "G.2",
+   "group": "G",
+   "groupLabel": "Nhà cửa, vật kiến trúc",
+   "label": "Nhà nghỉ giữa ca, nhà ăn giữa ca, nhà vệ sinh, nhà thay quần áo, nhà để xe...",
+   "minYears": 6,
+   "maxYears": 25
+  },
+  {
+   "code": "G.3",
+   "group": "G",
+   "groupLabel": "Nhà cửa, vật kiến trúc",
+   "label": "Nhà cửa khác",
+   "minYears": 6,
+   "maxYears": 25
+  },
+  {
+   "code": "G.4",
+   "group": "G",
+   "groupLabel": "Nhà cửa, vật kiến trúc",
+   "label": "Kho chứa, bể chứa; cầu, đường, đường băng sân bay; bãi đỗ, sân phơi...",
+   "minYears": 5,
+   "maxYears": 20
+  },
+  {
+   "code": "G.5",
+   "group": "G",
+   "groupLabel": "Nhà cửa, vật kiến trúc",
+   "label": "Kè, đập, cống, kênh, mương máng",
+   "minYears": 6,
+   "maxYears": 30
+  },
+  {
+   "code": "G.6",
+   "group": "G",
+   "groupLabel": "Nhà cửa, vật kiến trúc",
+   "label": "Bến cảng, ụ triền đà...",
+   "minYears": 10,
+   "maxYears": 40
+  },
+  {
+   "code": "G.7",
+   "group": "G",
+   "groupLabel": "Nhà cửa, vật kiến trúc",
+   "label": "Các vật kiến trúc khác",
+   "minYears": 5,
+   "maxYears": 10
+  },
+  {
+   "code": "H.1",
+   "group": "H",
+   "groupLabel": "Súc vật, vườn cây lâu năm",
+   "label": "Các loại súc vật",
+   "minYears": 4,
+   "maxYears": 15
+  },
+  {
+   "code": "H.2",
+   "group": "H",
+   "groupLabel": "Súc vật, vườn cây lâu năm",
+   "label": "Vườn cây công nghiệp, vườn cây ăn quả, vườn cây lâu năm",
+   "minYears": 6,
+   "maxYears": 40
+  },
+  {
+   "code": "H.3",
+   "group": "H",
+   "groupLabel": "Súc vật, vườn cây lâu năm",
+   "label": "Thảm cỏ, thảm cây xanh",
+   "minYears": 2,
+   "maxYears": 8
+  },
+  {
+   "code": "I",
+   "group": "I",
+   "groupLabel": "Các loại tài sản cố định hữu hình khác chưa quy định trong các nhóm trên",
+   "label": "Các loại tài sản cố định hữu hình khác chưa quy định trong các nhóm trên",
+   "minYears": 4,
+   "maxYears": 25
+  },
+  {
+   "code": "K",
+   "group": "K",
+   "groupLabel": "Tài sản cố định vô hình khác",
+   "label": "Tài sản cố định vô hình khác",
+   "minYears": 2,
+   "maxYears": 20
+  }
+ ]
+}

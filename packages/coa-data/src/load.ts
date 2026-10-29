@@ -127,6 +127,15 @@ export function loadHkdReturnTemplate(): HkdReturnTemplate {
   if (!isHkdReturnTemplateComplete()) throw new Error('Chưa có mẫu 01/TKN-CNKD theo TT 89/2026/TT-BTC đối chiếu văn bản gốc (status.json 01TKN_CNKD_TT89)');
   return JSON.parse(readFileSync(dataPath('tax', '01tkn-cnkd-tt89.json'), 'utf8')) as HkdReturnTemplate;
 }
+// Khung thời gian trích khấu hao TSCĐ (TT 45/2013/TT-BTC Phụ lục 1, data/tax/depreciation-frames.json), nhập từ Công báo; cổng status.json depreciationFrames_TT45.
+// Chỉ để gợi ý/cảnh báo ở phân hệ tài sản; không đổi cách tính khấu hao. validTo: QĐ 1760/QĐ-BTC giới hạn hiệu lực đến 31/12/2026 hoặc đến khi có văn bản thay thế.
+export interface DepreciationFrame { code: string; group: string; groupLabel: string; label: string; minYears: number; maxYears: number }
+export interface DepreciationFrameSet { form: string; validFrom: string; validTo: string | null; source: string; rules: string[]; frames: DepreciationFrame[] }
+export function isDepreciationFramesComplete(): boolean { return taxStatus().depreciationFrames_TT45 === true && existsSync(dataPath('tax', 'depreciation-frames.json')); }
+export function loadDepreciationFrames(): DepreciationFrameSet {
+  if (!isDepreciationFramesComplete()) throw new Error('Chưa có khung thời gian trích khấu hao theo TT 45/2013/TT-BTC đối chiếu văn bản gốc (status.json depreciationFrames_TT45)');
+  return JSON.parse(readFileSync(dataPath('tax', 'depreciation-frames.json'), 'utf8')) as DepreciationFrameSet;
+}
 // Ánh xạ sổ cái cho thuế TNDN theo chế độ (data/tax/cit-ledger.json): chỉ tiêu B02 lợi nhuận/doanh thu, tài khoản chi phí thuế, thuế phải nộp, tiền. Chế độ không có trong tệp thì undefined.
 export interface CitLedgerMap { profitLine: string; expenseLine: string; revenueLines: string[]; expenseAccount: string; payableAccount: string; cashAccounts: string[] }
 export function loadCitLedger(regime: Regime): CitLedgerMap | undefined {

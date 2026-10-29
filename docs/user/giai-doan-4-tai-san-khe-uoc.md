@@ -51,6 +51,8 @@ Nhập Mã, Tên, Loại (F4), Bộ phận sử dụng (F4), Ngày sử dụng, 
 
 Thẻ mới: phải lưu thông tin chung trước khi dùng các tab khác.
 
+**Gợi ý khung thời gian trích khấu hao (chỉ TSCĐ).** Dưới ô "Số kỳ sử dụng" có ô "Nhóm theo khung TT 45/2013 (kiểm tra thời gian)": chọn nhóm tài sản (ví dụ D.1 Phương tiện vận tải đường bộ, 6 đến 10 năm) để phần mềm đối chiếu số kỳ (tháng) với khung tối thiểu, tối đa của Phụ lục 1 Thông tư 45/2013/TT-BTC (Công báo số 277 + 278). Thấp hơn tối thiểu hoặc cao hơn tối đa thì hiện cảnh báo vàng, nhắc rằng muốn thời gian khác khung phải lập phương án thay đổi thời gian trích khấu hao và giải trình (Điều 10 khoản 3 điểm a). Đây chỉ là gợi ý: không chặn lưu thẻ, không lưu nhóm đã chọn, không đổi cách tính khấu hao. Đánh dấu "Đã qua sử dụng" thì phần mềm không đối chiếu khung (thời gian xác định theo Điều 10 khoản 2). Khung chỉ có hiệu lực đến 31/12/2026 theo Quyết định 1760/QĐ-BTC; ngày bắt đầu khấu hao sau mốc đó thì phần mềm không kiểm tra. Chưa đối chiếu được bản gốc Thông tư 147/2016/TT-BTC và Quyết định 1173/QĐ-BTC (theo Quyết định 1760 không sửa Phụ lục 1).
+
 Lưu ý:
 - Nguyên giá không nhập trên thẻ. Nguyên giá phát sinh khi ghi tăng (mục 3) hoặc từ số dư đầu kỳ (mục 8).
 - Khi thẻ đã có bút toán, Số lượng và Bộ phận chỉ đổi qua nghiệp vụ ghi giảm hoặc điều chuyển; giá trị sửa trực tiếp trên thẻ bị bỏ qua.

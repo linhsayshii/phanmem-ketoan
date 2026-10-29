@@ -91,3 +91,31 @@ describe('thẻ tài sản, phân bổ chi phí', () => {
     expect((await t.call('PUT', `/api/asset-categories/${c.json().id}`, { ...cat, assetAccountCode: '2112', name: 'Máy móc thiết bị' })).json()).toMatchObject({ name: 'Máy móc thiết bị' });
   });
 });
+
+describe('khung thời gian trích khấu hao TT 45/2013 (chỉ gợi ý)', () => {
+  it('danh mục có 56 nhóm kèm nguồn; kiểm tra thời gian trong khung, dưới tối thiểu, trên tối đa', async () => {
+    const t = await tenant();
+    const list = (await t.call('GET', '/api/asset-depreciation-frames')).json();
+    expect(list).toMatchObject({ available: true, validFrom: '2013-06-10', validTo: '2026-12-31' });
+    expect(list.frames).toHaveLength(56);
+    const chk = async (q: string) => (await t.call('GET', `/api/asset-depreciation-frames/check?${q}`)).json();
+    // D.1 phương tiện vận tải đường bộ: 6-10 năm = 72-120 tháng.
+    expect(await chk('frame=D.1&lifeMonths=96&at=2026-06-01')).toMatchObject({ status: 'within', minMonths: 72, maxMonths: 120, message: null });
+    const below = await chk('frame=D.1&lifeMonths=48&at=2026-06-01');
+    expect(below).toMatchObject({ status: 'below', frameCode: 'D.1' });
+    expect(below.message).toContain('thấp hơn mức tối thiểu 6 năm');
+    expect(below.message).toContain('Điều 10 khoản 3');
+    expect(await chk('frame=D.1&lifeMonths=132&at=2026-06-01')).toMatchObject({ status: 'above' });
+    expect((await chk('frame=D.1&lifeMonths=132&at=2026-06-01')).message).toContain('cao hơn mức tối đa 10 năm');
+  });
+  it('không áp dụng với TSCĐ đã qua sử dụng, ngày ngoài hiệu lực; mã nhóm lạ là unavailable; không chặn lưu thẻ', async () => {
+    const t = await tenant();
+    const chk = async (q: string) => (await t.call('GET', `/api/asset-depreciation-frames/check?${q}`)).json();
+    expect(await chk('frame=D.1&lifeMonths=12&at=2026-06-01&used=true')).toMatchObject({ status: 'not_applicable' });
+    expect(await chk('frame=D.1&lifeMonths=12&at=2027-01-01')).toMatchObject({ status: 'not_applicable' });
+    expect(await chk('frame=D.1&lifeMonths=12&at=2013-06-09')).toMatchObject({ status: 'not_applicable' });
+    expect(await chk('frame=Z.9&lifeMonths=12&at=2026-06-01')).toMatchObject({ status: 'unavailable', message: null });
+    const saved = await t.fixed('TSK1', { lifeUnits: 12 });
+    expect(saved.id).toBeGreaterThan(0);
+  });
+});
