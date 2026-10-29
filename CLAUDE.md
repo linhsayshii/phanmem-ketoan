@@ -2,13 +2,14 @@
 
 Phần mềm kế toán doanh nghiệp Việt Nam (web): TypeScript + PostgreSQL, monorepo pnpm. Mục tiêu: đạt mặt bằng nghiệp vụ MISA/Fast/SUNSOFT, tuân thủ TT 99/2025, TT 133/2016, hóa đơn điện tử 2026.
 
-**Trạng thái:** Giai đoạn 0 (nền tảng) và Giai đoạn 1 (lõi sổ cái) đã xong, tag `gd0-hoan-tat`, `gd1-hoan-tat`. Việc tiếp theo nằm ở `docs/TIEP-THEO.md`: đọc file đó trước khi làm bất cứ gì.
+**Trạng thái:** Lộ trình 8 giai đoạn đã xong (tag `gd0-hoan-tat` … `gd7-hoan-tat`). Việc tiếp theo nằm ở `docs/TIEP-THEO.md`: đọc file đó trước khi làm bất cứ gì.
 
 ## Đọc trước khi làm
 
 | Tài liệu | Khi nào đọc |
 |---|---|
-| `docs/TIEP-THEO.md` | Luôn đọc đầu tiên: hàng đợi việc, việc tồn đọng, việc chờ người dùng |
+| `docs/TIEP-THEO.md` | Luôn đọc đầu tiên: việc agent làm được, việc chờ người dùng |
+| `docs/dev/han-che.md`, `docs/dev/lich-su-giai-doan.md` | Hạn chế đã biết (không phải việc tồn đọng); lịch sử phạm vi và kiểm thử từng giai đoạn |
 | `docs/superpowers/specs/2026-10-19-phan-mem-ke-toan-design.md` | Đặc tả đã duyệt: kiến trúc, mô hình dữ liệu, quy tắc nghiệp vụ, danh sách phân hệ (mục 9), tham số pháp lý (mục 10) |
 | `docs/superpowers/plans/2026-10-19-lo-trinh-thuc-hien.md` | Lộ trình 8 giai đoạn: công việc và tiêu chí nghiệm thu từng giai đoạn |
 | `docs/superpowers/plans/2026-10-19-giai-doan-0-1-chi-tiet.md` | Kế hoạch chi tiết GĐ0–1 đã thực hiện: mẫu để viết kế hoạch các giai đoạn sau |
