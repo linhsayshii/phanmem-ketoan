@@ -80,6 +80,10 @@ jobs:
       - run: pnpm db:migrate
       - run: pnpm -F @kt/web exec playwright install --with-deps chromium
       - run: pnpm -F @kt/api cli create-admin --username e2e --password 'Matkhau1!' --tenant-code E2E --tenant-name "Công ty E2E"
+      # công ty riêng cho các spec chế độ kế toán / chưa có năm tài chính (điều kiện trước ghi ở đầu từng spec)
+      - run: pnpm -F @kt/api cli create-admin --username e2ehkd --password 'Matkhau1!' --tenant-code E2EHKD --tenant-name "Hộ kinh doanh E2E"
+      - run: pnpm -F @kt/api cli create-admin --username e2edn --password 'Matkhau1!' --tenant-code E2EDN --tenant-name "Doanh nghiệp siêu nhỏ E2E"
+      - run: pnpm -F @kt/api cli create-admin --username e2enoyear --password 'Matkhau1!' --tenant-code E2ENOYEAR --tenant-name "Công ty E2E chưa có năm"
       - run: pnpm -F @kt/web e2e
       - uses: actions/upload-artifact@v4
         if: failure()
