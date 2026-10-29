@@ -17,7 +17,10 @@ test('Hóa đơn đầu vào: tải XML, xem dòng, lập hóa đơn mua nháp b
   await signIn(page, request);
   // Mỗi lần chạy một số hóa đơn riêng để không trùng lần chạy trước (trùng tệp hoặc trùng khóa người bán, ký hiệu, số).
   const no = String(Date.now()).slice(-8);
-  const xml = readFileSync(FIXTURE, 'utf8').replace(/<SHDon>\d+<\/SHDon>/, `<SHDon>${no}</SHDon>`);
+  // Tên hàng cũng đổi theo lần chạy: ánh xạ hàng đã nhớ (người bán + tên hàng) sẽ điền sẵn tài khoản và làm nút Lập chứng từ không còn bị khóa.
+  const xml = readFileSync(FIXTURE, 'utf8').replace(/<SHDon>\d+<\/SHDon>/, `<SHDon>${no}</SHDon>`)
+    .replace('<THHDVu>Giấy in A4 70gsm</THHDVu>', `<THHDVu>Giấy in A4 70gsm ${no}</THHDVu>`)
+    .replace('<THHDVu>Dịch vụ giao hàng</THHDVu>', `<THHDVu>Dịch vụ giao hàng ${no}</THHDVu>`);
 
   await page.goto('/hoa-don-dau-vao');
   await expect(page.getByRole('heading', { name: 'Hóa đơn đầu vào' })).toBeVisible();
@@ -28,7 +31,7 @@ test('Hóa đơn đầu vào: tải XML, xem dòng, lập hóa đơn mua nháp b
   await expect(row).toContainText('Không có'); // tệp mẫu không có chữ ký người bán
   await row.getByRole('button', { name: 'Chi tiết' }).click();
   const drawer = page.locator('.ant-drawer');
-  await expect(drawer).toContainText('Giấy in A4 70gsm');
+  await expect(drawer).toContainText(`Giấy in A4 70gsm ${no}`);
   await expect(drawer).toContainText('1.430.000');
   await drawer.getByRole('button', { name: 'Lập chứng từ' }).click();
 
