@@ -5,7 +5,7 @@ import dayjs from 'dayjs';
 import { Link } from '@tanstack/react-router';
 import { formatVnDate, formatVnNumber, parseVnNumber } from '@kt/domain';
 import { COLOR, PageHeader, Toolbar } from '@kt/ui';
-import { api } from '../api/client.js';
+import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 import { AssetTab, DebtTab, EquityTab, OtherAssetTab, VoucherButton } from './HkdDnsnTabs.js';
@@ -246,6 +246,12 @@ export default function HkdBooksPage() {
   const cat = useCatalog();
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<{ fiscalYear: number }[]>('/api/fiscal-years') });
   // Chưa có năm nào: dùng thông báo chung. Đã có năm nhưng không phải TT 152/TT 58: giữ thông báo riêng nêu đúng chế độ cần.
+  // Lỗi khác (mạng, quyền, máy chủ): nêu đúng lỗi, không báo "chưa có năm".
+  const noRegimeYear = cat.error instanceof ApiError && cat.error.code === 'FISCAL_YEAR_NOT_FOUND';
+  if (cat.isError && !noRegimeYear) return (
+    <div><PageHeader title="Sổ hộ kinh doanh, doanh nghiệp siêu nhỏ" />
+      <Alert type="error" showIcon message="Không tải được danh mục sổ" description={cat.error.message} /></div>);
+  if (cat.isError && years.isLoading) return null;
   if (cat.isError && years.data && !years.data.length) return (
     <div><PageHeader title="Sổ hộ kinh doanh, doanh nghiệp siêu nhỏ" />
       <NoFiscalYearNotice purpose="ghi sổ hộ kinh doanh theo TT 152/2025 hoặc TT 58/2026" /></div>);

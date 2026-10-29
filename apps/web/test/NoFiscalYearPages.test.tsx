@@ -20,8 +20,8 @@ import OpeningStockPage from '../src/pages/OpeningStock.js';
 import PeriodClosePage from '../src/pages/PeriodClose.js';
 import ProjectAllocPage from '../src/pages/ProjectAlloc.js';
 
-const mocks = vi.hoisted(() => ({ api: vi.fn(), navigate: vi.fn(), perms: { has: (_c: string): boolean => true } }));
-vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: class extends Error {} }));
+const mocks = vi.hoisted(() => ({ ApiError: class ApiError extends Error { constructor(public code: string, message: string, public status = 0) { super(message); } }, api: vi.fn(), navigate: vi.fn(), perms: { has: (_c: string): boolean => true } }));
+vi.mock('../src/api/client.js', () => ({ api: mocks.api, ApiError: mocks.ApiError }));
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: (c: string) => mocks.perms.has(c), me: { tenantId: 1, userId: 1, sensitive: ['view_cost'] } }) }));
 vi.mock('@tanstack/react-router', async (orig) => ({ ...(await orig<object>()), useNavigate: () => mocks.navigate, Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a> }));
 vi.mock('@kt/ui', async (orig) => ({ ...(await orig<object>()), KeyboardGrid: () => null, LookupSelect: () => null }));
@@ -51,7 +51,7 @@ describe('Công ty chưa có năm tài chính', () => {
   beforeEach(() => {
     mocks.perms.has = () => true;
     mocks.api.mockImplementation(async (path: string) => {
-      if (path === '/api/hkd/books') throw new Error('Chưa có năm tài chính theo TT 152/2025 hoặc TT 58/2026');
+      if (path === '/api/hkd/books') throw new mocks.ApiError('FISCAL_YEAR_NOT_FOUND', 'Chưa mở năm tài chính theo TT 152/2025 hoặc TT 58/2026', 404);
       return [];
     });
   });
@@ -89,12 +89,23 @@ describe('Công ty chưa có năm tài chính', () => {
 
   it('Sổ hộ kinh doanh: đã có năm nhưng sai chế độ thì nêu đúng chế độ cần, không báo chưa có năm', async () => {
     mocks.api.mockImplementation(async (path: string) => {
-      if (path === '/api/hkd/books') throw new Error('x');
+      if (path === '/api/hkd/books') throw new mocks.ApiError('FISCAL_YEAR_NOT_FOUND', 'x', 404);
       if (path === '/api/fiscal-years') return [{ fiscalYear: 2026, regime: 'TT133', dateFrom: '2026-01-01', dateTo: '2026-12-31', periods: [] }];
       return [];
     });
     renderPage(HkdBooksPage);
     expect(await screen.findByText('Công ty chưa có năm tài chính theo TT 152/2025 hoặc TT 58/2026')).toBeInTheDocument();
     expect(screen.queryByText('Công ty chưa có năm tài chính')).not.toBeInTheDocument();
+  });
+
+  it('Sổ hộ kinh doanh: lỗi khác (mạng, máy chủ) thì nêu đúng lỗi, không báo chưa có năm', async () => {
+    mocks.api.mockImplementation(async (path: string) => {
+      if (path === '/api/hkd/books') throw new mocks.ApiError('HTTP_500', 'Lỗi máy chủ', 500);
+      return [];
+    });
+    renderPage(HkdBooksPage);
+    expect(await screen.findByText('Không tải được danh mục sổ')).toBeInTheDocument();
+    expect(screen.getByText('Lỗi máy chủ')).toBeInTheDocument();
+    expect(screen.queryByText(/chưa có năm tài chính/i)).not.toBeInTheDocument();
   });
 });
