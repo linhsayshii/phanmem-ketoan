@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
+import { Alert, Button, Form, Input, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
 import dayjs from 'dayjs';
-import { useHotkeys } from '@kt/ui';
+import { PageHeader, Section, useHotkeys } from '@kt/ui';
 import { api } from '../api/client.js';
 import type { SigningProfile } from '../signing/signXml.js';
 
@@ -41,10 +41,14 @@ export default function SigningSetupPage() {
   };
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <h2 style={{ margin: 0 }}>Cài đặt ký số</h2>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <PageHeader
+        title="Cài đặt ký số"
+        description="Quản lý hồ sơ chứng thư số cá nhân dùng để ký điện tử báo cáo và tờ khai thuế"
+        extra={<Button type="primary" data-add-profile onClick={show}>Thêm hồ sơ (Insert)</Button>}
+      />
       {list.error && <Alert type="error" showIcon message={(list.error as Error).message} />}
-      <Card size="small" title="Hồ sơ ký số của tôi" extra={<Button type="primary" data-add-profile onClick={show}>Thêm hồ sơ (Insert)</Button>}>
+      <Section title="Hồ sơ ký số của tôi" bodyPadding={0}>
         <Table<SigningProfile> size="small" rowKey="id" pagination={false} loading={list.isLoading} dataSource={list.data ?? []} locale={{ emptyText: 'Chưa có hồ sơ ký số' }} columns={[
           { title: 'Tên hồ sơ', dataIndex: 'label' }, { title: 'Hình thức', dataIndex: 'kind', width: 150, render: kindLabel },
           { title: 'Chủ thể chứng thư', dataIndex: 'certSubject' }, { title: 'Số sê-ri', dataIndex: 'certSerial', width: 180, ellipsis: true },
@@ -53,7 +57,7 @@ export default function SigningSetupPage() {
           { title: '', width: 190, render: (_v, r) => (<Space size={0}>
             {!r.isDefault && <Button type="link" size="small" onClick={() => setDefault.mutate(r.id)}>Đặt mặc định</Button>}
             <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: `Xóa hồ sơ ${r.label}?`, okText: 'Xóa', cancelText: 'Hủy', onOk: () => del.mutateAsync(r.id) })}>Xóa</Button></Space>) }]} />
-      </Card>
+      </Section>
       <Modal title="Thêm hồ sơ ký số" open={open} onCancel={() => setOpen(false)} onOk={() => form.submit()} okText="Lưu (Ctrl+S)" cancelText="Hủy" confirmLoading={save.isPending} destroyOnHidden forceRender>
         <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v)} onValuesChange={(c: { kind?: string }) => { if (c.kind) setKind(c.kind); }}>
           <Form.Item name="kind" label="Hình thức ký"><Select aria-label="Hình thức ký" options={KINDS} /></Form.Item>
@@ -78,6 +82,6 @@ export default function SigningSetupPage() {
           <Form.Item name="isDefault" label="Đặt làm mặc định" valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>
-    </Space>
+    </div>
   );
 }

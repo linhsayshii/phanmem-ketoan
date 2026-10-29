@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber } from '@kt/domain';
-import { KeyboardGrid, useRememberedFilter } from '@kt/ui';
+import { KeyboardGrid, PageHeader, Section, Toolbar, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -103,7 +103,9 @@ export default function InvoiceRegisterPage() {
         <Space size="large" wrap>{stat('Thuế GTGT đầu vào trên hóa đơn', d.purchaseTaxInvoices)}{stat('Thuế GTGT đầu vào trên sổ cái (thuần Nợ − Có, mọi TK thuế đầu vào)', d.debit1331)}{stat('Thuế GTGT đầu ra trên hóa đơn', d.saleTaxInvoices)}{stat('Thuế GTGT đầu ra trên sổ cái (thuần Có − Nợ, mọi TK thuế đầu ra)', d.credit33311)}</Space>
         {d.differences.length === 0 ? <Alert type="success" showIcon message="Thuế trên hóa đơn khớp sổ cái ở mọi chứng từ của kỳ" />
           : <><Alert type="warning" showIcon message={`${d.differences.length} chứng từ lệch giữa thuế trên hóa đơn và thuế ghi sổ`} />
-            <KeyboardGrid<Diff> rows={d.differences} columns={diffColumns} onRowsChange={() => undefined} addRowTemplate={() => ({} as Diff)} readOnly height="calc(100vh - 380px)" /></>}
+            <Section bodyPadding={0}>
+              <KeyboardGrid<Diff> rows={d.differences} columns={diffColumns} onRowsChange={() => undefined} addRowTemplate={() => ({} as Diff)} readOnly height="calc(100vh - 360px)" />
+            </Section></>}
       </Space>);
     const r = filterRegister(d as Register, filter);
     return (
@@ -113,22 +115,28 @@ export default function InvoiceRegisterPage() {
         {r.note && <Alert type="info" showIcon message={r.note} />}
         <Space size="large" wrap>{stat(filter.field === 'base' ? 'Giá trị chưa thuế (chỉ tiêu tờ khai)' : 'Giá trị chưa thuế', r.totals.baseAmount)}{stat(filter.field === 'tax' ? 'Thuế GTGT (chỉ tiêu tờ khai)' : 'Thuế GTGT', r.totals.taxAmount)}</Space>
         {rows.length === 0 ? <Alert type="info" showIcon message={`Không có hóa đơn ${tab === 'purchase' ? 'mua vào' : 'bán ra'} trong ${r.label.toLowerCase()}`} />
-          : <KeyboardGrid<Row> rows={rows} columns={registerColumns} onRowsChange={() => undefined} addRowTemplate={() => ({} as Row)} readOnly height="calc(100vh - 380px)" />}
+          : <Section bodyPadding={0}>
+            <KeyboardGrid<Row> rows={rows} columns={registerColumns} onRowsChange={() => undefined} addRowTemplate={() => ({} as Row)} readOnly height="calc(100vh - 360px)" />
+          </Section>}
       </Space>);
   };
 
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Bảng kê hóa đơn</h2>
-        <Segmented aria-label="Loại kỳ kê khai" value={kind} onChange={(v) => setF({ ...f, periodKind: String(v) })} options={[{ value: 'month', label: 'Tháng' }, { value: 'quarter', label: 'Quý' }]} />
-        <InputNumber aria-label="Năm" min={2000} max={2100} precision={0} value={f.year} onChange={(v) => v && setF({ ...f, year: v })} style={{ width: 90 }} />
-        <Select aria-label="Kỳ" style={{ width: 120 }} value={period} onChange={(v) => setF({ ...f, period: v })}
-          options={Array.from({ length: kind === 'month' ? 12 : 4 }, (_, i) => ({ value: i + 1, label: `${kind === 'month' ? 'Tháng' : 'Quý'} ${i + 1}` }))} />
-        {can('report.print') && <Button onClick={() => window.open(`${url}&format=xlsx`, '_blank')}>Xuất Excel</Button>}
-      </Space>
-      <Tabs activeKey={tab} onChange={(k) => { setTab(k as TabKey); clearFilter(); }} items={[{ key: 'purchase', label: 'Mua vào' }, { key: 'sale', label: 'Bán ra' }, { key: 'reconcile', label: 'Đối chiếu' }]} />
+    <>
+      <PageHeader
+        title="Bảng kê hóa đơn"
+        description="Bảng kê hóa đơn mua vào, bán ra và đối chiếu thuế GTGT với sổ cái"
+        extra={can('report.print') && <Button onClick={() => window.open(`${url}&format=xlsx`, '_blank')}>Xuất Excel</Button>}
+      >
+        <Toolbar>
+          <Segmented aria-label="Loại kỳ kê khai" value={kind} onChange={(v) => setF({ ...f, periodKind: String(v) })} options={[{ value: 'month', label: 'Tháng' }, { value: 'quarter', label: 'Quý' }]} />
+          <InputNumber aria-label="Năm" min={2000} max={2100} precision={0} value={f.year} onChange={(v) => v && setF({ ...f, year: v })} style={{ width: 90 }} />
+          <Select aria-label="Kỳ" style={{ width: 120 }} value={period} onChange={(v) => setF({ ...f, period: v })}
+            options={Array.from({ length: kind === 'month' ? 12 : 4 }, (_, i) => ({ value: i + 1, label: `${kind === 'month' ? 'Tháng' : 'Quý'} ${i + 1}` }))} />
+        </Toolbar>
+      </PageHeader>
+      <Tabs activeKey={tab} onChange={(k) => { setTab(k as TabKey); clearFilter(); }} style={{ marginBottom: 12 }} items={[{ key: 'purchase', label: 'Mua vào' }, { key: 'sale', label: 'Bán ra' }, { key: 'reconcile', label: 'Đối chiếu' }]} />
       {body()}
-    </Space>
+    </>
   );
 }

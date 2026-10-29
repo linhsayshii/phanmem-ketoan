@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { D, formatVnNumber } from '@kt/domain';
-import { VnNumberInput, useHotkeys, useRememberedFilter, useUnsavedChanges } from '@kt/ui';
+import { PageHeader, Section, Toolbar, VnNumberInput, useHotkeys, useRememberedFilter, useUnsavedChanges } from '@kt/ui';
 import { ApiError, api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { downloadSignedVatReturn, signDocumentConfirmed } from '../signing/signXml.js';
@@ -171,31 +171,34 @@ export default function VatReturnPage() {
 
   return (
     <div onKeyDown={onKeyDown} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Tờ khai thuế GTGT</h2>
-        <InputNumber aria-label="Năm" min={2000} max={2100} precision={0} value={f.year} onChange={(v) => v && setPeriod({ year: v })} style={{ width: 90 }} />
-        <Select aria-label="Kỳ" style={{ width: 120 }} value={period} onChange={(v) => setPeriod({ period: v })} options={Array.from({ length: kind === 'month' ? 12 : 4 }, (_, i) => ({ value: i + 1, label: `${kindName(kind)} ${i + 1}` }))} />
-        {rows.length > 0 && <Select aria-label="Lần khai" style={{ width: 170 }} value={cur?.id ?? null} onChange={(id: number) => guard(() => setSelId(id))} options={rows.map((r) => ({ value: r.id, label: `${revisionLabel(r.revision)}${r.status === 'final' ? ' (đã chốt)' : ' (nháp)'}` }))} />}
-        {cur && (cur.status === 'final' ? <Tag color="green" icon={<LockOutlined />}>Đã chốt</Tag> : <Tag color="gold">Nháp</Tag>)}
-      </Space>
+      <PageHeader
+        title="Tờ khai thuế GTGT"
+        tags={cur && (cur.status === 'final' ? <Tag color="green" icon={<LockOutlined />}>Đã chốt</Tag> : <Tag color="gold">Nháp</Tag>)}
+        description="Lập, kiểm tra, chốt tờ khai thuế GTGT, khấu trừ thuế cuối kỳ và xuất XML"
+        extra={!tplError && tpl.data && (
+          <Space wrap>
+            {!cur && can('tax_return.create') && <Button type="primary" loading={create.isPending} onClick={() => create.mutate(undefined)}>Tính tờ khai</Button>}
+            {cur && isDraft && can('tax_return.update') && <Button type="primary" loading={save.isPending} onClick={recalc}>Tính lại (F9)</Button>}
+            {cur && isDraft && can('tax_return.finalize') && <Button loading={finalize.isPending} onClick={confirmFinalize}>Chốt</Button>}
+            {latest && latest.status === 'final' && can('tax_return.create') && <Button loading={create.isPending} onClick={() => create.mutate(latest.revision + 1)}>Lập bổ sung</Button>}
+            {cur && isDraft && can('tax_return.delete') && <Popconfirm title="Xóa tờ khai nháp này?" okText="Xóa" cancelText="Không" onConfirm={() => del.mutate()}><Button danger loading={del.isPending}>Xóa nháp</Button></Popconfirm>}
+            {can('tax.offset') && <Button onClick={() => { setOffsetRes(null); setOffsetDate(periodEnd(kind, f.year, period)); setOffsetOpen(true); }}>Khấu trừ thuế cuối kỳ</Button>}
+            {cur && can('tax.view') && <Tooltip title={cur.status === 'final' ? (xmlUnverified ? 'XML chưa kiểm chứng với HTKK' : '') : 'Chốt tờ khai trước khi xuất XML'}><Button disabled={cur.status !== 'final'} onClick={() => void exportXml()}>Xuất XML</Button></Tooltip>}
+            {cur && can('tax.view') && can('signing.use') && <Tooltip title={signing || (cur.status === 'final' ? '' : 'Chốt tờ khai trước khi ký')}><Button disabled={cur.status !== 'final'} loading={!!signing} onClick={() => void signXml()}>Ký và tải XML</Button></Tooltip>}
+            {cur && can('report.print') && <Button onClick={() => window.open(`/api/tax/vat-returns/${cur.id}/print?format=pdf`, '_blank')}>In</Button>}
+            {dirty && <Typography.Text type="warning">Có thay đổi chưa lưu (Ctrl+S)</Typography.Text>}
+          </Space>
+        )}
+      >
+        <Toolbar>
+          <InputNumber aria-label="Năm" min={2000} max={2100} precision={0} value={f.year} onChange={(v) => v && setPeriod({ year: v })} style={{ width: 90 }} />
+          <Select aria-label="Kỳ" style={{ width: 120 }} value={period} onChange={(v) => setPeriod({ period: v })} options={Array.from({ length: kind === 'month' ? 12 : 4 }, (_, i) => ({ value: i + 1, label: `${kindName(kind)} ${i + 1}` }))} />
+          {rows.length > 0 && <Select aria-label="Lần khai" style={{ width: 170 }} value={cur?.id ?? null} onChange={(id: number) => guard(() => setSelId(id))} options={rows.map((r) => ({ value: r.id, label: `${revisionLabel(r.revision)}${r.status === 'final' ? ' (đã chốt)' : ' (nháp)'}` }))} />}
+        </Toolbar>
+      </PageHeader>
 
       {tplError && <Alert type="error" showIcon message={tplError.message} />}
       {!tplError && all.error && <Alert type="error" showIcon message={(all.error as Error).message} />}
-
-      {!tplError && tpl.data && (
-        <Space wrap>
-          {!cur && can('tax_return.create') && <Button type="primary" loading={create.isPending} onClick={() => create.mutate(undefined)}>Tính tờ khai</Button>}
-          {cur && isDraft && can('tax_return.update') && <Button type="primary" loading={save.isPending} onClick={recalc}>Tính lại (F9)</Button>}
-          {cur && isDraft && can('tax_return.delete') && <Popconfirm title="Xóa tờ khai nháp này?" okText="Xóa" cancelText="Không" onConfirm={() => del.mutate()}><Button danger loading={del.isPending}>Xóa nháp</Button></Popconfirm>}
-          {cur && isDraft && can('tax_return.finalize') && <Button loading={finalize.isPending} onClick={confirmFinalize}>Chốt</Button>}
-          {latest && latest.status === 'final' && can('tax_return.create') && <Button loading={create.isPending} onClick={() => create.mutate(latest.revision + 1)}>Lập bổ sung</Button>}
-          {can('tax.offset') && <Button onClick={() => { setOffsetRes(null); setOffsetDate(periodEnd(kind, f.year, period)); setOffsetOpen(true); }}>Khấu trừ thuế cuối kỳ</Button>}
-          {cur && can('tax.view') && <Tooltip title={cur.status === 'final' ? (xmlUnverified ? 'XML chưa kiểm chứng với HTKK' : '') : 'Chốt tờ khai trước khi xuất XML'}><Button disabled={cur.status !== 'final'} onClick={() => void exportXml()}>Xuất XML</Button></Tooltip>}
-          {cur && can('tax.view') && can('signing.use') && <Tooltip title={signing || (cur.status === 'final' ? '' : 'Chốt tờ khai trước khi ký')}><Button disabled={cur.status !== 'final'} loading={!!signing} onClick={() => void signXml()}>Ký và tải XML</Button></Tooltip>}
-          {cur && can('report.print') && <Button onClick={() => window.open(`/api/tax/vat-returns/${cur.id}/print?format=pdf`, '_blank')}>In</Button>}
-          {dirty && <Typography.Text type="warning">Có thay đổi chưa lưu (Ctrl+S)</Typography.Text>}
-        </Space>
-      )}
 
       {cur?.status === 'final' && can('tax.view') && xmlUnverified && <Alert type="warning" showIcon message="XML chưa kiểm chứng với HTKK" description="Tên thẻ, mã mẫu và phiên bản trong tệp là giả định tạm của phần mềm (chưa có XSD hoặc tệp mẫu của HTKK). Nạp thử vào HTKK và đối chiếu số liệu trước khi nộp." />}
       {changed.length > 0 && isDraft && (
@@ -204,13 +207,12 @@ export default function VatReturnPage() {
       {warnings.length > 0 && isDraft && <Alert type="warning" showIcon message="Cảnh báo" description={<ul style={{ margin: 0, paddingLeft: 18 }}>{warnings.map((w) => <li key={w}>{w}</li>)}</ul>} />}
 
       {!tplError && tpl.data && (cur
-        ? <Table<TemplateLine> size="small" bordered pagination={false} rowKey="code" dataSource={tpl.data.lines} columns={columns} loading={all.isLoading} sticky />
+        ? <Section bodyPadding={0}><Table<TemplateLine> size="small" bordered pagination={false} rowKey="code" dataSource={tpl.data.lines} columns={columns} loading={all.isLoading} sticky /></Section>
         : !all.isLoading && <Alert type="info" showIcon message={`Chưa có tờ khai ${periodLabel({ periodKind: kind, period, year: f.year }).toLowerCase()}. Bấm Tính tờ khai để lập bản nháp theo mẫu ${tpl.data.version}.`} />)}
 
       {supp.length > 0 && (
-        <div>
-          <h3 style={{ margin: '8px 0 4px' }}>Tờ khai bổ sung đã chốt</h3>
-          <List size="small" bordered dataSource={supp} renderItem={(s) => (
+        <Section title="Tờ khai bổ sung đã chốt" style={{ marginTop: 12 }}>
+          <List size="small" bordered={false} dataSource={supp} renderItem={(s) => (
             <List.Item key={s.ret.id} actions={[<Button key="open" type="link" size="small" onClick={() => guard(() => { setF({ ...f, year: s.ret.year, period: s.ret.period }); setSelId(s.ret.id); })}>Mở</Button>]}>
               <div>
                 <b>{periodLabel(s.ret)} – {revisionLabel(s.ret.revision)}</b>: thuế còn được khấu trừ chuyển kỳ sau {D(s.delta).gte(0) ? 'tăng' : 'giảm'} {formatVnNumber(D(s.delta).abs().toFixed(0))} so với lần khai trước.
@@ -222,7 +224,7 @@ export default function VatReturnPage() {
                 </div>
               </div>
             </List.Item>)} />
-        </div>)}
+        </Section>)}
 
       <Modal title="Khấu trừ thuế GTGT cuối kỳ" open={offsetOpen} onCancel={() => setOffsetOpen(false)} footer={<Space><Button onClick={() => setOffsetOpen(false)}>Đóng</Button><Button type="primary" loading={offset.isPending} onClick={() => offset.mutate()}>Chạy khấu trừ</Button></Space>}>
         <Space direction="vertical" style={{ width: '100%' }}>

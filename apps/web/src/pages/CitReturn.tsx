@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { formatVnNumber } from '@kt/domain';
-import { VnNumberInput, useHotkeys, useRememberedFilter, useUnsavedChanges } from '@kt/ui';
+import { PageHeader, Section, Toolbar, VnNumberInput, useHotkeys, useRememberedFilter, useUnsavedChanges } from '@kt/ui';
 import { ApiError, api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { downloadSigned, signDocumentConfirmed } from '../signing/signXml.js';
@@ -125,28 +125,31 @@ export default function CitReturnPage() {
 
   return (
     <div onKeyDown={onKeyDown} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Quyết toán thuế TNDN (03/TNDN)</h2>
-        <InputNumber aria-label="Năm" min={2000} max={2100} precision={0} value={f.year} onChange={(v) => v && guard(() => { setSelId(null); setF({ year: v }); })} style={{ width: 90 }} />
-        {rows.length > 0 && <Select aria-label="Lần khai" style={{ width: 170 }} value={cur?.id ?? null} onChange={(id: number) => guard(() => setSelId(id))} options={rows.map((r) => ({ value: r.id, label: `${revisionLabel(r.revision)}${r.status === 'final' ? ' (đã chốt)' : ' (nháp)'}` }))} />}
-        {cur && (cur.status === 'final' ? <Tag color="green" icon={<LockOutlined />}>Đã chốt</Tag> : <Tag color="gold">Nháp</Tag>)}
-      </Space>
+      <PageHeader
+        title="Quyết toán thuế TNDN (03/TNDN)"
+        tags={cur && (cur.status === 'final' ? <Tag color="green" icon={<LockOutlined />}>Đã chốt</Tag> : <Tag color="gold">Nháp</Tag>)}
+        description="Lập, kiểm tra, chốt tờ khai quyết toán thuế TNDN và xuất XML"
+        extra={!tplError && tpl.data && (
+          <Space wrap>
+            {!cur && can('cit.create') && <Button type="primary" loading={create.isPending} onClick={() => create.mutate(undefined)}>Tính tờ khai</Button>}
+            {canEdit && <Button type="primary" loading={save.isPending} onClick={recalc}>Tính lại (F9)</Button>}
+            {cur && canEdit && can('tax_return.finalize') && <Button loading={finalize.isPending} onClick={confirmFinalize}>Chốt</Button>}
+            {latest && latest.status === 'final' && can('cit.create') && <Button loading={create.isPending} onClick={() => create.mutate(latest.revision + 1)}>Lập bổ sung</Button>}
+            {cur && isDraft && can('cit.delete') && <Popconfirm title="Xóa tờ khai nháp này?" okText="Xóa" cancelText="Không" onConfirm={() => del.mutate()}><Button danger loading={del.isPending}>Xóa nháp</Button></Popconfirm>}
+            {cur && <Tooltip title={cur.status === 'final' ? (xmlUnverified ? 'XML chưa kiểm chứng với HTKK' : '') : 'Chốt tờ khai trước khi xuất XML'}><Button disabled={cur.status !== 'final'} onClick={() => void exportXml()}>Xuất XML</Button></Tooltip>}
+            {cur && can('signing.use') && <Tooltip title={signing || (cur.status === 'final' ? '' : 'Chốt tờ khai trước khi ký')}><Button disabled={cur.status !== 'final'} loading={!!signing} onClick={() => void signXml()}>Ký và tải XML</Button></Tooltip>}
+            {dirty && <Typography.Text type="warning">Có thay đổi chưa lưu (Ctrl+S)</Typography.Text>}
+          </Space>
+        )}
+      >
+        <Toolbar>
+          <InputNumber aria-label="Năm" min={2000} max={2100} precision={0} value={f.year} onChange={(v) => v && guard(() => { setSelId(null); setF({ year: v }); })} style={{ width: 90 }} />
+          {rows.length > 0 && <Select aria-label="Lần khai" style={{ width: 170 }} value={cur?.id ?? null} onChange={(id: number) => guard(() => setSelId(id))} options={rows.map((r) => ({ value: r.id, label: `${revisionLabel(r.revision)}${r.status === 'final' ? ' (đã chốt)' : ' (nháp)'}` }))} />}
+        </Toolbar>
+      </PageHeader>
 
       {tplError && <Alert type="error" showIcon message={tplError.message} />}
       {!tplError && all.error && <Alert type="error" showIcon message={(all.error as Error).message} />}
-
-      {!tplError && tpl.data && (
-        <Space wrap>
-          {!cur && can('cit.create') && <Button type="primary" loading={create.isPending} onClick={() => create.mutate(undefined)}>Tính tờ khai</Button>}
-          {canEdit && <Button type="primary" loading={save.isPending} onClick={recalc}>Tính lại (F9)</Button>}
-          {cur && isDraft && can('cit.delete') && <Popconfirm title="Xóa tờ khai nháp này?" okText="Xóa" cancelText="Không" onConfirm={() => del.mutate()}><Button danger loading={del.isPending}>Xóa nháp</Button></Popconfirm>}
-          {cur && canEdit && can('tax_return.finalize') && <Button loading={finalize.isPending} onClick={confirmFinalize}>Chốt</Button>}
-          {latest && latest.status === 'final' && can('cit.create') && <Button loading={create.isPending} onClick={() => create.mutate(latest.revision + 1)}>Lập bổ sung</Button>}
-          {cur && <Tooltip title={cur.status === 'final' ? (xmlUnverified ? 'XML chưa kiểm chứng với HTKK' : '') : 'Chốt tờ khai trước khi xuất XML'}><Button disabled={cur.status !== 'final'} onClick={() => void exportXml()}>Xuất XML</Button></Tooltip>}
-          {cur && can('signing.use') && <Tooltip title={signing || (cur.status === 'final' ? '' : 'Chốt tờ khai trước khi ký')}><Button disabled={cur.status !== 'final'} loading={!!signing} onClick={() => void signXml()}>Ký và tải XML</Button></Tooltip>}
-          {dirty && <Typography.Text type="warning">Có thay đổi chưa lưu (Ctrl+S)</Typography.Text>}
-        </Space>
-      )}
 
       {cur?.status === 'final' && xmlUnverified && <Alert type="warning" showIcon message="XML chưa kiểm chứng với HTKK" description="Tên thẻ, mã mẫu và phiên bản trong tệp là giả định tạm của phần mềm (chưa có XSD hoặc tệp mẫu 03/TNDN của HTKK). Nạp thử vào HTKK và đối chiếu số liệu trước khi nộp." />}
       {changed.length > 0 && isDraft && (
@@ -155,7 +158,7 @@ export default function CitReturnPage() {
       {warnings.length > 0 && isDraft && <Alert type="warning" showIcon message="Cảnh báo" description={<ul style={{ margin: 0, paddingLeft: 18 }}>{warnings.map((w) => <li key={w}>{w}</li>)}</ul>} />}
 
       {!tplError && tpl.data && (cur
-        ? <Table<Line> size="small" bordered pagination={false} rowKey="code" dataSource={tpl.data.lines} columns={columns} loading={all.isLoading} sticky />
+        ? <Section bodyPadding={0}><Table<Line> size="small" bordered pagination={false} rowKey="code" dataSource={tpl.data.lines} columns={columns} loading={all.isLoading} sticky /></Section>
         : !all.isLoading && <Alert type="info" showIcon message={`Chưa có tờ khai quyết toán năm ${f.year}. Bấm Tính tờ khai để lập bản nháp theo mẫu 03/TNDN ${tpl.data.version}.`} />)}
     </div>
   );

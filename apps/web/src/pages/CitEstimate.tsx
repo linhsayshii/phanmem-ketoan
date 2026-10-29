@@ -1,10 +1,10 @@
 import { useState, type KeyboardEvent } from 'react';
-import { Alert, Button, Input, InputNumber, Select, Space, Table, Typography, message } from 'antd';
+import { Alert, Button, Input, InputNumber, Select, Table, Typography, message } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import dayjs from 'dayjs';
 import { formatVnNumber } from '@kt/domain';
-import { VnNumberInput, useHotkeys, useRememberedFilter } from '@kt/ui';
+import { COLOR, PageHeader, Section, Toolbar, VnNumberInput, useHotkeys, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -71,36 +71,37 @@ export default function CitEstimatePage() {
 
   return (
     <div onKeyDown={onKeyDown} style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 960 }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Tạm tính thuế TNDN quý</h2>
-        <InputNumber aria-label="Năm" min={2000} max={2100} precision={0} value={f.year} onChange={(v) => v && setPeriod({ year: v })} style={{ width: 90 }} />
-        <Select aria-label="Quý" style={{ width: 100 }} value={f.quarter} onChange={(v) => setPeriod({ quarter: v })} options={[1, 2, 3, 4].map((q) => ({ value: q, label: `Quý ${q}` }))} />
-      </Space>
-
-      <Space wrap align="end">
-        <label>Doanh thu năm trước<br /><VnNumberInput aria-label="Doanh thu năm trước" data-cit-edit="1" placeholder="Theo sổ" style={{ width: 170 }} value={draft.prevRevenue} onChange={(v) => setDraft({ ...draft, prevRevenue: v })} /></label>
-        <label>Thuế suất (%)<br /><Input aria-label="Thuế suất" data-cit-edit="1" placeholder="Theo luật" style={{ width: 110, textAlign: 'right' }} inputMode="decimal" value={draft.rate} onChange={(ev) => setDraft({ ...draft, rate: ev.target.value })} /></label>
-        <label>Điều chỉnh<br /><VnNumberInput aria-label="Điều chỉnh" data-cit-edit="1" style={{ width: 170 }} value={draft.adjustments} onChange={(v) => setDraft({ ...draft, adjustments: v })} /></label>
-        <label>Lỗ được chuyển<br /><VnNumberInput aria-label="Lỗ được chuyển" data-cit-edit="1" style={{ width: 170 }} value={draft.lossCarried} onChange={(v) => setDraft({ ...draft, lossCarried: v })} /></label>
-        <label>Đã tạm nộp<br /><VnNumberInput aria-label="Đã tạm nộp" data-cit-edit="1" placeholder="Theo sổ" style={{ width: 170 }} value={draft.paidYtd} onChange={(v) => setDraft({ ...draft, paidYtd: v })} /></label>
-        <Button type="primary" loading={est.isFetching} onClick={apply}>Tính (F9)</Button>
-      </Space>
+      <PageHeader
+        title="Tạm tính thuế TNDN quý"
+        description="Tạm tính thuế TNDN từng quý theo kết quả kinh doanh và lập chứng từ chi phí thuế"
+        extra={can('cit.create') && <Button disabled={!canVoucher} loading={voucher.isPending} onClick={() => voucher.mutate()}>Lập chứng từ chi phí thuế TNDN</Button>}
+      >
+        <Toolbar>
+          <InputNumber aria-label="Năm" min={2000} max={2100} precision={0} value={f.year} onChange={(v) => v && setPeriod({ year: v })} style={{ width: 90 }} />
+          <Select aria-label="Quý" style={{ width: 100 }} value={f.quarter} onChange={(v) => setPeriod({ quarter: v })} options={[1, 2, 3, 4].map((q) => ({ value: q, label: `Quý ${q}` }))} />
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: COLOR.textSecondary }}>Doanh thu năm trước: <VnNumberInput aria-label="Doanh thu năm trước" data-cit-edit="1" placeholder="Theo sổ" style={{ width: 140 }} value={draft.prevRevenue} onChange={(v) => setDraft({ ...draft, prevRevenue: v })} /></label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: COLOR.textSecondary }}>Thuế suất (%): <Input aria-label="Thuế suất" data-cit-edit="1" placeholder="Theo luật" style={{ width: 90, textAlign: 'right' }} inputMode="decimal" value={draft.rate} onChange={(ev) => setDraft({ ...draft, rate: ev.target.value })} /></label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: COLOR.textSecondary }}>Điều chỉnh: <VnNumberInput aria-label="Điều chỉnh" data-cit-edit="1" style={{ width: 140 }} value={draft.adjustments} onChange={(v) => setDraft({ ...draft, adjustments: v })} /></label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: COLOR.textSecondary }}>Lỗ được chuyển: <VnNumberInput aria-label="Lỗ được chuyển" data-cit-edit="1" style={{ width: 140 }} value={draft.lossCarried} onChange={(v) => setDraft({ ...draft, lossCarried: v })} /></label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: COLOR.textSecondary }}>Đã tạm nộp: <VnNumberInput aria-label="Đã tạm nộp" data-cit-edit="1" placeholder="Theo sổ" style={{ width: 140 }} value={draft.paidYtd} onChange={(v) => setDraft({ ...draft, paidYtd: v })} /></label>
+          <Button type="primary" loading={est.isFetching} onClick={apply}>Tính (F9)</Button>
+        </Toolbar>
+      </PageHeader>
 
       {est.error && <Alert type="error" showIcon message={(est.error as Error).message} />}
       {e && e.warnings.length > 0 && <Alert type="warning" showIcon message="Lưu ý" description={<ul style={{ margin: 0, paddingLeft: 18 }}>{e.warnings.map((w) => <li key={w}>{w}</li>)}</ul>} />}
 
       {e && (
-        <Table size="small" bordered pagination={false} rowKey="key" dataSource={rows} columns={[
-          { title: 'Chỉ tiêu', render: (_: unknown, r) => (r.strong ? <b>{r.label}</b> : r.label) },
-          { title: 'Số tiền (VND)', width: 200, align: 'right', render: (_: unknown, r) => <span data-testid={`cit-${r.key}`} style={{ fontVariantNumeric: 'tabular-nums', fontWeight: r.strong ? 600 : undefined }}>{r.value}</span> },
-          { title: 'Nguồn', render: (_: unknown, r) => <Typography.Text type="secondary" style={{ fontSize: 12 }}>{r.note}</Typography.Text> },
-        ]} />)}
+        <Section bodyPadding={0}>
+          <Table size="small" bordered pagination={false} rowKey="key" dataSource={rows} columns={[
+            { title: 'Chỉ tiêu', render: (_: unknown, r) => (r.strong ? <b>{r.label}</b> : r.label) },
+            { title: 'Số tiền (VND)', width: 200, align: 'right', render: (_: unknown, r) => <span data-testid={`cit-${r.key}`} style={{ fontVariantNumeric: 'tabular-nums', fontWeight: r.strong ? 600 : undefined }}>{r.value}</span> },
+            { title: 'Nguồn', render: (_: unknown, r) => <Typography.Text type="secondary" style={{ fontSize: 12 }}>{r.note}</Typography.Text> },
+          ]}
+          footer={() => <Typography.Text type="secondary" style={{ fontSize: 13 }}>Nợ TK {e.accounts.expense} / Có TK {e.accounts.payable}, ngày {vnDate(e.period.to)}, chứng từ nháp để kiểm tra trước khi ghi sổ.</Typography.Text>}
+          />
+        </Section>)}
 
-      {e && (
-        <Space wrap>
-          {can('cit.create') && <Button disabled={!canVoucher} loading={voucher.isPending} onClick={() => voucher.mutate()}>Lập chứng từ chi phí thuế TNDN</Button>}
-          <Typography.Text type="secondary">Nợ TK {e.accounts.expense} / Có TK {e.accounts.payable}, ngày {vnDate(e.period.to)}, chứng từ nháp để kiểm tra trước khi ghi sổ.</Typography.Text>
-        </Space>)}
       {created && <Alert type="success" showIcon message={<span>Đã lập phiếu kế toán nháp <Link to="/chung-tu/$type/$id" params={{ type: created.voucherType, id: created.id }}>{created.voucherNo ?? 'mở chứng từ'}</Link> ngày {vnDate(created.postingDate)}.</span>} />}
     </div>
   );

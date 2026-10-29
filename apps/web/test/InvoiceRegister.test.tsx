@@ -10,9 +10,11 @@ vi.mock('../src/auth.js', () => ({ useAuth: () => ({ me: { userId: 'u', tenantId
 vi.mock('../src/api/client.js', async (orig) => ({ ...(await orig<Record<string, unknown>>()), api: apiMock }));
 
 interface GridColumn { headerName?: string; field?: string; valueGetter?: (p: { data: unknown }) => unknown; valueFormatter?: (p: { value: unknown }) => string }
-vi.mock('@kt/ui', async () => {
+vi.mock('@kt/ui', async (orig) => {
+  const actual = await orig<Record<string, unknown>>();
   const { useState } = await import('react');
   return {
+    ...actual,
     KeyboardGrid: ({ rows, columns }: { rows: Record<string, unknown>[]; columns: GridColumn[] }) => (
       <div data-testid="grid">{rows.map((r, i) => (
         <div key={i} data-testid="row">
