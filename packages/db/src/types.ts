@@ -707,6 +707,21 @@ export interface BookStockMoveTable {
 export interface BookOtherTaxTable {
   id: Generated<number>; tenant_id: string; entry_date: DateOnly; description: string; tax_kind: string; quantity: Numeric | null; abs_rate: Numeric | null; unit_price: Numeric | null; rate_pct: Numeric | null; other_amount: Numeric | null; created_by: string; created_at: Generated<Timestamp>;
 }
+export interface BookDebtTable {
+  id: Generated<number>; tenant_id: string; entry_date: DateOnly; doc_no: string | null; description: string; party: string; side: string; kind: string; nature: Generated<string>; amount: Numeric; created_by: string; created_at: Generated<Timestamp>;
+}
+export interface BookFixedAssetTable {
+  id: Generated<number>; tenant_id: string; asset_type: string; name: string; inc_doc_no: string | null; inc_date: DateOnly; in_use_month: DateOnly; cost: Numeric; dep_rate: Numeric;
+  dec_doc_no: string | null; dec_date: DateOnly | null; dec_reason: string | null; created_by: string; created_at: Generated<Timestamp>;
+}
+export interface BookEquityTable {
+  id: Generated<number>; tenant_id: string; entry_date: DateOnly; doc_no: string | null; description: string; section: string; kind: string; amount: Numeric; created_by: string; created_at: Generated<Timestamp>;
+}
+export interface BookOtherAssetTable {
+  id: Generated<number>; tenant_id: string; entry_date: DateOnly; doc_no: string | null; description: string; kind: string; amount: Numeric; created_by: string; created_at: Generated<Timestamp>;
+}
+// GĐ7 nhóm 6c: S4a, S4b, S4d, tài sản khác của B01-DNSN (0291).
+export interface Database { book_debt: BookDebtTable; book_fixed_asset: BookFixedAssetTable; book_equity: BookEquityTable; book_other_asset: BookOtherAssetTable }
 export interface Database {
   book_group: BookGroupTable; book_year_setting: BookYearSettingTable; book_entry: BookEntryTable; book_stock_item: BookStockItemTable; book_stock_move: BookStockMoveTable; book_other_tax: BookOtherTaxTable;
 }
