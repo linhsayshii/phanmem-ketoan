@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { D, formatVnDate, formatVnNumber, isImeComposing, todayVn } from '@kt/domain';
-import { LookupSelect, VnNumberInput } from '@kt/ui';
+import { LookupSelect, PageHeader, Section, Toolbar, VnNumberInput } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor } from '../lookups.js';
@@ -95,17 +95,29 @@ export default function AmortizationPage() {
   const writable = can('amortization.create') || can('amortization.update');
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <h2 style={{ margin: 0 }}>Phân bổ doanh thu nhận trước</h2>
-      <span>Doanh thu nhận trước (TK 3387) được phân bổ đều theo kỳ vào doanh thu: mỗi kỳ một chứng từ phân bổ (PB), Nợ TK nhận trước / Có TK doanh thu, ghi ngày cuối kỳ. Kỳ cuối nhận phần dư làm tròn.</span>
-      {can('amortization.run') && (
-        <Space wrap>
-          <Select<number> aria-label="Năm tài chính" style={{ width: 150 }} value={year?.fiscalYear ?? null} options={yearOpt} onChange={(v) => { setRunYear(v); setRunPeriod(null); }} />
-          <Select<number> aria-label="Kỳ kế toán" placeholder="Chọn kỳ" virtual={false} style={{ width: 220 }} value={runPeriod} onChange={setRunPeriod}
-            options={(year?.periods ?? []).filter((p) => p.periodNo > 0).map((p) => ({ value: p.periodNo, label: `Kỳ ${p.periodNo} (${formatVnDate(p.dateFrom).slice(0, 5)} - ${formatVnDate(p.dateTo).slice(0, 5)})` }))} />
-          <Button type="primary" disabled={runPeriod === null || !year} loading={run.isPending} onClick={() => run.mutate()}>Chạy phân bổ kỳ</Button>
-        </Space>
-      )}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <PageHeader
+        title="Phân bổ doanh thu nhận trước"
+        description="Doanh thu nhận trước (TK 3387) được phân bổ đều theo kỳ vào doanh thu: mỗi kỳ một chứng từ phân bổ (PB), Nợ TK nhận trước / Có TK doanh thu, ghi ngày cuối kỳ. Kỳ cuối nhận phần dư làm tròn."
+        extra={
+          <Space wrap>
+            {can('amortization.create') && <Button onClick={() => open('new')}>Thêm lịch</Button>}
+            {can('amortization.run') && (
+              <Button type="primary" disabled={runPeriod === null || !year} loading={run.isPending} onClick={() => run.mutate()}>
+                Chạy phân bổ kỳ
+              </Button>
+            )}
+          </Space>
+        }
+      >
+        {can('amortization.run') && (
+          <Toolbar>
+            <Select<number> aria-label="Năm tài chính" style={{ width: 150 }} value={year?.fiscalYear ?? null} options={yearOpt} onChange={(v) => { setRunYear(v); setRunPeriod(null); }} />
+            <Select<number> aria-label="Kỳ kế toán" placeholder="Chọn kỳ" virtual={false} style={{ width: 220 }} value={runPeriod} onChange={setRunPeriod}
+              options={(year?.periods ?? []).filter((p) => p.periodNo > 0).map((p) => ({ value: p.periodNo, label: `Kỳ ${p.periodNo} (${formatVnDate(p.dateFrom).slice(0, 5)} - ${formatVnDate(p.dateTo).slice(0, 5)})` }))} />
+          </Toolbar>
+        )}
+      </PageHeader>
       {runErr && <Alert type="error" showIcon message={runErr} />}
       {runOut && (runOut.r.created.length === 0
         ? <Alert type="info" showIcon message={`Không có khoản phân bổ mới ở kỳ ${runOut.r.periodNo}/${runOut.r.fiscalYear}${runOut.r.unchanged ? ` (${runOut.r.unchanged} chứng từ đã ghi sổ, không đổi)` : ''}`} />
@@ -113,33 +125,31 @@ export default function AmortizationPage() {
           description={runOut.r.created.map((c, i) => <span key={c.voucherId}>{i > 0 && ', '}<a href={`/chung-tu/PB/${c.voucherId}`} target="_blank" rel="noopener noreferrer">{runOut.nos[i] ?? c.voucherId}</a></span>)} />)}
       {!!runOut?.r.skipped?.length && <Alert type="warning" showIcon message={`Bỏ qua ${runOut.r.skipped.length} lịch vì chứng từ gốc không còn ghi sổ`}
         description={<ul style={{ margin: 0, paddingLeft: 18 }}>{runOut.r.skipped.map((k) => <li key={k.scheduleId}>{k.reason}</li>)}</ul>} />}
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <b>Lịch phân bổ</b>
-        {can('amortization.create') && <Button onClick={() => open('new')}>Thêm lịch</Button>}
-      </div>
       {list.error && <Alert type="error" showIcon message={(list.error as Error).message} />}
-      <Table<Schedule> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 10, hideOnSinglePage: true }} locale={{ emptyText: 'Chưa có lịch phân bổ' }}
-        expandable={{ expandedRowRender: (s) => (
-          <Table<Line> size="small" rowKey="seq" pagination={false} dataSource={s.lines} columns={[
-            { title: 'Kỳ phân bổ', dataIndex: 'seq', width: 100 }, { title: 'Kỳ kế toán', width: 120, render: (_, l) => `${l.periodNo}/${l.fiscalYear}` },
-            { title: 'Số tiền', dataIndex: 'amount', align: 'right', width: 150, render: money },
-            { title: 'Chứng từ', render: (_, l) => (l.voucherId ? <a href={`/chung-tu/PB/${l.voucherId}`} target="_blank" rel="noopener noreferrer">{l.voucherNo ?? l.voucherId} ({STATE_LABEL[l.voucherState ?? ''] ?? l.voucherState})</a> : 'Chưa phân bổ') }]} />) }}
-        columns={[
-          { title: 'Diễn giải', dataIndex: 'description', render: (v: string | null) => v ?? '' },
-          { title: 'Nợ / Có', width: 130, render: (_, s) => `${s.fromAccountCode} / ${s.toAccountCode}` },
-          { title: 'Tổng số tiền', dataIndex: 'total', align: 'right', width: 140, render: money },
-          { title: 'Số kỳ', dataIndex: 'periods', align: 'right', width: 80 },
-          { title: 'Bắt đầu', width: 90, render: (_, s) => `${s.startPeriod}/${s.startYear}` },
-          { title: 'Đã phân bổ', dataIndex: 'postedAmount', align: 'right', width: 140, render: money },
-          { title: 'Trạng thái', width: 110, render: (_, s) => <Tag color={s.isActive ? 'green' : 'default'}>{s.isActive ? 'Đang chạy' : 'Đã ngừng'}</Tag> },
-          { title: '', key: 'act', width: 230, render: (_, s) => writable && (
-            <Space size={4}>
-              {can('amortization.update') && <Button size="small" aria-label={`Sửa lịch ${s.id}`} onClick={() => open(s)}>Sửa</Button>}
-              {can('amortization.update') && <Button size="small" loading={toggle.isPending} onClick={() => toggle.mutate(s)}>{s.isActive ? 'Ngừng' : 'Tiếp tục'}</Button>}
-              {can('amortization.delete') && <Popconfirm title="Xóa lịch phân bổ này?" okText="Xóa" cancelText="Không" disabled={s.started} onConfirm={() => del.mutate(s)}>
-                <Button size="small" danger disabled={s.started}>Xóa</Button></Popconfirm>}
-            </Space>) },
-        ]} />
+      <Section title="Lịch phân bổ" bodyPadding={0}>
+        <Table<Schedule> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 10, hideOnSinglePage: true }} locale={{ emptyText: 'Chưa có lịch phân bổ' }}
+          expandable={{ expandedRowRender: (s) => (
+            <Table<Line> size="small" rowKey="seq" pagination={false} dataSource={s.lines} columns={[
+              { title: 'Kỳ phân bổ', dataIndex: 'seq', width: 100 }, { title: 'Kỳ kế toán', width: 120, render: (_, l) => `${l.periodNo}/${l.fiscalYear}` },
+              { title: 'Số tiền', dataIndex: 'amount', align: 'right', width: 150, render: money },
+              { title: 'Chứng từ', render: (_, l) => (l.voucherId ? <a href={`/chung-tu/PB/${l.voucherId}`} target="_blank" rel="noopener noreferrer">{l.voucherNo ?? l.voucherId} ({STATE_LABEL[l.voucherState ?? ''] ?? l.voucherState})</a> : 'Chưa phân bổ') }]} />) }}
+          columns={[
+            { title: 'Diễn giải', dataIndex: 'description', render: (v: string | null) => v ?? '' },
+            { title: 'Nợ / Có', width: 130, render: (_, s) => `${s.fromAccountCode} / ${s.toAccountCode}` },
+            { title: 'Tổng số tiền', dataIndex: 'total', align: 'right', width: 140, render: money },
+            { title: 'Số kỳ', dataIndex: 'periods', align: 'right', width: 80 },
+            { title: 'Bắt đầu', width: 90, render: (_, s) => `${s.startPeriod}/${s.startYear}` },
+            { title: 'Đã phân bổ', dataIndex: 'postedAmount', align: 'right', width: 140, render: money },
+            { title: 'Trạng thái', width: 110, render: (_, s) => <Tag color={s.isActive ? 'green' : 'default'}>{s.isActive ? 'Đang chạy' : 'Đã ngừng'}</Tag> },
+            { title: '', key: 'act', width: 230, render: (_, s) => writable && (
+              <Space size={4}>
+                {can('amortization.update') && <Button size="small" aria-label={`Sửa lịch ${s.id}`} onClick={() => open(s)}>Sửa</Button>}
+                {can('amortization.update') && <Button size="small" loading={toggle.isPending} onClick={() => toggle.mutate(s)}>{s.isActive ? 'Ngừng' : 'Tiếp tục'}</Button>}
+                {can('amortization.delete') && <Popconfirm title="Xóa lịch phân bổ này?" okText="Xóa" cancelText="Không" disabled={s.started} onConfirm={() => del.mutate(s)}>
+                  <Button size="small" danger disabled={s.started}>Xóa</Button></Popconfirm>}
+              </Space>) },
+          ]} />
+      </Section>
 
       <Modal open={editing !== null} title={editing === 'new' ? 'Thêm lịch phân bổ' : 'Sửa lịch phân bổ'} okText="Lưu" cancelText="Đóng" forceRender width={640} confirmLoading={save.isPending}
         onCancel={() => setEditing(null)} onOk={() => { void form.validateFields().then((v) => save.mutate(v), () => undefined); }}>
@@ -160,6 +170,6 @@ export default function AmortizationPage() {
         </Form>
         {split && <span style={{ opacity: 0.75 }}>Mỗi kỳ {money(split.each)}{split.last !== split.each ? `, kỳ cuối ${money(split.last)}` : ''}.</span>}
       </Modal>
-    </Space>
+    </div>
   );
 }

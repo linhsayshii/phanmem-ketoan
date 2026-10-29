@@ -31,7 +31,7 @@ test('Nhập chứng từ từ Excel: tệp có lỗi báo dòng và cột, tệ
   const group = `E2E${Date.now()}`.slice(0, 28);
   const good = { group, type: 'PT', postingDate: '2026-01-15', description: 'Thu tiền nhập từ Excel', partyCode: 'KH-E2E', debitAccount: '1111', creditAccount: '131', amount: '1500000' };
   await page.goto('/chung-tu/nhap-excel');
-  await expect(page.locator('.ant-card-head-title', { hasText: 'Nhập chứng từ từ Excel' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Nhập chứng từ từ Excel' })).toBeVisible();
   const upload = page.locator('input[type=file]');
   const nhap = page.getByRole('button', { name: 'Nhập', exact: true });
 

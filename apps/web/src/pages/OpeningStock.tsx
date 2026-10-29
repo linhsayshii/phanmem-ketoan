@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Card, Modal, Select, Space, Table, Upload, message } from 'antd';
+import { Alert, Button, Modal, Select, Space, Table, Upload, message } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import { formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, sum } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useHotkeys } from '@kt/ui';
+import { COLOR, KeyboardGrid, LookupSelect, PageHeader, Toolbar, useHotkeys } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { parseAmount } from './VoucherForm.js';
@@ -74,22 +74,31 @@ export default function OpeningStockPage() {
       valueFormatter: (p) => p.data?.badDate ?? (p.value ? formatVnDate(p.value as string) : ''),
       valueSetter: (p) => { const t = String(p.newValue ?? '').trim(); const iso = t === '' ? null : parseVnDate(t);
         if (t !== '' && iso === null) p.data.badDate = t; else { p.data.expiryDate = iso; delete p.data.badDate; } return true; },
-      cellStyle: (p) => (p.data?.badDate ? { color: '#cf1322', backgroundColor: '#fff1f0' } : { color: '', backgroundColor: '' }), tooltipValueGetter: (p) => (p.data?.badDate ? DATE_ERROR : undefined),
+      cellStyle: (p) => (p.data?.badDate ? { color: COLOR.error, backgroundColor: COLOR.errorBg } : { color: '', backgroundColor: '' }), tooltipValueGetter: (p) => (p.data?.badDate ? DATE_ERROR : undefined),
       cellEditorParams: { useFormatter: true } },
   ], [seeCost]);
   const onLookup = useCallback((col: string, row: number) => { if (col in LOOKUP && mayEdit) setLookup({ col, row }); }, [mayEdit]);
 
   return (
-    <Card title="Tồn kho đầu kỳ" extra={<Space wrap>
-      <Select style={{ width: 200 }} value={year} onChange={setPicked} loading={years.isLoading} placeholder="Chọn năm" options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
-      {mayEdit && <Button type="primary" onClick={() => void save()} loading={busy} disabled={!ready} title="Ctrl+S">Lưu</Button>}
-      <Button href="/api/opening-stock/template.xlsx">Tải mẫu Excel</Button>
-      {mayEdit && <Button onClick={() => setImporting(true)} disabled={!ready}>Nhập Excel</Button>}
-    </Space>}>
-      <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Tồn đầu kỳ theo kho và lô; tổng giá trị theo từng tài khoản kho phải bằng số dư đầu kỳ đã nhập ở màn hình Số dư đầu kỳ. Ghi sổ số dư đầu kỳ sẽ sinh phiếu nhập kho ngày đầu kỳ." />
-      {!seeCost && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Bạn không có quyền xem giá vốn nên không xem, sửa được tồn đầu kỳ (có giá trị)." />}
-      {saved.error && <Alert type="error" showIcon message={(saved.error as Error).message} style={{ marginBottom: 12 }} />}
-      <KeyboardGrid<Row> rows={rows} columns={columns} readOnly={!mayEdit} onRowsChange={setAll} addRowTemplate={emptyRow} onLookup={onLookup} height={420} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <PageHeader
+        title="Tồn kho đầu kỳ"
+        description="Tồn đầu kỳ theo kho và lô; tổng giá trị theo từng tài khoản kho phải bằng số dư đầu kỳ đã nhập ở màn hình Số dư đầu kỳ. Ghi sổ số dư đầu kỳ sẽ sinh phiếu nhập kho ngày đầu kỳ."
+        extra={
+          <Space wrap>
+            {mayEdit && <Button type="primary" onClick={() => void save()} loading={busy} disabled={!ready} title="Ctrl+S">Lưu</Button>}
+            <Button href="/api/opening-stock/template.xlsx">Tải mẫu Excel</Button>
+            {mayEdit && <Button onClick={() => setImporting(true)} disabled={!ready}>Nhập Excel</Button>}
+          </Space>
+        }
+      >
+        <Toolbar>
+          <Select aria-label="Năm tài chính" style={{ width: 200 }} value={year} onChange={setPicked} loading={years.isLoading} placeholder="Chọn năm" options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
+        </Toolbar>
+      </PageHeader>
+      {!seeCost && <Alert type="warning" showIcon message="Bạn không có quyền xem giá vốn nên không xem, sửa được tồn đầu kỳ (có giá trị)." />}
+      {saved.error && <Alert type="error" showIcon message={(saved.error as Error).message} />}
+      <KeyboardGrid<Row> rows={rows} columns={columns} readOnly={!mayEdit} onRowsChange={setAll} addRowTemplate={emptyRow} onLookup={onLookup} height="calc(100vh - 280px)" />
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, marginTop: 8 }}>
         <b>Tổng số lượng: {formatVnNumber(totalQty.toString(), 0)}</b>{seeCost && <b>Tổng giá trị: {formatVnNumber(totalValue.toString())}</b>}
       </div>
@@ -101,7 +110,7 @@ export default function OpeningStockPage() {
           }} /></div>}
       </Modal>
       {importing && year !== undefined && <ImportModal year={year} onClose={() => setImporting(false)} onDone={() => { setImporting(false); void qc.invalidateQueries({ queryKey: ['opening-stock', year] }); }} />}
-    </Card>
+    </div>
   );
 }
 

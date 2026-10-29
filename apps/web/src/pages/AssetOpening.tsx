@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Card, Modal, Select, Space, Table, Upload, message } from 'antd';
+import { Alert, Button, Modal, Select, Space, Table, Upload, message } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import { formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, sum } from '@kt/domain';
-import { KeyboardGrid, useHotkeys } from '@kt/ui';
+import { KeyboardGrid, PageHeader, Toolbar, useHotkeys } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { parseAmount } from './VoucherForm.js';
@@ -75,23 +75,32 @@ export default function AssetOpeningPage() {
   ], []);
 
   return (
-    <Card title="Số dư đầu kỳ tài sản" extra={<Space wrap>
-      <Select style={{ width: 200 }} value={year} onChange={setPicked} loading={years.isLoading} placeholder="Chọn năm" options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
-      {mayEdit && <Button type="primary" onClick={() => void save()} loading={busy} disabled={!ready} title="Ctrl+S">Lưu</Button>}
-      <Button onClick={() => void check()} disabled={!ready}>Kiểm tra</Button>
-      <Button href="/api/opening-assets/template">Tải mẫu Excel</Button>
-      {mayEdit && <Button onClick={() => setImporting(true)} disabled={!ready}>Nhập Excel</Button>}
-    </Space>}>
-      <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Mỗi thẻ một dòng: tài sản cố định nhập nguyên giá, hao mòn lũy kế và số tháng còn lại; công cụ dụng cụ, chi phí trả trước nhập giá trị còn lại (cột Nguyên giá) và số kỳ phân bổ còn lại. Tổng thẻ theo tài khoản phải khớp số dư ở màn hình Số dư đầu kỳ. Sửa thẻ khi số dư đầu kỳ đã ghi sổ thì bỏ ghi sổ trước." />
-      {saved.error && <Alert type="error" showIcon message={(saved.error as Error).message} style={{ marginBottom: 12 }} />}
-      {issues && (issues.length === 0 ? <Alert type="success" showIcon style={{ marginBottom: 12 }} message="Thẻ tài sản khớp số dư tài khoản" />
-        : <Alert type="error" showIcon style={{ marginBottom: 12 }} message={<ul style={{ margin: 0, paddingLeft: 18 }}>{issues.map((i, k) => <li key={k}>{i.message}</li>)}</ul>} />)}
-      <KeyboardGrid<Row> rows={rows} columns={columns} readOnly={!mayEdit} onRowsChange={setAll} addRowTemplate={emptyRow} height={420} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <PageHeader
+        title="Số dư đầu kỳ tài sản"
+        description="Mỗi thẻ một dòng: tài sản cố định nhập nguyên giá, hao mòn lũy kế và số tháng còn lại; công cụ dụng cụ, chi phí trả trước nhập giá trị còn lại (cột Nguyên giá) và số kỳ phân bổ còn lại. Tổng thẻ theo tài khoản phải khớp số dư ở màn hình Số dư đầu kỳ. Sửa thẻ khi số dư đầu kỳ đã ghi sổ thì bỏ ghi sổ trước."
+        extra={
+          <Space wrap>
+            {mayEdit && <Button type="primary" onClick={() => void save()} loading={busy} disabled={!ready} title="Ctrl+S">Lưu</Button>}
+            <Button onClick={() => void check()} disabled={!ready}>Kiểm tra</Button>
+            <Button href="/api/opening-assets/template">Tải mẫu Excel</Button>
+            {mayEdit && <Button onClick={() => setImporting(true)} disabled={!ready}>Nhập Excel</Button>}
+          </Space>
+        }
+      >
+        <Toolbar>
+          <Select aria-label="Năm tài chính" style={{ width: 200 }} value={year} onChange={setPicked} loading={years.isLoading} placeholder="Chọn năm" options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
+        </Toolbar>
+      </PageHeader>
+      {saved.error && <Alert type="error" showIcon message={(saved.error as Error).message} />}
+      {issues && (issues.length === 0 ? <Alert type="success" showIcon message="Thẻ tài sản khớp số dư tài khoản" />
+        : <Alert type="error" showIcon message={<ul style={{ margin: 0, paddingLeft: 18 }}>{issues.map((i, k) => <li key={k}>{i.message}</li>)}</ul>} />)}
+      <KeyboardGrid<Row> rows={rows} columns={columns} readOnly={!mayEdit} onRowsChange={setAll} addRowTemplate={emptyRow} height="calc(100vh - 280px)" />
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, marginTop: 8 }}>
         <b>Tổng nguyên giá: {formatVnNumber(totalCost.toString())}</b><b>Tổng hao mòn: {formatVnNumber(totalAcc.toString())}</b>
       </div>
       {importing && year !== undefined && <ImportModal year={year} onClose={() => setImporting(false)} onDone={() => { setImporting(false); void qc.invalidateQueries({ queryKey: ['opening-assets', year] }); }} />}
-    </Card>
+    </div>
   );
 }
 

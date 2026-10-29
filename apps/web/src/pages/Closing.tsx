@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Card, Checkbox, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
+import { Alert, Button, Checkbox, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import dayjs, { type Dayjs } from 'dayjs';
 import { sum, VND_AMOUNT_MSG, VND_AMOUNT_RE } from '@kt/domain';
-import { useUnsavedChanges } from '@kt/ui';
+import { PageHeader, Section, Toolbar, useUnsavedChanges } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -88,15 +88,23 @@ export default function ClosingPage() {
   };
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Kết chuyển cuối kỳ</h2>
-        <span>Ngày kết chuyển</span>
-        <DatePicker format="DD/MM/YYYY" allowClear={false} value={date} onChange={(d) => d && confirmIfDirty(() => setDate(d))} />
-        {can('closing.run') && <Button type="primary" disabled={!periodEnd.length} loading={exec.isPending} onClick={runAll}>Chạy tất cả bước cuối kỳ</Button>}
-      </Space>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <PageHeader
+        title="Kết chuyển cuối kỳ"
+        description="Kết chuyển doanh thu, chi phí, xác định kết quả kinh doanh và phân bổ theo sơ đồ tài khoản"
+        extra={can('closing.run') && (
+          <Button type="primary" disabled={!periodEnd.length} loading={exec.isPending} onClick={runAll}>
+            Chạy tất cả bước cuối kỳ
+          </Button>
+        )}
+      >
+        <Toolbar>
+          <span>Ngày kết chuyển</span>
+          <DatePicker format="DD/MM/YYYY" allowClear={false} value={date} onChange={(d) => d && confirmIfDirty(() => setDate(d))} />
+        </Toolbar>
+      </PageHeader>
       {laterDone.length > 0 && <Alert type="warning" showIcon closable onClose={() => setLaterDone([])} message={`Các bước sau đã chạy trước đó: ${laterDone.join(', ')}; hãy chạy lại các bước này hoặc Chạy tất cả`} />}
-      <Card size="small" title={<>Các bước {regime && <Tag color="blue">Sơ đồ {regime}</Tag>}</>} extra="Bước &quot;Đầu năm sau&quot; chạy với ngày 01/01 của năm sau">
+      <Section bodyPadding={0} title={<>Các bước {regime && <Tag color="blue">Sơ đồ {regime}</Tag>}</>} extra="Bước &quot;Đầu năm sau&quot; chạy với ngày 01/01 của năm sau">
         <Table<Step> rowKey="id" size="small" pagination={false} loading={steps.isFetching} dataSource={steps.data ?? []} columns={[
           { title: 'Thứ tự', dataIndex: 'stepOrder', width: 80 },
           { title: 'Tên bước', dataIndex: 'name', render: (n: string, s) => <>{n} {!s.isActive && <Tag>Ngừng</Tag>}</> },
@@ -110,8 +118,8 @@ export default function ClosingPage() {
               <Button size="small" onClick={() => rerunOne(s)}>Chạy lại (đảo cũ)</Button>
             </Space>) },
         ]} />
-      </Card>
-      <Card size="small" title={`Nhật ký chạy năm ${date.year()}`}>
+      </Section>
+      <Section bodyPadding={0} title={`Nhật ký chạy năm ${date.year()}`}>
         <Table<Run> rowKey="id" size="small" pagination={{ pageSize: 20, hideOnSinglePage: true }} loading={runs.isFetching} dataSource={runs.data ?? []} columns={[
           { title: 'Ngày', dataIndex: 'postingDate', width: 110, render: fmtDate },
           { title: 'Bước', dataIndex: 'stepName' },
@@ -119,15 +127,15 @@ export default function ClosingPage() {
           { title: 'Trạng thái', dataIndex: 'status', width: 110, render: (s: Run['status']) => (s === 'done' ? <Tag color="green">Đã chạy</Tag> : <Tag color="orange">Đã đảo</Tag>) },
           { title: 'Lúc chạy', dataIndex: 'createdAt', width: 150, render: (t: string) => dayjs(t).format('DD/MM/YYYY HH:mm') },
         ]} />
-      </Card>
+      </Section>
       {canEdit && (
-        <Card size="small" title="Sơ đồ kết chuyển, phân bổ">
+        <Section title="Sơ đồ kết chuyển, phân bổ">
           <Form<{ steps: FormStep[] }> form={form} layout="vertical" onFinish={onFinish} onValuesChange={() => setDirty(true)}>
             <Form.List name="steps">
               {(fields, { add, remove }) => (
                 <>
                   {fields.map((f) => (
-                    <Card key={f.key} size="small" style={{ marginBottom: 8 }} extra={<Button size="small" danger onClick={() => remove(f.name)}>Xóa bước</Button>}>
+                    <Section key={f.key} style={{ marginBottom: 8 }} extra={<Button size="small" danger onClick={() => remove(f.name)}>Xóa bước</Button>}>
                       <Form.Item name={[f.name, 'id']} hidden><Input /></Form.Item>
                       <Space align="start" wrap>
                         <Form.Item name={[f.name, 'stepOrder']} label="Thứ tự" rules={[{ required: true, message: 'Nhập thứ tự' }]}><InputNumber min={1} precision={0} /></Form.Item>
@@ -147,7 +155,7 @@ export default function ClosingPage() {
                         <Form.Item name={[f.name, 'keepBalance']} label="Giữ lại số dư" rules={[{ pattern: VND_AMOUNT_RE, message: VND_AMOUNT_MSG }]}><Input style={{ width: 120 }} /></Form.Item>
                         <Form.Item name={[f.name, 'byProject']} label=" " valuePropName="checked"><Checkbox>Theo vụ việc</Checkbox></Form.Item>
                       </Space>
-                    </Card>))}
+                    </Section>))}
                   <Button onClick={() => add({ stepOrder: Math.max(0, ...((form.getFieldValue('steps') ?? []) as FormStep[]).map((s) => s.stepOrder)) + 1, name: '', mode: 'transfer', fromAccounts: [], toAccount: '', keepBalance: '0',
                     ratios: [], byProject: false, runAt: 'period_end', isActive: true })}>Thêm bước</Button>
                 </>)}
@@ -157,7 +165,7 @@ export default function ClosingPage() {
               <Button loading={reload.isPending} onClick={() => confirm('Nạp lại sơ đồ mẫu?', `Sơ đồ ${regime ?? ''} hiện tại bị thay bằng sơ đồ mẫu của chế độ này (sơ đồ chế độ khác giữ nguyên). Nhật ký chạy được giữ lại.`, 'Nạp lại mẫu', () => reload.mutateAsync())}>Nạp lại mẫu</Button>
             </Space>
           </Form>
-        </Card>)}
-    </Space>
+        </Section>)}
+    </div>
   );
 }

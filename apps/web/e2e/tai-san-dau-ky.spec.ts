@@ -20,7 +20,7 @@ test('Số dư đầu kỳ tài sản: nhập thẻ bằng bàn phím rồi lưu
   expect((await request.put('/api/opening-assets/2026', { data: { rows: [] } })).ok()).toBeTruthy();
   try {
     await page.goto('/so-cai/tai-san-dau-ky');
-    await expect(page.locator('.ant-card-head-title', { hasText: 'Số dư đầu kỳ tài sản' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Số dư đầu kỳ tài sản' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Lưu' })).toBeEnabled();
     const cell = (row: number, col: string) => page.locator(`.ag-center-cols-container .ag-row[row-index="${row}"] [col-id="${col}"]`).first();
     const type = async (text: string) => { await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type(text); };

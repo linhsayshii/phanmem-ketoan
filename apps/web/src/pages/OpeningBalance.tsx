@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Card, Modal, Select, Space, Table, Tag, Upload, message } from 'antd';
+import { Alert, Button, Modal, Select, Space, Table, Tag, Upload, message } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import type { ColDef } from 'ag-grid-community';
 import { D, formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, sum } from '@kt/domain';
-import { KeyboardGrid, LookupSelect } from '@kt/ui';
+import { COLOR, KeyboardGrid, LookupSelect, PageHeader, Toolbar } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor, bankAccountFetcher, contractFetcher, contractPick, isContractAccount } from '../lookups.js';
@@ -48,7 +48,7 @@ const dateCol = (field: DateField, headerName: string, editable: (d: Row | undef
     if (t !== '' && iso === null) bad[field] = t; else p.data[field] = iso;
     p.data.badDates = bad; return true;
   },
-  cellStyle: (p) => (p.data?.badDates?.[field] ? { color: '#cf1322', backgroundColor: '#fff1f0' } : { color: '', backgroundColor: '' }), // '' gỡ màu lỗi khi đã sửa
+  cellStyle: (p) => (p.data?.badDates?.[field] ? { color: COLOR.error, backgroundColor: COLOR.errorBg } : { color: '', backgroundColor: '' }), // '' gỡ màu lỗi khi đã sửa
   tooltipValueGetter: (p) => (p.data?.badDates?.[field] ? DATE_ERROR : undefined),
   cellEditorParams: { useFormatter: true } });
 // Đổi mã thì xóa tên cũ (tên đúng chỉ có sau khi lưu hoặc chọn từ danh mục), không để tên của mã trước lại bên cạnh mã mới.
@@ -163,24 +163,34 @@ export default function OpeningBalancePage() {
   }, [mayEdit, bankCodes]);
 
   return (
-    <Card title="Số dư đầu kỳ" extra={<Space wrap>
-      <Select style={{ width: 200 }} value={year} onChange={setPicked} loading={years.isLoading} placeholder="Chọn năm"
-        options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
-      {mayEdit && <Button type="primary" onClick={() => void save()} loading={busy} disabled={!ready}>Lưu</Button>}
-      <Button onClick={() => void check()} disabled={busy || !ready}>Kiểm tra</Button>
-      {mayEdit && <Button onClick={() => void post()} disabled={busy || !ready}>Ghi sổ số dư đầu kỳ</Button>}
-      {mayEdit && can('voucher.unpost') && (!canSeeDk || (dk.data?.total ?? 0) > 0) && <Button onClick={unpost} disabled={busy || !ready}>Bỏ ghi sổ số dư đầu kỳ</Button>}
-      <Button href="/so-cai/ton-kho-dau-ky">Tồn kho đầu kỳ</Button>
-      <Button href="/api/opening-balance/template.xlsx">Tải mẫu Excel</Button>
-      {mayEdit && <Button onClick={() => setImporting(true)} disabled={!ready}>Nhập Excel</Button>}
-    </Space>}>
-      {saved.error && <Alert type="error" showIcon message={(saved.error as Error).message} style={{ marginBottom: 12 }} />}
-      {posted && <Alert type="success" showIcon style={{ marginBottom: 12 }} message={`Đã ghi sổ chứng từ số dư đầu kỳ ${posted.voucherNo ?? ''} (loại DK, ngày ${posted.postingDate.split('-').reverse().join('/')})`} />}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <PageHeader
+        title="Số dư đầu kỳ"
+        description="Khai báo số dư ban đầu của các tài khoản kế toán, công nợ chi tiết và số dư tiền gửi"
+        extra={
+          <Space wrap>
+            {mayEdit && <Button type="primary" onClick={() => void save()} loading={busy} disabled={!ready}>Lưu</Button>}
+            <Button onClick={() => void check()} disabled={busy || !ready}>Kiểm tra</Button>
+            {mayEdit && <Button onClick={() => void post()} disabled={busy || !ready}>Ghi sổ số dư đầu kỳ</Button>}
+            {mayEdit && can('voucher.unpost') && (!canSeeDk || (dk.data?.total ?? 0) > 0) && <Button onClick={unpost} disabled={busy || !ready}>Bỏ ghi sổ số dư đầu kỳ</Button>}
+            <Button href="/so-cai/ton-kho-dau-ky">Tồn kho đầu kỳ</Button>
+            <Button href="/api/opening-balance/template.xlsx">Tải mẫu Excel</Button>
+            {mayEdit && <Button onClick={() => setImporting(true)} disabled={!ready}>Nhập Excel</Button>}
+          </Space>
+        }
+      >
+        <Toolbar>
+          <Select aria-label="Năm tài chính" style={{ width: 200 }} value={year} onChange={setPicked} loading={years.isLoading} placeholder="Chọn năm"
+            options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
+        </Toolbar>
+      </PageHeader>
+      {saved.error && <Alert type="error" showIcon message={(saved.error as Error).message} />}
+      {posted && <Alert type="success" showIcon message={`Đã ghi sổ chứng từ số dư đầu kỳ ${posted.voucherNo ?? ''} (loại DK, ngày ${posted.postingDate.split('-').reverse().join('/')})`} />}
       {issues && (errors.length === 0
-        ? <Alert type="success" showIcon message="Số dư đầu kỳ hợp lệ" style={{ marginBottom: 12 }} />
-        : <Alert type="error" showIcon style={{ marginBottom: 12 }} message={`${errors.length} lỗi, chưa ghi sổ được`} description={<ul style={{ margin: 0, paddingLeft: 20 }}>{errors.map((i, k) => <li key={k}>{i.message}</li>)}</ul>} />)}
-      {warnings.length > 0 && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`${warnings.length} cảnh báo (vẫn ghi sổ được)`} description={<ul style={{ margin: 0, paddingLeft: 20 }}>{warnings.map((i, k) => <li key={k}>{i.message}</li>)}</ul>} />}
-      <KeyboardGrid<Row> rows={rows} columns={columns} readOnly={!mayEdit} onRowsChange={setAll} addRowTemplate={emptyRow} onLookup={onLookup} height={420} allColumns />
+        ? <Alert type="success" showIcon message="Số dư đầu kỳ hợp lệ" />
+        : <Alert type="error" showIcon message={`${errors.length} lỗi, chưa ghi sổ được`} description={<ul style={{ margin: 0, paddingLeft: 20 }}>{errors.map((i, k) => <li key={k}>{i.message}</li>)}</ul>} />)}
+      {warnings.length > 0 && <Alert type="warning" showIcon message={`${warnings.length} cảnh báo (vẫn ghi sổ được)`} description={<ul style={{ margin: 0, paddingLeft: 20 }}>{warnings.map((i, k) => <li key={k}>{i.message}</li>)}</ul>} />}
+      <KeyboardGrid<Row> rows={rows} columns={columns} readOnly={!mayEdit} onRowsChange={setAll} addRowTemplate={emptyRow} onLookup={onLookup} height="calc(100vh - 280px)" allColumns />
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, marginTop: 8 }}>
         <b>Tổng dư Nợ: {formatVnNumber(td.toString())}</b><b>Tổng dư Có: {formatVnNumber(tc.toString())}</b>
         {!td.equals(tc) && <Tag color="red">Chênh lệch {formatVnNumber(td.minus(tc).toString())}</Tag>}
@@ -199,7 +209,7 @@ export default function OpeningBalancePage() {
           }} /></div>}
       </Modal>
       {importing && year !== undefined && <ImportModal year={year} onClose={() => setImporting(false)} onDone={() => { setImporting(false); setIssues(null); setPosted(null); void qc.invalidateQueries({ queryKey: ['opening', year] }); }} />}
-    </Card>
+    </div>
   );
 }
 

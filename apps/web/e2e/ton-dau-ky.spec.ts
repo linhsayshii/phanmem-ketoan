@@ -24,7 +24,7 @@ test('Tồn kho đầu kỳ: nhập kho, hàng, số lượng, giá trị bằng
   expect((await request.put('/api/opening-stock/2026', { data: { rows: [] } })).ok()).toBeTruthy();
   try {
     await page.goto('/so-cai/ton-kho-dau-ky');
-    await expect(page.locator('.ant-card-head-title', { hasText: 'Tồn kho đầu kỳ' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Tồn kho đầu kỳ' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Lưu' })).toBeEnabled();
     await expect(page.locator('.ag-center-cols-container .ag-row')).toHaveCount(1);
     const cell = (row: number, col: string) => page.locator(`.ag-center-cols-container .ag-row[row-index="${row}"] [col-id="${col}"]`);

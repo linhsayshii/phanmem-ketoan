@@ -28,7 +28,7 @@ test('Số dư đầu kỳ: nhập bằng bàn phím, ô TK ngân hàng chỉ d�
   expect((await request.put('/api/opening-balance/2026', { data: { rows: [] } })).ok()).toBeTruthy();
   try {
     await page.goto('/so-cai/so-du-dau-ky');
-    await expect(page.locator('.ant-card-head-title', { hasText: 'Số dư đầu kỳ' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Số dư đầu kỳ' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Lưu' })).toBeEnabled();
     await expect(page.locator('.ag-center-cols-container .ag-row')).toHaveCount(1); // chỉ còn dòng trống cuối (dòng cũ của lần nạp trước đã gỡ khỏi lưới)
     const cell = (row: number, col: string) => page.locator(`.ag-center-cols-container .ag-row[row-index="${row}"] [col-id="${col}"]`);

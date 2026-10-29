@@ -8,7 +8,7 @@ const PRIMARY = '#1677ff'; // giữ xanh mặc định của antd; đổi màu n
 const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 const HEADER_BG = '#f5f6f7';
 export const BORDER = '#e5e7eb';
-export const COLOR = { primary: PRIMARY, border: BORDER, bgLayout: '#f3f4f6', textSecondary: 'rgba(0, 0, 0, 0.55)', surface: '#fff' } as const;
+export const COLOR = { primary: PRIMARY, border: BORDER, bgLayout: '#f3f4f6', textSecondary: 'rgba(0, 0, 0, 0.55)', surface: '#fff', error: '#cf1322', errorBg: '#fff1f0' } as const;
 
 export const appTheme: ThemeConfig = {
   token: {

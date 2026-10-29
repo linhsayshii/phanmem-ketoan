@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Form, Input, InputNumber, Modal, Select, Space, Table, Tabs, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import { PageHeader, Section, Toolbar } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { NumberingBranchPanel } from './NumberingBranch.js';
@@ -44,19 +45,21 @@ function VoucherTypesTab({ year }: { year: number | undefined }) {
   return (
     <>
       <NumberingBranchPanel />
-      <Table<VoucherTypeRow> rowKey="code" size="small" pagination={false} loading={types.isFetching || renumber.isPending} dataSource={types.data ?? []} columns={[
-        { title: 'Mã', dataIndex: 'code', width: 90 },
-        { title: 'Tên', dataIndex: 'name' },
-        { title: 'Tiền tố', dataIndex: 'prefix', width: 130 },
-        { title: 'Hậu tố', dataIndex: 'suffix', width: 130 },
-        { title: 'Độ dài số', dataIndex: 'pad_length', width: 100, align: 'right' },
-        { title: `Số tiếp theo (${year ?? ''})`, key: 'next', width: 180, render: (_, r) => <NextNo row={r} year={year} /> },
-        { title: '', key: 'act', width: 260, render: (_, r) => (
-          <Space>
-            {can('setting.update') && <Button size="small" onClick={() => setEditing(r)}>Sửa</Button>}
-            {can('voucher.renumber') && <Button size="small" disabled={year === undefined} onClick={() => confirmRenumber(r)}>Đánh lại số theo ngày</Button>}
-          </Space>) },
-      ]} />
+      <Section bodyPadding={0} style={{ marginTop: 12 }}>
+        <Table<VoucherTypeRow> rowKey="code" size="small" pagination={false} loading={types.isFetching || renumber.isPending} dataSource={types.data ?? []} columns={[
+          { title: 'Mã', dataIndex: 'code', width: 90 },
+          { title: 'Tên', dataIndex: 'name' },
+          { title: 'Tiền tố', dataIndex: 'prefix', width: 130 },
+          { title: 'Hậu tố', dataIndex: 'suffix', width: 130 },
+          { title: 'Độ dài số', dataIndex: 'pad_length', width: 100, align: 'right' },
+          { title: `Số tiếp theo (${year ?? ''})`, key: 'next', width: 180, render: (_, r) => <NextNo row={r} year={year} /> },
+          { title: '', key: 'act', width: 260, render: (_, r) => (
+            <Space>
+              {can('setting.update') && <Button size="small" onClick={() => setEditing(r)}>Sửa</Button>}
+              {can('voucher.renumber') && <Button size="small" disabled={year === undefined} onClick={() => confirmRenumber(r)}>Đánh lại số theo ngày</Button>}
+            </Space>) },
+        ]} />
+      </Section>
       <Modal open={!!editing} title={`Cấu hình đánh số - ${editing?.code ?? ''}`} okText="Lưu" cancelText="Hủy" confirmLoading={save.isPending} destroyOnHidden onCancel={() => setEditing(null)} onOk={() => form.submit()}>
         <Form<TypeForm> form={form} layout="vertical" initialValues={{ name: editing?.name ?? '', prefix: editing?.prefix ?? '', suffix: editing?.suffix ?? '', padLength: editing?.pad_length ?? 5 }} onFinish={(v) => save.mutate(v)}>
           <Form.Item name="name" label="Tên" rules={[{ required: true, message: 'Nhập tên' }]}><Input /></Form.Item>
@@ -90,32 +93,39 @@ export default function PeriodsPage() {
     content: 'Khóa cứng tính chuỗi hash, không sửa được chứng từ trong kỳ; chỉ bỏ khóa được với quyền riêng',
     onOk: () => run.mutate(() => api(url(r.periodNo, 'lock'), { method: 'POST', json: { level: 'hard' } })) });
   return (
-    <>
-      <Space style={{ marginBottom: 12 }}>
-        <span>Năm tài chính</span>
-        <Select style={{ width: 120 }} value={year} loading={years.isLoading} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: y.fiscalYear }))} onChange={setPicked} />
-      </Space>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <PageHeader
+        title="Kỳ kế toán"
+        description="Mở, khóa sổ kỳ kế toán và cấu hình quy tắc đánh số chứng từ"
+      >
+        <Toolbar>
+          <span>Năm tài chính</span>
+          <Select aria-label="Năm tài chính" style={{ width: 120 }} value={year} loading={years.isLoading} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: y.fiscalYear }))} onChange={setPicked} />
+        </Toolbar>
+      </PageHeader>
       <Tabs items={[
         { key: 'periods', label: 'Kỳ kế toán', children: (
         <>
-          <Table<PeriodRow> rowKey="periodNo" size="small" pagination={false} loading={periods.isFetching || run.isPending} dataSource={periods.data ?? []} columns={[
-            { title: 'Kỳ', dataIndex: 'periodNo', width: 120, render: periodLabel },
-            { title: 'Từ ngày', dataIndex: 'dateFrom', width: 110, render: fmtDate },
-            { title: 'Đến ngày', dataIndex: 'dateTo', width: 110, render: fmtDate },
-            { title: 'Trạng thái', dataIndex: 'status', width: 110, render: (s: PeriodRow['status']) => <Tag color={STATUS[s].color}>{STATUS[s].label}</Tag> },
-            { title: 'Phần hành khóa', dataIndex: 'lockedModules', render: (m: string[], r) => (
-              <Select mode="multiple" allowClear style={{ minWidth: 220 }} placeholder="Không khóa" value={m} options={MODULES} disabled={!can('period.lock') || r.status === 'hard_locked'}
-                onChange={(v: string[]) => run.mutate(() => api(url(r.periodNo, 'modules'), { method: 'PUT', json: { modules: v } }))} />) },
-            { title: 'Chứng từ nháp', dataIndex: 'draftCount', width: 120, align: 'right' },
-            { title: 'Hash', dataIndex: 'hashTail', width: 100, render: (h: string | null) => (h ? <span title={h}>{h.slice(0, 8)}</span> : '') },
-            { title: '', key: 'act', width: 300, render: (_, r) => (
-              <Space>
-                {r.status === 'open' && can('period.lock') && <Button size="small" onClick={() => run.mutate(() => api(url(r.periodNo, 'lock'), { method: 'POST', json: { level: 'soft' } }))}>Khóa sổ</Button>}
-                {r.status !== 'hard_locked' && can('period.lock') && <Button size="small" danger onClick={() => hardLock(r)}>Khóa cứng</Button>}
-                {r.status !== 'open' && can('period.unlock') && (r.status !== 'hard_locked' || can('period.unlock_hard')) && <Button size="small" onClick={() => run.mutate(() => api(url(r.periodNo, 'unlock'), { method: 'POST' }))}>Bỏ khóa</Button>}
-                {r.status === 'hard_locked' && <Button size="small" onClick={() => run.mutate(() => verify(r.periodNo))}>Kiểm tra hash</Button>}
-              </Space>) },
-          ]} />
+          <Section bodyPadding={0}>
+            <Table<PeriodRow> rowKey="periodNo" size="small" pagination={false} loading={periods.isFetching || run.isPending} dataSource={periods.data ?? []} columns={[
+              { title: 'Kỳ', dataIndex: 'periodNo', width: 120, render: periodLabel },
+              { title: 'Từ ngày', dataIndex: 'dateFrom', width: 110, render: fmtDate },
+              { title: 'Đến ngày', dataIndex: 'dateTo', width: 110, render: fmtDate },
+              { title: 'Trạng thái', dataIndex: 'status', width: 110, render: (s: PeriodRow['status']) => <Tag color={STATUS[s].color}>{STATUS[s].label}</Tag> },
+              { title: 'Phần hành khóa', dataIndex: 'lockedModules', render: (m: string[], r) => (
+                <Select mode="multiple" allowClear style={{ minWidth: 220 }} placeholder="Không khóa" value={m} options={MODULES} disabled={!can('period.lock') || r.status === 'hard_locked'}
+                  onChange={(v: string[]) => run.mutate(() => api(url(r.periodNo, 'modules'), { method: 'PUT', json: { modules: v } }))} />) },
+              { title: 'Chứng từ nháp', dataIndex: 'draftCount', width: 120, align: 'right' },
+              { title: 'Hash', dataIndex: 'hashTail', width: 100, render: (h: string | null) => (h ? <span title={h}>{h.slice(0, 8)}</span> : '') },
+              { title: '', key: 'act', width: 300, render: (_, r) => (
+                <Space>
+                  {r.status === 'open' && can('period.lock') && <Button size="small" onClick={() => run.mutate(() => api(url(r.periodNo, 'lock'), { method: 'POST', json: { level: 'soft' } }))}>Khóa sổ</Button>}
+                  {r.status !== 'hard_locked' && can('period.lock') && <Button size="small" danger onClick={() => hardLock(r)}>Khóa cứng</Button>}
+                  {r.status !== 'open' && can('period.unlock') && (r.status !== 'hard_locked' || can('period.unlock_hard')) && <Button size="small" onClick={() => run.mutate(() => api(url(r.periodNo, 'unlock'), { method: 'POST' }))}>Bỏ khóa</Button>}
+                  {r.status === 'hard_locked' && <Button size="small" onClick={() => run.mutate(() => verify(r.periodNo))}>Kiểm tra hash</Button>}
+                </Space>) },
+            ]} />
+          </Section>
           <Modal open={!!bad} title={`Chứng từ lệch hash - ${bad ? periodLabel(bad.periodNo) : ''}`} width={900} footer={null} onCancel={() => setBad(null)}>
             <Table<Mismatch> rowKey={(r) => r.voucherId ?? 'hash_tail'} size="small" pagination={false} dataSource={bad?.rows ?? []} columns={[
               { title: 'Số chứng từ', dataIndex: 'voucherNo', width: 130, render: (n: string | null) => n ?? '(chưa số)' },
@@ -125,6 +135,6 @@ export default function PeriodsPage() {
         </>) },
         { key: 'numbering', label: 'Loại chứng từ và đánh số', children: <VoucherTypesTab year={year} /> },
       ]} />
-    </>
+    </div>
   );
 }
