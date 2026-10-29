@@ -303,7 +303,7 @@ export default function PayrollProfilesPage() {
             <ul role="listbox" aria-label="Nhân viên" onKeyDown={move} data-testid="employee-list" style={{ listStyle: 'none', margin: 0, padding: 0, maxHeight: 'calc(100vh - 280px)', overflow: 'auto', border: `1px solid ${COLOR.border}`, borderRadius: 4 }}>
               {rows.map((r) => (
                 <li key={r.employeeId} role="option" aria-selected={sel === r.employeeId} tabIndex={0} data-employee={r.employeeId} onClick={() => setSel(r.employeeId)} onKeyDown={(e) => { if (e.key === 'Enter') setSel(r.employeeId); }}
-                  style={{ padding: '6px 10px', cursor: 'pointer', background: sel === r.employeeId ? 'rgba(22, 119, 255, 0.08)' : undefined, borderBottom: `1px solid ${COLOR.border}`, opacity: r.isActive ? 1 : 0.55 }}>
+                  style={{ padding: '6px 10px', cursor: 'pointer', background: sel === r.employeeId ? COLOR.selectedBg : undefined, borderBottom: `1px solid ${COLOR.border}`, opacity: r.isActive ? 1 : 0.55 }}>
                   <b>{r.code}</b> - {r.name}<br /><small>{r.hasProfile ? (r.currentSalary ? `Lương ${money(r.currentSalary)}` : 'Có hồ sơ, chưa có mức lương') : <Tag color="orange" style={{ margin: 0, fontSize: 11, lineHeight: '18px' }}>Chưa có hồ sơ lương</Tag>}</small>
                 </li>))}
               {!rows.length && !list.isLoading && <li style={{ padding: 12 }}><EmptyState title="Không có nhân viên" /></li>}

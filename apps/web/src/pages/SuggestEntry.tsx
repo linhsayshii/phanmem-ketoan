@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Alert, Button, Empty, List, Modal, Space, Spin, Tag, Typography } from 'antd';
+import { Alert, Button, List, Modal, Space, Spin, Tag, Typography } from 'antd';
+import { EmptyState } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -20,7 +21,7 @@ export const useSuggest = () => useMutation({
 const sorted = (ls: SuggestLine[]) => [...ls.filter((l) => l.side === 'debit'), ...ls.filter((l) => l.side === 'credit')];
 
 export function SuggestList({ data, onApply }: { data: Result; onApply?: ((lines: SuggestLine[]) => void) | undefined }) {
-  if (data.suggestions.length === 0) return <Empty data-testid="suggest-empty" description="Chưa đủ lịch sử để gợi ý: cần chứng từ đã ghi sổ cùng loại, cùng đối tượng hoặc có diễn giải gần giống" />;
+  if (data.suggestions.length === 0) return <EmptyState testId="suggest-empty" title="Chưa đủ lịch sử để gợi ý" description="Cần chứng từ đã ghi sổ cùng loại, cùng đối tượng hoặc có diễn giải gần giống." />;
   return (
     <List data-testid="suggest-list" dataSource={data.suggestions} renderItem={(s, i) => (
       <List.Item key={s.signature} data-testid="suggest-item" actions={onApply ? [<Button key="use" type={i === 0 ? 'primary' : 'default'} onClick={() => onApply(s.lines)}>Dùng gợi ý này</Button>] : []}>
