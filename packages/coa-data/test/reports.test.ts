@@ -3,8 +3,8 @@ import { formulaRefs, parseFormula, splitCsvLine, type Regime } from '@kt/domain
 import { readFileSync } from 'node:fs';
 import { dataPath, loadCoaTemplate, loadReportTemplates, reportStatus } from '../src/index.js';
 
-const REGIMES = ['TT99', 'TT133'] as const; const CODES = ['B01', 'B02', 'B03'] as const;
-const complete = (regime: Regime, code: string) => reportStatus()[regime.toLowerCase() as 'tt99' | 'tt133'][code] === true;
+const REGIMES = ['TT99', 'TT133', 'TT200'] as const; const CODES = ['B01', 'B02', 'B03'] as const;
+const complete = (regime: Regime, code: string) => reportStatus()[regime.toLowerCase() as 'tt99' | 'tt133' | 'tt200'][code] === true;
 
 describe('mẫu báo cáo tài chính', () => {
   const rows = loadReportTemplates();
@@ -52,7 +52,7 @@ describe('mẫu báo cáo tài chính', () => {
     for (const regime of REGIMES) {
       for (const code of CODES) {
         const n = loaded.filter((r) => r.regime === regime && r.reportCode === code).length;
-        if (complete(regime, code)) { expect(st[regime.toLowerCase() as 'tt99' | 'tt133'].source, `${regime}/${code}: thiếu nguồn`).not.toBe(''); expect(n).toBeGreaterThan(0); }
+        if (complete(regime, code)) { expect(st[regime.toLowerCase() as 'tt99' | 'tt133' | 'tt200'].source, `${regime}/${code}: thiếu nguồn`).not.toBe(''); expect(n).toBeGreaterThan(0); }
         else expect(n, `${regime}/${code} chưa hoàn tất`).toBe(0);
       }
     }
@@ -73,9 +73,27 @@ describe('mẫu báo cáo tài chính', () => {
     const withReval = rows.filter((r) => /REVAL/.test(r.formula ?? '')).map((r) => [r.regime, r.reportCode, r.lineCode, r.source, r.formula]);
     expect(withReval).toEqual([['TT99', 'B02', '22', 'movement', '515!REVAL + REVAL_GAIN'], ['TT99', 'B02', '23', 'movement', '635!REVAL + REVAL_LOSS']]);
   });
-  it('kỳ hạn và mã luồng tiền: LT chỉ ở dòng số dư B01 TT99; mỗi dòng luồng tiền B03 bỏ cặp có mã (!CF) và cộng CF(mã của chính nó) theo chiều thu/chi', () => {
-    for (const r of rows.filter((x) => /LT\(/.test(x.formula ?? ''))) expect([r.regime, r.reportCode, r.source]).toEqual(['TT99', 'B01', 'balance']);
+  it('kỳ hạn và mã luồng tiền: LT chỉ ở dòng số dư B01 của TT99 và TT200; mỗi dòng luồng tiền B03 bỏ cặp có mã (!CF) và cộng CF(mã của chính nó) theo chiều thu/chi', () => {
+    for (const r of rows.filter((x) => /LT\(/.test(x.formula ?? ''))) { expect(['TT99', 'TT200'], r.regime).toContain(r.regime); expect([r.reportCode, r.source]).toEqual(['B01', 'balance']); }
     for (const regime of REGIMES) for (const l of rows.filter((x) => x.regime === regime && x.reportCode === 'B03' && x.source === 'pair' && x.parentLineCode))
       expect(l.formula, `${regime}/B03/${l.lineCode}`).toMatch(new RegExp(`^N[^!]+!CF${l.negate ? '-' : '\\+'}CF\\(${l.lineCode}\\)$`));
+  });
+  it('TT200 theo Phụ lục 2 Công báo 289 + 290: mã chỉ tiêu và cây tổng của B01-DN, B02-DN, B03-DN', () => {
+    const lines = (c: string) => rows.filter((r) => r.regime === 'TT200' && r.reportCode === c);
+    const f = (c: string, l: string) => lines(c).find((x) => x.lineCode === l);
+    // Mã số in trên mẫu B01-DN (trang PDF 46-49 của Công báo), theo thứ tự in.
+    const b01 = '100 110 111 112 120 121 122 123 130 131 132 133 134 135 136 137 139 140 141 149 150 151 152 153 154 155 200 210 211 212 213 214 215 216 219 220 221 222 223 224 225 226 227 228 229 230 231 232 240 241 242 250 251 252 253 254 255 260 261 262 263 268 270 300 310 311 312 313 314 315 316 317 318 319 320 321 322 323 324 330 331 332 333 334 335 336 337 338 339 340 341 342 343 400 410 411 411a 411b 412 413 414 415 416 417 418 419 420 421 421a 421b 422 430 431 432 440';
+    expect(lines('B01').map((l) => l.lineCode).join(' ')).toBe(b01);
+    expect(lines('B02').map((l) => l.lineCode).join(' ')).toBe('01 02 10 11 20 21 22 23 25 26 30 31 32 40 50 51 52 60 70 71');
+    expect(lines('B03').map((l) => l.lineCode).join(' ')).toBe('01 02 03 04 05 06 07 20 21 22 23 24 25 26 27 30 31 32 33 34 35 36 40 50 60 61 70');
+    expect(f('B01', '270')!.formula).toBe('[100]+[200]'); expect(f('B01', '440')!.formula).toBe('[300]+[400]');
+    expect(f('B01', '260')!.formula).toBe('[261]+[262]+[263]+[268]'); // Điều 112 khoản 1.4 điểm b bỏ sót 263, mẫu in có 263
+    expect(f('B01', '320')).toMatchObject({ formula: '341+3431-LT(341,3431)', side: 'net_credit' });
+    expect(f('B01', '136')!.formula).toBe('1385+1388+334+338+141+244-LT(1385,1388,334,338,141,244)');
+    expect(f('B02', '30')!.formula).toBe('[20]+[21]-[22]-[25]-[26]'); expect(f('B02', '60')!.formula).toBe('[50]-[51]-[52]');
+    expect(f('B03', '20')!.formula).toBe('[01]-[02]-[03]-[04]-[05]+[06]-[07]'); expect(f('B03', '30')!.formula).toBe('[22]+[24]+[26]+[27]-[21]-[23]-[25]');
+    expect(f('B03', '40')!.formula).toBe('[31]-[32]+[33]-[34]-[35]-[36]');
+    // Dòng dự phòng, hao mòn, cổ phiếu quỹ in trong ngoặc: negate và trừ trong công thức của dòng tổng.
+    for (const l of ['122', '137', '149', '219', '223', '226', '229', '232', '254', '415']) expect(f('B01', l)!.negate, l).toBe(true);
   });
 });

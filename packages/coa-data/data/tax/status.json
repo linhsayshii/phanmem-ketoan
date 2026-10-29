@@ -1,8 +1,8 @@
 {
   "fxRules_TT133": true,
   "fxRules_TT99": true,
-  "fxRules_TT200": false,
-  "fxRules_note": "Loại tỷ giá đánh giá lại (assetRate, liabilityRate) và tài khoản trong fx-rules.json. TT133 (Điều 52 khoản 1.4.2) và TT99 (Tài khoản 413 khoản 1.5.1) đã đối chiếu văn bản gốc: tỷ giá chuyển khoản trung bình cho cả tài sản và nợ phải trả. TT200 chưa có văn bản gốc trong ~/legal-docs: để transfer_avg; công ty chọn lại ở cài đặt fx_reval_rate_asset, fx_reval_rate_liability (transfer_avg, buy, sell).",
+  "fxRules_TT200": true,
+  "fxRules_note": "Loại tỷ giá đánh giá lại (assetRate, liabilityRate) và tài khoản trong fx-rules.json. TT133 (Điều 52 khoản 1.4.2) và TT99 (Tài khoản 413 khoản 1.5.1) đã đối chiếu văn bản gốc: tỷ giá chuyển khoản trung bình cho cả tài sản và nợ phải trả. TT200 (Điều 69 khoản 1.3 điểm b, Công báo số 289 + 290): tài sản theo tỷ giá mua, nợ phải trả theo tỷ giá bán của ngân hàng thương mại; công ty chọn lại ở cài đặt fx_reval_rate_asset, fx_reval_rate_liability (transfer_avg, buy, sell).",
   "legalParam_vat_reduced_rate@2025-07-01": true,
   "legalParam_vat_noncash_threshold@2025-07-01": true,
   "legalParam_vat_return_template@2022-01-01": false,

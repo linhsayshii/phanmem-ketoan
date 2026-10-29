@@ -31,7 +31,11 @@ describe('fx-rules.json theo mẫu hệ thống tài khoản', () => {
   it('TT133 đánh giá lại qua 413 rồi kết chuyển; TT99 ghi thẳng 515/635 (Tài khoản 413 khoản 4.2)', () => {
     expect(loadFxRules('TT133')).toMatchObject({ revalAccount: '413', transferToPnl: true, assetRate: 'transfer_avg', liabilityRate: 'transfer_avg' });
     expect(loadFxRules('TT99')).toMatchObject({ revalAccount: null, transferToPnl: false, assetRate: 'transfer_avg', liabilityRate: 'transfer_avg' });
-    expect([status.fxRules_TT133, status.fxRules_TT99, status.fxRules_TT200]).toEqual([true, true, false]);
+    expect([status.fxRules_TT133, status.fxRules_TT99, status.fxRules_TT200]).toEqual([true, true, true]);
+  });
+  it('TT200 đánh giá lại qua 4131 rồi kết chuyển cuối năm; tài sản theo tỷ giá mua, nợ phải trả theo tỷ giá bán (Điều 69 khoản 1.3 điểm b)', () => {
+    expect(loadFxRules('TT200')).toMatchObject({ gainAccount: '515', lossAccount: '635', revalAccount: '4131', transferToPnl: true, assetRate: 'buy', liabilityRate: 'sell' });
+    expect(loadFxRules('TT200')!.source).toContain('Điều 69');
   });
   it('chế độ chưa có trong fx-rules.json (TT58): undefined', () => { expect(loadFxRules('TT58')).toBeUndefined(); });
 });
