@@ -158,7 +158,7 @@ Menu Thuế > "Tờ khai thuế GTGT" (cần quyền xem tờ khai). Kỳ khai t
 **Điều cần biết trước khi nộp**
 
 - Tệp XML xuất ra chưa được kiểm chứng với HTKK. Phần mềm chưa có tệp mẫu hay XSD của HTKK nên tên thẻ, mã mẫu và phiên bản trong tệp là giả định tạm. Màn hình cảnh báo "XML chưa kiểm chứng với HTKK" (cả 01/GTGT và 03/TNDN); hãy nạp thử vào HTKK và đối chiếu số liệu rồi mới nộp. Ký số tệp này cũng phải xác nhận riêng (mục Ký số trong `docs/user/giai-doan-7-phap-ly-lam-tron.md`).
-- Phần mềm mới có mẫu 01/GTGT theo Thông tư 89/2026 (áp dụng từ 01/7/2026) với 30 chỉ tiêu [21] đến [43]. Mẫu theo Thông tư 80 chưa có văn bản gốc nên không lập được tờ khai cho kỳ trước 01/7/2026: phần mềm báo kỳ này chưa có mẫu tờ khai.
+- Phần mềm có hai mẫu 01/GTGT: theo Thông tư 89/2026 (áp dụng từ 01/7/2026, 30 chỉ tiêu [21] đến [43]) và theo Thông tư 80/2021 (kỳ tính thuế từ 01/01/2022 đến 30/6/2026, 28 chỉ tiêu [21] đến [43], nhập từ Công báo số 969 + 970 ngày 17/11/2021). Kỳ nào dùng mẫu nào do phần mềm tự chọn theo ngày của kỳ. Mẫu Thông tư 80 không có [32b] (hàng hóa không tính vào giá tính thuế) và [34a] (không thuộc phạm vi điều chỉnh): số của nhóm hóa đơn KTGT, NPV không vào tờ khai kỳ này và tờ khai cảnh báo từng nhóm có số. Kỳ trước 01/01/2022 chưa có mẫu: phần mềm báo chưa có mẫu tờ khai.
 - Thuế suất 8% (giảm thuế GTGT theo Nghị quyết 204/2025/QH15 và Nghị định 174/2025) hiện chưa có chỉ tiêu xác nhận riêng. Hàng hóa 8% tạm gộp vào [32] và [33]. Từ giai đoạn 7, kỳ có hóa đơn bán ra 8% không chốt được cho đến khi bạn xác nhận rõ (hộp thoại "Hóa đơn bán ra 8% chưa có chỉ tiêu trong mẫu", mã VAT_RATE8_UNVERIFIED); xác nhận được lưu trên tờ khai và ghi nhật ký kiểm toán. Chưa xác nhận thì không xuất XML hay ký số được. Xem `docs/user/giai-doan-7-phap-ly-lam-tron.md`.
 - Chỉ tiêu [25] (thuế đầu vào dùng chung được phân bổ theo tỷ lệ doanh thu chịu thuế) là cách tính của phần mềm, bạn có thể ghi đè.
 
@@ -226,7 +226,7 @@ Các việc dưới đây chưa làm hoặc làm có điều kiện. Ghi chú tr
 
 **Chờ văn bản hoặc tài khoản thử**
 
-- Tờ khai 01/GTGT kỳ trước 01/7/2026 chưa lập được vì thiếu văn bản gốc Thông tư 80/2021. Thuế suất 8% gộp tạm vào [32], [33]. XML chưa kiểm chứng với HTKK. Ủy nhiệm chi chỉ có một mẫu nội bộ, chưa có mẫu riêng của từng ngân hàng. Phiếu thu, phiếu chi của TT200 và TT58 in không có dòng "Mẫu số" và căn cứ pháp lý. Quy tắc tỷ giá xuất quỹ của TT200 chưa có văn bản gốc; chế độ TT58 chưa có quy tắc tỷ giá nên chức năng tỷ giá báo lỗi thiếu quy tắc. Báo cáo tài chính B01, B02, B03 còn chờ kế toán trưởng rà soát; gõ tiếng Việt Telex hoặc VNI chưa kiểm tay.
+- Tờ khai 01/GTGT kỳ trước 01/01/2022 chưa có mẫu. Kỳ từ 01/01/2022 đến 30/6/2026 lập theo mẫu Thông tư 80/2021. Thuế suất 8% gộp tạm vào [32], [33] (cả hai mẫu). XML chưa kiểm chứng với HTKK. Ủy nhiệm chi chỉ có một mẫu nội bộ, chưa có mẫu riêng của từng ngân hàng. Phiếu thu, phiếu chi của TT200 và TT58 in không có dòng "Mẫu số" và căn cứ pháp lý. Quy tắc tỷ giá xuất quỹ của TT200 chưa có văn bản gốc; chế độ TT58 chưa có quy tắc tỷ giá nên chức năng tỷ giá báo lỗi thiếu quy tắc. Báo cáo tài chính B01, B02, B03 còn chờ kế toán trưởng rà soát; gõ tiếng Việt Telex hoặc VNI chưa kiểm tay.
 
 **Tỷ giá xuất quỹ**
 

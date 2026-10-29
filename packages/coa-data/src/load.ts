@@ -94,7 +94,7 @@ export function isVatTemplateComplete(version: 'TT89' | 'TT80'): boolean {
   const p = dataPath('tax', 'status.json');
   return existsSync(p) && (JSON.parse(readFileSync(p, 'utf8')) as Record<string, unknown>)[`01GTGT_${version}`] === true && existsSync(dataPath('tax', VAT_FILE[version]));
 }
-// Thuế suất 8% (NĐ 174/2025) chưa có căn cứ chỉ tiêu: false thì nhóm 08 gộp tạm vào [32]/[33], tờ khai phải cảnh báo.
+// Thuế suất 8% (NĐ 174/2025 và các nghị định giảm thuế trước đó) chưa có căn cứ chỉ tiêu: false thì nhóm 08 gộp tạm vào [32]/[33] (cả mẫu TT89 và TT80), tờ khai phải cảnh báo.
 export function isVatRate8Verified(): boolean {
   const p = dataPath('tax', 'status.json');
   return existsSync(p) && (JSON.parse(readFileSync(p, 'utf8')) as Record<string, unknown>)['01GTGT_TT89_rate8'] === true;
@@ -104,18 +104,20 @@ export function loadVatTemplate(version: 'TT89' | 'TT80'): VatTemplate {
   return JSON.parse(readFileSync(dataPath('tax', VAT_FILE[version]), 'utf8')) as VatTemplate;
 }
 
-// Tờ khai quyết toán thuế TNDN 03/TNDN theo TT 89/2026 (data/tax/03tndn-tt89.json), nhập từ ảnh trang mẫu; cổng status.json 03TNDN_TT89 (false: API 409 CIT_TEMPLATE_UNAVAILABLE).
+// Tờ khai quyết toán thuế TNDN 03/TNDN theo TT 89/2026 (data/tax/03tndn-tt89.json) và TT 80/2021 (03tndn-tt80.json, kỳ kết thúc trước 01/7/2026), nhập từ ảnh trang mẫu; cổng status.json 03TNDN_TT89, 03TNDN_TT80 (false: API 409 CIT_TEMPLATE_UNAVAILABLE).
 // kind: section (dòng tiêu đề, không có số), ledger (lấy từ sổ cái: A1, G2), input (nhập tay), formula, rate (thuế suất %), text (chữ: [04]). printed = false: công thức gợi ý của phần mềm, mẫu không in.
 export type CitLineKind = 'section' | 'ledger' | 'input' | 'formula' | 'rate' | 'text';
 export interface CitTemplateLine { code: string; label: string; section: string; stt: string; kind: CitLineKind; formula?: string; printed?: boolean; clamp?: 'positivePart'; overridable: boolean; note?: string; group?: string }
-export interface CitTemplate { form: '03/TNDN'; version: 'TT89'; source: string; lines: CitTemplateLine[]; notes: string[] }
+export type CitTemplateVersion = 'TT89' | 'TT80';
+export interface CitTemplate { form: '03/TNDN'; version: CitTemplateVersion; source: string; lines: CitTemplateLine[]; notes: string[] }
 const taxStatus = (): Record<string, unknown> => { const p = dataPath('tax', 'status.json'); return existsSync(p) ? (JSON.parse(readFileSync(p, 'utf8')) as Record<string, unknown>) : {}; };
-export function isCitTemplateComplete(version: 'TT89'): boolean { return taxStatus()[`03TNDN_${version}`] === true && existsSync(dataPath('tax', '03tndn-tt89.json')); }
+const CIT_FILE: Record<CitTemplateVersion, string> = { TT89: '03tndn-tt89.json', TT80: '03tndn-tt80.json' };
+export function isCitTemplateComplete(version: CitTemplateVersion): boolean { return taxStatus()[`03TNDN_${version}`] === true && existsSync(dataPath('tax', CIT_FILE[version])); }
 // Mẫu 05/KK-TNCN, 05/QTT-TNCN (TT 89/2026 Phụ lục I): cổng status.json 05KK_TNCN_TT89, 05QTT_TNCN_TT89; chưa có tệp chỉ tiêu nên false thì API 409 TNCN_TEMPLATE_UNAVAILABLE.
 export function isTncnTemplateComplete(form: '05KK' | '05QTT'): boolean { return taxStatus()[`${form}_TNCN_TT89`] === true; }
-export function loadCitTemplate(version: 'TT89'): CitTemplate {
-  if (!isCitTemplateComplete(version)) throw new Error('Chưa có mẫu tờ khai 03/TNDN theo TT 89/2026/TT-BTC đối chiếu văn bản gốc (status.json 03TNDN_TT89)');
-  return JSON.parse(readFileSync(dataPath('tax', '03tndn-tt89.json'), 'utf8')) as CitTemplate;
+export function loadCitTemplate(version: CitTemplateVersion): CitTemplate {
+  if (!isCitTemplateComplete(version)) throw new Error(`Chưa có mẫu tờ khai 03/TNDN ${version === 'TT80' ? 'theo TT 80/2021/TT-BTC' : 'theo TT 89/2026/TT-BTC'} đối chiếu văn bản gốc (status.json 03TNDN_${version})`);
+  return JSON.parse(readFileSync(dataPath('tax', CIT_FILE[version]), 'utf8')) as CitTemplate;
 }
 // Mẫu 01/TKN-CNKD (Thông báo doanh thu/Tờ khai thuế năm của hộ kinh doanh, TT 89/2026 Phụ lục I, thay 01/CNKD): data/tax/01tkn-cnkd-tt89.json, cổng status.json 01TKN_CNKD_TT89. Mới là định nghĩa mẫu, chưa có logic lập tờ khai.
 export interface HkdReturnLine { code: string; label: string; section: string; kind: 'row' | 'total' | 'input' | 'formula' | 'column'; stt?: string; formula?: string; printedAnomaly?: boolean; note?: string }

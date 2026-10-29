@@ -37,15 +37,35 @@ async function tenant() {
 }
 
 describe('tờ khai 01/GTGT', () => {
-  it('kỳ tháng 7/2026 dùng TT89; tháng 6/2026 trả VAT_TEMPLATE_UNAVAILABLE khi TT80 chưa có', async () => {
+  it('kỳ tháng 7/2026 dùng TT89; tháng 6/2026 dùng TT80 (kỳ kết thúc trước 01/7/2026)', async () => {
     const t = await tenant();
     const r = await t.create(t.month(7));
     expect(r).toMatchObject({ revision: 0, status: 'draft', templateVersion: 'TT89' });
     expect(r.values['21']).toBe('X'); // không có hóa đơn
-    const old = await t.call('POST', '/api/tax/vat-returns', t.month(6));
-    expect(err(old)).toEqual([409, 'VAT_TEMPLATE_UNAVAILABLE']);
-    expect(old.json().error.message).toContain('TT 80/2021');
+    const old = await t.create(t.month(6));
+    expect(old).toMatchObject({ revision: 0, status: 'draft', templateVersion: 'TT80' });
+    expect(old.values['21']).toBe('X');
+    expect(Object.keys(old.values)).not.toContain('32b'); expect(Object.keys(old.values)).not.toContain('34a'); // mẫu TT80 không có hai chỉ tiêu này
     expect(err(await t.call('POST', '/api/tax/vat-returns', t.month(13)))).toEqual([400, 'VALIDATION']);
+  });
+
+  it('tháng 6/2026 theo mẫu TT80: [27]=[29]+[30]+[32]+[32a], [34]=[26]+[27] (không có [32b], [34a]); nhóm KTGT, NPV không có chỉ tiêu nên cảnh báo', async () => {
+    const t = await tenant();
+    await t.invoice('HDM', '2026-06-05', M(100), 'V10', '01');
+    await t.invoice('HDB', '2026-06-10', M(300), 'V10', '10');
+    await t.invoice('HDB', '2026-06-12', M(50), 'KCT', 'KCT');
+    await t.invoice('HDB', '2026-06-13', M(40), 'KKK', 'KKK');
+    await t.invoice('HDB', '2026-06-14', M(7), 'KCT', 'KTGT');
+    await t.invoice('HDB', '2026-06-15', M(9), 'KCT', 'NPV');
+    const r = await t.create(t.month(6));
+    expect(r.templateVersion).toBe('TT80');
+    expect(r.values).toMatchObject({ '21': '', '22': '0', '23': M(100), '24': M(10), '25': M(10), '26': M(50), '32': M(300), '33': M(30), '32a': M(40), '27': M(340), '28': M(30), '34': M(390), '35': M(30), '36': M(20), '40a': M(20), '40': M(20), '41': '0', '43': '0' });
+    expect(r.warnings.filter((w) => w.includes('TT 80/2021')).map((w) => w.match(/Nhóm kê khai (\w+)/)![1]).sort()).toEqual(['KTGT', 'NPV']);
+    const f = await t.finalize(r.id);
+    expect(f).toMatchObject({ status: 'final', templateVersion: 'TT80' });
+    // Kỳ sau (7/2026, mẫu TT89) nhận [22] từ [43] của tờ khai 6/2026 (cả hai mẫu cùng chỉ tiêu [22], [43]).
+    const next = await t.create(t.month(7));
+    expect(next).toMatchObject({ templateVersion: 'TT89' }); expect(next.values['22']).toBe('0');
   });
 
   it('mua 100tr thuế 10tr (nhóm 01), bán 10% 300tr thuế 30tr, KCT 50tr: [23]=100tr [24]=10tr [25]=10tr [26]=50tr [32]=300tr [33]=30tr [27]=300tr [28]=30tr [34]=350tr [35]=30tr [36]=20tr', async () => {

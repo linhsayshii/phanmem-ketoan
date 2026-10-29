@@ -122,19 +122,22 @@ describe('escapeXml', () => {
     expect(escapeXml('a\uD83D\uDE00b')).toBe('a\uD83D\uDE00b'); // cặp thay thế đủ giữ nguyên
     expect(escapeXml('a\uD83Db\uDE00c\uFFFEd\uFFFFe')).toBe('abcde'); // nửa cặp lẻ, U+FFFE, U+FFFF bị bỏ
     expect(Object.keys(XML_FORMATS)).toEqual(['htkk-01gtgt', 'htkk-03tndn']);
-    expect(XML_FORMATS['htkk-03tndn']).toMatchObject({ verified: false, formCode: '03/TNDN', templateVersions: ['TT89'] });
-    expect(XML_FORMATS['htkk-01gtgt']).toMatchObject({ verified: false, formCode: '01/GTGT', templateVersions: ['TT89'] });
+    expect(XML_FORMATS['htkk-03tndn']).toMatchObject({ verified: false, formCode: '03/TNDN', templateVersions: ['TT89', 'TT80'] });
+    expect(XML_FORMATS['htkk-01gtgt']).toMatchObject({ verified: false, formCode: '01/GTGT', templateVersions: ['TT89', 'TT80'] });
   });
 });
 
 describe('mẫu và gợi ý cho màn hình tờ khai', () => {
-  it('vat-template trả chỉ tiêu theo mẫu của kỳ; kỳ trước 01/7/2026: 409 VAT_TEMPLATE_UNAVAILABLE', async () => {
+  it('vat-template trả chỉ tiêu theo mẫu của kỳ; kỳ trước 01/7/2026 dùng mẫu TT80', async () => {
     const t = await tenant();
     const ok = await t.call('GET', '/api/tax/vat-template?year=2026&periodKind=month&period=7');
     expect(ok.statusCode, ok.body).toBe(200);
     const body = ok.json(); expect(body.version).toBe('TT89');
     expect(body.lines.map((l: { code: string }) => l.code)).toEqual(loadVatTemplate('TT89').lines.map((l) => l.code));
-    expect(err(await t.call('GET', '/api/tax/vat-template?year=2026&periodKind=month&period=6'))).toEqual([409, 'VAT_TEMPLATE_UNAVAILABLE']);
+    const old = await t.call('GET', '/api/tax/vat-template?year=2026&periodKind=month&period=6');
+    expect(old.statusCode, old.body).toBe(200);
+    expect(old.json().version).toBe('TT80');
+    expect(old.json().lines.map((l: { code: string }) => l.code)).toEqual(loadVatTemplate('TT80').lines.map((l) => l.code));
   });
 
   it('hints: kỳ trước có tờ khai lần đầu đã chốt thì carryLocked = true (khóa ô [22])', async () => {

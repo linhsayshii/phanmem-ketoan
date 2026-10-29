@@ -438,9 +438,9 @@ Phần tham số pháp lý (thuế suất, ngưỡng miễn, tạm nộp) nằm 
 | Miễn thuế | Doanh thu năm trước không quá 1 tỷ đồng, từ kỳ 2026 | NĐ 141/2026/NĐ-CP Điều 2 |
 | Giảm 30% thuế phải nộp | Kỳ 2026 và 2027, doanh thu không quá 10 tỷ đồng: chỉ gợi ý, chờ hướng dẫn | NQ 43/2026/QH16 Điều 1 khoản 2 |
 | Tạm nộp | Tổng 4 quý không thấp hơn 80% số quyết toán, từ 01/7/2026 | NĐ 252/2026/NĐ-CP Điều 24 khoản 3 điểm a |
-| Mẫu tờ khai 03/TNDN | Mẫu theo TT 89/2026/TT-BTC, áp dụng cho kỳ tính thuế năm kết thúc từ 01/7/2026 | TT 89/2026/TT-BTC Điều 99, Điều 100, Phụ lục I |
+| Mẫu tờ khai 03/TNDN | Mẫu theo TT 89/2026/TT-BTC, áp dụng cho kỳ tính thuế năm kết thúc từ 01/7/2026; kỳ kết thúc từ 31/12/2021 đến 30/6/2026 dùng mẫu theo TT 80/2021/TT-BTC | TT 89/2026/TT-BTC Điều 99, Điều 100, Phụ lục I; TT 80/2021/TT-BTC Điều 87 khoản 2, Phụ lục II |
 
-Năm tính thuế kết thúc trước 01/7/2026 (ví dụ năm 2025 trở về trước): phần mềm không có mẫu 03/TNDN theo TT 80/2021 nên báo ("CIT_TEMPLATE_UNAVAILABLE", 409). Cảnh báo ngưỡng 80% chỉ có từ năm 2026.
+Năm tính thuế kết thúc trước 01/7/2026 (ví dụ năm 2025): phần mềm lập tờ khai theo mẫu 03/TNDN của TT 80/2021 (Công báo 969 + 970, trang 60-64). Mẫu này không có ô thuế suất phổ thông C7a: C7 là thu nhập tính thuế theo thuế suất 20%, thu nhập tính thuế theo thuế suất khác (15%, 17% theo doanh thu năm trước) khai ở C8 với thuế suất ở C8a; phần mềm gợi ý C8, C8a khi xác định được thuế suất khác 20%, và C9 = C7 × 20% + C8 × C8a. Mẫu TT 80/2021 có phụ lục 03-1A/TNDN (kết quả hoạt động sản xuất kinh doanh) mà phần mềm chưa lập: A1 lấy từ B02. Năm tính thuế kết thúc trước 31/12/2021 chưa có mẫu ("CIT_TEMPLATE_UNAVAILABLE", 409). Cảnh báo ngưỡng 80% chỉ có từ năm 2026 (quy tắc tạm nộp 80% của giai đoạn trước chưa nhập: xem docs/TIEP-THEO.md mục 4).
 
 ### Tạm tính thuế TNDN quý
 
@@ -602,7 +602,7 @@ Cách xử lý:
 - Chưa có phụ lục kết quả kinh doanh; cần văn bản gốc ban hành mẫu.
 - Giảm 30% theo NQ 43/2026/QH16 chỉ là gợi ý ở chỉ tiêu C15 chờ hướng dẫn của Chính phủ; mẫu 03/TNDN không có chỉ tiêu riêng.
 - Doanh thu quy đổi 12 tháng theo số tháng của năm tài chính, văn bản nói tháng hoạt động thực tế; chênh nhỏ, chỉnh tay được.
-- Năm tính thuế kết thúc trước 01/7/2026 chưa có mẫu 03/TNDN (TT 80/2021 chưa có văn bản gốc).
+- Năm tính thuế kết thúc trước 31/12/2021 chưa có mẫu 03/TNDN; mẫu TT 80/2021 (đến 30/6/2026) đã có nhưng chưa lập phụ lục 03-1A/TNDN.
 - Số đã tạm nộp tính theo Nợ TK 3334 đối ứng tiền từ 01/04 đến hết quý; nộp sớm hơn hoặc nộp không qua tiền cần nhập tay.
 - Kế toán trưởng cần rà cách lấy doanh thu xác định thuế suất và miễn thuế (doanh thu thuần cộng doanh thu tài chính cộng thu nhập khác).
 

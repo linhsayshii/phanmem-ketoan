@@ -75,7 +75,7 @@ describe('Bộ dữ liệu mẫu ABC năm 2026 (GĐ2)', () => {
     }
   });
 
-  it('tờ khai 01/GTGT quý 3/2026 khớp từng chỉ tiêu kỳ vọng; quý 4 nhận [22] từ quý 3; quý 1, 2 không lập (mẫu TT80 chưa có)', async () => {
+  it('tờ khai 01/GTGT quý 3/2026 khớp từng chỉ tiêu kỳ vọng; quý 4 nhận [22] từ quý 3; quý 1, 2 không lập (dữ liệu mẫu chỉ lập quý 3, 4 theo mẫu TT89)', async () => {
     const r = await sql<{ period: number; revision: number; status: string; template_version: string; values: Record<string, string> }>`
       SELECT period, revision, status, template_version, values FROM tax_return WHERE tenant_id = ${tenantId}::uuid AND form_code = '01/GTGT' ORDER BY period, revision`.execute(ctx.t.admin);
     expect(r.rows.map((x) => [x.period, x.revision, x.status, x.template_version])).toEqual([[3, 0, 'final', 'TT89'], [4, 0, 'final', 'TT89']]);

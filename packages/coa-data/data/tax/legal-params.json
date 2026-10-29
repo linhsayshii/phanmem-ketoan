@@ -21,7 +21,7 @@
     "value": "TT80",
     "validFrom": "2022-01-01",
     "validTo": "2026-06-30",
-    "source": "Mẫu tờ khai theo TT 80/2021/TT-BTC ngày 29/9/2021, kể cả các lần sửa đổi bởi TT 94/2025/TT-BTC và TT 21/2026/TT-BTC ngày 17/3/2026 (ngày bắt đầu áp dụng 01/01/2022 chưa đối chiếu văn bản gốc TT 80/2021; nếu mẫu 01/GTGT đổi trong khoảng này theo TT 94/2025 hoặc TT 21/2026 thì cần thêm dòng). Mốc kết thúc đã đối chiếu: TT 89/2026/TT-BTC Điều 99 khoản 1 (hiệu lực từ 01/7/2026), khoản 3 điểm h, i, k (bãi bỏ TT 80/2021, TT 94/2025, TT 21/2026), Điều 100 khoản 1 (hồ sơ khai thuế có kỳ tính thuế trước ngày 01/7/2026 thực hiện theo mẫu biểu áp dụng trước thời điểm Thông tư có hiệu lực). Tra theo một ngày thuộc kỳ tính thuế, không theo ngày nộp."
+    "source": "TT 80/2021/TT-BTC ngày 29/9/2021, Điều 87 khoản 2 (mẫu biểu hồ sơ khai thuế áp dụng cho kỳ tính thuế bắt đầu từ 01/01/2022; Công báo 961+962 trang 78) và mẫu 01/GTGT tại Phụ lục II (Công báo 969+970 trang 19-20, tải 2026-10-29 từ https://congbao.chinhphu.vn/van-ban/thong-tu-so-80-2021-tt-btc-34774.htm), đối chiếu ảnh trang; các lần sửa đổi TT 13/2023/TT-BTC, TT 40/2025/TT-BTC (Điều 1 khoản 7: chỉ sửa chữ địa danh ở [11a], [11b] và ghi chú), TT 94/2025/TT-BTC, TT 21/2026/TT-BTC không đổi chỉ tiêu [21]-[43] của mẫu. Mốc kết thúc 30/6/2026: TT 89/2026/TT-BTC Điều 99 khoản 1 (hiệu lực từ 01/7/2026), khoản 3 điểm h, i, k (bãi bỏ TT 80/2021, TT 94/2025, TT 21/2026), Điều 100 khoản 1 (hồ sơ khai thuế có kỳ tính thuế trước ngày 01/7/2026 thực hiện theo mẫu biểu áp dụng trước thời điểm Thông tư có hiệu lực). Tra theo một ngày thuộc kỳ tính thuế, không theo ngày nộp."
   },
   {
     "code": "vat_return_template",
@@ -76,10 +76,17 @@
   },
   {
     "code": "cit_return_template",
+    "value": "TT80",
+    "validFrom": "2021-12-31",
+    "validTo": "2026-06-30",
+    "source": "TT 80/2021/TT-BTC ngày 29/9/2021: Điều 87 khoản 2 (mẫu biểu hồ sơ khai thuế áp dụng cho kỳ tính thuế bắt đầu từ 01/01/2022; khai quyết toán thuế của kỳ tính thuế năm 2021 cũng theo mẫu biểu của Thông tư này; Công báo 961+962 trang 78) và mẫu 03/TNDN tại Phụ lục II (Công báo 969+970 trang 60-64, tải 2026-10-29 từ https://congbao.chinhphu.vn/van-ban/thong-tu-so-80-2021-tt-btc-34774.htm), đối chiếu ảnh trang. Mốc bắt đầu 2021-12-31 là cách đọc của phần mềm: kỳ tính thuế năm dương lịch 2021 kết thúc ngày đó (năm tài chính lệch năm dương lịch kết thúc trước ngày này dùng mẫu cũ, không nhập). Mốc kết thúc 30/6/2026: TT 89/2026/TT-BTC Điều 99 khoản 1, Điều 100 khoản 1. Tra theo ngày cuối năm tài chính: kỳ tính thuế năm kết thúc từ 01/01/2022 đến 30/6/2026 dùng mẫu này."
+  },
+  {
+    "code": "cit_return_template",
     "value": "TT89",
     "validFrom": "2026-07-01",
     "validTo": null,
-    "source": "TT 89/2026/TT-BTC ngày 30/6/2026: Điều 99 khoản 1 (hiệu lực từ 01/7/2026), Điều 100 khoản 1 (hồ sơ khai thuế có kỳ tính thuế trước ngày 01/7/2026 dùng mẫu biểu cũ; ~/legal-docs/tt89-2026/ocr/p199.txt dòng 38-44); Mẫu số 03/TNDN tại Phụ lục I trang 270-273, ghi chú 3 của mẫu lấy ví dụ kỳ tính thuế 01/01/2026-31/12/2026. Tra theo ngày cuối năm tài chính: kỳ tính thuế năm kết thúc từ 01/7/2026 dùng mẫu này; kỳ kết thúc trước đó dùng mẫu theo TT 80/2021 chưa có văn bản gốc nên không có mẫu."
+    "source": "TT 89/2026/TT-BTC ngày 30/6/2026: Điều 99 khoản 1 (hiệu lực từ 01/7/2026), Điều 100 khoản 1 (hồ sơ khai thuế có kỳ tính thuế trước ngày 01/7/2026 dùng mẫu biểu cũ; ~/legal-docs/tt89-2026/ocr/p199.txt dòng 38-44); Mẫu số 03/TNDN tại Phụ lục I trang 270-273, ghi chú 3 của mẫu lấy ví dụ kỳ tính thuế 01/01/2026-31/12/2026. Tra theo ngày cuối năm tài chính: kỳ tính thuế năm kết thúc từ 01/7/2026 dùng mẫu này; kỳ kết thúc trước đó (đến 30/6/2026) dùng mẫu theo TT 80/2021 (dòng cit_return_template TT80)."
   },
   {
     "code": "hkd_exempt_revenue",
