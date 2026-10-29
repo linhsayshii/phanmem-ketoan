@@ -3,6 +3,7 @@ import { Alert, Button, Modal, Select, Space, Table, Upload, message } from 'ant
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import { formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, sum } from '@kt/domain';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 import { KeyboardGrid, PageHeader, Toolbar, useHotkeys } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
@@ -32,6 +33,7 @@ export default function AssetOpeningPage() {
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<FiscalYear[]>('/api/fiscal-years') });
   const [picked, setPicked] = useState<number>();
   const fy = years.data?.find((y) => y.fiscalYear === picked) ?? years.data?.[0]; const year = fy?.fiscalYear;
+  const noYear = years.isSuccess && years.data.length === 0; // công ty chưa có năm tài chính
   const saved = useQuery({ queryKey: ['opening-assets', year], queryFn: () => api<Row[]>(`/api/opening-assets/${year}`), enabled: year !== undefined });
   const [rows, setRows] = useState<Row[]>([emptyRow()]); const rowsRef = useRef(rows);
   const setAll = useCallback((r: Row[]) => { rowsRef.current = r; setRows(r); }, []);
@@ -92,6 +94,7 @@ export default function AssetOpeningPage() {
           <Select aria-label="Năm tài chính" style={{ width: 200 }} value={year} onChange={setPicked} loading={years.isLoading} placeholder="Chọn năm" options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
         </Toolbar>
       </PageHeader>
+      {noYear ? <NoFiscalYearNotice purpose="nhập thẻ tài sản đầu kỳ" /> : (<>
       {saved.error && <Alert type="error" showIcon message={(saved.error as Error).message} />}
       {issues && (issues.length === 0 ? <Alert type="success" showIcon message="Thẻ tài sản khớp số dư tài khoản" />
         : <Alert type="error" showIcon message={<ul style={{ margin: 0, paddingLeft: 18 }}>{issues.map((i, k) => <li key={k}>{i.message}</li>)}</ul>} />)}
@@ -99,6 +102,7 @@ export default function AssetOpeningPage() {
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, marginTop: 8 }}>
         <b>Tổng nguyên giá: {formatVnNumber(totalCost.toString())}</b><b>Tổng hao mòn: {formatVnNumber(totalAcc.toString())}</b>
       </div>
+      </>)}
       {importing && year !== undefined && <ImportModal year={year} onClose={() => setImporting(false)} onDone={() => { setImporting(false); void qc.invalidateQueries({ queryKey: ['opening-assets', year] }); }} />}
     </div>
   );

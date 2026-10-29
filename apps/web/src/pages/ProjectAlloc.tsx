@@ -3,6 +3,7 @@ import { Alert, Button, Checkbox, Segmented, Select, Space, Table, Tabs, Tag } f
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { formatVnNumber, todayVn } from '@kt/domain';
 import { COLOR, LookupSelect, PageHeader, Section, Toolbar, useHotkeys, VnNumberInput } from '@kt/ui';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 import { api, type ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { contractFetcher } from '../lookups.js';
@@ -26,6 +27,7 @@ export default function ProjectAllocPage() {
   const { can } = useAuth();
   const today = todayVn();
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<FiscalYear[]>('/api/fiscal-years') });
+  const noYear = years.isSuccess && years.data.length === 0; // công ty chưa có năm tài chính: không có kỳ để chọn
   const cur = (years.data ?? []).find((y) => y.dateFrom <= today && today <= y.dateTo) ?? years.data?.at(-1);
   const [year, setYear] = useState<number | null>(null);
   const [month, setMonth] = useState<number>(Number(today.slice(5, 7)));
@@ -105,6 +107,7 @@ export default function ProjectAllocPage() {
           </>}
         </Toolbar>
       </PageHeader>
+      {noYear ? <NoFiscalYearNotice purpose="phân bổ chi phí cho vụ việc" /> : (<>
       <Tabs activeKey={kind} onChange={(k) => setKind(k as Kind)} style={{ marginBottom: 12 }} items={[{ key: 'alloc', label: 'Phân bổ chi phí chung' }, { key: 'cogs', label: 'Kết chuyển giá vốn vụ việc' }]} />
 
       {kind === 'alloc' && alloc.basis === 'manual' && (
@@ -170,6 +173,7 @@ export default function ProjectAllocPage() {
             ]} />
         </Section>
       )}
+      </>)}
     </>
   );
 }

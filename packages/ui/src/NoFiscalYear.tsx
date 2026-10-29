@@ -8,18 +8,20 @@ export interface NoFiscalYearProps {
   /** Người dùng có quyền `period.create`. */
   canCreate: boolean;
   /** Bấm "Thêm năm tài chính": trang gọi điều hướng tới Kỳ kế toán, hoặc mở hộp thoại nếu đang ở Kỳ kế toán. */
-  onCreate?: () => void;
+  onCreate?: (() => void) | undefined;
   /** Việc không làm được khi chưa có năm, nối vào câu hướng dẫn, ví dụ "nhập số dư đầu kỳ". */
-  purpose?: string;
+  purpose?: string | undefined;
+  /** Đang ở chính màn Kỳ kế toán: không dặn "vào Kỳ kế toán". */
+  inPeriods?: boolean | undefined;
   /** Bỏ khung Section khi đã nằm trong một khối. */
-  bare?: boolean;
+  bare?: boolean | undefined;
   testId?: string;
 }
 
-export function NoFiscalYear({ canCreate, onCreate, purpose, bare, testId = 'no-fiscal-year' }: NoFiscalYearProps) {
+export function NoFiscalYear({ canCreate, onCreate, purpose, inPeriods, bare, testId = 'no-fiscal-year' }: NoFiscalYearProps) {
   const need = purpose ? `Cần có năm tài chính để ${purpose}. ` : '';
   const description = canCreate
-    ? `${need}Vào Kỳ kế toán và bấm "Thêm năm tài chính" để tạo năm đầu tiên.`
+    ? `${need}${inPeriods ? 'Bấm' : 'Vào Kỳ kế toán và bấm'} "Thêm năm tài chính" để tạo năm đầu tiên.`
     : `${need}Bạn chưa có quyền tạo kỳ kế toán: liên hệ quản trị viên để thêm năm tài chính.`;
   const empty = (
     <EmptyState

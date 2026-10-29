@@ -3,6 +3,7 @@ import { Alert, Button, Checkbox, Select, Space, Table, Tag } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatVnNumber, todayVn } from '@kt/domain';
 import { COLOR, LookupSelect, PageHeader, Section, Toolbar, useHotkeys, VnNumberInput } from '@kt/ui';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 import { api, type ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -33,6 +34,7 @@ export default function CostRunsPage() {
   const { can } = useAuth();
   const today = todayVn();
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<FiscalYear[]>('/api/fiscal-years') });
+  const noYear = years.isSuccess && years.data.length === 0; // công ty chưa có năm tài chính: không có kỳ để chọn
   const cur = (years.data ?? []).find((y) => y.dateFrom <= today && today <= y.dateTo) ?? years.data?.at(-1);
   const [year, setYear] = useState<number | null>(null);
   const [month, setMonth] = useState<number>(Number(today.slice(5, 7)));
@@ -103,6 +105,7 @@ export default function CostRunsPage() {
             options={Object.entries(BASIS).map(([value, label]) => ({ value, label: `Phân bổ SXC theo ${label.toLowerCase()}` }))} onChange={(v) => setParams((p) => ({ ...p, overheadBasis: v }))} />
         </Toolbar>
       </PageHeader>
+      {noYear ? <NoFiscalYearNotice purpose="chạy giá thành" /> : (<>
 
       {note && <Alert type="success" showIcon message={note} style={{ marginBottom: 12 }} />}
       {err && <Alert type="error" showIcon message={err.message} style={{ marginBottom: 12 }} description={details?.length ? <ul style={{ margin: 0, paddingLeft: 18 }}>{details.map((d, i) => <li key={i}>{d.objectCode ?? 'Chưa gắn đối tượng'} · TK {d.accountCode}{d.costItemCode ? ` · khoản mục ${d.costItemCode} ${d.costItemName ?? ''}` : ''}: {money(d.amount)}</li>)}</ul> : undefined} />}
@@ -179,6 +182,7 @@ export default function CostRunsPage() {
             { title: 'Người chạy', dataIndex: 'runBy', render: (v: string | null) => v ?? '' },
           ]} />
       </Section>
+      </>)}
     </>
   );
 }

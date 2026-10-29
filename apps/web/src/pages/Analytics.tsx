@@ -5,6 +5,7 @@ import { formatVnNumber } from '@kt/domain';
 import { PageHeader, Section, StatStrip, Toolbar } from '@kt/ui';
 import { api } from '../api/client.js';
 import { Chart } from './charts.js';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 
 interface Month { month: number; dateTo: string; revenue: string; expense: string | null; profit: string | null; cash: string; receivable: string | null; payable: string | null }
 interface Ratio { code: string; name: string; unit: 'lan' | 'percent'; value: string }
@@ -20,6 +21,7 @@ const vnd = (v: string | null) => (v === null ? null : formatVnNumber(v));
 
 export default function AnalyticsPage() {
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<{ fiscalYear: number }[]>('/api/fiscal-years') });
+  const noYear = years.isSuccess && years.data.length === 0; // công ty chưa có năm tài chính: chưa có số liệu để phân tích
   const [year, setYear] = useState<number>(); const [month, setMonth] = useState(12);
   useEffect(() => { if (year === undefined && years.data?.length) setYear(years.data[0]!.fiscalYear); }, [years.data, year]);
   const q = useQuery({ queryKey: ['analytics', year, month], enabled: year !== undefined, retry: false, queryFn: () => api<Overview>(`/api/analytics/overview?year=${year}&month=${month}`) });
@@ -31,6 +33,7 @@ export default function AnalyticsPage() {
         <Select aria-label="Đến tháng" value={month} onChange={setMonth} style={{ width: 130 }} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `Đến tháng ${i + 1}` }))} />
       </Toolbar>
     </PageHeader>
+    {noYear ? <NoFiscalYearNotice purpose="xem phân tích tài chính" /> : (<>
     {q.error && <Alert type="error" showIcon message={(q.error as Error).message} />}
     {d && d.hidden.length > 0 && <Alert type="info" showIcon style={{ marginBottom: 12 }} message={`Một số số liệu bị ẩn do thiếu quyền xem: ${d.hidden.map((h) => HIDDEN_LABEL[h] ?? h).join(', ')}.`} />}
     {d && (<>
@@ -52,6 +55,7 @@ export default function AnalyticsPage() {
             : <Table<Ratio> size="small" rowKey="code" pagination={false} dataSource={d.ratios} columns={[{ title: 'Hệ số', dataIndex: 'name' }, { title: 'Giá trị', align: 'right', width: 160, render: (_: unknown, r) => (r.unit === 'percent' ? `${r.value.replace('.', ',')}%` : `${r.value.replace('.', ',')} lần`) }]} />}
         </Section></Col>
       </Row>
+    </>)}
     </>)}
   </>);
 }

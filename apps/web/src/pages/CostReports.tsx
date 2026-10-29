@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import { formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
 import { KeyboardGrid, LookupSelect, PageHeader, Toolbar, useRememberedFilter } from '@kt/ui';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 import { api, type ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { costObjectPick } from '../lookups.js';
@@ -42,6 +43,7 @@ export default function CostReportsPage() {
   const today = todayVn();
   const [f, setF] = useRememberedFilter('cost-reports', { year: Number(today.slice(0, 4)), month: Number(today.slice(5, 7)), toMonth: 0, objectId: 0 }, `${me?.tenantId}:${me?.userId}`);
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<FiscalYear[]>('/api/fiscal-years') });
+  const noYear = years.isSuccess && years.data.length === 0; // công ty chưa có năm tài chính: không có kỳ để chọn
   const url = useMemo(() => {
     const p = new URLSearchParams({ year: String(f.year), month: String(f.month) });
     if (f.objectId) p.set('objectId', String(f.objectId));
@@ -82,6 +84,7 @@ export default function CostReportsPage() {
             onChange={(id) => setF({ ...f, objectId: id ? Number(id) : 0 })} />
         </Toolbar>
       </PageHeader>
+      {noYear ? <NoFiscalYearNotice purpose="xem báo cáo giá thành" /> : (<>
       <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={TABS.map((t) => ({ key: t.key, label: t.label }))} style={{ marginBottom: 12 }} />
       {err ? <Alert type={err.status === 404 ? 'info' : 'error'} showIcon message={err.status === 404 && tab !== 'ledger-154' ? `Kỳ ${String(f.month).padStart(2, '0')}/${f.year} chưa chạy giá thành: chạy ở màn Tính giá thành trước khi xem báo cáo này.` : err.message} style={{ marginBottom: 12 }} />
         : !d ? <Alert type="info" message="Đang tải…" style={{ marginBottom: 12 }} /> : (
@@ -94,6 +97,7 @@ export default function CostReportsPage() {
               {...(d.footer ? { pinnedBottomRows: [{ ...d.footer, isBold: true }] } : {})} />
           </div>
         )}
+      </>)}
     </>
   );
 }
