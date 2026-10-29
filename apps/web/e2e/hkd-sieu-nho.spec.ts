@@ -21,7 +21,7 @@ test('Chế độ kế toán: TT 152 và TT 58 dùng được (ghi sổ theo nh�
   await page.getByRole('row', { name: /TT152/ }).locator('.ant-table-row-expand-icon').click();
   await expect(page.getByText('Đã nhập từ văn bản gốc')).toBeVisible();
   await expect(page.getByText('Giới hạn hiện tại')).toBeVisible();
-  await expect(page.getByText(/Mẫu tờ khai 01\/CNKD/)).toBeVisible();
+  await expect(page.getByText(/Chưa có tờ khai 01\/TKN-CNKD/)).toBeVisible();
   await expect(page.getByText('Chưa có văn bản gốc, chưa dùng cho kế toán thật')).toHaveCount(0);
   await page.getByRole('row', { name: /TT58/ }).locator('.ant-table-row-expand-icon').click();
   await expect(page.getByText(/B01-DNSN lập từ các sổ ghi đơn/)).toBeVisible();
@@ -54,7 +54,7 @@ test('Sổ hộ kinh doanh: tạo nhóm ngành nghề, ghi doanh thu, xem S2a-HK
   const ghi = page.getByRole('tabpanel', { name: 'Ghi sổ' });
   await ghi.getByLabel('Diễn giải').fill(`Bán hàng ${stamp}`); await ghi.getByLabel('Số tiền').fill('3.333.333');
   await ghi.getByLabel('Diễn giải').press('Enter');
-  await expect(page.getByText('Đã ghi sổ')).toBeVisible();
+  await expect(page.getByText('Đã ghi sổ', { exact: true })).toBeVisible();
   await expect(page.getByRole('row', { name: new RegExp(`Bán hàng ${stamp}`) })).toBeVisible();
 
   await page.getByRole('tab', { name: 'Sổ và báo cáo' }).click();
