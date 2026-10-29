@@ -218,7 +218,7 @@ Kế hoạch `docs/superpowers/plans/2026-10-29-giao-dien-moi-chi-tiet.md` (skil
 
 ### Lỗ hổng phát hiện khi thử Docker với DB trắng (2026-10-29)
 
-- Năm tài chính chỉ tạo được ở trình thiết lập công ty (`/he-thong/tao-cong-ty`, bước 2). Công ty đã có (ví dụ ABC của bản Docker) mà chưa có năm tài chính thì chưa có màn hình nào tạo năm (API `POST /api/fiscal-years` đã có, quyền `period.create`). Cần màn hình/nút "Thêm năm tài chính" ở Kỳ kế toán. Các trang đã báo tiếng Việt thay vì lỗi thô: Hình thức sổ, Ngân sách; Tổng quan và Báo cáo tài chính vốn đã có thông báo.
+- Đã sửa: Kỳ kế toán có nút "Thêm năm tài chính" (quyền `period.create`, dùng chung biểu mẫu với trình thiết lập công ty) và cảnh báo khi công ty chưa có năm. Các trang Hình thức sổ, Ngân sách báo tiếng Việt thay vì lỗi thô; Tổng quan và Báo cáo tài chính vốn đã có thông báo.
 - Trang còn hiện bảng/ô chọn trống không giải thích khi chưa có năm tài chính: Kỳ kế toán, Số dư đầu kỳ, Tồn kho đầu kỳ, Tài sản đầu kỳ, Phân tích, Phân bổ khấu hao, Khóa kỳ, Phân bổ dự án, Chạy giá thành, Tài khoản; Báo cáo giá thành báo "chưa chạy giá thành" sai ngữ cảnh. Nên dùng một thành phần trống chung như ở Tổng quan.
 
 ## 5. Ghi chú môi trường

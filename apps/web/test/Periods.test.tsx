@@ -81,3 +81,43 @@ describe('Màn hình kỳ kế toán', () => {
     await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/vouchers/renumber', { method: 'POST', json: { voucherType: 'PKT', fiscalYear: 2026 } }));
   }, 20000);
 });
+
+describe('Kỳ kế toán khi công ty chưa có năm tài chính', () => {
+  const renderPage = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PeriodsPage /></QueryClientProvider>);
+  const posts = () => apiMock.mock.calls.filter(([, init]) => init?.method === 'POST');
+  beforeEach(() => {
+    perms.has = () => true;
+    apiMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/fiscal-years' && init?.method === 'POST') return { periods: 12 };
+      if (path === '/api/fiscal-years') return [];
+      if (path === '/api/regimes') return [];
+      throw new Error('không được gọi: ' + path);
+    });
+  });
+  afterEach(() => { apiMock.mockReset(); });
+
+  it('báo tiếng Việt, không gọi API kỳ với năm trống, có nút Thêm năm tài chính', async () => {
+    renderPage();
+    expect(await screen.findByText('Công ty chưa có năm tài chính.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Thêm năm tài chính' })).toBeEnabled();
+    expect(apiMock.mock.calls.every(([p]) => !String(p).startsWith('/api/periods'))).toBe(true);
+  });
+
+  it('Thêm năm tài chính gửi POST /api/fiscal-years với năm và ngày bắt đầu mặc định', async () => {
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'Thêm năm tài chính' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Tạo năm tài chính' }));
+    await vi.waitFor(() => expect(posts()).toHaveLength(1));
+    const [path, init] = posts()[0]!;
+    const year = new Date().getFullYear();
+    expect(path).toBe('/api/fiscal-years');
+    expect(init.json).toEqual({ fiscalYear: year, dateFrom: `${year}-01-01`, months: 12, regime: 'TT133' });
+  });
+
+  it('không có quyền period.create thì không có nút thêm', async () => {
+    perms.has = (c) => c !== 'period.create';
+    renderPage();
+    await screen.findByText('Công ty chưa có năm tài chính.');
+    expect(screen.queryByRole('button', { name: 'Thêm năm tài chính' })).not.toBeInTheDocument();
+  });
+});

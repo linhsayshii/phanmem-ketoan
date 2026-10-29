@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Button, Form, Input, InputNumber, Modal, Select, Space, Table, Tabs, Tag, message } from 'antd';
+import { Alert, Button, Form, Input, InputNumber, Modal, Select, Space, Table, Tabs, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { PageHeader, Section, Toolbar } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { NumberingBranchPanel } from './NumberingBranch.js';
+import { FiscalYearForm, nextFiscalYearDefaults } from './FiscalYearForm.js';
 
 interface PeriodRow {
   fiscalYear: number; periodNo: number; dateFrom: string; dateTo: string; regime: string; status: 'open' | 'soft_locked' | 'hard_locked';
@@ -75,7 +76,8 @@ function VoucherTypesTab({ year }: { year: number | undefined }) {
 export default function PeriodsPage() {
   const qc = useQueryClient();
   const { can } = useAuth();
-  const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<{ fiscalYear: number }[]>('/api/fiscal-years') });
+  const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<{ fiscalYear: number; regime: string; dateTo: string }[]>('/api/fiscal-years') });
+  const [addingYear, setAddingYear] = useState(false);
   const [picked, setPicked] = useState<number>();
   const year = picked ?? years.data?.at(-1)?.fiscalYear;
   const periods = useQuery({ queryKey: ['periods', year], enabled: year !== undefined, queryFn: () => api<PeriodRow[]>(`/api/periods?year=${year}`) });
@@ -101,8 +103,10 @@ export default function PeriodsPage() {
         <Toolbar>
           <span>Năm tài chính</span>
           <Select aria-label="Năm tài chính" style={{ width: 120 }} value={year} loading={years.isLoading} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: y.fiscalYear }))} onChange={setPicked} />
+          {can('period.create') && <Button onClick={() => setAddingYear(true)}>Thêm năm tài chính</Button>}
         </Toolbar>
       </PageHeader>
+      {years.isSuccess && years.data.length === 0 && <Alert type="warning" showIcon message="Công ty chưa có năm tài chính." description={can('period.create') ? 'Bấm "Thêm năm tài chính" để tạo năm đầu tiên; các màn hình số dư đầu kỳ, hình thức sổ, báo cáo cần có năm tài chính.' : 'Nhờ người có quyền tạo kỳ kế toán thêm năm tài chính; các màn hình số dư đầu kỳ, hình thức sổ, báo cáo cần có năm tài chính.'} />}
       <Tabs items={[
         { key: 'periods', label: 'Kỳ kế toán', children: (
         <>
@@ -135,6 +139,10 @@ export default function PeriodsPage() {
         </>) },
         { key: 'numbering', label: 'Loại chứng từ và đánh số', children: <VoucherTypesTab year={year} /> },
       ]} />
+      <Modal open={addingYear} title="Thêm năm tài chính" footer={null} destroyOnHidden onCancel={() => setAddingYear(false)}>
+        <FiscalYearForm initial={nextFiscalYearDefaults(years.data)} submitText="Tạo năm tài chính"
+          onCreated={() => { setAddingYear(false); setPicked(undefined); void qc.invalidateQueries({ queryKey: ['fiscal-years'] }); void qc.invalidateQueries({ queryKey: ['periods'] }); }} />
+      </Modal>
     </div>
   );
 }
