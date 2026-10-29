@@ -12,7 +12,7 @@ describe('chế độ kế toán TT58 và TT152 (đã có văn bản gốc, ghi 
     const by = Object.fromEntries(list.map((r) => [r.code, r]));
     expect(by.TT133!.ready).toBe(true);
     for (const c of ['TT58', 'TT152']) { expect(by[c]!.ready).toBe(true); expect(by[c]!.primaryTextObtained).toBe(true); expect(by[c]!.applicable!.coa).toBe(false); expect(by[c]!.limits.length).toBeGreaterThan(0); }
-    expect([by.TT152!.reportsReady, by.TT58!.reportsReady]).toEqual([true, false]);
+    expect([by.TT152!.reportsReady, by.TT58!.reportsReady]).toEqual([true, true]);
     expect((await ctx.app.inject({ method: 'GET', url: '/api/regimes' })).statusCode).toBe(401);
   });
   it('tạo năm tài chính TT152 và TT58: tạo kỳ, không sinh tài khoản, sơ đồ kết chuyển, định nghĩa báo cáo', async () => {

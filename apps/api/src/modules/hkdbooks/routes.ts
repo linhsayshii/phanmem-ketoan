@@ -4,7 +4,10 @@ import { READ_SNAPSHOT } from '@kt/db';
 import { bookRegimeOf, loadBookSet, type BookRegime } from '@kt/coa-data';
 import { AppError } from '../../plugins/errors.js';
 import { assertPrint, isoDate, ordered, orderedMsg, respondReport } from '../reporting/routes.js';
-import { buildBook, catalog } from './books.js';
+import { catalog } from './books.js';
+import { buildAnyBook } from './dnsnBooks.js';
+import { assetInput, createAsset, createDebt, createEquity, createOtherAsset, debtInput, deleteAsset, deleteDebt, deleteEquity, deleteOtherAsset, equityInput, listAssets, listDebts, listEquity, listOtherAssets, listParties, otherAssetInput, updateAsset, updateDebt, updateEquity, updateOtherAsset } from './extras.js';
+import { registerVoucherRoutes } from './vouchers.js';
 import { createEntry, createGroup, createItem, createMove, createOtherTax, deleteEntry, deleteMove, deleteOtherTax, entryInput, getSetting, groupInput, itemInput, listEntries, listGroups, listItems, listMoves, listOtherTax, moveInput, otherTaxInput, putSetting, settingInput, updateEntry, updateGroup, yearOf } from './service.js';
 
 const id = z.object({ id: z.coerce.number().int().positive() });
@@ -30,11 +33,11 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     }, READ_SNAPSHOT));
 
   // In hoặc xem một sổ. Sổ kho trả nhiều tài liệu (mỗi mặt hàng một sổ).
-  app.get('/api/hkd/books/:code', { preHandler: view, schema: { params: z.object({ code: z.string().min(1).max(20) }), querystring: z.object({ ...range, itemId: z.coerce.number().int().positive().optional(), format }).refine(ordered, orderedMsg) } }, async (req, reply) => {
+  app.get('/api/hkd/books/:code', { preHandler: view, schema: { params: z.object({ code: z.string().min(1).max(20) }), querystring: z.object({ ...range, itemId: z.coerce.number().int().positive().optional(), party: z.string().trim().min(1).max(200).optional(), format }).refine(ordered, orderedMsg) } }, async (req, reply) => {
     const regime = bookRegimeOf(req.params.code);
     if (!regime || !(loadBookSet(regime).books.some((b) => b.code === req.params.code) || loadBookSet(regime).reports.some((r) => r.code === req.params.code))) throw new AppError('BOOK_NOT_FOUND', `Không có sổ ${req.params.code}`, 404);
     if (req.query.format !== 'json') assertPrint(req.auth!);
-    const docs = await app.withTenant(req, (trx) => buildBook(trx, req.auth!.tenantId!, req.params.code, req.query), READ_SNAPSHOT);
+    const docs = await app.withTenant(req, (trx) => buildAnyBook(trx, req.auth!.tenantId!, req.params.code, req.query), READ_SNAPSHOT);
     if (req.query.format === 'json') return { docs };
     return respondReport(reply, docs, req.query.format, `${req.params.code}-${req.query.from}-${req.query.to}`);
   });
@@ -61,5 +64,29 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.get('/api/hkd/other-taxes', { preHandler: view, schema: { querystring: z.object(range).refine(ordered, orderedMsg) } }, async (req) => app.withTenant(req, (trx) => listOtherTax(trx, req.query), READ_SNAPSHOT));
   app.post('/api/hkd/other-taxes', { preHandler: app.requirePermission('sohkd.create'), schema: { body: otherTaxInput } }, async (req, reply) => { const c = ctx(req); return reply.status(201).send(await app.withTenant(req, (trx) => createOtherTax(trx, c.tenantId, c.userId, req.body))); });
   app.delete('/api/hkd/other-taxes/:id', { preHandler: app.requirePermission('sohkd.delete'), schema: { params: id } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteOtherTax(trx, req.params.id)); return reply.status(204).send(); });
+  // TT58 Điều 9 khoản 1: S4a công nợ, S4b TSCĐ, S4d vốn chủ sở hữu và tài sản khác (mã 150 của B01-DNSN). Cùng quyền sohkd.* như các bút ghi sổ khác.
+  const optRange = { from: isoDate.optional(), to: isoDate.optional() };
+  app.get('/api/hkd/debts', { preHandler: view, schema: { querystring: z.object({ ...optRange, party: z.string().max(200).optional() }) } }, async (req) => app.withTenant(req, (trx) => listDebts(trx, req.query), READ_SNAPSHOT));
+  app.get('/api/hkd/debt-parties', { preHandler: view }, async (req) => app.withTenant(req, (trx) => listParties(trx), READ_SNAPSHOT));
+  app.post('/api/hkd/debts', { preHandler: app.requirePermission('sohkd.create'), schema: { body: debtInput } }, async (req, reply) => { const c = ctx(req); return reply.status(201).send(await app.withTenant(req, (trx) => createDebt(trx, c.tenantId, c.userId, req.body))); });
+  app.put('/api/hkd/debts/:id', { preHandler: app.requirePermission('sohkd.update'), schema: { params: id, body: debtInput } }, async (req) => app.withTenant(req, (trx) => updateDebt(trx, req.params.id, req.body)));
+  app.delete('/api/hkd/debts/:id', { preHandler: app.requirePermission('sohkd.delete'), schema: { params: id } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteDebt(trx, req.params.id)); return reply.status(204).send(); });
+
+  app.get('/api/hkd/fixed-assets', { preHandler: view }, async (req) => app.withTenant(req, (trx) => listAssets(trx), READ_SNAPSHOT));
+  app.post('/api/hkd/fixed-assets', { preHandler: app.requirePermission('sohkd.create'), schema: { body: assetInput } }, async (req, reply) => { const c = ctx(req); return reply.status(201).send(await app.withTenant(req, (trx) => createAsset(trx, c.tenantId, c.userId, req.body))); });
+  app.put('/api/hkd/fixed-assets/:id', { preHandler: app.requirePermission('sohkd.update'), schema: { params: id, body: assetInput } }, async (req) => app.withTenant(req, (trx) => updateAsset(trx, req.params.id, req.body)));
+  app.delete('/api/hkd/fixed-assets/:id', { preHandler: app.requirePermission('sohkd.delete'), schema: { params: id } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteAsset(trx, req.params.id)); return reply.status(204).send(); });
+
+  app.get('/api/hkd/equity', { preHandler: view, schema: { querystring: z.object(optRange) } }, async (req) => app.withTenant(req, (trx) => listEquity(trx, req.query), READ_SNAPSHOT));
+  app.post('/api/hkd/equity', { preHandler: app.requirePermission('sohkd.create'), schema: { body: equityInput } }, async (req, reply) => { const c = ctx(req); return reply.status(201).send(await app.withTenant(req, (trx) => createEquity(trx, c.tenantId, c.userId, req.body))); });
+  app.put('/api/hkd/equity/:id', { preHandler: app.requirePermission('sohkd.update'), schema: { params: id, body: equityInput } }, async (req) => app.withTenant(req, (trx) => updateEquity(trx, req.params.id, req.body)));
+  app.delete('/api/hkd/equity/:id', { preHandler: app.requirePermission('sohkd.delete'), schema: { params: id } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteEquity(trx, req.params.id)); return reply.status(204).send(); });
+
+  app.get('/api/hkd/other-assets', { preHandler: view, schema: { querystring: z.object(optRange) } }, async (req) => app.withTenant(req, (trx) => listOtherAssets(trx, req.query), READ_SNAPSHOT));
+  app.post('/api/hkd/other-assets', { preHandler: app.requirePermission('sohkd.create'), schema: { body: otherAssetInput } }, async (req, reply) => { const c = ctx(req); return reply.status(201).send(await app.withTenant(req, (trx) => createOtherAsset(trx, c.tenantId, c.userId, req.body))); });
+  app.put('/api/hkd/other-assets/:id', { preHandler: app.requirePermission('sohkd.update'), schema: { params: id, body: otherAssetInput } }, async (req) => app.withTenant(req, (trx) => updateOtherAsset(trx, req.params.id, req.body)));
+  app.delete('/api/hkd/other-assets/:id', { preHandler: app.requirePermission('sohkd.delete'), schema: { params: id } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteOtherAsset(trx, req.params.id)); return reply.status(204).send(); });
+
+  registerVoucherRoutes(app);
 };
 export default routes;

@@ -21,9 +21,10 @@ export interface BookColumnDef { key: string; label: string; ref: string; type?:
 export interface BookDef { code: string; name: string; article: string; built: boolean; verified: boolean; reason?: string; columns: BookColumnDef[]; formulas?: Record<string, string> }
 export interface BookMethodDef { code: string; article: string; label: string; books: string[] }
 export interface ReportLineDef { lineNo: string; label: string; source?: string; formula?: string }
+export interface VoucherDef { code: string; name: string; article: string; built: boolean; verified: boolean }
 export interface BookSetDef {
   regime: BookRegime; source: string; issuedBy: string; methods: BookMethodDef[]; extraBooks: string[]; books: BookDef[];
-  reports: { code: string; name: string; article: string; built: boolean; verified: boolean; reason?: string; lines: ReportLineDef[] }[]; notApplicable: string[];
+  reports: { code: string; name: string; article: string; built: boolean; verified: boolean; reason?: string; lines: ReportLineDef[] }[]; vouchers?: VoucherDef[]; notApplicable: string[];
 }
 export function loadBookSet(regime: BookRegime): BookSetDef { return JSON.parse(readFileSync(dataPath('books', `${regime.toLowerCase()}.json`), 'utf8')) as BookSetDef; }
 export const bookRegimeOf = (code: string): BookRegime | null => (code.endsWith('-HKD') ? 'TT152' : code.endsWith('-DNSN') || code === 'S1-DNSN' ? 'TT58' : null);

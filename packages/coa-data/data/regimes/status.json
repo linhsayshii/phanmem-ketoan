@@ -6,11 +6,14 @@
     "replaces": "TT 132/2018/TT-BTC",
     "primaryTextObtained": true,
     "applicable": { "coa": false, "reports": true },
-    "gates": { "coa": false, "books": true, "reports": false },
-    "note": "Thông tư không có hệ thống tài khoản: ghi sổ theo phương pháp nộp thuế GTGT, TNDN (Điều 5 đến Điều 8), không qua bút toán kép. Đã nhập và đối chiếu từng chữ với văn bản gốc các sổ S1, S2a đến S2d, S3a, S3b, S4c-DNSN và báo cáo B02-DNSN; B01-DNSN, S4a, S4b, S4d đã nhập định nghĩa nhưng chưa dựng báo cáo.",
+    "gates": { "coa": false, "books": true, "reports": true },
+    "note": "Thông tư không có hệ thống tài khoản: ghi sổ theo phương pháp nộp thuế GTGT, TNDN (Điều 5 đến Điều 8), không qua bút toán kép. Đã nhập và đối chiếu từng chữ với văn bản gốc các sổ S1, S2a đến S2d, S3a, S3b, S4a đến S4d, báo cáo B01-DNSN, B02-DNSN và bốn chứng từ 01-TT, 02-TT, 01-VT, 02-VT; tất cả đã dựng. B01-DNSN lập từ sổ ghi đơn nên không bảo đảm cân đối (xem giới hạn).",
     "limits": [
-      "Chưa lập được B01-DNSN (cần S4a, S4b, S4d và chỉ tiêu Tài sản khác; sổ ghi đơn không bảo đảm cân đối tài sản và nguồn vốn)",
-      "Chưa có sổ S4a (công nợ), S4b (TSCĐ), S4d (vốn chủ sở hữu); chứng từ 01-TT, 02-TT, 01-VT, 02-VT chưa nhập",
+      "B01-DNSN lập từ các sổ ghi đơn, không có bút toán đối ứng nên phần mềm không bảo đảm tổng tài sản (mã 200) bằng tổng nguồn vốn (mã 500): báo cáo nêu số chênh lệch để rà soát. Lợi nhuận sau thuế của năm không tự kết chuyển vào mã 420, phải ghi tăng ở S4d",
+      "Mã 320 của B01-DNSN chỉ gồm thuế GTGT, TNDN theo sổ thuế và nghĩa vụ thuế khác ghi ở S4a (bên phải trả, tính chất Thuế); S4c-DNSN chỉ tính số thuế phải nộp, không ghi số đã nộp nên không cộng vào B01",
+      "Mã 150 (tài sản khác) lấy từ sổ Tài sản khác nhập tay và phần thuế TNDN nộp thừa; mã 410, 420, 430 lấy từ S4d. Số liệu thuế phải nộp các năm trước tính lại theo tỷ lệ hiện hành (hạn chế chung của sổ ghi đơn)",
+      "S4b-DNSN: thông tư không nêu cách tính khấu hao; phần mềm tính đường thẳng tròn tháng theo tỷ lệ hằng năm, từ tháng đưa vào sử dụng, thôi từ tháng ghi giảm. Kế toán xác nhận cách tính",
+      "Chứng từ 01-VT, 02-VT in số lượng ở cột Thực nhập, Thực xuất; cột Theo chứng từ, Yêu cầu để trống vì sổ ghi đơn chỉ lưu một số lượng. Chứng từ in từ bút ghi sổ đơn, không lưu thêm",
       "Tỷ lệ thuế GTGT, TNDN do người dùng khai báo theo văn bản thuế, phần mềm không đặt sẵn"
     ],
     "booksSecondary": [],
@@ -19,8 +22,7 @@
       { "url": "https://congbao.chinhphu.vn/van-ban/thong-tu-so-58-2026-tt-btc-469663/65508.htm", "fetched": "2026-10-28", "kind": "văn bản gốc (Công báo số 323)", "used": "toàn bộ mẫu sổ, B01-DNSN, B02-DNSN, hướng dẫn ghi sổ, hiệu lực" }
     ],
     "missing": [
-      "Chứng từ 01-TT, 02-TT, 01-VT, 02-VT của TT 58/2026 (đã có văn bản, chưa nhập mẫu in)",
-      "Mô-đun S4a, S4b, S4d và B01-DNSN (đã có định nghĩa cột, chưa dựng phần mềm)"
+      "Đối chiếu ảnh trang mẫu S4b-DNSN ở dòng Cộng (văn bản chuyển sang chữ làm mất vị trí các ô đánh dấu x): phần mềm cộng nguyên giá, mức khấu hao, khấu hao lũy kế"
     ]
   },
   "TT152": {

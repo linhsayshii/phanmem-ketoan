@@ -24,7 +24,7 @@ test('Chế độ kế toán: TT 152 và TT 58 dùng được (ghi sổ theo nh�
   await expect(page.getByText(/Mẫu tờ khai 01\/CNKD/)).toBeVisible();
   await expect(page.getByText('Chưa có văn bản gốc, chưa dùng cho kế toán thật')).toHaveCount(0);
   await page.getByRole('row', { name: /TT58/ }).locator('.ant-table-row-expand-icon').click();
-  await expect(page.getByText(/Chưa lập được B01-DNSN/)).toBeVisible();
+  await expect(page.getByText(/B01-DNSN lập từ các sổ ghi đơn/)).toBeVisible();
 });
 
 test('Sổ hộ kinh doanh: tạo nhóm ngành nghề, ghi doanh thu, xem S2a-HKD với thuế GTGT làm tròn đúng', async ({ page, request }) => {
