@@ -11,6 +11,7 @@ import { isoDate } from '../reporting/routes.js';
 import { stockGroups, stockIssues, type StockGroup } from '../inventory/openingStock.js';
 import { assetIssues, openingCards, type OpeningCard } from '../assets/openingAssets.js';
 import { isSalaryCode, salaryAccountIds } from '../payroll/accounts.js';
+import { HEAD_OFFICE } from '../branch/scope.js';
 import { notifyRecompute } from './notifyRecompute.js';
 import { getVoucher, postVoucher, type VoucherDto } from './vouchers.service.js';
 
@@ -184,7 +185,9 @@ async function unpostOpeningVoucher(trx: Trx, id: string) {
 }
 
 // Tạo hoặc ghi lại chứng từ DK của năm: chứng từ cũ được bỏ ghi sổ rồi thay dòng, giữ nguyên số chứng từ.
-export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: string }, year: number): Promise<VoucherDto> {
+// opts.branchId: chi nhánh của chứng từ DK (null = trụ sở chính); bỏ trống thì DK mới theo chi nhánh làm việc của người ghi sổ (mặc định cột), DK cũ giữ chi nhánh.
+// Cả năm chỉ một DK nên toàn bộ số dư (tài khoản, công nợ, tồn kho, thẻ tài sản) thuộc một chi nhánh (QĐ 1808–1812).
+export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: string }, year: number, opts: { branchId?: number | null | undefined } = {}): Promise<VoucherDto> {
   const p0 = await openingPeriod(trx, year);
   // Số dư đầu kỳ chỉ nhập cho năm đầu tiên; các năm sau kết chuyển theo số dư, nhập thêm sẽ cộng đôi.
   if (await trx.selectFrom('fiscal_period').select('id').where('fiscal_year', '<', year).executeTakeFirst())
@@ -197,19 +200,26 @@ export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: str
   const issues = [...issuesOf(rows, cardAccounts(cards)), ...stockIssues(stockBook(rows), groups), ...await stockAccountIssues(trx, p0.regime, groups), ...assetIssues(cards, rows)].filter((i) => !i.warning);
   if (issues.length) throw new AppError('OPENING_INVALID', 'Số dư đầu kỳ chưa hợp lệ', 409, issues);
   // DK lập tay cùng năm không bị chiếm (bỏ ghi sổ + xóa dòng) và cũng không có DK thứ hai (số dư cộng đôi); chứng từ đã đảo hoặc hủy thì không tính.
-  const dks = await trx.selectFrom('voucher').select(['id', 'state', 'source_doc_type']).where('voucher_type', '=', 'DK').where('fiscal_year', '=', year).where('reversal_of_id', 'is', null)
+  const dks = await trx.selectFrom('voucher').select(['id', 'state', 'source_doc_type', 'voucher_no', sql<number | null>`branch_id`.as('branch_id')]).where('voucher_type', '=', 'DK').where('fiscal_year', '=', year).where('reversal_of_id', 'is', null)
     .where('state', 'in', ['draft', 'posted']).execute();
   if (dks.some((v) => v.source_doc_type !== 'opening_balance')) throw new AppError('OPENING_DK_FOREIGN', 'Năm này đã có chứng từ DK lập tay; hủy hoặc đảo chứng từ đó trước', 409);
   const old = dks[0];
   let id: string;
   if (old) {
     id = old.id;
+    const move = opts.branchId !== undefined && opts.branchId !== old.branch_id;
+    // Đánh số theo chi nhánh: số của DK mang mã chi nhánh cũ, đổi chi nhánh sẽ lệch mã trong số.
+    if (move && old.voucher_no && (await trx.selectFrom('voucher_numbering_setting').select('per_branch').executeTakeFirst())?.per_branch)
+      throw new AppError('OPENING_BRANCH_NUMBERED', `Chứng từ số dư ${old.voucher_no} đã có số theo chi nhánh cũ (đang đánh số theo chi nhánh): không đổi chi nhánh được`, 409);
     if (old.state === 'posted') await unpostOpeningVoucher(trx, id);
+    if (move) await sql`UPDATE voucher SET branch_id = ${opts.branchId ?? null} WHERE id = ${id}::uuid`.execute(trx);
     await trx.deleteFrom('voucher_line').where('voucher_id', '=', id).where('posting_date', '=', p0.date_from).execute();
     await trx.deleteFrom('voucher_item_line').where('voucher_id', '=', id).execute();
   } else {
     id = (await trx.insertInto('voucher').values({ tenant_id: ctx.tenantId, voucher_type: 'DK', posting_date: p0.date_from, document_date: p0.date_from, description: `Số dư đầu kỳ năm ${year}`,
       currency_code: 'VND', source_doc_type: 'opening_balance', source_doc_id: sql<string>`md5(${`${ctx.tenantId}:opening:${year}`})::uuid`, created_by: ctx.userId }).returning('id').executeTakeFirstOrThrow()).id;
+    // Cột branch_id (0240) không có trong kiểu Kysely: đặt sau khi tạo, chứng từ còn nháp (trg_voucher_branch kiểm chi nhánh có thật).
+    if (opts.branchId !== undefined) await sql`UPDATE voucher SET branch_id = ${opts.branchId} WHERE id = ${id}::uuid`.execute(trx);
   }
   // Tài khoản kho: dòng sổ cái lấy từ tồn đầu kỳ (theo hàng–kho); số dư từng tài khoản đã được kiểm bằng tổng tồn.
   const stockCodes = new Set([...groups.map((g) => g.accountCode), ...stockBook(rows).filter((r) => r.subledger_kind === 'inventory').map((r) => r.accountCode)]);
@@ -389,8 +399,19 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   // Trả cả cảnh báo (phần tử có warning: true, không chặn ghi sổ): mảng không còn phần tử lỗi mới là hợp lệ.
   app.get('/api/opening-balance/:year/check', { preHandler: app.requirePermission('opening_balance.view'), schema: { params: yearParam } }, async (req) =>
     app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); await guardSalary(trx, req.auth!, req.params.year); return checkOpening(trx, req.params.year); }));
-  app.post('/api/opening-balance/:year/post', { preHandler: app.requirePermission('opening_balance.update'), schema: { params: yearParam } }, async (req) => {
-    const dto = await app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); await guardSalary(trx, req.auth!, req.params.year); return postOpening(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.params.year); });
+  // Chi nhánh của chứng từ DK hiện có (null: chưa có DK).
+  app.get('/api/opening-balance/:year/branch', { preHandler: app.requirePermission('opening_balance.view'), schema: { params: yearParam } }, async (req) =>
+    app.withTenant(req, async (trx) => {
+      const dk = await trx.selectFrom('voucher').select(sql<number | null>`branch_id`.as('branch_id')).where('voucher_type', '=', 'DK').where('fiscal_year', '=', req.params.year).where('source_doc_type', '=', 'opening_balance')
+        .where('reversal_of_id', 'is', null).where('state', 'in', ['draft', 'posted']).executeTakeFirst();
+      return { branch: dk ? (dk.branch_id ?? 'HO') : null };
+    }));
+  // branch: chi nhánh của chứng từ DK ('HO' = trụ sở chính); bỏ trống như cũ. Ngoài phạm vi chi nhánh của người dùng là 403 (RLS trên voucher cũng chặn).
+  app.post('/api/opening-balance/:year/post', { preHandler: app.requirePermission('opening_balance.update'), schema: { params: yearParam, body: z.object({ branch: z.union([z.literal('HO'), z.number().int().positive()]).optional() }).nullish() } }, async (req) => {
+    const want = req.body?.branch; const branchId = want === undefined ? undefined : want === 'HO' ? null : want;
+    const scope = req.auth!.branchScope ?? null;
+    if (want !== undefined && scope !== null && !scope.includes(branchId ?? HEAD_OFFICE)) throw new AppError('BRANCH_FORBIDDEN', 'Chi nhánh ngoài phạm vi được phân quyền', 403);
+    const dto = await app.withTenant(req, async (trx) => { await guardInventory(trx, req.auth!, req.params.year); await guardSalary(trx, req.auth!, req.params.year); return postOpening(trx, { tenantId: req.auth!.tenantId!, userId: req.auth!.userId }, req.params.year, { branchId }); });
     notifyRecompute(app, req.auth!.tenantId!);
     return dto;
   });

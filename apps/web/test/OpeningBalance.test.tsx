@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import OpeningBalancePage from '../src/pages/OpeningBalance.js';
@@ -215,6 +215,45 @@ describe('Màn hình Số dư đầu kỳ', () => {
       await waitFor(() => expect(save).toBeEnabled());
       await userEvent.click(save);
       await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/opening-balance/2026', { method: 'PUT', json: { rows: [expect.objectContaining({ accountCode: '131', partyCode: 'KH001', docNo: 'HD001', docDate: '2025-11-15', dueDate: '2026-01-15' })] } }));
+    });
+  });
+
+  describe('chi nhánh của chứng từ số dư đầu kỳ', () => {
+    const branchList = { headOffice: { inScope: true }, rows: [{ id: 5, code: 'CNA', name: 'Chi nhánh A', taxCode: null, parentCode: null, isActive: true, inScope: true }] };
+    const postCall = () => mocks.api.mock.calls.find(([path]) => path === '/api/opening-balance/2026/post');
+    const mockWith = (branches: unknown, dkBranch: unknown) => mocks.api.mockImplementation(async (path: string) => (
+      path === '/api/fiscal-years' ? years : path === '/api/opening-balance/2026' ? [] : path === '/api/branches' ? branches
+        : path === '/api/opening-balance/2026/branch' ? { branch: dkBranch } : path === '/api/opening-balance/2026/post' ? { voucherNo: 'DK1', postingDate: '2025-12-31' } : []));
+
+    it('công ty có chi nhánh: ô chọn hiện chi nhánh của DK hiện có; chọn chi nhánh khác thì Ghi sổ gửi chi nhánh đó', async () => {
+      mockWith(branchList, 'HO');
+      renderPage();
+      const box = await screen.findByRole('combobox', { name: 'Chi nhánh của chứng từ số dư' });
+      await waitFor(() => expect(screen.getByTitle('Trụ sở chính')).toBeInTheDocument());
+      fireEvent.mouseDown(box);
+      fireEvent.click(await screen.findByText('CNA – Chi nhánh A', { selector: '.ant-select-item-option-content' }));
+      const post = screen.getByRole('button', { name: 'Ghi sổ số dư đầu kỳ' });
+      await waitFor(() => expect(post).toBeEnabled());
+      await userEvent.click(post);
+      await waitFor(() => expect(postCall()).toEqual(['/api/opening-balance/2026/post', { method: 'POST', json: { branch: 5 } }]));
+    });
+
+    it('chưa có DK, không chọn: Ghi sổ không gửi chi nhánh (DK theo chi nhánh làm việc)', async () => {
+      mockWith(branchList, null);
+      renderPage();
+      await screen.findByRole('combobox', { name: 'Chi nhánh của chứng từ số dư' });
+      const post = screen.getByRole('button', { name: 'Ghi sổ số dư đầu kỳ' });
+      await waitFor(() => expect(post).toBeEnabled());
+      await userEvent.click(post);
+      await waitFor(() => expect(postCall()).toEqual(['/api/opening-balance/2026/post', { method: 'POST', json: {} }]));
+    });
+
+    it('công ty chưa có chi nhánh: không có ô chọn, không hỏi chi nhánh của DK', async () => {
+      mockWith({ headOffice: { inScope: true }, rows: [] }, 'HO');
+      renderPage();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Ghi sổ số dư đầu kỳ' })).toBeEnabled());
+      expect(screen.queryByRole('combobox', { name: 'Chi nhánh của chứng từ số dư' })).not.toBeInTheDocument();
+      expect(mocks.api.mock.calls.some(([path]) => path === '/api/opening-balance/2026/branch')).toBe(false);
     });
   });
 });

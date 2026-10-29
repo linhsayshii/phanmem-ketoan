@@ -10,6 +10,7 @@ import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor, bankAccountFetcher, contractFetcher, contractPick, isContractAccount } from '../lookups.js';
 import { parseAmount } from './VoucherForm.js';
+import { unitOptions, useBranches } from './branchCommon.js';
 
 // accountName, partyName, bankName và id chỉ để hiển thị; máy chủ không nhận. docNo, docDate, dueDate: số dư công nợ theo từng hóa đơn.
 // badDates: chữ gõ sai ở ô ngày (chưa lưu được), ô báo lỗi tới khi sửa.
@@ -95,7 +96,7 @@ export default function OpeningBalancePage() {
   const [issues, setIssues] = useState<Issue[] | null>(null);
   const [posted, setPosted] = useState<{ voucherNo: string | null; postingDate: string } | null>(null);
   // Đổi năm: bỏ dòng và kết quả của năm cũ ngay (không để dòng năm cũ nằm đó trong lúc tải, rồi bị lưu đè lên năm mới); effect này đứng trước effect nạp dữ liệu.
-  useEffect(() => { setAll([emptyRow()]); setIssues(null); setPosted(null); }, [year, setAll]);
+  useEffect(() => { setAll([emptyRow()]); setIssues(null); setPosted(null); setBranchPick(undefined); }, [year, setAll]);
   useEffect(() => { if (saved.data) setAll([...saved.data, emptyRow()]); }, [saved.data, setAll]);
   const ready = saved.isSuccess && !saved.isFetching; // lưới đã khớp dữ liệu máy chủ của năm đang chọn
   const [busy, setBusy] = useState(false);
@@ -105,6 +106,12 @@ export default function OpeningBalancePage() {
   // Kỳ 0 nằm ngoài các tháng của năm nên tra hệ tài khoản theo ngày đầu năm (hệ tài khoản gắn với năm tài chính).
   const accountFetcher = useMemo(() => accountFetcherFor(fy?.dateFrom), [fy?.dateFrom]);
   const mayEdit = can('opening_balance.update');
+  // Chi nhánh của chứng từ DK (cả năm một DK nên mọi số dư thuộc một đơn vị). Chỉ hiện khi công ty có chi nhánh; chưa chọn thì như cũ (DK mới theo chi nhánh làm việc, DK cũ giữ đơn vị).
+  const branches = useBranches();
+  const hasBranches = (branches.data?.rows?.length ?? 0) > 0;
+  const dkBranch = useQuery({ queryKey: ['opening-branch', year], queryFn: () => api<{ branch: 'HO' | number | null }>(`/api/opening-balance/${year}/branch`), enabled: year !== undefined && mayEdit && hasBranches });
+  const [branchPick, setBranchPick] = useState<string>();
+  const branchValue = branchPick ?? (dkBranch.data?.branch != null ? String(dkBranch.data.branch) : undefined);
   const errors = (issues ?? []).filter((i) => !i.warning); const warnings = (issues ?? []).filter((i) => i.warning); // cảnh báo không chặn ghi sổ
 
   const live = rows.filter((r) => r.accountCode.trim() !== '');
@@ -132,8 +139,10 @@ export default function OpeningBalancePage() {
   const post = () => run(async () => {
     await persist(); setPosted(null);
     try {
-      const v = await api<{ voucherNo: string | null; postingDate: string }>(`/api/opening-balance/${year}/post`, { method: 'POST', json: {} });
+      const json = hasBranches && branchValue ? { branch: branchValue === 'HO' ? 'HO' : Number(branchValue) } : {};
+      const v = await api<{ voucherNo: string | null; postingDate: string }>(`/api/opening-balance/${year}/post`, { method: 'POST', json });
       setIssues(null); setPosted(v); void message.success(`Đã ghi sổ chứng từ ${v.voucherNo}`); await refreshDk();
+      setBranchPick(undefined); await qc.invalidateQueries({ queryKey: ['opening-branch', year] });
     } catch (e) {
       if (e instanceof ApiError && e.code === 'OPENING_INVALID') { setIssues(e.details as Issue[]); throw new Error('Số dư đầu kỳ chưa hợp lệ, xem danh sách lỗi'); }
       throw e;
@@ -184,6 +193,10 @@ export default function OpeningBalancePage() {
         <Toolbar>
           <Select aria-label="Năm tài chính" style={{ width: 200 }} value={year} onChange={setPicked} loading={years.isLoading} placeholder="Chọn năm"
             options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
+          {mayEdit && hasBranches && (
+            <Select aria-label="Chi nhánh của chứng từ số dư" style={{ width: 260 }} value={branchValue} onChange={setBranchPick} placeholder="Chi nhánh làm việc"
+              options={unitOptions(branches.data)} />
+          )}
         </Toolbar>
       </PageHeader>
       {noYear ? <NoFiscalYearNotice purpose="nhập số dư đầu kỳ" /> : (<>

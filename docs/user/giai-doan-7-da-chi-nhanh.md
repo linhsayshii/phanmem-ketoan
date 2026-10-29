@@ -86,6 +86,6 @@ Chưa có. Báo cáo tài chính hợp nhất của công ty mẹ và công ty c
 ## 7. Chưa làm
 
 - Thứ tự `seq_no` (dùng để sắp chứng từ cùng ngày khi tính giá vốn và băm chuỗi) không còn duy nhất toàn công ty khi bật đánh số theo chi nhánh; thứ tự cùng ngày giữa hai chi nhánh cùng loại chứng từ phân định theo mã nội bộ của chứng từ (sổ cái, hash chuỗi và các sổ đã sắp theo mã này; tính giá vốn xếp tiếp theo số dòng và mã phát sinh kho).
-- Số dư đầu kỳ theo chi nhánh: chứng từ số dư đầu kỳ thuộc chi nhánh làm việc của người nhập.
+- Số dư đầu kỳ tách theo từng chi nhánh: mỗi năm chỉ có một chứng từ số dư đầu kỳ (DK) nên toàn bộ số dư (tài khoản, công nợ, tồn kho, thẻ tài sản) thuộc một đơn vị. Ở màn hình **Số dư đầu kỳ**, công ty có chi nhánh thấy ô **Chi nhánh của chứng từ số dư**: chọn đơn vị trước khi bấm **Ghi sổ số dư đầu kỳ** (không chọn thì chứng từ mới theo chi nhánh làm việc, chứng từ đã có giữ đơn vị cũ). Khi bật đánh số theo chi nhánh, chứng từ số dư đã có số không đổi đơn vị được. Người dùng bị giới hạn chi nhánh không nhập số dư đầu kỳ.
 - Chứng từ lương, giá thành, giá vốn tự sinh gắn chi nhánh của nhân viên hoặc đối tượng tập hợp chi phí (hiện gắn chi nhánh làm việc của người chạy).
 - Phân hệ công nợ, hóa đơn điện tử, ngân hàng, tài sản cho người dùng bị giới hạn chi nhánh: các bảng riêng của phân hệ chưa tách theo chi nhánh nên các quyền này vẫn tắt.
