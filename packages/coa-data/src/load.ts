@@ -119,6 +119,15 @@ export function loadCitTemplate(version: CitTemplateVersion): CitTemplate {
   if (!isCitTemplateComplete(version)) throw new Error(`Chưa có mẫu tờ khai 03/TNDN ${version === 'TT80' ? 'theo TT 80/2021/TT-BTC' : 'theo TT 89/2026/TT-BTC'} đối chiếu văn bản gốc (status.json 03TNDN_${version})`);
   return JSON.parse(readFileSync(dataPath('tax', CIT_FILE[version]), 'utf8')) as CitTemplate;
 }
+// Phụ lục kết quả hoạt động sản xuất kinh doanh 03-1A/TNDN (TT 80/2021 Phụ lục II, kèm 03/TNDN kỳ trước 01/7/2026): data/tax/03-1a-tndn-tt80.json, cổng status.json 03_1A_TNDN_TT80.
+// Mới là định nghĩa mẫu từ văn bản gốc, chưa có logic lập hay xuất XML; chỉ tiêu [22] khớp A1 của 03/TNDN (A1 lấy từ B02).
+export interface CitAppendix1ALine { code: string; stt: string; label: string; formula?: string }
+export interface CitAppendix1A { form: '03-1A/TNDN'; title: string; version: 'TT80'; validFrom: string; validTo: string | null; source: string; note: string; header: { code: string; label: string }[]; lines: CitAppendix1ALine[] }
+export function isCitAppendix1AComplete(): boolean { return taxStatus()['03_1A_TNDN_TT80'] === true && existsSync(dataPath('tax', '03-1a-tndn-tt80.json')); }
+export function loadCitAppendix1A(): CitAppendix1A {
+  if (!isCitAppendix1AComplete()) throw new Error('Chưa có phụ lục 03-1A/TNDN theo TT 80/2021/TT-BTC đối chiếu văn bản gốc (status.json 03_1A_TNDN_TT80)');
+  return JSON.parse(readFileSync(dataPath('tax', '03-1a-tndn-tt80.json'), 'utf8')) as CitAppendix1A;
+}
 // Mẫu 01/TKN-CNKD (Thông báo doanh thu/Tờ khai thuế năm của hộ kinh doanh, TT 89/2026 Phụ lục I, thay 01/CNKD): data/tax/01tkn-cnkd-tt89.json, cổng status.json 01TKN_CNKD_TT89. Mới là định nghĩa mẫu, chưa có logic lập tờ khai.
 export interface HkdReturnLine { code: string; label: string; section: string; kind: 'row' | 'total' | 'input' | 'formula' | 'column'; stt?: string; formula?: string; printedAnomaly?: boolean; note?: string }
 export interface HkdReturnTemplate { form: '01/TKN-CNKD'; title: string; version: 'TT89'; validFrom: string; validTo: string | null; source: string; printedAnomalies: string[]; applicability: string[]; header: { code: string; label: string; kind: string }[]; sectionA: { title: string; unit: string; columns: { no: string; key: string; label: string }[] }; lines: HkdReturnLine[]; notes: string[] }

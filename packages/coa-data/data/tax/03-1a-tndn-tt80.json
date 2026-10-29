@@ -1,0 +1,125 @@
+{
+ "form": "03-1A/TNDN",
+ "title": "Phụ lục kết quả hoạt động sản xuất kinh doanh, áp dụng đối với ngành sản xuất, thương mại, dịch vụ (trừ công ty an ninh, quốc phòng), kèm tờ khai quyết toán 03/TNDN",
+ "version": "TT80",
+ "validFrom": "2022-01-01",
+ "validTo": "2026-06-30",
+ "source": "Thông tư 80/2021/TT-BTC Phụ lục II, mẫu số 03-1A/TNDN, Công báo số 969 + 970 ngày 17-11-2021 trang 65-66 (congbao.chinhphu.vn, tải 2026-10-29), đối chiếu ảnh trang 110 dpi. Chỉ nhập mẫu 03-1A (ngành sản xuất, thương mại, dịch vụ); không nhập 03-1B (ngân hàng, tín dụng), 03-1C (chứng khoán, bảo hiểm) và các phụ lục khác.",
+ "note": "Ghi chú in trên mẫu: số liệu chỉ tiêu [22] được tổng hợp vào chỉ tiêu A1 của Tờ khai 03/TNDN. Công thức in: [06]=[07]+[08]+[09]; [12]=[13]+[14]+[15]; [18]=[04]-[06]+[10]-[12]-[16]; [21]=[19]-[20]; [22]=[18]+[21]. Mẫu TT 89/2026 không có phụ lục này.",
+ "header": [
+  {
+   "code": "01",
+   "label": "Kỳ tính thuế"
+  },
+  {
+   "code": "02",
+   "label": "Tên người nộp thuế"
+  },
+  {
+   "code": "03",
+   "label": "Mã số thuế"
+  }
+ ],
+ "lines": [
+  {
+   "code": "04",
+   "stt": "1",
+   "label": "Doanh thu bán hàng và cung cấp dịch vụ"
+  },
+  {
+   "code": "05",
+   "stt": "",
+   "label": "Trong đó: - Doanh thu bán hàng hóa, dịch vụ xuất khẩu"
+  },
+  {
+   "code": "06",
+   "stt": "2",
+   "label": "Các khoản giảm trừ doanh thu",
+   "formula": "07+08+09"
+  },
+  {
+   "code": "07",
+   "stt": "a",
+   "label": "Chiết khấu thương mại"
+  },
+  {
+   "code": "08",
+   "stt": "b",
+   "label": "Giảm giá hàng bán"
+  },
+  {
+   "code": "09",
+   "stt": "c",
+   "label": "Giá trị hàng bán bị trả lại"
+  },
+  {
+   "code": "10",
+   "stt": "3",
+   "label": "Doanh thu hoạt động tài chính"
+  },
+  {
+   "code": "11",
+   "stt": "",
+   "label": "Trong đó: Doanh thu từ lãi tiền gửi"
+  },
+  {
+   "code": "12",
+   "stt": "4",
+   "label": "Chi phí sản xuất, kinh doanh hàng hóa, dịch vụ",
+   "formula": "13+14+15"
+  },
+  {
+   "code": "13",
+   "stt": "a",
+   "label": "Giá vốn hàng bán"
+  },
+  {
+   "code": "14",
+   "stt": "b",
+   "label": "Chi phí bán hàng"
+  },
+  {
+   "code": "15",
+   "stt": "c",
+   "label": "Chi phí quản lý doanh nghiệp"
+  },
+  {
+   "code": "16",
+   "stt": "5",
+   "label": "Chi phí tài chính"
+  },
+  {
+   "code": "17",
+   "stt": "",
+   "label": "Trong đó: Chi phí lãi tiền vay"
+  },
+  {
+   "code": "18",
+   "stt": "6",
+   "label": "Lợi nhuận thuần từ hoạt động kinh doanh",
+   "formula": "04-06+10-12-16"
+  },
+  {
+   "code": "19",
+   "stt": "7",
+   "label": "Thu nhập khác"
+  },
+  {
+   "code": "20",
+   "stt": "8",
+   "label": "Chi phí khác"
+  },
+  {
+   "code": "21",
+   "stt": "9",
+   "label": "Lợi nhuận khác",
+   "formula": "19-20"
+  },
+  {
+   "code": "22",
+   "stt": "10",
+   "label": "Tổng lợi nhuận kế toán trước thuế thu nhập doanh nghiệp",
+   "formula": "18+21"
+  }
+ ]
+}
