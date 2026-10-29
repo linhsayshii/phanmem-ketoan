@@ -19,12 +19,12 @@ export const citReturnInput = z.object({ year: z.number().int().min(2000).max(21
 export const citReturnUpdate = z.object({ overrides: z.record(z.string().max(500)) });
 const lock = (trx: Trx, tenantId: string) => sql`SELECT pg_advisory_xact_lock(hashtext('tax_return'), hashtext(${tenantId}::text))`.execute(trx);
 
-// Mẫu áp dụng: tham số cit_return_template tra theo ngày cuối năm tài chính (kỳ kết thúc từ 01/7/2026 dùng TT89); cổng 03TNDN_TT89 tắt thì 409.
+// Mẫu áp dụng: tham số cit_return_template tra theo ngày cuối năm tài chính (kỳ kết thúc từ 01/7/2026 dùng TT89, từ 31/12/2021 đến 30/6/2026 dùng TT80); cổng 03TNDN_<mẫu> tắt thì 409.
 export async function citTemplateFor(trx: Trx, year: number): Promise<CitTemplate> {
   const end = (await fiscalYearInfo(trx, year))?.to ?? `${year}-12-31`;
   const version = await legalParam<string>(trx, 'cit_return_template', end);
-  if (version !== 'TT89') throw new AppError('CIT_TEMPLATE_UNAVAILABLE', `Không có mẫu tờ khai 03/TNDN áp dụng cho kỳ tính thuế năm ${year} (kỳ kết thúc trước 01/7/2026 dùng mẫu theo TT 80/2021 chưa có văn bản gốc)`, 409);
-  if (!isCitTemplateComplete(version)) throw new AppError('CIT_TEMPLATE_UNAVAILABLE', 'Mẫu tờ khai 03/TNDN theo TT 89/2026 chưa đối chiếu đủ văn bản gốc (status.json 03TNDN_TT89)', 409);
+  if (version !== 'TT89' && version !== 'TT80') throw new AppError('CIT_TEMPLATE_UNAVAILABLE', `Không có mẫu tờ khai 03/TNDN áp dụng cho kỳ tính thuế năm ${year} (kỳ kết thúc trước 31/12/2021 dùng mẫu trước TT 80/2021, chưa nhập)`, 409);
+  if (!isCitTemplateComplete(version)) throw new AppError('CIT_TEMPLATE_UNAVAILABLE', `Mẫu tờ khai 03/TNDN theo ${version === 'TT80' ? 'TT 80/2021' : 'TT 89/2026'} chưa đối chiếu đủ văn bản gốc (status.json 03TNDN_${version})`, 409);
   return loadCitTemplate(version);
 }
 
@@ -34,6 +34,7 @@ async function compute(trx: Trx, tenantId: string, year: number, overrides: Reco
   const fy = await requireFiscalYear(trx, year);
   const hints: Record<string, string> = {}; const warnings: string[] = []; const defaults: Record<string, string> = {};
   const m = citLedger(fy.regime);
+  const hasC7a = t.lines.some((l) => l.code === 'C7a');
   const cur = await b02Figures(trx, tenantId, fy.regime, fy.from, fy.to);
   hints.A1 = `Chỉ tiêu ${m.profitLine} "Tổng lợi nhuận kế toán trước thuế" của B02 từ ${fy.from} đến ${fy.to}`;
   // Số đã tạm nộp cho năm: từ đầu quý 2 (khoản nộp tháng 1-3 thường thuộc năm trước) đến hết tháng thứ 3 sau năm (hạn nộp quyết toán, ghi chú 3 của mẫu).
@@ -41,17 +42,25 @@ async function compute(trx: Trx, tenantId: string, year: number, overrides: Reco
   const ledger = { A1: cur.profit, G2: await paidBetween(trx, fy.regime, paidFrom, paidTo) };
   hints.G2 = `Phát sinh Nợ TK ${m.payableAccount} đối ứng tiền từ ${paidFrom} đến ${paidTo}; khoản nộp trong khoảng này cho năm khác (hoặc khoản nộp đầu năm cho năm này) thì sửa tay`;
 
+  const run = () => evalCitReturn(t, { ledger, defaults, overrides });
+  let splitRate = false;
   const prev = await prevYearRevenue(trx, tenantId, year);
   try {
     const r = await rateOfYear(trx, fy, prev?.revenue ?? null, undefined, false);
-    defaults.C7a = r.rate; hints.C7a = `${r.basis}${prev ? `; ${prev.note}` : ''}`;
+    const why = `${r.basis}${prev ? `; ${prev.note}` : ''}`;
+    if (hasC7a) { defaults.C7a = r.rate; hints.C7a = why; }
+    else if (r.rate !== '20') {
+      // Mẫu TT 80/2021 không có ô thuế suất phổ thông: C7 nhân cố định 20%; thu nhập tính thuế theo thuế suất khác (15%, 17%) khai ở C8 (số) và C8a (thuế suất).
+      defaults.C8a = r.rate; splitRate = true;
+      hints.C8a = `${why}; mẫu TT 80/2021 không có ô thuế suất phổ thông nên khai ở C8/C8a, C7 = phần còn lại theo thuế suất 20%`; hints.C8 = hints.C8a;
+    } else hints.C8a = `${why}; thuế suất 20% khai ở C7 (in cố định trong C9 của mẫu TT 80/2021)`;
     warnings.push(RATE_CONDITIONS);
   } catch (e) {
     if (!(e instanceof CitError) || e.code !== 'CIT_RATE_REQUIRED') throw e;
-    hints.C7a = e.message; if (overrides.C7a === undefined) warnings.push(`Chưa xác định được thuế suất phổ thông: nhập chỉ tiêu C7a (${e.message})`);
+    const rateLine = hasC7a ? 'C7a' : 'C8a'; hints[rateLine] = e.message;
+    if (overrides[rateLine] === undefined) warnings.push(hasC7a ? `Chưa xác định được thuế suất phổ thông: nhập chỉ tiêu C7a (${e.message})` : `Chưa xác định được thuế suất: mẫu TT 80/2021 tính thu nhập tính thuế ở C7 theo thuế suất 20%, nếu thuế suất khác 20% nhập C8 và C8a (${e.message})`);
   }
   for (const l of t.lines) if (l.printed === false && l.note) hints[l.code] = l.note;
-  const run = () => evalCitReturn(t, { ledger, defaults, overrides });
 
   // Miễn thuế doanh thu năm trước từ 01 tỷ trở xuống (NĐ 141/2026 Điều 2 bổ sung khoản 15 Điều 4 "Thu nhập được miễn thuế" NĐ 320/2025): gợi ý C2 = C1.
   const exemptMax = await legalParam<string>(trx, 'cit_exempt_revenue', fy.from);
@@ -60,6 +69,8 @@ async function compute(trx: Trx, tenantId: string, year: number, overrides: Reco
     hints.C2 = `Gợi ý: miễn thuế cả thu nhập SXKD vì doanh thu năm trước ${prev.revenue} từ ${exemptMax} trở xuống (NĐ 141/2026/NĐ-CP Điều 2; NĐ 320/2025 Điều 4 khoản 15)`;
     warnings.push('Áp dụng miễn thuế TNDN doanh thu thấp: không áp dụng cho công ty con, công ty có quan hệ liên kết với doanh nghiệp không đáp ứng điều kiện (NĐ 141/2026 Điều 2 điểm d); kiểm tra trước khi chốt.');
   }
+  // Mẫu TT 80/2021, thuế suất khác 20%: C8 = toàn bộ TNTT sau trích quỹ (C6, tính sau khi đã gợi ý C2); C7 còn lại 0.
+  if (splitRate) defaults.C8 = Decimal.max(0, D(run().C6!)).toFixed(0);
   // Giảm thuế NQ 43/2026: doanh thu của chính năm không quá mức trần; số giảm tính trên thuế phải nộp sau ưu đãi (C9 - C10 - C14), gợi ý ở C15.
   const red = await legalParam<{ rate: number; maxRevenue: string }>(trx, 'cit_reduction', fy.from);
   if (red && D(cur.revenue).lte(red.maxRevenue)) {
@@ -129,7 +140,7 @@ export async function finalizeCitReturn(trx: Trx, ctx: { tenantId: string; userI
   const changed = diffValues(r.values, c.values);
   if (changed.length || c.version !== r.template_version)
     throw new AppError('TAX_RETURN_STALE', `Số liệu sổ đã thay đổi kể từ lần tính trước (${changed.map((x) => `[${x.code}]`).join(', ') || 'mẫu tờ khai'}): lưu lại nháp để tính lại và kiểm tra trước khi chốt`, 409, { changed });
-  if (D(c.values.C7 ?? '0').gt(0) && D(c.values.C7a ?? '0').isZero() && r.overrides.C7a === undefined)
+  if (c.values.C7a !== undefined && D(c.values.C7 ?? '0').gt(0) && D(c.values.C7a).isZero() && r.overrides.C7a === undefined)
     throw new AppError('CIT_RATE_REQUIRED', 'Chưa có thuế suất phổ thông (C7a) cho thu nhập tính thuế C7: nhập thuế suất trước khi chốt', 409);
   await trx.updateTable('tax_return').set({ status: 'final', finalized_by: ctx.userId, finalized_at: sql<string>`now()` }).where('id', '=', id).execute();
   return { ...(await getCitReturn(trx, id)), hints: c.hints, warnings: c.warnings };

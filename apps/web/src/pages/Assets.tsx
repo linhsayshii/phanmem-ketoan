@@ -27,6 +27,9 @@ const PATH_SLUG: Record<AssetKind, string> = { fixed: 'tscd', tool: 'ccdc', prep
 const actionsOf = (kind: AssetKind, suspended: boolean): EventKindName[] => kind === 'fixed'
   ? ['increase', 'decrease', 'revalue', 'transfer', suspended ? 'resume' : 'suspend', 'life'] : ['increase', 'decrease-tool', 'adjust-value', 'transfer', 'life'];
 
+interface FrameList { available: boolean; validTo?: string | null; frames?: { code: string; group: string; groupLabel: string; label: string; minYears: number; maxYears: number }[] }
+interface FrameCheck { status: 'within' | 'below' | 'above' | 'not_applicable' | 'unavailable'; message: string | null }
+
 interface InfoValues { code: string; name: string; categoryCode: string | null; departmentCode: string | null; useDate: dayjs.Dayjs | null; depreciationStartDate: dayjs.Dayjs | null; lifeUnits: number | null;
   quantity: string | null; uom: string; isDepreciable: boolean; note: string }
 
@@ -41,6 +44,13 @@ function AssetDrawer({ kind, asset, onClose }: { kind: AssetKind; asset: AssetRo
   const events = useQuery({ queryKey: ['asset-events', id], enabled: id !== null, queryFn: () => api<EventRow[]>(`/api/assets/${id}/events`) });
   const schedule = useQuery({ queryKey: ['asset-schedule', id], enabled: id !== null, queryFn: () => api<ScheduleRow[]>(`/api/assets/${id}/schedule`) });
   const a = detail.data;
+  // Gợi ý khung thời gian trích khấu hao TT 45/2013 Phụ lục 1: chọn nhóm chỉ để kiểm tra, không lưu và không chặn lưu thẻ.
+  const [frameCode, setFrameCode] = useState<string | null>(null); const [usedAsset, setUsedAsset] = useState(false);
+  const lifeWatch = Form.useWatch('lifeUnits', form); const startWatch = Form.useWatch('depreciationStartDate', form);
+  const frames = useQuery({ queryKey: ['asset-depreciation-frames'], enabled: kind === 'fixed', staleTime: Infinity, queryFn: () => api<FrameList>('/api/asset-depreciation-frames') });
+  const frameAt = startWatch ? iso(startWatch) : todayVn();
+  const frameCheck = useQuery({ queryKey: ['asset-frame-check', frameCode, lifeWatch, frameAt, usedAsset], enabled: kind === 'fixed' && !!frameCode && !!lifeWatch,
+    queryFn: () => api<FrameCheck>(`/api/asset-depreciation-frames/check?frame=${encodeURIComponent(frameCode!)}&lifeMonths=${lifeWatch}&at=${frameAt}&used=${usedAsset}`) });
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['asset'] }); void qc.invalidateQueries({ queryKey: ['asset-events'] }); void qc.invalidateQueries({ queryKey: ['asset-schedule'] }); void qc.invalidateQueries({ queryKey: ['assets'] }); };
 
   useEffect(() => {
@@ -90,6 +100,17 @@ function AssetDrawer({ kind, asset, onClose }: { kind: AssetKind; asset: AssetRo
         <Form.Item label={kind === 'fixed' ? 'Ngày bắt đầu khấu hao' : 'Ngày bắt đầu phân bổ'} name="depreciationStartDate"><DatePicker format="DD/MM/YYYY" /></Form.Item>
         <Form.Item label="Số kỳ sử dụng" name="lifeUnits"><InputNumber min={1} max={1200} precision={0} /></Form.Item>
       </Space>
+      {kind === 'fixed' && frames.data?.available && (
+        <div data-testid="frame-hint" style={{ marginBottom: 12 }}>
+          <Space align="start" wrap>
+            <Form.Item label="Nhóm theo khung TT 45/2013 (kiểm tra thời gian)" style={{ marginBottom: 8 }}>
+              <Select allowClear showSearch optionFilterProp="label" value={frameCode} onChange={(v) => setFrameCode(v ?? null)} placeholder="Chọn nhóm để đối chiếu khung" style={{ width: 460 }} disabled={false}
+                options={(frames.data.frames ?? []).map((f) => ({ value: f.code, label: `${f.code} ${f.label} (${f.minYears}-${f.maxYears} năm)` }))} />
+            </Form.Item>
+            <Form.Item label=" " style={{ marginBottom: 8 }}><Checkbox checked={usedAsset} onChange={(e) => setUsedAsset(e.target.checked)}>Đã qua sử dụng</Checkbox></Form.Item>
+          </Space>
+          {frameCheck.data?.message && <Alert type={frameCheck.data.status === 'not_applicable' ? 'info' : 'warning'} showIcon message={frameCheck.data.message} data-testid="frame-warning" />}
+        </div>)}
       <Space align="start" wrap>
         <Form.Item label="Số lượng" name="quantity"><VnNumberInput scale={4} aria-label="Số lượng" /></Form.Item>
         <Form.Item label="Đơn vị tính" name="uom"><Input maxLength={50} style={{ width: 120 }} /></Form.Item>

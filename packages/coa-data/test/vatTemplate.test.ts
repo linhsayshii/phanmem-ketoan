@@ -58,8 +58,40 @@ describe('mẫu tờ khai 01/GTGT theo TT 89/2026', () => {
     expect(status['01GTGT_TT89_rate8']).toBe(false); expect(isVatRate8Verified()).toBe(false);
     expect(t.lines.find((x) => x.code === '32')!.note).toMatch(/8%/);
   });
-  it('TT80 chưa có văn bản gốc: loadVatTemplate ném lỗi rõ, không hoàn chỉnh', () => {
-    expect(status['01GTGT_TT80']).toBe(false); expect(isVatTemplateComplete('TT80')).toBe(false);
-    expect(() => loadVatTemplate('TT80')).toThrow(/TT 80\/2021/);
+});
+
+// Chỉ tiêu in trên mẫu 01/GTGT, TT 80/2021 Phụ lục II, Công báo 969+970 trang 19-20 (đối chiếu ảnh); ghi tay, không suy ra từ dữ liệu.
+const CODES_80 = ['21', '22', '23', '24', '23a', '24a', '25', '26', '27', '28', '29', '30', '31', '32', '33', '32a', '34', '35', '36', '37', '38', '39a', '40a', '40b', '40', '41', '42', '43'];
+describe('mẫu tờ khai 01/GTGT theo TT 80/2021', () => {
+  const t = loadVatTemplate('TT80');
+  it('cổng 01GTGT_TT80 bật; đủ chỉ tiêu theo thứ tự in, không có [32b], [34a] của TT 89/2026', () => {
+    expect(status['01GTGT_TT80']).toBe(true); expect(isVatTemplateComplete('TT80')).toBe(true);
+    expect(t.lines.map((l) => l.code)).toEqual(CODES_80);
+    for (const l of t.lines) { expect(l.label, l.code).not.toBe(''); expect(l.section, l.code).not.toBe(''); }
+    expect(t).toMatchObject({ form: '01/GTGT', version: 'TT80', validFrom: '2022-01-01', validTo: '2026-06-30' });
+    expect(t.source).toContain('TT 80/2021'); expect(t.source).toContain('Công báo số 969 + 970'); expect(t.source).toMatch(/trang 19-20/);
+  });
+  it('công thức đúng như in trên mẫu, chỉ tham chiếu chỉ tiêu có thật, không chu trình', () => {
+    const f = Object.fromEntries(t.lines.filter((l) => l.formula).map((l) => [l.code, l.formula]));
+    expect(f).toEqual({
+      '27': '[29]+[30]+[32]+[32a]', '28': '[31]+[33]', '34': '[26]+[27]', '35': '[28]', '36': '[35]-[25]',
+      '40a': '[36]-[22]+[37]-[38]-[39a]', '40': '[40a]-[40b]', '41': '[36]-[22]+[37]-[38]-[39a]', '43': '[41]-[42]',
+    });
+    expect(t.lines.find((l) => l.code === '40a')!.clamp).toBe('positivePart');
+    expect(t.lines.find((l) => l.code === '41')!.clamp).toBe('negativePart');
+    const byCode = new Map(t.lines.map((l) => [l.code, l]));
+    const refs = (l: { formula?: string }): string[] => [...(l.formula ?? '').matchAll(/\[(\w+)\]/g)].map((m) => m[1]!);
+    for (const l of t.lines) { if (l.kind === 'formula') expect(l.formula, l.code).toBeTruthy(); else expect(l.formula, l.code).toBeUndefined(); for (const r of refs(l)) expect(byCode.has(r), `[${l.code}] → [${r}]`).toBe(true); }
+    const state = new Map<string, 1 | 2>();
+    const visit = (c: string): void => { if (state.get(c) === 2) return; expect(state.get(c), `chu trình tại [${c}]`).toBeUndefined(); state.set(c, 1); refs(byCode.get(c)!).forEach(visit); state.set(c, 2); };
+    CODES_80.forEach(visit);
+  });
+  it('ánh xạ nhóm kê khai giống mẫu TT89 cho cùng chỉ tiêu; [32a] là nhóm KKK', () => {
+    const t89 = loadVatTemplate('TT89'); const l = (c: string) => t.lines.find((x) => x.code === c)!;
+    for (const c of ['23', '24', '23a', '24a', '25', '26', '29', '30', '31', '32', '33', '32a']) expect(l(c).invoice, c).toEqual(t89.lines.find((x) => x.code === c)!.invoice);
+    expect(l('32a').invoice?.groups).toEqual(['KKK']); expect(l('32').note).toMatch(/8%/);
+    expect(l('21').kind).toBe('flag'); expect(l('22').kind).toBe('carry');
+    for (const c of ['37', '38', '39a', '40b', '42']) expect(l(c).kind, c).toBe('manual');
+    expect(l('25')).toMatchObject({ kind: 'invoice', overridable: true });
   });
 });

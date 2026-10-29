@@ -33,5 +33,6 @@ describe('legal-params.json', () => {
     expect(rows.find((r) => r.code === 'vat_reduced_rate')).toMatchObject({ value: { from: 10, to: 8 }, validFrom: '2025-07-01', validTo: '2026-12-31' });
     expect(rows.find((r) => r.code === 'vat_noncash_threshold')).toMatchObject({ value: '5000000', validFrom: '2025-07-01', validTo: null });
     expect(rows.filter((r) => r.code === 'vat_return_template').map((r) => [r.value, r.validFrom, r.validTo])).toEqual([['TT80', '2022-01-01', '2026-06-30'], ['TT89', '2026-07-01', null]]);
+    expect(rows.filter((r) => r.code === 'cit_return_template').map((r) => [r.value, r.validFrom, r.validTo])).toEqual([['TT80', '2021-12-31', '2026-06-30'], ['TT89', '2026-07-01', null]]);
   });
 });

@@ -46,6 +46,8 @@ export const diffValues = (stored: Record<string, string>, fresh: Record<string,
 
 // gates: cổng pháp lý còn false mà kỳ này đụng tới (hiện chỉ 'rate8_unverified': có hóa đơn bán ra 8%, 01GTGT_TT89_rate8 = false). Chốt tờ khai, xuất XML và ký số bị chặn trừ khi người chốt đã xác nhận (acknowledged_gates).
 export const GATE_RATE8 = 'rate8_unverified';
+const tplName = (v: string) => (v === 'TT80' ? 'TT 80/2021' : 'TT 89/2026');
+const rate8Basis = (v: string) => (v === 'TT80' ? 'kiểm tra nghị định giảm thuế GTGT áp dụng cho kỳ này' : 'lập kèm Mẫu số 01 Phụ lục II NĐ 174/2025/NĐ-CP');
 interface Computed { version: string; values: Record<string, string>; hints: Record<string, string>; warnings: string[]; carryLocked: boolean; gates: string[] }
 // explicitManual: manual do người dùng gửi trong yêu cầu này (không phải đọc lại từ values đã lưu); chỉ khi đó mới cảnh báo [22] nhập tay không dùng.
 async function compute(trx: Trx, q: PeriodQ, manual: Record<string, string>, overrides: Record<string, string>, explicitManual: boolean): Promise<Computed> {
@@ -71,7 +73,16 @@ async function compute(trx: Trx, q: PeriodQ, manual: Record<string, string>, ove
       if (direction === 'sale' && g.code === '08' && g.rows.length) group08 = true;
     }
   }
-  if (group08 && !isVatRate8Verified()) warnings.push('Hóa đơn bán ra thuế suất 8% đang cộng vào chỉ tiêu [32]/[33] (thuế suất 10%): mẫu 01/GTGT TT 89/2026 không có dòng 8% và văn bản chưa nói khai ở chỉ tiêu nào, đây là giả định tạm của phần mềm; lập kèm Mẫu số 01 Phụ lục II NĐ 174/2025/NĐ-CP');
+  if (group08 && !isVatRate8Verified()) warnings.push(`Hóa đơn bán ra thuế suất 8% đang cộng vào chỉ tiêu [32]/[33] (thuế suất 10%): mẫu 01/GTGT ${tplName(t.version)} không có dòng 8% và văn bản chưa nói khai ở chỉ tiêu nào, đây là giả định tạm của phần mềm; ${rate8Basis(t.version)}`);
+  // Mẫu TT 80/2021 không có chỉ tiêu cho nhóm bán ra không tính vào giá tính thuế (KTGT) và không thuộc phạm vi điều chỉnh (NPV) như mẫu TT 89/2026: số của nhóm không vào tờ khai, báo để người lập xử lý.
+  if (t.version === 'TT80') {
+    const covered = new Set(t.lines.flatMap((l) => (l.invoice ? l.invoice.groups.map((g) => `${l.invoice!.direction}:${g}`) : [])));
+    for (const [key, v] of Object.entries(invoice)) {
+      const [dir, group, field, imp] = key.split(':');
+      if (imp !== undefined || field !== 'base' || covered.has(`${dir}:${group}`) || D(v).isZero()) continue;
+      warnings.push(`Nhóm kê khai ${group} (${dir === 'sale' ? 'bán ra' : 'mua vào'}) có giá trị ${v} đồng nhưng mẫu 01/GTGT TT 80/2021 không có chỉ tiêu cho nhóm này: số không vào tờ khai`);
+    }
+  }
   const outside: string[] = [];
   for (const date of [...new Set(rate8.map((x) => x.date))]) if (!(await legalParam(trx, 'vat_reduced_rate', date))) outside.push(...rate8.filter((x) => x.date === date).map((x) => `${x.no} (${x.date})`));
   if (outside.length) warnings.push(`Hóa đơn dùng thuế suất 8% ngoài thời gian giảm thuế GTGT (tham số vat_reduced_rate): ${[...new Set(outside)].join(', ')}`);
@@ -106,12 +117,13 @@ async function compute(trx: Trx, q: PeriodQ, manual: Record<string, string>, ove
       AND b.year * 12 + CASE b.period_kind WHEN 'month' THEN b.period ELSE b.period * 3 END < ${s.lo}
       AND (b.finalized_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN ${s.from}::date AND ${s.to}::date
     ORDER BY b.year, b.period, b.revision`.execute(trx)).rows.filter((x) => !D(x.delta).isZero());
+  const supplRef = t.version === 'TT80' ? 'ghi chú 4 của mẫu 01/GTGT TT 80/2021' : 'TT 89/2026 Phụ lục II điểm 3';
   for (const [code, sign, word] of [['38', 1, 'tăng'], ['37', -1, 'giảm']] as const) {
     const list = supp.filter((x) => D(x.delta).times(sign).gt(0));
     if (!list.length || !t.lines.some((l) => l.code === code)) continue;
     const total = list.reduce((a, x) => a.plus(D(x.delta).abs()), D(0)).toFixed(0);
-    hints[code] = `Gợi ý ${total}: tờ khai bổ sung ${list.map((x) => `${kindName(x.period_kind)} ${x.period}/${x.year} lần ${x.revision} (${D(x.delta).abs().toFixed(0)})`).join(', ')} làm ${word} số thuế còn được khấu trừ chuyển kỳ sau; khai vào [${code}] kỳ phát hiện (TT 89/2026 Phụ lục II điểm 3)`;
-    warnings.push(`Có tờ khai bổ sung kỳ trước làm ${word} số thuế còn được khấu trừ: khai ${total} vào chỉ tiêu [${code}] (xem gợi ý). Phần mềm coi kỳ phát hiện sai sót là kỳ chứa ngày chốt tờ khai bổ sung; nếu đã khai ở kỳ khác thì không khai lại; nếu đã đề nghị hoàn ([42]) xem TT 89/2026 Phụ lục II điểm 3 b.2`);
+    hints[code] = `Gợi ý ${total}: tờ khai bổ sung ${list.map((x) => `${kindName(x.period_kind)} ${x.period}/${x.year} lần ${x.revision} (${D(x.delta).abs().toFixed(0)})`).join(', ')} làm ${word} số thuế còn được khấu trừ chuyển kỳ sau; khai vào [${code}] kỳ phát hiện (${supplRef})`;
+    warnings.push(`Có tờ khai bổ sung kỳ trước làm ${word} số thuế còn được khấu trừ: khai ${total} vào chỉ tiêu [${code}] (xem gợi ý). Phần mềm coi kỳ phát hiện sai sót là kỳ chứa ngày chốt tờ khai bổ sung; nếu đã khai ở kỳ khác thì không khai lại; nếu đã đề nghị hoàn ([42]) xem ${supplRef}${t.version === 'TT80' ? '' : ' b.2'}`);
   }
 
   const values = evalVatReturn(t, { invoice, carry, manual, overrides });
@@ -211,7 +223,7 @@ export async function finalizeReturn(trx: Trx, ctx: { tenantId: string; userId: 
     throw new AppError('TAX_RETURN_STALE', `Số liệu sổ đã thay đổi kể từ lần tính trước (${changed.map((x) => `[${x.code}]`).join(', ') || 'mẫu tờ khai'}): lưu lại nháp để tính lại và kiểm tra trước khi chốt`, 409, { changed });
   // Cổng pháp lý còn false: không chốt im lặng. Người chốt phải xác nhận rõ (acknowledge); xác nhận được lưu trên tờ khai và ghi audit_event (trigger audit).
   const open = c.gates.filter((g) => !acknowledge.includes(g));
-  if (open.includes(GATE_RATE8)) throw new AppError('VAT_RATE8_UNVERIFIED', 'Kỳ này có hóa đơn bán ra thuế suất 8% nhưng mẫu 01/GTGT TT 89/2026 không có dòng 8% và văn bản chưa nói khai ở chỉ tiêu nào: phần mềm tạm gộp vào [32]/[33] (thuế suất 10%). Chỉ chốt khi bạn đã xác nhận cách khai (gửi acknowledge: ["rate8_unverified"]) và lập kèm Mẫu số 01 Phụ lục II NĐ 174/2025/NĐ-CP', 409, { gates: open });
+  if (open.includes(GATE_RATE8)) throw new AppError('VAT_RATE8_UNVERIFIED', `Kỳ này có hóa đơn bán ra thuế suất 8% nhưng mẫu 01/GTGT ${tplName(c.version)} không có dòng 8% và văn bản chưa nói khai ở chỉ tiêu nào: phần mềm tạm gộp vào [32]/[33] (thuế suất 10%). Chỉ chốt khi bạn đã xác nhận cách khai (gửi acknowledge: ["rate8_unverified"]) và ${rate8Basis(c.version)}`, 409, { gates: open });
   await trx.updateTable('tax_return').set({ status: 'final', finalized_by: ctx.userId, finalized_at: sql<string>`now()`, acknowledged_gates: c.gates }).where('id', '=', id).execute();
   return { ...(await getReturn(trx, id)), hints: c.hints, warnings: c.warnings, carryLocked: c.carryLocked };
 }
@@ -222,10 +234,10 @@ export async function assertGatesAcknowledged(trx: Trx, id: number): Promise<voi
   const r = await rowOf(trx, id);
   const c = await compute(trx, qOf(r), manualOf(loadVatTemplate(r.template_version as VatTemplate['version']), r.values), r.overrides, false);
   const open = c.gates.filter((g) => !r.acknowledged_gates.includes(g));
-  if (open.length) throw new AppError('VAT_RATE8_UNVERIFIED', 'Tờ khai có hóa đơn 8% chưa xác nhận cách khai (cổng 01GTGT_TT89_rate8 = false): không xuất XML hay ký số; lập tờ khai bổ sung và xác nhận khi chốt', 409, { gates: open });
+  if (open.length) throw new AppError('VAT_RATE8_UNVERIFIED', 'Tờ khai có hóa đơn 8% chưa xác nhận cách khai (cổng 01GTGT_TT89_rate8 = false, dùng chung cho mẫu TT 80/2021 và TT 89/2026): không xuất XML hay ký số; lập tờ khai bổ sung và xác nhận khi chốt', 409, { gates: open });
 }
 
-// Mẫu chỉ tiêu áp dụng cho kỳ (màn hình dựng bảng từ đây, không viết cứng danh sách chỉ tiêu). Kỳ trước 01/7/2026 chưa có mẫu: 409 VAT_TEMPLATE_UNAVAILABLE.
+// Mẫu chỉ tiêu áp dụng cho kỳ (màn hình dựng bảng từ đây, không viết cứng danh sách chỉ tiêu). Kỳ trước 01/01/2022 chưa có mẫu: 409 VAT_TEMPLATE_UNAVAILABLE.
 export async function templateOfPeriod(trx: Trx, q: PeriodQ): Promise<VatTemplate> { const s = specOf(q); return templateFor(trx, s.from, s.label); }
 
 // Gợi ý, cảnh báo và số lệch so với sổ hiện tại của tờ khai nháp (chỉ đọc, không ghi): màn hình mở lại nháp vẫn thấy gợi ý [37]/[38], [25]; tờ khai đã chốt không có (số đã khóa).

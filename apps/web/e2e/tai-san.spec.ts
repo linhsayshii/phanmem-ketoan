@@ -34,6 +34,9 @@ test('Tài sản cố định: tạo loại, tạo thẻ, ghi tăng xây dựng 
   await dr.getByLabel('Loại (F4)').fill(cat); await page.locator('.ant-select-item-option', { hasText: cat }).first().click(); await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0);
   await dr.getByLabel('Ngày bắt đầu khấu hao').fill('01/02/2026'); await page.keyboard.press('Enter');
   await dr.getByLabel('Số kỳ sử dụng').fill('12');
+  // Gợi ý khung TT 45/2013 Phụ lục 1: 12 tháng thấp hơn tối thiểu 6 năm của nhóm D.1; chỉ cảnh báo, vẫn lưu được thẻ.
+  await dr.getByTestId('frame-hint').locator('.ant-select').click(); await page.keyboard.type('D.1'); await page.locator('.ant-select-item-option', { hasText: /^D\.1 / }).first().click();
+  await expect(dr.getByTestId('frame-warning')).toContainText('thấp hơn mức tối thiểu 6 năm');
   await dr.getByLabel('Ghi chú').press('Control+s');
   await expect(page.getByText('Đã lưu thẻ')).toBeVisible();
 

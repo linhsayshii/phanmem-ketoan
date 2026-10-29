@@ -2,15 +2,15 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import pg from 'pg';
 import { sql } from 'kysely';
 import { seedAbcFullTx } from '../../scripts/seed-abc.js';
-import { createTestApp, type TestApp } from '../helpers.js';
+import { bootstrapTenant, createTestApp, type TestApp } from '../helpers.js';
 import { postVoucher, setupLedgerTenant } from '../invariants/helpers.js';
 import type * as CoaData from '@kt/coa-data';
 
-// Cổng 03TNDN_TT89 của status.json đọc qua isCitTemplateComplete: kiểm thử bật/tắt bằng biến này thay cho sửa tệp dữ liệu.
+// Cổng 03TNDN_TT89, 03TNDN_TT80 của status.json đọc qua isCitTemplateComplete: kiểm thử bật/tắt bằng biến này thay cho sửa tệp dữ liệu.
 const gate = vi.hoisted(() => ({ open: true }));
 vi.mock('@kt/coa-data', async (orig) => {
   const m = await orig<typeof CoaData>();
-  return { ...m, isCitTemplateComplete: (v: 'TT89') => gate.open && m.isCitTemplateComplete(v) };
+  return { ...m, isCitTemplateComplete: (v: 'TT89' | 'TT80') => gate.open && m.isCitTemplateComplete(v) };
 });
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 300_000 });
@@ -107,6 +107,34 @@ describe('tờ khai quyết toán thuế TNDN 03/TNDN', () => {
       expect((await t.call('GET', '/api/cit/estimate?year=2026&quarter=1&rate=20')).statusCode).toBe(200); // tạm tính quý không phụ thuộc mẫu 03/TNDN
     } finally { gate.open = true; }
     expect((await ok(t.call('GET', '/api/cit/template?year=2026'))).lines.length).toBeGreaterThan(60);
-    expect(err(await t.call('POST', '/api/cit/returns', { year: 2025 }))).toEqual([409, 'CIT_TEMPLATE_UNAVAILABLE']); // kỳ kết thúc trước 01/7/2026
+  });
+
+  it('kỳ tính thuế năm 2025 (kết thúc trước 01/7/2026) dùng mẫu TT80: C9 = C7 x 20% + C8 x C8a; doanh thu năm trước ≤ 3 tỷ → 15% khai ở C8/C8a; cổng TT80 tắt thì 409', async () => {
+    const b = await bootstrapTenant(ctx, { code: `C80${Date.now()}${n++}` }); const call = as(b.cookie);
+    await sql`UPDATE tenant SET tax_code = '0109999999' WHERE id = ${b.tenantId}::uuid`.execute(ctx.t.admin);
+    for (const y of [2024, 2025]) await ok(call('POST', '/api/fiscal-years', { fiscalYear: y, dateFrom: `${y}-01-01`, months: 12, regime: 'TT133', confirmRegimeOverride: true }), 201);
+    const post = async (date: string, debit: string, credit: string, amount: string) => { const r = await postVoucher(ctx, b.cookie, date, [{ accountCode: debit, debit: amount, credit: '0' }, { accountCode: credit, debit: '0', credit: amount }]); expect(r.statusCode, r.body).toBe(201); };
+    const t = { call, post };
+    await t.post('2024-06-01', '1111', '5113', '1000000000'); // doanh thu năm trước 1 tỷ: thuế suất 15% (Luật 67/2025 Điều 10)
+    await t.post('2025-03-01', '1111', '5113', '100000000');
+    const tpl = await ok(t.call('GET', '/api/cit/template?year=2025'));
+    expect(tpl.version).toBe('TT80'); expect(tpl.lines.map((l: { code: string }) => l.code)).not.toContain('C7a');
+    const r: Ret & { templateVersion: string } = await ok(t.call('POST', '/api/cit/returns', { year: 2025 }), 201);
+    expect(r.templateVersion).toBe('TT80');
+    expect(r.values).toMatchObject({ A1: '100000000', B13: '100000000', C1: '100000000', C4: '100000000', C6: '100000000', C7: '0', C8: '100000000', C8a: '15', C9: '15000000', C17: '15000000', E1: '15000000', E: '15000000', G2: '0', I: '15000000' });
+    expect(Object.keys(r.values)).not.toContain('C7a'); expect(Object.keys(r.values)).not.toContain('D2a');
+    expect(r.hints.C8a).toMatch(/TT 80\/2021/);
+    // Thuế suất 20%: nhập tay C8 = 0, C8a = 0 → toàn bộ thu nhập ở C7.
+    const u: Ret = await ok(t.call('PUT', `/api/cit/returns/${r.id}`, { overrides: { C8: '0', C8a: '0' } }));
+    expect(u.values).toMatchObject({ C7: '100000000', C8: '0', C9: '20000000', C17: '20000000' });
+    expect(err(await t.call('PUT', `/api/cit/returns/${r.id}`, { overrides: { C7a: '20' } }))).toEqual([400, 'CIT_INVALID']); // TT80 không có C7a
+    await ok(t.call('PUT', `/api/cit/returns/${r.id}`, { overrides: {} }));
+    const f: Ret = await ok(t.call('POST', `/api/cit/returns/${r.id}/finalize`));
+    expect(f.status).toBe('final');
+    const xml = await t.call('GET', `/api/cit/returns/${r.id}/xml`);
+    expect(xml.statusCode, xml.body).toBe(200);
+    expect(xml.body).toContain('<phienBanMau>TT80</phienBanMau>'); expect(xml.body).toContain('<ctC8a>15</ctC8a>'); expect(xml.body).toContain('<ctC9>15000000</ctC9>'); expect(xml.body).not.toContain('ctC7a');
+    gate.open = false;
+    try { expect(err(await t.call('GET', '/api/cit/template?year=2025'))).toEqual([409, 'CIT_TEMPLATE_UNAVAILABLE']); } finally { gate.open = true; }
   });
 });

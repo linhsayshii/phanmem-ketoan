@@ -18,6 +18,8 @@ import { listRuns, runAssetPeriod } from './periodRun.js';
 import { assetValues, remainingUnitsOf, scheduleView } from './schedule.js';
 import { dateIso } from '../ledger/vouchers.service.js';
 import { adjustToolValue, cancelEvent, changeLife, decreaseAsset, decreaseInput, increaseAsset, increaseInput, lifeInput, listEvents, resumeAsset, resumeInput, revalueAsset, revalueInput, suspendAsset, suspendInput, toolAdjustInput, toolDecreaseInput, decreaseTool, transferAsset, transferInput, updateAllocations } from './events.js';
+import { checkLifeAgainstFrame, frameList } from './lifeFrame.js';
+import { todayVn } from '@kt/domain';
 import { allocationInput, assetInput, categoryInput, deleteAsset, deleteCategory, getAsset, listAssets, listCategories, lookupAssets, saveAsset, saveCategory } from './assets.js';
 
 const numId = z.object({ id: z.coerce.number().int().positive() });
@@ -33,6 +35,11 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.put('/api/asset-categories/:id', { preHandler: app.requirePermission('asset.update'), schema: { params: numId, body: categoryInput } }, async (req) => app.withTenant(req, (trx) => saveCategory(trx, tid(req), req.params.id, req.body)));
   app.delete('/api/asset-categories/:id', { preHandler: app.requirePermission('asset.delete'), schema: { params: numId } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteCategory(trx, req.params.id)); return reply.status(204).send(); });
 
+  // Khung thời gian trích khấu hao TT 45/2013 Phụ lục 1: danh mục và kiểm tra gợi ý (không chặn lưu thẻ).
+  app.get('/api/asset-depreciation-frames', { preHandler: app.requirePermission('asset.view') }, async () => frameList());
+  app.get('/api/asset-depreciation-frames/check', { preHandler: app.requirePermission('asset.view'),
+    schema: { querystring: z.object({ frame: z.string().min(1).max(10), lifeMonths: z.coerce.number().int().min(1).max(1200), at: dateIso.optional(), used: z.enum(['true', 'false']).default('false') }) } },
+  async (req) => checkLifeAgainstFrame(req.query.frame, req.query.lifeMonths, req.query.at ?? todayVn(), req.query.used === 'true'));
   app.get('/api/assets', { preHandler: app.requirePermission('asset.view'), schema: { querystring: z.object({ kind: kindQ.optional(), q: z.string().optional(), at: dateIso.optional() }) } }, async (req) =>
     // Nguyên giá, hao mòn lũy kế tại ngày `at` (mặc định toàn bộ sổ cái) cho màn hình danh sách.
     app.withTenant(req, async (trx) => {

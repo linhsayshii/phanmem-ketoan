@@ -1,0 +1,622 @@
+{
+  "form": "03/TNDN",
+  "version": "TT80",
+  "source": "TT 80/2021/TT-BTC ngày 29/9/2021 của Bộ trưởng Bộ Tài chính, Phụ lục II, Mẫu số 03/TNDN \"Tờ khai quyết toán thuế thu nhập doanh nghiệp (Áp dụng đối với phương pháp doanh thu - chi phí)\", Công báo số 969 + 970 ngày 17/11/2021 trang 60-64 (trang PDF 59-63 của tệp 37499-1-2021969-97080-2021-tt-btc.pdf, tải 2026-10-29 từ https://congbao.chinhphu.vn/van-ban/thong-tu-so-80-2021-tt-btc-34774.htm; trang 60: đầu tờ khai [01]-[10], mục A, B1; trang 61: B8-C9; trang 62: C10-E4; trang 63: E5-I và cam đoan; trang 64: ghi chú 1-6). Mã chỉ tiêu, tên chỉ tiêu và công thức đối chiếu từng chữ với ảnh trang 110 dpi (lớp chữ của PDF khớp ảnh). Áp dụng cho kỳ tính thuế năm 2021 trở đi (Điều 87 khoản 2); hết hiệu lực cho kỳ kết thúc từ 01/7/2026 (TT 89/2026 Điều 99, Điều 100). Không có thay đổi chỉ tiêu của mẫu này trong TT 13/2023/TT-BTC, TT 40/2025/TT-BTC (Điều 1 khoản 7 chỉ sửa chữ địa danh của các mẫu khác), TT 94/2025/TT-BTC, TT 21/2026/TT-BTC (thay mẫu 02/TNDN và 05/TNDN).",
+  "lines": [
+    {
+      "code": "04",
+      "label": "Ngành nghề có tỷ lệ doanh thu cao nhất",
+      "section": "Đầu tờ khai",
+      "stt": "",
+      "kind": "text",
+      "overridable": true
+    },
+    {
+      "code": "05",
+      "label": "Tỷ lệ (%)",
+      "section": "Đầu tờ khai",
+      "stt": "",
+      "kind": "rate",
+      "overridable": true
+    },
+    {
+      "code": "A",
+      "label": "Kết quả kinh doanh ghi nhận theo báo cáo tài chính",
+      "section": "A",
+      "stt": "A",
+      "kind": "section",
+      "overridable": false
+    },
+    {
+      "code": "A1",
+      "label": "Tổng lợi nhuận kế toán trước thuế thu nhập doanh nghiệp",
+      "section": "A",
+      "stt": "1",
+      "kind": "ledger",
+      "overridable": true,
+      "note": "Phần mềm lấy chỉ tiêu \"Tổng lợi nhuận kế toán trước thuế\" của Báo cáo kết quả hoạt động kinh doanh (B02) cả năm tài chính. Mẫu 03/TNDN TT 80/2021 kèm Phụ lục 03-1A/TNDN (kết quả hoạt động sản xuất kinh doanh) mà phần mềm chưa lập: A1 không lấy từ phụ lục."
+    },
+    {
+      "code": "B",
+      "label": "Xác định thu nhập chịu thuế theo Luật thuế thu nhập doanh nghiệp",
+      "section": "B",
+      "stt": "B",
+      "kind": "section",
+      "overridable": false
+    },
+    {
+      "code": "B1",
+      "label": "Điều chỉnh tăng tổng lợi nhuận trước thuế thu nhập doanh nghiệp (B1= B2+B3+B4+B5+B6+B7)",
+      "section": "B",
+      "stt": "1",
+      "kind": "formula",
+      "formula": "B2+B3+B4+B5+B6+B7",
+      "overridable": false
+    },
+    {
+      "code": "B2",
+      "label": "Các khoản điều chỉnh tăng doanh thu",
+      "section": "B",
+      "stt": "1.1",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "B3",
+      "label": "Chi phí của phần doanh thu điều chỉnh giảm",
+      "section": "B",
+      "stt": "1.2",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "B4",
+      "label": "Các khoản chi không được trừ khi xác định thu nhập chịu thuế",
+      "section": "B",
+      "stt": "1.3",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "B5",
+      "label": "Thuế thu nhập đã nộp cho phần thu nhập nhận được ở nước ngoài",
+      "section": "B",
+      "stt": "1.4",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "B6",
+      "label": "Điều chỉnh tăng lợi nhuận do xác định giá thị trường đối với giao dịch liên kết",
+      "section": "B",
+      "stt": "1.5",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "B7",
+      "label": "Các khoản điều chỉnh làm tăng lợi nhuận trước thuế khác",
+      "section": "B",
+      "stt": "1.6",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "B8",
+      "label": "Điều chỉnh giảm tổng lợi nhuận trước thuế thu nhập doanh nghiệp (B8=B9+B10+B11+B12)",
+      "section": "B",
+      "stt": "2",
+      "kind": "formula",
+      "formula": "B9+B10+B11+B12",
+      "overridable": false
+    },
+    {
+      "code": "B9",
+      "label": "Giảm trừ các khoản doanh thu đã tính thuế năm trước",
+      "section": "B",
+      "stt": "2.1",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "B10",
+      "label": "Chi phí của phần doanh thu điều chỉnh tăng",
+      "section": "B",
+      "stt": "2.2",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "B11",
+      "label": "Chi phí lãi vay không được trừ kỳ trước được chuyển sang kỳ này của doanh nghiệp có giao dịch liên kết",
+      "section": "B",
+      "stt": "2.3",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "B12",
+      "label": "Các khoản điều chỉnh làm giảm lợi nhuận trước thuế khác",
+      "section": "B",
+      "stt": "2.4",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "B13",
+      "label": "Tổng thu nhập chịu thuế (B13=A1+B1-B8)",
+      "section": "B",
+      "stt": "3",
+      "kind": "formula",
+      "formula": "A1+B1-B8",
+      "overridable": false
+    },
+    {
+      "code": "B14",
+      "label": "Thu nhập chịu thuế từ hoạt động sản xuất kinh doanh",
+      "section": "B",
+      "stt": "3.1",
+      "kind": "formula",
+      "formula": "B13-B15",
+      "printed": false,
+      "overridable": true,
+      "note": "Mẫu không ghi công thức cho B14; B13 gồm 3.1 (B14) và 3.2 (B15) nên phần mềm gợi ý B14 = B13 - B15, sửa được."
+    },
+    {
+      "code": "B15",
+      "label": "Thu nhập chịu thuế từ hoạt động chuyển nhượng BĐS",
+      "section": "B",
+      "stt": "3.2",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "C",
+      "label": "Thuế thu nhập doanh nghiệp (TNDN) phải nộp từ hoạt động sản xuất kinh doanh",
+      "section": "C",
+      "stt": "C",
+      "kind": "section",
+      "overridable": false
+    },
+    {
+      "code": "C1",
+      "label": "Thu nhập chịu thuế (C1 = B14)",
+      "section": "C",
+      "stt": "1",
+      "kind": "formula",
+      "formula": "B14",
+      "overridable": false
+    },
+    {
+      "code": "C2",
+      "label": "Thu nhập miễn thuế",
+      "section": "C",
+      "stt": "2",
+      "kind": "input",
+      "overridable": true,
+      "note": "Dòng \"Loại thu nhập miễn thuế…\" ngay dưới C2 trên mẫu là dòng chữ không có mã chỉ tiêu, phần mềm không lưu."
+    },
+    {
+      "code": "C3",
+      "label": "Chuyển lỗ và bù trừ lãi, lỗ (C3=C3a+C3b)",
+      "section": "C",
+      "stt": "3",
+      "kind": "formula",
+      "formula": "C3a+C3b",
+      "overridable": false
+    },
+    {
+      "code": "C3a",
+      "label": "+ Lỗ từ hoạt động SXKD được chuyển trong kỳ",
+      "section": "C",
+      "stt": "3.1",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "C3b",
+      "label": "+ Lỗ từ chuyển nhượng BĐS được bù trừ với lãi của hoạt động SXKD",
+      "section": "C",
+      "stt": "3.2",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "C4",
+      "label": "Thu nhập tính thuế (TNTT) (C4=C1-C2-C3)",
+      "section": "C",
+      "stt": "4",
+      "kind": "formula",
+      "formula": "C1-C2-C3",
+      "overridable": false
+    },
+    {
+      "code": "C5",
+      "label": "Trích lập quỹ khoa học công nghệ (nếu có)",
+      "section": "C",
+      "stt": "5",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "C6",
+      "label": "TNTT sau khi đã trích lập quỹ khoa học công nghệ (C6=C4-C5=C7+C8)",
+      "section": "C",
+      "stt": "6",
+      "kind": "formula",
+      "formula": "C4-C5",
+      "overridable": false
+    },
+    {
+      "code": "C7",
+      "label": "+ Thu nhập tính thuế áp dụng thuế suất 20%",
+      "section": "C",
+      "stt": "6.1",
+      "kind": "formula",
+      "formula": "C6-C8",
+      "printed": false,
+      "overridable": true,
+      "note": "Mẫu ghi C6 = C7 + C8, không ghi công thức riêng cho C7; phần mềm gợi ý C7 = C6 - C8, sửa được. Mẫu TT 80/2021 không có ô thuế suất phổ thông: C7 luôn nhân 20% trong C9; thu nhập tính thuế theo thuế suất khác 20% (15%, 17%) khai ở C8 với thuế suất ở C8a."
+    },
+    {
+      "code": "C8",
+      "label": "+ Thu nhập tính thuế tính theo thuế suất không ưu đãi khác",
+      "section": "C",
+      "stt": "6.2",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "C8a",
+      "label": "+ Thuế suất không ưu đãi khác (%)",
+      "section": "C",
+      "stt": "6.3",
+      "kind": "rate",
+      "overridable": true,
+      "note": "Thuế suất là phần trăm (ví dụ 15). Phần mềm gợi ý C8 và C8a khi thuế suất xác định được khác 20%."
+    },
+    {
+      "code": "C9",
+      "label": "Thuế TNDN từ hoạt động SXKD tính theo thuế suất không ưu đãi (C9 =(C7 x 20%) + (C8 x C8a))",
+      "section": "C",
+      "stt": "7",
+      "kind": "formula",
+      "formula": "C7*20/100+C8*C8a/100",
+      "clamp": "positivePart",
+      "overridable": false,
+      "note": "C8a là phần trăm nên phần mềm chia 100 và làm tròn đến đồng; thuế suất 20% in cố định trong công thức của mẫu; thu nhập tính thuế âm (lỗ) không sinh thuế âm (phần mềm lấy 0)."
+    },
+    {
+      "code": "C10",
+      "label": "Thuế TNDN được ưu đãi theo Luật thuế TNDN (C10 = C11 + C12 + C13)",
+      "section": "C",
+      "stt": "8",
+      "kind": "formula",
+      "formula": "C11+C12+C13",
+      "overridable": false
+    },
+    {
+      "code": "C11",
+      "label": "+ Thuế TNDN chênh lệch do áp dụng mức thuế suất ưu đãi",
+      "section": "C",
+      "stt": "8.1",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "C12",
+      "label": "+ Thuế TNDN được miễn trong kỳ",
+      "section": "C",
+      "stt": "8.2",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "C13",
+      "label": "+ Thuế TNDN được giảm trong kỳ",
+      "section": "C",
+      "stt": "8.3",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "C14",
+      "label": "Thuế TNDN được miễn, giảm theo Hiệp định thuế",
+      "section": "C",
+      "stt": "9",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "C15",
+      "label": "Thuế TNDN được miễn, giảm theo từng thời kỳ",
+      "section": "C",
+      "stt": "10",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "C16",
+      "label": "Thuế thu nhập đã nộp ở nước ngoài được trừ trong kỳ tính thuế",
+      "section": "C",
+      "stt": "11",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "C17",
+      "label": "Thuế TNDN phải nộp của hoạt động sản xuất kinh doanh (C17=C9-C10-C14-C15-C16)",
+      "section": "C",
+      "stt": "12",
+      "kind": "formula",
+      "formula": "C9-C10-C14-C15-C16",
+      "overridable": false
+    },
+    {
+      "code": "D",
+      "label": "Thuế TNDN phải nộp từ hoạt động chuyển nhượng BĐS",
+      "section": "D",
+      "stt": "D",
+      "kind": "section",
+      "overridable": false
+    },
+    {
+      "code": "D1",
+      "label": "Thu nhập chịu thuế (D1 = B15)",
+      "section": "D",
+      "stt": "1",
+      "kind": "formula",
+      "formula": "B15",
+      "overridable": false
+    },
+    {
+      "code": "D2",
+      "label": "Lỗ từ hoạt động chuyển nhượng BĐS được chuyển trong kỳ",
+      "section": "D",
+      "stt": "2",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "D3",
+      "label": "Thu nhập tính thuế (D3=D1-D2)",
+      "section": "D",
+      "stt": "3",
+      "kind": "formula",
+      "formula": "D1-D2",
+      "overridable": false
+    },
+    {
+      "code": "D4",
+      "label": "Trích lập quỹ khoa học công nghệ (nếu có)",
+      "section": "D",
+      "stt": "4",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "D5",
+      "label": "TNTT sau khi đã trích lập quỹ khoa học công nghệ (D5=D3-D4)",
+      "section": "D",
+      "stt": "5",
+      "kind": "formula",
+      "formula": "D3-D4",
+      "overridable": false
+    },
+    {
+      "code": "D6",
+      "label": "Thuế TNDN phải nộp của hoạt động chuyển nhượng BĐS trong kỳ",
+      "section": "D",
+      "stt": "6",
+      "kind": "input",
+      "overridable": true,
+      "note": "Mẫu không ghi công thức; người nộp thuế tự tính theo thuế suất áp dụng cho thu nhập chuyển nhượng bất động sản."
+    },
+    {
+      "code": "D7",
+      "label": "Thuế TNDN chênh lệch do áp dụng mức thuế suất ưu đãi đối với thu nhập từ thực hiện dự án đầu tư - kinh doanh nhà ở xã hội để bán, cho thuê, cho thuê mua",
+      "section": "D",
+      "stt": "7",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "D8",
+      "label": "Thuế TNDN của hoạt động chuyển nhượng BĐS còn phải nộp kỳ này (D8=D6-D7)",
+      "section": "D",
+      "stt": "8",
+      "kind": "formula",
+      "formula": "D6-D7",
+      "overridable": false
+    },
+    {
+      "code": "E",
+      "label": "Số thuế TNDN phải nộp quyết toán trong kỳ (E=E1+E2+E5)",
+      "section": "E",
+      "stt": "E",
+      "kind": "formula",
+      "formula": "E1+E2+E5",
+      "overridable": false
+    },
+    {
+      "code": "E1",
+      "label": "Thuế TNDN của hoạt động sản xuất kinh doanh",
+      "section": "E",
+      "stt": "1",
+      "kind": "formula",
+      "formula": "C17",
+      "printed": false,
+      "overridable": true,
+      "note": "Mẫu không ghi công thức cho E1; phần mềm gợi ý E1 = C17 (thuế phải nộp của hoạt động SXKD), sửa được (ghi chú 4, 5 của mẫu: doanh nghiệp xổ số, hoạt động ưu đãi khác tỉnh đã kê khai riêng)."
+    },
+    {
+      "code": "E2",
+      "label": "Thuế TNDN từ hoạt động chuyển nhượng bất động sản (E2=E3+E4)",
+      "section": "E",
+      "stt": "2",
+      "kind": "formula",
+      "formula": "E3+E4",
+      "overridable": false
+    },
+    {
+      "code": "E3",
+      "label": "Thuế TNDN từ hoạt động chuyển nhượng bất động sản",
+      "section": "E",
+      "stt": "2.1",
+      "kind": "formula",
+      "formula": "D8",
+      "printed": false,
+      "overridable": true,
+      "note": "Mẫu không ghi công thức cho E3; phần mềm gợi ý E3 = D8, sửa được."
+    },
+    {
+      "code": "E4",
+      "label": "Thuế TNDN từ hoạt động chuyển nhượng cơ sở hạ tầng, nhà có thu tiền theo tiến độ",
+      "section": "E",
+      "stt": "2.2",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "E5",
+      "label": "Thuế TNDN phải nộp khác (nếu có)",
+      "section": "E",
+      "stt": "3",
+      "kind": "input",
+      "overridable": true
+    },
+    {
+      "code": "E6",
+      "label": "Trong đó thuế TNDN từ xử lý Quỹ phát triển khoa học công nghệ",
+      "section": "E",
+      "stt": "3.1",
+      "kind": "input",
+      "overridable": true,
+      "note": "Số \"trong đó\" của E5."
+    },
+    {
+      "code": "G",
+      "label": "Số thuế TNDN đã tạm nộp (G=G1+G2+G3+G4+G5)",
+      "section": "G",
+      "stt": "G",
+      "kind": "formula",
+      "formula": "G1+G2+G3+G4+G5",
+      "overridable": false
+    },
+    {
+      "code": "G1",
+      "label": "Thuế TNDN nộp thừa kỳ trước chuyển sang kỳ này",
+      "section": "G",
+      "stt": "1.1",
+      "kind": "input",
+      "group": "Thuế TNDN đã tạm nộp của hoạt động sản xuất kinh doanh",
+      "overridable": true
+    },
+    {
+      "code": "G2",
+      "label": "Thuế TNDN đã tạm nộp trong năm",
+      "section": "G",
+      "stt": "1.2",
+      "kind": "ledger",
+      "group": "Thuế TNDN đã tạm nộp của hoạt động sản xuất kinh doanh",
+      "overridable": true,
+      "note": "Ghi chú 3 của mẫu: số đã tạm nộp vào NSNN cho kỳ tính thuế tính đến thời hạn nộp hồ sơ quyết toán (kỳ 01/01/2021-31/12/2021: tính từ 01/01/2021 đến hết 31/3/2022). Mặc định của phần mềm chỉ cộng số đã nộp từ ngày đầu quý 2 (01/04) đến hết tháng thứ 3 sau ngày kết thúc năm tài chính, vì khoản nộp tháng 1-3 thường là thuế quý 4 hoặc quyết toán năm trước; khoản nộp tháng 1-3 cho chính năm này thì sửa tay."
+    },
+    {
+      "code": "G3",
+      "label": "Thuế TNDN nộp thừa kỳ trước chuyển sang kỳ này của hoạt động chuyển nhượng BĐS",
+      "section": "G",
+      "stt": "2.1",
+      "kind": "input",
+      "group": "Thuế TNDN đã tạm nộp của hoạt động chuyển nhượng BĐS",
+      "overridable": true
+    },
+    {
+      "code": "G4",
+      "label": "Thuế TNDN đã tạm nộp trong năm của hoạt động chuyển nhượng BĐS",
+      "section": "G",
+      "stt": "2.2",
+      "kind": "input",
+      "group": "Thuế TNDN đã tạm nộp của hoạt động chuyển nhượng BĐS",
+      "overridable": true
+    },
+    {
+      "code": "G5",
+      "label": "Thuế TNDN đã tạm nộp các kỳ trước và trong năm quyết toán của hoạt động chuyển nhượng cơ sở hạ tầng, nhà có thu tiền theo tiến độ",
+      "section": "G",
+      "stt": "2.3",
+      "kind": "input",
+      "group": "Thuế TNDN đã tạm nộp của hoạt động chuyển nhượng BĐS",
+      "overridable": true
+    },
+    {
+      "code": "H",
+      "label": "Chênh lệch giữa số thuế phải nộp và số thuế đã tạm nộp",
+      "section": "H",
+      "stt": "H",
+      "kind": "section",
+      "overridable": false
+    },
+    {
+      "code": "H1",
+      "label": "Chênh lệch giữa số thuế phải nộp và số thuế đã tạm nộp trong năm của hoạt động sản xuất kinh doanh (H1=E1+E5-G2)",
+      "section": "H",
+      "stt": "1",
+      "kind": "formula",
+      "formula": "E1+E5-G2",
+      "overridable": false
+    },
+    {
+      "code": "H2",
+      "label": "Chênh lệch giữa số thuế phải nộp và số thuế đã tạm nộp trong năm của hoạt động chuyển nhượng BĐS (H2=E3-G4)",
+      "section": "H",
+      "stt": "2",
+      "kind": "formula",
+      "formula": "E3-G4",
+      "overridable": false
+    },
+    {
+      "code": "H3",
+      "label": "Chênh lệch giữa số thuế phải nộp và số thuế đã tạm nộp của hoạt động chuyển nhượng cơ sở hạ tầng, nhà có thu tiền theo tiến độ (H3=E4-G5)",
+      "section": "H",
+      "stt": "3",
+      "kind": "formula",
+      "formula": "E4-G5",
+      "overridable": false
+    },
+    {
+      "code": "I",
+      "label": "Số thuế TNDN còn phải nộp đến thời hạn nộp hồ sơ khai quyết toán thuế (I=E-G=I1+I2)",
+      "section": "I",
+      "stt": "I",
+      "kind": "formula",
+      "formula": "E-G",
+      "overridable": false
+    },
+    {
+      "code": "I1",
+      "label": "Thuế TNDN còn phải nộp của hoạt động sản xuất kinh doanh",
+      "section": "I",
+      "stt": "1",
+      "kind": "formula",
+      "formula": "E1+E5-G1-G2",
+      "overridable": false,
+      "note": "Công thức in ở cột mã chỉ tiêu: I1=E1+E5-G1-G2."
+    },
+    {
+      "code": "I2",
+      "label": "Thuế TNDN còn phải nộp của hoạt động chuyển nhượng BĐS",
+      "section": "I",
+      "stt": "2",
+      "kind": "formula",
+      "formula": "E2-G3-G4-G5",
+      "overridable": false,
+      "note": "Công thức in ở cột mã chỉ tiêu: I2=E2-G3-G4-G5."
+    }
+  ],
+  "notes": [
+    "Ghi chú 3 của mẫu nhắc chỉ tiêu \"D11\" nhưng bảng chỉ tiêu không có D11 (mục D chỉ có D1-D8); giữ nguyên như văn bản, không tạo D11.",
+    "Chỉ tiêu mục A, B, C, D, H là dòng tiêu đề, mẫu không ghi số tiền và không có công thức; E, G, I có công thức in trên mẫu.",
+    "Mẫu TT 80/2021 không có ô thuế suất phổ thông (C7a của TT 89/2026): C9 = (C7 x 20%) + (C8 x C8a)."
+  ]
+}

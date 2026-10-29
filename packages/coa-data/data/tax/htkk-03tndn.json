@@ -1,9 +1,9 @@
 {
   "id": "htkk-03tndn",
   "verified": false,
-  "note": "Chưa kiểm chứng với HTKK: chưa có XSD hay tệp kết xuất mẫu 03/TNDN (xem Chờ người dùng trong docs/TIEP-THEO.md). Tên thẻ, thứ tự thẻ, mã tờ khai và phiên bản dưới đây là giả định tạm của phần mềm theo cùng khuôn với htkk-01gtgt.json, không phải đặc tả của HTKK; khi có tệp kết xuất mẫu từ HTKK chỉ cần sửa tệp này rồi đổi verified thành true. Chỉ tiêu tiêu đề (A, B, C, D, H) không có thẻ vì mẫu không ghi số tiền; thuế suất C7a, C8a, [05] xuất số phần trăm (ví dụ 20).",
+  "note": "Chưa kiểm chứng với HTKK: chưa có XSD hay tệp kết xuất mẫu 03/TNDN (xem Chờ người dùng trong docs/TIEP-THEO.md). Tên thẻ, thứ tự thẻ, mã tờ khai và phiên bản dưới đây là giả định tạm của phần mềm theo cùng khuôn với htkk-01gtgt.json, không phải đặc tả của HTKK; khi có tệp kết xuất mẫu từ HTKK chỉ cần sửa tệp này rồi đổi verified thành true. Chỉ tiêu tiêu đề (A, B, C, D, H) không có thẻ vì mẫu không ghi số tiền; thuế suất C7a (chỉ mẫu TT89), C8a, [05] xuất số phần trăm (ví dụ 20). Mẫu TT80 dùng cùng bộ thẻ, thiếu các chỉ tiêu B12a, C7a, D2a, D2b (thẻ có sẵn nhưng không xuất) và giữ giả định chưa kiểm chứng như TT89.",
   "formCode": "03/TNDN",
-  "templateVersions": ["TT89"],
+  "templateVersions": ["TT89", "TT80"],
   "root": "HSoThueDTu",
   "encoding": "UTF-8",
   "header": [
