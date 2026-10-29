@@ -117,6 +117,14 @@ export function loadCitTemplate(version: 'TT89'): CitTemplate {
   if (!isCitTemplateComplete(version)) throw new Error('Chưa có mẫu tờ khai 03/TNDN theo TT 89/2026/TT-BTC đối chiếu văn bản gốc (status.json 03TNDN_TT89)');
   return JSON.parse(readFileSync(dataPath('tax', '03tndn-tt89.json'), 'utf8')) as CitTemplate;
 }
+// Mẫu 01/TKN-CNKD (Thông báo doanh thu/Tờ khai thuế năm của hộ kinh doanh, TT 89/2026 Phụ lục I, thay 01/CNKD): data/tax/01tkn-cnkd-tt89.json, cổng status.json 01TKN_CNKD_TT89. Mới là định nghĩa mẫu, chưa có logic lập tờ khai.
+export interface HkdReturnLine { code: string; label: string; section: string; kind: 'row' | 'total' | 'input' | 'formula' | 'column'; stt?: string; formula?: string; printedAnomaly?: boolean; note?: string }
+export interface HkdReturnTemplate { form: '01/TKN-CNKD'; title: string; version: 'TT89'; validFrom: string; validTo: string | null; source: string; printedAnomalies: string[]; applicability: string[]; header: { code: string; label: string; kind: string }[]; sectionA: { title: string; unit: string; columns: { no: string; key: string; label: string }[] }; lines: HkdReturnLine[]; notes: string[] }
+export function isHkdReturnTemplateComplete(): boolean { return taxStatus()['01TKN_CNKD_TT89'] === true && existsSync(dataPath('tax', '01tkn-cnkd-tt89.json')); }
+export function loadHkdReturnTemplate(): HkdReturnTemplate {
+  if (!isHkdReturnTemplateComplete()) throw new Error('Chưa có mẫu 01/TKN-CNKD theo TT 89/2026/TT-BTC đối chiếu văn bản gốc (status.json 01TKN_CNKD_TT89)');
+  return JSON.parse(readFileSync(dataPath('tax', '01tkn-cnkd-tt89.json'), 'utf8')) as HkdReturnTemplate;
+}
 // Ánh xạ sổ cái cho thuế TNDN theo chế độ (data/tax/cit-ledger.json): chỉ tiêu B02 lợi nhuận/doanh thu, tài khoản chi phí thuế, thuế phải nộp, tiền. Chế độ không có trong tệp thì undefined.
 export interface CitLedgerMap { profitLine: string; expenseLine: string; revenueLines: string[]; expenseAccount: string; payableAccount: string; cashAccounts: string[] }
 export function loadCitLedger(regime: Regime): CitLedgerMap | undefined {

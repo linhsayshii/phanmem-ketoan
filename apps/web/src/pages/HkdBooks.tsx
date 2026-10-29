@@ -55,6 +55,7 @@ function BooksTab({ cat }: { cat: Catalog }) {
   const [itemId, setItemId] = useState<number | undefined>();
   const [party, setParty] = useState<string | undefined>();
   const parties = useQuery({ queryKey: ['hkd-debt-parties'], enabled: cat.regime === 'TT58', queryFn: () => api<string[]>('/api/hkd/debt-parties') });
+  const check = useQuery({ queryKey: ['hkd-revenue-check', cat.fiscalYear], enabled: cat.regime === 'TT152', queryFn: () => api<{ revenue: string; messages: string[] }>(`/api/hkd/revenue-check?year=${cat.fiscalYear}`) });
   const [docs, setDocs] = useState<Doc[] | null>(null);
   const isStock = code === 'S2d-HKD' || code === 'S2c-DNSN'; const isDebt = code === 'S4a-DNSN';
   const qs = (format: string) => `from=${range[0]}&to=${range[1]}${isStock && itemId ? `&itemId=${itemId}` : ''}${isDebt && party ? `&party=${encodeURIComponent(party)}` : ''}&format=${format}`;
@@ -74,6 +75,7 @@ function BooksTab({ cat }: { cat: Catalog }) {
         <Button onClick={() => window.open(`/api/hkd/books/${code}?${qs('xlsx')}`, '_blank')} disabled={!code}>Xuất Excel</Button>
       </Toolbar>
       {sel && <div style={{ color: COLOR.textSecondary }}>{sel.article} của thông tư. {cat.methods.find((m) => m.code === cat.taxMethod)?.label ? `Phương pháp nộp thuế năm ${cat.fiscalYear}: ${cat.methods.find((m) => m.code === cat.taxMethod)!.label}.` : 'Chưa chọn phương pháp nộp thuế (tab Cài đặt năm).'}</div>}
+      {cat.regime === 'TT152' && check.data && <Alert type="info" showIcon message={`Doanh thu năm ${cat.fiscalYear} trên sổ: ${money(check.data.revenue)} đồng`} description={check.data.messages.map((m) => <div key={m}>{m}</div>)} />}
       {docs?.map((d, i) => <DocView key={i} doc={d} />)}
     </Space>
   );

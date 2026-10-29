@@ -7,6 +7,7 @@ import { assertPrint, isoDate, ordered, orderedMsg, respondReport } from '../rep
 import { catalog } from './books.js';
 import { buildAnyBook } from './dnsnBooks.js';
 import { assetInput, createAsset, createDebt, debtSide, createEquity, createOtherAsset, debtInput, deleteAsset, deleteDebt, deleteEquity, deleteOtherAsset, equityInput, listAssets, listDebts, listEquity, listOtherAssets, listParties, otherAssetInput, updateAsset, updateDebt, updateEquity, updateOtherAsset } from './extras.js';
+import { revenueCheck } from './threshold.js';
 import { registerVoucherRoutes } from './vouchers.js';
 import { createEntry, createGroup, createItem, createMove, createOtherTax, deleteEntry, deleteMove, deleteOtherTax, entryInput, getSetting, groupInput, itemInput, listEntries, listGroups, listItems, listMoves, listOtherTax, moveInput, otherTaxInput, putSetting, settingInput, updateEntry, updateGroup, yearOf } from './service.js';
 
@@ -93,6 +94,9 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.post('/api/hkd/other-assets', { preHandler: app.requirePermission('sohkd.create'), schema: { body: otherAssetInput } }, async (req, reply) => { const c = ctx(req); return reply.status(201).send(await app.withTenant(req, (trx) => createOtherAsset(trx, c.tenantId, c.userId, req.body))); });
   app.put('/api/hkd/other-assets/:id', { preHandler: app.requirePermission('sohkd.update'), schema: { params: id, body: otherAssetInput } }, async (req) => app.withTenant(req, (trx) => updateOtherAsset(trx, req.params.id, req.body)));
   app.delete('/api/hkd/other-assets/:id', { preHandler: app.requirePermission('sohkd.delete'), schema: { params: id } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteOtherAsset(trx, req.params.id)); return reply.status(204).send(); });
+
+  // Đối chiếu doanh thu năm với ngưỡng của NĐ 68/2026 (hộ kinh doanh): tham số hkd_* của legal_param.
+  app.get('/api/hkd/revenue-check', { preHandler: view, schema: { querystring: z.object({ year: z.coerce.number().int().min(2000).max(2100) }) } }, async (req) => app.withTenant(req, (trx) => revenueCheck(trx, req.query.year), READ_SNAPSHOT));
 
   registerVoucherRoutes(app);
 };
