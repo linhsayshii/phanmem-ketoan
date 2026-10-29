@@ -2,8 +2,8 @@ import { useState } from 'react';
 import dayjs from 'dayjs';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Badge, Button, Card, Checkbox, DatePicker, Descriptions, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Spin, Switch, Table, Tabs, Tag, Typography, Upload, message } from 'antd';
-import { LookupSelect } from '@kt/ui';
+import { Alert, Badge, Button, Checkbox, DatePicker, Descriptions, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Spin, Switch, Table, Tabs, Tag, Typography, Upload, message } from 'antd';
+import { LookupSelect, PageHeader, Section } from '@kt/ui';
 import { formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
@@ -125,7 +125,7 @@ function RecurringTab() {
   });
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="large">
-      <Card title="Mẫu bút toán định kỳ" extra={<Space>{manage && <Button type="primary" onClick={() => setEditing('new')}>Thêm mẫu</Button>}{manage && can('voucher.create') && <Button onClick={() => setRunOpen(true)}>Chạy ngay</Button>}</Space>}>
+      <Section title="Mẫu bút toán định kỳ" extra={<Space>{manage && <Button type="primary" onClick={() => setEditing('new')}>Thêm mẫu</Button>}{manage && can('voucher.create') && <Button onClick={() => setRunOpen(true)}>Chạy ngay</Button>}</Space>}>
         <Table<Entry> size="small" loading={list.isLoading} rowKey="id" dataSource={list.data ?? []} pagination={false} locale={{ emptyText: 'Chưa có mẫu. Thêm mẫu cho các bút toán lặp lại hằng tháng, quý, năm: phân bổ chi phí, trích lập, khấu trừ...' }}
           columns={[
             { title: 'Mã', dataIndex: 'code', width: 110, render: (c: string, e) => <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setEditing(e)}>{c}</Button> }, { title: 'Tên mẫu', dataIndex: 'name' },
@@ -141,14 +141,14 @@ function RecurringTab() {
                 <Popconfirm title="Xóa mẫu?" description="Chỉ xóa được mẫu chưa sinh chứng từ." okText="Xóa" cancelText="Không" onConfirm={() => act.mutate({ id: e.id, status: 'delete' })}><Button size="small" danger>Xóa</Button></Popconfirm>
               </Space>) }] : []),
           ]} />
-      </Card>
-      <Card title="Lịch sử chạy" extra={<Select allowClear placeholder="Mọi kết quả" style={{ width: 160 }} value={runStatus} onChange={setRunStatus} options={[{ value: 'created', label: 'Đã lập nháp' }, { value: 'skipped', label: 'Bỏ qua' }, { value: 'error', label: 'Lỗi' }]} />}>
+      </Section>
+      <Section title="Lịch sử chạy" extra={<Select allowClear placeholder="Mọi kết quả" style={{ width: 160 }} value={runStatus} onChange={setRunStatus} options={[{ value: 'created', label: 'Đã lập nháp' }, { value: 'skipped', label: 'Bỏ qua' }, { value: 'error', label: 'Lỗi' }]} />}>
         <Table<RunRow> size="small" loading={runs.isLoading} rowKey="id" dataSource={runs.data ?? []} pagination={{ pageSize: 10, hideOnSinglePage: true }} locale={{ emptyText: 'Chưa có lần chạy nào' }}
           columns={[{ title: 'Mẫu', dataIndex: 'entryCode', width: 110 }, { title: 'Kỳ', dataIndex: 'periodKey', width: 90 }, { title: 'Ngày', dataIndex: 'date', width: 110, render: (d: string) => formatVnDate(d) },
             { title: 'Kết quả', dataIndex: 'status', width: 120, render: (s: string) => runTag(s) },
             { title: 'Chứng từ', width: 220, render: (_, r) => (r.voucherId ? <Space><Link to="/chung-tu/$type/$id" params={{ type: 'PKT', id: r.voucherId }}>{r.voucherNo ?? 'Nháp (chưa cấp số)'}</Link><Tag>{r.voucherState ? VSTATE[r.voucherState] : 'Đã xóa'}</Tag></Space> : '–') },
             { title: 'Ghi chú', render: (_, r) => r.message ?? '' }, { title: 'Chạy lúc', width: 150, render: (_, r) => dayjs(r.runAt).format('DD/MM/YYYY HH:mm') }, { title: 'Nguồn', width: 90, render: (_, r) => (r.trigger === 'worker' ? 'Tự động' : 'Thủ công') }]} />
-      </Card>
+      </Section>
       <EntryEditor entry={editing} onClose={() => setEditing(null)} />
       <RunDialog open={runOpen} onClose={() => setRunOpen(false)} />
     </Space>
@@ -187,7 +187,7 @@ function RecognizeTab() {
   const rec = result?.recognition;
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="large">
-      <Card title="Nhận diện hóa đơn đầu vào">
+      <Section title="Nhận diện hóa đơn đầu vào">
         <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Kết quả chỉ là bản nháp để bạn soát: trợ lý không tạo chứng từ và không ghi sổ. Văn bản trong hóa đơn chỉ được coi là dữ liệu."
           description="Hóa đơn điện tử XML (QĐ 1233) được đọc ngay trên máy chủ, không gửi đi đâu. Ảnh và PDF cần dịch vụ nhận diện bên ngoài do quản trị cấu hình; tệp chỉ rời máy chủ khi công ty bật cài đặt và bạn chọn gửi ở từng lần." />
         <Space direction="vertical" style={{ width: '100%' }}>
@@ -203,9 +203,9 @@ function RecognizeTab() {
           </Upload.Dragger>
           {err && <Alert type="error" showIcon data-testid="recognize-error" message={err} />}
         </Space>
-      </Card>
+      </Section>
       {rec && result && (
-        <Card title={`Kết quả nhận diện (${result.provider}${result.external ? ', đã gửi ra ngoài' : ', cục bộ'})`} data-testid="recognize-result">
+        <Section title={`Kết quả nhận diện (${result.provider}${result.external ? ', đã gửi ra ngoài' : ', cục bộ'})`} testId="recognize-result">
           {rec.needsReview ? <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Cần soát lại trước khi dùng" description="Có trường thiếu, độ tin cậy dưới 80% hoặc số liệu không khớp." />
             : <Alert type="success" showIcon style={{ marginBottom: 12 }} message="Các trường đều đủ và tin cậy cao" />}
           {rec.warnings.map((w) => <Alert key={w.code + w.message} type="warning" showIcon style={{ marginBottom: 6 }} message={w.message} />)}
@@ -222,13 +222,13 @@ function RecognizeTab() {
           <Table<RLine> size="small" pagination={false} rowKey={(_, i) => String(i)} dataSource={rec.lines}
             columns={[{ title: 'Tên hàng', render: (_, l) => <Conf f={l.name} /> }, { title: 'ĐVT', width: 80, render: (_, l) => l.uom.value ?? '' }, { title: 'Số lượng', width: 100, render: (_, l) => l.quantity.value ?? '' },
               { title: 'Đơn giá', width: 120, render: (_, l) => (l.unitPrice.value ? formatVnNumber(l.unitPrice.value) : '') }, { title: 'Thành tiền', width: 170, render: (_, l) => <Conf num f={l.amount} /> }, { title: 'Thuế suất', width: 90, render: (_, l) => l.taxRate.value ?? '' }]} />
-        </Card>)}
-      <Card title="Nhật ký nhận diện" size="small">
+        </Section>)}
+      <Section title="Nhật ký nhận diện">
         <Table<LogRow> size="small" loading={logs.isLoading} rowKey="id" dataSource={logs.data ?? []} pagination={{ pageSize: 8, hideOnSinglePage: true }} locale={{ emptyText: 'Chưa nhận diện tệp nào' }}
           columns={[{ title: 'Lúc', width: 150, render: (_, r) => dayjs(r.createdAt).format('DD/MM/YYYY HH:mm') }, { title: 'Tệp', dataIndex: 'fileName' }, { title: 'Người dùng', dataIndex: 'username', width: 120 },
             { title: 'Bộ nhận diện', width: 110, dataIndex: 'provider' }, { title: 'Gửi ra ngoài', width: 110, render: (_, r) => (r.external ? <Badge status="warning" text="Có" /> : 'Không') },
             { title: 'Kết quả', width: 160, render: (_, r) => (r.status === 'ok' ? <Tag color="green">Thành công</Tag> : <Tag color="red">{r.errorCode ?? 'Lỗi'}</Tag>) }]} />
-      </Card>
+      </Section>
     </Space>
   );
 }
@@ -237,7 +237,7 @@ function RecognizeTab() {
 function SuggestTab() {
   const q = useSuggest(); const [form] = Form.useForm();
   return (
-    <Card title="Gợi ý định khoản">
+    <Section title="Gợi ý định khoản">
       <Typography.Paragraph type="secondary">Nhập đặc điểm của nghiệp vụ; trợ lý xếp hạng các cặp tài khoản Nợ/Có đã dùng cho nghiệp vụ tương tự trong sổ của công ty và giải thích lý do. Khi nhập chứng từ, bấm Ctrl+G để gợi ý ngay trên phiếu.</Typography.Paragraph>
       <Form form={form} layout="inline" style={{ marginBottom: 12, rowGap: 8 }} onFinish={(v) => q.mutate({ voucherType: v.voucherType, partyCode: v.partyCode, description: v.description, amount: v.amount })}>
         <Form.Item name="voucherType" label="Loại chứng từ"><Select allowClear style={{ width: 150 }} options={['PKT', 'PT', 'PC', 'BC', 'BN', 'HDM', 'HDB'].map((value) => ({ value, label: value }))} /></Form.Item>
@@ -248,7 +248,7 @@ function SuggestTab() {
       </Form>
       {q.error && <Alert type="error" showIcon message={(q.error as Error).message} />}
       {q.data && <><Typography.Paragraph type="secondary">Đã xét {q.data.considered} chứng từ đến ngày {formatVnDate(q.data.asOf)}.</Typography.Paragraph><SuggestList data={q.data} /></>}
-    </Card>
+    </Section>
   );
 }
 
@@ -258,8 +258,13 @@ export default function AssistantPage() {
     ...(can('recurring.view') ? [{ key: 'recurring', label: 'Bút toán định kỳ', children: <RecurringTab /> }] : []),
     ...(can('assistant.use') ? [{ key: 'recognize', label: 'Nhận diện hóa đơn', children: <RecognizeTab /> }, { key: 'suggest', label: 'Gợi ý định khoản', children: <SuggestTab /> }] : []),
   ];
-  return (<>
-    <Typography.Title level={4} style={{ marginTop: 0 }}>Trợ lý</Typography.Title>
-    {items.length ? <Tabs items={items} destroyInactiveTabPane /> : <Alert type="warning" showIcon message="Bạn chưa có quyền dùng trợ lý" />}
-  </>);
+  return (
+    <>
+      <PageHeader
+        title="Trợ lý"
+        description="Bút toán định kỳ, nhận diện hóa đơn và gợi ý định khoản"
+      />
+      {items.length ? <Tabs items={items} destroyInactiveTabPane /> : <Alert type="warning" showIcon message="Bạn chưa có quyền dùng trợ lý" />}
+    </>
+  );
 }

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Card, Collapse, DatePicker, Form, Input, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
+import { Alert, Button, Collapse, DatePicker, Form, Input, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import dayjs, { type Dayjs } from 'dayjs';
+import { PageHeader, Section, Toolbar } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -40,29 +41,32 @@ export default function DataCheckPage() {
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Card title="Soát lỗi dữ liệu">
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Alert type="info" showIcon message="Quy tắc tùy chỉnh bằng SQL chưa hỗ trợ vì lý do an toàn dữ liệu" description="Quy tắc do hệ thống cung cấp; bạn có thể bật/tắt từng quy tắc hoặc sửa tên, mức, thông điệp và hướng dẫn sửa." />
-          <Space wrap>
-            <span>Khoảng ngày ghi sổ</span>
-            <DatePicker.RangePicker allowClear={false} format="DD/MM/YYYY" value={range} onChange={(v) => { if (v?.[0] && v[1]) setRange([v[0], v[1]]); }} />
-            <Button type="primary" loading={check.isPending} disabled={canView && selected.length === 0} onClick={() => check.mutate()}>Soát lỗi</Button>
-          </Space>
-          {canView && (
-            <Table<Rule> rowKey="code" size="small" pagination={false} loading={rules.isFetching} dataSource={rules.data?.rows ?? []}
-              rowSelection={{ selectedRowKeys: selected, getCheckboxProps: (r) => ({ disabled: !r.is_enabled }), onChange: (keys) => setSelected(keys as string[]) }}
-              expandable={{ expandedRowRender: (r) => <div><b>Câu SQL (chỉ xem; tham số $1 từ ngày, $2 đến ngày)</b><pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{r.sql}</pre></div> }}
-              columns={[
-                { title: 'Mã', dataIndex: 'code', width: 240 },
-                { title: 'Tên quy tắc', dataIndex: 'name' },
-                { title: 'Mức', dataIndex: 'severity', width: 100, render: (s: Severity) => <Tag color={SEVERITY[s].color}>{SEVERITY[s].label}</Tag> },
-                { title: 'Thông điệp', dataIndex: 'message' },
-                { title: 'Hướng dẫn sửa', dataIndex: 'fix_hint' },
-                { title: 'Bật', dataIndex: 'is_enabled', width: 80, render: (on: boolean, r) => <Switch size="small" checked={on} disabled={!can('data_check.manage') || update.isPending} onChange={(v) => update.mutate({ id: r.id, json: { is_enabled: v } })} /> },
-                { title: '', key: 'act', width: 70, render: (_, r) => can('data_check.manage') && <Button size="small" onClick={() => { setEditing(r); form.setFieldsValue({ name: r.name, severity: r.severity, message: r.message, fix_hint: r.fix_hint }); }}>Sửa</Button> },
-              ]} />)}
-        </Space>
-      </Card>
+      <PageHeader
+        title="Soát lỗi dữ liệu"
+        description="Kiểm tra tính hợp lệ và cân đối của dữ liệu kế toán theo các quy tắc hệ thống"
+      >
+        <Toolbar>
+          <span>Khoảng ngày ghi sổ</span>
+          <DatePicker.RangePicker allowClear={false} format="DD/MM/YYYY" value={range} onChange={(v) => { if (v?.[0] && v[1]) setRange([v[0], v[1]]); }} />
+          <Button type="primary" loading={check.isPending} disabled={canView && selected.length === 0} onClick={() => check.mutate()}>Soát lỗi</Button>
+        </Toolbar>
+      </PageHeader>
+      <Alert type="info" showIcon message="Quy tắc tùy chỉnh bằng SQL chưa hỗ trợ vì lý do an toàn dữ liệu" description="Quy tắc do hệ thống cung cấp; bạn có thể bật/tắt từng quy tắc hoặc sửa tên, mức, thông điệp và hướng dẫn sửa." />
+      {canView && (
+        <Section bodyPadding={0}>
+          <Table<Rule> rowKey="code" size="small" pagination={false} loading={rules.isFetching} dataSource={rules.data?.rows ?? []}
+            rowSelection={{ selectedRowKeys: selected, getCheckboxProps: (r) => ({ disabled: !r.is_enabled }), onChange: (keys) => setSelected(keys as string[]) }}
+            expandable={{ expandedRowRender: (r) => <div><b>Câu SQL (chỉ xem; tham số $1 từ ngày, $2 đến ngày)</b><pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{r.sql}</pre></div> }}
+            columns={[
+              { title: 'Mã', dataIndex: 'code', width: 240 },
+              { title: 'Tên quy tắc', dataIndex: 'name' },
+              { title: 'Mức', dataIndex: 'severity', width: 100, render: (s: Severity) => <Tag color={SEVERITY[s].color}>{SEVERITY[s].label}</Tag> },
+              { title: 'Thông điệp', dataIndex: 'message' },
+              { title: 'Hướng dẫn sửa', dataIndex: 'fix_hint' },
+              { title: 'Bật', dataIndex: 'is_enabled', width: 80, render: (on: boolean, r) => <Switch size="small" checked={on} disabled={!can('data_check.manage') || update.isPending} onChange={(v) => update.mutate({ id: r.id, json: { is_enabled: v } })} /> },
+              { title: '', key: 'act', width: 70, render: (_, r) => can('data_check.manage') && <Button size="small" onClick={() => { setEditing(r); form.setFieldsValue({ name: r.name, severity: r.severity, message: r.message, fix_hint: r.fix_hint }); }}>Sửa</Button> },
+            ]} />
+        </Section>)}
 
       {!!check.data?.skipped?.length && (
         <Alert type="warning" showIcon message="Có quy tắc không được chạy"
@@ -70,7 +74,7 @@ export default function DataCheckPage() {
 
       {check.data && (check.data.results.length === 0
         ? check.data.ran > 0 && <Alert type="success" showIcon message={`Đã chạy ${check.data.ran} quy tắc, không phát hiện vấn đề`} />
-        : <Card title={`Kết quả: ${check.data.results.length} dòng từ ${groups.size} quy tắc (đã chạy ${check.data.ran} quy tắc)`}>
+        : <Section title={`Kết quả: ${check.data.results.length} dòng từ ${groups.size} quy tắc (đã chạy ${check.data.ran} quy tắc)`}>
           <Collapse defaultActiveKey={[...groups.keys()]} items={[...groups].map(([code, rows]) => ({ key: code,
             label: <Space><Tag color={SEVERITY[rows[0]!.severity].color}>{SEVERITY[rows[0]!.severity].label}</Tag><b>{rows[0]!.ruleName}</b><span>({rows.length})</span></Space>,
             children: (<>
@@ -83,7 +87,7 @@ export default function DataCheckPage() {
                 { title: 'Hướng dẫn sửa', dataIndex: 'fixHint' },
                 { title: '', key: 'fix', width: 120, render: (_, r) => r.voucherId && <Link to="/chung-tu/$type/$id" params={{ type: 'PKT', id: r.voucherId }}>Sửa chứng từ</Link> },
               ]} /></>) }))} />
-        </Card>)}
+        </Section>)}
 
       <Modal open={!!editing} title={`Sửa quy tắc ${editing?.code ?? ''}`} okText="Lưu" cancelText="Hủy" confirmLoading={update.isPending} destroyOnHidden onCancel={() => setEditing(null)} onOk={() => form.submit()}>
         <Form<RuleForm> form={form} layout="vertical" onFinish={(v) => update.mutate({ id: editing!.id, json: { ...v, fix_hint: v.fix_hint || null } })}>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useHotkeys } from '@kt/ui';
+import { PageHeader, Section, useHotkeys } from '@kt/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Checkbox, DatePicker, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { api } from '../api/client.js';
@@ -47,26 +47,28 @@ export default function ApiKeysPage() {
   if (!can('api_key.manage')) return <Alert type="warning" showIcon message="Bạn không có quyền quản lý khóa API" />;
   return (
     <div>
-      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>Khóa API</h2>
-        <Button type="primary" onClick={openAdd}>Tạo khóa API (Insert)</Button>
-      </Space>
-      <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Khóa API cho phép phần mềm bán hàng gọi /api/ext/v1 với quyền của người tạo, thu hẹp theo phạm vi đã chọn. Khóa đầy đủ chỉ hiện một lần; mất khóa thì thu hồi và tạo khóa mới." />
-      <Table<ApiKey> rowKey="id" size="small" loading={keys.isLoading} dataSource={keys.data ?? []} pagination={false} locale={{ emptyText: 'Chưa có khóa API nào' }}
-        columns={[
-          { title: 'Tên', dataIndex: 'name' },
-          { title: 'Tiền tố', dataIndex: 'prefix', width: 130, render: (p: string) => <code>kt_{p}</code> },
-          { title: 'Phạm vi', dataIndex: 'scopes', render: (s: string[]) => <Space size={[4, 4]} wrap>{s.map((x) => <Tag key={x}>{SCOPE_LABEL[x] ?? x}</Tag>)}</Space> },
-          { title: 'Người dùng', dataIndex: 'username', width: 110 },
-          { title: 'Kho mặc định', dataIndex: 'defaultWarehouseCode', width: 110, render: (w: string | null) => w ?? '–' },
-          { title: 'Dùng gần nhất', dataIndex: 'lastUsedAt', width: 160, render: (t: string | null) => fmtTime(t) ?? <Tag>Chưa dùng</Tag> },
-          { title: 'Hết hạn', dataIndex: 'expiresAt', width: 160, render: (t: string | null) => fmtTime(t) ?? '–' },
-          { title: 'Trạng thái', dataIndex: 'status', width: 110, render: (s: ApiKey['status']) => <Tag color={STATUS[s].color}>{STATUS[s].label}</Tag> },
-          { title: '', width: 100, render: (_, r) => r.status !== 'revoked' && (
-            <Popconfirm title="Thu hồi khóa này?" description="Phần mềm đang dùng khóa sẽ bị từ chối ngay." okText="Thu hồi" cancelText="Không" onConfirm={() => revoke.mutate(r.id)}>
-              <Button size="small" danger aria-label={`Thu hồi ${r.name}`}>Thu hồi</Button>
-            </Popconfirm>) },
-        ]} />
+      <PageHeader
+        title="Khóa API"
+        description="Khóa API cho phép phần mềm bán hàng gọi /api/ext/v1 với quyền của người tạo, thu hẹp theo phạm vi đã chọn. Khóa đầy đủ chỉ hiện một lần; mất khóa thì thu hồi và tạo khóa mới."
+        extra={<Button type="primary" onClick={openAdd}>Tạo khóa API (Insert)</Button>}
+      />
+      <Section bodyPadding={0}>
+        <Table<ApiKey> rowKey="id" size="small" loading={keys.isLoading} dataSource={keys.data ?? []} pagination={false} locale={{ emptyText: 'Chưa có khóa API nào' }}
+          columns={[
+            { title: 'Tên', dataIndex: 'name' },
+            { title: 'Tiền tố', dataIndex: 'prefix', width: 130, render: (p: string) => <code>kt_{p}</code> },
+            { title: 'Phạm vi', dataIndex: 'scopes', render: (s: string[]) => <Space size={[4, 4]} wrap>{s.map((x) => <Tag key={x}>{SCOPE_LABEL[x] ?? x}</Tag>)}</Space> },
+            { title: 'Người dùng', dataIndex: 'username', width: 110 },
+            { title: 'Kho mặc định', dataIndex: 'defaultWarehouseCode', width: 110, render: (w: string | null) => w ?? '–' },
+            { title: 'Dùng gần nhất', dataIndex: 'lastUsedAt', width: 160, render: (t: string | null) => fmtTime(t) ?? <Tag>Chưa dùng</Tag> },
+            { title: 'Hết hạn', dataIndex: 'expiresAt', width: 160, render: (t: string | null) => fmtTime(t) ?? '–' },
+            { title: 'Trạng thái', dataIndex: 'status', width: 110, render: (s: ApiKey['status']) => <Tag color={STATUS[s].color}>{STATUS[s].label}</Tag> },
+            { title: '', width: 100, render: (_, r) => r.status !== 'revoked' && (
+              <Popconfirm title="Thu hồi khóa này?" description="Phần mềm đang dùng khóa sẽ bị từ chối ngay." okText="Thu hồi" cancelText="Không" onConfirm={() => revoke.mutate(r.id)}>
+                <Button size="small" danger aria-label={`Thu hồi ${r.name}`}>Thu hồi</Button>
+              </Popconfirm>) },
+          ]} />
+      </Section>
 
       <Modal title="Tạo khóa API" open={adding} okText="Tạo khóa" cancelText="Hủy" confirmLoading={create.isPending} destroyOnHidden onCancel={() => setAdding(false)} onOk={() => form.submit()}>
         <Form form={form} layout="vertical" onFinish={submit} onKeyDown={(e: React.KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); form.submit(); } }}>

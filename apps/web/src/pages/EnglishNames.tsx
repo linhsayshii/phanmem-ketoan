@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button, Input, Popconfirm, Select, Space, Table, Tabs, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { COLOR, PageHeader, Section, Toolbar } from '@kt/ui';
 import { TRANSLATION_STATUS_LABELS, type TranslationStatus } from '@kt/domain';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
@@ -33,16 +34,18 @@ function Editor({ kind, regime, report }: { kind: 'accounts' | 'report-lines'; r
   const focusNext = (i: number) => { document.querySelector<HTMLInputElement>(`[data-en-row="${i + 1}"]`)?.focus(); };
   return (
     <Space direction="vertical" style={{ width: '100%' }}>
-      <Space wrap>
+      <Toolbar>
         {canEdit && <Popconfirm title="Điền tên tiếng Anh vào các dòng còn trống từ mẫu hệ thống?" okText="Điền" cancelText="Hủy" onConfirm={() => fill.mutate()}><Button loading={fill.isPending}>Điền chỗ trống từ mẫu</Button></Popconfirm>}
         {canEdit && <Button type="primary" disabled={!dirty.size} loading={save.isPending} onClick={() => save.mutate()}>Lưu ({dirty.size})</Button>}
-        <span style={{ color: '#888' }}>Dòng để trống thì bản in dùng tiếng Việt.</span>
-      </Space>
+        <span style={{ color: COLOR.textSecondary }}>Dòng để trống thì bản in dùng tiếng Việt.</span>
+      </Toolbar>
       {q.error && <Alert type="error" showIcon message={(q.error as Error).message} />}
-      <Table<Row> size="small" bordered pagination={false} rowKey="key" loading={q.isLoading} dataSource={rows} scroll={{ y: 520 }}
-        columns={[{ title: isAcc ? 'Số hiệu' : 'Mã số', dataIndex: 'code', width: 100 }, { title: 'Tiếng Việt', dataIndex: 'vi', width: 340 },
-          { title: 'Tiếng Anh', render: (_, r, i) => <Input data-en-row={i} aria-label={`Tên tiếng Anh ${r.code}`} value={r.en ?? ''} disabled={!canEdit} onChange={(e) => edit(r.key, { en: e.target.value, status: r.status ?? 'draft' })} onPressEnter={() => focusNext(i)} /> },
-          { title: 'Trạng thái', width: 150, render: (_, r) => (r.en ? <Select size="small" style={{ width: 120 }} aria-label={`Trạng thái ${r.code}`} value={r.status ?? 'draft'} disabled={!canEdit} options={STATUS_OPTIONS} onChange={(status) => edit(r.key, { status })} /> : <Tag>Chưa dịch</Tag>) }]} />
+      <Section bodyPadding={0}>
+        <Table<Row> size="small" bordered pagination={false} rowKey="key" loading={q.isLoading} dataSource={rows} scroll={{ y: 520 }}
+          columns={[{ title: isAcc ? 'Số hiệu' : 'Mã số', dataIndex: 'code', width: 100 }, { title: 'Tiếng Việt', dataIndex: 'vi', width: 340 },
+            { title: 'Tiếng Anh', render: (_, r, i) => <Input data-en-row={i} aria-label={`Tên tiếng Anh ${r.code}`} value={r.en ?? ''} disabled={!canEdit} onChange={(e) => edit(r.key, { en: e.target.value, status: r.status ?? 'draft' })} onPressEnter={() => focusNext(i)} /> },
+            { title: 'Trạng thái', width: 150, render: (_, r) => (r.en ? <Select size="small" style={{ width: 120 }} aria-label={`Trạng thái ${r.code}`} value={r.status ?? 'draft'} disabled={!canEdit} options={STATUS_OPTIONS} onChange={(status) => edit(r.key, { status })} /> : <Tag>Chưa dịch</Tag>) }]} />
+      </Section>
     </Space>
   );
 }
@@ -52,13 +55,28 @@ export default function EnglishNamesPage() {
   const [regime, setRegime] = useState<string | undefined>(); const [report, setReport] = useState('B01');
   const r = regime ?? years.data?.at(-1)?.regime ?? 'TT133';
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <Space wrap><h2 style={{ margin: 0 }}>Tên tiếng Anh</h2><Select style={{ width: 120 }} value={r} onChange={setRegime} aria-label="Chế độ kế toán" options={REGIMES.map((x) => ({ value: x, label: x }))} /></Space>
-      <Alert type="info" showIcon message="Bản dịch tham khảo, không phải bản dịch chính thức. Dùng cho bản in song ngữ Việt – Anh của sổ sách và báo cáo tài chính; sửa tay được, đặt trạng thái Đã soát khi kế toán đã kiểm tra." />
+    <div>
+      <PageHeader
+        title="Tên tiếng Anh"
+        description="Bản dịch tham khảo, không phải bản dịch chính thức. Dùng cho bản in song ngữ Việt – Anh của sổ sách và báo cáo tài chính; sửa tay được, đặt trạng thái Đã soát khi kế toán đã kiểm tra."
+      >
+        <Toolbar>
+          <span>Chế độ kế toán</span>
+          <Select style={{ width: 120 }} value={r} onChange={setRegime} aria-label="Chế độ kế toán" options={REGIMES.map((x) => ({ value: x, label: x }))} />
+        </Toolbar>
+      </PageHeader>
       <Tabs items={[
         { key: 'accounts', label: 'Tài khoản', children: <Editor kind="accounts" regime={r} report={report} /> },
-        { key: 'lines', label: 'Chỉ tiêu báo cáo', children: <Space direction="vertical" style={{ width: '100%' }}><Select style={{ width: 320 }} value={report} onChange={setReport} aria-label="Báo cáo" options={REPORTS} /><Editor kind="report-lines" regime={r} report={report} /></Space> },
+        { key: 'lines', label: 'Chỉ tiêu báo cáo', children: (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Toolbar>
+              <span>Báo cáo</span>
+              <Select style={{ width: 320 }} value={report} onChange={setReport} aria-label="Báo cáo" options={REPORTS} />
+            </Toolbar>
+            <Editor kind="report-lines" regime={r} report={report} />
+          </Space>
+        ) },
       ]} />
-    </Space>
+    </div>
   );
 }

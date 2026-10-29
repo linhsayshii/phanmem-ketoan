@@ -3,7 +3,7 @@ import { Alert, Button, DatePicker, Form, Input, Modal, Radio, Select, Space, Sw
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { D, formatVnNumber } from '@kt/domain';
-import { useHotkeys } from '@kt/ui';
+import { PageHeader, Section, Toolbar, useHotkeys } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { HO_LABEL, unitOptions, useBranches, type Branch } from './branchCommon.js';
@@ -25,14 +25,18 @@ function BranchCatalog() {
     save.mutate({ code: v.code, name: v.name, taxCode: v.taxCode?.trim() || null, parentCode: v.parentCode?.trim() || null, isActive: v.isActive });
   return (
     <>
-      {can('catalog.create') && <Button type="primary" style={{ marginBottom: 12 }} onClick={() => open('new')}>Thêm chi nhánh (Insert)</Button>}
-      <Table<Branch> rowKey="id" size="small" loading={branches.isLoading} dataSource={branches.data?.rows ?? []} pagination={false}
-        locale={{ emptyText: 'Chưa có chi nhánh: mọi chứng từ thuộc trụ sở chính' }}
-        onRow={(r) => ({ onDoubleClick: () => { if (can('catalog.update')) open(r); } })} columns={[
-          { title: 'Mã', dataIndex: 'code', width: 120 }, { title: 'Tên chi nhánh', dataIndex: 'name' },
-          { title: 'MST đơn vị trực thuộc', dataIndex: 'taxCode', width: 180 }, { title: 'Đơn vị cấp trên', dataIndex: 'parentCode', width: 140, render: (c: string | null) => c ?? HO_LABEL },
-          { title: 'Trạng thái', dataIndex: 'isActive', width: 110, render: (a: boolean) => (a ? <Tag color="green">Đang dùng</Tag> : <Tag>Ngừng</Tag>) },
-          { title: '', width: 80, render: (_, r) => can('catalog.update') && <Button size="small" onClick={() => open(r)} aria-label={`Sửa ${r.code}`}>Sửa</Button> }]} />
+      <Toolbar style={{ marginBottom: 12 }}>
+        {can('catalog.create') && <Button type="primary" onClick={() => open('new')}>Thêm chi nhánh (Insert)</Button>}
+      </Toolbar>
+      <Section bodyPadding={0}>
+        <Table<Branch> rowKey="id" size="small" loading={branches.isLoading} dataSource={branches.data?.rows ?? []} pagination={false}
+          locale={{ emptyText: 'Chưa có chi nhánh: mọi chứng từ thuộc trụ sở chính' }}
+          onRow={(r) => ({ onDoubleClick: () => { if (can('catalog.update')) open(r); } })} columns={[
+            { title: 'Mã', dataIndex: 'code', width: 120 }, { title: 'Tên chi nhánh', dataIndex: 'name' },
+            { title: 'MST đơn vị trực thuộc', dataIndex: 'taxCode', width: 180 }, { title: 'Đơn vị cấp trên', dataIndex: 'parentCode', width: 140, render: (c: string | null) => c ?? HO_LABEL },
+            { title: 'Trạng thái', dataIndex: 'isActive', width: 110, render: (a: boolean) => (a ? <Tag color="green">Đang dùng</Tag> : <Tag>Ngừng</Tag>) },
+            { title: '', width: 80, render: (_, r) => can('catalog.update') && <Button size="small" onClick={() => open(r)} aria-label={`Sửa ${r.code}`}>Sửa</Button> }]} />
+      </Section>
       <Modal title={editing === 'new' ? 'Thêm chi nhánh' : 'Sửa chi nhánh'} open={!!editing} okText="Lưu (Ctrl+S)" cancelText="Hủy" confirmLoading={save.isPending} destroyOnHidden onCancel={() => setEditing(null)} onOk={() => form.submit()}>
         <Form form={form} layout="vertical" onFinish={submit} onKeyDown={(e: React.KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); form.submit(); } }}>
           <Form.Item label="Mã chi nhánh" name="code" rules={[{ required: true, whitespace: true, message: 'Nhập mã chi nhánh' }]}><Input maxLength={50} autoFocus /></Form.Item>
@@ -82,21 +86,21 @@ function Consolidated() {
   const cell = (pick: (x: ConsRow) => string) => (_: unknown, x: ConsRow) => (x.formula ? money(pick(x), x.negate) : '');
   return (
     <Space direction="vertical" style={{ width: '100%' }}>
-      <Space wrap>
+      <Toolbar style={{ marginBottom: 12 }}>
         <Radio.Group optionType="button" value={code} onChange={(e) => setCode(e.target.value as 'B01' | 'B02')} options={[{ value: 'B01', label: 'B01 Tình hình tài chính' }, { value: 'B02', label: 'B02 Kết quả kinh doanh' }]} />
         <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(range.from), dayjs(range.to)]} onChange={(v) => v?.[0] && v[1] && setRange({ from: v[0].format('YYYY-MM-DD'), to: v[1].format('YYYY-MM-DD') })} />
         {d && <span>Tài khoản nội bộ loại trừ: <b>{d.internalPrefixes.join(', ')}</b></span>}
         {d && can('setting.update') && <Button size="small" onClick={() => setPrefixes(d.internalPrefixes.join(', '))}>Khai báo tài khoản nội bộ</Button>}
-      </Space>
+      </Toolbar>
       {r.error && <Alert type="error" showIcon message={(r.error as Error).message} />}
       {d && d.internalNet !== '0' && <Alert type="warning" showIcon message={`Phải thu và phải trả nội bộ chưa khớp: dư ròng các tài khoản nội bộ là ${money(d.internalNet)} (Nợ trừ Có). Đối chiếu nội bộ trước khi dùng số tổng hợp.`} />}
-      {d && <Table<ConsRow> rowKey="lineCode" size="small" bordered pagination={false} scroll={{ x: true }} dataSource={d.rows} columns={[
+      {d && <Section bodyPadding={0}><Table<ConsRow> rowKey="lineCode" size="small" bordered pagination={false} scroll={{ x: true }} dataSource={d.rows} columns={[
         { title: 'Chỉ tiêu', key: 'label', fixed: 'left', render: (_, x) => <span style={{ paddingLeft: depth(x) * 16, fontWeight: x.isBold ? 600 : undefined }}>{x.label}</span> },
         { title: 'Mã số', dataIndex: 'lineCode', width: 70, align: 'center' },
         ...d.units.map((u, i) => ({ title: u.code === 'HO' ? HO_LABEL : u.code, key: `u${u.id}`, align: 'right' as const, width: 130, render: cell((x) => x.byUnit[i]!) })),
         { title: 'Cộng', key: 'total', align: 'right', width: 140, render: cell((x) => x.total) },
         { title: 'Loại trừ nội bộ', key: 'elim', align: 'right', width: 140, render: cell((x) => x.elimination) },
-        { title: 'Tổng hợp', key: 'cons', align: 'right', width: 140, render: (_, x) => <b>{cell((y) => y.consolidated)(_, x)}</b> }]} />}
+        { title: 'Tổng hợp', key: 'cons', align: 'right', width: 140, render: (_, x) => <b>{cell((y) => y.consolidated)(_, x)}</b> }]} /></Section>}
       <Modal title="Tài khoản nội bộ giữa các đơn vị" open={prefixes !== null} okText="Lưu" cancelText="Hủy" confirmLoading={savePrefixes.isPending} onCancel={() => setPrefixes(null)}
         onOk={() => savePrefixes.mutate((prefixes ?? '').split(/[\s,;]+/).filter(Boolean))}>
         <p>Số hiệu tài khoản (tiền tố) cách nhau dấu phẩy. Mặc định 136, 336 (Phải thu nội bộ, Phải trả nội bộ). Thêm tài khoản chi tiết dùng riêng cho doanh thu, chi phí nội bộ nếu có.</p>
@@ -109,8 +113,11 @@ function Consolidated() {
 export default function BranchesPage() {
   const { can } = useAuth();
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <h2 style={{ margin: 0 }}>Chi nhánh</h2>
+    <div>
+      <PageHeader
+        title="Chi nhánh"
+        description="Quản lý danh mục đơn vị trực thuộc, chi nhánh làm việc và báo cáo tài chính tổng hợp"
+      />
       <Tabs items={[
         { key: 'catalog', label: 'Danh mục chi nhánh', children: <BranchCatalog /> },
         { key: 'working', label: 'Chi nhánh làm việc', children: <WorkingBranch /> },
@@ -118,7 +125,7 @@ export default function BranchesPage() {
         { key: 'group', label: 'Hợp nhất (TT 202/2014)', children: <Alert type="warning" showIcon message="Chưa có báo cáo tài chính hợp nhất nhiều pháp nhân"
           description="Hợp nhất theo Thông tư 202/2014/TT-BTC (loại trừ khoản đầu tư và vốn, lợi ích cổ đông không kiểm soát) chờ văn bản gốc và Thông tư 43/2026/TT-BTC sửa đổi để nhập đúng mẫu B01-DN/HN, B02-DN/HN. BCTC tổng hợp ở thẻ bên chỉ cộng các chi nhánh của cùng một công ty." /> },
       ]} />
-    </Space>
+    </div>
   );
 }
 

@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Alert, Button, Card, DatePicker, Descriptions, Empty, Input, Modal, Popconfirm, Space, Tag, message } from 'antd';
+import { Alert, Button, DatePicker, Descriptions, Input, Modal, Popconfirm, Space, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import dayjs, { type Dayjs } from 'dayjs';
 import { formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
+import { EmptyState, PageHeader, Section, Toolbar } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { STATE_COLOR, STATE_LABEL } from './VoucherList.js';
@@ -50,25 +51,27 @@ export default function DedupePage() {
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Card title="Khử trùng chứng từ">
-        <Space wrap>
+      <PageHeader
+        title="Khử trùng chứng từ"
+        description="Tìm các cặp chứng từ cùng số tiền, gần ngày, cùng đối tượng và tài khoản đối ứng theo cặp loại chứng từ đã cấu hình (ví dụ Phiếu chi và Giấy báo nợ)."
+      >
+        <Toolbar>
           <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={range} onChange={(v) => v?.[0] && v[1] && setRange([v[0], v[1]])} />
           <Button type="primary" loading={list.isFetching} onClick={() => { setAsked(range); }}>Tìm</Button>
           {can('catalog.view') && <Link to="/danh-muc/$name" params={{ name: 'voucher_dup_rule' }}>Quy tắc khử trùng</Link>}
-        </Space>
-        <p style={{ color: 'rgba(0,0,0,.45)', margin: '8px 0 0' }}>Tìm các cặp chứng từ cùng số tiền, gần ngày, cùng đối tượng và tài khoản đối ứng theo cặp loại chứng từ đã cấu hình (ví dụ Phiếu chi và Giấy báo nợ).</p>
-      </Card>
+        </Toolbar>
+      </PageHeader>
       {list.error && <Alert type="error" showIcon message={(list.error as Error).message} />}
       {list.data?.hiddenBySensitive && <Alert type="warning" showIcon message="Không xét chứng từ có tài khoản công nợ phải thu, phải trả hoặc giá vốn mà bạn không có quyền xem; các cặp liên quan (nếu có) bị ẩn." />}
       {list.data?.truncated && <Alert type="warning" showIcon message="Chỉ hiển thị 500 cặp đầu tiên. Hãy xử lý bớt hoặc thu hẹp khoảng ngày rồi tìm lại." />}
-      {asked && list.data && list.data.pairs.length === 0 && <Card><Empty description="Không có cặp chứng từ nghi trùng" /></Card>}
+      {asked && list.data && list.data.pairs.length === 0 && <Section><EmptyState title="Không có cặp chứng từ nghi trùng" /></Section>}
       {list.data?.pairs.map((p) => (
-        <Card key={`${p.a.id}:${p.b.id}`} size="small" data-testid="dup-pair"
+        <Section key={`${p.a.id}:${p.b.id}`} testId="dup-pair"
           title={<Space wrap>{p.reasons.map((x) => <Tag key={x} color="blue">{x}</Tag>)}</Space>}
           extra={<Popconfirm title="Hai chứng từ này không trùng nhau?" description="Cặp sẽ không hiện lại ở các lần tìm sau." okText="Không trùng" cancelText="Quay lại" onConfirm={() => ignore.mutate(p)}>
             <Button loading={ignore.isPending && ignore.variables === p}>Không trùng</Button></Popconfirm>}>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>{side(p.a, 'A')}{side(p.b, 'B')}</div>
-        </Card>
+        </Section>
       ))}
       <Modal open={!!reverse} title="Lập chứng từ đảo" okText="Lập chứng từ đảo" cancelText="Không" destroyOnHidden onCancel={() => setReverse(null)}
         okButtonProps={{ loading: doReverse.isPending, disabled: !reverse?.date }} onOk={() => { if (reverse) doReverse.mutate(reverse); }}>
