@@ -6,7 +6,7 @@ import BookFormsPage from '../src/pages/BookForms.js';
 const apiMock = vi.hoisted(() => vi.fn());
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ can: () => true }) }));
 vi.mock('../src/api/client.js', () => ({ api: apiMock }));
-vi.mock('@tanstack/react-router', () => ({ Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a> }));
+vi.mock('@tanstack/react-router', () => ({ Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>, useNavigate: () => vi.fn() }));
 vi.mock('@kt/ui', async (orig) => ({ ...(await orig<object>()), LookupSelect: () => null, KeyboardGrid: () => null }));
 
 const renderPage = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><BookFormsPage /></QueryClientProvider>);
@@ -16,9 +16,10 @@ describe('Hình thức sổ kế toán khi công ty chưa có năm tài chính',
 
   it('báo bằng tiếng Việt, khóa nút chọn hình thức sổ, không gọi API với năm trống', async () => {
     renderPage();
-    expect(await screen.findByText('Công ty chưa có năm tài chính nên chưa chọn được hình thức sổ.')).toBeInTheDocument();
+    expect(await screen.findByText('Công ty chưa có năm tài chính')).toBeInTheDocument();
     for (const name of ['Nhật ký chung', 'Chứng từ ghi sổ', 'Nhật ký – Sổ Cái', 'Nhật ký – Chứng từ']) expect(screen.getByRole('radio', { name })).toBeDisabled();
-    expect(screen.getByText('Kỳ kế toán và khóa sổ')).toBeInTheDocument();
+    expect(screen.getByText(/chọn hình thức sổ kế toán/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Thêm năm tài chính' })).toBeInTheDocument();
     expect(apiMock.mock.calls.map((c) => c[0])).toEqual(['/api/fiscal-years']);
   });
 

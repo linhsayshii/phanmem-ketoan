@@ -7,6 +7,11 @@ import AccountsPage from '../src/pages/Accounts.js';
 import AmortizationPage from '../src/pages/Amortization.js';
 import AnalyticsPage from '../src/pages/Analytics.js';
 import AssetOpeningPage from '../src/pages/AssetOpening.js';
+import BookFormsPage from '../src/pages/BookForms.js';
+import DashboardPage from '../src/pages/Dashboard.js';
+import FinancialPage from '../src/pages/Financial.js';
+import HkdBooksPage from '../src/pages/HkdBooks.js';
+import BudgetPage from '../src/pages/Budget.js';
 import CostReportsPage from '../src/pages/CostReports.js';
 import CostRunsPage from '../src/pages/CostRuns.js';
 import CostingRunPage from '../src/pages/CostingRun.js';
@@ -28,6 +33,10 @@ const PAGES: [string, ComponentType, RegExp][] = [
   ['Phân bổ khấu hao, chi phí trả trước', AmortizationPage, /chạy phân bổ/],
   ['Phân tích tài chính', AnalyticsPage, /xem phân tích tài chính/],
   ['Số dư đầu kỳ tài sản', AssetOpeningPage, /thẻ tài sản đầu kỳ/],
+  ['Hình thức sổ', BookFormsPage, /chọn hình thức sổ kế toán/],
+  ['Tổng quan', DashboardPage, /xem số liệu tổng quan/],
+  ['Báo cáo tài chính', FinancialPage, /xem báo cáo tài chính/],
+  ['Sổ hộ kinh doanh', HkdBooksPage, /ghi sổ hộ kinh doanh/],
   ['Báo cáo giá thành', CostReportsPage, /xem báo cáo giá thành/],
   ['Chạy giá thành', CostRunsPage, /chạy giá thành/],
   ['Tính giá vốn', CostingRunPage, /tính giá vốn/],
@@ -41,7 +50,10 @@ describe('Công ty chưa có năm tài chính', () => {
   const renderPage = (Page: ComponentType) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Page /></QueryClientProvider>);
   beforeEach(() => {
     mocks.perms.has = () => true;
-    mocks.api.mockImplementation(async (path: string) => (path === '/api/fiscal-years' ? [] : []));
+    mocks.api.mockImplementation(async (path: string) => {
+      if (path === '/api/hkd/books') throw new Error('Chưa có năm tài chính theo TT 152/2025 hoặc TT 58/2026');
+      return [];
+    });
   });
   afterEach(() => { cleanup(); mocks.api.mockReset(); mocks.navigate.mockReset(); });
 
@@ -65,6 +77,24 @@ describe('Công ty chưa có năm tài chính', () => {
     mocks.api.mockImplementation(async (path: string) => (path === '/api/fiscal-years' ? [{ fiscalYear: 2026, regime: 'TT133', dateFrom: '2026-01-01', dateTo: '2026-12-31', periods: [] }] : []));
     renderPage(OpeningBalancePage);
     await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/opening-balance/2026'));
+    expect(screen.queryByText('Công ty chưa có năm tài chính')).not.toBeInTheDocument();
+  });
+  it('Ngân sách: hộp thoại Thêm báo chưa có năm tài chính và khóa nút Lưu', async () => {
+    renderPage(BudgetPage);
+    await userEvent.click(await screen.findByRole('button', { name: /Thêm/ }));
+    expect(await screen.findByText('Công ty chưa có năm tài chính')).toBeInTheDocument();
+    expect(screen.getByText(/Cần có năm tài chính để lập ngân sách/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Lưu/ })).toBeDisabled();
+  });
+
+  it('Sổ hộ kinh doanh: đã có năm nhưng sai chế độ thì nêu đúng chế độ cần, không báo chưa có năm', async () => {
+    mocks.api.mockImplementation(async (path: string) => {
+      if (path === '/api/hkd/books') throw new Error('x');
+      if (path === '/api/fiscal-years') return [{ fiscalYear: 2026, regime: 'TT133', dateFrom: '2026-01-01', dateTo: '2026-12-31', periods: [] }];
+      return [];
+    });
+    renderPage(HkdBooksPage);
+    expect(await screen.findByText('Công ty chưa có năm tài chính theo TT 152/2025 hoặc TT 58/2026')).toBeInTheDocument();
     expect(screen.queryByText('Công ty chưa có năm tài chính')).not.toBeInTheDocument();
   });
 });

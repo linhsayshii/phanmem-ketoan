@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Alert, Button, DatePicker, Form, Input, Modal, Popconfirm, Radio, Select, Space, Table, Tabs, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber } from '@kt/domain';
@@ -9,6 +8,7 @@ import { KeyboardGrid, LookupSelect, PageHeader, Toolbar } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor } from '../lookups.js';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 
 type BookForm = 'NKC' | 'CTGS' | 'NKSC' | 'NKCT';
 const FORMS: { value: BookForm; label: string }[] = [{ value: 'NKC', label: 'Nhật ký chung' }, { value: 'CTGS', label: 'Chứng từ ghi sổ' }, { value: 'NKSC', label: 'Nhật ký – Sổ Cái' }, { value: 'NKCT', label: 'Nhật ký – Chứng từ' }];
@@ -64,7 +64,7 @@ export default function BookFormsPage() {
   const d = data.data;
   const body = () => {
     if (noYear) return years.isLoading ? <Alert type="info" message="Đang tải…" /> : years.error ? <Alert type="error" showIcon message={(years.error as Error).message} />
-      : <Alert type="warning" showIcon message="Công ty chưa có năm tài chính nên chưa chọn được hình thức sổ." description={<>Cần có năm tài chính trước, xem ở {can('period.view') ? <Link to="/so-cai/ky-ke-toan">Kỳ kế toán và khóa sổ</Link> : 'Kỳ kế toán và khóa sổ'}.</>} />;
+      : <NoFiscalYearNotice bare purpose="chọn hình thức sổ kế toán" />;
     if (form === 'NKC') return <Alert type="info" showIcon message="Năm này dùng hình thức Nhật ký chung: xem ở trang Sổ sách kế toán." />;
     if (needAccount) return <Alert type="info" showIcon message={form === 'NKCT' ? 'Chọn tài khoản ghi Có để xem bảng kê' : 'Chọn tài khoản để xem Sổ Cái'} />;
     if (data.error) return <Alert type="error" showIcon message={(data.error as Error).message} />;

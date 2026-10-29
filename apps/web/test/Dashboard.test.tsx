@@ -83,7 +83,7 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('button', { name: /Lập chứng từ/ })).toBeDefined();
   });
 
-  it('khi không có năm tài chính thì hiện EmptyState hướng dẫn tạo năm tài chính', async () => {
+  it('khi không có năm tài chính thì hiện thông báo chung hướng dẫn thêm năm tài chính', async () => {
     apiMock.mockImplementation(async (path: string) => {
       if (path === '/api/fiscal-years') return [];
       if (path.startsWith('/api/approvals/inbox/count')) return { count: 0 };
@@ -91,8 +91,9 @@ describe('DashboardPage', () => {
       return {};
     });
     renderPage();
-    expect(await screen.findByText('Chưa có năm tài chính')).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Tạo năm tài chính' })).toBeDefined();
+    expect(await screen.findByText('Công ty chưa có năm tài chính')).toBeDefined();
+    expect(screen.getByText(/xem số liệu tổng quan/)).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Thêm năm tài chính' })).toBeDefined();
   });
 
   it('khi không có quyền report.view thì ẩn hàng số liệu và biểu đồ', async () => {

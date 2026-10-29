@@ -5,10 +5,11 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber } from '@kt/domain';
-import { COLOR, EmptyState, PageHeader, Section, StatStrip, Toolbar } from '@kt/ui';
+import { COLOR, PageHeader, Section, StatStrip, Toolbar } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { Chart } from './charts.js';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 
 interface FiscalYear {
   fiscalYear: number;
@@ -200,17 +201,7 @@ export default function DashboardPage() {
       )}
 
       {!hasFiscalYears && !years.isLoading ? (
-        <Section testId="empty-fiscal-year">
-          <EmptyState
-            title="Chưa có năm tài chính"
-            description="Vui lòng thiết lập năm tài chính để bắt đầu ghi sổ kế toán và xem số liệu tổng quan."
-            action={
-              <Button type="primary" onClick={() => void navigate({ to: '/so-cai/ky-ke-toan' })}>
-                Tạo năm tài chính
-              </Button>
-            }
-          />
-        </Section>
+        <NoFiscalYearNotice purpose="xem số liệu tổng quan" />
       ) : (
         <>
           {/* Hàng số liệu nhanh */}

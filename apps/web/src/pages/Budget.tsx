@@ -6,6 +6,7 @@ import { D, formatVnDate, formatVnNumber, parseVnNumber } from '@kt/domain';
 import { COLOR, KeyboardGrid, PageHeader, Toolbar, useHotkeys } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 
 const MONTHS = ['m01', 'm02', 'm03', 'm04', 'm05', 'm06', 'm07', 'm08', 'm09', 'm10', 'm11', 'm12'] as const;
 type MKey = (typeof MONTHS)[number];
@@ -72,6 +73,7 @@ function Editor({ id, onClose }: { id: number | 'new'; onClose: () => void }) {
         {cur !== 'new' && status === 'draft' && can('budget.approve') && <Button onClick={() => approve.mutate()}>Duyệt</Button>}
         {cur !== 'new' && status !== 'draft' && can('budget.create') && <Button onClick={() => newVersion.mutate()}>Tạo phiên bản mới</Button>}
         <Button onClick={onClose}>Đóng</Button>{editable && <Button type="primary" loading={save.isPending} disabled={needYear} onClick={() => save.mutate()}>Lưu (Ctrl+S)</Button>}</Space>}>
+      {needYear && !years.isLoading && !years.data?.length && <NoFiscalYearNotice bare purpose="lập ngân sách" />}
       <Space style={{ marginBottom: 8 }} wrap>
         <Input aria-label="Tên ngân sách" value={name} onChange={(e) => setName(e.target.value)} style={{ width: 280 }} disabled={!editable} />
         <Select aria-label="Năm tài chính" placeholder="Chưa có năm tài chính" value={year} onChange={setYear} disabled={cur !== 'new'} style={{ width: 120 }} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear}` }))} />

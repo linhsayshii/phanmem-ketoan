@@ -9,6 +9,7 @@ import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { PrintLangSelect } from './PrintLangSelect.js';
 import { BranchFilter } from './branchCommon.js';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 
 interface FiscalYear { fiscalYear: number; regime: string; dateFrom: string; dateTo: string }
 interface Row { lineCode: string; label: string; parentLineCode: string | null; isBold: boolean; negate: boolean; noteRef: string | null; source: string; formula: string | null; current: string; previous: string | null }
@@ -140,7 +141,7 @@ export default function FinancialPage() {
           {can('report.print') && range && <PrintLangSelect value={printLang} onChange={setPrintLang} />}
         </Toolbar>
       </PageHeader>
-      {years.data && !years.data.length && <Alert type="info" showIcon message="Chưa có năm tài chính nào. Tạo năm tài chính trước khi xem báo cáo." />}
+      {years.data && !years.data.length && <NoFiscalYearNotice purpose="xem báo cáo tài chính" />}
       {report.data && <div><b>{report.data.name}</b> - Mẫu số {report.data.formNo}<div style={{ color: COLOR.textSecondary }}>{report.data.issuedBy}</div></div>}
       {missing && <Alert type="info" showIcon message={`Chưa có định nghĩa ${code} cho ${fy?.regime}. ${can('report_def.update') ? 'Bấm "Sửa công thức" để định nghĩa các chỉ tiêu.' : 'Liên hệ người quản trị để định nghĩa.'}`} />}
       {report.data?.previousNote && <Alert type="warning" showIcon message={REGIME_NOTE} />}

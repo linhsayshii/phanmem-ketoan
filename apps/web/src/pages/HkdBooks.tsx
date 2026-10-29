@@ -7,6 +7,7 @@ import { formatVnDate, formatVnNumber, parseVnNumber } from '@kt/domain';
 import { COLOR, PageHeader, Toolbar } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 import { AssetTab, DebtTab, EquityTab, OtherAssetTab, VoucherButton } from './HkdDnsnTabs.js';
 
 // Sổ hộ kinh doanh (TT 152/2025) và doanh nghiệp siêu nhỏ (TT 58/2026): ghi sổ đơn theo nhóm thuế, không có hệ thống tài khoản.
@@ -243,6 +244,11 @@ function SettingsTab({ cat }: { cat: Catalog }) {
 
 export default function HkdBooksPage() {
   const cat = useCatalog();
+  const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<{ fiscalYear: number }[]>('/api/fiscal-years') });
+  // Chưa có năm nào: dùng thông báo chung. Đã có năm nhưng không phải TT 152/TT 58: giữ thông báo riêng nêu đúng chế độ cần.
+  if (cat.isError && years.data && !years.data.length) return (
+    <div><PageHeader title="Sổ hộ kinh doanh, doanh nghiệp siêu nhỏ" />
+      <NoFiscalYearNotice purpose="ghi sổ hộ kinh doanh theo TT 152/2025 hoặc TT 58/2026" /></div>);
   if (cat.isError) return (
     <div><PageHeader title="Sổ hộ kinh doanh, doanh nghiệp siêu nhỏ" />
       <Alert type="warning" showIcon message="Công ty chưa có năm tài chính theo TT 152/2025 hoặc TT 58/2026" description={<span>Tạo năm tài chính với chế độ này ở <Link to="/he-thong/tao-cong-ty">Tạo công ty mới</Link> hoặc <Link to="/he-thong/che-do-ke-toan">xem tình trạng chế độ</Link>.</span>} /></div>);
