@@ -62,6 +62,10 @@ Cách tính chính:
 - **Cờ dữ liệu nhạy cảm chỉ áp cho Công nợ (S4a), chưa khóa kỳ.** Công nợ phải thu cần cờ xem công nợ phải thu, công nợ phải trả cần cờ xem công nợ phải trả (danh sách, sổ S4a, ghi, sửa, xóa); thiếu cờ thì bên đó bị ẩn hoặc trả 403. Các sổ khác: người có quyền xem sổ hộ kinh doanh thấy mọi sổ; người có quyền sửa, xóa sửa được bút ghi ở mọi ngày. Hãy cấp quyền `sohkd.*` cẩn thận.
 - **Kiểm tra tệp PDF hóa đơn chỉ là lớp phụ.** Phần mềm chặn PDF có mã chạy ngầm bằng cách dò nội dung thô của tệp; không thay cho phần mềm diệt virus và không phát hiện nội dung nén hoặc mã hóa.
 
+## Cảnh báo ngưỡng doanh thu (hộ kinh doanh, Thông tư 152)
+
+Ở tab **Sổ và báo cáo**, khi công ty theo Thông tư 152, phần mềm so tổng doanh thu đã ghi sổ trong năm tài chính với các ngưỡng của Nghị định 68/2026/NĐ-CP (sửa bởi Nghị định 141/2026/NĐ-CP): 1 tỷ đồng (hết miễn thuế GTGT, TNCN và phải dùng hóa đơn điện tử), 3 tỷ đồng (phương pháp tính thuế trên thu nhập tính thuế) và 50 tỷ đồng/tháng (khai thuế GTGT theo tháng). Đây chỉ là cảnh báo để kế toán rà soát: doanh thu là doanh thu **trên sổ**, chưa gồm phần tổ chức khấu trừ hay nộp thay nếu chưa ghi sổ, và chưa loại doanh thu cho thuê bất động sản. Ngưỡng là dữ liệu pháp lý theo ngày hiệu lực; năm chưa có tham số thì phần mềm nói rõ "Chưa có tham số".
+
 ## Chưa có
 
-Tờ khai 01/CNKD (chưa có văn bản gốc của mẫu), tự tính thuế theo ngành nghề và ngưỡng doanh thu của hộ kinh doanh (chờ Nghị định 68/2026), hóa đơn từ máy tính tiền, nhập số dư đầu từ Thông tư 132/2018 (Điều 11) bằng chức năng riêng: hiện nhập tay từng bút "Số dư đầu" ở từng sổ. Chi tiết: mục "GĐ7 nhóm 6 — Chờ người dùng" trong `docs/TIEP-THEO.md`.
+Tờ khai 01/TKN-CNKD (Thông báo doanh thu/Tờ khai thuế năm, thay mẫu 01/CNKD theo Thông tư 89/2026): định nghĩa mẫu và các mã chỉ tiêu đã nhập từ văn bản gốc nhưng chưa có chức năng lập, chốt, xuất tờ khai từ sổ; tự tính thuế theo ngành nghề (tỷ lệ GTGT và TNCN theo ngành chưa nhập vì chưa có văn bản gốc đọc được), hóa đơn từ máy tính tiền, nhập số dư đầu từ Thông tư 132/2018 (Điều 11) bằng chức năng riêng: hiện nhập tay từng bút "Số dư đầu" ở từng sổ. Chi tiết: mục "GĐ7 nhóm 6 — Chờ người dùng" trong `docs/TIEP-THEO.md`.
