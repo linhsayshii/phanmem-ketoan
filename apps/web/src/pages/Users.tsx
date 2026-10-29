@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Alert, Button, Checkbox, Form, Input, Modal, Select, Table, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SENSITIVE_FLAGS } from '@kt/domain';
+import { PageHeader, Section } from '@kt/ui';
 import { api, type ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { BranchScopeButton } from './Branches.js';
@@ -15,13 +16,15 @@ export function UsersTable({ users, roles, onCreate, loading = false, canCreate 
   const [form] = Form.useForm();
   return (
     <>
-      {canCreate && <Button type="primary" onClick={() => setOpen(true)} style={{ marginBottom: 12 }}>Thêm người dùng</Button>}
-      <Table rowKey="id" dataSource={users} loading={loading} pagination={false} columns={[
-        { title: 'Tên đăng nhập', dataIndex: 'username' }, { title: 'Họ tên', dataIndex: 'fullName' },
-        { title: 'Vai trò', dataIndex: 'roleCode', render: (c: string) => roles.find((r) => r.code === c)?.name ?? c },
-        { title: 'Dữ liệu nhạy cảm', dataIndex: 'sensitiveFlags', render: (f: string[]) => f.map((x) => <Tag key={x}>{FLAG_LABEL[x] ?? x}</Tag>) },
-        { title: 'Trạng thái', dataIndex: 'isActive', render: (a: boolean) => (a ? 'Đang dùng' : 'Khóa') },
-        ...(branchScope ? [{ title: 'Phạm vi chi nhánh', key: 'branch', render: (_: unknown, u: UserRow) => branchScope(u) }] : [])]} />
+      <PageHeader title="Người dùng" extra={canCreate && <Button type="primary" onClick={() => setOpen(true)}>Thêm người dùng</Button>} />
+      <Section bodyPadding={0}>
+        <Table rowKey="id" dataSource={users} loading={loading} pagination={false} columns={[
+          { title: 'Tên đăng nhập', dataIndex: 'username' }, { title: 'Họ tên', dataIndex: 'fullName' },
+          { title: 'Vai trò', dataIndex: 'roleCode', render: (c: string) => roles.find((r) => r.code === c)?.name ?? c },
+          { title: 'Dữ liệu nhạy cảm', dataIndex: 'sensitiveFlags', render: (f: string[]) => f.map((x) => <Tag key={x}>{FLAG_LABEL[x] ?? x}</Tag>) },
+          { title: 'Trạng thái', dataIndex: 'isActive', render: (a: boolean) => (a ? 'Đang dùng' : 'Khóa') },
+          ...(branchScope ? [{ title: 'Phạm vi chi nhánh', key: 'branch', render: (_: unknown, u: UserRow) => branchScope(u) }] : [])]} />
+      </Section>
       <Modal title="Thêm người dùng" open={open} onCancel={() => setOpen(false)} onOk={() => form.submit()} destroyOnHidden>
         <Form form={form} layout="vertical" onFinish={async (v) => { try { await onCreate(v); setOpen(false); form.resetFields(); } catch { /* lỗi đã hiển thị qua onError */ } }}>
           <Form.Item label="Tên đăng nhập" name="username" rules={[{ required: true }]}><Input /></Form.Item>
