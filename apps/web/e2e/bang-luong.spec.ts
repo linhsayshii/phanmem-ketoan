@@ -1,7 +1,10 @@
 import { expect, test, type APIRequestContext, type APIResponse, type Page } from '@playwright/test';
+import { typeDate } from './helpers/dates.js';
 
 // Yêu cầu trước khi chạy: pnpm -F @kt/api cli create-admin --username e2e --password Matkhau1! --tenant-code E2E --tenant-name "Công ty E2E"
-// Mọi tham số lương trong spec là dữ liệu minh họa (nguồn ghi rõ), không phải văn bản pháp lý. Spec xóa mọi tham số lương của công ty E2E trước khi chạy.
+// Tham số lương của công ty trong spec là dữ liệu minh họa (nguồn ghi rõ), không phải văn bản pháp lý. Spec xóa mọi tham số lương của công ty E2E trước khi chạy.
+// Từ 2026 hệ thống có tham số pháp lý đã kiểm (`legal_param`: biểu thuế, giảm trừ, tỷ lệ và trần BHXH) và luôn thắng tham số công ty: kỳ hiện tại tính theo đó, không cần nhập gì.
+// Kỳ trước hiệu lực (12/2025) không có tham số pháp lý nên vẫn thiếu biểu thuế cho tới khi công ty nhập bằng giao diện.
 
 async function login(request: APIRequestContext, username: string) {
   const r = await request.post('/api/auth/login', { data: { username, password: 'Matkhau1!' } });
@@ -19,7 +22,8 @@ const SRC = 'Dữ liệu minh họa của kiểm thử e2e, không phải văn b
 const now = new Date(); const year = now.getFullYear(), month = now.getMonth() + 1;
 const sfx = String(Date.now()).slice(-8);
 const dept = { code: `BP${sfx}`, name: `Bộ phận lương ${sfx}` };
-const emp = [{ code: `NA${sfx}`, name: `Nguyễn Văn A ${sfx}`, id: 0, days: 26 }, { code: `NB${sfx}`, name: `Trần Thị B ${sfx}`, id: 0, days: 13 }];
+const emp = [{ code: `NA${sfx}`, name: `Nguyễn Văn A ${sfx}`, id: 0, days: 26, salary: '30000000' }, { code: `NB${sfx}`, name: `Trần Thị B ${sfx}`, id: 0, days: 13, salary: '10000000' }];
+const PAST = { year: 2025, month: 12 }; // kỳ trước hiệu lực của tham số pháp lý 2026
 let deptId = 0;
 
 // Lưới AG Grid chỉ vẽ các cột đang thấy: cuộn ngang dần cho tới khi ô cần tìm được vẽ ra.
@@ -51,65 +55,50 @@ test.describe.serial('bảng lương', () => {
       e.id = Number((await (await ok(request.post('/api/catalogs/employee', { data: { code: e.code, name: e.name, department_code: dept.code } }))).json()).id);
       await ok(request.put(`/api/payroll/profiles/${e.id}`, { data: { payMethod: 'cash', taxResidency: 'resident', contractType: 'long', startDate: '2020-01-01', region: 'I',
         siParticipates: true, hiParticipates: true, uiParticipates: true, occupationalParticipates: false } }));
-      await ok(request.post(`/api/payroll/profiles/${e.id}/salary-history`, { data: { validFrom: '2020-01-01', monthlySalary: '10000000' } }));
+      await ok(request.post(`/api/payroll/profiles/${e.id}/salary-history`, { data: { validFrom: '2020-01-01', monthlySalary: e.salary } }));
     }
-    const cells = emp.flatMap((e) => Array.from({ length: e.days }, (_, i) => ({ employeeId: e.id, date: `${year}-${String(month).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`, entries: [{ kind: 'work_day', qty: '1' }] })));
-    await ok(request.put(`/api/attendance?year=${year}&month=${month}&departmentId=${deptId}`, { data: { cells } }));
+    for (const [y, m] of [[year, month], [PAST.year, PAST.month]] as const) {
+      const cells = emp.flatMap((e) => Array.from({ length: e.days }, (_, i) => ({ employeeId: e.id, date: `${y}-${String(m).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`, entries: [{ kind: 'work_day', qty: '1' }] })));
+      await ok(request.put(`/api/attendance?year=${y}&month=${m}&departmentId=${deptId}`, { data: { cells } }));
+    }
     await request.dispose();
   });
 
-  test('tạo bảng lương, thiếu biểu thuế thì dẫn sang Tham số lương, nhập rồi Tính, sửa ô thưởng tay thì dòng tính lại', async ({ page, request }) => {
-    await signIn(page, request);
-    await page.goto('/luong/bang-luong');
-    await expect(page.getByRole('heading', { name: 'Bảng lương' })).toBeVisible();
-
-    // Tạo bảng lương theo bộ phận (chỉ hai nhân viên của kiểm thử)
+  const monthText = (y: number, m: number) => `${String(m).padStart(2, '0')}/${y}`;
+  // Bộ lọc kỳ của trang nhớ lần chọn trước (kể cả lần chạy trước): luôn đặt kỳ cần xem, không dựa vào mặc định
+  async function pickPeriod(page: Page, text: string) {
+    const input = page.getByLabel('Kỳ lương').first();
+    await input.click(); await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type(text); await input.blur(); await expect(input).toHaveValue(text);
+  }
+  async function createRun(page: Page, period: string) {
     await page.getByRole('button', { name: 'Tạo bảng lương' }).click();
     const dlg = page.getByRole('dialog');
+    { const input = dlg.getByLabel('Kỳ lương'); await input.click(); await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type(period); await input.blur(); await expect(input).toHaveValue(period); } // không bấm Enter: Enter trong ô kỳ gửi cả biểu mẫu khi chưa chọn bộ phận
     await dlg.getByRole('combobox', { name: 'Bộ phận' }).focus(); await page.keyboard.press('F4'); await page.keyboard.type(dept.code);
     await page.locator('.ant-select-item-option', { hasText: new RegExp(dept.code) }).click();
     await dlg.getByRole('button', { name: 'Tạo', exact: true }).click();
     await expect(page.getByTestId('run-detail')).toBeVisible();
     await expect(page.getByTestId('run-status')).toHaveText('Nháp');
     await expect(page.getByTestId('run-detail').getByText('2 nhân viên').first()).toBeVisible();
+  }
 
-    // Chưa có biểu thuế lũy tiến: Tính báo thiếu tham số kèm liên kết sang màn tham số
-    await page.getByRole('button', { name: 'Tính (F9)' }).click();
-    const alert = page.locator('.ant-alert-error');
-    await expect(alert).toContainText('Thiếu tham số');
-    await alert.getByRole('link', { name: /Mở màn Tham số lương/ }).click();
-    await expect(page).toHaveURL(/\/luong\/tham-so/);
-    await expect(page.getByTestId('params-banner')).toContainText('phần mềm không có mặc định');
-    await expect(page.getByTestId('illustrative-warning')).toBeVisible(); // các tham số nhập qua API ghi nguồn minh họa
-
-    // Nhập biểu thuế hai bậc bằng hộp thoại có cấu trúc (không điền sẵn giá trị nào)
-    await page.getByRole('tab', { name: 'Các dòng đã nhập' }).click();
-    await page.getByRole('button', { name: 'Thêm tham số' }).click();
-    const pd = page.getByRole('dialog');
-    await pd.getByRole('combobox', { name: 'Tham số' }).click(); await page.locator('.ant-select-item-option', { hasText: 'Biểu thuế thu nhập cá nhân lũy tiến (theo tháng)' }).click();
-    await expect(pd.getByLabel('Bậc 1 thuế suất')).toHaveValue('');
-    await pd.getByLabel('Hiệu lực từ ngày').fill('01/01/2000'); await page.keyboard.press('Enter');
-    await pd.getByRole('button', { name: 'Thêm bậc' }).click(); // mới chỉ có bậc cuối không giới hạn
-    await pd.getByLabel('Bậc 1 đến mức').fill('5000000'); await pd.getByLabel('Bậc 1 thuế suất').fill('5');
-    await pd.getByLabel('Bậc 2 thuế suất').fill('10');
-    await pd.getByRole('button', { name: 'Lưu', exact: true }).click();
-    await expect(pd.locator('.ant-alert-error')).toContainText('nguồn'); // chưa ghi nguồn văn bản: bị chặn
-    await pd.getByLabel('Nguồn văn bản').fill(SRC);
-    await expect(pd.locator('.ant-alert-warning')).toContainText('dữ liệu minh họa');
-    await pd.getByRole('button', { name: 'Lưu', exact: true }).click();
-    await expect(page.getByText('Đã lưu tham số')).toBeVisible();
-    await expect(page.getByTestId('param-list').getByText('2 bậc: đến 5.000.000: 5%; trên 5.000.000: 10%')).toBeVisible();
-
-    // Quay lại bảng lương, chọn bảng vừa tạo, Tính bằng F9
+  test('kỳ có tham số pháp lý 2026: tạo bảng lương, Tính ngay không cần nhập tham số, thuế và BHXH theo tham số pháp lý (thắng tham số công ty), sửa ô thưởng tay thì dòng tính lại', async ({ page, request }) => {
+    await signIn(page, request);
     await page.goto('/luong/bang-luong');
-    await page.getByTestId('run-list').getByText(dept.name).click();
-    await expect(page.getByTestId('run-status')).toHaveText('Nháp');
-    await page.keyboard.press('F9');
+    await expect(page.getByRole('heading', { name: 'Bảng lương' })).toBeVisible();
+    await pickPeriod(page, monthText(year, month));
+    await createRun(page, monthText(year, month));
+
+    // Tham số công ty (giảm trừ 4.000.000, trần BHXH 36.000.000) lệch tham số pháp lý: Tính vẫn chạy, dùng tham số pháp lý
+    await page.getByRole('button', { name: 'Tính (F9)' }).click();
     await expect(page.getByTestId('run-status')).toHaveText('Đã tính');
-    // NA: lương 10.000.000 đủ 26 công, BH người lao động 10,5% = 1.050.000, thuế 5% trên (10.000.000 - 1.050.000 - 4.000.000) = 247.500
-    await expect(await cell(page, 0, 'gross')).toHaveText('10.000.000');
-    await expect(await cell(page, 0, 'net')).toHaveText('8.702.500');
-    await expect(await cell(page, 1, 'base_salary')).toHaveText('5.000.000'); // NB: 13/26 công
+    // NA: lương 30.000.000 đủ 26 công, BH người lao động 10,5% = 3.150.000 (dưới trần 50.600.000), giảm trừ bản thân 15.500.000:
+    // thu nhập tính thuế 30.000.000 - 3.150.000 - 15.500.000 = 11.350.000 → 5% của 10.000.000 + 10% của 1.350.000 = 635.000
+    await expect(await cell(page, 0, 'gross')).toHaveText('30.000.000');
+    await expect(await cell(page, 0, 'net')).toHaveText('26.215.000');
+    await expect(await cell(page, 1, 'base_salary')).toHaveText('5.000.000'); // NB: 13/26 công của 10.000.000
+    // NB: BH tính trên lương hợp đồng 10.000.000 chứ không theo công: 10,5% = 1.050.000; thu nhập tính thuế âm nên thuế 0 → thực lĩnh 5.000.000 - 1.050.000
+    await expect(await cell(page, 1, 'net')).toHaveText('3.950.000');
 
     // Sửa tay ô Thưởng của NA: dòng tính lại ngay, ô đánh dấu đã sửa tay
     const put = page.waitForResponse((r) => r.url().includes('/values') && r.request().method() === 'PUT');
@@ -119,12 +108,13 @@ test.describe.serial('bảng lương', () => {
     await page.keyboard.press('Escape');
     await expect(await cell(page, 0, 'bonus')).toHaveText('1.000.000');
     await expect(await cell(page, 0, 'bonus')).toHaveCSS('font-weight', '600');
-    await expect(await cell(page, 0, 'gross')).toHaveText('11.000.000');
-    // thuế: 5% của 5.000.000 + 10% của 950.000 = 345.000; thực lĩnh = 11.000.000 - 1.050.000 - 345.000
-    await expect(await cell(page, 0, 'net')).toHaveText('9.605.000');
+    await expect(await cell(page, 0, 'gross')).toHaveText('31.000.000');
+    // BH vẫn 3.150.000 (thưởng không tính BH); thu nhập tính thuế 31.000.000 - 3.150.000 - 15.500.000 = 12.350.000 → 500.000 + 10% của 2.350.000 = 735.000
+    // thực lĩnh = 31.000.000 - 3.150.000 - 735.000
+    await expect(await cell(page, 0, 'net')).toHaveText('27.115.000');
     const run = (await (await request.get(`/api/payroll/runs?year=${year}&month=${month}`)).json()).find((r: { name: string }) => r.name.includes(dept.name));
     const detail = await (await request.get(`/api/payroll/runs/${run.id}`)).json();
-    expect(detail.lines.find((l: { employeeCode: string }) => l.employeeCode === emp[0]!.code)).toMatchObject({ net: '9605000', manual: ['bonus'] });
+    expect(detail.lines.find((l: { employeeCode: string }) => l.employeeCode === emp[0]!.code)).toMatchObject({ net: '27115000', manual: ['bonus'] });
     expect(detail.stale).toBe(false);
 
     // Hàng tổng cộng cuối lưới cộng cả hai nhân viên
@@ -136,9 +126,69 @@ test.describe.serial('bảng lương', () => {
     // Đổi chấm công sau khi tính: bảng báo Cần tính lại
     await ok(request.put(`/api/attendance?year=${year}&month=${month}&departmentId=${deptId}`, { data: { cells: [{ employeeId: emp[1]!.id, date: `${year}-${String(month).padStart(2, '0')}-20`, entries: [{ kind: 'work_day', qty: '1' }] }] } }));
     await page.reload();
+    await pickPeriod(page, monthText(year, month));
     await page.getByTestId('run-list').getByText(dept.name).click();
     await expect(page.getByTestId('run-stale')).toBeVisible();
     await expect(page.getByTestId('run-detail').getByText('Cần tính lại').first()).toBeVisible();
+
+    // Màn Tham số lương ghi nguồn của các tham số đang áp dụng hôm nay là tham số pháp lý đã kiểm
+    await page.goto('/luong/tham-so');
+    await expect(page.getByText('Tham số pháp lý đã kiểm của hệ thống').first()).toBeVisible();
+  });
+
+  test('kỳ trước hiệu lực tham số pháp lý (12/2025): thiếu biểu thuế thì dẫn sang Tham số lương, nhập rồi Tính theo tham số công ty', async ({ page, request }) => {
+    await signIn(page, request);
+    try {
+      await page.goto('/luong/bang-luong');
+      await expect(page.getByRole('heading', { name: 'Bảng lương' })).toBeVisible();
+      await pickPeriod(page, monthText(PAST.year, PAST.month));
+      await createRun(page, monthText(PAST.year, PAST.month));
+
+      // Chưa có biểu thuế lũy tiến: Tính báo thiếu tham số kèm liên kết sang màn tham số
+      await page.getByRole('button', { name: 'Tính (F9)' }).click();
+      const alert = page.locator('.ant-alert-error');
+      await expect(alert).toContainText('Thiếu tham số');
+      await alert.getByRole('link', { name: /Mở màn Tham số lương/ }).click();
+      await expect(page).toHaveURL(/\/luong\/tham-so/);
+      await expect(page.getByTestId('params-banner')).toContainText('phần mềm không có mặc định');
+      // Hôm nay (2026) các tham số công ty bị tham số pháp lý che nên không có cảnh báo minh họa; xem tại ngày 31/12/2025 (trước hiệu lực) thì còn
+      await expect(page.getByTestId('illustrative-warning')).toHaveCount(0);
+      await typeDate(page, page.getByLabel('Ngày xem hiệu lực'), '31/12/2025');
+      await expect(page.getByTestId('illustrative-warning')).toBeVisible(); // các tham số nhập qua API ghi nguồn minh họa
+
+      // Nhập biểu thuế hai bậc bằng hộp thoại có cấu trúc (không điền sẵn giá trị nào)
+      await page.getByRole('tab', { name: 'Các dòng đã nhập' }).click();
+      await page.getByRole('button', { name: 'Thêm tham số' }).click();
+      const pd = page.getByRole('dialog');
+      await pd.getByRole('combobox', { name: 'Tham số' }).click(); await page.locator('.ant-select-item-option', { hasText: 'Biểu thuế thu nhập cá nhân lũy tiến (theo tháng)' }).click();
+      await expect(pd.getByLabel('Bậc 1 thuế suất')).toHaveValue('');
+      await pd.getByLabel('Hiệu lực từ ngày').fill('01/01/2000'); await page.keyboard.press('Enter');
+      await pd.getByRole('button', { name: 'Thêm bậc' }).click(); // mới chỉ có bậc cuối không giới hạn
+      await pd.getByLabel('Bậc 1 đến mức').fill('5000000'); await pd.getByLabel('Bậc 1 thuế suất').fill('5');
+      await pd.getByLabel('Bậc 2 thuế suất').fill('10');
+      await pd.getByRole('button', { name: 'Lưu', exact: true }).click();
+      await expect(pd.locator('.ant-alert-error')).toContainText('nguồn'); // chưa ghi nguồn văn bản: bị chặn
+      await pd.getByLabel('Nguồn văn bản').fill(SRC);
+      await expect(pd.locator('.ant-alert-warning')).toContainText('dữ liệu minh họa');
+      await pd.getByRole('button', { name: 'Lưu', exact: true }).click();
+      await expect(page.getByText('Đã lưu tham số')).toBeVisible();
+      await expect(page.getByTestId('param-list').getByText('2 bậc: đến 5.000.000: 5%; trên 5.000.000: 10%')).toBeVisible();
+
+      // Quay lại bảng lương kỳ 12/2025, chọn bảng vừa tạo, Tính bằng F9 theo tham số công ty
+      await page.goto('/luong/bang-luong');
+      await pickPeriod(page, monthText(PAST.year, PAST.month));
+      await page.getByTestId('run-list').getByText(dept.name).click();
+      await expect(page.getByTestId('run-status')).toHaveText('Nháp');
+      await page.keyboard.press('F9');
+      await expect(page.getByTestId('run-status')).toHaveText('Đã tính');
+      // NA: BH 10,5% của 30.000.000 = 3.150.000 (dưới trần công ty 36.000.000), giảm trừ công ty 4.000.000:
+      // thu nhập tính thuế 22.850.000 → 5% của 5.000.000 + 10% của 17.850.000 = 2.035.000; thực lĩnh = 30.000.000 - 3.150.000 - 2.035.000
+      await expect(await cell(page, 0, 'gross')).toHaveText('30.000.000');
+      await expect(await cell(page, 0, 'net')).toHaveText('24.815.000');
+    } finally {
+      // Bộ lọc kỳ của trang được nhớ theo người dùng: trả về kỳ hiện tại để các spec lương khác không mở nhầm kỳ 12/2025
+      await page.goto('/luong/bang-luong'); await pickPeriod(page, monthText(year, month));
+    }
   });
 
   test('cấu trúc bảng lương: thêm cột công thức, kiểm với một nhân viên, cấu trúc đã dùng bị khóa và nhân bản được', async ({ page, request }) => {
