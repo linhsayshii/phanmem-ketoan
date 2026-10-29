@@ -1,5 +1,6 @@
 import './env.js';
 import { randomUUID } from 'node:crypto';
+import pg from 'pg';
 import { sql, type Kysely } from 'kysely';
 import { createDb, createPool } from './client.js';
 import { migrate } from './migrate.js';
@@ -15,6 +16,13 @@ export async function setupTestDb(): Promise<TestDb> {
   const appUrl = process.env.DATABASE_URL!;
   await migrate(adminUrl);
   await syncReferenceData(adminUrl);
+  // Kiểm thử lương của API dùng tham số minh họa của công ty (payroll_param, kỳ 2026) và kỳ vọng tính tay theo đó; legal_param thắng payroll_param nên gỡ các dòng
+  // lương, TNCN, BHXH thật khỏi DB kiểm thử khi KT_TEST_ILLUSTRATIVE_PAYROLL=1 (apps/api/vitest.config.ts). Kiểm thử tham số thật dựng lại từ tệp: apps/api/test/payroll/legalParams.test.ts.
+  if (process.env.KT_TEST_ILLUSTRATIVE_PAYROLL === '1') {
+    const c = new pg.Client({ connectionString: adminUrl });
+    await c.connect();
+    try { await c.query(`DELETE FROM legal_param WHERE code ~ '^(pit_|si_|min_wage|ot_|payroll)'`); } finally { await c.end(); }
+  }
   const adminPool = createPool(adminUrl);
   const appPool = createPool(appUrl);
   return {

@@ -52,7 +52,7 @@ test('thuế TNCN: bảng kê quý, lập và chốt 05/KK-TNCN, quyết toán n
   await page.goto('/luong/thue-tncn');
   await page.getByRole('combobox', { name: 'Loại kỳ' }).click({ force: true }); await page.locator('.ant-select-item-option', { hasText: 'Khấu trừ theo quý' }).click(); await expect(page.locator('.ant-select-dropdown:visible')).toHaveCount(0);
   await page.getByRole('combobox', { name: 'Quý' }).click({ force: true }); await page.locator('.ant-select-item-option', { hasText: `Quý ${quarter}` }).last().click();
-  await expect(page.getByText('Chưa có mẫu tờ khai theo TT 89/2026: xuất bảng kê Excel')).toBeVisible();
+  await expect(page.getByText('Chưa xuất được tờ khai theo mẫu TT 89/2026: xuất bảng kê Excel')).toBeVisible();
   await expect(page.getByText(names[0]!)).toBeVisible(); await expect(page.getByText(names[1]!)).toBeVisible();
 
   await page.getByRole('button', { name: 'Lập tờ khai 05/KK-TNCN' }).click();

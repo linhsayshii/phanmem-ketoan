@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Database } from '@kt/db';
-import { isTncnTemplateComplete } from '@kt/coa-data';
+import { isTncnTemplateComplete, isTncnXmlAvailable } from '@kt/coa-data';
 import { D, Decimal, pitAnnualSettlement, type PitAnnualMonth, type PitBracket } from '@kt/domain';
 import { AppError } from '../../plugins/errors.js';
 import type { ReportColumn, ReportDoc } from '../reporting/print/html.js';
@@ -15,7 +15,8 @@ import { banner, load, type LineRec } from './reports.js';
 
 // Thuế TNCN (Task 9): bảng kê khấu trừ theo cá nhân, quyết toán năm thay cho người lao động, tờ khai 05/KK-TNCN và 05/QTT-TNCN (lưu trong tax_return).
 // Nguồn số là bảng lương ĐÃ HẠCH TOÁN (mọi loại bảng: chính, thưởng, truy lĩnh; D12) và khoản thuế TNCN khấu trừ trên hóa đơn mua dịch vụ (mã TNCN_KT).
-// Mẫu tờ khai TT 89/2026 Phụ lục I chưa có văn bản gốc (cổng 05KK_TNCN_TT89, 05QTT_TNCN_TT89 = false): tờ khai lưu bảng kê + tổng; XML, ký số trả 409 TNCN_TEMPLATE_UNAVAILABLE.
+// Mẫu tờ khai TT 89/2026 Phụ lục I đã nhập (data/tax/05kk-tncn-tt89.json, 05qtt-tncn-tt89.json) nhưng chưa có định dạng XML HTKK (cổng TNCN_XML_HTKK = false) và chưa ánh xạ bảng kê vào từng chỉ tiêu:
+// tờ khai lưu bảng kê + tổng; XML, ký số trả 409 TNCN_TEMPLATE_UNAVAILABLE.
 type Trx = Transaction<Database>;
 const s0 = (x: Decimal) => x.toFixed(0);
 const sum = (xs: Decimal[]) => xs.reduce((a, b) => a.plus(b), D(0));
@@ -171,7 +172,7 @@ export async function certificates(trx: Trx, q: z.infer<typeof certificateQuery>
 const RES: Record<string, string> = { resident: 'Cư trú', non_resident: 'Không cư trú' };
 const CT: Record<string, string> = { long: 'HĐ từ 3 tháng', short: 'HĐ dưới 3 tháng', none: 'Không HĐ' };
 const num = (key: string, label: string): ReportColumn => ({ key, label, type: 'number' });
-const NOTE = 'Bảng kê số liệu nguồn từ bảng lương đã hạch toán. Chưa phải tờ khai theo mẫu TT 89/2026 (Phụ lục I): mẫu chưa được nhập từ văn bản gốc.';
+const NOTE = 'Bảng kê số liệu nguồn từ bảng lương đã hạch toán. Chưa phải tờ khai theo mẫu TT 89/2026 (Phụ lục I): phần mềm chưa ánh xạ số liệu vào từng chỉ tiêu và chưa có định dạng XML.';
 async function company(trx: Trx, tenantId: string, p: { from: string; to: string }) { return companyInfo(trx, tenantId, await regimeOf(trx, p), null); }
 const stt = <T extends object>(rows: T[]) => rows.map((r, i) => ({ stt: i + 1, ...r }));
 
@@ -221,10 +222,12 @@ export async function certificateDocs(trx: Trx, tenantId: string, d: Awaited<Ret
 export const TNCN_FORMS = { '05/KK-TNCN': { gate: '05KK', kinds: ['month', 'quarter'] }, '05/QTT-TNCN': { gate: '05QTT', kinds: ['year'] } } as const;
 export type TncnForm = keyof typeof TNCN_FORMS;
 const FORM_CODES = Object.keys(TNCN_FORMS) as TncnForm[];
-const TEMPLATE = 'BANG_KE'; // chưa có mẫu: tờ khai chỉ lưu bảng kê số liệu nguồn
+const TEMPLATE = 'BANG_KE'; // chưa ánh xạ vào chỉ tiêu mẫu: tờ khai chỉ lưu bảng kê số liệu nguồn
 export function assertTncnTemplate(form: TncnForm) {
   if (!isTncnTemplateComplete(TNCN_FORMS[form].gate))
     throw new AppError('TNCN_TEMPLATE_UNAVAILABLE', `Chưa có mẫu tờ khai ${form} theo TT 89/2026 (Phụ lục I) đối chiếu văn bản gốc (status.json ${TNCN_FORMS[form].gate}_TNCN_TT89): xuất bảng kê Excel`, 409);
+  if (!isTncnXmlAvailable())
+    throw new AppError('TNCN_TEMPLATE_UNAVAILABLE', `Chưa có định dạng XML HTKK cho tờ khai ${form} (status.json TNCN_XML_HTKK): cần tệp kết xuất mẫu từ HTKK; hiện xuất bảng kê Excel`, 409);
 }
 export const formOfDocKind = (k: string): TncnForm | null => (k === '05kk_tncn' ? '05/KK-TNCN' : k === '05qtt_tncn' ? '05/QTT-TNCN' : null);
 
@@ -300,10 +303,10 @@ export async function finalizeTncnReturn(trx: Trx, ctx: { tenantId: string; user
   await trx.updateTable('tax_return').set({ status: 'final', finalized_by: ctx.userId, finalized_at: sql<string>`now()` }).where('id', '=', id).execute();
   return getTncnReturn(trx, id);
 }
-// XML theo mẫu chỉ khi cổng mẫu bật; hiện chưa có mẫu nên luôn 409.
+// XML theo mẫu chỉ khi cổng mẫu và cổng định dạng XML đều bật; hiện cổng XML tắt nên luôn 409.
 export async function renderTncnXml(trx: Trx, id: number): Promise<never> {
   const r = await rowOf(trx, id);
   assertTncnTemplate(r.form_code as TncnForm);
-  // shortcut: cổng chỉ bật được khi đã nhập chỉ tiêu mẫu từ văn bản gốc; lúc đó dựng bộ XML theo khuôn tax/xml/htkk03tndn.ts.
+  // shortcut: khi có tệp kết xuất mẫu từ HTKK: ánh xạ bảng kê vào chỉ tiêu (loadTncnTemplate) và dựng XML theo khuôn tax/xml/htkk03tndn.ts.
   throw new AppError('TNCN_TEMPLATE_UNAVAILABLE', `Chưa có định dạng XML cho tờ khai ${r.form_code}`, 409);
 }

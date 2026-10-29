@@ -54,10 +54,22 @@ Các tham số, mỗi tham số một biểu mẫu đúng hình dạng (không �
 
 Trên màn hình:
 
-- Ô "Ngày xem hiệu lực" cho biết giá trị nào đang áp dụng tại ngày đó. Nếu hệ thống có tham số pháp lý đã kiểm cùng mã thì nó được ưu tiên và hiện nhãn "Tham số pháp lý đã kiểm của hệ thống"; khi giá trị của công ty khác giá trị đó, hiện cảnh báo. Hiện tại hệ thống chưa nạp tham số lương nào.
+- Ô "Ngày xem hiệu lực" cho biết giá trị nào đang áp dụng tại ngày đó. Nếu hệ thống có tham số pháp lý đã kiểm cùng mã thì nó được ưu tiên và hiện nhãn "Tham số pháp lý đã kiểm của hệ thống"; khi giá trị của công ty khác giá trị đó, hiện cảnh báo. Hệ thống đã nạp sẵn tham số kỳ 2026 từ văn bản gốc (mục "Tham số pháp lý có sẵn" ngay dưới).
 - Nguồn bắt đầu bằng "Dữ liệu minh họa" hiện thẻ cam ở bảng, cảnh báo trong hộp thoại và cảnh báo đầu trang khi tham số đang hiệu lực dùng nguồn đó. Báo cáo lương và bảng kê TNCN xuất Excel cũng có dòng "Dữ liệu minh họa" ở đầu.
 - Tham số hiệu lực "Chưa có" nghĩa là chưa nhập; tính lương cần tham số nào thì báo thiếu đúng tham số đó (kèm ngày hiệu lực và mã nhân viên) và liên kết sang màn hình này. Chỉ báo thiếu khi phép tính cần: không có giờ làm thêm thì không cần hệ số làm thêm giờ; không ai tham gia bảo hiểm thì không cần tỷ lệ bảo hiểm.
 - Bảng lương lấy tham số theo ngày cuối kỳ lương; nếu giá trị đầu kỳ khác cuối kỳ thì bảng có cảnh báo `PARAM_CHANGED_IN_PERIOD`.
+
+### Tham số pháp lý có sẵn (từ 01/01/2026)
+
+Hệ thống nạp sẵn các tham số sau, mỗi dòng ghi văn bản, điều, khoản, đường dẫn và ngày tải; người dùng không sửa được, chỉ xem. Mỗi dòng đã được đối chiếu từng chữ, từng số với bản gốc.
+
+- Biểu thuế lũy tiến theo tháng (đến 10 triệu 5%, đến 30 triệu 10%, đến 60 triệu 20%, đến 100 triệu 30%, trên 100 triệu 35%) và biểu quyết toán năm (đến 120 triệu, 360 triệu, 720 triệu, 1,2 tỷ): Luật Thuế thu nhập cá nhân 109/2025/QH15 Điều 9 khoản 2. Giảm trừ gia cảnh 15.500.000 đồng/tháng cho bản thân và 6.200.000 đồng/tháng cho mỗi người phụ thuộc (Điều 10 khoản 1).
+- Thuế suất cá nhân không cư trú 20% từ 01/7/2026 (Điều 21); khấu trừ 10% khi không ký hợp đồng lao động hoặc ký dưới 3 tháng (Nghị định 253/2026/NĐ-CP Điều 50 khoản 2; ngưỡng 5 triệu đồng/lần và cam kết do bạn áp dụng).
+- Tỷ lệ bảo hiểm: người lao động BHXH 8%, BHYT 1,5%, BHTN 1%; doanh nghiệp BHXH 17%, BHYT 3%, BHTN 1%, tai nạn lao động, bệnh nghề nghiệp 0,5%, kinh phí công đoàn 2%.
+- Trần đóng BHXH, BHYT bằng 20 lần lương cơ sở: 46.800.000 đồng đến 30/6/2026, 50.600.000 đồng từ 01/7/2026; sàn 2.340.000 và 2.530.000 đồng theo cùng mốc. Trần BHTN bằng 20 lần lương tối thiểu vùng.
+- Lương tối thiểu vùng I đến IV: 5.310.000, 4.730.000, 4.140.000, 3.700.000 đồng/tháng (Nghị định 293/2025/NĐ-CP).
+
+Chưa có sẵn, bạn tự nhập ở màn này kèm nguồn: hệ số làm thêm giờ, phần làm thêm giờ không chịu thuế, thời điểm tính thu nhập chịu thuế, mọi tham số của kỳ trước 2026 (tính lương kỳ đó báo thiếu tham số). Vì tham số pháp lý có sẵn luôn được ưu tiên, bạn không đặt được riêng mức 0,3% tai nạn lao động, bệnh nghề nghiệp của doanh nghiệp đủ điều kiện hay miễn, giảm kinh phí công đoàn (xem mục 21).
 
 Cài đặt công ty liên quan (Hệ thống > Thông tin công ty > Tùy chọn hệ thống): "Số giờ làm việc chuẩn mỗi ngày" (cần khi có chấm công theo giờ), "Số ngày công chuẩn của tháng" (cần khi tính lương theo "ngày công chuẩn của công ty"). Để trống thì phần mềm báo lỗi `PAYROLL_SETTING_MISSING` khi cần tới, không tự giả định. Ở cùng chỗ có công tắc "Tập hợp chi phí theo đối tượng (giá thành)" (mục 11).
 
@@ -208,7 +220,7 @@ Quyết toán thay chỉ cho người cư trú, hợp đồng từ 3 tháng, có
 
 ### XML và ký số
 
-Xuất XML và ký số tờ khai 05/KK-TNCN, 05/QTT-TNCN trả `TNCN_TEMPLATE_UNAVAILABLE` (409) cho đến khi mẫu theo TT 89/2026 Phụ lục I được nhập từ ảnh trang gốc và cổng pháp lý bật. Xem mục 21.
+Mẫu 05/KK-TNCN, 05/QTT-TNCN và các phụ lục (05-1/PBT-KK-TNCN, 05-1, 05-2, 05-3/BK-QTT-TNCN) theo TT 89/2026 Phụ lục I đã được nhập vào hệ thống từ ảnh trang gốc (mã chỉ tiêu, công thức, cột). Tờ khai trên màn hình vẫn là bảng kê số liệu: chưa ghép số vào từng chỉ tiêu của mẫu. Xuất XML và ký số trả `TNCN_TEMPLATE_UNAVAILABLE` (409) vì chưa có định dạng XML của HTKK. Xem mục 21.
 
 ## 11. Đối tượng tập hợp chi phí và định mức
 
@@ -370,7 +382,7 @@ Tệp, mẫu và biểu mẫu chưa theo văn bản chính thức:
 1. Tệp danh sách BHXH là bảng cột chung, không phải mẫu D02-LT hay TK1-TS của cơ quan bảo hiểm (chưa có văn bản gốc, chưa có đặc tả công khai); kê khai trên cổng BHXH phải nhập lại hoặc dán.
 2. Bảng thanh toán tiền lương, báo cáo bảo hiểm, bảng kê TNCN không in số mẫu: mẫu của chế độ hiện hành chưa nhập từ văn bản gốc. Chứng từ khấu trừ thuế TNCN in tổng hợp, không có mẫu số, ký hiệu, số chứng từ.
 3. Thẻ tính giá thành và sổ chi tiết TK 154 không in số mẫu (S37-DN).
-4. Tờ khai 05/KK-TNCN, 05/QTT-TNCN chỉ là bảng kê số liệu; XML và ký số trả `TNCN_TEMPLATE_UNAVAILABLE` đến khi cổng pháp lý `05KK_TNCN_TT89` và `05QTT_TNCN_TT89` bật (cần mẫu từ Phụ lục I TT 89/2026). Cổng tham số lương (`payrollParams_pit|si|minWage`) cũng đang tắt.
+4. Tờ khai 05/KK-TNCN, 05/QTT-TNCN chỉ là bảng kê số liệu: mẫu đã nhập (cổng `05KK_TNCN_TT89`, `05QTT_TNCN_TT89` bật) nhưng phần mềm chưa ghép số vào từng chỉ tiêu (bảng kê chưa có số cá nhân miễn thuế theo Hiệp định, địa bàn đơn vị phụ thuộc...) và XML, ký số trả `TNCN_TEMPLATE_UNAVAILABLE` đến khi có tệp kết xuất mẫu từ HTKK (cổng `TNCN_XML_HTKK`). Chứng từ khấu trừ thuế TNCN không có mẫu trong TT 89/2026. Tham số lương kỳ 2026 đã có sẵn; không có tham số kỳ trước 2026, hệ số làm thêm giờ, phần làm thêm không chịu thuế, thời điểm tính thu nhập; dòng pháp lý có sẵn luôn thắng nên không đặt riêng 0,3% tai nạn lao động, bệnh nghề nghiệp hay miễn, giảm kinh phí công đoàn.
 5. Chi lương theo lô chỉ có bố cục "Chung" và các cột bạn tự khai; chưa có mẫu của ngân hàng nào, mã hóa chỉ UTF-8, chưa thử trên hệ thống ngân hàng, không kiểm số tài khoản theo ngân hàng, không có trường chi nhánh (dùng cột giá trị cố định). Trong tệp chi lương và các tệp Excel, CSV GĐ6, ô văn bản bắt đầu bằng `=`, `+`, `-`, `@` bị thêm dấu nháy đơn phía trước để Excel không chạy công thức nên dấu nháy hiện trong ô; khoảng trắng đầu ô không được cắt.
 
 Lương và thuế TNCN:
@@ -418,12 +430,12 @@ Những việc này agent không làm thay được và quyết định số li�
 
 | Cần | Chép vào | Vì sao |
 |---|---|---|
-| Luật Thuế thu nhập cá nhân số 109/2025/QH15 và văn bản hướng dẫn (thuế suất, giảm trừ gia cảnh kỳ 2026) | `~/legal-docs/tncn-2025/` | Nhập tham số thuế từ văn bản gốc, không từ trí nhớ |
-| Văn bản BHXH, BHYT, BHTN hiện hành (tỷ lệ, mức trần, mức sàn) và lương tối thiểu vùng 2026 | `~/legal-docs/` | Cùng lý do; hiện bạn phải tự nhập ở màn Tham số lương kèm nguồn |
-| Ảnh trang hoặc PDF có chữ mẫu 05/KK-TNCN, 05/QTT-TNCN, các phụ lục bảng kê và mẫu chứng từ khấu trừ thuế TNCN trong Thông tư 89/2026/TT-BTC Phụ lục I | `~/legal-docs/tt89-2026/` | Dựng tờ khai theo mẫu, XML, ký số; in chứng từ khấu trừ có mẫu số |
+| Văn bản về hệ số làm thêm giờ được miễn thuế, thời điểm tính thu nhập chịu thuế và tham số kỳ trước 2026 (nếu cần tính lại kỳ cũ) | `~/legal-docs/` | Chưa có sẵn: nhập từ văn bản gốc, không từ trí nhớ |
+| Mẫu chứng từ khấu trừ thuế TNCN hiện hành (không có trong TT 89/2026) | `~/legal-docs/` | In chứng từ khấu trừ có mẫu số |
+| Tệp XML mẫu kết xuất từ HTKK cho 05/KK-TNCN, 05/QTT-TNCN và phụ lục | `~/legal-docs/tt89-2026/` | Xuất XML, ký số tờ khai TNCN |
 | Mẫu tệp nhập chi hộ (chi lương) của từng ngân hàng công ty dùng | cùng thư mục tài liệu pháp lý hoặc tệp mẫu | Tạo mẫu sẵn cho từng ngân hàng |
 | Mẫu tệp kê khai I-VAN của cơ quan BHXH (D02-LT, TK1-TS nếu áp dụng) và đặc tả | như trên | Xuất tệp BHXH đúng định dạng |
 | Mẫu thẻ tính giá thành (TT133, TT99 và TT200 nếu cần), mẫu bảng thanh toán tiền lương, nếu muốn in đủ "Mẫu số" | `~/legal-docs/` | In số mẫu trên báo cáo |
 | Tài khoản thử nghiệm các hệ thống bên ngoài nếu dùng (ngân hàng, cổng BHXH) | | Các tích hợp chưa thử trên môi trường thật |
 
-Khi các văn bản có, báo cho người phát triển: tham số sẽ được nhập vào dữ liệu pháp lý có kiểm và cổng pháp lý được bật; các mẫu được nhập từ ảnh trang gốc.
+Khi các văn bản có, báo cho người phát triển: tham số sẽ được nhập vào dữ liệu pháp lý có kiểm và cổng pháp lý được bật; các mẫu được nhập từ ảnh trang gốc. Sổ quyết định: `docs/superpowers/plans/2026-10-29-luong-tncn-bhxh-phap-ly-quyet-dinh.md`.
