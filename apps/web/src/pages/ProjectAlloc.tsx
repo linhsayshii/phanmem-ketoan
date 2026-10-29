@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Button, Checkbox, Segmented, Select, Space, Table, Tabs, Tag } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { formatVnNumber, todayVn } from '@kt/domain';
-import { LookupSelect, useHotkeys, VnNumberInput } from '@kt/ui';
+import { COLOR, LookupSelect, PageHeader, Section, Toolbar, useHotkeys, VnNumberInput } from '@kt/ui';
 import { api, type ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { contractFetcher } from '../lookups.js';
@@ -73,62 +73,103 @@ export default function ProjectAllocPage() {
   const tag = !shown?.status ? <Tag>Chưa chạy</Tag> : shown.stale ? <Tag color="orange">Cần chạy lại</Tag> : shown.status === 'posted' ? <Tag color="green">Đã hạch toán</Tag> : <Tag>Không có số liệu</Tag>;
   const setManual = (i: number, patch: Partial<AllocParams['manual'][number]>) => setAlloc((p) => ({ ...p, manual: p.manual.map((m, k) => (k === i ? { ...m, ...patch } : m)) }));
 
+  const allocDesc = 'Chi phí bán hàng, chi phí quản lý doanh nghiệp chưa gắn vụ việc trong tháng được phân bổ cho các vụ việc theo tiêu thức bằng một Chứng từ phân bổ (PB): Nợ tài khoản chi phí có vụ việc / Có cùng tài khoản. Tổng chi phí công ty không đổi; phần lẻ do làm tròn dồn vào vụ việc cuối. Chạy lại thì đảo chứng từ cũ và sinh chứng từ mới.';
+  const cogsDesc = 'Vụ việc, hợp đồng đã hoàn thành: toàn bộ chi phí sản xuất kinh doanh dở dang (154) đến cuối tháng được kết chuyển sang giá vốn hàng bán (632) bằng một Chứng từ giá thành (GT), giữ vụ việc, hợp đồng, đối tượng tập hợp chi phí.';
+
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <h2 style={{ margin: 0 }}>Phân bổ chi phí vào vụ việc</h2>
-      <Tabs activeKey={kind} onChange={(k) => setKind(k as Kind)} items={[{ key: 'alloc', label: 'Phân bổ chi phí chung' }, { key: 'cogs', label: 'Kết chuyển giá vốn vụ việc' }]} />
-      <span>{kind === 'alloc'
-        ? 'Chi phí bán hàng, chi phí quản lý doanh nghiệp chưa gắn vụ việc trong tháng được phân bổ cho các vụ việc theo tiêu thức bằng một Chứng từ phân bổ (PB): Nợ tài khoản chi phí có vụ việc / Có cùng tài khoản. Tổng chi phí công ty không đổi; phần lẻ do làm tròn dồn vào vụ việc cuối. Chạy lại thì đảo chứng từ cũ và sinh chứng từ mới.'
-        : 'Vụ việc, hợp đồng đã hoàn thành: toàn bộ chi phí sản xuất kinh doanh dở dang (154) đến cuối tháng được kết chuyển sang giá vốn hàng bán (632) bằng một Chứng từ giá thành (GT), giữ vụ việc, hợp đồng, đối tượng tập hợp chi phí.'}</span>
-      <Space wrap align="end">
-        <Select<number> aria-label="Năm tài chính" style={{ width: 130 }} value={y} options={(years.data ?? []).map((f) => ({ value: f.fiscalYear, label: `Năm ${f.fiscalYear}` }))} onChange={setYear} />
-        <Select<number> aria-label="Kỳ" style={{ width: 120 }} value={month} virtual={false} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `Tháng ${i + 1}` }))} onChange={setMonth} />
-        {kind === 'alloc' && <>
-          <Segmented aria-label="Tiêu thức phân bổ" value={alloc.basis} options={BASIS} onChange={(v) => setAlloc((p) => ({ ...p, basis: v as AllocParams['basis'] }))} />
-          {alloc.basis === 'direct_cost' && <Checkbox checked={alloc.includeProduction} onChange={(e) => setAlloc((p) => ({ ...p, includeProduction: e.target.checked }))}>Cộng chi phí sản xuất</Checkbox>}
+    <>
+      <PageHeader
+        title="Phân bổ chi phí vào vụ việc"
+        tags={
+          <Space size={6} align="center">
+            {tag}
+            {shown?.voucherId && (
+              <span style={{ fontSize: 13, color: COLOR.textSecondary }}>
+                Chứng từ: <a href={`/chung-tu/${kind === 'alloc' ? 'PB' : 'GT'}/${shown.voucherId}`} target="_blank" rel="noopener noreferrer">{shown.voucherNo ?? (kind === 'alloc' ? 'PB' : 'GT')}</a>
+              </span>
+            )}
+          </Space>
+        }
+        description={kind === 'alloc' ? allocDesc : cogsDesc}
+        extra={<>
+          <Button onClick={() => preview.mutate(params)} loading={preview.isPending} disabled={!y}>Xem trước</Button>
+          {can('contract_track.run') && <Button type="primary" onClick={start} loading={run.isPending} disabled={!y}>Chạy (F9)</Button>}
         </>}
-        <Button onClick={() => preview.mutate(params)} loading={preview.isPending} disabled={!y}>Xem trước</Button>
-        {can('contract_track.run') && <Button type="primary" onClick={start} loading={run.isPending} disabled={!y}>Chạy (F9)</Button>}
-        <Space size={4}>{tag}
-          {shown?.voucherId && <span>Chứng từ: <a href={`/chung-tu/${kind === 'alloc' ? 'PB' : 'GT'}/${shown.voucherId}`} target="_blank" rel="noopener noreferrer">{shown.voucherNo ?? (kind === 'alloc' ? 'PB' : 'GT')}</a></span>}
-        </Space>
-      </Space>
+      >
+        <Toolbar>
+          <Select<number> aria-label="Năm tài chính" style={{ width: 130 }} value={y} options={(years.data ?? []).map((f) => ({ value: f.fiscalYear, label: `Năm ${f.fiscalYear}` }))} onChange={setYear} />
+          <Select<number> aria-label="Kỳ" style={{ width: 120 }} value={month} virtual={false} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `Tháng ${i + 1}` }))} onChange={setMonth} />
+          {kind === 'alloc' && <>
+            <Segmented aria-label="Tiêu thức phân bổ" value={alloc.basis} options={BASIS} onChange={(v) => setAlloc((p) => ({ ...p, basis: v as AllocParams['basis'] }))} />
+            {alloc.basis === 'direct_cost' && <Checkbox checked={alloc.includeProduction} onChange={(e) => setAlloc((p) => ({ ...p, includeProduction: e.target.checked }))}>Cộng chi phí sản xuất</Checkbox>}
+          </>}
+        </Toolbar>
+      </PageHeader>
+      <Tabs activeKey={kind} onChange={(k) => setKind(k as Kind)} style={{ marginBottom: 12 }} items={[{ key: 'alloc', label: 'Phân bổ chi phí chung' }, { key: 'cogs', label: 'Kết chuyển giá vốn vụ việc' }]} />
 
       {kind === 'alloc' && alloc.basis === 'manual' && (
-        <Table size="small" rowKey={(_r, i) => String(i)} dataSource={alloc.manual} pagination={false} style={{ maxWidth: 560 }} locale={{ emptyText: 'Chưa có vụ việc nhận phân bổ' }}
-          columns={[
-            { title: 'Vụ việc', render: (_v, m, i) => <LookupSelect catalog="project" aria-label={`Vụ việc ${i + 1}`} value={m.projectCode || null} onChange={(c) => setManual(i, { projectCode: c ?? '' })} /> },
-            { title: 'Tiêu thức', width: 160, render: (_v, m, i) => <VnNumberInput scale={4} aria-label={`Tiêu thức ${i + 1}`} value={m.weight} onChange={(v) => setManual(i, { weight: v ?? '0' })} /> },
-            { title: '', width: 60, render: (_v, _m, i) => <Button type="link" size="small" onClick={() => setAlloc((p) => ({ ...p, manual: p.manual.filter((_x, k) => k !== i) }))}>Bỏ</Button> },
-          ]} footer={() => <Button size="small" onClick={() => setAlloc((p) => ({ ...p, manual: [...p.manual, { projectCode: '', weight: '1' }] }))}>Thêm vụ việc</Button>} />)}
+        <Section title="Tiêu thức phân bổ theo vụ việc" style={{ maxWidth: 560, marginBottom: 16 }} bodyPadding={0}>
+          <Table size="small" rowKey={(_r, i) => String(i)} dataSource={alloc.manual} pagination={false} locale={{ emptyText: 'Chưa có vụ việc nhận phân bổ' }}
+            columns={[
+              { title: 'Vụ việc', render: (_v, m, i) => <LookupSelect catalog="project" aria-label={`Vụ việc ${i + 1}`} value={m.projectCode || null} onChange={(c) => setManual(i, { projectCode: c ?? '' })} /> },
+              { title: 'Tiêu thức', width: 160, render: (_v, m, i) => <VnNumberInput scale={4} aria-label={`Tiêu thức ${i + 1}`} value={m.weight} onChange={(v) => setManual(i, { weight: v ?? '0' })} /> },
+              { title: '', width: 60, render: (_v, _m, i) => <Button type="link" size="small" onClick={() => setAlloc((p) => ({ ...p, manual: p.manual.filter((_x, k) => k !== i) }))}>Bỏ</Button> },
+            ]} footer={() => <Button size="small" onClick={() => setAlloc((p) => ({ ...p, manual: [...p.manual, { projectCode: '', weight: '1' }] }))}>Thêm vụ việc</Button>} />
+        </Section>
+      )}
 
-      {kind === 'cogs' && <Space direction="vertical">
-        <Space wrap><span style={{ width: 170, display: 'inline-block' }}>Vụ việc đã hoàn thành:</span>
-          {cogs.projectCodes.map((c) => <Tag key={c} closable onClose={() => setCogs((p) => ({ ...p, projectCodes: p.projectCodes.filter((x) => x !== c) }))}>{c}</Tag>)}
-          <LookupSelect catalog="project" aria-label="Thêm vụ việc hoàn thành" placeholder="Thêm vụ việc (F4)" style={{ width: 240 }} value={null}
-            onChange={(c) => c && setCogs((p) => (p.projectCodes.includes(c) ? p : { ...p, projectCodes: [...p.projectCodes, c] }))} /></Space>
-        <Space wrap><span style={{ width: 170, display: 'inline-block' }}>Hợp đồng đã hoàn thành:</span>
-          {cogs.contractCodes.map((c) => <Tag key={c} closable onClose={() => setCogs((p) => ({ ...p, contractCodes: p.contractCodes.filter((x) => x !== c) }))}>{c}</Tag>)}
-          <LookupSelect catalog="contract" fetcher={contractFetcher()} aria-label="Thêm hợp đồng hoàn thành" placeholder="Thêm hợp đồng (F4)" style={{ width: 240 }} value={null}
-            onChange={(c) => c && setCogs((p) => (p.contractCodes.includes(c) ? p : { ...p, contractCodes: [...p.contractCodes, c] }))} /></Space>
-      </Space>}
+      {kind === 'cogs' && (
+        <Section title="Vụ việc và hợp đồng hoàn thành" style={{ marginBottom: 16 }}>
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Space wrap><span style={{ width: 170, display: 'inline-block' }}>Vụ việc đã hoàn thành:</span>
+              {cogs.projectCodes.map((c) => <Tag key={c} closable onClose={() => setCogs((p) => ({ ...p, projectCodes: p.projectCodes.filter((x) => x !== c) }))}>{c}</Tag>)}
+              <LookupSelect catalog="project" aria-label="Thêm vụ việc hoàn thành" placeholder="Thêm vụ việc (F4)" style={{ width: 240 }} value={null}
+                onChange={(c) => c && setCogs((p) => (p.projectCodes.includes(c) ? p : { ...p, projectCodes: [...p.projectCodes, c] }))} /></Space>
+            <Space wrap><span style={{ width: 170, display: 'inline-block' }}>Hợp đồng đã hoàn thành:</span>
+              {cogs.contractCodes.map((c) => <Tag key={c} closable onClose={() => setCogs((p) => ({ ...p, contractCodes: p.contractCodes.filter((x) => x !== c) }))}>{c}</Tag>)}
+              <LookupSelect catalog="contract" fetcher={contractFetcher()} aria-label="Thêm hợp đồng hoàn thành" placeholder="Thêm hợp đồng (F4)" style={{ width: 240 }} value={null}
+                onChange={(c) => c && setCogs((p) => (p.contractCodes.includes(c) ? p : { ...p, contractCodes: [...p.contractCodes, c] }))} /></Space>
+          </Space>
+        </Section>
+      )}
 
-      {note && <Alert type="success" showIcon message={note} />}
-      {err && <Alert type="error" showIcon message={err.message} />}
-      {!!shown?.warnings.length && <Alert type="info" showIcon message="Lưu ý" description={<ul style={{ margin: 0, paddingLeft: 18 }}>{shown.warnings.map((w) => <li key={w}>{w}</li>)}</ul>} />}
+      {note && <Alert type="success" showIcon message={note} style={{ marginBottom: 12 }} />}
+      {err && <Alert type="error" showIcon message={err.message} style={{ marginBottom: 12 }} />}
+      {!!shown?.warnings.length && <Alert type="info" showIcon message="Lưu ý" style={{ marginBottom: 12 }} description={<ul style={{ margin: 0, paddingLeft: 18 }}>{shown.warnings.map((w) => <li key={w}>{w}</li>)}</ul>} />}
 
-      {kind === 'alloc' && shown && <>
-        <span data-testid="alloc-pool">Chi phí chung chưa phân bổ: {accounts.length ? accounts.map((a) => <span key={a.code} style={{ marginRight: 16 }}>TK {a.code}: <b>{money(a.pool)}</b></span>) : <b>không có</b>}</span>
-        <Table<AllocRow> size="small" rowKey="projectCode" dataSource={allocRows} pagination={false} data-testid="alloc-result" scroll={{ x: 800 }} loading={preview.isPending || run.isPending}
-          locale={{ emptyText: 'Không có vụ việc nhận phân bổ' }}
-          columns={[{ title: 'Mã vụ việc', dataIndex: 'projectCode', width: 120 }, { title: 'Tên vụ việc', dataIndex: 'projectName' },
-            { title: 'Tiêu thức', dataIndex: 'basis', align: 'right', width: 150, render: (v: string) => formatVnNumber(v, 4) },
-            { title: 'Tỷ lệ (%)', dataIndex: 'ratio', align: 'right', width: 100, render: (v: string) => formatVnNumber(v, 2) },
-            ...accounts.filter((a) => Number(a.pool) > 0).map((a) => ({ title: `TK ${a.code}`, align: 'right' as const, width: 140, render: (_v: unknown, r: AllocRow) => money(r.amounts[a.code] ?? '0') })),
-            { title: 'Cộng', dataIndex: 'total', align: 'right', width: 140, render: money }]} />
-      </>}
-      {kind === 'cogs' && shown && <Table<CogsRow> size="small" rowKey={(r) => `${r.dim}-${r.code}`} dataSource={cogsRows} pagination={false} data-testid="cogs-result" style={{ maxWidth: 760 }}
-        columns={[{ title: 'Loại', dataIndex: 'dim', width: 100, render: (v: string) => (v === 'project' ? 'Vụ việc' : 'Hợp đồng') }, { title: 'Mã', dataIndex: 'code', width: 120 }, { title: 'Tên', dataIndex: 'name' },
-          { title: 'Giá vốn kết chuyển', dataIndex: 'amount', align: 'right', width: 160, render: money }]} />}
-    </Space>);
+      {kind === 'alloc' && (
+        <Section
+          title="Kết quả phân bổ chi phí"
+          extra={
+            shown && (
+              <span data-testid="alloc-pool" style={{ fontSize: 13, color: COLOR.textSecondary }}>
+                Chi phí chung chưa phân bổ: {accounts.length ? accounts.map((a) => <span key={a.code} style={{ marginRight: 16 }}>TK {a.code}: <b style={{ color: 'inherit' }}>{money(a.pool)}</b></span>) : <b>không có</b>}
+              </span>
+            )
+          }
+          bodyPadding={0}
+        >
+          <Table<AllocRow> size="small" rowKey="projectCode" dataSource={allocRows} pagination={false} data-testid="alloc-result" scroll={{ x: 800 }} loading={preview.isPending || run.isPending}
+            locale={{ emptyText: 'Không có vụ việc nhận phân bổ' }}
+            columns={[
+              { title: 'Mã vụ việc', dataIndex: 'projectCode', width: 120 }, { title: 'Tên vụ việc', dataIndex: 'projectName' },
+              { title: 'Tiêu thức', dataIndex: 'basis', align: 'right', width: 150, render: (v: string) => formatVnNumber(v, 4) },
+              { title: 'Tỷ lệ (%)', dataIndex: 'ratio', align: 'right', width: 100, render: (v: string) => formatVnNumber(v, 2) },
+              ...accounts.filter((a) => Number(a.pool) > 0).map((a) => ({ title: `TK ${a.code}`, align: 'right' as const, width: 140, render: (_v: unknown, r: AllocRow) => money(r.amounts[a.code] ?? '0') })),
+              { title: 'Cộng', dataIndex: 'total', align: 'right', width: 140, render: money },
+            ]} />
+        </Section>
+      )}
+      {kind === 'cogs' && (
+        <Section title="Giá vốn kết chuyển sang 632" bodyPadding={0} style={{ maxWidth: 760 }}>
+          <Table<CogsRow> size="small" rowKey={(r) => `${r.dim}-${r.code}`} dataSource={cogsRows} pagination={false} data-testid="cogs-result" loading={preview.isPending || run.isPending}
+            locale={{ emptyText: 'Chưa có vụ việc, hợp đồng hoàn thành được chọn' }}
+            columns={[
+              { title: 'Loại', dataIndex: 'dim', width: 100, render: (v: string) => (v === 'project' ? 'Vụ việc' : 'Hợp đồng') }, { title: 'Mã', dataIndex: 'code', width: 120 }, { title: 'Tên', dataIndex: 'name' },
+              { title: 'Giá vốn kết chuyển', dataIndex: 'amount', align: 'right', width: 160, render: money },
+            ]} />
+        </Section>
+      )}
+    </>
+  );
 }

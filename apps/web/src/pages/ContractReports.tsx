@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
-import { KeyboardGrid, useRememberedFilter } from '@kt/ui';
+import { COLOR, KeyboardGrid, PageHeader, Section, StatStrip, Toolbar, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import type { Track } from './Contracts.js';
@@ -63,59 +63,92 @@ export default function ContractReportsPage() {
   const open = (format: 'pdf' | 'xlsx') => { window.open(`${url}&format=${format}`, '_blank'); };
 
   const body = () => {
-    if (data.error) return <Alert type="error" showIcon message={(data.error as Error).message} />;
-    if (!data.data) return <Alert type="info" message="Đang tải…" />;
+    if (data.error) return <Alert type="error" showIcon message={(data.error as Error).message} style={{ marginBottom: 12 }} />;
+    if (!data.data) return <Alert type="info" message="Đang tải…" style={{ marginBottom: 12 }} />;
     if (tab === 'track') {
       const r = data.data as TrackReport;
-      return (<>
-        <Space size="large" wrap style={{ marginBottom: 8 }}>
-          <span>Còn phải thu/trả: <b>{formatVnNumber(String(r.totals['outstanding']))}</b></span><span>Quá hạn: <b data-testid="total-overdue">{formatVnNumber(String(r.totals['overdueDebt']))}</b></span>
-          <span>Đợt quá hạn: <b>{String(r.totals['overdueMilestoneCount'])}</b></span>
-        </Space>
-        <KeyboardGrid<TrackRow> rows={r.rows} columns={trackCols} onRowsChange={() => undefined} addRowTemplate={() => ({} as TrackRow)} readOnly height="calc(100vh - 300px)" />
-      </>);
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <StatStrip items={[
+            { label: 'Còn phải thu/trả', value: formatVnNumber(String(r.totals['outstanding'])) },
+            { label: 'Quá hạn', value: formatVnNumber(String(r.totals['overdueDebt'])), testId: 'total-overdue' },
+            { label: 'Đợt quá hạn', value: String(r.totals['overdueMilestoneCount']) },
+          ]} />
+          <Section bodyPadding={0}>
+            <KeyboardGrid<TrackRow> rows={r.rows} columns={trackCols} onRowsChange={() => undefined} addRowTemplate={() => ({} as TrackRow)} readOnly height="calc(100vh - 340px)" />
+          </Section>
+        </div>
+      );
     }
     if (tab === 'balance') {
       const r = data.data as BalReport;
-      return (<>
-        <Space size="large" wrap style={{ marginBottom: 8 }} data-testid="wip-summary">
-          <span>Chi phí dở dang (154) theo {f.by === 'contract' ? 'hợp đồng' : 'vụ việc'}:</span>
-          {r.wip.length ? r.wip.map((w) => <span key={w.dimCode}>{w.dimCode}: <b>{formatVnNumber(w.amount)}</b></span>) : <b>không có</b>}
-        </Space>
-        <KeyboardGrid<BalRow> rows={r.rows} columns={balCols} onRowsChange={() => undefined} addRowTemplate={() => ({} as BalRow)} readOnly height="calc(100vh - 320px)" />
-      </>);
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ fontSize: 13 }} data-testid="wip-summary">
+            <span style={{ color: COLOR.textSecondary }}>Chi phí dở dang (154) theo {f.by === 'contract' ? 'hợp đồng' : 'vụ việc'}: </span>
+            {r.wip.length ? r.wip.map((w) => <span key={w.dimCode} style={{ marginRight: 12 }}>{w.dimCode}: <b>{formatVnNumber(w.amount)}</b></span>) : <b>không có</b>}
+          </div>
+          <Section bodyPadding={0}>
+            <KeyboardGrid<BalRow> rows={r.rows} columns={balCols} onRowsChange={() => undefined} addRowTemplate={() => ({} as BalRow)} readOnly height="calc(100vh - 340px)" />
+          </Section>
+        </div>
+      );
     }
     const r = data.data as PnlReport;
     const un = { code: '', name: tab === 'project' ? 'Chưa gắn vụ việc (chi phí chung chưa phân bổ)' : 'Chưa gắn hợp đồng (chi phí chung chưa phân bổ)', ...r.unassigned };
-    return (<>
-      <Space size="large" wrap style={{ marginBottom: 8 }}>
-        <span>Doanh thu thuần: <b>{formatVnNumber(r.totals.netRevenue)}</b></span><span>Lãi (lỗ): <b data-testid="total-profit">{formatVnNumber(r.totals.profit)}</b></span>
-        <span>Chi phí chung chưa phân bổ: <b>{formatVnNumber(D(r.unassigned.selling).plus(r.unassigned.admin).toString())}</b></span>
-      </Space>
-      <Alert type="info" showIcon style={{ marginBottom: 8 }} message="Lãi (lỗ) = doanh thu thuần − giá vốn − chi phí bán hàng, quản lý gắn trực tiếp. Chi phí sản xuất chỉ để xem: đi vào giá vốn qua 154, không trừ thêm." />
-      <KeyboardGrid<PnlRow> rows={r.rows} columns={cols} onRowsChange={() => undefined} addRowTemplate={() => ({} as PnlRow)} readOnly height="calc(100vh - 360px)"
-        pinnedBottomRows={[un, { code: 'Cộng', name: '', ...r.totals }]} />
-    </>);
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <StatStrip items={[
+          { label: 'Doanh thu thuần', value: formatVnNumber(r.totals.netRevenue) },
+          { label: 'Lãi (lỗ)', value: formatVnNumber(r.totals.profit), testId: 'total-profit' },
+          { label: 'Chi phí chung chưa phân bổ', value: formatVnNumber(D(r.unassigned.selling).plus(r.unassigned.admin).toString()) },
+        ]} />
+        <Alert type="info" showIcon message="Lãi (lỗ) = doanh thu thuần − giá vốn − chi phí bán hàng, quản lý gắn trực tiếp. Chi phí sản xuất chỉ để xem: đi vào giá vốn qua 154, không trừ thêm." />
+        <Section bodyPadding={0}>
+          <KeyboardGrid<PnlRow> rows={r.rows} columns={cols} onRowsChange={() => undefined} addRowTemplate={() => ({} as PnlRow)} readOnly height="calc(100vh - 400px)"
+            pinnedBottomRows={[un, { code: 'Cộng', name: '', ...r.totals }]} />
+        </Section>
+      </div>
+    );
   };
 
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Báo cáo hợp đồng, vụ việc</h2>
-        {tab === 'track' ? <>
-          <DatePicker format="DD/MM/YYYY" allowClear={false} aria-label="Tại ngày" value={dayjs(f.asOf)} onChange={(d) => d && setF({ ...f, asOf: d.format('YYYY-MM-DD') })} />
-          <Segmented aria-label="Loại hợp đồng" value={f.kind} onChange={(v) => setF({ ...f, kind: String(v) })} options={[{ value: '', label: 'Bán và mua' }, { value: 'sale', label: 'Bán (phải thu)' }, { value: 'purchase', label: 'Mua (phải trả)' }]} />
-          <Checkbox checked={f.overdue} onChange={(e) => setF({ ...f, overdue: e.target.checked })}>Chỉ hợp đồng quá hạn</Checkbox>
-        </> : <><DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} aria-label="Khoảng ngày"
-          onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
-          {tab === 'balance' && <>
-            <Segmented aria-label="Theo" value={f.by ?? 'project'} onChange={(v) => setF({ ...f, by: String(v) })} options={[{ value: 'project', label: 'Theo vụ việc' }, { value: 'contract', label: 'Theo hợp đồng' }]} />
-            <Input aria-label="Tài khoản" placeholder="Tài khoản (để trống: mọi TK)" style={{ width: 210 }} defaultValue={f.accountCode ?? ''} onPressEnter={(e) => setF({ ...f, accountCode: e.currentTarget.value.trim() })}
-              onBlur={(e) => setF({ ...f, accountCode: e.currentTarget.value.trim() })} /></>}</>}
-        {can('report.print') && <><Button onClick={() => open('pdf')}>In PDF</Button><Button onClick={() => open('xlsx')}>Xuất Excel</Button></>}
-      </Space>
-      <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={[{ key: 'track', label: 'Theo dõi thực hiện, quá hạn' },
+    <>
+      <PageHeader
+        title="Báo cáo hợp đồng, vụ việc"
+        description="Theo dõi tiến độ thực hiện, công nợ quá hạn, lãi lỗ theo hợp đồng, vụ việc và số dư theo chiều quản trị"
+        extra={can('report.print') && (
+          <Space>
+            <Button onClick={() => open('pdf')}>In PDF</Button>
+            <Button onClick={() => open('xlsx')}>Xuất Excel</Button>
+          </Space>
+        )}
+      >
+        <Toolbar>
+          {tab === 'track' ? (
+            <>
+              <DatePicker format="DD/MM/YYYY" allowClear={false} aria-label="Tại ngày" value={dayjs(f.asOf)} onChange={(d) => d && setF({ ...f, asOf: d.format('YYYY-MM-DD') })} />
+              <Segmented aria-label="Loại hợp đồng" value={f.kind} onChange={(v) => setF({ ...f, kind: String(v) })} options={[{ value: '', label: 'Bán và mua' }, { value: 'sale', label: 'Bán (phải thu)' }, { value: 'purchase', label: 'Mua (phải trả)' }]} />
+              <Checkbox checked={f.overdue} onChange={(e) => setF({ ...f, overdue: e.target.checked })}>Chỉ hợp đồng quá hạn</Checkbox>
+            </>
+          ) : (
+            <>
+              <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} aria-label="Khoảng ngày"
+                onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
+              {tab === 'balance' && (
+                <>
+                  <Segmented aria-label="Theo" value={f.by ?? 'project'} onChange={(v) => setF({ ...f, by: String(v) })} options={[{ value: 'project', label: 'Theo vụ việc' }, { value: 'contract', label: 'Theo hợp đồng' }]} />
+                  <Input aria-label="Tài khoản" placeholder="Tài khoản (để trống: mọi TK)" style={{ width: 210 }} defaultValue={f.accountCode ?? ''} onPressEnter={(e) => setF({ ...f, accountCode: e.currentTarget.value.trim() })}
+                    onBlur={(e) => setF({ ...f, accountCode: e.currentTarget.value.trim() })} />
+                </>
+              )}
+            </>
+          )}
+        </Toolbar>
+      </PageHeader>
+      <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} style={{ marginBottom: 12 }} items={[{ key: 'track', label: 'Theo dõi thực hiện, quá hạn' },
         ...(cost ? [{ key: 'contract', label: 'Lãi lỗ theo hợp đồng' }, { key: 'project', label: 'Lãi lỗ theo vụ việc' }, { key: 'balance', label: 'Số dư theo vụ việc, hợp đồng' }] : [])]} />
       {body()}
-    </Space>);
+    </>
+  );
 }

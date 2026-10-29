@@ -5,7 +5,7 @@ import { Link } from '@tanstack/react-router';
 import type { ColDef, EditableCallbackParams } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, todayVn } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useHotkeys, useRememberedFilter, VnNumberInput } from '@kt/ui';
+import { COLOR, KeyboardGrid, LookupSelect, PageHeader, Section, Toolbar, useHotkeys, useRememberedFilter, VnNumberInput } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor } from '../lookups.js';
@@ -255,24 +255,34 @@ export default function ContractsPage() {
   const rows = (list.data ?? []).filter((r) => (!f.kind || r.kind === f.kind) && (!f.status || r.status === f.status) && (!k || r.code.toLowerCase().includes(k) || r.name.toLowerCase().includes(k) || (r.partyName ?? '').toLowerCase().includes(k)));
   useHotkeys({ Insert: () => { if (can('order.create') && !open) setOpen('new'); } });
   return (
-    <div>
-      <h2 style={{ marginTop: 0 }}>Hợp đồng</h2>
-      <Space wrap style={{ marginBottom: 12 }}>
-        <Input.Search placeholder="Tìm theo số, tên, đối tác" allowClear defaultValue={f.q} onSearch={(q) => setF({ ...f, q })} style={{ width: 260 }} />
-        <Select style={{ width: 130 }} value={f.kind} onChange={(kind) => setF({ ...f, kind })} aria-label="Lọc loại" options={[{ value: '', label: 'Bán và mua' }, { value: 'sale', label: 'Hợp đồng bán' }, { value: 'purchase', label: 'Hợp đồng mua' }]} />
-        <Select style={{ width: 150 }} value={f.status} onChange={(status) => setF({ ...f, status })} aria-label="Lọc trạng thái" options={[{ value: '', label: 'Mọi trạng thái' }, ...Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label }))]} />
-        {can('order.create') && <Button type="primary" onClick={() => setOpen('new')}>Thêm (Insert)</Button>}
-      </Space>
-      {list.error && <Alert type="error" showIcon message={(list.error as Error).message} style={{ marginBottom: 8 }} />}
-      <Table<ContractRow> size="small" rowKey="id" loading={list.isLoading} dataSource={rows} pagination={{ pageSize: 50, hideOnSinglePage: true }} data-testid="contracts-table" locale={{ emptyText: 'Chưa có hợp đồng' }}
-        onRow={(r) => ({ onClick: () => setOpen(r), tabIndex: 0, onKeyDown: (e) => { if (e.key === 'Enter') setOpen(r); }, style: { cursor: 'pointer' } })}
-        columns={[{ title: 'Số hợp đồng', dataIndex: 'code', width: 130 }, { title: 'Tên', dataIndex: 'name' }, { title: 'Loại', dataIndex: 'kind', width: 70, render: (s: Kind) => KIND_LABEL[s] },
-          { title: 'Đối tác', dataIndex: 'partyName' }, { title: 'Tiền', dataIndex: 'currencyCode', width: 60 }, { title: 'Giá trị', dataIndex: 'value', align: 'right', render: (s: string) => money(s) },
-          { title: 'Đã lập hóa đơn', dataIndex: 'invoicedTotal', align: 'right', render: (s: string, r) => money(s, r.currencyCode === 'VND' ? 0 : 4) },
-          { title: 'Chưa lập hóa đơn', align: 'right', render: (_, r) => money(D(r.milestoneTotal).minus(r.invoicedTotal).toString(), r.currencyCode === 'VND' ? 0 : 4) },
-          { title: 'Đợt', width: 80, render: (_, r) => `${r.invoicedCount}/${r.milestoneCount}` },
-          { title: 'Hiệu lực đến', dataIndex: 'validTo', width: 110, render: (d: string | null) => (d ? formatVnDate(d) : '') },
-          { title: 'Trạng thái', dataIndex: 'status', width: 110, render: (s: string) => <Tag color={STATUS_COLOR[s] ?? 'default'}>{STATUS_LABEL[s] ?? s}</Tag> }]} />
+    <>
+      <PageHeader
+        title="Hợp đồng"
+        description="Hợp đồng bán, mua, đợt thanh toán, xuất hóa đơn và theo dõi tiến độ thực hiện"
+        extra={can('order.create') && <Button type="primary" onClick={() => setOpen('new')}>Thêm (Insert)</Button>}
+      >
+        <Toolbar>
+          <Input.Search placeholder="Tìm theo số, tên, đối tác" allowClear defaultValue={f.q} onSearch={(q) => setF({ ...f, q })} style={{ width: 260 }} />
+          <Select style={{ width: 130 }} value={f.kind} onChange={(kind) => setF({ ...f, kind })} aria-label="Lọc loại" options={[{ value: '', label: 'Bán và mua' }, { value: 'sale', label: 'Hợp đồng bán' }, { value: 'purchase', label: 'Hợp đồng mua' }]} />
+          <Select style={{ width: 150 }} value={f.status} onChange={(status) => setF({ ...f, status })} aria-label="Lọc trạng thái" options={[{ value: '', label: 'Mọi trạng thái' }, ...Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label }))]} />
+          <span style={{ marginLeft: 'auto', color: COLOR.textSecondary, fontSize: 13 }}>
+            {formatVnNumber(String(rows.length))} hợp đồng
+          </span>
+        </Toolbar>
+      </PageHeader>
+      {list.error && <Alert type="error" showIcon message={(list.error as Error).message} style={{ marginBottom: 12 }} />}
+      <Section bodyPadding={0}>
+        <Table<ContractRow> size="small" rowKey="id" loading={list.isLoading} dataSource={rows} pagination={{ pageSize: 50, hideOnSinglePage: true }} data-testid="contracts-table" locale={{ emptyText: 'Chưa có hợp đồng' }}
+          onRow={(r) => ({ onClick: () => setOpen(r), tabIndex: 0, onKeyDown: (e) => { if (e.key === 'Enter') setOpen(r); }, style: { cursor: 'pointer' } })}
+          columns={[{ title: 'Số hợp đồng', dataIndex: 'code', width: 130 }, { title: 'Tên', dataIndex: 'name' }, { title: 'Loại', dataIndex: 'kind', width: 70, render: (s: Kind) => KIND_LABEL[s] },
+            { title: 'Đối tác', dataIndex: 'partyName' }, { title: 'Tiền', dataIndex: 'currencyCode', width: 60 }, { title: 'Giá trị', dataIndex: 'value', align: 'right', render: (s: string) => money(s) },
+            { title: 'Đã lập hóa đơn', dataIndex: 'invoicedTotal', align: 'right', render: (s: string, r) => money(s, r.currencyCode === 'VND' ? 0 : 4) },
+            { title: 'Chưa lập hóa đơn', align: 'right', render: (_, r) => money(D(r.milestoneTotal).minus(r.invoicedTotal).toString(), r.currencyCode === 'VND' ? 0 : 4) },
+            { title: 'Đợt', width: 80, render: (_, r) => `${r.invoicedCount}/${r.milestoneCount}` },
+            { title: 'Hiệu lực đến', dataIndex: 'validTo', width: 110, render: (d: string | null) => (d ? formatVnDate(d) : '') },
+            { title: 'Trạng thái', dataIndex: 'status', width: 110, render: (s: string) => <Tag color={STATUS_COLOR[s] ?? 'default'}>{STATUS_LABEL[s] ?? s}</Tag> }]} />
+      </Section>
       {open && <ContractDrawer initial={open} onClose={() => setOpen(null)} />}
-    </div>);
+    </>
+  );
 }

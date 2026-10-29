@@ -5,7 +5,7 @@ import { Link } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, todayVn } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useHotkeys, useRememberedFilter, VnNumberInput } from '@kt/ui';
+import { COLOR, KeyboardGrid, LookupSelect, PageHeader, Section, Toolbar, useHotkeys, useRememberedFilter, VnNumberInput } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor, bankAccountFetcher } from '../lookups.js';
@@ -180,61 +180,91 @@ function LoanDrawer({ loan, onClose }: { loan: LoanRow | 'new'; onClose: () => v
     </Drawer>);
 }
 
-function LoanReportTab() {
-  const { me, can } = useAuth();
-  const [f, setF] = useRememberedFilter('loan-report', { from: `${todayVn().slice(0, 4)}-01-01`, to: todayVn() }, `${me?.tenantId}:${me?.userId}`);
+function LoanReportTab({ filter: f }: { filter: { from: string; to: string } }) {
   const url = `/api/loans/report?from=${f.from}&to=${f.to}`;
   const q = useQuery({ queryKey: ['loan-report', f.from, f.to], queryFn: () => api<Report>(url) });
   const t = q.data?.totals;
-  return (<>
-    <Space wrap style={{ marginBottom: 12 }}>
-      <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
-      {can('report.print') && <><Button onClick={() => window.open(`${url}&format=pdf`, '_blank')}>In PDF</Button><Button onClick={() => window.open(`${url}&format=xlsx`, '_blank')}>Xuất Excel</Button></>}
-    </Space>
-    {q.error && <Alert type="error" showIcon message={(q.error as Error).message} style={{ marginBottom: 8 }} />}
-    <Table<ReportRow> size="small" rowKey="id" loading={q.isLoading} dataSource={q.data?.rows ?? []} pagination={false} scroll={{ x: 2300 }} data-testid="loan-report" locale={{ emptyText: 'Chưa có khế ước' }}
-      columns={[{ title: 'Khế ước', dataIndex: 'code', fixed: 'left', width: 110 }, { title: 'Tên', dataIndex: 'name', width: 160 }, { title: 'Loại tiền', dataIndex: 'currency', width: 70 },
-        { title: 'Dư nợ đầu kỳ', dataIndex: 'openingVnd', align: 'right', render: money }, { title: 'Giải ngân', dataIndex: 'drawnVnd', align: 'right', render: money }, { title: 'Trả gốc', dataIndex: 'repaidVnd', align: 'right', render: money },
-        ...(['openingCur', 'drawnCur', 'repaidCur', 'closingCur'] as const).map((k) => ({ title: `${{ openingCur: 'Dư nợ đầu kỳ', drawnCur: 'Giải ngân', repaidCur: 'Trả gốc', closingCur: 'Dư nợ cuối kỳ' }[k]} (nguyên tệ)`, dataIndex: k, align: 'right' as const, render: (v: string, r: ReportRow) => (r.currency === 'VND' ? '' : formatVnNumber(v, 4)) })),
-        { title: 'Dư nợ cuối kỳ (VND)', dataIndex: 'closingVnd', align: 'right', render: money },
-        { title: 'Lãi phải trả đầu kỳ', dataIndex: 'interestOpening', align: 'right', render: money }, { title: 'Lãi dự tính (LV)', dataIndex: 'interestEstimated', align: 'right', render: money },
-        { title: 'Lãi trích khác', dataIndex: 'interestOther', align: 'right', render: money }, { title: 'Lãi đã trả', dataIndex: 'interestPaid', align: 'right', render: money },
-        { title: 'Lãi phải trả cuối kỳ', dataIndex: 'interestClosing', align: 'right', render: money },
-        { title: 'Kỳ trả gốc kế tiếp', render: (_, r) => (r.nextDueDate ? `${formatVnDate(r.nextDueDate)}: ${money(r.nextDuePrincipal)}` : '') }]}
-      summary={() => t && (<Table.Summary.Row><Table.Summary.Cell index={0} colSpan={3}><b>Cộng</b></Table.Summary.Cell>
-        {(['openingVnd', 'drawnVnd', 'repaidVnd'] as const).map((k, i) => <Table.Summary.Cell key={k} index={3 + i} align="right"><b>{money(t[k])}</b></Table.Summary.Cell>)}
-        <Table.Summary.Cell index={6} colSpan={4} /><Table.Summary.Cell index={10} align="right"><b data-testid="report-total-closing">{money(t['closingVnd'])}</b></Table.Summary.Cell>
-        {(['interestOpening', 'interestEstimated', 'interestOther', 'interestPaid', 'interestClosing'] as const).map((k, i) => <Table.Summary.Cell key={k} index={11 + i} align="right"><b>{money(t[k])}</b></Table.Summary.Cell>)}
-        <Table.Summary.Cell index={16} /></Table.Summary.Row>)} />
-  </>);
+  return (
+    <>
+      {q.error && <Alert type="error" showIcon message={(q.error as Error).message} style={{ marginBottom: 12 }} />}
+      <Section bodyPadding={0}>
+        <Table<ReportRow> size="small" rowKey="id" loading={q.isLoading} dataSource={q.data?.rows ?? []} pagination={false} scroll={{ x: 2300 }} data-testid="loan-report" locale={{ emptyText: 'Chưa có khế ước' }}
+          columns={[{ title: 'Khế ước', dataIndex: 'code', fixed: 'left', width: 110 }, { title: 'Tên', dataIndex: 'name', width: 160 }, { title: 'Loại tiền', dataIndex: 'currency', width: 70 },
+            { title: 'Dư nợ đầu kỳ', dataIndex: 'openingVnd', align: 'right', render: money }, { title: 'Giải ngân', dataIndex: 'drawnVnd', align: 'right', render: money }, { title: 'Trả gốc', dataIndex: 'repaidVnd', align: 'right', render: money },
+            ...(['openingCur', 'drawnCur', 'repaidCur', 'closingCur'] as const).map((k) => ({ title: `${{ openingCur: 'Dư nợ đầu kỳ', drawnCur: 'Giải ngân', repaidCur: 'Trả gốc', closingCur: 'Dư nợ cuối kỳ' }[k]} (nguyên tệ)`, dataIndex: k, align: 'right' as const, render: (v: string, r: ReportRow) => (r.currency === 'VND' ? '' : formatVnNumber(v, 4)) })),
+            { title: 'Dư nợ cuối kỳ (VND)', dataIndex: 'closingVnd', align: 'right', render: money },
+            { title: 'Lãi phải trả đầu kỳ', dataIndex: 'interestOpening', align: 'right', render: money }, { title: 'Lãi dự tính (LV)', dataIndex: 'interestEstimated', align: 'right', render: money },
+            { title: 'Lãi trích khác', dataIndex: 'interestOther', align: 'right', render: money }, { title: 'Lãi đã trả', dataIndex: 'interestPaid', align: 'right', render: money },
+            { title: 'Lãi phải trả cuối kỳ', dataIndex: 'interestClosing', align: 'right', render: money },
+            { title: 'Kỳ trả gốc kế tiếp', render: (_, r) => (r.nextDueDate ? `${formatVnDate(r.nextDueDate)}: ${money(r.nextDuePrincipal)}` : '') }]}
+          summary={() => t && (<Table.Summary.Row><Table.Summary.Cell index={0} colSpan={3}><b>Cộng</b></Table.Summary.Cell>
+            {(['openingVnd', 'drawnVnd', 'repaidVnd'] as const).map((k, i) => <Table.Summary.Cell key={k} index={3 + i} align="right"><b>{money(t[k])}</b></Table.Summary.Cell>)}
+            <Table.Summary.Cell index={6} colSpan={4} /><Table.Summary.Cell index={10} align="right"><b data-testid="report-total-closing">{money(t['closingVnd'])}</b></Table.Summary.Cell>
+            {(['interestOpening', 'interestEstimated', 'interestOther', 'interestPaid', 'interestClosing'] as const).map((k, i) => <Table.Summary.Cell key={k} index={11 + i} align="right"><b>{money(t[k])}</b></Table.Summary.Cell>)}
+            <Table.Summary.Cell index={16} /></Table.Summary.Row>)} />
+      </Section>
+    </>
+  );
 }
 
 export default function LoansPage() {
   const { me, can } = useAuth();
   const [f, setF] = useRememberedFilter('loans', { q: '', status: '' as string }, `${me?.tenantId}:${me?.userId}`);
+  const [reportF, setReportF] = useRememberedFilter('loan-report', { from: `${todayVn().slice(0, 4)}-01-01`, to: todayVn() }, `${me?.tenantId}:${me?.userId}`);
   const [open, setOpen] = useState<LoanRow | 'new' | null>(null); const [tab, setTab] = useState('list');
   const list = useQuery({ queryKey: ['loans'], queryFn: () => api<LoanRow[]>('/api/loans') });
   const k = f.q.trim().toLowerCase();
   const rows = (list.data ?? []).filter((r) => (!f.status || r.status === f.status) && (!k || r.code.toLowerCase().includes(k) || r.name.toLowerCase().includes(k)));
   useHotkeys({ Insert: () => { if (can('loan.create') && !open && tab === 'list') setOpen('new'); } });
+  const reportUrl = `/api/loans/report?from=${reportF.from}&to=${reportF.to}`;
+
   return (
-    <div>
-      <h2 style={{ marginTop: 0 }}>Khế ước vay</h2>
-      <Tabs activeKey={tab} onChange={setTab} items={[
-        { key: 'list', label: 'Danh sách khế ước', children: (<>
-          <Space wrap style={{ marginBottom: 12 }}>
+    <>
+      <PageHeader
+        title="Khế ước vay"
+        description="Theo dõi khế ước vay: giải ngân, lãi suất, lịch trả gốc, trả gốc và trả lãi"
+        extra={tab === 'list' ? (
+          can('loan.create') && <Button type="primary" onClick={() => setOpen('new')}>Thêm (Insert)</Button>
+        ) : (
+          can('report.print') && (
+            <Space>
+              <Button onClick={() => window.open(`${reportUrl}&format=pdf`, '_blank')}>In PDF</Button>
+              <Button onClick={() => window.open(`${reportUrl}&format=xlsx`, '_blank')}>Xuất Excel</Button>
+            </Space>
+          )
+        )}
+      >
+        {tab === 'list' ? (
+          <Toolbar>
             <Input.Search placeholder="Tìm theo số, tên" allowClear defaultValue={f.q} onSearch={(q) => setF({ ...f, q })} style={{ width: 220 }} />
-            <select aria-label="Trạng thái" value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}><option value="">Mọi trạng thái</option><option value="draft">Nháp</option><option value="active">Đang hiệu lực</option><option value="terminated">Đã tất toán</option></select>
-            {can('loan.create') && <Button type="primary" onClick={() => setOpen('new')}>Thêm (Insert)</Button>}
-          </Space>
-          <Table<LoanRow> size="small" rowKey="id" loading={list.isLoading} dataSource={rows} pagination={{ pageSize: 50, hideOnSinglePage: true }} data-testid="loans-table" locale={{ emptyText: 'Chưa có khế ước' }}
-            onRow={(r) => ({ onClick: () => setOpen(r), tabIndex: 0, onKeyDown: (e) => { if (e.key === 'Enter') setOpen(r); }, style: { cursor: 'pointer' } })}
-            columns={[{ title: 'Số khế ước', dataIndex: 'code' }, { title: 'Tên', dataIndex: 'name' }, { title: 'Bên cho vay', dataIndex: 'partyName' }, { title: 'Loại tiền', dataIndex: 'currencyCode' },
-              { title: 'Hạn mức', dataIndex: 'value', align: 'right', render: money }, { title: 'Dư nợ gốc', dataIndex: 'outstanding', align: 'right', render: money }, { title: 'Lãi phải trả (VND)', dataIndex: 'interestPayable', align: 'right', render: money },
-              { title: 'Đáo hạn', dataIndex: 'validTo', render: (d: string | null) => (d ? formatVnDate(d) : '') }, { title: 'Trạng thái', dataIndex: 'status', render: (s: string) => STATUS_LABEL[s] ?? s }]} />
-        </>) },
-        ...(can('report.view') ? [{ key: 'report', label: 'Sổ theo dõi khế ước vay', children: <LoanReportTab /> }] : []),
+            <Select aria-label="Trạng thái" value={f.status} onChange={(v) => setF({ ...f, status: v })} style={{ width: 150 }}
+              options={[{ value: '', label: 'Mọi trạng thái' }, { value: 'draft', label: 'Nháp' }, { value: 'active', label: 'Đang hiệu lực' }, { value: 'terminated', label: 'Đã tất toán' }]} />
+            <span style={{ marginLeft: 'auto', color: COLOR.textSecondary, fontSize: 13 }}>
+              {formatVnNumber(String(rows.length))} khế ước
+            </span>
+          </Toolbar>
+        ) : (
+          <Toolbar>
+            <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(reportF.from), dayjs(reportF.to)]} onChange={(r) => r?.[0] && r[1] && setReportF({ from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
+          </Toolbar>
+        )}
+      </PageHeader>
+      <Tabs activeKey={tab} onChange={setTab} style={{ marginBottom: 12 }} items={[
+        { key: 'list', label: 'Danh sách khế ước', children: (
+          <>
+            {list.error && <Alert type="error" showIcon message={(list.error as Error).message} style={{ marginBottom: 12 }} />}
+            <Section bodyPadding={0}>
+              <Table<LoanRow> size="small" rowKey="id" loading={list.isLoading} dataSource={rows} pagination={{ pageSize: 50, hideOnSinglePage: true }} data-testid="loans-table" locale={{ emptyText: 'Chưa có khế ước' }}
+                onRow={(r) => ({ onClick: () => setOpen(r), tabIndex: 0, onKeyDown: (e) => { if (e.key === 'Enter') setOpen(r); }, style: { cursor: 'pointer' } })}
+                columns={[{ title: 'Số khế ước', dataIndex: 'code' }, { title: 'Tên', dataIndex: 'name' }, { title: 'Bên cho vay', dataIndex: 'partyName' }, { title: 'Loại tiền', dataIndex: 'currencyCode' },
+                  { title: 'Hạn mức', dataIndex: 'value', align: 'right', render: money }, { title: 'Dư nợ gốc', dataIndex: 'outstanding', align: 'right', render: money }, { title: 'Lãi phải trả (VND)', dataIndex: 'interestPayable', align: 'right', render: money },
+                  { title: 'Đáo hạn', dataIndex: 'validTo', render: (d: string | null) => (d ? formatVnDate(d) : '') }, { title: 'Trạng thái', dataIndex: 'status', render: (s: string) => STATUS_LABEL[s] ?? s }]} />
+            </Section>
+          </>
+        ) },
+        ...(can('report.view') ? [{ key: 'report', label: 'Sổ theo dõi khế ước vay', children: <LoanReportTab filter={reportF} /> }] : []),
       ]} />
       {open && <LoanDrawer loan={open} onClose={() => setOpen(null)} />}
-    </div>);
+    </>
+  );
 }
