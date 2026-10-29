@@ -4,7 +4,7 @@ import { Button, DatePicker, Form, Input, Modal, Radio, Space, Table, message } 
 import dayjs from 'dayjs';
 import type { ColDef } from 'ag-grid-community';
 import { D, formatVnNumber, parseVnNumber } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useHotkeys, useRememberedFilter } from '@kt/ui';
+import { COLOR, KeyboardGrid, LookupSelect, PageHeader, Section, Toolbar, useHotkeys, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { costObjectPick } from '../lookups.js';
@@ -60,18 +60,30 @@ export default function CostNormsPage() {
     window.addEventListener('keydown', onKey, true); return () => window.removeEventListener('keydown', onKey, true);
   }, [editing, form]);
   useHotkeys({ Insert: () => { if (can('costing_obj.create') && !editing) void open('new'); } });
+  const count = list.data?.length;
   return (<>
-    <Space style={{ marginBottom: 12 }} wrap>
-      <h2 style={{ margin: 0 }}>Định mức nguyên vật liệu</h2>
-      <Input.Search placeholder="Tìm sản phẩm, đối tượng…" defaultValue={filter.q} onSearch={(q) => setFilter({ q })} style={{ width: 280 }} allowClear aria-label="Tìm định mức" />
-      {can('costing_obj.create') && <Button type="primary" onClick={() => void open('new')}>Thêm (Insert)</Button>}
-    </Space>
-    <Table<Head> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 50, hideOnSinglePage: true }} data-testid="cost-norms" columns={[
-      { title: 'Áp dụng cho', render: (_v, r) => (r.itemCode ? `Sản phẩm ${r.itemCode} - ${r.itemName}` : `Đối tượng ${r.costObjectCode} - ${r.costObjectName}`) },
-      { title: 'Hiệu lực', width: 220, render: (_v, r) => `${vnDate(r.validFrom)} - ${r.validTo ? vnDate(r.validTo) : 'không giới hạn'}` },
-      { title: 'Số dòng NVL', dataIndex: 'lineCount', align: 'right', width: 110 }, { title: 'Ghi chú', dataIndex: 'note' },
-      { title: '', width: 120, render: (_v, r) => (<Space size={0}>{can('costing_obj.update') && <Button type="link" size="small" onClick={() => void open(r.id)}>Sửa</Button>}
-        {can('costing_obj.delete') && <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: 'Xóa định mức này?', okText: 'Xóa', cancelText: 'Không', onOk: () => del.mutateAsync(r.id) })}>Xóa</Button>}</Space>) }]} />
+    <PageHeader
+      title="Định mức nguyên vật liệu"
+      description="Lượng nguyên vật liệu cho một đơn vị sản phẩm và tỷ lệ hao hụt theo khoảng thời gian hiệu lực"
+      extra={can('costing_obj.create') && <Button type="primary" onClick={() => void open('new')}>Thêm (Insert)</Button>}
+    >
+      <Toolbar>
+        <Input.Search placeholder="Tìm sản phẩm, đối tượng…" defaultValue={filter.q} onSearch={(q) => setFilter({ q })} style={{ width: 280 }} allowClear aria-label="Tìm định mức" />
+        {count !== undefined && (
+          <span style={{ marginLeft: 'auto', color: COLOR.textSecondary, fontSize: 13 }}>
+            {formatVnNumber(String(count))} định mức
+          </span>
+        )}
+      </Toolbar>
+    </PageHeader>
+    <Section bodyPadding={0}>
+      <Table<Head> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 50, hideOnSinglePage: true }} data-testid="cost-norms" columns={[
+        { title: 'Áp dụng cho', render: (_v, r) => (r.itemCode ? `Sản phẩm ${r.itemCode} - ${r.itemName}` : `Đối tượng ${r.costObjectCode} - ${r.costObjectName}`) },
+        { title: 'Hiệu lực', width: 220, render: (_v, r) => `${vnDate(r.validFrom)} - ${r.validTo ? vnDate(r.validTo) : 'không giới hạn'}` },
+        { title: 'Số dòng NVL', dataIndex: 'lineCount', align: 'right', width: 110 }, { title: 'Ghi chú', dataIndex: 'note' },
+        { title: '', width: 120, render: (_v, r) => (<Space size={0}>{can('costing_obj.update') && <Button type="link" size="small" onClick={() => void open(r.id)}>Sửa</Button>}
+          {can('costing_obj.delete') && <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: 'Xóa định mức này?', okText: 'Xóa', cancelText: 'Không', onOk: () => del.mutateAsync(r.id) })}>Xóa</Button>}</Space>) }]} />
+    </Section>
     <Modal title={editing === 'new' ? 'Thêm định mức nguyên vật liệu' : 'Sửa định mức nguyên vật liệu'} open={editing !== null} onCancel={() => setEditing(null)} onOk={() => form.submit()}
       okText="Lưu (Ctrl+S)" cancelText="Bỏ qua" okButtonProps={{ disabled: !canEdit }} confirmLoading={save.isPending} width={960} destroyOnHidden forceRender>
       <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v)}>

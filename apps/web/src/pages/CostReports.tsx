@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Alert, Button, Select, Space, Tabs, Tag } from 'antd';
+import { Alert, Button, Select, Tabs, Tag } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import { formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useRememberedFilter } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, PageHeader, Toolbar, useRememberedFilter } from '@kt/ui';
 import { api, type ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { costObjectPick } from '../lookups.js';
@@ -52,32 +52,48 @@ export default function CostReportsPage() {
   const columns = useMemo(() => (data.data?.columns ?? []).map(toColDef), [data.data]);
   const open = (format: 'html' | 'xlsx') => window.open(`${url}&format=${format}`, '_blank');
 
-  if (!me?.sensitive.includes('view_cost')) return <Alert type="warning" showIcon message="Báo cáo giá thành là dữ liệu giá vốn: tài khoản của bạn chưa được cấp quyền xem giá vốn." />;
+  const desc = 'Thẻ tính giá thành, sổ chi tiết TK 154 theo đối tượng, tổng hợp chi phí sản xuất theo khoản mục và so sánh định mức nguyên vật liệu';
+  if (!me?.sensitive.includes('view_cost')) {
+    return (
+      <>
+        <PageHeader title="Báo cáo giá thành" description={desc} />
+        <Alert type="warning" showIcon message="Báo cáo giá thành là dữ liệu giá vốn: tài khoản của bạn chưa được cấp quyền xem giá vốn." />
+      </>
+    );
+  }
   const d = data.data; const err = data.error as ApiError | null;
   const months = Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `Tháng ${i + 1}` }));
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Báo cáo giá thành</h2>
-        <Select<number> aria-label="Năm tài chính" style={{ width: 120 }} value={f.year} onChange={(year) => setF({ ...f, year })}
-          options={[...new Set([...(years.data ?? []).map((y) => y.fiscalYear), f.year])].sort().map((y) => ({ value: y, label: `Năm ${y}` }))} />
-        <Select<number> aria-label="Kỳ" style={{ width: 110 }} value={f.month} virtual={false} onChange={(month) => setF({ ...f, month, toMonth: Math.max(f.toMonth, month) })} options={months} />
-        {tab === 'expense-summary' && <Select<number> aria-label="Đến tháng" style={{ width: 130 }} value={f.toMonth > f.month ? f.toMonth : f.month} virtual={false} onChange={(toMonth) => setF({ ...f, toMonth })} options={months.filter((m) => m.value >= f.month)} />}
-        <LookupSelect catalog="cost_object" fetcher={costObjectPick} valueField="id" value={f.objectId ? String(f.objectId) : null} style={{ width: 280 }} placeholder="Mọi đối tượng (F4)" aria-label="Đối tượng tập hợp chi phí"
-          onChange={(id) => setF({ ...f, objectId: id ? Number(id) : 0 })} />
-        <Button onClick={() => open('html')} disabled={!d}>In</Button>
-        {can('report.print') && <Button onClick={() => open('xlsx')} disabled={!d}>Xuất Excel</Button>}
-      </Space>
-      <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={TABS.map((t) => ({ key: t.key, label: t.label }))} />
-      {err ? <Alert type={err.status === 404 ? 'info' : 'error'} showIcon message={err.status === 404 && tab !== 'ledger-154' ? `Kỳ ${String(f.month).padStart(2, '0')}/${f.year} chưa chạy giá thành: chạy ở màn Tính giá thành trước khi xem báo cáo này.` : err.message} />
-        : !d ? <Alert type="info" message="Đang tải…" /> : <>
-          {tab === 'card' && <Alert type="info" showIcon message="Thẻ tính giá thành theo mẫu nội bộ; chưa in số mẫu S37-DN vì chưa đối chiếu với văn bản gốc." />}
-          {d.stale && <Alert type="warning" showIcon message="Lần chạy giá thành của kỳ cần chạy lại" description="Chi phí, dở dang đầu kỳ hoặc phiếu nhập kho đã đổi sau lần chạy; số liệu thẻ là kết quả đã lưu." />}
-          {d.intro.map((t) => <Alert key={t} type="warning" showIcon message={t} />)}
-          <ReconAlert r={d.reconciliation} />
-          <KeyboardGrid<Row> rows={d.rows} columns={columns} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly lockRows animateRows={false} height="calc(100vh - 420px)"
-            {...(d.footer ? { pinnedBottomRows: [{ ...d.footer, isBold: true }] } : {})} />
+    <>
+      <PageHeader
+        title="Báo cáo giá thành"
+        description={desc}
+        extra={<>
+          <Button onClick={() => open('html')} disabled={!d}>In</Button>
+          {can('report.print') && <Button onClick={() => open('xlsx')} disabled={!d}>Xuất Excel</Button>}
         </>}
-    </Space>
+      >
+        <Toolbar>
+          <Select<number> aria-label="Năm tài chính" style={{ width: 120 }} value={f.year} onChange={(year) => setF({ ...f, year })}
+            options={[...new Set([...(years.data ?? []).map((y) => y.fiscalYear), f.year])].sort().map((y) => ({ value: y, label: `Năm ${y}` }))} />
+          <Select<number> aria-label="Kỳ" style={{ width: 110 }} value={f.month} virtual={false} onChange={(month) => setF({ ...f, month, toMonth: Math.max(f.toMonth, month) })} options={months} />
+          {tab === 'expense-summary' && <Select<number> aria-label="Đến tháng" style={{ width: 130 }} value={f.toMonth > f.month ? f.toMonth : f.month} virtual={false} onChange={(toMonth) => setF({ ...f, toMonth })} options={months.filter((m) => m.value >= f.month)} />}
+          <LookupSelect catalog="cost_object" fetcher={costObjectPick} valueField="id" value={f.objectId ? String(f.objectId) : null} style={{ width: 280 }} placeholder="Mọi đối tượng (F4)" aria-label="Đối tượng tập hợp chi phí"
+            onChange={(id) => setF({ ...f, objectId: id ? Number(id) : 0 })} />
+        </Toolbar>
+      </PageHeader>
+      <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={TABS.map((t) => ({ key: t.key, label: t.label }))} style={{ marginBottom: 12 }} />
+      {err ? <Alert type={err.status === 404 ? 'info' : 'error'} showIcon message={err.status === 404 && tab !== 'ledger-154' ? `Kỳ ${String(f.month).padStart(2, '0')}/${f.year} chưa chạy giá thành: chạy ở màn Tính giá thành trước khi xem báo cáo này.` : err.message} style={{ marginBottom: 12 }} />
+        : !d ? <Alert type="info" message="Đang tải…" style={{ marginBottom: 12 }} /> : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {tab === 'card' && <Alert type="info" showIcon message="Thẻ tính giá thành theo mẫu nội bộ; chưa in số mẫu S37-DN vì chưa đối chiếu với văn bản gốc." />}
+            {d.stale && <Alert type="warning" showIcon message="Lần chạy giá thành của kỳ cần chạy lại" description="Chi phí, dở dang đầu kỳ hoặc phiếu nhập kho đã đổi sau lần chạy; số liệu thẻ là kết quả đã lưu." />}
+            {d.intro.map((t) => <Alert key={t} type="warning" showIcon message={t} />)}
+            <ReconAlert r={d.reconciliation} />
+            <KeyboardGrid<Row> rows={d.rows} columns={columns} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly lockRows animateRows={false} height="calc(100vh - 420px)"
+              {...(d.footer ? { pinnedBottomRows: [{ ...d.footer, isBold: true }] } : {})} />
+          </div>
+        )}
+    </>
   );
 }

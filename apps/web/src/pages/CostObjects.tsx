@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, message } from 'antd';
-import { LookupSelect, useHotkeys, useRememberedFilter, type LookupRow } from '@kt/ui';
+import { formatVnNumber } from '@kt/domain';
+import { COLOR, LookupSelect, PageHeader, Section, Toolbar, useHotkeys, useRememberedFilter, type LookupRow } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -39,28 +40,40 @@ export default function CostObjectsPage() {
   const add = () => { form.resetFields(); form.setFieldsValue({ kind: 'product', isActive: true }); setEditing('new'); };
   useHotkeys({ Insert: () => { if (can('costing_obj.create') && !editing) add(); } });
   const canEdit = can('costing_obj.update');
+  const count = list.data?.rows?.length;
   return (
     <>
-      <Space style={{ marginBottom: 12 }} wrap>
-        <h2 style={{ margin: 0 }}>Đối tượng tập hợp chi phí</h2>
-        <Input.Search placeholder="Tìm mã, tên…" defaultValue={filter.q} onSearch={(q) => setFilter({ ...filter, q })} style={{ width: 260 }} allowClear aria-label="Tìm đối tượng" />
-        <Select value={filter.kind} onChange={(k: Kind | '') => setFilter({ ...filter, kind: k })} style={{ width: 190 }} aria-label="Loại đối tượng"
-          options={[{ value: '', label: 'Mọi loại' }, ...Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }))]} />
-        {can('costing_obj.create') && <Button type="primary" onClick={add}>Thêm (Insert)</Button>}
-      </Space>
-      <Table<CostObject> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data?.rows ?? []} pagination={{ pageSize: 50, hideOnSinglePage: true }} data-testid="cost-objects"
-        columns={[
-          { title: 'Mã', dataIndex: 'code', width: 130 }, { title: 'Tên đối tượng', dataIndex: 'name' },
-          { title: 'Loại', dataIndex: 'kind', width: 170, render: (k: Kind) => KIND_LABEL[k] },
-          { title: 'Tham chiếu', width: 160, render: (_v, r) => r[REF[r.kind].key] },
-          { title: 'Phương pháp giá thành', dataIndex: 'method', width: 170, render: (m: string | null) => (m ? METHOD_LABEL[m] : '') },
-          { title: 'ĐVT', dataIndex: 'unit', width: 80 },
-          { title: 'Trạng thái', dataIndex: 'isActive', width: 110, render: (a: boolean) => (a ? <Tag color="green">Đang dùng</Tag> : <Tag>Ngưng dùng</Tag>) },
-          { title: '', width: 120, render: (_v, r) => <Space size={0}>
-            {canEdit && <Button type="link" size="small" onClick={() => { form.resetFields(); form.setFieldsValue(r); setEditing(r); }}>Sửa</Button>}
-            {can('costing_obj.delete') && <Popconfirm title={`Xóa đối tượng ${r.code}?`} okText="Xóa" cancelText="Không" onConfirm={() => del.mutate(r.id)}><Button type="link" size="small" danger>Xóa</Button></Popconfirm>}
-          </Space> },
-        ]} />
+      <PageHeader
+        title="Đối tượng tập hợp chi phí"
+        description="Sản phẩm, vụ việc, công trình, đơn hàng hoặc hợp đồng để tập hợp chi phí sản xuất"
+        extra={can('costing_obj.create') && <Button type="primary" onClick={add}>Thêm (Insert)</Button>}
+      >
+        <Toolbar>
+          <Input.Search placeholder="Tìm mã, tên…" defaultValue={filter.q} onSearch={(q) => setFilter({ ...filter, q })} style={{ width: 260 }} allowClear aria-label="Tìm đối tượng" />
+          <Select value={filter.kind} onChange={(k: Kind | '') => setFilter({ ...filter, kind: k })} style={{ width: 190 }} aria-label="Loại đối tượng"
+            options={[{ value: '', label: 'Mọi loại' }, ...Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }))]} />
+          {count !== undefined && (
+            <span style={{ marginLeft: 'auto', color: COLOR.textSecondary, fontSize: 13 }}>
+              {formatVnNumber(String(count))} đối tượng
+            </span>
+          )}
+        </Toolbar>
+      </PageHeader>
+      <Section bodyPadding={0}>
+        <Table<CostObject> size="small" rowKey="id" loading={list.isLoading} dataSource={list.data?.rows ?? []} pagination={{ pageSize: 50, hideOnSinglePage: true }} data-testid="cost-objects"
+          columns={[
+            { title: 'Mã', dataIndex: 'code', width: 130 }, { title: 'Tên đối tượng', dataIndex: 'name' },
+            { title: 'Loại', dataIndex: 'kind', width: 170, render: (k: Kind) => KIND_LABEL[k] },
+            { title: 'Tham chiếu', width: 160, render: (_v, r) => r[REF[r.kind].key] },
+            { title: 'Phương pháp giá thành', dataIndex: 'method', width: 170, render: (m: string | null) => (m ? METHOD_LABEL[m] : '') },
+            { title: 'ĐVT', dataIndex: 'unit', width: 80 },
+            { title: 'Trạng thái', dataIndex: 'isActive', width: 110, render: (a: boolean) => (a ? <Tag color="green">Đang dùng</Tag> : <Tag>Ngưng dùng</Tag>) },
+            { title: '', width: 120, render: (_v, r) => <Space size={0}>
+              {canEdit && <Button type="link" size="small" onClick={() => { form.resetFields(); form.setFieldsValue(r); setEditing(r); }}>Sửa</Button>}
+              {can('costing_obj.delete') && <Popconfirm title={`Xóa đối tượng ${r.code}?`} okText="Xóa" cancelText="Không" onConfirm={() => del.mutate(r.id)}><Button type="link" size="small" danger>Xóa</Button></Popconfirm>}
+            </Space> },
+          ]} />
+      </Section>
       <Modal title={editing === 'new' ? 'Thêm đối tượng tập hợp chi phí' : 'Sửa đối tượng tập hợp chi phí'} open={!!editing} onCancel={() => setEditing(null)} onOk={() => form.submit()}
         okText="Lưu (Ctrl+S)" cancelText="Bỏ qua" confirmLoading={save.isPending} destroyOnHidden forceRender width={620}>
         <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v)}
