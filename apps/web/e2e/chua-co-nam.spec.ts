@@ -27,6 +27,6 @@ test('Công ty chưa có năm tài chính: các màn cần chọn năm giải th
   await expect(page.getByTestId('no-fiscal-year')).toContainText('Công ty chưa có năm tài chính');
   await page.getByTestId('no-fiscal-year').getByRole('button', { name: 'Thêm năm tài chính' }).click();
   await expect(page.getByRole('dialog', { name: 'Thêm năm tài chính' })).toBeVisible();
-  await page.keyboard.press('Escape');
+  await page.getByRole('dialog', { name: 'Thêm năm tài chính' }).getByRole('button', { name: 'Close', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Thêm năm tài chính' })).toBeHidden();
 });
