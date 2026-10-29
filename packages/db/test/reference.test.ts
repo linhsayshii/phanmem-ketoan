@@ -59,7 +59,7 @@ describe('dữ liệu tham chiếu', () => {
       const expected = isReportComplete(regime, code) ? loadReportTemplates({ onlyComplete: true }).filter((r) => r.regime === regime && r.reportCode === code).length : 0;
       expect(await n(regime, code), `${regime}/${code}`).toBe(expected);
     }
-    expect(await n('TT200', 'B02')).toBe(0);
+    expect(await n('TT200', 'B02')).toBeGreaterThan(0); // dòng thừa 999 của TT200 đã bị xóa khi đồng bộ (đếm khớp tệp ở vòng lặp trên)
     await expect(sql`INSERT INTO report_template(regime, report_code, line_code, label, source, side, sort_order) VALUES ('TT133','B01','1','x','balance','net_debit',1)`.execute(t.db)).rejects.toThrow(/permission denied/);
   });
   it('legal_param nạp từ legal-params.json; đồng bộ lại là upsert theo (mã, ngày hiệu lực): sửa dòng lệch, xóa dòng không còn trong tệp; app_user không sửa được', async () => {

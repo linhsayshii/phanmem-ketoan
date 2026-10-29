@@ -17,10 +17,8 @@
   "TT200": {
     "label": "TT 200/2014/TT-BTC (dữ liệu 2025 trở về trước)",
     "effectiveFrom": "2015-01-01", "effectiveTo": "2025-12-31", "effectiveVerified": true,
-    "gates": { "coa": true, "reports": false },
-    "missing": [
-      "Mẫu B01, B02, B03 của TT 200 (Phụ lục 2; chưa có định nghĩa báo cáo) và quy tắc tỷ giá (fxRules_TT200 = false)"
-    ],
-    "source": "effectiveFrom: Điều 128 TT 200/2014/TT-BTC (Công báo số 289 + 290 ngày 28/02/2015): áp dụng cho năm tài chính bắt đầu hoặc sau ngày 01/01/2015. effectiveTo: đặc tả mục 10 (TT 99/2025 thay TT 200 từ năm tài chính 01/01/2026), điều khoản thi hành của TT 99 chưa đối chiếu. coa: Phụ lục 1 đã đối chiếu, xem NOTICE.md của gói coa-data."
+    "gates": { "coa": true, "reports": true },
+    "missing": [],
+    "source": "effectiveFrom: Điều 128 TT 200/2014/TT-BTC (Công báo số 289 + 290 ngày 28/02/2015): áp dụng cho năm tài chính bắt đầu hoặc sau ngày 01/01/2015. effectiveTo: đặc tả mục 10 (TT 99/2025 thay TT 200 từ năm tài chính 01/01/2026), điều khoản thi hành của TT 99 chưa đối chiếu. coa: Phụ lục 1 đã đối chiếu, xem NOTICE.md của gói coa-data. reports: B01-DN, B02-DN, B03-DN (trực tiếp) nhập từ Phụ lục 2 và Điều 112-114 (Công báo số 283 + 284 và 289 + 290), xem reports/status.json. Chưa dựng: B03 gián tiếp, B01/CDHĐ-DNKLT (doanh nghiệp không đáp ứng giả định hoạt động liên tục), B09-DN và các mẫu giữa niên độ."
   }
 }

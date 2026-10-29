@@ -25,13 +25,13 @@ Mẫu 01/GTGT theo Thông tư 89/2026 không có dòng 8%; phần mềm tạm g�
 
 ## 4. Chế độ kế toán và năm tài chính
 
-- Hiệu lực và cổng của TT99, TT133, TT200 lưu thành dữ liệu (`packages/coa-data/data/regimes/accounting.json`): TT99 áp dụng cho năm tài chính bắt đầu từ 01/01/2026; TT200 chỉ còn cho dữ liệu đến hết 2025 hệ thống tài khoản đã đối chiếu Phụ lục 1 (từ 29/10/2026), nhưng chưa có B01/B02/B03 (nên "Chưa dùng cho kế toán thật" ở Hệ thống > Chế độ kế toán).
+- Hiệu lực và cổng của TT99, TT133, TT200 lưu thành dữ liệu (`packages/coa-data/data/regimes/accounting.json`): TT99 áp dụng cho năm tài chính bắt đầu từ 01/01/2026; TT200 chỉ còn cho dữ liệu đến hết 2025; hệ thống tài khoản đã đối chiếu Phụ lục 1, báo cáo B01-DN, B02-DN, B03-DN (trực tiếp) nhập từ Phụ lục 2 và Điều 112-114, quy tắc tỷ giá từ Điều 69 (cập nhật 29/10/2026), nên TT200 "Sẵn sàng" ở Hệ thống > Chế độ kế toán cho năm tài chính 2015–2025. Chưa có B03 gián tiếp, B01 cho doanh nghiệp không đáp ứng giả định hoạt động liên tục, B09-DN và các mẫu giữa niên độ.
 - Tạo năm tài chính theo chế độ chưa sẵn sàng hoặc ngày bắt đầu ngoài hiệu lực: 409 `REGIME_NOT_READY` / `REGIME_NOT_EFFECTIVE`. Hộp thoại "Tạo năm tài chính theo chế độ này?" cho phép "Vẫn tạo" khi cần xem lại dữ liệu cũ; việc này ghi nhật ký (`fiscal_year_regime_override`).
 - TT58 và TT152 chưa có hệ thống tài khoản nên không có cách xác nhận: vẫn trả 409 `COA_TEMPLATE_PENDING`.
 
 ## 5. Số mẫu in trên sổ và báo cáo
 
-Số mẫu chỉ in khi đã đối chiếu văn bản gốc. Đã bỏ: Nhật ký chung (S03a), Sổ Cái (S03b), sổ chi tiết theo đối tượng (S38/S20-DNN), Bảng cân đối số phát sinh (S06 trùng số với sổ chi tiết vật liệu), các sổ Chứng từ ghi sổ (S02a, S02b, S02c1) và mọi số mẫu, dòng "Ban hành theo" của TT200. Các sổ này vẫn in đủ nội dung, chỉ không có dòng "Mẫu số". Còn giữ: B01/B02/B03 của TT99 và TT133, chứng từ tiền, kho, TSCĐ, sổ quỹ, sổ tiền gửi, sổ chi tiết vật liệu và thẻ kho (đã đối chiếu).
+Số mẫu chỉ in khi đã đối chiếu văn bản gốc. Đã bỏ: Nhật ký chung (S03a), Sổ Cái (S03b), sổ chi tiết theo đối tượng (S38/S20-DNN), Bảng cân đối số phát sinh (S06 trùng số với sổ chi tiết vật liệu), các sổ Chứng từ ghi sổ (S02a, S02b, S02c1) và mọi số mẫu, dòng "Ban hành theo" của chứng từ và sổ TT200 (Phụ lục 3 và 4 của TT200 chưa có bản gốc). Các sổ này vẫn in đủ nội dung, chỉ không có dòng "Mẫu số". Còn giữ: B01/B02/B03 của TT99, TT133 và TT200 (B01-DN, B02-DN, B03-DN), chứng từ tiền, kho, TSCĐ, sổ quỹ, sổ tiền gửi, sổ chi tiết vật liệu và thẻ kho (đã đối chiếu).
 
 ## 6. Chú thích trên Báo cáo tài chính
 
@@ -51,4 +51,4 @@ B01/B02/B03 in thêm chú thích của phần mềm: chỉ tiêu luôn bằng 0 
 - Ngày bắt đầu hiệu lực của TT99 (01/01/2026) và ngày hết hiệu lực của TT200 lấy từ đặc tả mục 10, chưa đối chiếu lại điều khoản thi hành của văn bản gốc TT 99/2025.
 - Số mẫu S03a, S03b, S38, S06, S02 của TT99 và TT133 còn để trống chờ đối chiếu Phụ lục sổ kế toán.
 - Tờ khai 01/GTGT chưa có chỉ tiêu 8% riêng (chờ hướng dẫn); XML HTKK chưa kiểm chứng.
-- Chưa làm: cảnh báo khi đánh giá lại tỷ giá theo TT200 (quy tắc chưa đối chiếu), lãi vay ngoại tệ theo đơn vị nhỏ nhất của loại tiền, nguồn văn bản của sơ đồ kết chuyển, tách câu dẫn luật khỏi mã.
+- Chưa làm: tách khoản trả trước, người mua trả trước khỏi khoản mục tiền tệ khi đánh giá lại tỷ giá TT200, lãi vay ngoại tệ theo đơn vị nhỏ nhất của loại tiền, nguồn văn bản của sơ đồ kết chuyển, tách câu dẫn luật khỏi mã.

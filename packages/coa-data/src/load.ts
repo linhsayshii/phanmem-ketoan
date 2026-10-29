@@ -28,13 +28,13 @@ export interface ClosingStepTemplate { stepOrder: number; name: string; mode: 't
 export function loadDefaultClosingSteps(regime: Regime): ClosingStepTemplate[] { return JSON.parse(readFileSync(dataPath('closing-steps', `${regime.toLowerCase()}.json`), 'utf8')) as ClosingStepTemplate[]; }
 
 export interface ReportTemplateRow { regime: Regime; reportCode: string; lineCode: string; label: string; parentLineCode: string | null; source: Source; side: Side; formula: string | null; sortOrder: number; isBold: boolean; negate: boolean; noteRef: string | null; labelEn: string | null }
-export type ReportStatus = Record<'tt99' | 'tt133', Record<string, boolean | string>>;
-export const REPORT_REGIMES: Regime[] = ['TT99', 'TT133'];
+export type ReportStatus = Record<'tt99' | 'tt133' | 'tt200', Record<string, boolean | string>>;
+export const REPORT_REGIMES: Regime[] = ['TT99', 'TT133', 'TT200'];
 export const REPORT_CODES = ['B01', 'B02', 'B03'] as const;
 const REPORT_HEADER = 'line_code,label,parent_line_code,source,side,formula,is_bold,negate,note_ref';
 const SOURCES: string[] = ['balance', 'movement', 'pair', 'lines']; const SIDES: string[] = ['debit', 'credit', 'net_debit', 'net_credit'];
 export function reportStatus(): ReportStatus { return JSON.parse(readFileSync(dataPath('reports', 'status.json'), 'utf8')) as ReportStatus; }
-export function isReportComplete(regime: Regime, code: string): boolean { return reportStatus()[regime.toLowerCase() as 'tt99' | 'tt133']?.[code] === true; }
+export function isReportComplete(regime: Regime, code: string): boolean { return reportStatus()[regime.toLowerCase() as 'tt99' | 'tt133' | 'tt200']?.[code] === true; }
 // Chỉ tiêu để 0 cố định và cách lấy số gần đúng của B01/B02/B03 (data/reports/approximations.json); chế độ hoặc báo cáo không có mục thì rỗng.
 export interface ReportApprox { fixedZero: string[]; approx: string[] }
 export function reportApproximations(regime: string, code: string): ReportApprox {

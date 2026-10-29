@@ -22,8 +22,8 @@
     "lossAccount": "635",
     "revalAccount": "4131",
     "transferToPnl": true,
-    "assetRate": "transfer_avg",
-    "liabilityRate": "transfer_avg",
-    "source": "chưa có văn bản gốc trong ~/legal-docs; dùng 515, 635 và 4131 (Chênh lệch tỷ giá do đánh giá lại các khoản mục tiền tệ có gốc ngoại tệ) có trong mẫu hệ thống tài khoản TT200 của coa-data; loại tỷ giá đánh giá lại chưa đối chiếu (status.json fxRules_TT200 = false)"
+    "assetRate": "buy",
+    "liabilityRate": "sell",
+    "source": "TT 200/2014/TT-BTC, Điều 69 (Tài khoản 413 - Chênh lệch tỷ giá hối đoái), Công báo số 289 + 290 ngày 28/02/2015 (tải ngày 29/10/2026 từ https://congbao.chinhphu.vn/van-ban/thong-tu-so-200-2014-tt-btc-6697.htm, bản PDF phần 4): khoản 1.3 điểm b (tỷ giá đánh giá lại các khoản mục tiền tệ có gốc ngoại tệ là tỷ giá công bố của ngân hàng thương mại nơi doanh nghiệp thường xuyên có giao dịch: tài sản theo tỷ giá mua, riêng ngoại tệ gửi ngân hàng theo tỷ giá mua của chính ngân hàng nơi mở tài khoản; nợ phải trả theo tỷ giá bán), khoản 2 điểm b (tất cả chênh lệch tỷ giá phát sinh trong kỳ phản ánh ngay vào doanh thu hoạt động tài chính nếu lãi, chi phí tài chính nếu lỗ), khoản 4.1 (Nợ 635 / Có 515 khi thanh toán, thu nợ), khoản 4.2 điểm a (lãi, lỗ đánh giá lại ghi Nợ/Có TK 413 chi tiết 4131) và điểm b (cuối năm tài chính kết chuyển số thuần sau khi bù trừ bên Nợ, bên Có của 4131 vào 515 nếu lãi, 635 nếu lỗ). TK 4132 chỉ dùng cho doanh nghiệp Nhà nước 100% vốn điều lệ ở giai đoạn trước hoạt động, không dựng. Phần mềm đặt một tỷ giá mua cho mọi tài sản có gốc ngoại tệ và một tỷ giá bán cho mọi nợ phải trả, công ty tự nhập tỷ giá của ngân hàng mình chọn; giới hạn: khoản trả trước cho người bán, người mua trả trước, chi phí trả trước và doanh thu nhận trước không phải khoản mục tiền tệ (khoản 1.6 điểm b) nhưng phần mềm đánh giá lại theo dư công nợ nguyên tệ của từng đối tượng, chưa tách các khoản này: kế toán xem lại bảng đánh giá lại trước khi ghi"
   }
 }

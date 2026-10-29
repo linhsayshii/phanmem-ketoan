@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FORMS, bookFormFor, formNoFor } from '../src/modules/reporting/print/forms.js';
+import { FORMS, bookFormFor, formNoFor, voucherFormFor } from '../src/modules/reporting/print/forms.js';
 
 // GĐ7 gói 2 (C1, TB1-TB3): số mẫu chỉ giữ khi đã đối chiếu văn bản gốc; hai sổ/báo cáo khác nhau không được cùng số mẫu trong một chế độ.
 describe('số mẫu sổ và báo cáo', () => {
@@ -20,9 +20,15 @@ describe('số mẫu sổ và báo cáo', () => {
     }
     expect(bookFormFor('TT133', 'stock-ledger')?.formNo).toBe('S06-DNN'); // đã đối chiếu: sổ chi tiết vật liệu
   });
-  it('TT200 không in số mẫu hay "Ban hành theo" cho sổ và báo cáo', () => {
-    for (const key of Object.keys(FORMS)) expect(formNoFor('TT200', key).issuedBy, key).toBe('');
-    expect(formNoFor('TT200', 'B01')).toEqual({ formNo: '', issuedBy: '' });
+  it('TT200 chỉ in số mẫu và "Ban hành theo" cho báo cáo tài chính B01-DN, B02-DN, B03-DN (Phụ lục 2); sổ và chứng từ chưa có bản gốc nên để trống', () => {
+    const issued = 'Ban hành theo Thông tư số 200/2014/TT-BTC ngày 22/12/2014 của Bộ Tài chính';
+    expect(formNoFor('TT200', 'B01')).toEqual({ formNo: 'B01-DN', issuedBy: issued });
+    expect(formNoFor('TT200', 'B02')).toEqual({ formNo: 'B02-DN', issuedBy: issued });
+    expect(formNoFor('TT200', 'B03')).toEqual({ formNo: 'B03-DN', issuedBy: issued });
+    for (const key of Object.keys(FORMS).filter((k) => !['B01', 'B02', 'B03'].includes(k))) {
+      expect(formNoFor('TT200', key), key).toEqual({ formNo: '', issuedBy: '' });
+      expect(bookFormFor('TT200', key), key).toBeNull(); expect(voucherFormFor('TT200', key), key).toBeNull();
+    }
     expect(formNoFor('TT133', 'B01')).toMatchObject({ formNo: 'B01a-DNN' });
   });
 });

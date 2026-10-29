@@ -52,5 +52,45 @@
         "Dòng 07 liệt kê 3331-3339 trừ 3334 và gồm N3388 mà văn bản xếp ở dòng 35; tiền thu thanh lý qua 711 nằm ở dòng 06; cổ tức chi qua 3388 nằm ở dòng 07"
       ]
     }
+  },
+  "TT200": {
+    "B01": {
+      "fixedZero": [
+        "112",
+        "219",
+        "241",
+        "261",
+        "263",
+        "340"
+      ],
+      "approx": [
+        "Phân loại ngắn hạn, dài hạn theo hạn thanh toán còn lại của từng khoản (12 tháng sau ngày báo cáo), không xét chu kỳ kinh doanh thông thường dài hơn 12 tháng",
+        "Tài khoản dùng chung cho ngắn hạn và dài hạn mà không có hạn ghi ở dòng được đưa hết vào dòng ngắn hạn: dự phòng phải thu khó đòi (2293) nằm ở dòng 137, chi phí trả trước (242) ở dòng 151, thiết bị, phụ tùng thay thế (1534) ở dòng 141",
+        "Dòng 112 (tương đương tiền) để 0 vì cần kỳ hạn gốc của 1281, 1288; dòng 340 để 0 vì cổ phiếu ưu đãi lấy ở 411b (41112)",
+        "Mã 260 = 261 + 262 + 263 + 268 theo mẫu; câu hướng dẫn của Điều 112 chỉ nêu 261 + 262 + 268",
+        "Nếu chưa kết chuyển thì tổng tài sản lệch nguồn vốn bằng lãi lỗ chưa kết chuyển"
+      ]
+    },
+    "B02": {
+      "fixedZero": [
+        "70",
+        "71"
+      ],
+      "approx": [
+        "Dòng 21 lấy số thuần phát sinh TK 515 trong kỳ, gồm chênh lệch tỷ giá đánh giá lại (4131) đã kết chuyển vào 515, 635 cuối năm tài chính",
+        "Dòng 23 (chi phí lãi vay) theo cặp N635/C111,112,335 nên có thể lẫn khoản chi phí tài chính khác trả bằng tiền",
+        "Dòng 70, 71 (lãi trên cổ phiếu, chỉ công ty cổ phần) để 0, kế toán nhập tay"
+      ]
+    },
+    "B03": {
+      "fixedZero": [],
+      "approx": [
+        "Báo cáo lưu chuyển tiền tệ theo phương pháp trực tiếp: dòng tiền không gắn mã luồng tiền được phân loại theo cặp đối ứng tài khoản",
+        "Tiền thu thanh lý TSCĐ qua 711 nằm ở dòng 06; tiền thu qua 5117 nằm ở dòng 01; cổ tức chi qua 338 nằm ở dòng 07; trả người bán XDCB qua 331 nằm ở dòng 02",
+        "Tiền thu của bên mua trong giao dịch mua bán lại trái phiếu Chính phủ (Nợ 111/Có 171) nằm ở dòng 33; dòng 04 chỉ lấy khoản chi qua N635, lãi vay đã trả qua N335 nằm ở dòng 02",
+        "Tiền thu phát hành cổ phiếu ưu đãi phân loại là nợ phải trả (41112) nằm ở dòng 31",
+        "Dòng 61 theo cặp với TK 413 (đánh giá lại tiền ngoại tệ qua 4131); chênh lệch chưa phân loại hiện ở 50 + 60 + 61 khác 70"
+      ]
+    }
   }
 }
