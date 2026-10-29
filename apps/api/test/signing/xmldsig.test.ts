@@ -37,7 +37,10 @@ describe('xmldsig', () => {
     }
     const s = sign(small);
     expect(verifyEnveloped(s.replace('2026-10-24T09:30:00', '2026-10-25T09:30:00'))).toMatchObject({ valid: false });
-    expect(verifyEnveloped(s.replace(/(<ds:SignatureValue>.)./, '$1A')).valid).toBe(false);
+    // Ký tự thay phải khác ký tự cũ (khóa sinh ngẫu nhiên mỗi lần chạy: ký tự thứ hai có thể đã là 'A').
+    const tampered = s.replace(/(<ds:SignatureValue>.)(.)/, (_m, a: string, c: string) => a + (c === 'A' ? 'B' : 'A'));
+    expect(tampered).not.toBe(s);
+    expect(verifyEnveloped(tampered).valid).toBe(false);
   });
   it('chữ ký của khóa khác, hoặc hoặc Reference không tồn tại → invalid', () => {
     const p = prepareEnveloped(small, key.certDer, { signingTime: '2026-10-24T09:30:00' });
