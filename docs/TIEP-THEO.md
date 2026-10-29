@@ -166,7 +166,13 @@ Kế hoạch `docs/superpowers/plans/2026-10-29-giao-dien-moi-chi-tiet.md` (skil
 - Không làm lại: `DeclaredInvoices` là thành phần con trong `VoucherForm` (không phải trang), giữ như cũ.
 - Một số spec E2E đổi locator heading sang `getByRole('heading', { level: 1, name })` (nhap-chung-tu, so-du-dau-ky, ton-dau-ky, tai-san-dau-ky).
 - Kiểm thử cuối đợt: `pnpm lint && pnpm typecheck` xanh, `@kt/ui` 46, `@kt/web` 272 đạt; E2E toàn bộ trên VPS (ketoan_ui, tuần tự): 87/87 đạt. Chạy lại trên cùng DB cần dọn dữ liệu nhớ từ lần trước: `delete from inbound_item_map` (hoa-don-dau-vao mong nút Lập chứng từ bị khóa khi chưa có ánh xạ); phan-bo-thue nay tự đưa bộ lọc nhớ về mặc định.
-- Còn lại: kiểm tay giao diện trên trình duyệt thật (màn rộng 1280–1920 và màn hẹp), nhất là Phân tích tài chính (`StatStrip` sáu ô) và các trang cài đặt.
+- Còn lại (làm tiếp ở phiên sau):
+  - Người dùng: kiểm tay giao diện trên trình duyệt thật (màn rộng 1280–1920 và màn hẹp), nhất là Phân tích tài chính (`StatStrip` sáu ô), các trang cài đặt, Đăng nhập/Chọn công ty (`AuthCard`). Chưa ai xem ảnh chụp màn hình của đợt này: E2E chỉ kiểm luồng, không kiểm thẩm mỹ. Ghi màn nào xấu/lệch vào đây để agent sửa.
+  - Người dùng: kiểm tay phím tắt trên vài lưới chứng từ sau khi đổi khung (Enter/Tab, F4, Ctrl+S, F9, Insert): E2E đã phủ, nhưng chưa kiểm bằng tay. Gõ Telex/VNI vẫn ở mục 4.
+  - Agent: `e2e/hoa-don-dau-vao.spec.ts` chưa chịu chạy lại trên cùng DB (ánh xạ hàng hóa nhớ ở `inbound_item_map` làm tài khoản điền sẵn). Sửa như `phan-bo-thue`: dọn hoặc dùng mã hàng mới mỗi lần chạy, chỉ đổi spec.
+  - Agent (tùy chọn): một lượt rà soát toàn đợt bằng Sonnet trên `git diff 9e2cf40^..382d263 -- apps/web/src packages/ui/src` (mỗi phân hệ đã rà riêng, chưa rà chéo): tìm trang lệch quy ước (thiếu `PageHeader`, màu viết cứng, `Card` thay vì `Section`).
+  - Còn màu viết cứng có chủ ý: bảng màu biểu đồ `charts.tsx`, tô trạng thái dòng lưới ở `PayrollProfiles`, `BankTransactions`, `Attendance`. Đưa vào `theme.ts` nếu muốn đồng bộ chế độ tối sau này.
+  - Dọn VPS: pane herdr `ui-impl` (agy) đang rảnh, đóng được; tệp tạm `~/.cache/kt-ui-agy/` (prompt, `check.log`, `e2e.log`, `ui-db.env`) giữ lại nếu còn chạy E2E trên `ketoan_ui`, không thì xóa.
 
 ## 4. Chờ người dùng
 
