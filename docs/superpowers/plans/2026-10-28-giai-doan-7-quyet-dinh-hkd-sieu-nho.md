@@ -20,7 +20,7 @@ Chuyển vào mục "Nhóm 6" của sổ quyết định GĐ7 khi hợp nhất. 
 
 1508. **Sổ vật tư, hàng hóa: giá bình quân theo tháng dương lịch** — thông tư không nêu độ dài kỳ tính đơn giá xuất; chọn tháng (kỳ báo cáo thường dùng, khớp quyền xem theo tháng). Tồn đầu tháng tính từ dòng đầu tiên chạy tuần tự; dòng xuất cuối tháng làm tồn về 0 thì nhận phần dư làm tròn để giá trị tồn về 0. Xuất nhiều hơn tồn không bị chặn (số âm hiện nguyên trên sổ).
 
-1509. **Chưa dựng S4a, S4b, S4d và B01-DNSN** — đã nhập đủ cột và chỉ tiêu (`built=false`, có lý do). B01-DNSN cần số dư công nợ, TSCĐ, vốn chủ sở hữu, "tài sản khác"; sổ ghi đơn không có đối ứng nên không bảo đảm tổng tài sản = tổng nguồn vốn (thông tư bắt buộc 200 = 500). Dựng bừa thì báo cáo không cân; dựng đúng cần mô-đun số dư riêng (hoãn). S4c-DNSN dựng chung với S3a-HKD vì cùng cấu trúc.
+1509. **Chưa dựng S4a, S4b, S4d và B01-DNSN** — đã nhập đủ cột và chỉ tiêu (`built=false`, có lý do). B01-DNSN cần số dư công nợ, TSCĐ, vốn chủ sở hữu, "tài sản khác"; sổ ghi đơn không có đối ứng nên không bảo đảm tổng tài sản = tổng nguồn vốn (thông tư bắt buộc 200 = 500). Dựng bừa thì báo cáo không cân; dựng đúng cần mô-đun số dư riêng (hoãn). S4c-DNSN dựng chung với S3a-HKD vì cùng cấu trúc. **Đã dựng ngày 2026-10-29: xem `2026-10-29-tt58-so-s4-b01-quyet-dinh.md` (1620–1637).**
 
 1510. **Bút ghi sổ đơn cho sửa, xóa, có nhật ký kiểm toán** — khác sổ cái bất biến: bảng `book_*` không phải sổ cái bút toán kép, `audit_enable` ghi trước và sau. Không khóa theo kỳ khóa sổ (kỳ chỉ có ý nghĩa báo cáo). Giá phải trả: bản in cũ có thể khác bản in sau khi sửa số cũ; chưa có "chốt sổ" cho HKD.
 

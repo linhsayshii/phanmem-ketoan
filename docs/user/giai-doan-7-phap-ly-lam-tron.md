@@ -25,7 +25,7 @@ Mẫu 01/GTGT theo Thông tư 89/2026 không có dòng 8%; phần mềm tạm g�
 
 ## 4. Chế độ kế toán và năm tài chính
 
-- Hiệu lực và cổng của TT99, TT133, TT200 lưu thành dữ liệu (`packages/coa-data/data/regimes/accounting.json`): TT99 áp dụng cho năm tài chính bắt đầu từ 01/01/2026; TT200 chỉ còn cho dữ liệu đến hết 2025 và hệ thống tài khoản chưa đối chiếu Phụ lục 1, chưa có B01/B02/B03 (nên "Chưa dùng cho kế toán thật" ở Hệ thống > Chế độ kế toán).
+- Hiệu lực và cổng của TT99, TT133, TT200 lưu thành dữ liệu (`packages/coa-data/data/regimes/accounting.json`): TT99 áp dụng cho năm tài chính bắt đầu từ 01/01/2026; TT200 chỉ còn cho dữ liệu đến hết 2025 hệ thống tài khoản đã đối chiếu Phụ lục 1 (từ 29/10/2026), nhưng chưa có B01/B02/B03 (nên "Chưa dùng cho kế toán thật" ở Hệ thống > Chế độ kế toán).
 - Tạo năm tài chính theo chế độ chưa sẵn sàng hoặc ngày bắt đầu ngoài hiệu lực: 409 `REGIME_NOT_READY` / `REGIME_NOT_EFFECTIVE`. Hộp thoại "Tạo năm tài chính theo chế độ này?" cho phép "Vẫn tạo" khi cần xem lại dữ liệu cũ; việc này ghi nhật ký (`fiscal_year_regime_override`).
 - TT58 và TT152 chưa có hệ thống tài khoản nên không có cách xác nhận: vẫn trả 409 `COA_TEMPLATE_PENDING`.
 

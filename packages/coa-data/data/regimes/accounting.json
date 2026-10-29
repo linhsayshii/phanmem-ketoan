@@ -16,12 +16,11 @@
   },
   "TT200": {
     "label": "TT 200/2014/TT-BTC (dữ liệu 2025 trở về trước)",
-    "effectiveFrom": null, "effectiveTo": "2025-12-31", "effectiveVerified": false,
-    "gates": { "coa": false, "reports": false },
+    "effectiveFrom": "2015-01-01", "effectiveTo": "2025-12-31", "effectiveVerified": true,
+    "gates": { "coa": true, "reports": false },
     "missing": [
-      "Văn bản gốc TT 200/2014/TT-BTC để đối chiếu Phụ lục 1 (hệ thống tài khoản đang lấy từ SUNSOFT OrgDMTK_200, chưa đối chiếu)",
-      "Mẫu B01, B02, B03 của TT 200 (chưa có định nghĩa báo cáo) và quy tắc tỷ giá (fxRules_TT200 = false)"
+      "Mẫu B01, B02, B03 của TT 200 (Phụ lục 2; chưa có định nghĩa báo cáo) và quy tắc tỷ giá (fxRules_TT200 = false)"
     ],
-    "source": "Đặc tả mục 10: TT 99/2025 thay TT 200 từ năm tài chính 01/01/2026, TT 200 chỉ còn cho dữ liệu 2025 trở về trước. Ngày chưa đối chiếu văn bản gốc."
+    "source": "effectiveFrom: Điều 128 TT 200/2014/TT-BTC (Công báo số 289 + 290 ngày 28/02/2015): áp dụng cho năm tài chính bắt đầu hoặc sau ngày 01/01/2015. effectiveTo: đặc tả mục 10 (TT 99/2025 thay TT 200 từ năm tài chính 01/01/2026), điều khoản thi hành của TT 99 chưa đối chiếu. coa: Phụ lục 1 đã đối chiếu, xem NOTICE.md của gói coa-data."
   }
 }

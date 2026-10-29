@@ -6,10 +6,10 @@ import { companyInfo } from '../reporting/print/bookSet.js';
 import { dayBefore, getSetting, loadEntries, loadGroups, pctTax, profitFlagFor, profitTax, sumOf, taxAccrued, yearBack, yearOf, type Ent, type Grp, type Trx } from './service.js';
 
 // Dựng sổ và báo cáo của hộ kinh doanh (TT 152/2025) và doanh nghiệp siêu nhỏ (TT 58/2026) từ bút ghi sổ đơn. Cột, tên sổ, điều lấy từ packages/coa-data/data/books/*.json.
-type Row = Record<string, unknown>;
-const FAR_PAST = '1900-01-01';
+export type Row = Record<string, unknown>;
+export const FAR_PAST = '1900-01-01';
 export interface BookFilter { from: string; to: string; itemId?: number | undefined }
-const S = (x: Decimal) => x.toString();
+export const S = (x: Decimal) => x.toString();
 
 const CAT_LABEL_HKD: Record<string, string> = {
   a: 'a) Chi phí nguyên liệu, vật liệu, nhiên liệu, năng lượng, hàng hóa sử dụng vào sản xuất, kinh doanh',
@@ -23,7 +23,7 @@ const CAT_LABEL_DNSN: Record<string, string> = { ...CAT_LABEL_HKD,
   c: 'c) Chi phí khấu hao tài sản cố định phục vụ cho hoạt động sản xuất, kinh doanh theo chế độ quản lý, sử dụng và trích khấu hao tài sản cố định',
   dd: 'đ) Chi phí trả lãi tiền vay vốn sản xuất, kinh doanh của tổ chức tín dụng' };
 
-async function frame(trx: Trx, tenantId: string, code: string, f: { from: string; to: string }, opts: { landscape?: boolean; subtitle?: string } = {}) {
+export async function frame(trx: Trx, tenantId: string, code: string, f: { from: string; to: string }, opts: { landscape?: boolean; subtitle?: string } = {}) {
   const regime = bookRegimeOf(code); if (!regime) throw new AppError('BOOK_NOT_FOUND', `Không có sổ ${code}`, 404);
   const set = loadBookSet(regime); const def = set.books.find((b) => b.code === code);
   if (!def) throw new AppError('BOOK_NOT_FOUND', `Không có sổ ${code}`, 404);
@@ -38,13 +38,13 @@ async function frame(trx: Trx, tenantId: string, code: string, f: { from: string
   return { regime, set, def, doc, company };
 }
 
-async function profitRateOf(trx: Trx, to: string) { const s = await getSetting(trx, await yearOf(trx, to)); return { rate: s.incomeTaxRate === null ? null : D(s.incomeTaxRate), method: s.taxMethod }; }
+export async function profitRateOf(trx: Trx, to: string) { const s = await getSetting(trx, await yearOf(trx, to)); return { rate: s.incomeTaxRate === null ? null : D(s.incomeTaxRate), method: s.taxMethod }; }
 const missingRateNote = (groups: Grp[], which: 'vat' | 'income', label: string) => { const m = groups.filter((g) => (which === 'vat' ? g.vatRate : g.incomeRate) === null).map((g) => g.code); return m.length ? [`Chưa khai tỷ lệ ${label} cho nhóm ${m.join(', ')}: thuế của nhóm này tạm tính 0.`] : []; };
 
 // Thuế đã nộp (tax_paid) trong khoảng, theo loại thuế.
-const paidOf = (ents: Ent[], t: 'vat' | 'income') => sumOf(ents.filter((e) => e.kind === 'tax_paid' && e.taxType === t));
+export const paidOf = (ents: Ent[], t: 'vat' | 'income') => sumOf(ents.filter((e) => e.kind === 'tax_paid' && e.taxType === t));
 // Số thuế còn phải nộp đầu kỳ: số dư đầu nhập tay (ngày không sau đầu kỳ) + thuế phát sinh các kỳ trước - thuế đã nộp các kỳ trước.
-async function openingTax(trx: Trx, from: string, t: 'vat' | 'income', method: string | null, rate: Decimal | null): Promise<Decimal> {
+export async function openingTax(trx: Trx, from: string, t: 'vat' | 'income', method: string | null, rate: Decimal | null): Promise<Decimal> {
   const prev = dayBefore(from); const earlier = await loadEntries(trx, FAR_PAST, prev);
   const open = sumOf((await loadEntries(trx, FAR_PAST, from)).filter((e) => e.kind === 'opening' && e.openRef === (t === 'vat' ? 'vat_payable' : 'income_tax')));
   const acc = await taxAccrued(trx, FAR_PAST, prev, { profitRate: rate, profit: profitFlagFor(method) });
@@ -113,7 +113,7 @@ async function incomeExpense(trx: Trx, tenantId: string, code: 'S2c-HKD' | 'S2b-
 }
 
 // ---- Sổ chi tiết tiền: S2e-HKD, S2d-DNSN ----
-const CASH_IN = new Set(['revenue', 'other_income', 'cash_in']); const CASH_OUT = new Set(['expense', 'tax_paid', 'cash_out']);
+export const CASH_IN = new Set(['revenue', 'other_income', 'cash_in']); export const CASH_OUT = new Set(['expense', 'tax_paid', 'cash_out']);
 async function cashBook(trx: Trx, tenantId: string, code: 'S2e-HKD' | 'S2d-DNSN', f: BookFilter) {
   const fr = await frame(trx, tenantId, code, f); const all = (await loadEntries(trx, FAR_PAST, f.to)).filter((e) => e.money);
   const accounts = [...new Set(all.map((e) => e.money!))].sort((a, b) => (a === 'TM' ? -1 : b === 'TM' ? 1 : a.localeCompare(b, 'vi')));
@@ -140,7 +140,22 @@ async function cashBook(trx: Trx, tenantId: string, code: 'S2e-HKD' | 'S2d-DNSN'
 }
 
 // ---- Sổ chi tiết vật liệu, dụng cụ, sản phẩm, hàng hóa: S2d-HKD, S2c-DNSN. Đơn giá xuất kho theo công thức của thông tư tính theo từng tháng dương lịch ----
-interface Mv { id: number; itemId: number; date: string; docNo: string | null; desc: string; dir: string; qty: Decimal; price: Decimal | null }
+export interface Mv { id: number; itemId: number; date: string; docNo: string | null; desc: string; dir: string; qty: Decimal; price: Decimal | null }
+// Giá bình quân từng tháng = (giá trị tồn đầu tháng + giá trị nhập trong tháng) / (số lượng tồn đầu tháng + số lượng nhập trong tháng); dòng xuất cuối cùng làm hết số lượng thì lấy phần giá trị còn lại.
+export function stockCosting(mvs: Mv[]): { priceOf: Map<string, Decimal>; outAmt: Map<number, Decimal> } {
+  const months = [...new Set(mvs.map((m) => m.date.slice(0, 7)))].sort();
+  const priceOf = new Map<string, Decimal>(); const outAmt = new Map<number, Decimal>();
+  let qOpen = D(0); let vOpen = D(0);
+  for (const mo of months) {
+    const inMs = mvs.filter((m) => m.date.slice(0, 7) === mo && m.dir !== 'out'); const outMs = mvs.filter((m) => m.date.slice(0, 7) === mo && m.dir === 'out');
+    const inQ = inMs.reduce((a, m) => a.plus(m.qty), D(0)); const inV = inMs.reduce((a, m) => a.plus(m.qty.times(m.price!).toDecimalPlaces(0)), D(0));
+    const den = qOpen.plus(inQ); const p = den.isZero() ? D(0) : vOpen.plus(inV).div(den); priceOf.set(mo, p);
+    let outV = D(0); const outQ = outMs.reduce((a, m) => a.plus(m.qty), D(0));
+    outMs.forEach((m, i) => { const last = i === outMs.length - 1 && qOpen.plus(inQ).minus(outQ).isZero(); const a = last ? vOpen.plus(inV).minus(outV) : m.qty.times(p).toDecimalPlaces(0); outAmt.set(m.id, a); outV = outV.plus(a); });
+    qOpen = qOpen.plus(inQ).minus(outQ); vOpen = vOpen.plus(inV).minus(outV);
+  }
+  return { priceOf, outAmt };
+}
 export async function stockDocs(trx: Trx, tenantId: string, code: 'S2d-HKD' | 'S2c-DNSN', f: BookFilter): Promise<ReportDoc[]> {
   const fr = await frame(trx, tenantId, code, f, { landscape: true });
   let items = await trx.selectFrom('book_stock_item').selectAll().orderBy('code').execute(); if (f.itemId) items = items.filter((i) => i.id === f.itemId);
@@ -148,18 +163,7 @@ export async function stockDocs(trx: Trx, tenantId: string, code: 'S2d-HKD' | 'S
   for (const it of items) {
     const mvs: Mv[] = (await trx.selectFrom('book_stock_move').selectAll().where('item_id', '=', it.id).where('move_date', '<=', f.to).orderBy('move_date').orderBy('id').execute())
       .map((m) => ({ id: m.id, itemId: m.item_id, date: m.move_date, docNo: m.doc_no, desc: m.description, dir: m.direction, qty: D(m.quantity), price: m.unit_price === null ? null : D(m.unit_price) }));
-    // Giá bình quân từng tháng = (giá trị tồn đầu tháng + giá trị nhập trong tháng) / (số lượng tồn đầu tháng + số lượng nhập trong tháng).
-    const months = [...new Set(mvs.map((m) => m.date.slice(0, 7)))].sort();
-    const priceOf = new Map<string, Decimal>(); const outAmt = new Map<number, Decimal>();
-    let qOpen = D(0); let vOpen = D(0);
-    for (const mo of months) {
-      const inMs = mvs.filter((m) => m.date.slice(0, 7) === mo && m.dir !== 'out'); const outMs = mvs.filter((m) => m.date.slice(0, 7) === mo && m.dir === 'out');
-      const inQ = inMs.reduce((a, m) => a.plus(m.qty), D(0)); const inV = inMs.reduce((a, m) => a.plus(m.qty.times(m.price!).toDecimalPlaces(0)), D(0));
-      const den = qOpen.plus(inQ); const p = den.isZero() ? D(0) : vOpen.plus(inV).div(den); priceOf.set(mo, p);
-      let outV = D(0); const outQ = outMs.reduce((a, m) => a.plus(m.qty), D(0));
-      outMs.forEach((m, i) => { const last = i === outMs.length - 1 && qOpen.plus(inQ).minus(outQ).isZero(); const a = last ? vOpen.plus(inV).minus(outV) : m.qty.times(p).toDecimalPlaces(0); outAmt.set(m.id, a); outV = outV.plus(a); });
-      qOpen = qOpen.plus(inQ).minus(outQ); vOpen = vOpen.plus(inV).minus(outV);
-    }
+    const { priceOf, outAmt } = stockCosting(mvs);
     // Chạy tuần tự để có tồn sau từng dòng; dòng trước kỳ gộp vào số dư đầu kỳ.
     let q = D(0); let v = D(0); const rows: Row[] = []; let totIQ = D(0); let totIV = D(0); let totOQ = D(0); let totOV = D(0); let openRowAdded = false;
     const addOpen = () => { if (!openRowAdded) { openRowAdded = true; rows.unshift({ desc: 'Số dư đầu kỳ', stockQty: S(q), stockAmt: S(v), isBold: true }); } };
@@ -263,12 +267,13 @@ export async function buildBook(trx: Trx, tenantId: string, code: string, f: Boo
 
 // Danh mục sổ và báo cáo của chế độ theo phương pháp nộp thuế đã chọn cho năm.
 export interface CatalogItem { code: string; name: string; article: string; built: boolean; required: boolean; reason: string | null; kind: 'book' | 'report' }
-export async function catalog(trx: Trx, regime: BookRegime, year: number): Promise<{ regime: BookRegime; regimeLabel: string; fiscalYear: number; taxMethod: string | null; methods: BookSetDef['methods']; items: CatalogItem[] }> {
+export interface CatalogVoucher { code: string; name: string; article: string; built: boolean }
+export async function catalog(trx: Trx, regime: BookRegime, year: number): Promise<{ regime: BookRegime; regimeLabel: string; fiscalYear: number; taxMethod: string | null; methods: BookSetDef['methods']; items: CatalogItem[]; vouchers: CatalogVoucher[] }> {
   const set = loadBookSet(regime); const st = await getSetting(trx, year); const m = set.methods.find((x) => x.code === st.taxMethod);
   const required = new Set(m?.books ?? []);
   const items: CatalogItem[] = [
     ...set.books.map((b: BookDef) => ({ code: b.code, name: b.name, article: b.article, built: b.built, required: required.has(b.code), reason: b.reason ?? null, kind: 'book' as const })),
     ...set.reports.map((r) => ({ code: r.code, name: r.name, article: r.article, built: r.built, required: false, reason: r.reason ?? null, kind: 'report' as const })),
   ];
-  return { regime, regimeLabel: regime === 'TT152' ? 'TT 152/2025/TT-BTC (hộ kinh doanh)' : 'TT 58/2026/TT-BTC (doanh nghiệp siêu nhỏ)', fiscalYear: year, taxMethod: st.taxMethod, methods: set.methods, items };
+  return { regime, regimeLabel: regime === 'TT152' ? 'TT 152/2025/TT-BTC (hộ kinh doanh)' : 'TT 58/2026/TT-BTC (doanh nghiệp siêu nhỏ)', fiscalYear: year, taxMethod: st.taxMethod, methods: set.methods, items, vouchers: (set.vouchers ?? []).map((v) => ({ code: v.code, name: v.name, article: v.article, built: v.built })) };
 }

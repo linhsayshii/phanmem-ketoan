@@ -19,10 +19,11 @@ describe('reports/approximations.json', () => {
 
 // GĐ7 gói 2 (C4): hiệu lực và cổng của TT99, TT133, TT200 là dữ liệu (data/regimes/accounting.json), không viết cứng ở mã.
 describe('regimes/accounting.json: hiệu lực và cổng TT99, TT133, TT200', () => {
-  it('TT200 chưa sẵn sàng (hệ thống tài khoản chưa đối chiếu, chưa có B01-B03) và hết hiệu lực từ 2026', () => {
+  it('TT200 chưa sẵn sàng (hệ thống tài khoản đã đối chiếu Phụ lục 1, chưa có B01-B03), áp dụng từ 2015 và hết hiệu lực từ 2026', () => {
     const r = checkRegimeForYear('TT200', '2025-01-01');
     expect(r).toMatchObject({ ready: false, effective: true, effectiveTo: '2025-12-31' });
-    expect(r.notReady).toEqual(['coa', 'reports']);
+    expect(r.notReady).toEqual(['reports']);
+    expect(checkRegimeForYear('TT200', '2014-01-01').effective).toBe(false); expect(checkRegimeForYear('TT200', '2015-01-01').effective).toBe(true);
     expect(checkRegimeForYear('TT200', '2026-01-01').effective).toBe(false);
     expect(accountingRegimeRules().TT200.missing.length).toBeGreaterThan(0);
   });

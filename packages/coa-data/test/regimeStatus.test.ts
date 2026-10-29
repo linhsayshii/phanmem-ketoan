@@ -13,11 +13,12 @@ describe('regimes/status.json: cổng pháp lý TT58 và TT152 (đã có văn b�
       expect(s.sources.every((x) => x.kind.startsWith('văn bản gốc'))).toBe(true);
     });
   }
-  it('TT152 không có báo cáo tài chính nên không áp dụng; TT58 chưa lập được B01-DNSN nên cổng báo cáo còn false, có giới hạn ghi rõ', () => {
+  it('TT152 không có báo cáo tài chính nên không áp dụng; TT58 đã dựng B01-DNSN và B02-DNSN nên cổng báo cáo true, giới hạn cân đối vẫn ghi rõ', () => {
     expect(regimeReportsReady('TT152')).toBe(true);
     expect(regimeStatus().TT152.gates.reports).toBe(false);
-    expect(regimeReportsReady('TT58')).toBe(false);
-    expect(regimeStatus().TT58.limits.some((l) => l.includes('B01-DNSN'))).toBe(true);
+    expect(regimeReportsReady('TT58')).toBe(true);
+    expect(regimeStatus().TT58.limits.some((l) => l.includes('B01-DNSN') && l.includes('không bảo đảm'))).toBe(true);
+    expect(regimeStatus().TT58.missing.join(' ')).not.toMatch(/S4a|01-TT|B01-DNSN/);
   });
   it('không có mẫu hệ thống tài khoản cho chế độ này (không bịa danh mục)', () => {
     expect(() => loadCoaTemplate('TT152')).toThrow();
@@ -36,12 +37,14 @@ describe('data/books: định nghĩa sổ theo văn bản gốc', () => {
     expect([n('TT152', 'S1a-HKD'), n('TT152', 'S2a-HKD'), n('TT152', 'S2d-HKD'), n('TT152', 'S2e-HKD'), n('TT152', 'S3a-HKD')]).toEqual([3, 4, 12, 5, 12]);
     expect([n('TT58', 'S1-DNSN'), n('TT58', 'S2c-DNSN'), n('TT58', 'S3b-DNSN'), n('TT58', 'S4a-DNSN'), n('TT58', 'S4b-DNSN'), n('TT58', 'S4c-DNSN'), n('TT58', 'S4d-DNSN')]).toEqual([4, 12, 5, 9, 11, 13, 6]);
   });
-  it('TT58: các phương pháp nộp thuế (Điều 5 đến 8) trỏ tới sổ có định nghĩa; B02-DNSN dựng, B01-DNSN chưa dựng nhưng đã nhập chỉ tiêu', () => {
+  it('TT58: các phương pháp nộp thuế (Điều 5 đến 8) trỏ tới sổ có định nghĩa; B01-DNSN và B02-DNSN đã dựng, đủ chỉ tiêu; bốn chứng từ Điều 9 khoản 2', () => {
     const b = loadBookSet('TT58'); const codes = new Set(b.books.map((x) => x.code));
     expect(b.methods.map((m) => m.article)).toEqual(['Điều 5', 'Điều 6', 'Điều 7', 'Điều 8']);
     for (const m of b.methods) for (const c of m.books) expect(codes.has(c)).toBe(true);
     const by = Object.fromEntries(b.reports.map((r) => [r.code, r]));
-    expect([by['B02-DNSN']!.built, by['B01-DNSN']!.built]).toEqual([true, false]);
+    expect([by['B02-DNSN']!.built, by['B01-DNSN']!.built]).toEqual([true, true]);
+    expect(b.books.every((x) => x.built && x.verified)).toBe(true);
+    expect(b.vouchers!.map((v) => [v.code, v.built, v.verified])).toEqual([['01-TT', true, true], ['02-TT', true, true], ['01-VT', true, true], ['02-VT', true, true]]);
     expect(by['B02-DNSN']!.lines.map((l) => l.lineNo)).toEqual(['01', '02', '03', '10', '20']);
     expect(by['B01-DNSN']!.lines.map((l) => l.lineNo)).toEqual(['110', '120', '130', '140', '150', '200', '300', '310', '320', '400', '410', '420', '430', '500']);
   });

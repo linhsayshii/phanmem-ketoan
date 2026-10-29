@@ -116,11 +116,9 @@ describe('TT 152/2025 hộ kinh doanh: tạo năm tài chính, sổ doanh thu th
     expect(d!.columns).toHaveLength(12);
   });
 
-  it('sổ chưa có (B01-DNSN của HKD) trả 404, sổ TT58 chưa dựng trả 501, sổ lạ trả 404', async () => {
-    const r1 = await ctx.app.inject({ method: 'GET', url: '/api/hkd/books/B01-DNSN?from=2026-01-01&to=2026-12-31', headers: s.h });
-    expect([r1.statusCode, r1.json().error.code]).toEqual([501, 'BOOK_NOT_BUILT']);
+  it('sổ lạ trả 404 BOOK_NOT_FOUND (mọi sổ và báo cáo trong định nghĩa đều đã dựng)', async () => {
     const r2 = await ctx.app.inject({ method: 'GET', url: '/api/hkd/books/S9-HKD?from=2026-01-01&to=2026-12-31', headers: s.h });
-    expect(r2.statusCode).toBe(404);
+    expect([r2.statusCode, r2.json().error.code]).toEqual([404, 'BOOK_NOT_FOUND']);
   });
 
   it('danh mục sổ theo phương pháp nộp thuế: income (Điều 6) cần S2b, S2c, S2d, S2e-HKD', async () => {
@@ -207,14 +205,12 @@ describe('TT 58/2026 doanh nghiệp siêu nhỏ: S2a-DNSN, S2b-DNSN, S3b-DNSN, B
     expect(row(dec!, 'Số thuế GTGT còn được khấu trừ hoặc được hoàn đầu kỳ').vatIn).toBe('250000');
   });
 
-  it('B01-DNSN và S4a-DNSN chưa dựng: 501 kèm lý do, danh mục nêu rõ', async () => {
-    const r = await ctx.app.inject({ method: 'GET', url: '/api/hkd/books/S4a-DNSN?from=2026-07-01&to=2026-07-31', headers: s.h });
-    expect([r.statusCode, r.json().error.code]).toEqual([501, 'BOOK_NOT_BUILT']);
+  it('danh mục TT58 theo phương pháp Điều 6: bốn sổ bắt buộc; S4a-DNSN, B01-DNSN đã dựng (xem hkdDnsn.test.ts)', async () => {
     const c = (await ctx.app.inject({ method: 'GET', url: '/api/hkd/books?year=2026', headers: s.h })).json() as { regime: string; items: { code: string; built: boolean; required: boolean; reason: string | null }[] };
     expect(c.regime).toBe('TT58');
     expect(c.items.filter((i) => i.required).map((i) => i.code)).toEqual(['S2a-DNSN', 'S2b-DNSN', 'S2c-DNSN', 'S2d-DNSN']);
-    expect(c.items.find((i) => i.code === 'B01-DNSN')).toMatchObject({ built: false });
-    expect(c.items.find((i) => i.code === 'B01-DNSN')!.reason).toBeTruthy();
+    expect(c.items.find((i) => i.code === 'B01-DNSN')).toMatchObject({ built: true, reason: null });
+    expect(c.items.find((i) => i.code === 'S4a-DNSN')).toMatchObject({ built: true });
   });
 
   it('công ty khác không thấy dữ liệu sổ (RLS)', async () => {

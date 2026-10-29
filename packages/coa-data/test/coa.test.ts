@@ -41,7 +41,18 @@ describe('mẫu hệ thống tài khoản', () => {
   });
   it('TT200 đủ tài khoản SUNSOFT OrgDMTK_200', () => {
     const by = new Set(loadCoaTemplate('TT200').map((r) => r.code));
-    for (const c of refCodes('OrgDMTK_200.csv', 'TK_TI')) expect(by.has(c), `thiếu ${c}`).toBe(true);
+    // 1552 là số hiệu SUNSOFT ghi nhầm: Phụ lục 1 TT 200/2014 là 1557 (Thành phẩm bất động sản).
+    for (const c of refCodes('OrgDMTK_200.csv', 'TK_TI').filter((x) => x !== '1552')) expect(by.has(c), `thiếu ${c}`).toBe(true);
+    expect(by.has('1552')).toBe(false);
+  });
+  it('TT200: khớp Phụ lục 1 (1123 Vàng tiền tệ gửi ngân hàng, 1557, tên theo văn bản, có nguồn Công báo)', () => {
+    const rows = loadCoaTemplate('TT200'); const by = new Map(rows.map((r) => [r.code, r]));
+    expect(rows).toHaveLength(235);
+    expect(by.get('1123')?.parentCode).toBe('112'); expect(by.get('1557')?.name).toBe('Thành phẩm bất động sản'); expect(by.get('1557')?.parentCode).toBe('155');
+    expect(by.get('3331')?.name).toBe('Thuế giá trị gia tăng phải nộp'); expect(by.get('2115')?.name).toBe('Cây lâu năm, súc vật làm việc và cho sản phẩm');
+    expect(by.get('911')?.name).toBe('Xác định kết quả kinh doanh');
+    for (const r of rows) if (r.parentCode) expect(by.has(r.parentCode), `${r.code}: thiếu cha ${r.parentCode}`).toBe(true);
+    expect(rows[0]!.source).toContain('congbao.chinhphu.vn');
   });
   it('TT99: nhập từ Phụ lục II, đã hoàn tất, có nguồn Công báo', () => {
     const st = tt99Status();

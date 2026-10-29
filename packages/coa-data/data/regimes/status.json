@@ -5,23 +5,35 @@
     "effectiveFrom": "2026-07-01",
     "replaces": "TT 132/2018/TT-BTC",
     "primaryTextObtained": true,
-    "applicable": { "coa": false, "reports": true },
-    "gates": { "coa": false, "books": true, "reports": false },
-    "note": "Thông tư không có hệ thống tài khoản: ghi sổ theo phương pháp nộp thuế GTGT, TNDN (Điều 5 đến Điều 8), không qua bút toán kép. Đã nhập và đối chiếu từng chữ với văn bản gốc các sổ S1, S2a đến S2d, S3a, S3b, S4c-DNSN và báo cáo B02-DNSN; B01-DNSN, S4a, S4b, S4d đã nhập định nghĩa nhưng chưa dựng báo cáo.",
+    "applicable": {
+      "coa": false,
+      "reports": true
+    },
+    "gates": {
+      "coa": false,
+      "books": true,
+      "reports": true
+    },
+    "note": "Thông tư không có hệ thống tài khoản: ghi sổ theo phương pháp nộp thuế GTGT, TNDN (Điều 5 đến Điều 8), không qua bút toán kép. Đã nhập và đối chiếu từng chữ với văn bản gốc các sổ S1, S2a đến S2d, S3a, S3b, S4a đến S4d, báo cáo B01-DNSN, B02-DNSN và bốn chứng từ 01-TT, 02-TT, 01-VT, 02-VT; tất cả đã dựng. B01-DNSN lập từ sổ ghi đơn nên không bảo đảm cân đối (xem giới hạn).",
     "limits": [
-      "Chưa lập được B01-DNSN (cần S4a, S4b, S4d và chỉ tiêu Tài sản khác; sổ ghi đơn không bảo đảm cân đối tài sản và nguồn vốn)",
-      "Chưa có sổ S4a (công nợ), S4b (TSCĐ), S4d (vốn chủ sở hữu); chứng từ 01-TT, 02-TT, 01-VT, 02-VT chưa nhập",
+      "B01-DNSN lập từ các sổ ghi đơn, không có bút toán đối ứng nên phần mềm không bảo đảm tổng tài sản (mã 200) bằng tổng nguồn vốn (mã 500): báo cáo nêu số chênh lệch để rà soát. Lợi nhuận sau thuế của năm không tự kết chuyển vào mã 420, phải ghi tăng ở S4d",
+      "Mã 320 của B01-DNSN chỉ gồm thuế GTGT, TNDN theo sổ thuế và nghĩa vụ thuế khác ghi ở S4a (bên phải trả, tính chất Thuế); S4c-DNSN chỉ tính số thuế phải nộp, không ghi số đã nộp nên không cộng vào B01",
+      "Mã 150 (tài sản khác) lấy từ sổ Tài sản khác nhập tay và phần thuế TNDN nộp thừa; mã 410, 420, 430 lấy từ S4d. Số liệu thuế phải nộp các năm trước tính lại theo tỷ lệ hiện hành (hạn chế chung của sổ ghi đơn)",
+      "S4b-DNSN: thông tư không nêu cách tính khấu hao; phần mềm tính đường thẳng tròn tháng theo tỷ lệ hằng năm, từ tháng đưa vào sử dụng, thôi từ tháng ghi giảm. Kế toán xác nhận cách tính. Dòng Cộng chỉ cộng mức khấu hao và khấu hao lũy kế (ô Nguyên giá của dòng Cộng là x theo mẫu)",
+      "Chứng từ 01-VT, 02-VT in số lượng ở cột Thực nhập, Thực xuất; cột Theo chứng từ, Yêu cầu để trống vì sổ ghi đơn chỉ lưu một số lượng. Chứng từ in từ bút ghi sổ đơn, không lưu thêm",
       "Tỷ lệ thuế GTGT, TNDN do người dùng khai báo theo văn bản thuế, phần mềm không đặt sẵn"
     ],
     "booksSecondary": [],
     "reportsSecondary": [],
     "sources": [
-      { "url": "https://congbao.chinhphu.vn/van-ban/thong-tu-so-58-2026-tt-btc-469663/65508.htm", "fetched": "2026-10-28", "kind": "văn bản gốc (Công báo số 323)", "used": "toàn bộ mẫu sổ, B01-DNSN, B02-DNSN, hướng dẫn ghi sổ, hiệu lực" }
+      {
+        "url": "https://congbao.chinhphu.vn/van-ban/thong-tu-so-58-2026-tt-btc-469663/65508.htm",
+        "fetched": "2026-10-28",
+        "kind": "văn bản gốc (Công báo số 323)",
+        "used": "toàn bộ mẫu sổ, B01-DNSN, B02-DNSN, hướng dẫn ghi sổ, hiệu lực"
+      }
     ],
-    "missing": [
-      "Chứng từ 01-TT, 02-TT, 01-VT, 02-VT của TT 58/2026 (đã có văn bản, chưa nhập mẫu in)",
-      "Mô-đun S4a, S4b, S4d và B01-DNSN (đã có định nghĩa cột, chưa dựng phần mềm)"
-    ]
+    "missing": []
   },
   "TT152": {
     "label": "TT 152/2025/TT-BTC (hộ kinh doanh, cá nhân kinh doanh)",
@@ -29,21 +41,52 @@
     "effectiveFrom": "2026-01-01",
     "replaces": "TT 88/2021/TT-BTC",
     "primaryTextObtained": true,
-    "applicable": { "coa": false, "reports": false },
-    "gates": { "coa": false, "books": true, "reports": false },
-    "note": "Thông tư chỉ hướng dẫn ghi sổ kế toán (Điều 1), không có hệ thống tài khoản và không có báo cáo tài chính. Đã nhập và đối chiếu với văn bản gốc (bản scan ký số, đối chiếu ảnh trang) toàn bộ 7 sổ S1a, S2a, S2b, S2c, S2d, S2e, S3a-HKD.",
+    "applicable": {
+      "coa": false,
+      "reports": false
+    },
+    "gates": {
+      "coa": false,
+      "books": true,
+      "reports": false
+    },
+    "note": "Thông tư chỉ hướng dẫn ghi sổ kế toán (Điều 1), không có hệ thống tài khoản và không có báo cáo tài chính. Đã nhập và đối chiếu với văn bản gốc (bản scan ký số, đối chiếu ảnh trang) toàn bộ 7 sổ S1a, S2a, S2b, S2c, S2d, S2e, S3a-HKD. NĐ 68/2026 (và NĐ 141/2026) đã nhập làm tham số ngưỡng hkd_* (legal-params.json); mẫu 01/TKN-CNKD đã nhập định nghĩa.",
     "limits": [
-      "Chưa có tờ khai 01/CNKD (chưa có văn bản gốc của mẫu) và chưa có NĐ 68/2026 nên không tính thuế tự động theo ngành nghề",
-      "Tỷ lệ thuế GTGT, TNCN do người dùng khai báo theo văn bản thuế, phần mềm không đặt sẵn"
+      "Chưa có tờ khai 01/TKN-CNKD (thay 01/CNKD, TT 89/2026): mới nhập định nghĩa mẫu vào data/tax/01tkn-cnkd-tt89.json, phần mềm chưa lập, chốt, xuất tờ khai; sổ ghi đơn không có bảng kê khai thuế theo cột của mẫu",
+      "Ngưỡng doanh thu (1 tỷ đồng miễn thuế GTGT, TNCN và hóa đơn điện tử, 3 tỷ đồng phương pháp TNCN, 50 tỷ đồng khai GTGT theo tháng) lấy từ NĐ 68/2026 đã sửa bởi NĐ 141/2026 và chỉ đối chiếu, cảnh báo ở màn Sổ (doanh thu trên sổ, chưa gồm phần tổ chức khấu trừ, nộp thay); không tự tính thuế",
+      "Tỷ lệ thuế GTGT theo ngành và thuế suất TNCN theo ngành do người dùng khai báo: NĐ 68/2026 dẫn chiếu Luật Thuế GTGT 48/2024/QH15 và Luật Thuế TNCN 109/2025/QH15 Điều 7 cùng văn bản hướng dẫn, chưa nhập từ văn bản gốc nên phần mềm không đặt sẵn"
     ],
     "booksSecondary": [],
     "reportsSecondary": [],
     "sources": [
-      { "url": "https://storage-vnportal.vnpt.vn/lci-ubnd-responsive/2321/CHIDAODIEUHANH/152.2025.TT-BTC.pdf", "fetched": "2026-10-28", "kind": "văn bản gốc (PDF ký số Bộ Tài chính 06/01/2026)", "used": "toàn bộ mẫu sổ S1a đến S3a-HKD, hướng dẫn ghi sổ, hiệu lực" }
+      {
+        "url": "https://storage-vnportal.vnpt.vn/lci-ubnd-responsive/2321/CHIDAODIEUHANH/152.2025.TT-BTC.pdf",
+        "fetched": "2026-10-28",
+        "kind": "văn bản gốc (PDF ký số Bộ Tài chính 06/01/2026)",
+        "used": "toàn bộ mẫu sổ S1a đến S3a-HKD, hướng dẫn ghi sổ, hiệu lực"
+      },
+      {
+        "url": "https://congbao.chinhphu.vn/van-ban/nghi-dinh-so-68-2026-nd-cp-469047.htm",
+        "fetched": "2026-10-29",
+        "kind": "văn bản gốc (Công báo số 152, bản PDF có chữ)",
+        "used": "ngưỡng doanh thu 500 triệu, 03 tỷ, 50 tỷ, quy tắc thông báo doanh thu, khai thuế, hóa đơn điện tử (Điều 3, 4, 8, 9, 10, 19)"
+      },
+      {
+        "url": "~/Documents/PetProject/legal-docs-gd7/nd141-2026/nd141.txt (Công báo số 272, 14/5/2026)",
+        "fetched": "2026-10-23",
+        "kind": "văn bản gốc (bản có chữ)",
+        "used": "Điều 1: sửa 500 triệu thành 01 tỷ đồng, thay khoản 5 Điều 8 NĐ 68; Điều 3 hiệu lực 01/01/2026"
+      },
+      {
+        "url": "https://datafiles.chinhphu.vn/cpp/files/vbpq/2026/7/89-btc.signed.pdf",
+        "fetched": "2026-10-29",
+        "kind": "văn bản gốc (PDF ký số, bản quét, đối chiếu ảnh trang)",
+        "used": "mẫu 01/TKN-CNKD trang 365-371 (định nghĩa mẫu)"
+      }
     ],
     "missing": [
-      "Mẫu tờ khai 01/CNKD và văn bản ban hành mẫu hiện hành (TT 89/2026/TT-BTC hoặc văn bản thay thế)",
-      "NĐ 68/2026/NĐ-CP (ngưỡng doanh thu, cách xác định doanh thu, tỷ lệ thuế theo ngành)"
+      "Luật Thuế TNCN 109/2025/QH15 (Điều 7: thuế suất theo ngành, nghề của phương pháp thuế suất nhân doanh thu) và văn bản hướng dẫn tỷ lệ % thuế GTGT theo ngành (Luật GTGT 48/2024/QH15 sửa bởi 149/2025 và thông tư hướng dẫn)",
+      "Logic lập tờ khai 01/TKN-CNKD từ sổ (mới có định nghĩa mẫu); 02/CNKD-TNCN-QTT (TT 89/2026 trang 372-375) và 01/BK-KTHTKD (trang 364) chưa nhập"
     ]
   }
 }

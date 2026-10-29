@@ -26,15 +26,15 @@
       "columns": [{ "key": "docNo", "label": "Hóa đơn, Chứng từ: Số hiệu", "ref": "A" }, { "key": "date", "label": "Hóa đơn, Chứng từ: Ngày, tháng", "ref": "B", "type": "date" }, { "key": "desc", "label": "Diễn giải", "ref": "C" }, { "key": "amount", "label": "Số tiền", "ref": "1", "type": "number" }] },
     { "code": "S3b-DNSN", "name": "Sổ theo dõi nghĩa vụ thuế GTGT", "article": "Điều 7 khoản 2.2 điểm b", "built": true, "verified": true,
       "columns": [{ "key": "docNo", "label": "Hóa đơn, chứng từ: Số hiệu", "ref": "A" }, { "key": "date", "label": "Hóa đơn, chứng từ: Ngày, tháng", "ref": "B", "type": "date" }, { "key": "desc", "label": "Diễn giải", "ref": "C" }, { "key": "vatIn", "label": "Số thuế GTGT đầu vào", "ref": "1", "type": "number" }, { "key": "vatOut", "label": "Số thuế GTGT đầu ra", "ref": "2", "type": "number" }] },
-    { "code": "S4a-DNSN", "name": "Sổ chi tiết thanh toán công nợ", "article": "Điều 9 khoản 1.1", "built": false, "verified": true, "reason": "Chưa dựng báo cáo: cần mô-đun công nợ theo đối tượng.",
+    { "code": "S4a-DNSN", "name": "Sổ chi tiết thanh toán công nợ", "article": "Điều 9 khoản 1.1", "built": true, "verified": true,
       "columns": [{ "key": "docNo", "label": "Hóa đơn, Chứng từ: Số hiệu", "ref": "A" }, { "key": "date", "label": "Hóa đơn, Chứng từ: Ngày, tháng", "ref": "B", "type": "date" }, { "key": "desc", "label": "Diễn giải", "ref": "C" }, { "key": "recv", "label": "Nợ phải thu: Số phải thu", "ref": "1", "type": "number" }, { "key": "recvPaid", "label": "Nợ phải thu: Số đã thu", "ref": "2", "type": "number" }, { "key": "recvLeft", "label": "Nợ phải thu: Số còn phải thu", "ref": "3", "type": "number" }, { "key": "pay", "label": "Nợ phải trả: Số phải trả", "ref": "4", "type": "number" }, { "key": "payPaid", "label": "Nợ phải trả: Số đã trả", "ref": "5", "type": "number" }, { "key": "payLeft", "label": "Nợ phải trả: Số còn phải trả", "ref": "6", "type": "number" }] },
-    { "code": "S4b-DNSN", "name": "Sổ tài sản cố định", "article": "Điều 9 khoản 1.2", "built": false, "verified": true, "reason": "Chưa dựng báo cáo: cần sổ tài sản cố định riêng.",
-      "columns": [{ "key": "incDocNo", "label": "Ghi tăng TSCĐ, Chứng từ: Số hiệu", "ref": "A" }, { "key": "incDate", "label": "Ghi tăng TSCĐ, Chứng từ: Ngày, tháng", "ref": "B", "type": "date" }, { "key": "name", "label": "Tên, đặc điểm, ký hiệu TSCĐ", "ref": "C" }, { "key": "inUse", "label": "Tháng, năm đưa vào sử dụng", "ref": "D" }, { "key": "cost", "label": "Nguyên giá TSCĐ", "ref": "1", "type": "number" }, { "key": "depRate", "label": "Số khấu hao TSCĐ: Tỷ lệ (%) khấu hao", "ref": "2", "type": "number" }, { "key": "dep", "label": "Số khấu hao TSCĐ: Mức khấu hao", "ref": "3", "type": "number" }, { "key": "accDep", "label": "Số khấu hao TSCĐ: Khấu hao lũy kế", "ref": "4", "type": "number" }, { "key": "decDocNo", "label": "Ghi giảm TSCĐ, Chứng từ: Số hiệu", "ref": "E" }, { "key": "decDate", "label": "Ghi giảm TSCĐ, Chứng từ: Ngày, tháng, năm", "ref": "G", "type": "date" }, { "key": "decReason", "label": "Lý do giảm TSCĐ", "ref": "H" }] },
+    { "code": "S4b-DNSN", "name": "Sổ tài sản cố định", "article": "Điều 9 khoản 1.2", "built": true, "verified": true,
+      "columns": [{ "key": "incDocNo", "label": "Ghi tăng TSCĐ, Chứng từ: Số hiệu", "ref": "A" }, { "key": "incDate", "label": "Ghi tăng TSCĐ, Chứng từ: Ngày, tháng", "ref": "B", "type": "date" }, { "key": "name", "label": "Tên, đặc điểm, ký hiệu TSCĐ", "ref": "C" }, { "key": "inUse", "label": "Tháng, năm đưa vào sử dụng", "ref": "D" }, { "key": "cost", "label": "Nguyên giá TSCĐ", "ref": "1", "type": "number" }, { "key": "depRate", "label": "Số khấu hao TSCĐ: Tỷ lệ (%) khấu hao", "ref": "2", "type": "number", "scale": 4 }, { "key": "dep", "label": "Số khấu hao TSCĐ: Mức khấu hao", "ref": "3", "type": "number" }, { "key": "accDep", "label": "Số khấu hao TSCĐ: Khấu hao lũy kế", "ref": "4", "type": "number" }, { "key": "decDocNo", "label": "Ghi giảm TSCĐ, Chứng từ: Số hiệu", "ref": "E" }, { "key": "decDate", "label": "Ghi giảm TSCĐ, Chứng từ: Ngày, tháng, năm", "ref": "G", "type": "date" }, { "key": "decReason", "label": "Lý do giảm TSCĐ", "ref": "H" }] },
     { "code": "S4c-DNSN", "name": "Sổ theo dõi nghĩa vụ thuế khác", "article": "Điều 9 khoản 1.3", "built": true, "verified": true,
       "columns": [{ "key": "date", "label": "Ngày tháng ghi sổ", "ref": "A", "type": "date" }, { "key": "desc", "label": "Giao dịch", "ref": "B" }, { "key": "qty", "label": "Lượng hàng hóa, dịch vụ chịu thuế", "ref": "1", "type": "number", "scale": 4 }, { "key": "absRate", "label": "Mức thuế tuyệt đối", "ref": "2", "type": "number" }, { "key": "unitPrice", "label": "Giá tính thuế/01 đơn vị hàng hóa, dịch vụ chịu thuế", "ref": "3", "type": "number" }, { "key": "rate", "label": "Thuế suất", "ref": "4", "type": "number", "scale": 4 },
         { "key": "pct", "label": "Thuế XK, NK, TTĐB: áp dụng phương pháp tính thuế theo tỷ lệ %", "ref": "5", "type": "number" }, { "key": "abs", "label": "Thuế XK, NK, TTĐB: áp dụng phương pháp tính thuế tuyệt đối (nếu có)", "ref": "6", "type": "number" }, { "key": "xnk", "label": "Thuế XK, NK, TTĐB: số thuế phải nộp", "ref": "7", "type": "number" },
         { "key": "env", "label": "Thuế bảo vệ môi trường", "ref": "8", "type": "number" }, { "key": "res", "label": "Thuế tài nguyên", "ref": "9", "type": "number" }, { "key": "land", "label": "Thuế sử dụng đất", "ref": "10", "type": "number" }, { "key": "other", "label": "Khác", "ref": "11", "type": "number" }] },
-    { "code": "S4d-DNSN", "name": "Sổ theo dõi vốn chủ sở hữu", "article": "Điều 9 khoản 1.4", "built": false, "verified": true, "reason": "Chưa dựng báo cáo: cần sổ vốn chủ sở hữu riêng.",
+    { "code": "S4d-DNSN", "name": "Sổ theo dõi vốn chủ sở hữu", "article": "Điều 9 khoản 1.4", "built": true, "verified": true,
       "columns": [{ "key": "docNo", "label": "Chứng từ: Số hiệu", "ref": "A" }, { "key": "date", "label": "Chứng từ: Ngày, tháng", "ref": "B", "type": "date" }, { "key": "desc", "label": "Diễn giải", "ref": "C" }, { "key": "inc", "label": "Tăng trong kỳ", "ref": "1", "type": "number" }, { "key": "dec", "label": "Giảm trong kỳ", "ref": "2", "type": "number" }, { "key": "bal", "label": "Số dư", "ref": "3", "type": "number" }] }
   ],
   "reports": [
@@ -46,7 +46,7 @@
         { "lineNo": "10", "label": "4. Chi phí thuế TNDN", "source": "Tổng số thuế TNDN phải nộp trên S2b-DNSN" },
         { "lineNo": "20", "label": "5. Lợi nhuận sau thuế TNDN", "formula": "20 = 03 - 10" }
       ] },
-    { "code": "B01-DNSN", "name": "Báo cáo tình hình tài chính", "article": "Điều 10 khoản 2.2.1", "built": false, "verified": true, "reason": "Chưa dựng báo cáo: cần S4a, S4b, S4d và chỉ tiêu Tài sản khác; sổ ghi đơn không bảo đảm cân đối 200 = 500.",
+    { "code": "B01-DNSN", "name": "Báo cáo tình hình tài chính", "article": "Điều 10 khoản 2.2.1", "built": true, "verified": true,
       "lines": [
         { "lineNo": "110", "label": "1. Tiền", "source": "số dư cuối kỳ Sổ chi tiết tiền" },
         { "lineNo": "120", "label": "2. Các khoản nợ phải thu", "source": "Sổ chi tiết thanh toán công nợ và sổ liên quan (kể cả thuế GTGT được khấu trừ)" },
@@ -63,6 +63,12 @@
         { "lineNo": "430", "label": "3. Các quỹ thuộc vốn chủ sở hữu", "source": "Sổ theo dõi vốn chủ sở hữu" },
         { "lineNo": "500", "label": "TỔNG CỘNG NGUỒN VỐN", "formula": "500 = 300 + 400" }
       ] }
+  ],
+  "vouchers": [
+    { "code": "01-TT", "name": "Phiếu thu", "article": "Điều 9 khoản 2.1", "built": true, "verified": true },
+    { "code": "02-TT", "name": "Phiếu chi", "article": "Điều 9 khoản 2.2", "built": true, "verified": true },
+    { "code": "01-VT", "name": "Phiếu nhập kho", "article": "Điều 9 khoản 2.3", "built": true, "verified": true },
+    { "code": "02-VT", "name": "Phiếu xuất kho", "article": "Điều 9 khoản 2.4", "built": true, "verified": true }
   ],
   "notApplicable": ["Hệ thống tài khoản: thông tư không quy định (Điều 11 chỉ hướng dẫn chuyển số dư từ tài khoản TT 132/2018 sang sổ)"]
 }

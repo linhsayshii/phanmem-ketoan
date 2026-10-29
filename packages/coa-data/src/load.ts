@@ -7,7 +7,7 @@ const dataDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..',
 export const COA_REGIMES: Regime[] = ['TT133', 'TT200', 'TT99'];
 const SOURCE: Record<string, string> = {
   TT133: 'Phụ lục 1 TT 133/2016/TT-BTC ngày 26/8/2016, Công báo số 1103 + 1104 ngày 12/10/2016, https://congbao.chinhphu.vn/van-ban/thong-tu-so-133-2016-tt-btc-21048/15522.htm',
-  TT200: 'SUNSOFT OrgDMTK_200 (chưa đối chiếu Phụ lục 1 TT 200/2014/TT-BTC)',
+  TT200: 'Phụ lục 1 TT 200/2014/TT-BTC ngày 22/12/2014, Công báo số 289 + 290 ngày 28/02/2015, https://congbao.chinhphu.vn/van-ban/thong-tu-so-200-2014-tt-btc-6697.htm',
   TT99: 'Phụ lục II TT 99/2025/TT-BTC ngày 27/10/2025, Công báo số 1565 + 1566 ngày 16/11/2025, https://congbao.chinhphu.vn/van-ban/thong-tu-so-99-2025-tt-btc-46529.htm',
 };
 export function dataPath(...p: string[]): string { return path.join(dataDir, ...p); }
@@ -116,6 +116,14 @@ export function isTncnTemplateComplete(form: '05KK' | '05QTT'): boolean { return
 export function loadCitTemplate(version: 'TT89'): CitTemplate {
   if (!isCitTemplateComplete(version)) throw new Error('Chưa có mẫu tờ khai 03/TNDN theo TT 89/2026/TT-BTC đối chiếu văn bản gốc (status.json 03TNDN_TT89)');
   return JSON.parse(readFileSync(dataPath('tax', '03tndn-tt89.json'), 'utf8')) as CitTemplate;
+}
+// Mẫu 01/TKN-CNKD (Thông báo doanh thu/Tờ khai thuế năm của hộ kinh doanh, TT 89/2026 Phụ lục I, thay 01/CNKD): data/tax/01tkn-cnkd-tt89.json, cổng status.json 01TKN_CNKD_TT89. Mới là định nghĩa mẫu, chưa có logic lập tờ khai.
+export interface HkdReturnLine { code: string; label: string; section: string; kind: 'row' | 'total' | 'input' | 'formula' | 'column'; stt?: string; formula?: string; printedAnomaly?: boolean; note?: string }
+export interface HkdReturnTemplate { form: '01/TKN-CNKD'; title: string; version: 'TT89'; validFrom: string; validTo: string | null; source: string; printedAnomalies: string[]; applicability: string[]; header: { code: string; label: string; kind: string }[]; sectionA: { title: string; unit: string; columns: { no: string; key: string; label: string }[] }; lines: HkdReturnLine[]; notes: string[] }
+export function isHkdReturnTemplateComplete(): boolean { return taxStatus()['01TKN_CNKD_TT89'] === true && existsSync(dataPath('tax', '01tkn-cnkd-tt89.json')); }
+export function loadHkdReturnTemplate(): HkdReturnTemplate {
+  if (!isHkdReturnTemplateComplete()) throw new Error('Chưa có mẫu 01/TKN-CNKD theo TT 89/2026/TT-BTC đối chiếu văn bản gốc (status.json 01TKN_CNKD_TT89)');
+  return JSON.parse(readFileSync(dataPath('tax', '01tkn-cnkd-tt89.json'), 'utf8')) as HkdReturnTemplate;
 }
 // Ánh xạ sổ cái cho thuế TNDN theo chế độ (data/tax/cit-ledger.json): chỉ tiêu B02 lợi nhuận/doanh thu, tài khoản chi phí thuế, thuế phải nộp, tiền. Chế độ không có trong tệp thì undefined.
 export interface CitLedgerMap { profitLine: string; expenseLine: string; revenueLines: string[]; expenseAccount: string; payableAccount: string; cashAccounts: string[] }
