@@ -9,7 +9,7 @@ const me = vi.hoisted(() => ({ sensitive: [] as string[] }));
 vi.mock('../src/auth.js', () => ({ useAuth: () => ({ me: { userId: 'u', tenantId: 't', sensitive: me.sensitive }, can: () => true }) }));
 vi.mock('../src/api/client.js', async (orig) => ({ ...(await orig<Record<string, unknown>>()), api: apiMock }));
 // lưới AG Grid và ô tra danh mục nặng trong jsdom, không thuộc điều đang kiểm tra; bộ lọc nhớ lại trả luôn giá trị mặc định
-vi.mock('@kt/ui', () => ({ KeyboardGrid: () => null, LookupSelect: () => null, useRememberedFilter: (_key: string, initial: unknown) => [initial, vi.fn()] }));
+vi.mock('@kt/ui', async (importOriginal) => ({ ...(await importOriginal<Record<string, unknown>>()), KeyboardGrid: () => null, LookupSelect: () => null, useRememberedFilter: (_key: string, initial: unknown) => [initial, vi.fn()] }));
 
 describe('In cả bộ sổ năm', () => {
   const fetchMock = vi.fn();

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Drawer, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tabs, Tag, Upload, message } from 'antd';
 import type { ColDef } from 'ag-grid-community';
 import { D, formatVnDate, formatVnNumber, parseVnNumber } from '@kt/domain';
-import { KeyboardGrid, useHotkeys } from '@kt/ui';
+import { COLOR, KeyboardGrid, PageHeader, Toolbar, useHotkeys } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -97,10 +97,10 @@ function ReportTab({ budgets }: { budgets: Head[] }) {
   const entries = useQuery({ queryKey: ['budget-entries', id, drill?.lineId, month], enabled: !!drill, queryFn: () => api<{ rows: Entry[]; truncated: boolean }>(`/api/budgets/${id}/lines/${drill!.lineId}/entries?month=${month}`) });
   const dim = (r: RepLine) => [r.costItemCode, r.departmentCode, r.projectCode].filter(Boolean).join(' / ');
   return (<>
-    <Space style={{ marginBottom: 12 }} wrap>
+    <Toolbar style={{ marginBottom: 12 }}>
       <Select aria-label="Ngân sách" value={id} onChange={setId} style={{ width: 320 }} options={budgets.map((b) => ({ value: b.id, label: `${b.fiscalYear} - ${b.name} (v${b.version}, ${STATUS[b.status]?.text})` }))} />
       <Select aria-label="Đến tháng" value={month} onChange={setMonth} style={{ width: 130 }} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `Đến tháng ${i + 1}` }))} />
-    </Space>
+    </Toolbar>
     {rep.error && <Alert type="error" showIcon message={(rep.error as Error).message} />}
     <Table<RepLine> size="small" rowKey="lineId" loading={rep.isFetching} pagination={false} dataSource={rep.data?.lines ?? []} scroll={{ x: 1300 }}
       onRow={(r) => ({ onDoubleClick: () => setDrill(r) })}
@@ -108,7 +108,7 @@ function ReportTab({ budgets }: { budgets: Head[] }) {
         { title: 'Loại', dataIndex: 'kind', width: 90, render: (k: string) => (k === 'expense' ? 'Chi phí' : 'Doanh thu') },
         cellCols('month', `Tháng ${month}`), cellCols('ytd', 'Lũy kế'), cellCols('year', 'Cả năm'),
         { title: '', width: 90, fixed: 'right', render: (_: unknown, r) => <Button type="link" size="small" onClick={() => setDrill(r)}>Truy ngược</Button> }]} />
-    {rep.data && <p style={{ marginTop: 8, color: '#52514e' }}>Chênh lệch = Thực tế - Ngân sách. Thực tế lấy từ sổ cái (bỏ bút toán kết chuyển). Nhấp đúp một dòng để xem chứng từ.</p>}
+    {rep.data && <p style={{ marginTop: 8, color: COLOR.textSecondary }}>Chênh lệch = Thực tế - Ngân sách. Thực tế lấy từ sổ cái (bỏ bút toán kết chuyển). Nhấp đúp một dòng để xem chứng từ.</p>}
     <Drawer open={!!drill} onClose={() => setDrill(null)} width={760} title={drill ? `Chứng từ tạo nên số thực tế - ${drill.accountPrefix} tháng ${month}` : ''}>
       <Table<Entry> size="small" rowKey={(r) => `${r.voucherId}|${r.accountCode}|${r.amount}`} loading={entries.isFetching} pagination={{ pageSize: 50, hideOnSinglePage: true }} dataSource={entries.data?.rows ?? []} columns={[
         { title: 'Ngày', dataIndex: 'postingDate', width: 100, render: formatVnDate }, { title: 'Chứng từ', width: 120, render: (_: unknown, r) => r.voucherNo ?? r.voucherType }, { title: 'TK', dataIndex: 'accountCode', width: 80 },
@@ -146,7 +146,7 @@ export default function BudgetPage() {
   useHotkeys({ Insert: () => { if (can('budget.create') && edit === null) setEdit('new'); } });
   const data = list.data ?? [];
   return (<>
-    <h2 style={{ margin: '0 0 12px' }}>Ngân sách</h2>
+    <PageHeader title="Ngân sách" />
     <Tabs items={[
       { key: 'list', label: 'Danh sách ngân sách', children: (<>
         <Space style={{ marginBottom: 12 }}>

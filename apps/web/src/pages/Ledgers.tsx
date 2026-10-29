@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber, SENSITIVE_FLAGS_ALL, type PrintLang } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useRememberedFilter, type LookupRow } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, PageHeader, Toolbar, useRememberedFilter, type LookupRow } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor, contractFetcher, costObjectPick } from '../lookups.js';
@@ -157,22 +157,22 @@ export default function LedgersPage() {
     <LookupSelect catalog={catalog} includeInactive placeholder={placeholder} aria-label={placeholder} style={{ width: 200 }} value={f[field] || null} onChange={(code) => setF({ ...f, [field]: code ?? '' })} {...(fetcher && { fetcher })} />;
   return (
     <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Sổ sách kế toán</h2>
-        <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
-        <BranchFilter value={f.branch ?? ''} onChange={(branch) => setF({ ...f, branch })} />
-        {(tab === 'ledger' || tab === 'detail') && <LookupSelect catalog="account" fetcher={accountFetcher} placeholder="Tài khoản" style={{ width: 300 }} value={f.accountCode || null} onChange={(accountCode) => setF({ ...f, accountCode: accountCode ?? '' })} />}
-        {tab === 'ledger' && <Radio.Group optionType="button" value={f.mode} onChange={(e) => setF({ ...f, mode: e.target.value as Mode })}
-          options={[{ value: 'voucher', label: 'Theo chứng từ' }, { value: 'subaccount', label: 'Theo tiểu khoản' }, { value: 't', label: 'Chữ T' }]} />}
-        {tab === 'trial' && <>
-          <Radio.Group optionType="button" value={f.level} onChange={(e) => setF({ ...f, level: e.target.value as number })} options={[{ value: 1, label: 'Cấp 1' }, { value: 2, label: 'Cấp 2' }, { value: 3, label: 'Cấp 3' }, { value: 0, label: 'Tất cả' }]} />
-          <span><Switch checked={f.splitParty} onChange={(splitParty) => setF({ ...f, splitParty })} /> Tách dư hai bên theo đối tượng</span></>}
-        {can('report.print') && <>
-          <PrintLangSelect value={printLang} onChange={setPrintLang} />
-          <Button disabled={needAccount} onClick={() => printAs('pdf')}>In PDF</Button>
-          <Button disabled={needAccount} onClick={() => printAs('xlsx')}>Xuất Excel</Button>
-          <Button onClick={() => setBookSet(true)}>In cả bộ sổ năm…</Button></>}
-      </Space>
+      <PageHeader title="Sổ sách kế toán" extra={can('report.print') && <>
+        <Button disabled={needAccount} onClick={() => printAs('pdf')}>In PDF</Button>
+        <Button disabled={needAccount} onClick={() => printAs('xlsx')}>Xuất Excel</Button>
+        <Button onClick={() => setBookSet(true)}>In cả bộ sổ năm…</Button></>}>
+        <Toolbar>
+          <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
+          <BranchFilter value={f.branch ?? ''} onChange={(branch) => setF({ ...f, branch })} />
+          {(tab === 'ledger' || tab === 'detail') && <LookupSelect catalog="account" fetcher={accountFetcher} placeholder="Tài khoản" style={{ width: 300 }} value={f.accountCode || null} onChange={(accountCode) => setF({ ...f, accountCode: accountCode ?? '' })} />}
+          {tab === 'ledger' && <Radio.Group optionType="button" value={f.mode} onChange={(e) => setF({ ...f, mode: e.target.value as Mode })}
+            options={[{ value: 'voucher', label: 'Theo chứng từ' }, { value: 'subaccount', label: 'Theo tiểu khoản' }, { value: 't', label: 'Chữ T' }]} />}
+          {tab === 'trial' && <>
+            <Radio.Group optionType="button" value={f.level} onChange={(e) => setF({ ...f, level: e.target.value as number })} options={[{ value: 1, label: 'Cấp 1' }, { value: 2, label: 'Cấp 2' }, { value: 3, label: 'Cấp 3' }, { value: 0, label: 'Tất cả' }]} />
+            <span><Switch checked={f.splitParty} onChange={(splitParty) => setF({ ...f, splitParty })} /> Tách dư hai bên theo đối tượng</span></>}
+          {can('report.print') && <PrintLangSelect value={printLang} onChange={setPrintLang} />}
+        </Toolbar>
+      </PageHeader>
       {tab === 'detail' && <Space wrap>{lookup('party', 'partyCode', 'Đối tượng')}{lookup('cost_item', 'costItemCode', 'Khoản mục')}{lookup('project', 'projectCode', 'Vụ việc')}{lookup('department', 'departmentCode', 'Bộ phận')}
         {lookup('contract', 'contractCode', 'Hợp đồng', contractFetcher())}{lookup('cost_object', 'costObjectCode', 'Đối tượng THCP', costObjectPick)}</Space>}
       <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={[{ key: 'journal', label: 'Nhật ký chung' }, { key: 'ledger', label: 'Sổ Cái' }, { key: 'detail', label: 'Sổ chi tiết' }, { key: 'trial', label: 'Bảng cân đối số phát sinh' }]} />

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useRememberedFilter, type LookupRow } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, PageHeader, Toolbar, useRememberedFilter, type LookupRow } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor, bankAccountFetcher } from '../lookups.js';
@@ -85,20 +85,20 @@ export default function CashBooksPage() {
 
   return (
     <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Sổ quỹ và tiền gửi</h2>
-        <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
-        {tab === 'cash' ? <>
-          <LookupSelect catalog="account" fetcher={accountFetcher} placeholder="Tài khoản quỹ" style={{ width: 280 }} value={f.accountCode || null} onChange={(accountCode) => setF({ ...f, accountCode: accountCode ?? '' })} />
-          <LookupSelect catalog="currency" placeholder="Loại tiền" style={{ width: 160 }} value={f.currency || null} onChange={(currency) => setF({ ...f, currency: currency ?? '' })} />
-        </> : <>
-          <LookupSelect catalog="bank_account" fetcher={bankAccountFetcher} placeholder="Tài khoản ngân hàng" style={{ width: 300 }} disabled={f.unassigned} value={f.bankAccountNo || null} onChange={(bankAccountNo) => setF({ ...f, bankAccountNo: bankAccountNo ?? '' })} />
-          <span><Switch aria-label="Chưa gán tài khoản ngân hàng (TK 112)" checked={f.unassigned} onChange={(unassigned) => setF({ ...f, unassigned })} /> Chưa gán tài khoản ngân hàng (TK 112)</span>
-        </>}
-        {can('report.print') && <>
-          <Button disabled={needChoice} onClick={() => printAs('pdf')}>In PDF</Button>
-          <Button disabled={needChoice} onClick={() => printAs('xlsx')}>Xuất Excel</Button></>}
-      </Space>
+      <PageHeader title="Sổ quỹ và tiền gửi" extra={can('report.print') && <>
+        <Button disabled={needChoice} onClick={() => printAs('pdf')}>In PDF</Button>
+        <Button disabled={needChoice} onClick={() => printAs('xlsx')}>Xuất Excel</Button></>}>
+        <Toolbar>
+          <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(f.from), dayjs(f.to)]} onChange={(r) => r?.[0] && r[1] && setF({ ...f, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />
+          {tab === 'cash' ? <>
+            <LookupSelect catalog="account" fetcher={accountFetcher} placeholder="Tài khoản quỹ" style={{ width: 280 }} value={f.accountCode || null} onChange={(accountCode) => setF({ ...f, accountCode: accountCode ?? '' })} />
+            <LookupSelect catalog="currency" placeholder="Loại tiền" style={{ width: 160 }} value={f.currency || null} onChange={(currency) => setF({ ...f, currency: currency ?? '' })} />
+          </> : <>
+            <LookupSelect catalog="bank_account" fetcher={bankAccountFetcher} placeholder="Tài khoản ngân hàng" style={{ width: 300 }} disabled={f.unassigned} value={f.bankAccountNo || null} onChange={(bankAccountNo) => setF({ ...f, bankAccountNo: bankAccountNo ?? '' })} />
+            <span><Switch aria-label="Chưa gán tài khoản ngân hàng (TK 112)" checked={f.unassigned} onChange={(unassigned) => setF({ ...f, unassigned })} /> Chưa gán tài khoản ngân hàng (TK 112)</span>
+          </>}
+        </Toolbar>
+      </PageHeader>
       <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={[{ key: 'cash', label: 'Sổ quỹ' }, { key: 'bank', label: 'Sổ tiền gửi' }]} />
       {body()}
     </Space>

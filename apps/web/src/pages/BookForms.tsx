@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber } from '@kt/domain';
-import { KeyboardGrid, LookupSelect } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, PageHeader, Toolbar } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor } from '../lookups.js';
@@ -93,14 +93,14 @@ export default function BookFormsPage() {
   const accountPick = <LookupSelect catalog="account" fetcher={fetcher} placeholder={form === 'NKCT' ? 'Tài khoản ghi Có' : 'Tài khoản'} style={{ width: 300 }} value={accountCode || null} onChange={(c) => setAccountCode(c ?? '')} />;
   return (
     <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Hình thức sổ kế toán</h2>
-        <Select style={{ width: 130 }} placeholder="Năm" value={year} onChange={(y) => { setYear(y); setRange(null); }} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear}` }))} />
-        <Radio.Group optionType="button" value={form} disabled={!can('period.update') || change.isPending} onChange={(e) => change.mutate(e.target.value as BookForm)} options={FORMS} />
-        <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={from ? [dayjs(from), dayjs(to)] : null} onChange={(r) => r?.[0] && r[1] && setRange([r[0].format('YYYY-MM-DD'), r[1].format('YYYY-MM-DD')])} />
-        {(form === 'NKCT' || (form === 'CTGS' && ctgsTab === 'ledger')) && accountPick}
-        {can('report.print') && !!url && <><Button disabled={needAccount} onClick={() => open(url, 'pdf')}>In PDF</Button><Button disabled={needAccount} onClick={() => open(url, 'xlsx')}>Xuất Excel</Button></>}
-      </Space>
+      <PageHeader title="Hình thức sổ kế toán" extra={can('report.print') && !!url && <><Button disabled={needAccount} onClick={() => open(url, 'pdf')}>In PDF</Button><Button disabled={needAccount} onClick={() => open(url, 'xlsx')}>Xuất Excel</Button></>}>
+        <Toolbar>
+          <Select style={{ width: 130 }} placeholder="Năm" value={year} onChange={(y) => { setYear(y); setRange(null); }} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear}` }))} />
+          <Radio.Group optionType="button" value={form} disabled={!can('period.update') || change.isPending} onChange={(e) => change.mutate(e.target.value as BookForm)} options={FORMS} />
+          <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={from ? [dayjs(from), dayjs(to)] : null} onChange={(r) => r?.[0] && r[1] && setRange([r[0].format('YYYY-MM-DD'), r[1].format('YYYY-MM-DD')])} />
+          {(form === 'NKCT' || (form === 'CTGS' && ctgsTab === 'ledger')) && accountPick}
+        </Toolbar>
+      </PageHeader>
       {!can('period.update') && <Alert type="info" showIcon message="Chỉ người có quyền sửa kỳ kế toán mới đổi được hình thức sổ của năm." />}
       {form === 'CTGS' && <Tabs activeKey={ctgsTab} onChange={setCtgsTab} items={[{ key: 'sets', label: 'Chứng từ ghi sổ' }, { key: 'register', label: 'Sổ đăng ký Chứng từ ghi sổ' }, { key: 'ledger', label: 'Sổ Cái' }]} />}
       {form === 'CTGS' && ctgsTab === 'sets' && <Space direction="vertical" style={{ width: '100%' }}>

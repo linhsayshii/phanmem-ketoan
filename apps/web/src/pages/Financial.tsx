@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber, type PrintLang } from '@kt/domain';
+import { COLOR, PageHeader, Toolbar } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { PrintLangSelect } from './PrintLangSelect.js';
@@ -120,25 +121,27 @@ export default function FinancialPage() {
   };
   return (
     <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Báo cáo tài chính</h2>
-        <Select style={{ width: 130 }} value={fy?.fiscalYear} placeholder="Năm" onChange={setYearNo} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
-        <Select style={{ width: 280 }} value={code} onChange={setCode} options={REPORTS} />
-        {range && fy && (isB01
-          ? <><span>Đến ngày</span><DatePicker format="DD/MM/YYYY" allowClear={false} value={dayjs(range.to)} onChange={(d) => d && setCustom({ year: fy.fiscalYear, from: fy.dateFrom, to: d.format('YYYY-MM-DD') })} /></>
-          : <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(range.from), dayjs(range.to)]} onChange={(r) => r?.[0] && r[1] && setCustom({ year: fy.fiscalYear, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />)}
-        <BranchFilter value={branch} onChange={setBranch} />
-        {!isB01 && <span><Switch checked={compare} onChange={setCompare} /> So sánh năm trước</span>}
+      <PageHeader title="Báo cáo tài chính" extra={<>
         {can('report.print') && range && <>
-          <PrintLangSelect value={printLang} onChange={setPrintLang} />
           <Button disabled={!report.data} onClick={() => { window.open(`/api/reports/financial/${code}?${query({ ...range, format: 'pdf', lang: printLang })}`, '_blank'); }}>In PDF</Button>
           <Button disabled={!report.data} onClick={() => { window.open(`/api/reports/financial/${code}?${query({ ...range, format: 'xlsx', lang: printLang })}`, '_blank'); }}>Xuất Excel</Button></>}
         {can('report_def.update') && fy && <>
           <Button onClick={() => setEditing(true)}>Sửa công thức</Button>
           <Button loading={reload.isPending} onClick={() => Modal.confirm({ title: `Nạp lại mẫu ${code}?`, content: 'Báo cáo này được thay bằng mẫu hệ thống; các báo cáo khác của công ty giữ nguyên.', okText: 'Nạp lại mẫu', cancelText: 'Hủy', onOk: () => reload.mutateAsync().catch(() => undefined) })}>Nạp lại mẫu</Button></>}
-      </Space>
+      </>}>
+        <Toolbar>
+          <Select style={{ width: 130 }} value={fy?.fiscalYear} placeholder="Năm" onChange={setYearNo} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
+          <Select style={{ width: 280 }} value={code} onChange={setCode} options={REPORTS} />
+          {range && fy && (isB01
+            ? <><span>Đến ngày</span><DatePicker format="DD/MM/YYYY" allowClear={false} value={dayjs(range.to)} onChange={(d) => d && setCustom({ year: fy.fiscalYear, from: fy.dateFrom, to: d.format('YYYY-MM-DD') })} /></>
+            : <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={[dayjs(range.from), dayjs(range.to)]} onChange={(r) => r?.[0] && r[1] && setCustom({ year: fy.fiscalYear, from: r[0].format('YYYY-MM-DD'), to: r[1].format('YYYY-MM-DD') })} />)}
+          <BranchFilter value={branch} onChange={setBranch} />
+          {!isB01 && <span><Switch checked={compare} onChange={setCompare} /> So sánh năm trước</span>}
+          {can('report.print') && range && <PrintLangSelect value={printLang} onChange={setPrintLang} />}
+        </Toolbar>
+      </PageHeader>
       {years.data && !years.data.length && <Alert type="info" showIcon message="Chưa có năm tài chính nào. Tạo năm tài chính trước khi xem báo cáo." />}
-      {report.data && <div><b>{report.data.name}</b> - Mẫu số {report.data.formNo}<div style={{ color: '#888' }}>{report.data.issuedBy}</div></div>}
+      {report.data && <div><b>{report.data.name}</b> - Mẫu số {report.data.formNo}<div style={{ color: COLOR.textSecondary }}>{report.data.issuedBy}</div></div>}
       {missing && <Alert type="info" showIcon message={`Chưa có định nghĩa ${code} cho ${fy?.regime}. ${can('report_def.update') ? 'Bấm "Sửa công thức" để định nghĩa các chỉ tiêu.' : 'Liên hệ người quản trị để định nghĩa.'}`} />}
       {report.data?.previousNote && <Alert type="warning" showIcon message={REGIME_NOTE} />}
       {!!(report.data?.approximations?.fixedZero.length || report.data?.approximations?.approx.length) && <Alert type="info" showIcon message="Báo cáo có chỉ tiêu để 0 cố định hoặc lấy số gần đúng"

@@ -4,6 +4,7 @@ import { Alert, Button, DatePicker, Form, Input, Popconfirm, Select, Space, Tabl
 import dayjs from 'dayjs';
 import { Link } from '@tanstack/react-router';
 import { formatVnDate, formatVnNumber, parseVnNumber } from '@kt/domain';
+import { COLOR, PageHeader, Toolbar } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -36,8 +37,8 @@ function DocView({ doc }: { doc: Doc }) {
   return (
     <div style={{ marginBottom: 24 }}>
       <h3 style={{ marginBottom: 2 }}>{doc.title.toUpperCase()}</h3>
-      <div style={{ color: '#667085', marginBottom: 8 }}>Mẫu số {doc.formNo} {doc.issuedBy}. {doc.subtitle}</div>
-      {doc.intro?.map((t) => <div key={t} style={{ color: '#667085' }}>{t}</div>)}
+      <div style={{ color: COLOR.textSecondary, marginBottom: 8 }}>Mẫu số {doc.formNo} {doc.issuedBy}. {doc.subtitle}</div>
+      {doc.intro?.map((t) => <div key={t} style={{ color: COLOR.textSecondary }}>{t}</div>)}
       <Table size="small" bordered pagination={false} columns={cols} dataSource={doc.footer ? [...doc.rows, { ...doc.footer, isBold: true }] : doc.rows} rowKey={(_r, i) => String(i)} scroll={{ x: 'max-content' }} />
       {doc.outro?.map((t) => <Alert key={t} type="warning" showIcon style={{ marginTop: 8 }} message={t} />)}
     </div>
@@ -58,7 +59,7 @@ function BooksTab({ cat }: { cat: Catalog }) {
   const sel = cat.items.find((i) => i.code === code);
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
-      <Space wrap>
+      <Toolbar>
         <Select aria-label="Sổ hoặc báo cáo" style={{ width: 440 }} value={code} onChange={(v) => { setCode(v); setDocs(null); }}
           options={cat.items.map((i) => ({ value: i.code, disabled: !i.built, label: `${i.code}: ${i.name}${i.required ? ' (bắt buộc theo phương pháp đã chọn)' : ''}${i.built ? '' : ' (chưa dựng)'}` }))} />
         <DatePicker.RangePicker aria-label="Kỳ" format="DD/MM/YYYY" allowClear={false} value={[dayjs(range[0]), dayjs(range[1])]} onChange={(v) => v?.[0] && v[1] && setRange([v[0].format(DATE), v[1].format(DATE)])} />
@@ -67,8 +68,8 @@ function BooksTab({ cat }: { cat: Catalog }) {
         <Button type="primary" onClick={() => view.mutate()} loading={view.isPending} disabled={!code}>Xem sổ</Button>
         <Button onClick={() => window.open(`/api/hkd/books/${code}?${qs('pdf')}`, '_blank')} disabled={!code}>In PDF</Button>
         <Button onClick={() => window.open(`/api/hkd/books/${code}?${qs('xlsx')}`, '_blank')} disabled={!code}>Xuất Excel</Button>
-      </Space>
-      {sel && <div style={{ color: '#667085' }}>{sel.article} của thông tư. {cat.methods.find((m) => m.code === cat.taxMethod)?.label ? `Phương pháp nộp thuế năm ${cat.fiscalYear}: ${cat.methods.find((m) => m.code === cat.taxMethod)!.label}.` : 'Chưa chọn phương pháp nộp thuế (tab Cài đặt năm).'}</div>}
+      </Toolbar>
+      {sel && <div style={{ color: COLOR.textSecondary }}>{sel.article} của thông tư. {cat.methods.find((m) => m.code === cat.taxMethod)?.label ? `Phương pháp nộp thuế năm ${cat.fiscalYear}: ${cat.methods.find((m) => m.code === cat.taxMethod)!.label}.` : 'Chưa chọn phương pháp nộp thuế (tab Cài đặt năm).'}</div>}
       {docs?.map((d, i) => <DocView key={i} doc={d} />)}
     </Space>
   );
@@ -235,14 +236,13 @@ function SettingsTab({ cat }: { cat: Catalog }) {
 export default function HkdBooksPage() {
   const cat = useCatalog();
   if (cat.isError) return (
-    <div><h2 style={{ marginTop: 0 }}>Sổ hộ kinh doanh, doanh nghiệp siêu nhỏ</h2>
+    <div><PageHeader title="Sổ hộ kinh doanh, doanh nghiệp siêu nhỏ" />
       <Alert type="warning" showIcon message="Công ty chưa có năm tài chính theo TT 152/2025 hoặc TT 58/2026" description={<span>Tạo năm tài chính với chế độ này ở <Link to="/he-thong/tao-cong-ty">Tạo công ty mới</Link> hoặc <Link to="/he-thong/che-do-ke-toan">xem tình trạng chế độ</Link>.</span>} /></div>);
   if (!cat.data) return null;
   const c = cat.data;
   return (
     <div>
-      <h2 style={{ marginTop: 0 }}>Sổ hộ kinh doanh, doanh nghiệp siêu nhỏ</h2>
-      <div style={{ color: '#667085', marginBottom: 12 }}>{c.regimeLabel}, năm tài chính {c.fiscalYear}. Ghi sổ theo nhóm thuế, không có hệ thống tài khoản.</div>
+      <PageHeader title="Sổ hộ kinh doanh, doanh nghiệp siêu nhỏ" description={`${c.regimeLabel}, năm tài chính ${c.fiscalYear}. Ghi sổ theo nhóm thuế, không có hệ thống tài khoản.`} />
       {!c.taxMethod && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Chưa chọn phương pháp nộp thuế cho năm này" description="Chọn ở tab Cài đặt năm để biết cần dùng những sổ nào." />}
       <Tabs items={[
         { key: 'books', label: 'Sổ và báo cáo', children: <BooksTab key={c.fiscalYear} cat={c} /> },

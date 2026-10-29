@@ -11,9 +11,10 @@ vi.mock('../src/api/client.js', async (orig) => ({ ...(await orig<Record<string,
 
 interface GridColumn { headerName?: string; field?: string; valueGetter?: (p: { data: unknown }) => unknown; valueFormatter?: (p: { value: unknown }) => string; onCellDoubleClicked?: (e: { data: unknown }) => void }
 // Lưới giả: mỗi dòng một khối, mỗi cột một ô mang tên cột; nhấn đúp dòng gọi cột đầu như AG Grid. Ô tra danh mục giả là một ô nhập có nhãn là gợi ý.
-vi.mock('@kt/ui', async () => {
+vi.mock('@kt/ui', async (importOriginal) => {
   const { useState } = await import('react');
   return {
+    ...(await importOriginal<Record<string, unknown>>()),
     KeyboardGrid: ({ rows, columns }: { rows: Record<string, unknown>[]; columns: GridColumn[] }) => (
       <div data-testid="grid">{rows.map((r, i) => (
         <div key={i} data-testid="row" onDoubleClick={() => columns[0]?.onCellDoubleClicked?.({ data: r })}>
