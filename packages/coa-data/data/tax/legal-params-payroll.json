@@ -1,0 +1,156 @@
+[
+  {
+    "code": "pit_brackets",
+    "value": [
+      {
+        "upTo": "10000000",
+        "rate": 5
+      },
+      {
+        "upTo": "30000000",
+        "rate": 10
+      },
+      {
+        "upTo": "60000000",
+        "rate": 20
+      },
+      {
+        "upTo": "100000000",
+        "rate": 30
+      },
+      {
+        "upTo": null,
+        "rate": 35
+      }
+    ],
+    "validFrom": "2026-01-01",
+    "validTo": null,
+    "source": "Luật Thuế thu nhập cá nhân số 109/2025/QH15 ngày 10/12/2025 (bản quét datafiles.chinhphu.vn/cpp/files/vbpq/2026/01/luat109-2025.pdf, tải 2026-10-29, OCR và đối chiếu ảnh trang 8) Điều 9 khoản 2 (biểu thuế lũy tiến từng phần, cột phần thu nhập tính thuế/tháng: đến 10 triệu 5%, trên 10 đến 30 triệu 10%, trên 30 đến 60 triệu 20%, trên 60 đến 100 triệu 30%, trên 100 triệu 35%), Điều 29 khoản 2 (quy định về thu nhập từ tiền lương, tiền công của cá nhân cư trú áp dụng từ kỳ tính thuế năm 2026). NĐ 253/2026/NĐ-CP Điều 46 khoản 1, Điều 50 khoản 1 (khấu trừ theo biểu thuế Điều 9 của Luật), Điều 69 khoản 1 điểm a (áp dụng từ kỳ tính thuế năm 2026). Luật số 09/2026/QH16 (Công báo 286 ngày 27/5/2026, congbao.chinhphu.vn/van-ban/luat-so-092026qh16-469536.htm) chỉ sửa khoản 1 Điều 7 của Luật 109/2025, không sửa Điều 9, Điều 10"
+  },
+  {
+    "code": "pit_brackets_annual",
+    "value": [
+      {
+        "upTo": "120000000",
+        "rate": 5
+      },
+      {
+        "upTo": "360000000",
+        "rate": 10
+      },
+      {
+        "upTo": "720000000",
+        "rate": 20
+      },
+      {
+        "upTo": "1200000000",
+        "rate": 30
+      },
+      {
+        "upTo": null,
+        "rate": 35
+      }
+    ],
+    "validFrom": "2026-01-01",
+    "validTo": null,
+    "source": "Luật Thuế thu nhập cá nhân số 109/2025/QH15 ngày 10/12/2025 (bản quét datafiles.chinhphu.vn/cpp/files/vbpq/2026/01/luat109-2025.pdf, tải 2026-10-29, OCR và đối chiếu ảnh trang 8) Điều 9 khoản 2 (cột phần thu nhập tính thuế/năm: đến 120 triệu 5%, trên 120 đến 360 triệu 10%, trên 360 đến 720 triệu 20%, trên 720 đến 1.200 triệu 30%, trên 1.200 triệu 35%), Điều 29 khoản 2. NĐ 253/2026/NĐ-CP Điều 51 (quyết toán năm), Điều 69 khoản 1 điểm a. Luật số 09/2026/QH16 (Công báo 286 ngày 27/5/2026, congbao.chinhphu.vn/van-ban/luat-so-092026qh16-469536.htm) chỉ sửa khoản 1 Điều 7 của Luật 109/2025, không sửa Điều 9, Điều 10"
+  },
+  {
+    "code": "pit_deduction",
+    "value": {
+      "self": "15500000",
+      "dependent": "6200000"
+    },
+    "validFrom": "2026-01-01",
+    "validTo": null,
+    "source": "Luật Thuế thu nhập cá nhân số 109/2025/QH15 ngày 10/12/2025 (bản quét datafiles.chinhphu.vn/cpp/files/vbpq/2026/01/luat109-2025.pdf, tải 2026-10-29, OCR và đối chiếu ảnh trang 8) Điều 10 khoản 1 (giảm trừ đối với người nộp thuế 15,5 triệu đồng/tháng (186 triệu đồng/năm); mỗi người phụ thuộc 6,2 triệu đồng/tháng), Điều 29 khoản 2 (áp dụng từ kỳ tính thuế năm 2026). NĐ 253/2026/NĐ-CP Điều 47 khoản 1, Điều 69 khoản 1 điểm a. Luật số 09/2026/QH16 (Công báo 286 ngày 27/5/2026, congbao.chinhphu.vn/van-ban/luat-so-092026qh16-469536.htm) chỉ sửa khoản 1 Điều 7 của Luật 109/2025, không sửa Điều 9, Điều 10. Điều 10 khoản 2 cho phép Ủy ban Thường vụ Quốc hội điều chỉnh mức này: thêm dòng mới khi có nghị quyết điều chỉnh"
+  },
+  {
+    "code": "pit_flat_rate_no_contract",
+    "value": {
+      "rate": 10
+    },
+    "validFrom": "2026-01-01",
+    "validTo": null,
+    "source": "NĐ 253/2026/NĐ-CP ngày 30/6/2026 (Công báo 402 ngày 16/7/2026, congbaocdn.chinhphu.vn/180507251028987904/2026/7/16/469959-1784171413_v1_1784174315_signed.pdf, bản PDF có chữ, tải 2026-10-29) Điều 50 khoản 2 (cá nhân cư trú không ký hợp đồng lao động hoặc ký dưới 03 tháng, mức chi trả từ 05 triệu đồng/lần trở lên: khấu trừ 10% trên thu nhập trước khi trả; dưới 05 triệu đồng/lần khấu trừ 10% khi cá nhân yêu cầu), Điều 69 khoản 1 điểm a (thu nhập từ tiền lương, tiền công của cá nhân cư trú áp dụng từ kỳ tính thuế năm 2026). Tham số chỉ mã hóa tỷ lệ 10%; ngưỡng 05 triệu đồng/lần và cam kết chưa đến mức khấu trừ (Điều 50 khoản 2) do người dùng áp dụng"
+  },
+  {
+    "code": "pit_non_resident_rate",
+    "value": {
+      "rate": 20
+    },
+    "validFrom": "2026-07-01",
+    "validTo": null,
+    "source": "Luật Thuế thu nhập cá nhân số 109/2025/QH15 ngày 10/12/2025 (bản quét datafiles.chinhphu.vn/cpp/files/vbpq/2026/01/luat109-2025.pdf, tải 2026-10-29, OCR và đối chiếu ảnh trang 8) Điều 21 (thu nhập từ tiền lương, tiền công của cá nhân không cư trú: nhân với thuế suất 20%, không phân biệt nơi trả), Điều 29 khoản 1 (hiệu lực 01/7/2026). NĐ 253/2026/NĐ-CP Điều 64 khoản 1, Điều 69 khoản 1 (hiệu lực 01/7/2026). Chưa nhập giai đoạn trước 01/7/2026 vì chưa lấy Luật Thuế thu nhập cá nhân 04/2007/QH12"
+  },
+  {
+    "code": "min_wage_region",
+    "value": {
+      "I": "5310000",
+      "II": "4730000",
+      "III": "4140000",
+      "IV": "3700000"
+    },
+    "validFrom": "2026-01-01",
+    "validTo": null,
+    "source": "NĐ 293/2025/NĐ-CP ngày 10/11/2025 (Công báo 1591+1592 ngày 19/11/2025, congbao.chinhphu.vn/van-ban/nghi-dinh-so-293-2025-nd-cp-46568.htm, bản PDF có chữ, tải 2026-10-29) Điều 3 khoản 1 (mức lương tối thiểu tháng: vùng I 5.310.000; vùng II 4.730.000; vùng III 4.140.000; vùng IV 3.700.000 đồng/tháng), Điều 5 khoản 1 (hiệu lực 01/01/2026). Danh mục địa bàn vùng I–IV ở Phụ lục của nghị định, công ty chọn vùng theo nơi hoạt động (Điều 3 khoản 3)"
+  },
+  {
+    "code": "si_rates",
+    "value": {
+      "employee": {
+        "si": 8,
+        "hi": 1.5,
+        "ui": 1
+      },
+      "employer": {
+        "si": 17,
+        "hi": 3,
+        "ui": 1,
+        "occupational": 0.5,
+        "union": 2
+      }
+    },
+    "validFrom": "2026-01-01",
+    "validTo": null,
+    "source": "Người lao động: BHXH 8% (quỹ hưu trí và tử tuất): Luật Bảo hiểm xã hội số 41/2024/QH15 (Công báo 987+988 ngày 25/8/2024, datafiles.chinhphu.vn/cpp/files/vbpq/2024/9/41-2024-qh15.pdf, tải 2026-10-29, hiệu lực 01/7/2025 theo Điều 140 khoản 1) Điều 33 khoản 1 điểm a; BHYT 1,5% (một phần ba của 4,5% tiền lương tháng làm căn cứ đóng BHXH bắt buộc): NĐ 188/2025/NĐ-CP ngày 01/7/2025 (Công báo, congbao.chinhphu.vn/van-ban/nghi-dinh-so-1882025ndcp-45593.htm, bản PDF có chữ, tải 2026-10-29) Điều 6 khoản 1 điểm a (hiệu lực 01/7/2025 theo Điều 70 khoản 2); BHTN 1% tiền lương tháng: NĐ 374/2025/NĐ-CP (Công báo 48 ngày 23/01/2026, congbao.chinhphu.vn/van-ban/nghi-dinh-so-3742025ndcp-468724.htm, bản PDF có chữ, tải 2026-10-29, hiệu lực 01/01/2026 theo Điều 45 khoản 1) Điều 4 khoản 1 (Luật Việc làm 74/2025 Điều 33 khoản 1 điểm a chỉ ghi \"tối đa 1%\"). Đơn vị: BHXH 17% = 3% quỹ ốm đau và thai sản + 14% quỹ hưu trí và tử tuất (Luật Bảo hiểm xã hội số 41/2024/QH15 (Công báo 987+988 ngày 25/8/2024, datafiles.chinhphu.vn/cpp/files/vbpq/2024/9/41-2024-qh15.pdf, tải 2026-10-29, hiệu lực 01/7/2025 theo Điều 140 khoản 1) Điều 34 khoản 1); BHYT 3% (hai phần ba của 4,5%; NĐ 188/2025/NĐ-CP ngày 01/7/2025 (Công báo, congbao.chinhphu.vn/van-ban/nghi-dinh-so-1882025ndcp-45593.htm, bản PDF có chữ, tải 2026-10-29) Điều 6 khoản 1 điểm a); BHTN 1% quỹ tiền lương (NĐ 374/2025/NĐ-CP (Công báo 48 ngày 23/01/2026, congbao.chinhphu.vn/van-ban/nghi-dinh-so-3742025ndcp-468724.htm, bản PDF có chữ, tải 2026-10-29, hiệu lực 01/01/2026 theo Điều 45 khoản 1) Điều 4 khoản 2); TNLĐ-BNN 0,5% mức đóng bình thường (NĐ 158/2025/NĐ-CP (congbao.chinhphu.vn/van-ban/nghi-dinh-so-1582025ndcp-45240.htm; datafiles.chinhphu.vn/cpp/files/vbpq/2025/6/158-ndcp.signed.pdf, bản quét OCR, đối chiếu ảnh trang 46, tải 2026-10-29, hiệu lực 01/7/2025 theo Điều 44) Điều 43 khoản 2 điểm a, sửa khoản 1 Điều 4 NĐ 58/2020/NĐ-CP; doanh nghiệp đủ điều kiện Điều 5 NĐ 58/2020 đóng 0,3% (điểm b): legal_param thắng nên công ty đó chưa chọn được 0,3%: xem hạn chế ghi ở tài liệu người dùng); kinh phí công đoàn 2% quỹ tiền lương làm căn cứ đóng BHXH bắt buộc (Luật Công đoàn số 50/2024/QH15 (congbao.chinhphu.vn/van-ban/luat-so-502024qh15-43589.htm, bản PDF có chữ, tải 2026-10-29, hiệu lực 01/7/2025 theo Điều 37) Điều 29 khoản 1 điểm b; miễn, giảm, tạm dừng theo Điều 30 không mã hóa). Không mã hóa đoàn phí của đoàn viên (người lao động đóng)"
+  },
+  {
+    "code": "si_ceiling",
+    "value": {
+      "si_base_max": "46800000",
+      "ui_base_max_multiple_of_min_wage": 20
+    },
+    "validFrom": "2026-01-01",
+    "validTo": "2026-06-30",
+    "source": "BHXH, BHYT: tiền lương làm căn cứ đóng cao nhất bằng 20 lần mức tham chiếu (Luật Bảo hiểm xã hội số 41/2024/QH15 (Công báo 987+988 ngày 25/8/2024, datafiles.chinhphu.vn/cpp/files/vbpq/2024/9/41-2024-qh15.pdf, tải 2026-10-29, hiệu lực 01/7/2025 theo Điều 140 khoản 1) Điều 31 khoản 1 điểm đ; mức tham chiếu bằng mức lương cơ sở khi chưa bãi bỏ lương cơ sở (Luật 41/2024 Điều 141 khoản 13; NĐ 158/2025 Điều 5 khoản 2)); mức lương cơ sở 2.340.000 đồng/tháng từ 01/7/2024 đến 30/6/2026 (NĐ 161/2026/NĐ-CP ngày 15/5/2026 (Công báo 290 ngày 29/5/2026, congbaocdn.chinhphu.vn/180507251028987904/2026/5/29/469550-1779784276_v1_1780017044_signed.pdf, tải 2026-10-29) Điều 3 khoản 2 (từ 01/7/2026 lương cơ sở 2.530.000 đồng/tháng, Điều 6 khoản 1 hiệu lực 01/7/2026) và NĐ 73/2024/NĐ-CP ngày 30/6/2024 (congbao.chinhphu.vn/van-ban/nghi-dinh-so-732024ndcp-42169.htm, Điều 3 khoản 2: từ 01/7/2024 là 2.340.000 đồng/tháng)) nên 20 × 2.340.000 = 46.800.000 đồng. BHTN: cao nhất bằng 20 lần mức lương tối thiểu tháng theo vùng do Chính phủ công bố tại thời điểm đóng (Luật Việc làm số 74/2025/QH15 (datafiles.chinhphu.vn/cpp/files/vbpq/2025/7/74qh15.signed.pdf, bản quét OCR, tải 2026-10-29, hiệu lực 01/01/2026 theo Điều 54 khoản 1) Điều 34 khoản 2), giá trị 20 là bội số của min_wage_region"
+  },
+  {
+    "code": "si_ceiling",
+    "value": {
+      "si_base_max": "50600000",
+      "ui_base_max_multiple_of_min_wage": 20
+    },
+    "validFrom": "2026-07-01",
+    "validTo": null,
+    "source": "BHXH, BHYT: tiền lương làm căn cứ đóng cao nhất bằng 20 lần mức tham chiếu (Luật Bảo hiểm xã hội số 41/2024/QH15 (Công báo 987+988 ngày 25/8/2024, datafiles.chinhphu.vn/cpp/files/vbpq/2024/9/41-2024-qh15.pdf, tải 2026-10-29, hiệu lực 01/7/2025 theo Điều 140 khoản 1) Điều 31 khoản 1 điểm đ; mức tham chiếu bằng mức lương cơ sở khi chưa bãi bỏ lương cơ sở (Luật 41/2024 Điều 141 khoản 13; NĐ 158/2025 Điều 5 khoản 2)); mức lương cơ sở 2.530.000 đồng/tháng từ 01/7/2026 (NĐ 161/2026/NĐ-CP ngày 15/5/2026 (Công báo 290 ngày 29/5/2026, congbaocdn.chinhphu.vn/180507251028987904/2026/5/29/469550-1779784276_v1_1780017044_signed.pdf, tải 2026-10-29) Điều 3 khoản 2 (từ 01/7/2026 lương cơ sở 2.530.000 đồng/tháng, Điều 6 khoản 1 hiệu lực 01/7/2026) và NĐ 73/2024/NĐ-CP ngày 30/6/2024 (congbao.chinhphu.vn/van-ban/nghi-dinh-so-732024ndcp-42169.htm, Điều 3 khoản 2: từ 01/7/2024 là 2.340.000 đồng/tháng)) nên 20 × 2.530.000 = 50.600.000 đồng. BHTN: cao nhất bằng 20 lần mức lương tối thiểu tháng theo vùng do Chính phủ công bố tại thời điểm đóng (Luật Việc làm số 74/2025/QH15 (datafiles.chinhphu.vn/cpp/files/vbpq/2025/7/74qh15.signed.pdf, bản quét OCR, tải 2026-10-29, hiệu lực 01/01/2026 theo Điều 54 khoản 1) Điều 34 khoản 2), giá trị 20 là bội số của min_wage_region"
+  },
+  {
+    "code": "si_floor",
+    "value": {
+      "si_base_min": "2340000"
+    },
+    "validFrom": "2026-01-01",
+    "validTo": "2026-06-30",
+    "source": "Tiền lương làm căn cứ đóng BHXH bắt buộc thấp nhất bằng mức tham chiếu (Luật Bảo hiểm xã hội số 41/2024/QH15 (Công báo 987+988 ngày 25/8/2024, datafiles.chinhphu.vn/cpp/files/vbpq/2024/9/41-2024-qh15.pdf, tải 2026-10-29, hiệu lực 01/7/2025 theo Điều 140 khoản 1) Điều 31 khoản 1 điểm đ; mức tham chiếu bằng mức lương cơ sở khi chưa bãi bỏ lương cơ sở (Luật 41/2024 Điều 141 khoản 13; NĐ 158/2025 Điều 5 khoản 2)); mức lương cơ sở 2.340.000 đồng/tháng từ 01/7/2024 đến 30/6/2026 (NĐ 161/2026/NĐ-CP ngày 15/5/2026 (Công báo 290 ngày 29/5/2026, congbaocdn.chinhphu.vn/180507251028987904/2026/5/29/469550-1779784276_v1_1780017044_signed.pdf, tải 2026-10-29) Điều 3 khoản 2 (từ 01/7/2026 lương cơ sở 2.530.000 đồng/tháng, Điều 6 khoản 1 hiệu lực 01/7/2026) và NĐ 73/2024/NĐ-CP ngày 30/6/2024 (congbao.chinhphu.vn/van-ban/nghi-dinh-so-732024ndcp-42169.htm, Điều 3 khoản 2: từ 01/7/2024 là 2.340.000 đồng/tháng)). BHYT cùng căn cứ BHXH (NĐ 188/2025/NĐ-CP ngày 01/7/2025 (Công báo, congbao.chinhphu.vn/van-ban/nghi-dinh-so-1882025ndcp-45593.htm, bản PDF có chữ, tải 2026-10-29) Điều 6 khoản 1 điểm a), BHTN: NĐ 374/2025/NĐ-CP (Công báo 48 ngày 23/01/2026, congbao.chinhphu.vn/van-ban/nghi-dinh-so-3742025ndcp-468724.htm, bản PDF có chữ, tải 2026-10-29, hiệu lực 01/01/2026 theo Điều 45 khoản 1) Điều 7 khoản 3 lấy tiền lương làm căn cứ đóng BHXH bắt buộc thấp nhất theo Luật BHXH làm mốc. Mức tối thiểu vùng của Bộ luật Lao động là điều kiện trả lương riêng, không phải sàn đóng BHXH theo văn bản này"
+  },
+  {
+    "code": "si_floor",
+    "value": {
+      "si_base_min": "2530000"
+    },
+    "validFrom": "2026-07-01",
+    "validTo": null,
+    "source": "Tiền lương làm căn cứ đóng BHXH bắt buộc thấp nhất bằng mức tham chiếu (Luật Bảo hiểm xã hội số 41/2024/QH15 (Công báo 987+988 ngày 25/8/2024, datafiles.chinhphu.vn/cpp/files/vbpq/2024/9/41-2024-qh15.pdf, tải 2026-10-29, hiệu lực 01/7/2025 theo Điều 140 khoản 1) Điều 31 khoản 1 điểm đ; mức tham chiếu bằng mức lương cơ sở khi chưa bãi bỏ lương cơ sở (Luật 41/2024 Điều 141 khoản 13; NĐ 158/2025 Điều 5 khoản 2)); mức lương cơ sở 2.530.000 đồng/tháng từ 01/7/2026 (NĐ 161/2026/NĐ-CP ngày 15/5/2026 (Công báo 290 ngày 29/5/2026, congbaocdn.chinhphu.vn/180507251028987904/2026/5/29/469550-1779784276_v1_1780017044_signed.pdf, tải 2026-10-29) Điều 3 khoản 2 (từ 01/7/2026 lương cơ sở 2.530.000 đồng/tháng, Điều 6 khoản 1 hiệu lực 01/7/2026) và NĐ 73/2024/NĐ-CP ngày 30/6/2024 (congbao.chinhphu.vn/van-ban/nghi-dinh-so-732024ndcp-42169.htm, Điều 3 khoản 2: từ 01/7/2024 là 2.340.000 đồng/tháng)). BHYT cùng căn cứ BHXH (NĐ 188/2025/NĐ-CP ngày 01/7/2025 (Công báo, congbao.chinhphu.vn/van-ban/nghi-dinh-so-1882025ndcp-45593.htm, bản PDF có chữ, tải 2026-10-29) Điều 6 khoản 1 điểm a), BHTN: NĐ 374/2025/NĐ-CP (Công báo 48 ngày 23/01/2026, congbao.chinhphu.vn/van-ban/nghi-dinh-so-3742025ndcp-468724.htm, bản PDF có chữ, tải 2026-10-29, hiệu lực 01/01/2026 theo Điều 45 khoản 1) Điều 7 khoản 3 lấy tiền lương làm căn cứ đóng BHXH bắt buộc thấp nhất theo Luật BHXH làm mốc. Mức tối thiểu vùng của Bộ luật Lao động là điều kiện trả lương riêng, không phải sàn đóng BHXH theo văn bản này"
+  }
+]

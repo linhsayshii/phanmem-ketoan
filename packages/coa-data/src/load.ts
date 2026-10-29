@@ -78,7 +78,10 @@ export function loadFxRules(regime: Regime): FxRules | undefined {
 // Tham số pháp lý theo ngày hiệu lực (data/tax/legal-params.json, mỗi dòng kèm nguồn văn bản); syncReferenceData nạp vào legal_param, API đọc bằng legalParam().
 // Cổng dữ liệu pháp lý theo dòng: status.json legalParam_<code>@<validFrom> = false khi dòng còn phần chưa đối chiếu văn bản gốc (nhãn, sync vẫn nạp mọi dòng).
 export interface LegalParam { code: string; value: unknown; validFrom: string; validTo: string | null; source: string }
-export function loadLegalParams(): LegalParam[] { return JSON.parse(readFileSync(dataPath('tax', 'legal-params.json'), 'utf8')) as LegalParam[]; }
+// Tham số lương, TNCN, BHXH nằm ở tệp riêng legal-params-payroll.json (cùng khuôn); loadLegalParams gộp cả hai.
+export function loadLegalParams(): LegalParam[] {
+  return (['legal-params.json', 'legal-params-payroll.json'] as const).flatMap((f) => JSON.parse(readFileSync(dataPath('tax', f), 'utf8')) as LegalParam[]);
+}
 
 // Chỉ tiêu tờ khai 01/GTGT theo phiên bản mẫu (data/tax/01gtgt-tt89.json, 01gtgt-tt80.json), nhập từ văn bản gốc; cổng status.json 01GTGT_TT89, 01GTGT_TT80.
 // Chưa có tệp của phiên bản nào thì loadVatTemplate ném lỗi (API trả 409 VAT_TEMPLATE_UNAVAILABLE).
