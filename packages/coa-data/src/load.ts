@@ -7,7 +7,7 @@ const dataDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..',
 export const COA_REGIMES: Regime[] = ['TT133', 'TT200', 'TT99'];
 const SOURCE: Record<string, string> = {
   TT133: 'Phụ lục 1 TT 133/2016/TT-BTC ngày 26/8/2016, Công báo số 1103 + 1104 ngày 12/10/2016, https://congbao.chinhphu.vn/van-ban/thong-tu-so-133-2016-tt-btc-21048/15522.htm',
-  TT200: 'SUNSOFT OrgDMTK_200 (chưa đối chiếu Phụ lục 1 TT 200/2014/TT-BTC)',
+  TT200: 'Phụ lục 1 TT 200/2014/TT-BTC ngày 22/12/2014, Công báo số 289 + 290 ngày 28/02/2015, https://congbao.chinhphu.vn/van-ban/thong-tu-so-200-2014-tt-btc-6697.htm',
   TT99: 'Phụ lục II TT 99/2025/TT-BTC ngày 27/10/2025, Công báo số 1565 + 1566 ngày 16/11/2025, https://congbao.chinhphu.vn/van-ban/thong-tu-so-99-2025-tt-btc-46529.htm',
 };
 export function dataPath(...p: string[]): string { return path.join(dataDir, ...p); }
