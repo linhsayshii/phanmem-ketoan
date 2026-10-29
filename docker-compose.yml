@@ -24,7 +24,7 @@ services:
       DATABASE_ADMIN_URL: postgres://postgres:postgres@postgres:5432/ketoan
       SESSION_SECRET: ${SESSION_SECRET:-doi-chuoi-nay-khi-trien-khai}
       SESSION_TTL_HOURS: "12"
-      COOKIE_SECURE: "false"
+      COOKIE_SECURE: ${COOKIE_SECURE:-true} # production bắt buộc true: dùng HTTPS hoặc localhost
       TRUST_PROXY: "1"
       PORT: "3000"
       WEB_ORIGIN: http://localhost:8080
