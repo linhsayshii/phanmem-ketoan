@@ -27,10 +27,12 @@ const balanceOf = (es: Debt[], side: 'recv' | 'pay') => es.filter((e) => e.side 
 async function s4a(trx: Trx, tenantId: string, f: DnsnFilter): Promise<ReportDoc[]> {
   const fr = await frame(trx, tenantId, 'S4a-DNSN', f, { landscape: true });
   const all = (await loadDebts(trx, f.to)).filter((e) => !f.sides || f.sides.includes(e.side));
-  const parties = [...new Set(all.map((e) => e.party))].filter((p) => !f.party || p === f.party).sort(viSort);
+  const byParty = new Map<string, Debt[]>();
+  for (const e of all) (byParty.get(e.party) ?? byParty.set(e.party, []).get(e.party)!).push(e);
+  const parties = [...byParty.keys()].filter((p) => !f.party || p === f.party).sort(viSort);
   const docs: ReportDoc[] = [];
   parties.forEach((party, idx) => {
-    const mine = all.filter((e) => e.party === party);
+    const mine = byParty.get(party)!;
     const open = mine.filter((e) => debtOpens(e, f.from)); const inRange = mine.filter((e) => !debtOpens(e, f.from));
     let recv = balanceOf(open, 'recv'); let pay = balanceOf(open, 'pay');
     const rows: Row[] = [{ desc: 'Số dư đầu kỳ', recvLeft: S(recv), payLeft: S(pay), isBold: true }, { desc: 'Số phát sinh trong kỳ', isBold: true }];

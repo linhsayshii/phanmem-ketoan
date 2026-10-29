@@ -44,9 +44,9 @@ Cách tính chính:
 - Sổ theo dõi nghĩa vụ thuế GTGT: lấy số dư ròng (đầu ra trừ đầu vào, đã nộp, đã hoàn); còn được khấu trừ hoặc còn phải nộp cuối kỳ chỉ hiện một bên.
 - B02-DNSN: 01 = doanh thu và thu nhập, 02 = chi phí, 03 = 01 - 02, 10 = thuế TNDN (tính như Sổ chi tiết doanh thu, chi phí), 20 = 03 - 10, so với năm trước.
 - S4a: mỗi đối tượng một sổ; cột 3 và 6 là số còn lại sau từng dòng (đầu kỳ + phát sinh - đã thu, đã trả).
-- S4b: mỗi loại tài sản một sổ; khấu hao lũy kế = nguyên giá x tỷ lệ năm x số tháng / 12, làm tròn đến đồng, không vượt nguyên giá; dòng Cộng cộng nguyên giá, mức khấu hao, khấu hao lũy kế.
+- S4b: mỗi loại tài sản một sổ; khấu hao lũy kế = nguyên giá x tỷ lệ năm x số tháng / 12, làm tròn đến đồng, không vượt nguyên giá; dòng Cộng chỉ cộng mức khấu hao và khấu hao lũy kế (theo mẫu, ô Nguyên giá của dòng Cộng là x).
 - S4d: ba phần (vốn góp, lợi nhuận sau thuế chưa phân phối, các quỹ), mỗi phần có số dư đầu kỳ, phát sinh tăng, giảm và số dư cuối kỳ.
-- B01-DNSN: chọn **Cả năm** để ngày bắt đầu là đầu năm tài chính. 110 = số dư cuối kỳ Sổ chi tiết tiền; 120 = nợ phải thu ở S4a và thuế GTGT còn được khấu trừ; 130 = tồn kho cuối kỳ ở sổ vật tư, hàng hóa; 140 = nguyên giá trừ khấu hao lũy kế của tài sản chưa ghi giảm; 150 = tài sản khác và thuế TNDN nộp thừa; 310 = nợ phải trả ở S4a; 320 = thuế GTGT, TNDN còn phải nộp và nghĩa vụ thuế khác ghi ở S4a; 410, 420, 430 = số dư cuối kỳ S4d. Cột "Số đầu năm" tính tới ngày liền trước đầu năm. Cần chọn phương pháp nộp thuế của năm ở tab Cài đặt năm. Nếu tổng tài sản (200) khác tổng nguồn vốn (500), bản in có chú thích nêu số chênh lệch: kiểm tra lại số dư đầu của các sổ và đã ghi tăng lợi nhuận sau thuế vào S4d chưa.
+- B01-DNSN: ngày lập là ngày cuối của khoảng chọn; số đầu năm và thuế phát sinh luôn tính từ đầu năm tài chính chứa ngày lập (khoảng chọn một tháng vẫn cho cùng kết quả như chọn cả năm). 110 = số dư cuối kỳ Sổ chi tiết tiền; 120 = nợ phải thu ở S4a và thuế GTGT còn được khấu trừ; 130 = tồn kho cuối kỳ ở sổ vật tư, hàng hóa; 140 = nguyên giá trừ khấu hao lũy kế của tài sản chưa ghi giảm; 150 = tài sản khác và thuế TNDN nộp thừa; 310 = nợ phải trả ở S4a; 320 = thuế GTGT, TNDN còn phải nộp và nghĩa vụ thuế khác ghi ở S4a; 410, 420, 430 = số dư cuối kỳ S4d. Cột "Số đầu năm" gồm các bút "Số dư đầu" ghi đến hết ngày đầu năm và mọi phát sinh trước ngày đầu năm. Cần chọn phương pháp nộp thuế của năm ở tab Cài đặt năm. Nếu tổng tài sản (200) khác tổng nguồn vốn (500), bản in có chú thích nêu số chênh lệch: kiểm tra lại số dư đầu của các sổ và đã ghi tăng lợi nhuận sau thuế vào S4d chưa.
 - Sổ vật tư: đơn giá xuất kho bình quân từng tháng = (giá trị tồn đầu tháng + giá trị nhập trong tháng) / (số lượng tồn đầu tháng + số lượng nhập trong tháng).
 
 ### In chứng từ (Thông tư 58)
@@ -59,7 +59,7 @@ Cách tính chính:
 - **Nghĩa vụ thuế khác trong B01** chỉ lấy từ S4a (bên phải trả, tính chất Nghĩa vụ thuế); S4c-DNSN chỉ tính số thuế phải nộp nên không cộng vào mã 320.
 
 - **Thuế còn phải nộp đầu kỳ tính lại bằng tỷ lệ hiện hành.** Số thuế phát sinh của các kỳ trước được tính lại theo tỷ lệ thuế và phương pháp nộp thuế đang khai báo cho năm, không theo tỷ lệ tại thời điểm đó. Nếu đổi tỷ lệ giữa năm, số "còn phải nộp đầu kỳ" của kỳ sau đổi theo và bản in kỳ cũ có thể khác bản đã in trước đó. Cần đổi tỷ lệ thì nên đổi đầu năm, hoặc nhập số dư đầu kỳ bằng tay.
-- **Sổ chưa áp cờ dữ liệu nhạy cảm và chưa khóa kỳ.** Người có quyền xem sổ hộ kinh doanh thấy mọi sổ; người có quyền sửa, xóa sửa được bút ghi ở mọi ngày. Hãy cấp quyền `sohkd.*` cẩn thận.
+- **Cờ dữ liệu nhạy cảm chỉ áp cho Công nợ (S4a), chưa khóa kỳ.** Công nợ phải thu cần cờ xem công nợ phải thu, công nợ phải trả cần cờ xem công nợ phải trả (danh sách, sổ S4a, ghi, sửa, xóa); thiếu cờ thì bên đó bị ẩn hoặc trả 403. Các sổ khác: người có quyền xem sổ hộ kinh doanh thấy mọi sổ; người có quyền sửa, xóa sửa được bút ghi ở mọi ngày. Hãy cấp quyền `sohkd.*` cẩn thận.
 - **Kiểm tra tệp PDF hóa đơn chỉ là lớp phụ.** Phần mềm chặn PDF có mã chạy ngầm bằng cách dò nội dung thô của tệp; không thay cho phần mềm diệt virus và không phát hiện nội dung nén hoặc mã hóa.
 
 ## Chưa có
