@@ -14,7 +14,7 @@ async function setup(request: APIRequestContext, approver: string) {
   expect(u.ok(), await u.text()).toBeTruthy();
 }
 
-test('Phê duyệt: duyệt hàng loạt các đề nghị đã chọn; lập và thu hồi ủy quyền duyệt', async ({ browser, request }) => {
+test('Phê duyệt: duyệt và từ chối hàng loạt các đề nghị đã chọn; lập và thu hồi ủy quyền duyệt', async ({ browser, request }) => {
   const tag = String(Date.now()).slice(-6);
   const approver = `ktt_hl_${tag}`;
   const min = String(70_000_000 + Number(tag)); // hạn mức riêng của lần chạy để quy trình này được chọn
@@ -22,7 +22,7 @@ test('Phê duyệt: duyệt hàng loạt các đề nghị đã chọn; lập v�
   const roles = await (await request.get('/api/roles')).json() as { id: string; code: string }[];
   const flow = await request.post('/api/approval-flows', { data: { kind: 'advance', name: `Tạm ứng hàng loạt ${tag}`, minAmount: min, steps: [{ roleId: roles.find((r) => r.code === 'ketoan_truong')!.id }] } });
   expect(flow.ok(), await flow.text()).toBeTruthy();
-  const payees = [1, 2, 3].map((i) => `Người nhận HL${i} ${tag}`);
+  const payees = [1, 2, 3, 4, 5].map((i) => `Người nhận HL${i} ${tag}`);
   for (const payee of payees) {
     const r = await request.post('/api/approvals', { data: { kind: 'advance', requestDate: '2026-03-10', payeeName: payee, reason: 'Tạm ứng hàng loạt', currencyCode: 'VND', amountCurrency: min, payMethod: 'cash' } });
     expect(r.ok(), await r.text()).toBeTruthy();
@@ -49,6 +49,22 @@ test('Phê duyệt: duyệt hàng loạt các đề nghị đã chọn; lập v�
   await expect(rowOf(payees[0]!)).toHaveCount(0); // đã duyệt: rời hộp duyệt
   await expect(rowOf(payees[1]!)).toHaveCount(0);
   await expect(rowOf(payees[2]!)).toBeVisible(); // đề nghị không chọn vẫn chờ duyệt
+
+  // Từ chối hàng loạt: nút khóa khi chưa chọn, lý do bắt buộc, đề nghị bị từ chối rời hộp duyệt, đề nghị không chọn vẫn chờ.
+  await expect(p.getByRole('button', { name: 'Từ chối hàng loạt' })).toBeDisabled();
+  await rowOf(payees[2]!).getByRole('checkbox').check();
+  await rowOf(payees[3]!).getByRole('checkbox').check();
+  await p.getByRole('button', { name: 'Từ chối 2 đề nghị đã chọn' }).click();
+  const rej = p.getByRole('dialog', { name: 'Từ chối hàng loạt' });
+  await expect(rej.getByRole('button', { name: 'Từ chối', exact: true })).toBeDisabled();
+  await rej.getByLabel('Lý do từ chối').fill('Thiếu chứng từ gốc');
+  await rej.getByRole('button', { name: 'Từ chối', exact: true }).click();
+  const rejResult = p.getByRole('dialog', { name: 'Kết quả từ chối hàng loạt' });
+  await expect(rejResult).toContainText('Đã từ chối 2 đề nghị');
+  await rejResult.getByRole('button', { name: 'Đóng' }).click();
+  await expect(rowOf(payees[2]!)).toHaveCount(0);
+  await expect(rowOf(payees[3]!)).toHaveCount(0);
+  await expect(rowOf(payees[4]!)).toBeVisible();
 
   // Ủy quyền duyệt: lập cho quản trị E2E trong 3 ngày, thấy "Đang hiệu lực", thu hồi.
   await p.getByRole('link', { name: 'Ủy quyền duyệt' }).first().click();

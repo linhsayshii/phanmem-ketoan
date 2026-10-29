@@ -173,11 +173,20 @@ function RequestList({ box, onOpen }: { box: Box; onOpen(id: string): void }) {
   const empty = box === 'inbox' ? 'Không có đề nghị nào chờ bạn duyệt' : 'Chưa có đề nghị nào';
   const qc = useQueryClient();
   const [picked, setPicked] = useState<string[]>([]);
-  const [result, setResult] = useState<{ approved: number; failed: number; rows: { id: string; ok: boolean; message?: string }[] } | null>(null);
+  type BatchRow = { id: string; ok: boolean; message?: string };
+  const [result, setResult] = useState<{ kind: 'approve' | 'reject'; done: number; failed: number; rows: BatchRow[] } | null>(null);
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
+  const finish = (kind: 'approve' | 'reject', done: number, r: { failed: number; results: BatchRow[] }) => { setPicked([]); setResult({ kind, done, failed: r.failed, rows: r.results }); void qc.invalidateQueries({ queryKey: ['approvals'] }); };
   const batch = useMutation({
-    mutationFn: (ids: string[]) => api<{ approved: number; failed: number; results: { id: string; ok: boolean; message?: string }[] }>('/api/approvals/batch/approve', { method: 'POST', json: { ids } }),
+    mutationFn: (ids: string[]) => api<{ approved: number; failed: number; results: BatchRow[] }>('/api/approvals/batch/approve', { method: 'POST', json: { ids } }),
     onError: fail,
-    onSuccess: (r) => { setPicked([]); setResult({ approved: r.approved, failed: r.failed, rows: r.results }); void qc.invalidateQueries({ queryKey: ['approvals'] }); },
+    onSuccess: (r) => finish('approve', r.approved, r),
+  });
+  const batchReject = useMutation({
+    mutationFn: (v: { ids: string[]; reason: string }) => api<{ rejected: number; failed: number; results: BatchRow[] }>('/api/approvals/batch/reject', { method: 'POST', json: v }),
+    onError: fail,
+    onSuccess: (r) => { setRejecting(false); setReason(''); finish('reject', r.rejected, r); },
   });
   const byId = new Map((q.data ?? []).map((r) => [r.id, r]));
   return (
@@ -188,12 +197,18 @@ function RequestList({ box, onOpen }: { box: Box; onOpen(id: string): void }) {
             onConfirm={() => batch.mutate(picked)}>
             <Button type="primary" disabled={!picked.length} loading={batch.isPending}>{picked.length ? `Duyệt ${picked.length} đề nghị đã chọn` : 'Duyệt các đề nghị đã chọn'}</Button>
           </Popconfirm>
+          <Button danger disabled={!picked.length} onClick={() => setRejecting(true)}>{picked.length ? `Từ chối ${picked.length} đề nghị đã chọn` : 'Từ chối hàng loạt'}</Button>
           <Link to="/phe-duyet/uy-quyen">Ủy quyền duyệt</Link>
         </Toolbar>
       )}
-      <Modal title="Kết quả duyệt hàng loạt" open={!!result} footer={<Button type="primary" onClick={() => setResult(null)}>Đóng</Button>} onCancel={() => setResult(null)}>
+      <Modal title="Từ chối hàng loạt" open={rejecting} okText="Từ chối" okButtonProps={{ danger: true, disabled: !reason.trim(), loading: batchReject.isPending }} cancelText="Không" onCancel={() => { setRejecting(false); setReason(''); }}
+        onOk={() => batchReject.mutate({ ids: picked, reason: reason.trim() })}>
+        <p>{`Từ chối ${picked.length} đề nghị đã chọn với cùng một lý do. Mỗi đề nghị được xử lý riêng; đề nghị lỗi không ảnh hưởng các đề nghị khác.`}</p>
+        <Input.TextArea aria-label="Lý do từ chối" rows={3} maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Nhập lý do từ chối (bắt buộc)" autoFocus />
+      </Modal>
+      <Modal title={result?.kind === 'reject' ? 'Kết quả từ chối hàng loạt' : 'Kết quả duyệt hàng loạt'} open={!!result} footer={<Button type="primary" onClick={() => setResult(null)}>Đóng</Button>} onCancel={() => setResult(null)}>
         {result && <>
-          <Alert type={result.failed ? 'warning' : 'success'} showIcon message={`Đã duyệt ${result.approved} đề nghị${result.failed ? `, ${result.failed} đề nghị không duyệt được` : ''}`} style={{ marginBottom: 8 }} />
+          <Alert type={result.failed ? 'warning' : 'success'} showIcon message={`Đã ${result.kind === 'reject' ? 'từ chối' : 'duyệt'} ${result.done} đề nghị${result.failed ? `, ${result.failed} đề nghị không ${result.kind === 'reject' ? 'từ chối' : 'duyệt'} được` : ''}`} style={{ marginBottom: 8 }} />
           {result.rows.filter((x) => !x.ok).map((x) => <div key={x.id}>{byId.get(x.id)?.requestNo ?? x.id}: {x.message}</div>)}
         </>}
       </Modal>
