@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber, parseVnNumber } from '@kt/domain';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
+import { FormModal } from '@kt/ui';
 
 // TT 58/2026 Điều 9: sổ công nợ (S4a), TSCĐ (S4b), vốn chủ sở hữu (S4d), tài sản khác (mã 150 của B01-DNSN) và in chứng từ 01-TT, 02-TT, 01-VT, 02-VT. Cùng khuôn với các tab ghi sổ của HkdBooks.
 const DATE = 'YYYY-MM-DD';
@@ -126,13 +127,13 @@ export function AssetTab() {
           { title: 'Tỷ lệ %/năm', dataIndex: 'depRate', align: 'right', width: 100, render: (v: string) => money(v, 4) },
           { title: 'Ghi giảm', width: 200, render: (_v, r) => (r.decDate ? <span>{formatVnDate(r.decDate)}: {r.decReason}</span> : can('sohkd.update') && <Button size="small" type="link" onClick={() => { fd.resetFields(); fd.setFieldsValue({ decDate: dayjs() }); setDecOf(r); }}>Ghi giảm</Button>) },
           { title: '', width: 70, render: (_v, r) => delBtn(can('sohkd.delete'), () => del.mutate(r.id)) }]} />
-      <Modal title={`Ghi giảm TSCĐ: ${decOf?.name ?? ''}`} open={!!decOf} onCancel={() => setDecOf(null)} okText="Ghi giảm" cancelText="Hủy" confirmLoading={dec.isPending} onOk={() => fd.submit()} forceRender>
+      <FormModal title={`Ghi giảm TSCĐ: ${decOf?.name ?? ''}`} open={!!decOf} onCancel={() => setDecOf(null)} okText="Ghi giảm" cancelText="Hủy" confirmLoading={dec.isPending} onOk={() => fd.submit()} forceRender>
         <Form form={fd} name="hkdAssetDec" layout="vertical" onFinish={(v) => decOf && dec.mutate({ a: decOf, body: assetBody(decOf, { decDocNo: v.decDocNo || null, decDate: (v.decDate as dayjs.Dayjs).format(DATE), decReason: v.decReason }) })}>
           <Form.Item name="decDocNo" label="Số chứng từ ghi giảm"><Input /></Form.Item>
           <Form.Item name="decDate" label="Ngày ghi giảm" rules={[{ required: true }]}><DatePicker format="DD/MM/YYYY" allowClear={false} /></Form.Item>
           <Form.Item name="decReason" label="Lý do giảm TSCĐ" rules={[{ required: true, message: 'Cần lý do (nhượng bán, thanh lý...)' }]}><Input /></Form.Item>
         </Form>
-      </Modal>
+      </FormModal>
     </Space>
   );
 }

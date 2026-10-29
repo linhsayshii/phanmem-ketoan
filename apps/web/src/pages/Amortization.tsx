@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, message } from 'antd';
+import { Alert, Button, Form, Input, InputNumber, Popconfirm, Select, Space, Table, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { D, formatVnDate, formatVnNumber, isImeComposing, todayVn } from '@kt/domain';
-import { LookupSelect, PageHeader, Section, Toolbar, VnNumberInput } from '@kt/ui';
+import { LookupSelect, PageHeader, Section, Toolbar, VnNumberInput, FormModal } from '@kt/ui';
 import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
@@ -154,7 +154,7 @@ export default function AmortizationPage() {
           ]} />
       </Section>
 
-      <Modal open={editing !== null} title={editing === 'new' ? 'Thêm lịch phân bổ' : 'Sửa lịch phân bổ'} okText="Lưu" cancelText="Đóng" forceRender width={640} confirmLoading={save.isPending}
+      <FormModal open={editing !== null} title={editing === 'new' ? 'Thêm lịch phân bổ' : 'Sửa lịch phân bổ'} okText="Lưu" cancelText="Đóng" forceRender width={640} confirmLoading={save.isPending}
         onCancel={() => setEditing(null)} onOk={() => { void form.validateFields().then((v) => save.mutate(v), () => undefined); }}>
         {typeof editing === 'object' && editing?.started && <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Lịch đã phân bổ ít nhất một kỳ: chỉ sửa được diễn giải" />}
         {formErr && <Alert type="error" showIcon message={formErr} style={{ marginBottom: 12 }} />}
@@ -172,7 +172,7 @@ export default function AmortizationPage() {
           <Form.Item label="Diễn giải" name="description"><Input maxLength={500} disabled={false} /></Form.Item>
         </Form>
         {split && <span style={{ opacity: 0.75 }}>Mỗi kỳ {money(split.each)}{split.last !== split.each ? `, kỳ cuối ${money(split.last)}` : ''}.</span>}
-      </Modal>
+      </FormModal>
       </>)}
     </div>
   );

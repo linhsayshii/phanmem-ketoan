@@ -4,7 +4,7 @@ import { Button, DatePicker, Form, Input, Modal, Radio, Space, Table, message } 
 import dayjs from 'dayjs';
 import type { ColDef } from 'ag-grid-community';
 import { D, formatVnNumber, parseVnNumber } from '@kt/domain';
-import { COLOR, KeyboardGrid, LookupSelect, PageHeader, Section, Toolbar, useHotkeys, useRememberedFilter } from '@kt/ui';
+import { COLOR, KeyboardGrid, LookupSelect, PageHeader, Section, Toolbar, useHotkeys, useRememberedFilter, FormModal } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { costObjectPick } from '../lookups.js';
@@ -84,7 +84,7 @@ export default function CostNormsPage() {
         { title: '', width: 120, render: (_v, r) => (<Space size={0}>{can('costing_obj.update') && <Button type="link" size="small" onClick={() => void open(r.id)}>Sửa</Button>}
           {can('costing_obj.delete') && <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: 'Xóa định mức này?', okText: 'Xóa', cancelText: 'Không', onOk: () => del.mutateAsync(r.id) })}>Xóa</Button>}</Space>) }]} />
     </Section>
-    <Modal title={editing === 'new' ? 'Thêm định mức nguyên vật liệu' : 'Sửa định mức nguyên vật liệu'} open={editing !== null} onCancel={() => setEditing(null)} onOk={() => form.submit()}
+    <FormModal title={editing === 'new' ? 'Thêm định mức nguyên vật liệu' : 'Sửa định mức nguyên vật liệu'} open={editing !== null} onCancel={() => setEditing(null)} onOk={() => form.submit()}
       okText="Lưu (Ctrl+S)" cancelText="Bỏ qua" okButtonProps={{ disabled: !canEdit }} confirmLoading={save.isPending} width={960} destroyOnHidden forceRender>
       <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v)}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr', columnGap: 16 }}>
@@ -100,7 +100,7 @@ export default function CostNormsPage() {
         <KeyboardGrid<Line> rows={lines} columns={columns} onRowsChange={setLines} addRowTemplate={() => ({ lossPercent: '0' })} height={280} readOnly={!canEdit}
           onLookup={(col, row) => { if (col === 'itemCode') setPick(row); }} />
       </Form>
-    </Modal>
+    </FormModal>
     <Modal title="Chọn nguyên vật liệu" open={pick !== null} footer={null} onCancel={() => setPick(null)} destroyOnHidden>
       {pick !== null && <LookupSelect catalog="item" autoFocus defaultOpen style={{ width: '100%' }} aria-label="Tra cứu vật tư" value={null}
         onChange={(code, row) => { if (code) { setLines((ls) => ls.map((l, i) => (i === pick ? { ...l, itemCode: code, itemName: row?.name ?? '' } : l))); setPick(null); } }} />}

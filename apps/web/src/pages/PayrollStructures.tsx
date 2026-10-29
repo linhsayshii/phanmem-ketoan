@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AutoComplete, Button, Checkbox, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, message } from 'antd';
+import { Alert, AutoComplete, Button, Checkbox, DatePicker, Form, Input, InputNumber, Popconfirm, Select, Space, Table, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { PAYROLL_BUILTIN_COLUMNS, formatVnNumber, type PayrollColumn } from '@kt/domain';
-import { COLOR, EmptyState, LookupSelect, PageHeader, Section } from '@kt/ui';
+import { COLOR, EmptyState, LookupSelect, PageHeader, Section, FormModal } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { NO_SALARY, PayrollErrorAlert } from './payrollUi.js';
@@ -171,13 +171,13 @@ function Structures() {
           {current && <Editor key={`${current.id}:${current.inUse}`} source={current} isNew={false} templateColumns={template} onSaved={(s) => setSel(s.id)} onDeleted={() => setSel(null)} onClone={setCloning} />}
         </Section>
       </div>
-      <Modal open={cloning !== null} title="Nhân bản cấu trúc" onCancel={() => setCloning(null)} onOk={doClone} okText="Nhân bản" cancelText="Bỏ qua" confirmLoading={cBusy} destroyOnHidden forceRender>
+      <FormModal open={cloning !== null} title="Nhân bản cấu trúc" onCancel={() => setCloning(null)} onOk={doClone} okText="Nhân bản" cancelText="Bỏ qua" confirmLoading={cBusy} destroyOnHidden forceRender>
         <Form form={cForm} name="clone" layout="vertical">
           <Form.Item label="Mã cấu trúc mới" name="code" rules={[{ required: true, whitespace: true, message: 'Nhập mã' }]}><Input maxLength={30} aria-label="Mã cấu trúc mới" /></Form.Item>
           <Form.Item label="Tên cấu trúc mới" name="name" rules={[{ required: true, whitespace: true, message: 'Nhập tên' }]}><Input maxLength={200} aria-label="Tên cấu trúc mới" /></Form.Item>
           <PayrollErrorAlert error={cErr} />
         </Form>
-      </Modal>
+      </FormModal>
     </>);
 }
 

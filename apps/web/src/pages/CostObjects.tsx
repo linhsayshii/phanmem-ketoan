@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, message } from 'antd';
+import { Button, Form, Input, Popconfirm, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { formatVnNumber } from '@kt/domain';
-import { COLOR, LookupSelect, PageHeader, Section, Toolbar, useHotkeys, useRememberedFilter, type LookupRow } from '@kt/ui';
+import { COLOR, LookupSelect, PageHeader, Section, Toolbar, useHotkeys, useRememberedFilter, type LookupRow, FormModal } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -74,7 +74,7 @@ export default function CostObjectsPage() {
             </Space> },
           ]} />
       </Section>
-      <Modal title={editing === 'new' ? 'Thêm đối tượng tập hợp chi phí' : 'Sửa đối tượng tập hợp chi phí'} open={!!editing} onCancel={() => setEditing(null)} onOk={() => form.submit()}
+      <FormModal title={editing === 'new' ? 'Thêm đối tượng tập hợp chi phí' : 'Sửa đối tượng tập hợp chi phí'} open={!!editing} onCancel={() => setEditing(null)} onOk={() => form.submit()}
         okText="Lưu (Ctrl+S)" cancelText="Bỏ qua" confirmLoading={save.isPending} destroyOnHidden forceRender width={620}>
         <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v)}
           onKeyDown={(e: React.KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); form.submit(); } }}>
@@ -95,7 +95,7 @@ export default function CostObjectsPage() {
             <Form.Item label="Đang dùng" name="isActive" valuePropName="checked"><Switch /></Form.Item>
           </div>
         </Form>
-      </Modal>
+      </FormModal>
     </>
   );
 }

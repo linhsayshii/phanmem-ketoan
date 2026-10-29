@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Checkbox, DatePicker, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, message } from 'antd';
+import { Alert, Button, Checkbox, DatePicker, Drawer, Form, Input, InputNumber, Popconfirm, Select, Space, Table, Tabs, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
-import { COLOR, LookupSelect, PageHeader, Toolbar, Section, useHotkeys, useRememberedFilter, VnNumberInput } from '@kt/ui';
+import { COLOR, LookupSelect, PageHeader, Toolbar, Section, useHotkeys, useRememberedFilter, VnNumberInput, FormModal } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor, assetCategoryFetcher } from '../lookups.js';
@@ -223,7 +223,7 @@ export function AssetCategoriesPage() {
             { title: '', render: (_, r) => (<Space>{can('asset.update') && <Button size="small" onClick={() => openEdit(r)}>Sửa</Button>}
               {can('asset.delete') && <Popconfirm title="Xóa loại này?" okText="Xóa" cancelText="Không" onConfirm={() => del.mutate(r.id)}><Button size="small" danger>Xóa</Button></Popconfirm>}</Space>) }]} />
       </Section>
-      <Modal open={editing !== null} title={editing === 'new' ? 'Thêm loại tài sản' : 'Sửa loại tài sản'} okText="Lưu" cancelText="Bỏ qua" onCancel={() => setEditing(null)} onOk={() => { void form.validateFields().then((v) => save.mutate(v), () => undefined); }} confirmLoading={save.isPending} forceRender>
+      <FormModal open={editing !== null} title={editing === 'new' ? 'Thêm loại tài sản' : 'Sửa loại tài sản'} okText="Lưu" cancelText="Bỏ qua" onCancel={() => setEditing(null)} onOk={() => { void form.validateFields().then((v) => save.mutate(v), () => undefined); }} confirmLoading={save.isPending} forceRender>
         <Form form={form} layout="vertical">
           <Form.Item label="Mã" name="code" rules={[{ required: true, whitespace: true }]}><Input maxLength={30} /></Form.Item>
           <Form.Item label="Tên" name="name" rules={[{ required: true, whitespace: true }]}><Input maxLength={200} /></Form.Item>
@@ -234,7 +234,7 @@ export function AssetCategoriesPage() {
           <Form.Item name="isActive" valuePropName="checked"><Checkbox>Đang dùng</Checkbox></Form.Item>
           {err && <Alert type="error" showIcon message={err} />}
         </Form>
-      </Modal>
+      </FormModal>
     </>
   );
 }

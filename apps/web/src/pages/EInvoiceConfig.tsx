@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Form, Input, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { parseInvoiceSymbol } from '@kt/domain';
-import { EmptyState, PageHeader, Section, useHotkeys } from '@kt/ui';
+import { EmptyState, PageHeader, Section, useHotkeys, FormModal } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import type { Series } from './einvoiceCommon.js';
@@ -35,7 +35,7 @@ function ProviderCard({ providers, canEdit }: { providers: Provider[]; canEdit: 
           {tested[r.id] && <Tag color={tested[r.id]!.ok ? 'green' : 'red'}>{tested[r.id]!.message}</Tag>}
           {canEdit && <Button type="link" size="small" onClick={() => open(r)}>Sửa</Button>}
           {canEdit && <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: `Xóa nhà cung cấp ${r.name}?`, okText: 'Xóa', cancelText: 'Hủy', onOk: () => del.mutateAsync(r.id) })}>Xóa</Button>}</Space>) }]} />
-      <Modal title={editing === 'new' ? 'Thêm nhà cung cấp' : 'Sửa nhà cung cấp'} open={editing !== null} onCancel={() => setEditing(null)} onOk={() => form.submit()} okText="Lưu (Ctrl+S)" cancelText="Hủy" confirmLoading={save.isPending} destroyOnHidden forceRender>
+      <FormModal title={editing === 'new' ? 'Thêm nhà cung cấp' : 'Sửa nhà cung cấp'} open={editing !== null} onCancel={() => setEditing(null)} onOk={() => form.submit()} okText="Lưu (Ctrl+S)" cancelText="Hủy" confirmLoading={save.isPending} destroyOnHidden forceRender>
         <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v)}>
           <Form.Item name="code" label="Loại nhà cung cấp"><Select options={CODES} aria-label="Loại nhà cung cấp" /></Form.Item>
           <Form.Item name="name" label="Tên" rules={required}><Input /></Form.Item>
@@ -45,7 +45,7 @@ function ProviderCard({ providers, canEdit }: { providers: Provider[]; canEdit: 
           <Form.Item name="sellerTaxCode" label="Mã số thuế người bán"><Input maxLength={20} /></Form.Item>
           <Form.Item name="isActive" label="Đang dùng" valuePropName="checked"><Switch /></Form.Item>
         </Form>
-      </Modal>
+      </FormModal>
     </Section>
   );
 }
@@ -70,7 +70,7 @@ function SeriesCard({ providers, series, canEdit }: { providers: Provider[]; ser
         { title: 'Mã mẫu của nhà cung cấp', dataIndex: 'providerTemplate', width: 190 }, { title: 'Đang dùng', dataIndex: 'isActive', width: 100, render: (b: boolean) => (b ? <Tag color="green">Đang dùng</Tag> : <Tag>Ngừng</Tag>) }, { title: 'Ghi chú', dataIndex: 'note' },
         { title: '', width: 110, render: (_v, r) => canEdit && (<Space size={0}><Button type="link" size="small" onClick={() => open(r)}>Sửa</Button>
           <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: `Xóa ký hiệu ${r.formNo}${r.serial}?`, okText: 'Xóa', cancelText: 'Hủy', onOk: () => del.mutateAsync(r.id) })}>Xóa</Button></Space>) }]} />
-      <Modal title={editing === 'new' ? 'Thêm ký hiệu hóa đơn' : 'Sửa ký hiệu hóa đơn'} open={editing !== null} onCancel={() => setEditing(null)} onOk={() => form.submit()} okText="Lưu (Ctrl+S)" cancelText="Hủy" confirmLoading={save.isPending} destroyOnHidden forceRender>
+      <FormModal title={editing === 'new' ? 'Thêm ký hiệu hóa đơn' : 'Sửa ký hiệu hóa đơn'} open={editing !== null} onCancel={() => setEditing(null)} onOk={() => form.submit()} okText="Lưu (Ctrl+S)" cancelText="Hủy" confirmLoading={save.isPending} destroyOnHidden forceRender>
         <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v)} onValuesChange={(_c, all: { formNo?: string; serial?: string }) => setTyped({ formNo: all.formNo ?? '', serial: all.serial ?? '' })}>
           <Form.Item name="providerId" label="Nhà cung cấp" rules={[{ required: true, message: 'Chọn nhà cung cấp' }]}><Select aria-label="Nhà cung cấp" options={providers.map((p) => ({ value: p.id, label: p.name }))} /></Form.Item>
           <Space align="start">
@@ -84,7 +84,7 @@ function SeriesCard({ providers, series, canEdit }: { providers: Provider[]; ser
           <Form.Item name="note" label="Ghi chú"><Input /></Form.Item>
           <Form.Item name="isActive" label="Đang dùng" valuePropName="checked"><Switch /></Form.Item>
         </Form>
-      </Modal>
+      </FormModal>
     </Section>
   );
 }

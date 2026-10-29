@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Form, Input, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
 import dayjs from 'dayjs';
-import { PageHeader, Section, useHotkeys } from '@kt/ui';
+import { PageHeader, Section, useHotkeys, FormModal } from '@kt/ui';
 import { api } from '../api/client.js';
 import type { SigningProfile } from '../signing/signXml.js';
 
@@ -58,7 +58,7 @@ export default function SigningSetupPage() {
             {!r.isDefault && <Button type="link" size="small" onClick={() => setDefault.mutate(r.id)}>Đặt mặc định</Button>}
             <Button type="link" size="small" danger onClick={() => Modal.confirm({ title: `Xóa hồ sơ ${r.label}?`, okText: 'Xóa', cancelText: 'Hủy', onOk: () => del.mutateAsync(r.id) })}>Xóa</Button></Space>) }]} />
       </Section>
-      <Modal title="Thêm hồ sơ ký số" open={open} onCancel={() => setOpen(false)} onOk={() => form.submit()} okText="Lưu (Ctrl+S)" cancelText="Hủy" confirmLoading={save.isPending} destroyOnHidden forceRender>
+      <FormModal title="Thêm hồ sơ ký số" open={open} onCancel={() => setOpen(false)} onOk={() => form.submit()} okText="Lưu (Ctrl+S)" cancelText="Hủy" confirmLoading={save.isPending} destroyOnHidden forceRender>
         <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v)} onValuesChange={(c: { kind?: string }) => { if (c.kind) setKind(c.kind); }}>
           <Form.Item name="kind" label="Hình thức ký"><Select aria-label="Hình thức ký" options={KINDS} /></Form.Item>
           <Form.Item name="label" label="Tên hồ sơ" rules={required}><Input /></Form.Item>
@@ -81,7 +81,7 @@ export default function SigningSetupPage() {
           {kind === 'fake' && <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Khóa thử công khai, chữ ký không có giá trị pháp lý. Không dùng ở môi trường chính thức." />}
           <Form.Item name="isDefault" label="Đặt làm mặc định" valuePropName="checked"><Switch /></Form.Item>
         </Form>
-      </Modal>
+      </FormModal>
     </div>
   );
 }

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Form, Modal, Select, Space, Table } from 'antd';
+import { Alert, Form, Select, Space, Table } from 'antd';
 import { Link } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { D } from '@kt/domain';
-import { LookupSelect } from '@kt/ui';
+import { LookupSelect, FormModal } from '@kt/ui';
 import { api } from '../api/client.js';
 import { bankAccountFetcher } from '../lookups.js';
 import { PayrollErrorAlert } from './payrollUi.js';
@@ -36,7 +36,7 @@ export function PaymentFileDialog({ runId, open, onClose }: { runId: number; ope
     }, () => undefined);
   };
   return (
-    <Modal open={open} title="Xuất tệp chi lương" onCancel={onClose} onOk={submit} okText="Xuất tệp" cancelText="Đóng" confirmLoading={busy} destroyOnHidden forceRender width={760}>
+    <FormModal open={open} title="Xuất tệp chi lương" onCancel={onClose} onOk={submit} okText="Xuất tệp" cancelText="Đóng" confirmLoading={busy} destroyOnHidden forceRender width={760}>
       <Form form={form} name="payroll-payment-file" layout="vertical">
         <Space align="start" wrap>
           <Form.Item label="Mẫu tệp" name="formatId" rules={[{ required: true, message: 'Chọn mẫu tệp' }]}>
@@ -64,5 +64,5 @@ export function PaymentFileDialog({ runId, open, onClose }: { runId: number; ope
           { title: 'Số người', dataIndex: 'count', width: 90, align: 'right' }, { title: 'Tổng tiền', dataIndex: 'total', width: 140, align: 'right', render: (v: string) => money(v) },
           { title: '', width: 90, render: (_, b) => <a href={batchUrl(b.id)} download={b.fileName}>Tải lại</a> },
         ]} />}
-    </Modal>);
+    </FormModal>);
 }

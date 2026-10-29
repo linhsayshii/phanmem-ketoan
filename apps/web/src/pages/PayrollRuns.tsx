@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, DatePicker, Form, Input, Modal, Popconfirm, Radio, Select, Space, Table, Tag, Tooltip, message } from 'antd';
+import { Alert, Button, DatePicker, Form, Input, Popconfirm, Radio, Select, Space, Table, Tag, Tooltip, message } from 'antd';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColDef, GridApi, NewValueParams } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnNumber, type PayrollColumn } from '@kt/domain';
-import { COLOR, EmptyState, KeyboardGrid, LookupSelect, PageHeader, Section, Toolbar, useRememberedFilter } from '@kt/ui';
+import { COLOR, EmptyState, KeyboardGrid, LookupSelect, PageHeader, Section, Toolbar, useRememberedFilter, FormModal } from '@kt/ui';
 import { api } from '../api/client.js';
 import { bankAccountFetcher } from '../lookups.js';
 import { useAuth } from '../auth.js';
@@ -47,7 +47,7 @@ function CreateDialog({ open, year, month, onClose, onCreated }: { open: boolean
     }, () => undefined);
   };
   return (
-    <Modal open={open} title="Tạo bảng lương" onCancel={onClose} onOk={submit} okText="Tạo" cancelText="Bỏ qua" confirmLoading={busy} destroyOnHidden forceRender width={560}>
+    <FormModal open={open} title="Tạo bảng lương" onCancel={onClose} onOk={submit} okText="Tạo" cancelText="Bỏ qua" confirmLoading={busy} destroyOnHidden forceRender width={560}>
       <Form form={form} name="payroll-run" layout="vertical" onKeyDown={(e) => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT' && !(e.target as HTMLElement).closest('.ant-select')) { e.preventDefault(); submit(); } }}>
         <Space align="start" wrap>
           <Form.Item label="Kỳ lương" name="period" rules={[{ required: true }]}><DatePicker picker="month" format="MM/YYYY" allowClear={false} aria-label="Kỳ lương" /></Form.Item>
@@ -63,7 +63,7 @@ function CreateDialog({ open, year, month, onClose, onCreated }: { open: boolean
         <Form.Item label="Ghi chú" name="note"><Input maxLength={500} aria-label="Ghi chú" /></Form.Item>
         <PayrollErrorAlert error={err} />
       </Form>
-    </Modal>);
+    </FormModal>);
 }
 
 function PayDialog({ runId, kind, onClose, onDone }: { runId: number; kind: PayKind | null; onClose: () => void; onDone: (l: PayLink) => void }) {
@@ -82,7 +82,7 @@ function PayDialog({ runId, kind, onClose, onDone }: { runId: number; kind: PayK
     }, () => undefined);
   };
   return (
-    <Modal open={kind !== null} title={kind ? PAY_KIND[kind].button : ''} onCancel={onClose} onOk={submit} okText="Lập chứng từ nháp" cancelText="Bỏ qua" confirmLoading={busy} destroyOnHidden forceRender>
+    <FormModal open={kind !== null} title={kind ? PAY_KIND[kind].button : ''} onCancel={onClose} onOk={submit} okText="Lập chứng từ nháp" cancelText="Bỏ qua" confirmLoading={busy} destroyOnHidden forceRender>
       <Form form={form} name="payroll-pay" layout="vertical">
         <Form.Item label="Hình thức" name="method"><Radio.Group aria-label="Hình thức" options={[{ value: 'cash', label: 'Tiền mặt (Phiếu chi)' }, { value: 'bank', label: 'Chuyển khoản (Giấy báo Nợ)' }]} /></Form.Item>
         {method === 'bank' && <Form.Item label="Tài khoản ngân hàng (F4)" name="bankAccountNo" rules={[{ required: true, message: 'Chọn tài khoản ngân hàng chi tiền' }]}>
@@ -93,7 +93,7 @@ function PayDialog({ runId, kind, onClose, onDone }: { runId: number; kind: PayK
           : kind === 'insurance' ? 'Nợ BHXH, BHYT, BHTN bằng số đã trích trên chứng từ hạch toán lương (cả phần doanh nghiệp và người lao động).' : 'Nợ thuế TNCN bằng số đã khấu trừ trên chứng từ hạch toán lương.'} Chứng từ lập ở trạng thái nháp, chưa ghi sổ.</div>
         <PayrollErrorAlert error={err} />
       </Form>
-    </Modal>);
+    </FormModal>);
 }
 
 function RunView({ id, onGone }: { id: number; onGone: () => void }) {
