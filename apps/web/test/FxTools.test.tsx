@@ -209,15 +209,15 @@ describe('Công cụ tỷ giá', () => {
       expect(runButton()).toBeDisabled();
     });
 
-    it('chế độ TT200: nhắc quy tắc đánh giá lại chưa đối chiếu văn bản gốc; chế độ khác không nhắc', async () => {
+    it('chế độ TT200: nhắc quy tắc đánh giá lại theo Điều 69 và phần chưa tách khoản mục tiền tệ; chế độ khác không nhắc', async () => {
       years = YEARS('TT200');
       await openReval();
-      expect(screen.getByText(/chưa được đối chiếu với văn bản gốc/)).toBeInTheDocument();
+      expect(screen.getByText(/Điều 69.*phần mềm chưa tách/)).toBeInTheDocument();
     });
 
     it('chế độ TT133 không có nhắc TT200', async () => {
       await openReval();
-      expect(screen.queryByText(/chưa được đối chiếu với văn bản gốc/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Điều 69/)).not.toBeInTheDocument();
     });
 
     it('lịch sử các lần đánh giá lại có số DG', async () => {

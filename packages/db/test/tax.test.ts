@@ -100,6 +100,7 @@ describe('động cơ thuế: dữ liệu mặc định', () => {
     expect(await param('cit_reduction', '2028-01-01')).toEqual([]);
     expect(await param('cit_prepay_min_ratio', '2026-12-31')).toEqual([80]);
     expect(await param('cit_return_template', '2026-12-31')).toEqual(['TT89']);
-    expect(await param('cit_return_template', '2025-12-31')).toEqual([]);
+    expect(await param('cit_return_template', '2026-06-30')).toEqual(['TT80']);
+    expect(await param('cit_return_template', '2021-12-30')).toEqual([]);
   });
 });
