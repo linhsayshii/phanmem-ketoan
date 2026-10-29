@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { ConfigProvider } from 'antd';
+import { ConfigProvider, message } from 'antd';
 import viVN from 'antd/locale/vi_VN';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
@@ -11,8 +11,10 @@ import '@kt/ui/app.css';
 import { AuthProvider } from './auth.js';
 import { appTheme } from '@kt/ui';
 import { router } from './router.js';
+import { dedupeErrorToasts } from './api/toast.js';
 
 dayjs.locale('vi');
+dedupeErrorToasts(message);
 const qc = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

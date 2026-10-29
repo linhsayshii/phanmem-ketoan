@@ -28,8 +28,14 @@ export default fp(async (app) => {
     if (err instanceof PayrollError) return reply.status(err.code === 'PAYROLL_PARAM_MISSING' ? 409 : 400).send({ error: { code: err.code, message: err.message, details: { column: err.column ?? null, param: err.param ?? null } } });
     if (err instanceof FormulaError) return reply.status(400).send({ error: { code: 'FORMULA_INVALID', message: err.message } });
     if (err instanceof ZodError) return reply.status(400).send({ error: { code: 'VALIDATION', message: 'Dữ liệu không hợp lệ', details: err.issues } });
-    const e = err as PgError & { validation?: unknown; statusCode?: number };
-    if (e.validation) return reply.status(400).send({ error: { code: 'VALIDATION', message: e.message } });
+    const e = err as PgError & { validation?: unknown; validationContext?: string; statusCode?: number };
+    if (e.validation) {
+      // Lỗi kiểm tra tham số của fastify (params/body/querystring): kèm danh sách lỗi zod có `path` mảng, giống nhánh ZodError, để giao diện dịch ra tiếng Việt.
+      const details = Array.isArray(e.validation)
+        ? (e.validation as { params?: { issue?: object } }[]).flatMap((v) => v.params?.issue ? [{ ...v.params.issue, scope: e.validationContext }] : [])
+        : [];
+      return reply.status(400).send({ error: { code: 'VALIDATION', message: e.message, ...(details.length && { details }) } });
+    }
     if (e.code === 'P0001' && e.message.includes(':')) {
       const [code, ...rest] = e.message.split(':');
       // Tồn âm: tách mã hàng, kho, ngày, số thiếu (ĐVT cơ sở) từ thông báo của hàm SQL để giao diện dùng được.

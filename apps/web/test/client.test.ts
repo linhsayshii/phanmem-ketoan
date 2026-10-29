@@ -22,7 +22,7 @@ describe('api()', () => {
     mockFetch(new Response('<html>502 Bad Gateway</html>', { status: 502, headers: { 'content-type': 'text/html' } }));
     const e = await api('/api/users').catch((x: unknown) => x);
     expect(e).toBeInstanceOf(ApiError);
-    expect(e).toMatchObject({ code: 'HTTP_502', message: 'Lỗi hệ thống (502)', status: 502 });
+    expect(e).toMatchObject({ code: 'HTTP_502', message: 'Máy chủ tạm thời không phản hồi, hãy thử lại sau ít phút', status: 502 });
   });
 
   it('mất kết nối thì ném ApiError NETWORK', async () => {

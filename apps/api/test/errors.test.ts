@@ -3,9 +3,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
+import { z } from 'zod';
+import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 import errorsPlugin from '../src/plugins/errors.js';
 
 const app = Fastify();
+app.setValidatorCompiler(validatorCompiler); app.setSerializerCompiler(serializerCompiler);
 await app.register(errorsPlugin);
 const pgError = (code: string) => Object.assign(new Error('lỗi từ PostgreSQL'), { code });
 const raise = (message: string) => Object.assign(new Error(message), { code: 'P0001' });
@@ -17,6 +20,7 @@ app.get('/duplicate-other', async () => { throw Object.assign(pgError('23505'), 
 app.get('/overflow', async () => { throw pgError('22003'); });
 app.get('/raise-not-found', async () => { throw raise('VOUCHER_NOT_FOUND: x'); });
 app.get('/raise-posted', async () => { throw raise('VOUCHER_POSTED: y'); });
+app.get('/year/:year', { schema: { params: z.object({ year: z.coerce.number().int() }) } }, async () => ({ ok: true }));
 afterAll(async () => { await app.close(); });
 
 // Các đối số của lời gọi AppError(...) (bắt đầu tại dấu '('), bỏ qua chuỗi trong nháy để thông báo chứa ';' hay ')' không làm lệch.
@@ -32,6 +36,16 @@ function appErrorArgs(src: string, open: number): string[] {
   }
   return args;
 }
+
+describe('lỗi kiểm tra tham số của fastify', () => {
+  it('400 VALIDATION giữ thông báo gốc và thêm details (lỗi zod có path mảng, phạm vi) để giao diện dịch ra tiếng Việt', async () => {
+    const r = await app.inject({ method: 'GET', url: '/year/undefined' });
+    const e = r.json().error;
+    expect([r.statusCode, e.code, e.message]).toEqual([400, 'VALIDATION', 'params/year Expected number, received nan']);
+    expect(e.details).toHaveLength(1);
+    expect(e.details[0]).toMatchObject({ path: ['year'], code: 'invalid_type', expected: 'number', received: 'nan', scope: 'params' });
+  });
+});
 
 describe('ánh xạ lỗi PostgreSQL', () => {
   it.each(['/deadlock', '/serialization'])('%s -> 409 CONCURRENT_RETRY để người dùng thử lại', async (url) => {
