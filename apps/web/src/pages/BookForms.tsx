@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Alert, Button, DatePicker, Form, Input, Modal, Popconfirm, Radio, Select, Space, Table, Tabs, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { formatVnDate, formatVnNumber } from '@kt/domain';
@@ -56,11 +57,14 @@ export default function BookFormsPage() {
     onSuccess: (r) => { setAdding(false); addForm.resetFields(); void message.success(`Đã lập Chứng từ ghi sổ số ${r.setNo} (${r.vouchers} chứng từ gốc)`); void qc.invalidateQueries({ queryKey: ['voucher-sets'] }); } });
   const remove = useMutation({ mutationFn: (id: number) => api(`/api/voucher-sets/${id}`, { method: 'DELETE' }), onError: fail,
     onSuccess: () => { void message.success('Đã xóa Chứng từ ghi sổ; chứng từ gốc và sổ cái không đổi'); void qc.invalidateQueries({ queryKey: ['voucher-sets'] }); } });
+  const noYear = year === undefined; // công ty chưa có năm tài chính: không có gì để gọi API hay đổi hình thức sổ
   const open = (u: string, format: 'pdf' | 'xlsx') => { window.open(`${u}${u.includes('?') ? '&' : '?'}format=${format}`, '_blank'); };
 
   const needAccount = (form === 'NKCT' || (form === 'CTGS' && ctgsTab === 'ledger')) && !accountCode;
   const d = data.data;
   const body = () => {
+    if (noYear) return years.isLoading ? <Alert type="info" message="Đang tải…" /> : years.error ? <Alert type="error" showIcon message={(years.error as Error).message} />
+      : <Alert type="warning" showIcon message="Công ty chưa có năm tài chính nên chưa chọn được hình thức sổ." description={<>Cần có năm tài chính trước, xem ở {can('period.view') ? <Link to="/so-cai/ky-ke-toan">Kỳ kế toán và khóa sổ</Link> : 'Kỳ kế toán và khóa sổ'}.</>} />;
     if (form === 'NKC') return <Alert type="info" showIcon message="Năm này dùng hình thức Nhật ký chung: xem ở trang Sổ sách kế toán." />;
     if (needAccount) return <Alert type="info" showIcon message={form === 'NKCT' ? 'Chọn tài khoản ghi Có để xem bảng kê' : 'Chọn tài khoản để xem Sổ Cái'} />;
     if (data.error) return <Alert type="error" showIcon message={(data.error as Error).message} />;
@@ -95,8 +99,8 @@ export default function BookFormsPage() {
     <Space direction="vertical" size={8} style={{ width: '100%' }}>
       <PageHeader title="Hình thức sổ kế toán" extra={can('report.print') && !!url && <><Button disabled={needAccount} onClick={() => open(url, 'pdf')}>In PDF</Button><Button disabled={needAccount} onClick={() => open(url, 'xlsx')}>Xuất Excel</Button></>}>
         <Toolbar>
-          <Select style={{ width: 130 }} placeholder="Năm" value={year} onChange={(y) => { setYear(y); setRange(null); }} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear}` }))} />
-          <Radio.Group optionType="button" value={form} disabled={!can('period.update') || change.isPending} onChange={(e) => change.mutate(e.target.value as BookForm)} options={FORMS} />
+          <Select style={{ width: 130 }} placeholder="Năm" value={year} disabled={noYear} loading={years.isLoading} onChange={(y) => { setYear(y); setRange(null); }} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear}` }))} />
+          <Radio.Group optionType="button" value={form} disabled={!can('period.update') || noYear || change.isPending} onChange={(e) => { if (!noYear) change.mutate(e.target.value as BookForm); }} options={FORMS} />
           <DatePicker.RangePicker format="DD/MM/YYYY" allowClear={false} value={from ? [dayjs(from), dayjs(to)] : null} onChange={(r) => r?.[0] && r[1] && setRange([r[0].format('YYYY-MM-DD'), r[1].format('YYYY-MM-DD')])} />
           {(form === 'NKCT' || (form === 'CTGS' && ctgsTab === 'ledger')) && accountPick}
         </Toolbar>

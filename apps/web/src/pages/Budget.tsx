@@ -37,6 +37,7 @@ function Editor({ id, onClose }: { id: number | 'new'; onClose: () => void }) {
   const detail = useQuery({ queryKey: ['budget', cur], enabled: cur !== 'new', queryFn: () => api<Detail>(`/api/budgets/${cur as number}`) });
   useEffect(() => { if (detail.data) { setName(detail.data.name); setYear(detail.data.fiscalYear); setRows(detail.data.lines.length ? detail.data.lines.map(toGrid) : [{}]); } }, [detail.data]);
   useEffect(() => { if (year === undefined && years.data?.length) setYear(years.data[0]!.fiscalYear); }, [years.data, year]);
+  const needYear = cur === 'new' && year === undefined; // công ty chưa có năm tài chính: chưa lập được ngân sách mới
   const status = cur === 'new' ? 'draft' : detail.data?.status ?? 'draft'; const editable = status === 'draft' && can(cur === 'new' ? 'budget.create' : 'budget.update');
   const columns = useMemo<ColDef<GridRow>[]>(() => [
     { colId: 'accountPrefix', field: 'accountPrefix', headerName: 'Tài khoản / nhóm', width: 130 }, { colId: 'costItemCode', field: 'costItemCode', headerName: 'Khoản mục phí', width: 120 },
@@ -62,18 +63,18 @@ function Editor({ id, onClose }: { id: number | 'new'; onClose: () => void }) {
     else { void message.success(`Đã nhập ${j.lines} dòng`); void qc.invalidateQueries({ queryKey: ['budget', cur] }); void detail.refetch(); }
   };
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (!editable) return; (document.activeElement as HTMLElement | null)?.blur(); setTimeout(() => save.mutate(), 50); } };
+    const onKey = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (!editable || needYear) return; (document.activeElement as HTMLElement | null)?.blur(); setTimeout(() => save.mutate(), 50); } };
     window.addEventListener('keydown', onKey, true); return () => window.removeEventListener('keydown', onKey, true);
-  }, [editable, save]);
+  }, [editable, needYear, save]);
   return (
     <Modal open title={cur === 'new' ? 'Thêm ngân sách' : `Ngân sách ${year} - phiên bản ${detail.data?.version ?? ''}`} onCancel={onClose} width={1280} destroyOnHidden
       footer={<Space>
         {cur !== 'new' && status === 'draft' && can('budget.approve') && <Button onClick={() => approve.mutate()}>Duyệt</Button>}
         {cur !== 'new' && status !== 'draft' && can('budget.create') && <Button onClick={() => newVersion.mutate()}>Tạo phiên bản mới</Button>}
-        <Button onClick={onClose}>Đóng</Button>{editable && <Button type="primary" loading={save.isPending} onClick={() => save.mutate()}>Lưu (Ctrl+S)</Button>}</Space>}>
+        <Button onClick={onClose}>Đóng</Button>{editable && <Button type="primary" loading={save.isPending} disabled={needYear} onClick={() => save.mutate()}>Lưu (Ctrl+S)</Button>}</Space>}>
       <Space style={{ marginBottom: 8 }} wrap>
         <Input aria-label="Tên ngân sách" value={name} onChange={(e) => setName(e.target.value)} style={{ width: 280 }} disabled={!editable} />
-        <Select aria-label="Năm tài chính" value={year} onChange={setYear} disabled={cur !== 'new'} style={{ width: 120 }} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear}` }))} />
+        <Select aria-label="Năm tài chính" placeholder="Chưa có năm tài chính" value={year} onChange={setYear} disabled={cur !== 'new'} style={{ width: 120 }} options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear}` }))} />
         <Tag color={STATUS[status]?.color ?? 'default'}>{STATUS[status]?.text ?? status}</Tag>
         {cur !== 'new' && editable && <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => { void importXlsx(f); return false; }}><Button size="small">Nhập Excel</Button></Upload>}
         {cur !== 'new' && <a href={`/api/budgets/${cur}/export.xlsx`}>Xuất Excel</a>}<a href="/api/budgets/template.xlsx">Tải mẫu Excel</a>
