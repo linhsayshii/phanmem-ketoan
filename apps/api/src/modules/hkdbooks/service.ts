@@ -118,6 +118,12 @@ export async function createMove(trx: Trx, tenantId: string, userId: string, i: 
   const m = await trx.insertInto('book_stock_move').values({ tenant_id: tenantId, created_by: userId, item_id: i.itemId, move_date: i.moveDate, doc_no: i.docNo ?? null, description: i.description, direction: i.direction, quantity: i.quantity, unit_price: i.unitPrice ?? null }).returning('id').executeTakeFirstOrThrow();
   return { id: m.id };
 }
+// Chiều của dòng nhập, xuất hiện có (để kiểm cờ view_cost trước khi xóa); không có dòng thì 404.
+export async function moveDirection(trx: Trx, id: number): Promise<string> {
+  const r = await trx.selectFrom('book_stock_move').select('direction').where('id', '=', id).executeTakeFirst();
+  if (!r) throw new AppError('BOOK_MOVE_NOT_FOUND', 'Không có dòng nhập, xuất kho', 404);
+  return r.direction;
+}
 export async function deleteMove(trx: Trx, id: number) {
   if (!(await trx.deleteFrom('book_stock_move').where('id', '=', id).returning('id').executeTakeFirst())) throw new AppError('BOOK_MOVE_NOT_FOUND', 'Không có dòng nhập, xuất kho', 404);
 }

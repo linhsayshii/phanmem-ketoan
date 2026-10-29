@@ -131,6 +131,8 @@ export function registerVoucherRoutes(app: Parameters<FastifyPluginAsyncZod>[0])
     const form = req.params.form; const q = req.query;
     if (!loadBookSet('TT58').vouchers?.some((v) => v.code === form && v.built)) throw new AppError('VOUCHER_NOT_BUILT', `Chưa dựng mẫu ${form}`, 501);
     const isCash = form === '01-TT' || form === '02-TT';
+    // Phiếu nhập, xuất kho in đơn giá, thành tiền (giá trị tồn kho, giá xuất bình quân): cần cờ view_cost như sổ kho S2c-DNSN.
+    if (!isCash && !req.auth!.sensitive.has('view_cost')) throw new AppError('FORBIDDEN', 'Không có quyền xem giá vốn', 403);
     if (isCash && q.entryId === undefined) throw new AppError('VALIDATION', 'Phiếu thu, phiếu chi cần entryId của bút ghi sổ', 400);
     if (!isCash && q.docNo === undefined) throw new AppError('VALIDATION', 'Phiếu nhập, xuất kho cần docNo (số chứng từ của các dòng nhập, xuất)', 400);
     const html = await app.withTenant(req, async (trx) => {

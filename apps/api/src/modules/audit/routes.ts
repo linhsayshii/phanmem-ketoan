@@ -10,7 +10,7 @@ import { TNCN_FORMS } from '../payroll/tncnReturn.js';
 // Bảng có trg_audit mang số liệu giá vốn, công nợ (kiểm tra bằng bộ quét danh mục ở test/audit.test.ts: bảng mới có số tiền nhạy cảm phải vào danh sách hoặc danh sách không che).
 // Giá vốn: dòng hàng phiếu kho (đơn giá, giá trị tồn, chi phí mua), tồn đầu kỳ, lần chạy giá thành/giá vốn, phân bổ chi phí mua và vụ việc, định mức, hợp đồng (giá trị, lãi lỗ).
 const COST_AUDIT_ENTITIES = ['cost_run', 'project_alloc_run', 'voucher_item_line', 'opening_stock', 'costing_run', 'landed_cost_alloc', 'stocktake_line', 'cost_norm', 'cost_norm_line',
-  'contract', 'contract_amendment', 'contract_milestone'];
+  'contract', 'contract_amendment', 'contract_milestone', 'book_stock_move'];
 // Phải trả: khế ước vay (dư nợ gốc, lãi), hóa đơn đầu vào. Phải thu: chưa có bảng riêng (khoản phải thu nằm ở dòng chứng từ, số dư đầu kỳ, đối trừ: lọc theo tài khoản bên dưới).
 const PAYABLE_AUDIT_ENTITIES = ['loan_installment', 'loan_rate', 'loan_term', 'inbound_invoice', 'inbound_invoice_line'];
 const RECEIVABLE_AUDIT_ENTITIES: string[] = [];
