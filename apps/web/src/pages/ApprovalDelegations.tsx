@@ -2,6 +2,7 @@ import { useState } from 'react';
 import dayjs from 'dayjs';
 import { Alert, Button, DatePicker, Form, Input, Popconfirm, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { EmptyState, PageHeader, Section } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -31,37 +32,41 @@ export default function ApprovalDelegationsPage() {
   const revoke = useMutation({ mutationFn: (id: number) => api(`/api/approval-delegations/${id}/revoke`, { method: 'POST', json: {} }), onError: fail, onSuccess: () => { void message.success('Đã thu hồi ủy quyền'); refresh(); } });
   if (!can('approval_request.approve')) return <Alert type="warning" showIcon message="Cần quyền duyệt đề nghị để lập ủy quyền duyệt" />;
   return (
-    <div>
-      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }} wrap>
-        <h2 style={{ margin: 0 }}>Ủy quyền duyệt</h2>
-        {can('setting.update') && <Space>Xem mọi ủy quyền của công ty <Switch aria-label="Xem mọi ủy quyền" checked={all} onChange={setAll} /></Space>}
-      </Space>
-      <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Khi vắng mặt, ủy quyền cho người khác duyệt thay các bước của bạn trong khoảng ngày."
-        description="Người được ủy quyền vẫn phải có quyền duyệt và quyền xem số liệu của chính họ. Không duyệt thay đề nghị do bạn lập, không duyệt hai bước của cùng một đề nghị, không ủy quyền vòng. Nhật ký ghi cả người duyệt thay và người ủy quyền." />
-      <Form form={form} layout="inline" onFinish={(v) => create.mutate(v)} style={{ marginBottom: 16, rowGap: 8 }}>
-        <Form.Item name="delegateId" label="Người được ủy quyền" rules={[{ required: true, message: 'Chọn người được ủy quyền' }]}>
-          <Select aria-label="Người được ủy quyền" style={{ width: 260 }} showSearch optionFilterProp="label" loading={candidates.isLoading} placeholder="Chọn người"
-            options={(candidates.data ?? []).map((u) => ({ value: u.id, label: `${u.fullName || u.username} (${u.username})` }))} />
-        </Form.Item>
-        <Form.Item name="reason" label="Lý do"><Input aria-label="Lý do ủy quyền" maxLength={500} style={{ width: 220 }} placeholder="Đi công tác, nghỉ phép…" /></Form.Item>
-        <Form.Item name="range" label="Từ ngày – đến ngày" rules={[{ required: true, message: 'Chọn khoảng ngày' }]}>
-          <DatePicker.RangePicker aria-label="Khoảng ngày ủy quyền" format="DD/MM/YYYY" disabledDate={(d) => d.isBefore(dayjs(), 'day')} />
-        </Form.Item>
-        <Form.Item><Button type="primary" htmlType="submit" loading={create.isPending}>Ủy quyền</Button></Form.Item>
-      </Form>
-      <Table<Delegation> rowKey="id" size="small" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 50, hideOnSinglePage: true }} locale={{ emptyText: 'Chưa có ủy quyền nào' }}
-        columns={[
-          { title: 'Người ủy quyền', dataIndex: 'delegator', width: 150 },
-          { title: 'Người được ủy quyền', dataIndex: 'delegate', width: 170 },
-          { title: 'Từ ngày', dataIndex: 'dateFrom', width: 110, render: fmt },
-          { title: 'Đến ngày', dataIndex: 'dateTo', width: 110, render: fmt },
-          { title: 'Lý do', dataIndex: 'reason', ellipsis: true },
-          { title: 'Trạng thái', dataIndex: 'status', width: 140, render: (s: Delegation['status']) => <Tag color={DELEGATION_STATUS[s].color}>{DELEGATION_STATUS[s].label}</Tag> },
-          { title: '', width: 110, render: (_, d) => (d.status === 'active' || d.status === 'upcoming') && (d.delegatorId === me?.userId || can('setting.update')) && (
-            <Popconfirm title="Thu hồi ủy quyền này?" okText="Thu hồi" cancelText="Không" onConfirm={() => revoke.mutate(d.id)}>
-              <Button size="small" danger aria-label={`Thu hồi ủy quyền cho ${d.delegate}`}>Thu hồi</Button>
-            </Popconfirm>) },
-        ]} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <PageHeader
+        title="Ủy quyền duyệt"
+        description="Khi vắng mặt, ủy quyền cho người khác duyệt thay các bước của bạn trong khoảng ngày."
+        extra={can('setting.update') ? <Space><span>Xem mọi ủy quyền của công ty</span><Switch aria-label="Xem mọi ủy quyền" checked={all} onChange={setAll} /></Space> : undefined}
+      />
+      <Alert type="info" showIcon message="Người được ủy quyền vẫn phải có quyền duyệt và quyền xem số liệu của chính họ. Không duyệt thay đề nghị do bạn lập, không duyệt hai bước của cùng một đề nghị, không ủy quyền vòng. Nhật ký ghi cả người duyệt thay và người ủy quyền." />
+      <Section title="Lập ủy quyền">
+        <Form form={form} layout="inline" onFinish={(v) => create.mutate(v)} style={{ rowGap: 8 }}>
+          <Form.Item name="delegateId" label="Người được ủy quyền" rules={[{ required: true, message: 'Chọn người được ủy quyền' }]}>
+            <Select aria-label="Người được ủy quyền" style={{ width: 260 }} showSearch optionFilterProp="label" loading={candidates.isLoading} placeholder="Chọn người"
+              options={(candidates.data ?? []).map((u) => ({ value: u.id, label: `${u.fullName || u.username} (${u.username})` }))} />
+          </Form.Item>
+          <Form.Item name="reason" label="Lý do"><Input aria-label="Lý do ủy quyền" maxLength={500} style={{ width: 220 }} placeholder="Đi công tác, nghỉ phép…" /></Form.Item>
+          <Form.Item name="range" label="Từ ngày – đến ngày" rules={[{ required: true, message: 'Chọn khoảng ngày' }]}>
+            <DatePicker.RangePicker aria-label="Khoảng ngày ủy quyền" format="DD/MM/YYYY" disabledDate={(d) => d.isBefore(dayjs(), 'day')} />
+          </Form.Item>
+          <Form.Item><Button type="primary" htmlType="submit" loading={create.isPending}>Ủy quyền</Button></Form.Item>
+        </Form>
+      </Section>
+      <Section bodyPadding={0}>
+        <Table<Delegation> rowKey="id" size="small" loading={list.isLoading} dataSource={list.data ?? []} pagination={{ pageSize: 50, hideOnSinglePage: true }} locale={{ emptyText: <EmptyState title="Chưa có ủy quyền nào" /> }}
+          columns={[
+            { title: 'Người ủy quyền', dataIndex: 'delegator', width: 150 },
+            { title: 'Người được ủy quyền', dataIndex: 'delegate', width: 170 },
+            { title: 'Từ ngày', dataIndex: 'dateFrom', width: 110, render: fmt },
+            { title: 'Đến ngày', dataIndex: 'dateTo', width: 110, render: fmt },
+            { title: 'Lý do', dataIndex: 'reason', ellipsis: true },
+            { title: 'Trạng thái', dataIndex: 'status', width: 140, render: (s: Delegation['status']) => <Tag color={DELEGATION_STATUS[s].color}>{DELEGATION_STATUS[s].label}</Tag> },
+            { title: '', width: 110, render: (_, d) => (d.status === 'active' || d.status === 'upcoming') && (d.delegatorId === me?.userId || can('setting.update')) && (
+              <Popconfirm title="Thu hồi ủy quyền này?" okText="Thu hồi" cancelText="Không" onConfirm={() => revoke.mutate(d.id)}>
+                <Button size="small" danger aria-label={`Thu hồi ủy quyền cho ${d.delegate}`}>Thu hồi</Button>
+              </Popconfirm>) },
+          ]} />
+      </Section>
     </div>
   );
 }

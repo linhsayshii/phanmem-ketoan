@@ -3,9 +3,9 @@ import dayjs from 'dayjs';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, Badge, Button, Card, DatePicker, Descriptions, Drawer, Form, Grid, Input, List, Modal, Popconfirm, Radio, Select, Space, Steps, Switch, Table, Tabs, Tag, Timeline, Upload, message,
+  Alert, Badge, Button, DatePicker, Descriptions, Drawer, Form, Grid, Input, List, Modal, Popconfirm, Radio, Select, Space, Steps, Switch, Table, Tabs, Tag, Timeline, Upload, message,
 } from 'antd';
-import { LookupSelect, VnNumberInput, useHotkeys } from '@kt/ui';
+import { EmptyState, LookupSelect, PageHeader, Section, Toolbar, VnNumberInput, useHotkeys } from '@kt/ui';
 import { formatVnNumber } from '@kt/domain';
 import { api, apiBlob } from '../api/client.js';
 import { useAuth } from '../auth.js';
@@ -137,13 +137,13 @@ function RequestDrawer({ id, onClose, onEdit }: { id: string | null; onClose(): 
           )}
           <Timeline items={r.log.map((l) => ({ color: l.action === 'reject' ? 'red' : l.action === 'approve' ? 'green' : 'blue', children: `${dayjs(l.at).format('DD/MM/YYYY HH:mm')} ${l.username}${l.onBehalfOf ? ` (thay ${l.onBehalfOf})` : ''}: ${ACTION[l.action] ?? l.action}${l.stepNo ? ` bước ${l.stepNo}` : ''}${l.note ? ` – ${l.note}` : ''}` }))} />
           {r.canAct && (
-            <Card size="small" title="Quyết định của bạn">
+            <Section title="Quyết định của bạn">
               <Input.TextArea rows={2} placeholder="Ghi chú (không bắt buộc)" value={note} onChange={(e) => setNote(e.target.value)} style={{ marginBottom: 8 }} />
               <Space wrap>
                 <Button type="primary" size="large" loading={call.isPending} onClick={() => call.mutate({ path: 'approve', body: note ? { note } : {} }, { onSuccess: () => { done('Đã duyệt'); onClose(); } })}>Duyệt</Button>
                 <Button danger size="large" onClick={() => setRejecting(true)}>Từ chối</Button>
               </Space>
-            </Card>
+            </Section>
           )}
           {mine && (
             <Space wrap>
@@ -183,13 +183,13 @@ function RequestList({ box, onOpen }: { box: Box; onOpen(id: string): void }) {
   return (
     <div>
       {box === 'inbox' && screens.md && (
-        <Space style={{ marginBottom: 12 }} wrap>
+        <Toolbar style={{ marginBottom: 12 }}>
           <Popconfirm title={`Duyệt ${picked.length} đề nghị đã chọn?`} description="Mỗi đề nghị được duyệt riêng; đề nghị lỗi không ảnh hưởng các đề nghị khác." okText="Duyệt" cancelText="Không" disabled={!picked.length}
             onConfirm={() => batch.mutate(picked)}>
             <Button type="primary" disabled={!picked.length} loading={batch.isPending}>{picked.length ? `Duyệt ${picked.length} đề nghị đã chọn` : 'Duyệt các đề nghị đã chọn'}</Button>
           </Popconfirm>
           <Link to="/phe-duyet/uy-quyen">Ủy quyền duyệt</Link>
-        </Space>
+        </Toolbar>
       )}
       <Modal title="Kết quả duyệt hàng loạt" open={!!result} footer={<Button type="primary" onClick={() => setResult(null)}>Đóng</Button>} onCancel={() => setResult(null)}>
         {result && <>
@@ -198,26 +198,30 @@ function RequestList({ box, onOpen }: { box: Box; onOpen(id: string): void }) {
         </>}
       </Modal>
       {box !== 'inbox' && (
-        <Select aria-label="Lọc trạng thái" allowClear placeholder="Mọi trạng thái" style={{ width: 180, marginBottom: 12 }} value={state} onChange={setState}
-          options={Object.entries(STATE).map(([value, s]) => ({ value, label: s.label }))} />
+        <Toolbar style={{ marginBottom: 12 }}>
+          <Select aria-label="Lọc trạng thái" allowClear placeholder="Mọi trạng thái" style={{ width: 180 }} value={state} onChange={setState}
+            options={Object.entries(STATE).map(([value, s]) => ({ value, label: s.label }))} />
+        </Toolbar>
       )}
       {screens.md ? (
-        <Table<Request> rowKey="id" size="small" loading={q.isLoading} dataSource={q.data ?? []} pagination={{ pageSize: 50, hideOnSinglePage: true }} locale={{ emptyText: empty }}
-          {...(box === 'inbox' ? { rowSelection: { selectedRowKeys: picked, onChange: (k: React.Key[]) => setPicked(k as string[]), columnTitle: 'Chọn' } } : {})}
-          onRow={(r) => ({ onClick: (e) => { if (!(e.target as HTMLElement).closest('.ant-table-selection-column')) onOpen(r.id); }, onKeyDown: (e) => { if (e.key === 'Enter') onOpen(r.id); }, tabIndex: 0, style: { cursor: 'pointer' } })}
-          columns={[
-            { title: 'Số', dataIndex: 'requestNo', width: 150 },
-            { title: 'Ngày', dataIndex: 'requestDate', width: 100, render: fmtDate },
-            { title: 'Loại', dataIndex: 'kindLabel', width: 160 },
-            { title: 'Người đề nghị', dataIndex: 'requesterName', width: 130 },
-            ...(box === 'inbox' ? [{ title: 'Duyệt thay', dataIndex: 'via', width: 120, render: (v: string | null | undefined) => (v ? <Tag color="purple">{v}</Tag> : '') }] : []),
-            { title: 'Người nhận', dataIndex: 'payeeName' },
-            { title: 'Lý do', dataIndex: 'reason', ellipsis: true },
-            { title: 'Số tiền', width: 170, align: 'right', render: (_, r) => money(r) },
-            { title: 'Trạng thái', dataIndex: 'state', width: 150, render: (s: State, r) => <Tag color={STATE[s].color}>{STATE[s].label}{s === 'submitted' && r.steps.length > 1 ? ` ${r.currentStep}/${r.steps.length}` : ''}</Tag> },
-          ]} />
+        <Section bodyPadding={0}>
+          <Table<Request> rowKey="id" size="small" loading={q.isLoading} dataSource={q.data ?? []} pagination={{ pageSize: 50, hideOnSinglePage: true }} locale={{ emptyText: <EmptyState title={empty} /> }}
+            {...(box === 'inbox' ? { rowSelection: { selectedRowKeys: picked, onChange: (k: React.Key[]) => setPicked(k as string[]), columnTitle: 'Chọn' } } : {})}
+            onRow={(r) => ({ onClick: (e) => { if (!(e.target as HTMLElement).closest('.ant-table-selection-column')) onOpen(r.id); }, onKeyDown: (e) => { if (e.key === 'Enter') onOpen(r.id); }, tabIndex: 0, style: { cursor: 'pointer' } })}
+            columns={[
+              { title: 'Số', dataIndex: 'requestNo', width: 150 },
+              { title: 'Ngày', dataIndex: 'requestDate', width: 100, render: fmtDate },
+              { title: 'Loại', dataIndex: 'kindLabel', width: 160 },
+              { title: 'Người đề nghị', dataIndex: 'requesterName', width: 130 },
+              ...(box === 'inbox' ? [{ title: 'Duyệt thay', dataIndex: 'via', width: 120, render: (v: string | null | undefined) => (v ? <Tag color="purple">{v}</Tag> : '') }] : []),
+              { title: 'Người nhận', dataIndex: 'payeeName' },
+              { title: 'Lý do', dataIndex: 'reason', ellipsis: true },
+              { title: 'Số tiền', width: 170, align: 'right', render: (_, r) => money(r) },
+              { title: 'Trạng thái', dataIndex: 'state', width: 150, render: (s: State, r) => <Tag color={STATE[s].color}>{STATE[s].label}{s === 'submitted' && r.steps.length > 1 ? ` ${r.currentStep}/${r.steps.length}` : ''}</Tag> },
+            ]} />
+        </Section>
       ) : (
-        <List loading={q.isLoading} dataSource={q.data ?? []} locale={{ emptyText: empty }} renderItem={(r) => (
+        <List loading={q.isLoading} dataSource={q.data ?? []} locale={{ emptyText: <EmptyState title={empty} /> }} renderItem={(r) => (
           <List.Item onClick={() => onOpen(r.id)} style={{ cursor: 'pointer' }} aria-label={`${r.requestNo} ${r.payeeName}`}>
             <List.Item.Meta title={<Space style={{ justifyContent: 'space-between', width: '100%' }}><span>{r.payeeName}</span><strong>{money(r)}</strong></Space>}
               description={<span>{r.requestNo} · {r.requesterName} · {fmtDate(r.requestDate)} <Tag color={STATE[r.state].color}>{STATE[r.state].label}</Tag><br />{r.reason}</span>} />
@@ -242,15 +246,18 @@ export default function ApprovalsPage() {
   if (!tabs.length) return <Alert type="warning" showIcon message="Bạn không có quyền với đề nghị thanh toán, tạm ứng" />;
   const active = box ?? tabs[0]!.key;
   return (
-    <div>
-      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8 }} wrap>
-        <h2 style={{ margin: 0 }}>Đề nghị thanh toán, tạm ứng</h2>
-        <Space wrap>
-          {can('approval_request.approve') && <Link to="/phe-duyet/uy-quyen">Ủy quyền duyệt</Link>}
-          {can('setting.update') && <Link to="/phe-duyet/quy-trinh">Quy trình phê duyệt</Link>}
-          {can('approval_request.create') && <Button type="primary" onClick={() => setEditing({ r: null })}>Lập đề nghị (Insert)</Button>}
-        </Space>
-      </Space>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <PageHeader
+        title="Đề nghị thanh toán, tạm ứng"
+        description="Lập, theo dõi và phê duyệt các đề nghị thanh toán, tạm ứng"
+        extra={
+          <Space wrap>
+            {can('approval_request.approve') && <Link to="/phe-duyet/uy-quyen">Ủy quyền duyệt</Link>}
+            {can('setting.update') && <Link to="/phe-duyet/quy-trinh">Quy trình phê duyệt</Link>}
+            {can('approval_request.create') && <Button type="primary" onClick={() => setEditing({ r: null })}>Lập đề nghị (Insert)</Button>}
+          </Space>
+        }
+      />
       <Tabs activeKey={active} onChange={(k) => setBox(k as Box)} items={tabs.map((t) => ({ key: t.key, label: t.label, children: <RequestList box={t.key} onOpen={setOpen} /> }))} />
       <RequestDrawer id={open} onClose={() => setOpen(null)} onEdit={(r) => { setOpen(null); setEditing({ r }); }} />
       {editing && <RequestForm open initial={editing.r} onClose={() => setEditing(null)} />}
@@ -283,22 +290,24 @@ export function ApprovalFlowsPage() {
   useHotkeys({ Insert: () => { if (can('setting.update') && !editing) openEdit('new'); } });
   if (!can('setting.update')) return <Alert type="warning" showIcon message="Cần quyền sửa tùy chọn hệ thống để cấu hình quy trình phê duyệt" />;
   return (
-    <div>
-      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }} wrap>
-        <h2 style={{ margin: 0 }}>Quy trình phê duyệt</h2>
-        <Button type="primary" onClick={() => openEdit('new')}>Thêm quy trình (Insert)</Button>
-      </Space>
-      <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Đề nghị dùng quy trình đang dùng cùng loại có hạn mức lớn nhất không vượt số tiền (quy đổi VND). Sửa quy trình không đổi các đề nghị đã gửi duyệt." />
-      <Table<Flow> rowKey="id" size="small" loading={flows.isLoading} dataSource={flows.data ?? []} pagination={false} locale={{ emptyText: 'Chưa có quy trình nào: đề nghị chưa gửi duyệt được' }}
-        onRow={(f) => ({ onDoubleClick: () => openEdit(f) })}
-        columns={[
-          { title: 'Loại', dataIndex: 'kind', width: 170, render: (k: string) => (k === 'payment' ? 'Đề nghị thanh toán' : 'Đề nghị tạm ứng') },
-          { title: 'Tên', dataIndex: 'name' },
-          { title: 'Từ số tiền', dataIndex: 'minAmount', width: 150, align: 'right', render: (m: string) => formatVnNumber(m) },
-          { title: 'Các bước', dataIndex: 'steps', render: (s: Step[]) => s.map(stepName).join(' → ') },
-          { title: 'Đang dùng', dataIndex: 'isActive', width: 100, render: (a: boolean) => (a ? <Tag color="green">Có</Tag> : <Tag>Không</Tag>) },
-          { title: '', width: 80, render: (_, f) => <Button size="small" onClick={() => openEdit(f)} aria-label={`Sửa ${f.name}`}>Sửa</Button> },
-        ]} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <PageHeader
+        title="Quy trình phê duyệt"
+        description="Đề nghị dùng quy trình đang dùng cùng loại có hạn mức lớn nhất không vượt số tiền (quy đổi VND). Sửa quy trình không đổi các đề nghị đã gửi duyệt."
+        extra={<Button type="primary" onClick={() => openEdit('new')}>Thêm quy trình (Insert)</Button>}
+      />
+      <Section bodyPadding={0}>
+        <Table<Flow> rowKey="id" size="small" loading={flows.isLoading} dataSource={flows.data ?? []} pagination={false} locale={{ emptyText: <EmptyState title="Chưa có quy trình nào: đề nghị chưa gửi duyệt được" /> }}
+          onRow={(f) => ({ onDoubleClick: () => openEdit(f) })}
+          columns={[
+            { title: 'Loại', dataIndex: 'kind', width: 170, render: (k: string) => (k === 'payment' ? 'Đề nghị thanh toán' : 'Đề nghị tạm ứng') },
+            { title: 'Tên', dataIndex: 'name' },
+            { title: 'Từ số tiền', dataIndex: 'minAmount', width: 150, align: 'right', render: (m: string) => formatVnNumber(m) },
+            { title: 'Các bước', dataIndex: 'steps', render: (s: Step[]) => s.map(stepName).join(' → ') },
+            { title: 'Đang dùng', dataIndex: 'isActive', width: 100, render: (a: boolean) => (a ? <Tag color="green">Có</Tag> : <Tag>Không</Tag>) },
+            { title: '', width: 80, render: (_, f) => <Button size="small" onClick={() => openEdit(f)} aria-label={`Sửa ${f.name}`}>Sửa</Button> },
+          ]} />
+      </Section>
       <Modal title={editing === 'new' ? 'Thêm quy trình phê duyệt' : 'Sửa quy trình phê duyệt'} open={!!editing} okText="Lưu" cancelText="Hủy" confirmLoading={save.isPending} onCancel={() => setEditing(null)} onOk={() => form.submit()} destroyOnHidden>
         <Form form={form} layout="vertical" initialValues={init} preserve={false} onFinish={submit} onKeyDown={(e: React.KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); form.submit(); } }}>
           <Form.Item name="kind" label="Loại đề nghị"><Radio.Group options={[{ value: 'payment', label: 'Thanh toán' }, { value: 'advance', label: 'Tạm ứng' }]} /></Form.Item>
