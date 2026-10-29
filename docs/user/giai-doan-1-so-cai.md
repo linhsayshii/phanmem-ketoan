@@ -18,6 +18,7 @@ Tài liệu ngắn cho kế toán viên và kế toán trưởng: nhập Phiếu
 
 ## Số dư đầu kỳ
 
+- Công ty mới chưa có năm tài chính: Số dư đầu kỳ, Tồn kho đầu kỳ, Tài sản đầu kỳ, Phân tích, Phân bổ khấu hao, Khóa kỳ, Phân bổ dự án, Tính giá thành, Báo cáo giá thành và Hệ thống tài khoản hiện thông báo "Công ty chưa có năm tài chính" thay vì bảng trống. Vào Sổ cái → Kỳ kế toán, bấm "Thêm năm tài chính". Tài khoản không có quyền tạo kỳ kế toán chỉ thấy lời nhắn liên hệ quản trị viên.
 - Vào Sổ cái → Số dư đầu kỳ, chọn năm tài chính đầu tiên của công ty, nhập số dư từng tài khoản chi tiết (công nợ nhập theo từng đối tượng) hoặc "Nhập Excel" bằng "Tải mẫu Excel".
 - Bấm "Kiểm tra" để xem lỗi (tổng Nợ khác tổng Có, nhập sai bên, thiếu đối tượng, tài khoản loại 5–9), sửa hết lỗi rồi bấm "Ghi sổ số dư đầu kỳ": hệ thống tạo một phiếu loại DK đã ghi sổ.
 - Tài khoản tiền gửi ngân hàng (1121, 1122 của hệ TT133) nhập số dư theo từng tài khoản ngân hàng: chọn ở cột "TK ngân hàng" (F4), mỗi tài khoản ngân hàng một dòng; nhờ vậy Sổ tiền gửi của từng tài khoản ngân hàng mở đầu đúng số dư. Dòng chưa gán tài khoản ngân hàng vẫn ghi sổ được nhưng "Kiểm tra" nhắc là sổ tiền gửi theo tài khoản ngân hàng sẽ thiếu số dư đầu. Mẫu Excel có thêm cột "Tài khoản ngân hàng" ngay sau cột Mã đối tượng; tệp mẫu cũ (không có cột này) vẫn nhập được. Tiêu đề cột ở dòng 1 phải đúng một trong các mẫu (không phân biệt hoa thường, khoảng trắng thừa); tiêu đề khác thì hệ thống từ chối và nêu tiêu đề cần có, hãy tải lại mẫu. Trên lưới, Enter/Tab bỏ qua ô TK ngân hàng ở dòng không phải tài khoản tiền gửi.

@@ -98,14 +98,15 @@ describe('Kỳ kế toán khi công ty chưa có năm tài chính', () => {
 
   it('báo tiếng Việt, không gọi API kỳ với năm trống, có nút Thêm năm tài chính', async () => {
     renderPage();
-    expect(await screen.findByText('Công ty chưa có năm tài chính.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Thêm năm tài chính' })).toBeEnabled();
+    expect(await screen.findByText('Công ty chưa có năm tài chính')).toBeInTheDocument();
+    expect(screen.getByText(/^Cần có năm tài chính để mở, khóa sổ các kỳ kế toán\. Bấm "Thêm năm tài chính"/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Thêm năm tài chính' })[0]).toBeEnabled();
     expect(apiMock.mock.calls.every(([p]) => !String(p).startsWith('/api/periods'))).toBe(true);
   });
 
   it('Thêm năm tài chính gửi POST /api/fiscal-years với năm và ngày bắt đầu mặc định', async () => {
     renderPage();
-    await userEvent.click(await screen.findByRole('button', { name: 'Thêm năm tài chính' }));
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Thêm năm tài chính' }))[0]!);
     await userEvent.click(await screen.findByRole('button', { name: 'Tạo năm tài chính' }));
     await vi.waitFor(() => expect(posts()).toHaveLength(1));
     const [path, init] = posts()[0]!;
@@ -117,7 +118,8 @@ describe('Kỳ kế toán khi công ty chưa có năm tài chính', () => {
   it('không có quyền period.create thì không có nút thêm', async () => {
     perms.has = (c) => c !== 'period.create';
     renderPage();
-    await screen.findByText('Công ty chưa có năm tài chính.');
+    await screen.findByText('Công ty chưa có năm tài chính');
+    expect(screen.getByText(/liên hệ quản trị viên/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Thêm năm tài chính' })).not.toBeInTheDocument();
   });
 });

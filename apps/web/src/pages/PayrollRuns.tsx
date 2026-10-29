@@ -176,8 +176,8 @@ function RunView({ id, onGone }: { id: number; onGone: () => void }) {
         onCellValueChanged: (e) => { void saveCell(e, c.code); },
         cellStyle: (p) => {
           if (p.data?.isTotal) return { fontWeight: 600 };
-          if (p.data?.manual.has(c.code)) return { background: 'rgba(250, 173, 20, 0.28)', fontWeight: 600 }; // ô đã sửa tay
-          return input && canEdit ? { background: 'rgba(22, 119, 255, 0.07)' } : null; // ô nhập tay chưa có giá trị riêng
+          if (p.data?.manual.has(c.code)) return { background: COLOR.editedCellBg, fontWeight: 600 }; // ô đã sửa tay
+          return input && canEdit ? { background: COLOR.inputCellBg } : null; // ô nhập tay chưa có giá trị riêng
         },
       });
     }

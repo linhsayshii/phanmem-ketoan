@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Form, Input, InputNumber, Modal, Select, Space, Table, Tabs, Tag, message } from 'antd';
+import { Button, Form, Input, InputNumber, Modal, Select, Space, Table, Tabs, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { PageHeader, Section, Toolbar } from '@kt/ui';
+import { NoFiscalYear, PageHeader, Section, Toolbar } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { NumberingBranchPanel } from './NumberingBranch.js';
@@ -106,9 +106,10 @@ export default function PeriodsPage() {
           {can('period.create') && <Button onClick={() => setAddingYear(true)}>Thêm năm tài chính</Button>}
         </Toolbar>
       </PageHeader>
-      {years.isSuccess && years.data.length === 0 && <Alert type="warning" showIcon message="Công ty chưa có năm tài chính." description={can('period.create') ? 'Bấm "Thêm năm tài chính" để tạo năm đầu tiên; các màn hình số dư đầu kỳ, hình thức sổ, báo cáo cần có năm tài chính.' : 'Nhờ người có quyền tạo kỳ kế toán thêm năm tài chính; các màn hình số dư đầu kỳ, hình thức sổ, báo cáo cần có năm tài chính.'} />}
       <Tabs items={[
-        { key: 'periods', label: 'Kỳ kế toán', children: (
+        { key: 'periods', label: 'Kỳ kế toán', children: years.isSuccess && years.data.length === 0
+        ? <NoFiscalYear inPeriods canCreate={can('period.create')} onCreate={() => setAddingYear(true)} purpose="mở, khóa sổ các kỳ kế toán" />
+        : (
         <>
           <Section bodyPadding={0}>
             <Table<PeriodRow> rowKey="periodNo" size="small" pagination={false} loading={periods.isFetching || run.isPending} dataSource={periods.data ?? []} columns={[

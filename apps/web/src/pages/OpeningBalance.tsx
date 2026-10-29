@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import type { ColDef } from 'ag-grid-community';
 import { D, formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, sum } from '@kt/domain';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 import { COLOR, KeyboardGrid, LookupSelect, PageHeader, Toolbar } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
@@ -75,6 +76,7 @@ export default function OpeningBalancePage() {
   const [picked, setPicked] = useState<number>();
   const fy = years.data?.find((y) => y.fiscalYear === picked) ?? years.data?.[0]; // mặc định năm đầu tiên: số dư đầu kỳ chỉ nhập cho năm đầu
   const year = fy?.fiscalYear;
+  const noYear = years.isSuccess && years.data.length === 0; // công ty chưa có năm tài chính: chưa có số dư đầu kỳ để nhập
   const saved = useQuery({ queryKey: ['opening', year], queryFn: () => api<Row[]>(`/api/opening-balance/${year}`), enabled: year !== undefined });
   // Chứng từ số dư đầu kỳ (loại DK) hạch toán vào ngày liền trước ngày đầu năm (kỳ 0); có chứng từ đã ghi sổ thì mới có gì để bỏ ghi sổ.
   // Chỉ dòng tài khoản tiền gửi (theo dõi chi tiết theo ngân hàng) mới gán được tài khoản ngân hàng.
@@ -184,6 +186,7 @@ export default function OpeningBalancePage() {
             options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
         </Toolbar>
       </PageHeader>
+      {noYear ? <NoFiscalYearNotice purpose="nhập số dư đầu kỳ" /> : (<>
       {saved.error && <Alert type="error" showIcon message={(saved.error as Error).message} />}
       {posted && <Alert type="success" showIcon message={`Đã ghi sổ chứng từ số dư đầu kỳ ${posted.voucherNo ?? ''} (loại DK, ngày ${posted.postingDate.split('-').reverse().join('/')})`} />}
       {issues && (errors.length === 0
@@ -195,6 +198,7 @@ export default function OpeningBalancePage() {
         <b>Tổng dư Nợ: {formatVnNumber(td.toString())}</b><b>Tổng dư Có: {formatVnNumber(tc.toString())}</b>
         {!td.equals(tc) && <Tag color="red">Chênh lệch {formatVnNumber(td.minus(tc).toString())}</Tag>}
       </div>
+      </>)}
       <Modal open={!!lookup} onCancel={() => setLookup(null)} footer={null} title="Chọn từ danh mục" destroyOnHidden afterOpenChange={(o) => { if (o) lookupBox.current?.querySelector('input')?.focus(); }}>
         {lookup && <div ref={lookupBox}><LookupSelect catalog={LOOKUP_CATALOG[lookup.col]!} style={{ width: '100%' }} {...(lookup.col === 'accountCode' ? { fetcher: accountFetcher } : lookup.col === 'bankAccountNo' ? { fetcher: bankAccountFetcher }
             : lookup.col === 'contractCode' ? { fetcher: isContractAccount(rowsRef.current[lookup.row]?.accountCode) ? contractPick : contractFetcher() } : { quickAddFields: quickAdd })}

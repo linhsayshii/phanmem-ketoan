@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Card, DatePicker, Descriptions, Empty, Form, Input, Modal, Select, Space, Table, Tabs, Tag, Upload, message } from 'antd';
+import { Alert, Button, DatePicker, Descriptions, Form, Input, Modal, Select, Space, Table, Tabs, Tag, Upload, message } from 'antd';
 import dayjs from 'dayjs';
 import { CASH_PURPOSES, D, formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
-import { COLOR, LookupSelect, PageHeader, Section, Toolbar, useHotkeys, useRememberedFilter } from '@kt/ui';
+import { COLOR, EmptyState, LookupSelect, PageHeader, Section, Toolbar, useHotkeys, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -177,7 +177,7 @@ export default function BankTransactionsPage() {
     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
       <Section bodyPadding={0} style={{ flex: 1, minWidth: 0 }}>
         <Table<Txn> rowKey="id" size="small" loading={list.isLoading} dataSource={list.data ?? []} pagination={false} scroll={{ y: 'calc(100vh - 330px)' }} locale={{ emptyText: 'Không có giao dịch' }}
-          onRow={(t) => ({ onClick: () => setSel(t), 'aria-selected': sel?.id === t.id, style: { cursor: 'pointer', background: sel?.id === t.id ? 'var(--ant-color-primary-bg, #e6f4ff)' : undefined } })}
+          onRow={(t) => ({ onClick: () => setSel(t), 'aria-selected': sel?.id === t.id, style: { cursor: 'pointer', background: sel?.id === t.id ? COLOR.selectedBg : undefined } })}
           columns={[
             { title: 'Ngày', dataIndex: 'valueDate', width: 100, render: (d: string) => formatVnDate(d) },
             { title: 'Diễn giải', dataIndex: 'description', ellipsis: true },
@@ -191,7 +191,7 @@ export default function BankTransactionsPage() {
           ]} />
       </Section>
       <Section style={{ width: 360, flex: 'none' }} title={sel ? `Giao dịch ${formatVnDate(sel.valueDate)}: ${num(amountOf(sel))}` : 'Gợi ý đối chiếu'}>
-        {!sel ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chọn một giao dịch" /> : (
+        {!sel ? <EmptyState title="Chọn một giao dịch" /> : (
           <Space direction="vertical" style={{ width: '100%' }}>
             <div style={{ color: COLOR.textSecondary }}>{sel.description}</div>
             {sel.counterName && <div>Người chuyển/nhận: {sel.counterName}</div>}
@@ -206,20 +206,20 @@ export default function BankTransactionsPage() {
                 <b>Gợi ý</b>
                 {sug.isLoading && <div>Đang tìm gợi ý...</div>}
                 {sug.data?.hiddenBySensitivity && <Alert type="info" showIcon message="Một số gợi ý công nợ bị ẩn do quyền xem công nợ." />}
-                {sug.data && !sug.data.suggestions.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có gợi ý" />}
+                {sug.data && !sug.data.suggestions.length && <EmptyState title="Không có gợi ý" />}
                 {sug.data?.suggestions.map((s) => s.kind === 'voucher' ? (
-                  <Card key={`v${s.voucherId}`} size="small" data-testid="suggestion">
+                  <Section key={`v${s.voucherId}`} testId="suggestion">
                     <div><b>{s.voucherNo ?? 'Chứng từ nháp'}</b> · {formatVnDate(s.date)} · {num(s.amount)}</div>
                     <div style={{ fontSize: 12, color: COLOR.textSecondary }}>{s.reasons.join('; ')}</div>
                     <Button size="small" type="primary" style={{ marginTop: 6 }} loading={act.isPending} onClick={() => act.mutate({ id: sel.id, op: 'match', voucherId: s.voucherId })}>Gắn</Button>
-                  </Card>
+                  </Section>
                 ) : (
-                  <Card key={`o${s.openItemId}`} size="small" data-testid="suggestion">
+                  <Section key={`o${s.openItemId}`} testId="suggestion">
                     <div><b>{s.partyName}</b> ({s.partyCode})</div>
                     <div>Hóa đơn {s.invoiceNo ?? ''} · còn {num(D(s.residual).abs().toFixed(0))}{s.dueDate ? ` · hạn ${formatVnDate(s.dueDate)}` : ''}</div>
                     <div style={{ fontSize: 12, color: COLOR.textSecondary }}>{s.reasons.join('; ')}</div>
                     <Button size="small" type="primary" style={{ marginTop: 6 }} onClick={() => setForm({ txn: sel, preset: { partyCode: s.partyCode, openItemId: s.openItemId } })}>{isIn(sel) ? 'Lập Giấy báo Có' : 'Lập Giấy báo Nợ'}</Button>
-                  </Card>))}
+                  </Section>))}
               </>)}
           </Space>)}
       </Section>

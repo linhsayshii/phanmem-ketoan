@@ -3,6 +3,7 @@ import { Alert, Button, Form, Input, InputNumber, Modal, Popconfirm, Select, Spa
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { D, formatVnDate, formatVnNumber, isImeComposing, todayVn } from '@kt/domain';
 import { LookupSelect, PageHeader, Section, Toolbar, VnNumberInput } from '@kt/ui';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { accountFetcherFor } from '../lookups.js';
@@ -29,6 +30,7 @@ export default function AmortizationPage() {
   const { can } = useAuth();
   const today = todayVn();
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<FiscalYear[]>('/api/fiscal-years') });
+  const noYear = years.isSuccess && years.data.length === 0; // công ty chưa có năm tài chính: không có kỳ để chọn
   const list = useQuery({ queryKey: ['amortizations'], queryFn: () => api<Schedule[]>('/api/amortizations') });
   const fy = years.data ?? [];
   const cur = fy.find((y) => y.dateFrom <= today && today <= y.dateTo) ?? fy.at(-1);
@@ -118,6 +120,7 @@ export default function AmortizationPage() {
           </Toolbar>
         )}
       </PageHeader>
+      {noYear ? <NoFiscalYearNotice purpose="lập lịch và chạy phân bổ" /> : (<>
       {runErr && <Alert type="error" showIcon message={runErr} />}
       {runOut && (runOut.r.created.length === 0
         ? <Alert type="info" showIcon message={`Không có khoản phân bổ mới ở kỳ ${runOut.r.periodNo}/${runOut.r.fiscalYear}${runOut.r.unchanged ? ` (${runOut.r.unchanged} chứng từ đã ghi sổ, không đổi)` : ''}`} />
@@ -170,6 +173,7 @@ export default function AmortizationPage() {
         </Form>
         {split && <span style={{ opacity: 0.75 }}>Mỗi kỳ {money(split.each)}{split.last !== split.each ? `, kỳ cuối ${money(split.last)}` : ''}.</span>}
       </Modal>
+      </>)}
     </div>
   );
 }

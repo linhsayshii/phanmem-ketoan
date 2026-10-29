@@ -28,7 +28,7 @@ export function EmptyState({ title, description, action, testId, style, classNam
 
   return (
     <div {...divProps}>
-      <div style={{ fontSize: 14, fontWeight: 600, color: 'rgba(0, 0, 0, 0.88)' }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: COLOR.text }}>
         {title}
       </div>
       {description && (

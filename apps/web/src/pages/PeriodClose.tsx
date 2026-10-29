@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import dayjs from 'dayjs';
 import { PageHeader, Section, Toolbar, useHotkeys } from '@kt/ui';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -20,6 +21,7 @@ export default function PeriodClosePage() {
   const qc = useQueryClient();
   const { can } = useAuth();
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<{ fiscalYear: number }[]>('/api/fiscal-years') });
+  const noYear = years.isSuccess && years.data.length === 0; // công ty chưa có năm tài chính: không có kỳ để chọn
   const [pickedYear, setYear] = useState<number>();
   const [period, setPeriod] = useState<number>(() => dayjs().month() + 1);
   const year = pickedYear ?? years.data?.at(-1)?.fiscalYear;
@@ -62,6 +64,7 @@ export default function PeriodClosePage() {
           <Select aria-label="Chọn kỳ" virtual={false} style={{ width: 120 }} value={period} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: periodLabel(i + 1) }))} onChange={setPeriod} />
         </Toolbar>
       </PageHeader>
+      {noYear ? <NoFiscalYearNotice purpose="chạy quy trình khóa kỳ" /> : (<>
       {rerunCount > 0 && <Alert type="warning" showIcon message={`${rerunCount} bước cần chạy lại vì số liệu hoặc bước đứng trước đã thay đổi.`} />}
       <Section bodyPadding={0}>
         <Table<Step> rowKey="key" size="small" pagination={false} loading={state.isFetching} dataSource={steps} data-testid="close-steps" columns={[
@@ -83,6 +86,7 @@ export default function PeriodClosePage() {
             </Space>) },
         ]} />
       </Section>
+      </>)}
     </div>
   );
 }

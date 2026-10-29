@@ -3,6 +3,7 @@ import { Alert, Button, Modal, Select, Space, Table, Upload, message } from 'ant
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import { formatVnDate, formatVnNumber, parseVnDate, parseVnNumber, sum } from '@kt/domain';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 import { COLOR, KeyboardGrid, LookupSelect, PageHeader, Toolbar, useHotkeys } from '@kt/ui';
 import { api, ApiError } from '../api/client.js';
 import { useAuth } from '../auth.js';
@@ -31,6 +32,7 @@ export default function OpeningStockPage() {
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<FiscalYear[]>('/api/fiscal-years') });
   const [picked, setPicked] = useState<number>();
   const fy = years.data?.find((y) => y.fiscalYear === picked) ?? years.data?.[0]; const year = fy?.fiscalYear;
+  const noYear = years.isSuccess && years.data.length === 0; // công ty chưa có năm tài chính
   const saved = useQuery({ queryKey: ['opening-stock', year], queryFn: () => api<Row[]>(`/api/opening-stock/${year}`), enabled: year !== undefined });
   const [rows, setRows] = useState<Row[]>([emptyRow()]); const rowsRef = useRef(rows);
   const setAll = useCallback((r: Row[]) => { rowsRef.current = r; setRows(r); }, []);
@@ -96,12 +98,14 @@ export default function OpeningStockPage() {
           <Select aria-label="Năm tài chính" style={{ width: 200 }} value={year} onChange={setPicked} loading={years.isLoading} placeholder="Chọn năm" options={(years.data ?? []).map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear} (${y.regime})` }))} />
         </Toolbar>
       </PageHeader>
+      {noYear ? <NoFiscalYearNotice purpose="nhập tồn kho đầu kỳ" /> : (<>
       {!seeCost && <Alert type="warning" showIcon message="Bạn không có quyền xem giá vốn nên không xem, sửa được tồn đầu kỳ (có giá trị)." />}
       {saved.error && <Alert type="error" showIcon message={(saved.error as Error).message} />}
       <KeyboardGrid<Row> rows={rows} columns={columns} readOnly={!mayEdit} onRowsChange={setAll} addRowTemplate={emptyRow} onLookup={onLookup} height="calc(100vh - 280px)" />
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, marginTop: 8 }}>
         <b>Tổng số lượng: {formatVnNumber(totalQty.toString(), 0)}</b>{seeCost && <b>Tổng giá trị: {formatVnNumber(totalValue.toString())}</b>}
       </div>
+      </>)}
       <Modal open={!!lookup} onCancel={() => setLookup(null)} footer={null} title="Chọn từ danh mục" destroyOnHidden afterOpenChange={(o) => { if (o) lookupBox.current?.querySelector('input')?.focus(); }}>
         {lookup && <div ref={lookupBox}><LookupSelect catalog={LOOKUP[lookup.col]!} style={{ width: '100%' }}
           onChange={(code, p) => {

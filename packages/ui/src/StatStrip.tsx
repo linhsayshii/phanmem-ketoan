@@ -65,7 +65,7 @@ export function StatStrip({ items, style, className }: StatStripProps) {
                 style={{
                   fontSize: 20,
                   fontWeight: 600,
-                  color: 'rgba(0, 0, 0, 0.88)',
+                  color: COLOR.text,
                   lineHeight: '28px',
                   fontVariantNumeric: 'tabular-nums',
                   whiteSpace: 'nowrap',

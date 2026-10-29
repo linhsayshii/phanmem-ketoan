@@ -3,6 +3,7 @@ import { Button, Form, Input, Modal, Select, Space, Table, Tag, message } from '
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatVnNumber } from '@kt/domain';
 import { COLOR, PageHeader, Section, Toolbar } from '@kt/ui';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -79,6 +80,7 @@ export function countTreeAccounts(nodes: Acc[]): number {
 export default function AccountsPage() {
   const { can } = useAuth(); const qc = useQueryClient();
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<{ fiscalYear: number; regime: string }[]>('/api/fiscal-years') });
+  const noYear = years.isSuccess && years.data.length === 0; // công ty chưa có năm tài chính: không có kỳ để chọn
   const [regime, setRegime] = useState<string | undefined>();
   const current = regime ?? years.data?.at(-1)?.regime;
   const accounts = useQuery({ queryKey: ['accounts', current], queryFn: () => api<Acc[]>(`/api/accounts?regime=${current}`), enabled: !!current });
@@ -137,6 +139,7 @@ export default function AccountsPage() {
           )}
         </Toolbar>
       </PageHeader>
+      {noYear ? <NoFiscalYearNotice purpose="chọn chế độ kế toán và xem hệ thống tài khoản" /> : (<>
       <Section bodyPadding={0}>
         <Table<Acc>
           rowKey="id"
@@ -197,6 +200,7 @@ export default function AccountsPage() {
           {modal?.kind === 'merge' && <Form.Item label="Ghép vào tài khoản" name="targetCode" rules={[{ required: true }]}><Input /></Form.Item>}
         </Form>
       </Modal>
+      </>)}
     </>
   );
 }

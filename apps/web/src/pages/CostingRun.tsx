@@ -3,6 +3,7 @@ import { Alert, Button, Select, Space, Table, Tag } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
 import { LookupSelect, PageHeader, Toolbar, Section, useHotkeys } from '@kt/ui';
+import { NoFiscalYearNotice } from './NoFiscalYearNotice.js';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { fetchVoucherNos } from './settleCommon.js';
@@ -27,6 +28,7 @@ export default function CostingRunPage() {
   const seeCost = !!me?.sensitive.includes('view_cost');
   const today = todayVn();
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<FiscalYear[]>('/api/fiscal-years') });
+  const noYear = years.isSuccess && years.data.length === 0; // công ty chưa có năm tài chính: không có kỳ để chọn
   const runs = useQuery({ queryKey: ['costing-runs'], queryFn: () => api<RunRow[]>('/api/inventory/costing-runs') });
   const stale = useQuery({ queryKey: ['costing-status'], queryFn: () => api<StaleRow[]>('/api/inventory/costing-status') });
   const fy = years.data ?? [];
@@ -88,6 +90,7 @@ export default function CostingRunPage() {
           </Toolbar>
         )}
       </PageHeader>
+      {noYear ? <NoFiscalYearNotice purpose="tính giá vốn" /> : (<>
 
       {staleFrom && (
         <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={stale.data!.length === 1 ? staleText(stale.data![0]!) : `${stale.data!.length} cặp hàng – kho có giá vốn chưa cập nhật`}
@@ -137,6 +140,7 @@ export default function CostingRunPage() {
             { title: 'Người chạy', dataIndex: 'createdBy', width: 140, render: (v: string | null) => v ?? '' },
           ]} />
       </Section>
+      </>)}
     </>
   );
 }
