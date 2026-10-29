@@ -7,6 +7,7 @@ import { formatVnDate, formatVnNumber, parseVnNumber } from '@kt/domain';
 import { COLOR, PageHeader, Toolbar } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
+import { AssetTab, DebtTab, EquityTab, OtherAssetTab, VoucherButton } from './HkdDnsnTabs.js';
 
 // Sổ hộ kinh doanh (TT 152/2025) và doanh nghiệp siêu nhỏ (TT 58/2026): ghi sổ đơn theo nhóm thuế, không có hệ thống tài khoản.
 interface Catalog { regime: string; regimeLabel: string; fiscalYear: number; taxMethod: string | null; methods: { code: string; article: string; label: string; books: string[] }[]; items: { code: string; name: string; article: string; built: boolean; required: boolean; reason: string | null; kind: 'book' | 'report' }[] }
@@ -52,9 +53,11 @@ function BooksTab({ cat }: { cat: Catalog }) {
   const [code, setCode] = useState<string>(cat.items.find((i) => i.required && i.built)?.code ?? cat.items.find((i) => i.built)?.code ?? '');
   const [range, setRange] = useState<[string, string]>([dayjs().startOf('month').format(DATE), dayjs().endOf('month').format(DATE)]);
   const [itemId, setItemId] = useState<number | undefined>();
+  const [party, setParty] = useState<string | undefined>();
+  const parties = useQuery({ queryKey: ['hkd-debt-parties'], enabled: cat.regime === 'TT58', queryFn: () => api<string[]>('/api/hkd/debt-parties') });
   const [docs, setDocs] = useState<Doc[] | null>(null);
-  const isStock = code === 'S2d-HKD' || code === 'S2c-DNSN';
-  const qs = (format: string) => `from=${range[0]}&to=${range[1]}${isStock && itemId ? `&itemId=${itemId}` : ''}&format=${format}`;
+  const isStock = code === 'S2d-HKD' || code === 'S2c-DNSN'; const isDebt = code === 'S4a-DNSN';
+  const qs = (format: string) => `from=${range[0]}&to=${range[1]}${isStock && itemId ? `&itemId=${itemId}` : ''}${isDebt && party ? `&party=${encodeURIComponent(party)}` : ''}&format=${format}`;
   const view = useMutation({ mutationFn: () => api<{ docs: Doc[] }>(`/api/hkd/books/${code}?${qs('json')}`), onSuccess: (r) => setDocs(r.docs), onError: err });
   const sel = cat.items.find((i) => i.code === code);
   return (
@@ -65,6 +68,7 @@ function BooksTab({ cat }: { cat: Catalog }) {
         <DatePicker.RangePicker aria-label="Kỳ" format="DD/MM/YYYY" allowClear={false} value={[dayjs(range[0]), dayjs(range[1])]} onChange={(v) => v?.[0] && v[1] && setRange([v[0].format(DATE), v[1].format(DATE)])} />
         <Button onClick={() => fy && setRange([fy.dateFrom, fy.dateTo])} disabled={!fy}>Cả năm {cat.fiscalYear}</Button>
         {isStock && <Select allowClear placeholder="Mọi mặt hàng" style={{ width: 220 }} value={itemId} onChange={setItemId} options={(items.data ?? []).map((i) => ({ value: i.id, label: `${i.code} - ${i.name}` }))} />}
+        {isDebt && <Select allowClear placeholder="Mọi đối tượng" aria-label="Đối tượng công nợ" style={{ width: 220 }} value={party} onChange={setParty} options={(parties.data ?? []).map((p) => ({ value: p, label: p }))} />}
         <Button type="primary" onClick={() => view.mutate()} loading={view.isPending} disabled={!code}>Xem sổ</Button>
         <Button onClick={() => window.open(`/api/hkd/books/${code}?${qs('pdf')}`, '_blank')} disabled={!code}>In PDF</Button>
         <Button onClick={() => window.open(`/api/hkd/books/${code}?${qs('xlsx')}`, '_blank')} disabled={!code}>Xuất Excel</Button>
@@ -115,6 +119,7 @@ function EntriesTab({ cat }: { cat: Catalog }) {
           { title: 'Ngày', dataIndex: 'entryDate', width: 100, render: formatVnDate }, { title: 'Số CT', dataIndex: 'docNo', width: 100 },
           { title: 'Loại', dataIndex: 'kind', width: 220, render: (k: string, r) => <Space size={4}>{KIND[k]}{r.groupId && <Tag>{gname.get(r.groupId)}</Tag>}{r.expenseCat && <Tag>{r.expenseCat === 'dd' ? 'đ' : r.expenseCat}</Tag>}{r.moneyAccount && <Tag color="blue">{r.moneyAccount}</Tag>}</Space> },
           { title: 'Diễn giải', dataIndex: 'description' }, { title: 'Số tiền', dataIndex: 'amount', align: 'right', width: 150, render: (v: string) => money(v) },
+          ...(cat.regime === 'TT58' ? [{ title: '', width: 80, render: (_v: unknown, r: Entry) => r.moneyAccount === 'TM' && (['revenue', 'other_income', 'cash_in'].includes(r.kind) ? <VoucherButton form="01-TT" entryId={r.id} /> : ['expense', 'tax_paid', 'cash_out'].includes(r.kind) ? <VoucherButton form="02-TT" entryId={r.id} /> : null) }] : []),
           { title: '', width: 70, render: (_v, r) => can('sohkd.delete') && <Popconfirm title="Xóa bút ghi này?" okText="Xóa" cancelText="Không" onConfirm={() => del.mutate(r.id)}><Button size="small" danger type="link">Xóa</Button></Popconfirm> },
         ]} />
     </Space>
@@ -146,7 +151,7 @@ function GroupsTab() {
   );
 }
 
-function StockTab() {
+function StockTab({ regime }: { regime: string }) {
   const { can } = useAuth(); const qc = useQueryClient(); const [fi] = Form.useForm(); const [fm] = Form.useForm();
   const items = useQuery({ queryKey: ['hkd-items'], queryFn: () => api<Item[]>('/api/hkd/stock-items') });
   const moves = useQuery({ queryKey: ['hkd-moves'], queryFn: () => api<Move[]>('/api/hkd/stock-moves') });
@@ -179,6 +184,7 @@ function StockTab() {
       <Table<Move> size="small" bordered rowKey="id" dataSource={moves.data ?? []} pagination={{ pageSize: 50 }}
         columns={[{ title: 'Ngày', dataIndex: 'moveDate', width: 100, render: formatVnDate }, { title: 'Mặt hàng', dataIndex: 'itemId', render: (i: number) => name.get(i) }, { title: 'Loại', dataIndex: 'direction', width: 90, render: (d: string) => DIR[d] }, { title: 'Diễn giải', dataIndex: 'description' },
           { title: 'Số lượng', dataIndex: 'quantity', align: 'right', width: 110, render: (v: string) => money(v, 4) }, { title: 'Đơn giá', dataIndex: 'unitPrice', align: 'right', width: 120, render: (v: string | null) => (v ? money(v, 4) : '') },
+          ...(regime === 'TT58' ? [{ title: '', width: 80, render: (_v: unknown, r: Move) => (r.direction === 'in' ? <VoucherButton form="01-VT" docNo={r.docNo} /> : r.direction === 'out' ? <VoucherButton form="02-VT" docNo={r.docNo} /> : null) }] : []),
           { title: '', width: 70, render: (_v, r) => can('sohkd.delete') && <Popconfirm title="Xóa dòng này?" okText="Xóa" cancelText="Không" onConfirm={() => delMove.mutate(r.id)}><Button size="small" danger type="link">Xóa</Button></Popconfirm> }]} />
     </Space>
   );
@@ -248,7 +254,13 @@ export default function HkdBooksPage() {
         { key: 'books', label: 'Sổ và báo cáo', children: <BooksTab key={c.fiscalYear} cat={c} /> },
         { key: 'entries', label: 'Ghi sổ', children: <EntriesTab cat={c} /> },
         { key: 'groups', label: 'Nhóm ngành nghề', children: <GroupsTab /> },
-        { key: 'stock', label: 'Kho', children: <StockTab /> },
+        { key: 'stock', label: 'Kho', children: <StockTab regime={c.regime} /> },
+        ...(c.regime === 'TT58' ? [
+          { key: 'debts', label: 'Công nợ', children: <DebtTab /> },
+          { key: 'assets', label: 'Tài sản cố định', children: <AssetTab /> },
+          { key: 'equity', label: 'Vốn chủ sở hữu', children: <EquityTab /> },
+          { key: 'otherAssets', label: 'Tài sản khác', children: <OtherAssetTab /> },
+        ] : []),
         { key: 'other', label: 'Thuế khác', children: <OtherTaxTab /> },
         { key: 'settings', label: 'Cài đặt năm', children: <SettingsTab cat={c} /> },
       ]} />
