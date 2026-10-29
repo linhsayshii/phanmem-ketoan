@@ -30,18 +30,27 @@ export interface DebtDto { id: number; entryDate: string; docNo: string | null; 
 const toDebt = (r: { id: number; entry_date: string; doc_no: string | null; description: string; party: string; side: string; kind: string; nature: string; amount: string }): DebtDto =>
   ({ id: r.id, entryDate: r.entry_date, docNo: r.doc_no, description: r.description, party: r.party, side: r.side, kind: r.kind, nature: r.nature, amount: r.amount });
 const debtValues = (i: DebtIn) => ({ entry_date: i.entryDate, doc_no: i.docNo ?? null, description: i.description, party: i.party, side: i.side, kind: i.kind, nature: i.nature, amount: i.amount });
-export async function listDebts(trx: Trx, f: { from?: string | undefined; to?: string | undefined; party?: string | undefined }): Promise<DebtDto[]> {
+// sides: bên người dùng được xem (cờ view_receivable, view_payable); bỏ trống là cả hai.
+export async function listDebts(trx: Trx, f: { from?: string | undefined; to?: string | undefined; party?: string | undefined; sides?: readonly string[] | undefined }): Promise<DebtDto[]> {
   let q = trx.selectFrom('book_debt').selectAll();
+  if (f.sides) q = q.where('side', 'in', f.sides.length ? [...f.sides] : ['-']);
   if (f.from) q = q.where('entry_date', '>=', f.from);
   if (f.to) q = q.where('entry_date', '<=', f.to);
   if (f.party) q = q.where('party', '=', f.party);
   return (await q.orderBy('entry_date').orderBy('id').limit(5000).execute()).map(toDebt);
 }
-export async function listParties(trx: Trx): Promise<string[]> {
-  return (await trx.selectFrom('book_debt').select('party').distinct().orderBy('party').limit(2000).execute()).map((r) => r.party);
+export async function listParties(trx: Trx, sides?: readonly string[]): Promise<string[]> {
+  let q = trx.selectFrom('book_debt').select('party').distinct();
+  if (sides) q = q.where('side', 'in', sides.length ? [...sides] : ['-']);
+  return (await q.orderBy('party').limit(2000).execute()).map((r) => r.party);
 }
 export async function createDebt(trx: Trx, tenantId: string, userId: string, i: DebtIn): Promise<DebtDto> {
   return toDebt(await trx.insertInto('book_debt').values({ tenant_id: tenantId, created_by: userId, ...debtValues(i) }).returningAll().executeTakeFirstOrThrow());
+}
+// Bên của bút ghi hiện có (để kiểm cờ nhạy cảm trước khi sửa, xóa); không có bút thì 404.
+export async function debtSide(trx: Trx, id: number): Promise<string> {
+  const r = await trx.selectFrom('book_debt').select('side').where('id', '=', id).executeTakeFirst();
+  return r ? r.side : notFound('BOOK_DEBT_NOT_FOUND', 'bút ghi công nợ');
 }
 export async function updateDebt(trx: Trx, id: number, i: DebtIn): Promise<DebtDto> {
   const r = await trx.updateTable('book_debt').set(debtValues(i)).where('id', '=', id).returningAll().executeTakeFirst();

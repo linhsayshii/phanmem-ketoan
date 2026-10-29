@@ -6,11 +6,18 @@ import { AppError } from '../../plugins/errors.js';
 import { assertPrint, isoDate, ordered, orderedMsg, respondReport } from '../reporting/routes.js';
 import { catalog } from './books.js';
 import { buildAnyBook } from './dnsnBooks.js';
-import { assetInput, createAsset, createDebt, createEquity, createOtherAsset, debtInput, deleteAsset, deleteDebt, deleteEquity, deleteOtherAsset, equityInput, listAssets, listDebts, listEquity, listOtherAssets, listParties, otherAssetInput, updateAsset, updateDebt, updateEquity, updateOtherAsset } from './extras.js';
+import { assetInput, createAsset, createDebt, debtSide, createEquity, createOtherAsset, debtInput, deleteAsset, deleteDebt, deleteEquity, deleteOtherAsset, equityInput, listAssets, listDebts, listEquity, listOtherAssets, listParties, otherAssetInput, updateAsset, updateDebt, updateEquity, updateOtherAsset } from './extras.js';
 import { registerVoucherRoutes } from './vouchers.js';
 import { createEntry, createGroup, createItem, createMove, createOtherTax, deleteEntry, deleteMove, deleteOtherTax, entryInput, getSetting, groupInput, itemInput, listEntries, listGroups, listItems, listMoves, listOtherTax, moveInput, otherTaxInput, putSetting, settingInput, updateEntry, updateGroup, yearOf } from './service.js';
 
 const id = z.object({ id: z.coerce.number().int().positive() });
+// Công nợ phải thu, phải trả là dữ liệu nhạy cảm (cờ view_receivable, view_payable): chặn ở API theo từng bên, như sổ cái.
+const SIDE_FLAG = { recv: 'view_receivable', pay: 'view_payable' } as const;
+const visibleSides = (auth: { sensitive: Set<string> }): ('recv' | 'pay')[] => (['recv', 'pay'] as const).filter((s) => auth.sensitive.has(SIDE_FLAG[s]));
+const assertSide = (auth: { sensitive: Set<string> }, side: string) => {
+  if (side !== 'recv' && side !== 'pay') return;
+  if (!auth.sensitive.has(SIDE_FLAG[side])) throw new AppError('FORBIDDEN', side === 'recv' ? 'Cần quyền xem công nợ phải thu để ghi sổ công nợ phải thu' : 'Cần quyền xem công nợ phải trả để ghi sổ công nợ phải trả', 403);
+};
 const year = z.coerce.number().int().min(2000).max(2100);
 const range = { from: isoDate, to: isoDate };
 const format = z.enum(['json', 'html', 'pdf', 'xlsx']).default('json');
@@ -37,7 +44,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     const regime = bookRegimeOf(req.params.code);
     if (!regime || !(loadBookSet(regime).books.some((b) => b.code === req.params.code) || loadBookSet(regime).reports.some((r) => r.code === req.params.code))) throw new AppError('BOOK_NOT_FOUND', `Không có sổ ${req.params.code}`, 404);
     if (req.query.format !== 'json') assertPrint(req.auth!);
-    const docs = await app.withTenant(req, (trx) => buildAnyBook(trx, req.auth!.tenantId!, req.params.code, req.query), READ_SNAPSHOT);
+    const docs = await app.withTenant(req, (trx) => buildAnyBook(trx, req.auth!.tenantId!, req.params.code, { ...req.query, sides: visibleSides(req.auth!) }), READ_SNAPSHOT);
     if (req.query.format === 'json') return { docs };
     return respondReport(reply, docs, req.query.format, `${req.params.code}-${req.query.from}-${req.query.to}`);
   });
@@ -66,11 +73,11 @@ const routes: FastifyPluginAsyncZod = async (app) => {
   app.delete('/api/hkd/other-taxes/:id', { preHandler: app.requirePermission('sohkd.delete'), schema: { params: id } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteOtherTax(trx, req.params.id)); return reply.status(204).send(); });
   // TT58 Điều 9 khoản 1: S4a công nợ, S4b TSCĐ, S4d vốn chủ sở hữu và tài sản khác (mã 150 của B01-DNSN). Cùng quyền sohkd.* như các bút ghi sổ khác.
   const optRange = { from: isoDate.optional(), to: isoDate.optional() };
-  app.get('/api/hkd/debts', { preHandler: view, schema: { querystring: z.object({ ...optRange, party: z.string().max(200).optional() }) } }, async (req) => app.withTenant(req, (trx) => listDebts(trx, req.query), READ_SNAPSHOT));
-  app.get('/api/hkd/debt-parties', { preHandler: view }, async (req) => app.withTenant(req, (trx) => listParties(trx), READ_SNAPSHOT));
-  app.post('/api/hkd/debts', { preHandler: app.requirePermission('sohkd.create'), schema: { body: debtInput } }, async (req, reply) => { const c = ctx(req); return reply.status(201).send(await app.withTenant(req, (trx) => createDebt(trx, c.tenantId, c.userId, req.body))); });
-  app.put('/api/hkd/debts/:id', { preHandler: app.requirePermission('sohkd.update'), schema: { params: id, body: debtInput } }, async (req) => app.withTenant(req, (trx) => updateDebt(trx, req.params.id, req.body)));
-  app.delete('/api/hkd/debts/:id', { preHandler: app.requirePermission('sohkd.delete'), schema: { params: id } }, async (req, reply) => { await app.withTenant(req, (trx) => deleteDebt(trx, req.params.id)); return reply.status(204).send(); });
+  app.get('/api/hkd/debts', { preHandler: view, schema: { querystring: z.object({ ...optRange, party: z.string().max(200).optional() }) } }, async (req) => app.withTenant(req, (trx) => listDebts(trx, { ...req.query, sides: visibleSides(req.auth!) }), READ_SNAPSHOT));
+  app.get('/api/hkd/debt-parties', { preHandler: view }, async (req) => app.withTenant(req, (trx) => listParties(trx, visibleSides(req.auth!)), READ_SNAPSHOT));
+  app.post('/api/hkd/debts', { preHandler: app.requirePermission('sohkd.create'), schema: { body: debtInput } }, async (req, reply) => { const c = ctx(req); assertSide(req.auth!, req.body.side); return reply.status(201).send(await app.withTenant(req, (trx) => createDebt(trx, c.tenantId, c.userId, req.body))); });
+  app.put('/api/hkd/debts/:id', { preHandler: app.requirePermission('sohkd.update'), schema: { params: id, body: debtInput } }, async (req) => { assertSide(req.auth!, req.body.side); return app.withTenant(req, async (trx) => { assertSide(req.auth!, await debtSide(trx, req.params.id)); return updateDebt(trx, req.params.id, req.body); }); });
+  app.delete('/api/hkd/debts/:id', { preHandler: app.requirePermission('sohkd.delete'), schema: { params: id } }, async (req, reply) => { await app.withTenant(req, async (trx) => { assertSide(req.auth!, await debtSide(trx, req.params.id)); await deleteDebt(trx, req.params.id); }); return reply.status(204).send(); });
 
   app.get('/api/hkd/fixed-assets', { preHandler: view }, async (req) => app.withTenant(req, (trx) => listAssets(trx), READ_SNAPSHOT));
   app.post('/api/hkd/fixed-assets', { preHandler: app.requirePermission('sohkd.create'), schema: { body: assetInput } }, async (req, reply) => { const c = ctx(req); return reply.status(201).send(await app.withTenant(req, (trx) => createAsset(trx, c.tenantId, c.userId, req.body))); });

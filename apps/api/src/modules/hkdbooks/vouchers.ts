@@ -76,7 +76,7 @@ export function renderStockVoucher(form: '01-VT' | '02-VT', c: CompanyInfo, s: S
       <tr>${th('STT', ' rowspan="2"')}${th('Tên, nhãn hiệu, quy cách, phẩm chất vật liệu, dụng cụ, sản phẩm, hàng hoá', ' rowspan="2"')}${th('Mã số', ' rowspan="2"')}${th('Đơn vị tính', ' rowspan="2"')}${th('Số lượng', ' colspan="2"')}${th('Đơn giá', ' rowspan="2"')}${th('Thành tiền', ' rowspan="2"')}</tr>
       <tr>${th(inbound ? 'Theo chứng từ' : 'Yêu cầu')}${th(inbound ? 'Thực nhập' : 'Thực xuất')}</tr>
       <tr><th>A</th><th>B</th><th>C</th><th>D</th><th>1</th><th>2</th><th>3</th><th>4</th></tr></thead>
-    <tbody>${rows}<tr><td colspan="4"><b>Cộng</b></td><td class="num">x</td><td class="num">x</td><td class="num">x</td><td class="num"><b>${formatVnNumber(total)}</b></td></tr></tbody></table>
+    <tbody>${rows}<tr><td></td><td><b>Cộng</b></td><td class="num">x</td><td class="num">x</td><td></td><td></td><td></td><td class="num"><b>${formatVnNumber(total)}</b></td></tr></tbody></table>
     <p>- Tổng số tiền (viết bằng chữ): <b>${esc(vndInWords(total))}</b></p>
     <p>- Số chứng từ gốc kèm theo: ${val(t.attachments)}</p>
     <div style="text-align:right">Ngày … tháng … năm …</div>

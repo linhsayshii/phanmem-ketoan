@@ -103,14 +103,16 @@ describe('TT 58/2026: S4a, S4b, S4d, B01-DNSN và chứng từ', () => {
     expect(later!.rows.filter((r) => r.docNo)).toHaveLength(0);
   });
 
-  it('S4b-DNSN: một sổ theo loại tài sản; máy B đã thanh lý hiện lý do, khấu hao 3 tháng; cộng nguyên giá 36.000.000, khấu hao 2.300.000', async () => {
+  it('S4b-DNSN: một sổ theo loại tài sản; máy B đã thanh lý hiện lý do, khấu hao 3 tháng; dòng Cộng khấu hao 2.300.000', async () => {
     const [d] = await s.book('S4b-DNSN', '2026-07-01', '2026-12-31');
     expect(d!.intro![0]).toBe('Loại tài sản: Máy móc');
     expect(d!.columns.map((c) => c.key)).toEqual(['incDocNo', 'incDate', 'name', 'inUse', 'cost', 'depRate', 'dep', 'accDep', 'decDocNo', 'decDate', 'decReason']);
     const a = d!.rows.find((r) => r.name === 'Máy may A')!; const b = d!.rows.find((r) => r.name === 'Máy cắt B')!;
     expect([a.inUse, a.cost, a.depRate, a.dep, a.accDep, a.decReason]).toEqual(['08/2026', '24000000', '20', '2000000', '2000000', undefined]);
     expect([b.dep, b.accDep, b.decDocNo, b.decDate, b.decReason]).toEqual(['300000', '300000', 'TL01', '2026-10-15', 'Thanh lý']);
-    expect(d!.rows.find((r) => r.name === 'Cộng')).toMatchObject({ cost: '36000000', dep: '2300000', accDep: '2300000' });
+    // Dòng Cộng theo mẫu (bản .docx của thông tư): ô Nguyên giá đánh dấu x nên không cộng; chỉ mức khấu hao và khấu hao lũy kế
+    const sum = d!.rows.find((r) => r.name === 'Cộng')!;
+    expect(sum).toMatchObject({ dep: '2300000', accDep: '2300000' }); expect(sum.cost).toBeUndefined();
     // kỳ sau khi đã thanh lý: máy B không còn trên sổ; máy A khấu hao lũy kế 3.200.000 (8 tháng), phát sinh trong kỳ 1.200.000
     const [later] = await s.book('S4b-DNSN', '2027-01-01', '2027-03-31');
     expect(later!.rows.map((r) => r.name)).toEqual(['Máy may A', 'Cộng']);
@@ -135,7 +137,11 @@ describe('TT 58/2026: S4a, S4b, S4d, B01-DNSN và chứng từ', () => {
     expect(['110', '120', '130', '140', '150', '200'].map(cur)).toEqual(['40000000', '7000000', '600000', '22000000', '5500000', '75100000']);
     // 310 = 6.000.000; 320 = GTGT 3.000.000 + TNDN 6.000.000 + TNCN 1.000.000 = 10.000.000; 300 = 16.000.000; 400 = 36.000.000; 500 = 52.000.000
     expect(['310', '320', '300', '410', '420', '430', '400', '500'].map(cur)).toEqual(['6000000', '10000000', '16000000', '35000000', '-1000000', '2000000', '36000000', '52000000']);
-    expect(['110', '200', '500'].map((n) => code(d!, n).prev)).toEqual(['0', '0', '0']);
+    // Số đầu năm: bút "số dư đầu" ghi đúng ngày đầu năm (01/07) là số đầu năm; mọi phát sinh sau đó không tính.
+    // 110 = 10.000.000; 120 = Cty A 4.000.000; 130 = 0; 140 = 0; 150 = 5.000.000; 200 = 19.000.000; 410 = 30.000.000; 420 = -2.000.000; 430 = 3.000.000; 500 = 31.000.000
+    expect(['110', '120', '130', '140', '150', '200', '310', '320', '410', '420', '430', '500'].map((n) => code(d!, n).prev))
+      .toEqual(['10000000', '4000000', '0', '0', '5000000', '19000000', '0', '0', '30000000', '-2000000', '3000000', '31000000']);
+    expect(d!.outro!.some((t) => t.includes('số đầu năm lệch -12000000 đồng'))).toBe(true);
     expect(d!.outro!.some((t) => t.includes('chưa bằng nhau') && t.includes('lệch 23100000 đồng'))).toBe(true);
     expect(d!.outro!.some((t) => t.includes('(mã 20) là 24000000 đồng') && t.includes('S4d'))).toBe(true);
   });
@@ -149,6 +155,52 @@ describe('TT 58/2026: S4a, S4b, S4d, B01-DNSN và chứng từ', () => {
     const [d] = await t.book('B01-DNSN', '2026-07-01', '2026-12-31');
     expect([code(d!, '110').cur, code(d!, '110').prev, code(d!, '410').cur, code(d!, '410').prev]).toEqual(['1500000', '2000000', '2000000', '2000000']);
     expect(d!.outro!.some((x) => x.includes('số đầu năm lệch 0 đồng') && x.includes('số cuối năm lệch -500000 đồng'))).toBe(true);
+  });
+
+  it('B01-DNSN: số đầu năm và thuế tính từ đầu năm tài chính dù khoảng chọn chỉ là một tháng cuối năm', async () => {
+    const [full] = await s.book('B01-DNSN', '2026-07-01', '2026-12-31');
+    const [lastMonth] = await s.book('B01-DNSN', '2026-12-01', '2026-12-31');
+    const cols = (d: Doc) => d.rows.filter((r) => r.code).map((r) => [r.code, r.cur, r.prev]);
+    expect(cols(lastMonth!)).toEqual(cols(full!));
+  });
+
+  it('B01-DNSN: lỗ tháng cuối làm giảm thuế TNDN của cả năm (lợi nhuận tính cả năm, không theo từng khoảng chọn)', async () => {
+    const t = await setup(`DL${Date.now()}`);
+    await t.send('PUT', '/api/hkd/settings/2026', { taxMethod: 'vat_percent_cit_profit', incomeTaxRate: '20' });
+    await t.post('/api/hkd/groups', { code: 'G', name: 'G', vatRate: '1', incomeRate: '1' });
+    const g = ((await t.send('GET', '/api/hkd/groups')).json() as { id: number }[])[0]!;
+    await t.post('/api/hkd/entries', { entryDate: '2026-08-10', description: 'Bán', kind: 'revenue', amount: '100000000', groupId: g.id });
+    await t.post('/api/hkd/entries', { entryDate: '2026-12-10', description: 'Chi lớn', kind: 'expense', amount: '130000000', expenseCat: 'a' });
+    // lợi nhuận cả năm = -30.000.000 -> TNDN 0; GTGT 1% x 100.000.000 = 1.000.000
+    const [d] = await t.book('B01-DNSN', '2026-12-01', '2026-12-31');
+    expect(code(d!, '320').cur).toBe('1000000');
+  });
+
+  it('cờ nhạy cảm: thiếu view_receivable thì không thấy, không ghi công nợ phải thu; S4a chỉ còn bên phải trả', async () => {
+    const t = await setup(`DF${Date.now()}`);
+    await t.post('/api/hkd/debts', { entryDate: '2026-07-02', description: 'Bán chịu', party: 'KH1', side: 'recv', kind: 'incur', amount: '1000' });
+    await t.post('/api/hkd/debts', { entryDate: '2026-07-02', description: 'Mua chịu', party: 'NCC1', side: 'pay', kind: 'incur', amount: '2000' });
+    const mk = async (flags: string[]) => {
+      const username = `fl_${flags.length}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+      const made = await ctx.app.inject({ method: 'POST', url: '/api/users', headers: t.h, payload: { username, fullName: 'X', password: 'Matkhau1!', roleCode: 'ketoan_truong', sensitiveFlags: flags } });
+      expect([flags, made.statusCode, made.body]).toEqual([flags, 201, made.body]);
+      const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+      return { cookie: `sid=${login.cookies.find((x) => x.name === 'sid')!.value}` };
+    };
+    const payOnly = await mk(['view_payable']); const none = await mk([]);
+    const get = (u: { cookie: string }, url: string) => ctx.app.inject({ method: 'GET', url, headers: u });
+    expect((await get(payOnly, '/api/hkd/debts')).json().map((x: { party: string }) => x.party)).toEqual(['NCC1']);
+    expect((await get(payOnly, '/api/hkd/debt-parties')).json()).toEqual(['NCC1']);
+    expect((await get(none, '/api/hkd/debts')).json()).toEqual([]);
+    const docs = (await get(payOnly, '/api/hkd/books/S4a-DNSN?from=2026-07-01&to=2026-12-31&format=json')).json().docs as Doc[];
+    expect(docs.map((d) => d.intro![0])).toEqual(['Đối tượng: NCC1']);
+    const recvRow = { entryDate: '2026-07-03', description: 'x', party: 'KH2', side: 'recv', kind: 'incur', amount: '5' };
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/hkd/debts', headers: payOnly, payload: recvRow })).statusCode).toBe(403);
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/hkd/debts', headers: payOnly, payload: { ...recvRow, side: 'pay' } })).statusCode).toBe(201);
+    const recvId = ((await t.send('GET', '/api/hkd/debts')).json() as { id: number; side: string }[]).find((x) => x.side === 'recv')!.id;
+    expect((await ctx.app.inject({ method: 'DELETE', url: `/api/hkd/debts/${recvId}`, headers: payOnly })).statusCode).toBe(403);
+    expect((await ctx.app.inject({ method: 'PUT', url: `/api/hkd/debts/${recvId}`, headers: payOnly, payload: { ...recvRow, side: 'pay' } })).statusCode).toBe(403);
+    await t.send('DELETE', `/api/hkd/debts/${recvId}`, undefined, 204);
   });
 
   it('B01-DNSN: chưa chọn phương pháp nộp thuế thì 409 TAX_METHOD_MISSING', async () => {
