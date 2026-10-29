@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bootstrapTenant, createTestApp, type TestApp } from './helpers.js';
 import { accumulatedDep, depMonths } from '../src/modules/hkdbooks/dnsnBooks.js';
 import { D } from '@kt/domain';
+import { sql } from 'kysely';
 
 // TT 58/2026: S4a, S4b, S4d, B01-DNSN, chứng từ 01-TT, 02-TT, 01-VT, 02-VT. Mọi số dưới đây tính tay; tỷ lệ thuế là số giả định cho kiểm thử.
 let ctx: TestApp;
@@ -10,7 +11,7 @@ afterAll(async () => { await ctx.close(); });
 
 interface Doc { title: string; formNo: string; columns: { key: string; label: string }[]; rows: Record<string, unknown>[]; footer?: Record<string, unknown>; outro?: string[]; intro?: string[] }
 async function setup(code: string) {
-  const { cookie } = await bootstrapTenant(ctx, { code });
+  const { cookie, tenantId } = await bootstrapTenant(ctx, { code });
   const h = { cookie };
   const fy = await ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: h, payload: { fiscalYear: 2026, dateFrom: '2026-07-01', months: 12, regime: 'TT58' } });
   expect([fy.statusCode, fy.json()]).toEqual([201, { periods: 13 }]);
@@ -21,7 +22,7 @@ async function setup(code: string) {
   };
   const post = async (url: string, payload: unknown, expectCode = 201) => (await send('POST', url, payload, expectCode)).json() as { id: number };
   const book = async (c: string, from: string, to: string, extra = '') => (await send('GET', `/api/hkd/books/${c}?from=${from}&to=${to}${extra}`)).json().docs as Doc[];
-  return { h, send, post, book };
+  return { h, tenantId, send, post, book };
 }
 const row = (d: Doc, desc: string) => d.rows.find((r) => r.desc === desc) as Record<string, unknown>;
 const code = (d: Doc, no: string) => d.rows.find((r) => r.code === no) as Record<string, unknown>;
@@ -92,6 +93,7 @@ describe('TT 58/2026: S4a, S4b, S4d, B01-DNSN và chứng từ', () => {
     const a = docs[0]!;
     expect(a.formNo).toBe('S4a-DNSN');
     expect(a.columns.map((c) => c.key)).toEqual(['docNo', 'date', 'desc', 'recv', 'recvPaid', 'recvLeft', 'pay', 'payPaid', 'payLeft']);
+    expect(a.columns.filter((c) => ['recv', 'pay'].includes(c.key)).map((c) => c.label)).toEqual(['Các khoản nợ phải thu: Số phải thu (1)', 'Các khoản nợ phải trả: Số phải trả (4)']); // đúng tiêu đề nhóm cột của mẫu
     expect(row(a, 'Số dư đầu kỳ')).toMatchObject({ recvLeft: '4000000', payLeft: '0' });
     expect(a.rows.filter((r) => r.docNo).map((r) => [r.docNo, r.recv ?? null, r.recvPaid ?? null, r.recvLeft])).toEqual([['HD10', '6000000', null, '10000000'], ['PT05', null, '3000000', '7000000']]);
     expect(row(a, 'Cộng số phát sinh trong kỳ')).toMatchObject({ recv: '6000000', recvPaid: '3000000', pay: '0', payPaid: '0' });
@@ -141,9 +143,9 @@ describe('TT 58/2026: S4a, S4b, S4d, B01-DNSN và chứng từ', () => {
     // 110 = 10.000.000; 120 = Cty A 4.000.000; 130 = 0; 140 = 0; 150 = 5.000.000; 200 = 19.000.000; 410 = 30.000.000; 420 = -2.000.000; 430 = 3.000.000; 500 = 31.000.000
     expect(['110', '120', '130', '140', '150', '200', '310', '320', '410', '420', '430', '500'].map((n) => code(d!, n).prev))
       .toEqual(['10000000', '4000000', '0', '0', '5000000', '19000000', '0', '0', '30000000', '-2000000', '3000000', '31000000']);
-    expect(d!.outro!.some((t) => t.includes('số đầu năm lệch -12000000 đồng'))).toBe(true);
-    expect(d!.outro!.some((t) => t.includes('chưa bằng nhau') && t.includes('lệch 23100000 đồng'))).toBe(true);
-    expect(d!.outro!.some((t) => t.includes('(mã 20) là 24000000 đồng') && t.includes('S4d'))).toBe(true);
+    expect(d!.outro!.some((t) => t.includes('số đầu năm lệch -12.000.000 đồng'))).toBe(true);
+    expect(d!.outro!.some((t) => t.includes('chưa bằng nhau') && t.includes('lệch 23.100.000 đồng'))).toBe(true);
+    expect(d!.outro!.some((t) => t.includes('(mã 20) là 24.000.000 đồng') && t.includes('S4d'))).toBe(true);
   });
 
   it('B01-DNSN: cột số đầu năm là số cuối năm trước (tính đến ngày liền trước đầu năm)', async () => {
@@ -154,7 +156,7 @@ describe('TT 58/2026: S4a, S4b, S4d, B01-DNSN và chứng từ', () => {
     await t.post('/api/hkd/equity', { entryDate: '2026-01-01', description: 'Vốn góp', section: 'capital', kind: 'opening', amount: '2000000' });
     const [d] = await t.book('B01-DNSN', '2026-07-01', '2026-12-31');
     expect([code(d!, '110').cur, code(d!, '110').prev, code(d!, '410').cur, code(d!, '410').prev]).toEqual(['1500000', '2000000', '2000000', '2000000']);
-    expect(d!.outro!.some((x) => x.includes('số đầu năm lệch 0 đồng') && x.includes('số cuối năm lệch -500000 đồng'))).toBe(true);
+    expect(d!.outro!.some((x) => x.includes('số đầu năm lệch 0 đồng') && x.includes('số cuối năm lệch -500.000 đồng'))).toBe(true);
   });
 
   it('B01-DNSN: số đầu năm và thuế tính từ đầu năm tài chính dù khoảng chọn chỉ là một tháng cuối năm', async () => {
@@ -227,6 +229,59 @@ describe('TT 58/2026: S4a, S4b, S4d, B01-DNSN và chứng từ', () => {
     await e({ entryDate: '2026-08-02', description: 'Nộp tạm TNDN', kind: 'tax_paid', amount: '300000', taxType: 'income' });
     const [d] = await t.book('B01-DNSN', '2026-07-01', '2026-12-31');
     expect([code(d!, '120').cur, code(d!, '150').cur, code(d!, '320').cur]).toEqual(['800000', '300000', '0']);
+  });
+
+  it('B01-DNSN: thuế GTGT theo tỷ lệ % nộp thừa là tài sản khác (150), không phải GTGT được khấu trừ (120)', async () => {
+    const t = await setup(`DV${Date.now()}`);
+    await t.send('PUT', '/api/hkd/settings/2026', { taxMethod: 'vat_percent_cit_profit', incomeTaxRate: '20' });
+    const g = await t.post('/api/hkd/groups', { code: 'G', name: 'G', vatRate: '1', incomeRate: '1' });
+    const e = (x: Record<string, unknown>) => t.post('/api/hkd/entries', { docNo: null, ...x });
+    await e({ entryDate: '2026-08-01', description: 'Bán', kind: 'revenue', amount: '10000000', groupId: g.id });
+    await e({ entryDate: '2026-08-02', description: 'Chi', kind: 'expense', amount: '10000000', expenseCat: 'a' });
+    await e({ entryDate: '2026-08-03', description: 'Nộp GTGT', kind: 'tax_paid', amount: '300000', taxType: 'vat' });
+    // GTGT phải nộp 1% x 10.000.000 = 100.000, đã nộp 300.000 -> nộp thừa 200.000; lợi nhuận 0 nên TNDN 0
+    const [d] = await t.book('B01-DNSN', '2026-07-01', '2026-12-31');
+    expect([code(d!, '120').cur, code(d!, '150').cur, code(d!, '320').cur]).toEqual(['0', '200000', '0']);
+  });
+
+  it('B01-DNSN: số tiền trong chú thích có dấu chấm phân cách hàng nghìn', async () => {
+    const t = await setup(`DX${Date.now()}`);
+    await t.send('PUT', '/api/hkd/settings/2026', { taxMethod: 'vat_percent_cit_profit', incomeTaxRate: '20' });
+    await t.post('/api/hkd/entries', { entryDate: '2026-07-01', description: 'Tiền', kind: 'opening', amount: '26186419', openingRef: 'cash', moneyAccount: 'TM' });
+    const [d] = await t.book('B01-DNSN', '2026-07-01', '2026-12-31');
+    expect(d!.outro!.some((x) => x.includes('số cuối năm lệch 26.186.419 đồng'))).toBe(true);
+    expect(d!.outro!.some((x) => /\d{7,}/.test(x))).toBe(false);
+  });
+
+  it('nhật ký kiểm toán: ghi trước/sau của bốn bảng sổ mới; công nợ phải thu chỉ lộ cho người có view_receivable, phải trả cho view_payable', async () => {
+    const t = await setup(`DA${Date.now()}`);
+    const cnt = async (entity: string, action: string) => Number((await sql<{ n: string }>`SELECT count(*)::text AS n FROM audit_event WHERE tenant_id = ${t.tenantId}::uuid AND entity = ${entity} AND action = ${action}`.execute(ctx.t.admin)).rows[0]!.n);
+    const kr = await t.post('/api/hkd/debts', { entryDate: '2026-07-02', description: 'Bán chịu bí mật', party: 'KH-AR', side: 'recv', kind: 'incur', amount: '1111' });
+    await t.post('/api/hkd/debts', { entryDate: '2026-07-02', description: 'Mua chịu bí mật', party: 'NCC-AP', side: 'pay', kind: 'incur', amount: '2222' });
+    await t.send('PUT', `/api/hkd/debts/${kr.id}`, { entryDate: '2026-07-02', description: 'Bán chịu bí mật sửa', party: 'KH-AR', side: 'recv', kind: 'incur', nature: 'trade', amount: '1112' });
+    const fa = await t.post('/api/hkd/fixed-assets', { assetType: 'M', name: 'Máy', incDate: '2026-07-01', inUseMonth: '2026-07', cost: '1000', depRate: '10' });
+    const eq = await t.post('/api/hkd/equity', { entryDate: '2026-07-01', description: 'Vốn', section: 'capital', kind: 'opening', amount: '500' });
+    const oa = await t.post('/api/hkd/other-assets', { entryDate: '2026-07-01', description: 'Gửi', kind: 'opening', amount: '700' });
+    await t.send('DELETE', `/api/hkd/fixed-assets/${fa.id}`, undefined, 204); await t.send('DELETE', `/api/hkd/equity/${eq.id}`, undefined, 204); await t.send('DELETE', `/api/hkd/other-assets/${oa.id}`, undefined, 204);
+    for (const e of ['book_debt', 'book_fixed_asset', 'book_equity', 'book_other_asset']) expect([e, await cnt(e, 'insert')]).toEqual([e, e === 'book_debt' ? 2 : 1]);
+    expect(await cnt('book_debt', 'update')).toBe(1);
+    for (const e of ['book_fixed_asset', 'book_equity', 'book_other_asset']) expect([e, await cnt(e, 'delete')]).toEqual([e, 1]);
+    const mk = async (flags: string[]) => {
+      const username = `au_${flags.length}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+      const made = await ctx.app.inject({ method: 'POST', url: '/api/users', headers: t.h, payload: { username, fullName: 'X', password: 'Matkhau1!', roleCode: 'ketoan_truong', sensitiveFlags: flags } });
+      expect([flags, made.statusCode, made.body]).toEqual([flags, 201, made.body]);
+      const login = await ctx.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password: 'Matkhau1!' } });
+      return { cookie: `sid=${login.cookies.find((x) => x.name === 'sid')!.value}` };
+    };
+    const body = async (u: { cookie: string }) => { const r = await ctx.app.inject({ method: 'GET', url: '/api/audit?entity=book_debt&size=500', headers: u }); expect([r.statusCode, r.body.slice(0, 200)]).toEqual([200, r.body.slice(0, 200)]); return r.body; };
+    const payOnly = await body(await mk(['view_payable'])); const recvOnly = await body(await mk(['view_receivable'])); const none = await body(await mk([])); const all = await body(await mk(['view_receivable', 'view_payable']));
+    expect([payOnly.includes('NCC-AP'), payOnly.includes('KH-AR')]).toEqual([true, false]);
+    expect([recvOnly.includes('NCC-AP'), recvOnly.includes('KH-AR')]).toEqual([false, true]);
+    expect([none.includes('NCC-AP'), none.includes('KH-AR')]).toEqual([false, false]);
+    expect([all.includes('NCC-AP'), all.includes('KH-AR')]).toEqual([true, true]);
+    // xem chung (không chỉ định thực thể) cũng không lộ
+    const gen = await ctx.app.inject({ method: 'GET', url: '/api/audit?size=500', headers: await mk(['view_payable']) });
+    expect(gen.statusCode).toBe(200); expect(gen.body.includes('KH-AR')).toBe(false); expect(gen.body.includes('NCC-AP')).toBe(true);
   });
 
   it('kiểm tra đầu vào: thuế chỉ ở bên phải trả, ghi giảm cần lý do, số âm chỉ ở số dư đầu lợi nhuận chưa phân phối, nguyên giá > 0', async () => {
