@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Checkbox, DatePicker, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Space, Table, Tabs, Tag, message } from 'antd';
+import { Alert, Button, Checkbox, DatePicker, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import dayjs from 'dayjs';
@@ -150,7 +150,7 @@ export function AssetsPage({ kind }: { kind: AssetKind }) {
           <Input.Search placeholder="Tìm theo mã, tên" allowClear defaultValue={f.q} onSearch={(q) => setF({ ...f, q })} style={{ width: 220 }} />
           <LookupSelect catalog="asset_category" fetcher={catFetcher} allowClear placeholder="Loại" value={f.categoryCode || null} onChange={(c) => setF({ ...f, categoryCode: c ?? '' })} style={{ width: 200 }} />
           <LookupSelect catalog="department" allowClear placeholder="Bộ phận" value={f.departmentCode || null} onChange={(c) => setF({ ...f, departmentCode: c ?? '' })} style={{ width: 200 }} />
-          <select aria-label="Trạng thái" value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}><option value="">Mọi trạng thái</option><option value="active">Đang dùng</option><option value="decreased">Đã ghi giảm</option></select>
+          <Select aria-label="Trạng thái" style={{ width: 160 }} value={f.status} onChange={(v) => setF({ ...f, status: v })} options={[{ value: '', label: 'Mọi trạng thái' }, { value: 'active', label: 'Đang dùng' }, { value: 'decreased', label: 'Đã ghi giảm' }]} />
           {list.data !== undefined && (
             <span style={{ marginLeft: 'auto', color: COLOR.textSecondary, fontSize: 13 }}>
               {formatVnNumber(String(rows.length))} thẻ
@@ -206,7 +206,7 @@ export function AssetCategoriesPage() {
         <Form form={form} layout="vertical">
           <Form.Item label="Mã" name="code" rules={[{ required: true, whitespace: true }]}><Input maxLength={30} /></Form.Item>
           <Form.Item label="Tên" name="name" rules={[{ required: true, whitespace: true }]}><Input maxLength={200} /></Form.Item>
-          <Form.Item label="Nhóm" name="kind"><select aria-label="Nhóm" disabled={editing !== 'new'} onChange={(e) => form.setFieldValue('kind', e.target.value)} value={kind}><option value="fixed">Tài sản cố định</option><option value="tool">Công cụ dụng cụ</option><option value="prepaid">Chi phí trả trước</option></select></Form.Item>
+          <Form.Item label="Nhóm" name="kind"><Select aria-label="Nhóm" disabled={editing !== 'new'} options={[{ value: 'fixed', label: 'Tài sản cố định' }, { value: 'tool', label: 'Công cụ dụng cụ' }, { value: 'prepaid', label: 'Chi phí trả trước' }]} /></Form.Item>
           <Form.Item label="TK tài sản (F4)" name="assetAccountCode" rules={[{ required: true, message: 'Chọn tài khoản tài sản' }]}><LookupSelect catalog="account" fetcher={fetcher} /></Form.Item>
           {kind === 'fixed' && <Form.Item label="TK hao mòn (F4)" name="depreciationAccountCode" rules={[{ required: true, message: 'Chọn tài khoản hao mòn' }]}><LookupSelect catalog="account" fetcher={fetcher} /></Form.Item>}
           <Form.Item label="Số kỳ sử dụng mặc định" name="defaultLifeUnits"><InputNumber min={1} max={1200} precision={0} /></Form.Item>

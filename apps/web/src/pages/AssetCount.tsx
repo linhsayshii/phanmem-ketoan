@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, DatePicker, Popconfirm, Space, Table, Tag, theme, message } from 'antd';
+import { Alert, Button, DatePicker, Popconfirm, Select, Space, Table, Tag, theme, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
@@ -130,10 +130,7 @@ export default function AssetCountPage() {
           <Toolbar>
             <Space size={6} align="center">
               <label htmlFor="ac-kind">Đối tượng kiểm kê</label>
-              <select id="ac-kind" value={kind} onChange={(e) => setKind(e.target.value as Doc['kind'])}>
-                <option value="fixed">{KIND.fixed}</option>
-                <option value="tool">{KIND.tool}</option>
-              </select>
+              <Select id="ac-kind" style={{ width: 200 }} value={kind} onChange={(v) => setKind(v)} options={[{ value: 'fixed', label: KIND.fixed }, { value: 'tool', label: KIND.tool }]} />
             </Space>
             <Space size={6} align="center">
               <label htmlFor="ac-date">Ngày kiểm kê</label>

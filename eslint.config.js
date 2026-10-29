@@ -11,4 +11,10 @@ export default tseslint.config(
       '@typescript-eslint/consistent-type-imports': 'error',
     },
   },
+  {
+    files: ['apps/web/src/**/*.tsx'],
+    rules: {
+      'no-restricted-syntax': ['error', { selector: "JSXOpeningElement[name.name='select']", message: 'Dùng Select của Ant Design, không dùng <select> thuần.' }],
+    },
+  },
 );
