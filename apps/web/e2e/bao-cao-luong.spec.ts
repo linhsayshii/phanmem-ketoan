@@ -52,6 +52,8 @@ test.beforeAll(async ({ playwright }, testInfo) => {
   const bonus = (await (await ok(request.post('/api/payroll/runs', { data: { year, month, kind: 'bonus', employeeIds: ids, name: bonusName } }))).json()) as { id: number };
   bonusId = bonus.id;
   await ok(request.post(`/api/payroll/runs/${bonus.id}/calculate`));
+  // Bộ lọc báo cáo được nhớ theo người dùng (lần chạy trước để lại bảng lương cũ): đặt về kỳ hiện tại, bỏ bảng lương đã chọn.
+  await ok(request.put('/api/prefs/filter%3Apayroll-reports', { data: { value: { year, month, runId: 0 } } }));
   await request.dispose();
 });
 

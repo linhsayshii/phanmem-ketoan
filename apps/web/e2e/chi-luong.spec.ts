@@ -42,6 +42,8 @@ test.beforeAll(async ({ playwright }, testInfo) => {
   await ok(request.put(`/api/attendance?year=${year}&month=${month}`, { data: { cells } }));
   const run = (await (await ok(request.post('/api/payroll/runs', { data: { year, month, employeeIds: ids, name: runName } }))).json()) as { id: number };
   net = ((await (await ok(request.post(`/api/payroll/runs/${run.id}/calculate`))).json()) as { totals: { net: string } }).totals.net;
+  // Bộ lọc kỳ của màn Bảng lương được nhớ theo người dùng (bảng lương spec khác đổi sang kỳ khác): đặt về kỳ của bảng vừa tạo, nếu không danh sách đổi kỳ giữa chừng và dòng bị tháo khỏi DOM.
+  await ok(request.put('/api/prefs/filter%3Apayroll-runs', { data: { value: { year, month, kind: 'all' } } }));
   await request.dispose();
 });
 
