@@ -87,16 +87,16 @@ describe('năm tài chính', () => {
     expect((await ctx.app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } })).json().tenantId).toBe(first.json().id);
   });
   // GĐ7 gói 2 (C4, TB6): chế độ chưa sẵn sàng hoặc ngoài hiệu lực không tạo được năm tài chính nếu không xác nhận rõ.
-  it('TT200 chưa đối chiếu và hết hiệu lực từ 2026: 409 REGIME_NOT_READY; TT99 cho năm 2025: 409 REGIME_NOT_EFFECTIVE; xác nhận rõ thì tạo được và có audit_event', async () => {
+  it('TT200 sẵn sàng cho năm 2025 nhưng hết hiệu lực từ 2026: 409 REGIME_NOT_EFFECTIVE; TT99 cho năm 2025: 409 REGIME_NOT_EFFECTIVE; xác nhận rõ thì tạo được và có audit_event', async () => {
     const { cookie, tenantId } = await bootstrapTenant(ctx, { code: `FG${Date.now()}` });
     const mk = (fiscalYear: number, regime: string, more: object = {}) => ctx.app.inject({ method: 'POST', url: '/api/fiscal-years', headers: { cookie }, payload: { fiscalYear, dateFrom: `${fiscalYear}-01-01`, months: 12, regime, ...more } });
     const e = (r: { statusCode: number; json: () => { error?: { code?: string } } }) => [r.statusCode, r.json().error?.code];
-    expect(e(await mk(2025, 'TT200'))).toEqual([409, 'REGIME_NOT_READY']); // chưa đối chiếu Phụ lục 1 dù năm 2025 còn trong hiệu lực
     expect(e(await mk(2025, 'TT99'))).toEqual([409, 'REGIME_NOT_EFFECTIVE']);
     expect(e(await mk(2025, 'TT99', { confirmRegimeOverride: false }))).toEqual([409, 'REGIME_NOT_EFFECTIVE']);
-    expect((await mk(2025, 'TT200', { confirmRegimeOverride: true })).statusCode).toBe(201);
-    expect(e(await mk(2026, 'TT200'))).toEqual([409, 'REGIME_NOT_READY']);
-    expect((await mk(2026, 'TT99')).statusCode).toBe(201); // TT99 từ 2026: không cần xác nhận
+    expect((await mk(2025, 'TT200')).statusCode).toBe(201); // Phụ lục 1 và B01-B03 đã đối chiếu, năm 2025 còn trong hiệu lực: không cần xác nhận
+    expect(e(await mk(2026, 'TT200'))).toEqual([409, 'REGIME_NOT_EFFECTIVE']);
+    expect((await mk(2026, 'TT200', { confirmRegimeOverride: true })).statusCode).toBe(201); // ngoài hiệu lực nhưng đã xác nhận: một audit_event
+    expect((await mk(2027, 'TT99')).statusCode).toBe(201); // TT99 từ 2026: không cần xác nhận
     const n = await sql<{ n: string }>`SELECT count(*)::text AS n FROM audit_event WHERE tenant_id = ${tenantId}::uuid AND action = 'fiscal_year_regime_override'`.execute(ctx.t.admin);
     expect(n.rows[0]!.n).toBe('1');
     const { cookie: c2 } = await bootstrapTenant(ctx, { code: `FH${Date.now()}` });
