@@ -71,7 +71,7 @@ describe('in sổ: nội dung, hệ tài khoản, quyền', () => {
   beforeAll(async () => {
     ({ cookie: c2, tenantId: tenant2 } = await bootstrapTenant(ctx, { code: `PS${Date.now()}` }));
     await ctx.app.inject({ method: 'PUT', url: '/api/company', headers: { cookie: c2 }, payload: { name: 'Công ty Hai Hệ', address: '2 Hàng Bài', legalRep: 'Lê Văn C', chiefAccountant: 'Phạm Thị D' } });
-    // Hai hệ tài khoản trong một công ty: 6421 là "Chi phí bán hàng" ở TT133 nhưng là "Chi phí nhân viên quản lí" ở TT200.
+    // Hai hệ tài khoản trong một công ty: 6421 là "Chi phí bán hàng" ở TT133 nhưng là "Chi phí nhân viên quản lý" ở TT200.
     expect((await post('/api/fiscal-years', { fiscalYear: 2026, dateFrom: '2026-01-01', months: 12, regime: 'TT133' })).statusCode).toBe(201);
     expect((await post('/api/fiscal-years', { fiscalYear: 2027, dateFrom: '2027-01-01', months: 12, regime: 'TT200', confirmRegimeOverride: true })).statusCode).toBe(201);
     expect((await post('/api/catalogs/party', { code: 'KH001', name: 'Khách một', is_customer: true })).statusCode).toBe(201);
@@ -85,12 +85,12 @@ describe('in sổ: nội dung, hệ tài khoản, quyền', () => {
   it('Sổ Cái: tên tài khoản theo đúng hệ của kỳ, diễn giải được thoát ký tự, không in số mẫu chưa đối chiếu', async () => {
     const r = await get('/api/reports/ledgers/account?accountCode=6421&from=2026-01-01&to=2026-01-31&format=html');
     expect(r.statusCode, r.body).toBe(200);
-    expect(r.body).not.toContain('S03b-DNN'); expect(r.body).toContain('SỔ CÁI – TÀI KHOẢN 6421 – CHI PHÍ BÁN HÀNG'); expect(r.body).not.toContain('NHÂN VIÊN QUẢN LÍ');
+    expect(r.body).not.toContain('S03b-DNN'); expect(r.body).toContain('SỔ CÁI – TÀI KHOẢN 6421 – CHI PHÍ BÁN HÀNG'); expect(r.body).not.toContain('NHÂN VIÊN QUẢN LÝ');
     expect(r.body).toContain('&lt;script&gt;'); expect(r.body).not.toContain('<script>alert');
     expect(r.body).toContain('Số dư đầu kỳ'); expect(r.body).toContain('Số dư cuối kỳ'); expect(r.body).toContain('100.000');
     // Tên tài khoản ở TT133 và TT200 khác nhau: trong năm 2027 (TT200) cùng mã in tên của hệ TT200.
     const y = await get('/api/reports/ledgers/account?accountCode=6421&from=2027-01-01&to=2027-01-31&format=html');
-    expect(y.body).toContain('CHI PHÍ NHÂN VIÊN QUẢN LÍ'); expect(y.body).not.toContain('S03b-DN');
+    expect(y.body).toContain('CHI PHÍ NHÂN VIÊN QUẢN LÝ'); expect(y.body).not.toContain('S03b-DN');
   });
 
   it('Sổ chi tiết theo đối tượng không in số mẫu chưa đối chiếu (S20-DNN); mã đối tượng sai báo 404', async () => {
