@@ -17,6 +17,8 @@ test('Phân bổ thuế: tìm phân bổ TNCN khấu trừ tại nguồn 3335, s
   const row = (await list()).find((d) => d.tax_code_code === 'TNCN_KT' && d.document_type === 'invoice')!;
   expect(row, 'công ty E2E thiếu phân bổ mặc định TNCN_KT → 3335').toBeTruthy();
   const tag = `pit_withheld_${Date.now()}`;
+  // bộ lọc nhớ còn q=3335 từ lần chạy trước thì Enter không gửi lại yêu cầu tìm: đưa về mặc định trước khi mở trang
+  expect((await request.put(`/api/prefs/${encodeURIComponent('filter:catalog:tax_distribution')}`, { data: { value: { q: '', active: 'true' } } })).ok()).toBeTruthy();
   try {
     await page.goto('/danh-muc/tax_distribution');
     await expect(page.getByRole('heading', { name: 'Phân bổ thuế' })).toBeVisible();
