@@ -85,8 +85,8 @@ export default function TncnReturnsPage() {
           {f.kind === 'month' && <Select aria-label="Tháng" value={f.month} style={{ width: 100 }} onChange={(month) => setF({ ...f, month })} options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `Tháng ${i + 1}` }))} />}
         </Toolbar>
       </PageHeader>
-      <Alert style={{ marginBottom: 12 }} type="warning" showIcon message="Chưa có mẫu tờ khai theo TT 89/2026: xuất bảng kê Excel"
-        description="Mẫu 05/KK-TNCN, 05/QTT-TNCN (TT 89/2026 Phụ lục I) chưa được nhập từ văn bản gốc. Tờ khai lưu và chốt bảng kê số liệu nguồn; chưa xuất XML, chưa ký số. Chứng từ khấu trừ in bản tổng hợp không có mẫu số, ký hiệu." />
+      <Alert style={{ marginBottom: 12 }} type="warning" showIcon message="Chưa xuất được tờ khai theo mẫu TT 89/2026: xuất bảng kê Excel"
+        description="Mẫu 05/KK-TNCN, 05/QTT-TNCN (TT 89/2026 Phụ lục I) đã nhập từ văn bản gốc nhưng chưa ghép số vào từng chỉ tiêu và chưa có định dạng XML của HTKK. Tờ khai lưu và chốt bảng kê số liệu nguồn; chưa xuất XML, chưa ký số. Chứng từ khấu trừ in bản tổng hợp không có mẫu số, ký hiệu." />
       <PayrollErrorAlert error={err} onClose={() => setErr(null)} />
       {data.error ? <PayrollErrorAlert error={data.error} /> : !d ? <Alert type="info" message="Đang tải…" /> : <>
         {[...d.intro, ...d.warnings].map((t) => <Alert key={t} type="warning" showIcon style={{ marginBottom: 8 }} message={t} />)}
