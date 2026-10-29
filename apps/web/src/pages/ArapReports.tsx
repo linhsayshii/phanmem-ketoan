@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
-import { KeyboardGrid, LookupSelect, useRememberedFilter } from '@kt/ui';
+import { KeyboardGrid, LookupSelect, PageHeader, Section, Toolbar, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 
@@ -93,7 +93,9 @@ export default function ArapReportsPage() {
           <Space size="large" wrap>{stat('Dư đầu kỳ Nợ', t.openingDebit)}{stat('Dư đầu kỳ Có', t.openingCredit)}{stat('Phát sinh Nợ', t.periodDebit)}{stat('Phát sinh Có', t.periodCredit)}{stat('Dư cuối kỳ Nợ', t.closingDebit)}{stat('Dư cuối kỳ Có', t.closingCredit)}</Space>
           {s.matches ? <span>Khớp số dư tài khoản {f.accountCode} tại ngày {formatVnDate(f.to)}: <b>{formatVnNumber(s.accountNet)}</b></span>
             : <Alert type="warning" showIcon message={`Tổng dư cuối kỳ các đối tượng (${formatVnNumber(s.closingNet)}) lệch số dư tài khoản ${f.accountCode} (${formatVnNumber(s.accountNet)})`} />}
-          <KeyboardGrid<SummaryRow> rows={s.rows} columns={summaryColumns} onRowsChange={() => undefined} addRowTemplate={() => ({} as SummaryRow)} readOnly height="calc(100vh - 340px)" />
+          <Section bodyPadding={0}>
+            <KeyboardGrid<SummaryRow> rows={s.rows} columns={summaryColumns} onRowsChange={() => undefined} addRowTemplate={() => ({} as SummaryRow)} readOnly height="calc(100vh - 340px)" />
+          </Section>
         </Space>);
     }
     if (tab === 'aging') {
@@ -101,9 +103,13 @@ export default function ArapReportsPage() {
       return (
         <Space direction="vertical" style={{ width: '100%' }}>
           <Space size="large" wrap>{a.columns.map((c) => stat(c.label, a.totals[c.key] ?? '0', undefined, c.key === 'credit'))}</Space>
-          <KeyboardGrid<Row> rows={a.rows} columns={agingColumns} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly height={a.items ? 220 : 'calc(100vh - 340px)'} />
+          <Section bodyPadding={0}>
+            <KeyboardGrid<Row> rows={a.rows} columns={agingColumns} onRowsChange={() => undefined} addRowTemplate={() => ({})} readOnly height={a.items ? 220 : 'calc(100vh - 340px)'} />
+          </Section>
           {a.items && <><b>Các khoản còn nợ của đối tượng {f.partyCode}</b>
-            <KeyboardGrid<AgingItem> rows={a.items} columns={itemColumns(f.by)} onRowsChange={() => undefined} addRowTemplate={() => ({} as AgingItem)} readOnly height="calc(100vh - 640px)" /></>}
+            <Section bodyPadding={0}>
+              <KeyboardGrid<AgingItem> rows={a.items} columns={itemColumns(f.by)} onRowsChange={() => undefined} addRowTemplate={() => ({} as AgingItem)} readOnly height="calc(100vh - 640px)" />
+            </Section></>}
         </Space>);
     }
     const x = d as Detail; const fx = !!x.currency && x.currency !== 'VND';
@@ -113,7 +119,9 @@ export default function ArapReportsPage() {
           {stat('Dư đầu kỳ', x.opening, fx ? x.openingCurrency : null, true)}{stat('Phát sinh Nợ', x.totalDebit)}{stat('Phát sinh Có', x.totalCredit)}{stat('Dư cuối kỳ', x.closing, fx ? x.closingCurrency : null, true)}
         </Space>
         {tab === 'statement' && <Alert type="info" showIcon message={`Biên bản đối chiếu với ${x.partyName}: số dư tại ngày ${formatVnDate(f.to)}. ${verdict(x.closing)}`} />}
-        <KeyboardGrid<DetailRow> rows={x.rows} columns={detailColumns(fx)} onRowsChange={() => undefined} addRowTemplate={() => ({} as DetailRow)} readOnly height="calc(100vh - 360px)" />
+        <Section bodyPadding={0}>
+          <KeyboardGrid<DetailRow> rows={x.rows} columns={detailColumns(fx)} onRowsChange={() => undefined} addRowTemplate={() => ({} as DetailRow)} readOnly height="calc(100vh - 360px)" />
+        </Section>
       </Space>);
   };
 
@@ -127,28 +135,35 @@ export default function ArapReportsPage() {
   const hasOverdue = !!overdue.data?.items?.some((i) => i.ageDays !== null && i.ageDays > 0 && D(i.residual).gt(0));
 
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Báo cáo công nợ</h2>
-        <Segmented aria-label="Loại công nợ" value={f.accountCode} onChange={(v) => setF({ ...f, accountCode: String(v) })} options={[{ value: '131', label: 'Phải thu (131)' }, { value: '331', label: 'Phải trả (331)' }]} />
-        {tab === 'aging' ? <>
-          <DatePicker format="DD/MM/YYYY" allowClear={false} aria-label="Tính đến ngày" value={dayjs(f.asOf)} onChange={(d) => d && setF({ ...f, asOf: d.format('YYYY-MM-DD') })} />
-          <Select aria-label="Tính tuổi nợ theo" style={{ width: 170 }} value={f.by} onChange={(by) => setF({ ...f, by })} options={[{ value: 'due', label: 'Theo hạn thanh toán' }, { value: 'doc', label: 'Theo ngày chứng từ' }]} />
-          <Input aria-label="Mốc tuổi nợ (ngày)" prefix="Mốc (ngày)" style={{ width: 210 }} value={bucketsDraft ?? f.buckets} onChange={(e) => setBucketsDraft(e.target.value)} onBlur={commitBuckets} onPressEnter={commitBuckets} />
-          {partyPicker('Đối tượng (không bắt buộc)')}
-        </> : <>
-          {rangePicker}
-          {tab !== 'summary' && partyPicker('Đối tượng (F4)')}
-          {tab === 'detail' && <LookupSelect catalog="currency" aria-label="Loại tiền" placeholder="Loại tiền" style={{ width: 140 }} value={f.currency || null} onChange={(currency) => setF({ ...f, currency: currency ?? '' })} />}
-        </>}
-        {canPrint && <>
-          <Button disabled={!url || tab === 'statement'} onClick={() => printAs('pdf')}>In PDF</Button>
-          <Button disabled={!url || tab === 'statement'} onClick={() => printAs('xlsx')}>Xuất Excel</Button>
-          <Button type="primary" disabled={!f.partyCode} onClick={() => open(printUrl('statement'))}>In biên bản</Button>
-          {receivable && <Button disabled={!hasOverdue} title={f.partyCode && overdue.isSuccess && !hasOverdue ? `Đối tượng không có khoản nợ quá hạn tại ngày ${formatVnDate(f.asOf)}` : undefined} onClick={() => open(printUrl('reminder'))}>Thư nhắc nợ</Button>}</>}
-      </Space>
-      <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} items={[{ key: 'detail', label: 'Sổ chi tiết' }, { key: 'summary', label: 'Tổng hợp' }, { key: 'aging', label: 'Tuổi nợ' }, { key: 'statement', label: 'Đối chiếu' }]} />
+    <>
+      <PageHeader
+        title="Báo cáo công nợ"
+        description="Sổ chi tiết, tổng hợp, phân tích tuổi nợ và đối chiếu công nợ"
+        extra={canPrint && (
+          <Space>
+            <Button disabled={!url || tab === 'statement'} onClick={() => printAs('pdf')}>In PDF</Button>
+            <Button disabled={!url || tab === 'statement'} onClick={() => printAs('xlsx')}>Xuất Excel</Button>
+            <Button type="primary" disabled={!f.partyCode} onClick={() => open(printUrl('statement'))}>In biên bản</Button>
+            {receivable && <Button disabled={!hasOverdue} title={f.partyCode && overdue.isSuccess && !hasOverdue ? `Đối tượng không có khoản nợ quá hạn tại ngày ${formatVnDate(f.asOf)}` : undefined} onClick={() => open(printUrl('reminder'))}>Thư nhắc nợ</Button>}
+          </Space>
+        )}
+      >
+        <Toolbar>
+          <Segmented aria-label="Loại công nợ" value={f.accountCode} onChange={(v) => setF({ ...f, accountCode: String(v) })} options={[{ value: '131', label: 'Phải thu (131)' }, { value: '331', label: 'Phải trả (331)' }]} />
+          {tab === 'aging' ? <>
+            <DatePicker format="DD/MM/YYYY" allowClear={false} aria-label="Tính đến ngày" value={dayjs(f.asOf)} onChange={(d) => d && setF({ ...f, asOf: d.format('YYYY-MM-DD') })} />
+            <Select aria-label="Tính tuổi nợ theo" style={{ width: 170 }} value={f.by} onChange={(by) => setF({ ...f, by })} options={[{ value: 'due', label: 'Theo hạn thanh toán' }, { value: 'doc', label: 'Theo ngày chứng từ' }]} />
+            <Input aria-label="Mốc tuổi nợ (ngày)" prefix="Mốc (ngày)" style={{ width: 210 }} value={bucketsDraft ?? f.buckets} onChange={(e) => setBucketsDraft(e.target.value)} onBlur={commitBuckets} onPressEnter={commitBuckets} />
+            {partyPicker('Đối tượng (không bắt buộc)')}
+          </> : <>
+            {rangePicker}
+            {tab !== 'summary' && partyPicker('Đối tượng (F4)')}
+            {tab === 'detail' && <LookupSelect catalog="currency" aria-label="Loại tiền" placeholder="Loại tiền" style={{ width: 140 }} value={f.currency || null} onChange={(currency) => setF({ ...f, currency: currency ?? '' })} />}
+          </>}
+        </Toolbar>
+      </PageHeader>
+      <Tabs activeKey={tab} onChange={(k) => setTab(k as TabKey)} style={{ marginBottom: 12 }} items={[{ key: 'detail', label: 'Sổ chi tiết' }, { key: 'summary', label: 'Tổng hợp' }, { key: 'aging', label: 'Tuổi nợ' }, { key: 'statement', label: 'Đối chiếu' }]} />
       {body()}
-    </Space>
+    </>
   );
 }

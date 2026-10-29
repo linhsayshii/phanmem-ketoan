@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, DatePicker, Modal, Segmented, Space, Table, Tabs, message } from 'antd';
+import { Alert, Button, DatePicker, Modal, Segmented, Space, Table, Tabs, message, theme } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
-import { LookupSelect, useRememberedFilter } from '@kt/ui';
+import { COLOR, LookupSelect, PageHeader, Section, Toolbar, useRememberedFilter } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { PickGrid, buildRows, fetchVoucherNos, formatAmount, overResidual, pairOff, sumPicks, type OpenItem, type PickRow } from './settleCommon.js';
@@ -32,6 +32,7 @@ function groupsOf(rows: SettlementRow[]): Group[] {
 
 export default function SettlementPage() {
   const { me, can } = useAuth();
+  const { token } = theme.useToken();
   const qc = useQueryClient();
   const [tab, setTab] = useState<'pick' | 'history'>('pick');
   const [f, setF] = useRememberedFilter('settlement', { accountCode: '131', partyCode: '', currency: 'VND' }, `${me?.tenantId}:${me?.userId}`);
@@ -121,8 +122,9 @@ export default function SettlementPage() {
 
   const section = (label: string, rows: PickRow[], set: (r: PickRow[]) => void) => (
     <section aria-label={label} style={{ flex: 1, minWidth: 0 }}>
-      <b>{label}</b>
-      <PickGrid rows={rows} fx={fx} onChange={set} height="calc(100vh - 470px)" />
+      <Section title={label} bodyPadding={0}>
+        <PickGrid rows={rows} fx={fx} onChange={set} height="calc(100vh - 470px)" />
+      </Section>
     </section>);
 
   const pickPane = !f.partyCode ? <Alert type="info" showIcon message="Chọn đối tượng (F4) để xem các khoản còn dư" />
@@ -132,35 +134,46 @@ export default function SettlementPage() {
         <div style={{ display: 'flex', gap: 12 }}>{section('Phát sinh Nợ còn dư', debit, setDebit)}{section('Phát sinh Có còn dư', credit, setCredit)}</div>
         <Space size="large" wrap>
           <span>Tổng Nợ chọn: <b>{formatAmount(totalD, fx)}</b></span><span>Tổng Có chọn: <b>{formatAmount(totalC, fx)}</b></span>
-          <span style={diff.isZero() ? undefined : { color: '#cf1322' }}>Chênh lệch: <b>{formatAmount(diff, fx)}</b></span>
+          <span style={diff.isZero() ? undefined : { color: token.colorError }}>Chênh lệch: <b>{formatAmount(diff, fx)}</b></span>
         </Space>
         {over.length > 0 && <Alert type="error" showIcon message={`Số đối trừ của ${over.map((r) => `${r.docNo} vượt số còn dư ${formatAmount(r.remain, fx)}`).join('; ')}`} />}
-        {fx && <span style={{ opacity: 0.7 }}>Khoản ngoại tệ đối trừ lệch tỷ giá sẽ tự sinh chứng từ CL (chênh lệch tỷ giá).</span>}
+        {fx && <span style={{ color: COLOR.textSecondary, fontSize: 13 }}>Khoản ngoại tệ đối trừ lệch tỷ giá sẽ tự sinh chứng từ CL (chênh lệch tỷ giá).</span>}
         {result && <Alert type={result.failed ? 'warning' : 'success'} showIcon message={`Đã đối trừ ${result.pairs} cặp`}
           description={<>{result.failed && <div>{`Dừng ở lỗi: ${result.failed}`}</div>}{result.vouchers.length > 0 && <span>Chứng từ chênh lệch tỷ giá: {result.vouchers.map((v, i) => <span key={v.id}>{i > 0 && ', '}<a href={`/chung-tu/CL/${v.id}`} target="_blank" rel="noopener noreferrer">{v.no}</a></span>)}</span>}</>} />}
       </Space>);
 
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <Space wrap>
-        <h2 style={{ margin: 0 }}>Đối trừ chứng từ</h2>
-        <Segmented aria-label="Loại công nợ" value={f.accountCode} onChange={(v) => setF({ ...f, accountCode: String(v) })} options={[{ value: '131', label: 'Phải thu (131)' }, { value: '331', label: 'Phải trả (331)' }]} />
-        <LookupSelect catalog="party" includeInactive aria-label="Đối tượng (F4)" placeholder="Đối tượng (F4)" style={{ width: 240 }} value={f.partyCode || null} onChange={(code) => setF({ ...f, partyCode: code ?? '' })} />
-        <LookupSelect catalog="currency" aria-label="Loại tiền (F4)" placeholder="Loại tiền (F4)" style={{ width: 140 }} value={f.currency} onChange={(code) => setF({ ...f, currency: code ?? 'VND' })} />
-        <DatePicker format="DD/MM/YYYY" placeholder="Mặc định theo chứng từ" aria-label="Ngày đối trừ" value={settleDate ? dayjs(settleDate) : null} onChange={(d) => setSettleDate(d ? d.format('YYYY-MM-DD') : null)} />
-        {canCreate && <>
-          <Button type="primary" disabled={!balanced || busy || tab !== 'pick'} loading={busy} onClick={() => { void settle(); }}>Đối trừ (Ctrl+S)</Button>
-          <Button onClick={autoSettle}>Đối trừ tự động</Button></>}
-      </Space>
-      <Tabs activeKey={tab} onChange={(k) => setTab(k as 'pick' | 'history')} items={[
+    <>
+      <PageHeader
+        title="Đối trừ chứng từ"
+        description="Đối trừ công nợ giữa các chứng từ phát sinh Nợ và phát sinh Có theo từng đối tượng"
+        extra={canCreate && (
+          <Space>
+            <Button type="primary" disabled={!balanced || busy || tab !== 'pick'} loading={busy} onClick={() => { void settle(); }}>Đối trừ (Ctrl+S)</Button>
+            <Button onClick={autoSettle}>Đối trừ tự động</Button>
+          </Space>
+        )}
+      >
+        <Toolbar>
+          <Segmented aria-label="Loại công nợ" value={f.accountCode} onChange={(v) => setF({ ...f, accountCode: String(v) })} options={[{ value: '131', label: 'Phải thu (131)' }, { value: '331', label: 'Phải trả (331)' }]} />
+          <LookupSelect catalog="party" includeInactive aria-label="Đối tượng (F4)" placeholder="Đối tượng (F4)" style={{ width: 240 }} value={f.partyCode || null} onChange={(code) => setF({ ...f, partyCode: code ?? '' })} />
+          <LookupSelect catalog="currency" aria-label="Loại tiền (F4)" placeholder="Loại tiền (F4)" style={{ width: 140 }} value={f.currency} onChange={(code) => setF({ ...f, currency: code ?? 'VND' })} />
+          <DatePicker format="DD/MM/YYYY" placeholder="Mặc định theo chứng từ" aria-label="Ngày đối trừ" value={settleDate ? dayjs(settleDate) : null} onChange={(d) => setSettleDate(d ? d.format('YYYY-MM-DD') : null)} />
+        </Toolbar>
+      </PageHeader>
+      <Tabs activeKey={tab} onChange={(k) => setTab(k as 'pick' | 'history')} style={{ marginBottom: 12 }} items={[
         { key: 'pick', label: 'Chọn để đối trừ', children: pickPane },
         { key: 'history', label: 'Đã đối trừ', children: (
           <Space direction="vertical" style={{ width: '100%' }}>
             <DatePicker.RangePicker format="DD/MM/YYYY" allowClear aria-label="Khoảng ngày đối trừ" value={range ? [dayjs(range[0]), dayjs(range[1])] : null} onChange={(r) => setRange(r?.[0] && r[1] ? [r[0].format('YYYY-MM-DD'), r[1].format('YYYY-MM-DD')] : null)} />
             {history.error ? <Alert type="error" showIcon message={(history.error as Error).message} />
-              : <Table<Group> size="small" rowKey="groupId" loading={history.isLoading} columns={historyColumns} dataSource={groups} pagination={{ pageSize: 50, hideOnSinglePage: true }} />}
+              : (
+                <Section bodyPadding={0}>
+                  <Table<Group> size="small" rowKey="groupId" loading={history.isLoading} columns={historyColumns} dataSource={groups} pagination={{ pageSize: 50, hideOnSinglePage: true }} />
+                </Section>
+              )}
           </Space>) },
       ]} />
-    </Space>
+    </>
   );
 }

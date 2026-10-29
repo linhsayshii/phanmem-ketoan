@@ -11,9 +11,11 @@ vi.mock('../src/api/client.js', async (orig) => ({ ...(await orig<Record<string,
 
 interface GridColumn { headerName?: string; field?: string; valueGetter?: (p: { data: unknown }) => unknown; valueFormatter?: (p: { value: unknown }) => string }
 // Lưới giả: mỗi dòng một khối, mỗi cột một ô mang tên cột. Ô tra danh mục giả là một ô nhập có nhãn là gợi ý.
-vi.mock('@kt/ui', async () => {
+vi.mock('@kt/ui', async (importOriginal) => {
   const { useState } = await import('react');
+  const actual = await importOriginal<Record<string, unknown>>();
   return {
+    ...actual,
     KeyboardGrid: ({ rows, columns }: { rows: Record<string, unknown>[]; columns: GridColumn[] }) => (
       <div data-testid="grid">{rows.map((r, i) => (
         <div key={i} data-testid="row">

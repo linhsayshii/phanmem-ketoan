@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Alert, Button, DatePicker, Select, Space, Table, Tabs, message } from 'antd';
+import { Alert, Button, DatePicker, Select, Space, Table, Tabs, message, theme } from 'antd';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import dayjs from 'dayjs';
 import { D, formatVnDate, formatVnNumber, todayVn } from '@kt/domain';
-import { KeyboardGrid, VnNumberInput } from '@kt/ui';
+import { COLOR, KeyboardGrid, PageHeader, Section, Toolbar, VnNumberInput } from '@kt/ui';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth.js';
 import { regimeFor } from '../lookups.js';
@@ -53,7 +53,7 @@ function RunHistory({ kind }: { kind: FxRun['kind'] }) {
   );
 }
 
-function OutflowTab() {
+function useOutflow() {
   const qc = useQueryClient();
   const years = useQuery({ queryKey: ['fiscal-years'], queryFn: () => api<FiscalYear[]>('/api/fiscal-years') });
   const [yearSel, setYearSel] = useState<number | null>(null);
@@ -72,15 +72,16 @@ function OutflowTab() {
       void qc.invalidateQueries({ queryKey: ['fx-runs'] });
     },
   });
+  return { year, list, setYearSel, periodNo, setPeriodNo, error, out, run };
+}
+
+function OutflowContent({ outflow }: { outflow: ReturnType<typeof useOutflow> }) {
+  const { error, out } = outflow;
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <span>Tính lại tỷ giá ghi Có các tài khoản tiền ngoại tệ theo bình quân di động trong kỳ; chênh lệch ghi bằng chứng từ XQ. Chạy lại cùng kỳ thì chứng từ cũ được đảo và sinh chứng từ mới.</span>
-      <Space wrap>
-        <Select<number> aria-label="Năm tài chính" style={{ width: 150 }} value={year?.fiscalYear ?? null} onChange={(v) => { setYearSel(v); setPeriodNo(null); }} options={list.map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear}` }))} />
-        <Select<number> aria-label="Kỳ kế toán" placeholder="Chọn kỳ" virtual={false} style={{ width: 220 }} value={periodNo} onChange={setPeriodNo}
-          options={(year?.periods ?? []).filter((p) => p.periodNo > 0).map((p) => ({ value: p.periodNo, label: `Kỳ ${p.periodNo} (${shortDate(p.dateFrom)} - ${shortDate(p.dateTo)})` }))} />
-        <Button type="primary" disabled={periodNo === null || !year} loading={run.isPending} onClick={() => run.mutate()}>Chạy điều chỉnh tỷ giá xuất quỹ</Button>
-      </Space>
+      <div style={{ fontSize: 13, color: COLOR.textSecondary }}>
+        Tính lại tỷ giá ghi Có các tài khoản tiền ngoại tệ theo bình quân di động trong kỳ; chênh lệch ghi bằng chứng từ XQ. Chạy lại cùng kỳ thì chứng từ cũ được đảo và sinh chứng từ mới.
+      </div>
       {error && <Alert type="error" showIcon message={error} />}
       {out && <>
         {out.unchanged || out.ids.length === 0
@@ -89,8 +90,9 @@ function OutflowTab() {
         {out.stalePeriods.length > 0 && <Alert type="warning" showIcon message={`Các kỳ sau đã chạy điều chỉnh tỷ giá xuất quỹ, cần chạy lại theo thứ tự: ${out.stalePeriods.map((n) => `kỳ ${n}`).join(', ')}`} />}
         {out.stale.length > 0 && <Alert type="warning" showIcon message={`Đánh giá lại ngoại tệ ngày ${out.stale.map(formatVnDate).join(', ')} đã chạy trước điều chỉnh này, cần chạy lại`} />}
       </>}
-      <b>Các lần đã chạy</b>
-      <RunHistory kind="outflow" />
+      <Section title="Các lần đã chạy" bodyPadding={0}>
+        <RunHistory kind="outflow" />
+      </Section>
     </Space>
   );
 }
@@ -107,7 +109,7 @@ const previewColumns: ColDef<RevalLine>[] = ([
   { field: 'difference', headerName: 'Chênh lệch', width: 130, cellClass: 'ag-right-aligned-cell', valueFormatter: (p) => money(p.value) },
 ] as ColDef<RevalLine>[]).map((c) => ({ ...c, editable: false }));
 
-function RevaluationTab() {
+function useReval() {
   const qc = useQueryClient();
   const { can } = useAuth();
   const [date, setDate] = useState(todayVn());
@@ -154,51 +156,144 @@ function RevaluationTab() {
   // shortcut: chế độ TT200 gắn cứng ở đây vì chưa có API nào lộ trạng thái đối chiếu của fx-rules; làm thành dữ liệu khi quy tắc đánh giá lại TT200 được đối chiếu văn bản gốc.
   const tt200 = regimeFor(years.data ?? [], date) === 'TT200';
 
+  return { date, setDate, manual, setManual, previewed, busy, error, done, foreign, catalog, prefillOf, doPreview, doRun, save, rateSetting, tt200 };
+}
+
+function RevalContent({ reval }: { reval: ReturnType<typeof useReval> }) {
+  const { token } = theme.useToken();
+  const { tt200, foreign, catalog, manual, setManual, prefillOf, previewed, error, done } = reval;
+
   const rateColumns = [
     { title: 'Loại tiền', render: (_: unknown, c: Currency) => `${c.code} - ${c.name}`, width: 220 },
     { title: 'Tỷ giá', width: 200, render: (_: unknown, c: Currency) => (
       <VnNumberInput aria-label={`Tỷ giá ${c.code}`} scale={4} value={manual[c.code] ?? prefillOf(c.code)?.data?.rate ?? null}
         onChange={(v) => { setManual((m) => { const rest = Object.fromEntries(Object.entries(m).filter(([k]) => k !== c.code)); return v === null ? rest : { ...rest, [c.code]: v }; }); }} />) },
-    { title: 'Ngày tỷ giá', render: (_: unknown, c: Currency) => { const q = prefillOf(c.code); return q?.data ? formatVnDate(q.data.rateDate) : q?.error ? <span style={{ color: '#cf1322' }}>{(q.error as Error).message}</span> : ''; } },
+    { title: 'Ngày tỷ giá', render: (_: unknown, c: Currency) => { const q = prefillOf(c.code); return q?.data ? formatVnDate(q.data.rateDate) : q?.error ? <span style={{ color: token.colorError }}>{(q.error as Error).message}</span> : ''; } },
   ];
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       {tt200 && <Alert type="info" showIcon message="Quy tắc đánh giá lại ngoại tệ theo TT200 chưa được đối chiếu với văn bản gốc; kiểm tra kết quả trước khi ghi sổ" />}
-      <Space wrap size="large">
-        <Space>Ngày đánh giá lại<DatePicker aria-label="Ngày đánh giá lại" format="DD/MM/YYYY" allowClear={false} value={dayjs(date)} onChange={(d) => { if (d) { setDate(d.format('YYYY-MM-DD')); setManual({}); } }} /></Space>
-        {rateSetting('fx_reval_rate_asset', 'Tỷ giá đánh giá lại tài sản')}{rateSetting('fx_reval_rate_liability', 'Tỷ giá đánh giá lại nợ phải trả')}
-      </Space>
-      <Table size="small" rowKey="code" pagination={false} dataSource={foreign} columns={rateColumns} loading={catalog.isLoading} locale={{ emptyText: 'Chưa có loại tiền ngoại tệ' }} />
-      <span style={{ opacity: 0.7 }}>Tỷ giá điền sẵn theo loại tỷ giá tài sản đã chọn ở trên và chỉ dùng khi bạn sửa; loại tiền không sửa lấy theo loại tỷ giá của từng khoản (tài sản, nợ phải trả). Bấm Xem trước để biết tỷ giá máy chủ áp dụng.</span>
-      <Space>
-        <Button loading={busy === 'preview'} disabled={save.isPending} onClick={() => { void doPreview(); }}>Xem trước</Button>
-        {previewed && warningAlerts(previewed.warnings)}
-      </Space>
+      <Section
+        title="Tỷ giá theo loại tiền"
+        bodyPadding={0}
+      >
+        <Table size="small" rowKey="code" pagination={false} dataSource={foreign} columns={rateColumns} loading={catalog.isLoading} locale={{ emptyText: 'Chưa có loại tiền ngoại tệ' }} />
+      </Section>
+      <div style={{ fontSize: 13, color: COLOR.textSecondary }}>
+        Tỷ giá điền sẵn theo loại tỷ giá tài sản đã chọn ở trên và chỉ dùng khi bạn sửa; loại tiền không sửa lấy theo loại tỷ giá của từng khoản (tài sản, nợ phải trả). Bấm Xem trước để biết tỷ giá máy chủ áp dụng.
+      </div>
+      {previewed && warningAlerts(previewed.warnings)}
       {error && <Alert type="error" showIcon message={error} />}
-      {previewed && <>
-        {previewed.unchanged && <Alert type="info" showIcon message="Kết quả không đổi so với lần chạy trước của ngày này; chạy lại không sinh thêm chứng từ" />}
-        <span>Lãi chênh lệch tỷ giá: <b>{money(previewed.totals.gain)}</b> · Lỗ chênh lệch tỷ giá: <b>{money(previewed.totals.loss)}</b> · Tổng chênh lệch: <b>{money(previewed.totals.net)}</b> (kỳ {previewed.periodNo}/{previewed.fiscalYear})</span>
-        <AppliedRates rates={previewed.rates} />
-        <KeyboardGrid<RevalLine> rows={previewed.lines} columns={previewColumns} onRowsChange={() => undefined} addRowTemplate={() => ({} as RevalLine)} readOnly height={Math.min(420, 90 + 32 * previewed.lines.length)} />
-      </>}
-      <Button type="primary" disabled={!previewed || busy !== null || save.isPending} loading={busy === 'run'} onClick={() => { void doRun(); }}>Chạy đánh giá lại</Button>
+      {previewed && (
+        <Section
+          title="Kết quả xem trước"
+          extra={
+            <span style={{ fontSize: 13, color: COLOR.textSecondary }}>
+              Lãi chênh lệch tỷ giá: <b style={{ color: 'inherit' }}>{money(previewed.totals.gain)}</b> · Lỗ chênh lệch tỷ giá: <b style={{ color: 'inherit' }}>{money(previewed.totals.loss)}</b> · Tổng chênh lệch: <b style={{ color: 'inherit' }}>{money(previewed.totals.net)}</b> (kỳ {previewed.periodNo}/{previewed.fiscalYear})
+            </span>
+          }
+          bodyPadding={0}
+        >
+          {previewed.unchanged && <Alert type="info" showIcon message="Kết quả không đổi so với lần chạy trước của ngày này; chạy lại không sinh thêm chứng từ" style={{ margin: 8 }} />}
+          <AppliedRates rates={previewed.rates} />
+          <KeyboardGrid<RevalLine> rows={previewed.lines} columns={previewColumns} onRowsChange={() => undefined} addRowTemplate={() => ({} as RevalLine)} readOnly height={Math.min(420, 90 + 32 * previewed.lines.length)} />
+        </Section>
+      )}
       {done && (done.unchanged || done.ids.length === 0
         ? <Alert type="info" showIcon message="Không có chênh lệch cần ghi sổ, không sinh chứng từ mới" />
         : <Alert type="success" showIcon message="Đã đánh giá lại ngoại tệ" description={<span>Chứng từ: {voucherLinks('DG', done.ids, done.nos)}</span>} />)}
       {done && <>{warningAlerts(done.warnings)}<AppliedRates rates={done.rates} /></>}
       {done && done.stale.length > 0 && <Alert type="warning" showIcon message={`Đánh giá lại ngoại tệ ngày ${done.stale.map(formatVnDate).join(', ')} đã chạy sau ngày này, cần chạy lại`} />}
-      <b>Các lần đã chạy</b>
-      <RunHistory kind="revaluation" />
+      <Section title="Các lần đã chạy" bodyPadding={0}>
+        <RunHistory kind="revaluation" />
+      </Section>
     </Space>
   );
 }
 
 export default function FxToolsPage() {
+  const [tab, setTab] = useState<'outflow' | 'reval'>('outflow');
+  const outflow = useOutflow();
+  const reval = useReval();
+
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-      <h2 style={{ margin: 0 }}>Công cụ tỷ giá</h2>
-      <Tabs items={[{ key: 'outflow', label: 'Tỷ giá xuất quỹ', children: <OutflowTab /> }, { key: 'reval', label: 'Đánh giá lại ngoại tệ', children: <RevaluationTab /> }]} />
-    </Space>
+    <>
+      <PageHeader
+        title="Công cụ tỷ giá"
+        description="Điều chỉnh tỷ giá xuất quỹ và đánh giá lại số dư ngoại tệ cuối kỳ"
+        extra={
+          tab === 'outflow' ? (
+            <Button
+              type="primary"
+              disabled={outflow.periodNo === null || !outflow.year}
+              loading={outflow.run.isPending}
+              onClick={() => outflow.run.mutate()}
+            >
+              Chạy điều chỉnh tỷ giá xuất quỹ
+            </Button>
+          ) : (
+            <Space>
+              <Button loading={reval.busy === 'preview'} disabled={reval.save.isPending} onClick={() => { void reval.doPreview(); }}>
+                Xem trước
+              </Button>
+              <Button
+                type="primary"
+                disabled={!reval.previewed || reval.busy !== null || reval.save.isPending}
+                loading={reval.busy === 'run'}
+                onClick={() => { void reval.doRun(); }}
+              >
+                Chạy đánh giá lại
+              </Button>
+            </Space>
+          )
+        }
+      >
+        {tab === 'outflow' ? (
+          <Toolbar>
+            <Select<number>
+              aria-label="Năm tài chính"
+              style={{ width: 150 }}
+              value={outflow.year?.fiscalYear ?? null}
+              onChange={(v) => { outflow.setYearSel(v); outflow.setPeriodNo(null); }}
+              options={outflow.list.map((y) => ({ value: y.fiscalYear, label: `Năm ${y.fiscalYear}` }))}
+            />
+            <Select<number>
+              aria-label="Kỳ kế toán"
+              placeholder="Chọn kỳ"
+              virtual={false}
+              style={{ width: 220 }}
+              value={outflow.periodNo}
+              onChange={outflow.setPeriodNo}
+              options={(outflow.year?.periods ?? []).filter((p) => p.periodNo > 0).map((p) => ({ value: p.periodNo, label: `Kỳ ${p.periodNo} (${shortDate(p.dateFrom)} - ${shortDate(p.dateTo)})` }))}
+            />
+          </Toolbar>
+        ) : (
+          <Toolbar>
+            <Space>
+              <span>Ngày đánh giá lại</span>
+              <DatePicker
+                aria-label="Ngày đánh giá lại"
+                format="DD/MM/YYYY"
+                allowClear={false}
+                value={dayjs(reval.date)}
+                onChange={(d) => { if (d) { reval.setDate(d.format('YYYY-MM-DD')); reval.setManual({}); } }}
+              />
+            </Space>
+            {reval.rateSetting('fx_reval_rate_asset', 'Tỷ giá đánh giá lại tài sản')}
+            {reval.rateSetting('fx_reval_rate_liability', 'Tỷ giá đánh giá lại nợ phải trả')}
+          </Toolbar>
+        )}
+      </PageHeader>
+      <Tabs
+        activeKey={tab}
+        onChange={(k) => setTab(k as 'outflow' | 'reval')}
+        style={{ marginBottom: 12 }}
+        items={[
+          { key: 'outflow', label: 'Tỷ giá xuất quỹ', children: <OutflowContent outflow={outflow} /> },
+          { key: 'reval', label: 'Đánh giá lại ngoại tệ', children: <RevalContent reval={reval} /> },
+        ]}
+      />
+    </>
   );
 }

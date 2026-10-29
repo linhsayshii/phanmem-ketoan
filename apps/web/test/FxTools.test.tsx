@@ -11,15 +11,19 @@ vi.mock('../src/auth.js', () => ({ useAuth: () => ({ me: { userId: 'u', tenantId
 vi.mock('../src/api/client.js', async (orig) => ({ ...(await orig<Record<string, unknown>>()), api: apiMock }));
 
 interface GridColumn { headerName?: string; field?: string; valueGetter?: (p: { data: unknown }) => unknown; valueFormatter?: (p: { value: unknown }) => string }
-vi.mock('@kt/ui', () => ({
-  KeyboardGrid: ({ rows, columns }: { rows: Record<string, unknown>[]; columns: GridColumn[] }) => (
-    <div data-testid="grid">{rows.map((r, i) => (
-      <div key={i} data-testid="row">
-        {columns.map((c) => { const raw = c.valueGetter ? c.valueGetter({ data: r }) : r[c.field ?? '']; return <span key={c.headerName} data-col={c.headerName}>{c.valueFormatter ? c.valueFormatter({ value: raw }) : String(raw ?? '')}</span>; })}
-      </div>))}</div>),
-  VnNumberInput: ({ value, onChange, ...rest }: { value?: string | null; onChange?: (v: string | null) => void; 'aria-label'?: string }) =>
-    <input aria-label={rest['aria-label']} value={value ?? ''} onChange={(e) => onChange?.(e.target.value || null)} />,
-}));
+vi.mock('@kt/ui', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    KeyboardGrid: ({ rows, columns }: { rows: Record<string, unknown>[]; columns: GridColumn[] }) => (
+      <div data-testid="grid">{rows.map((r, i) => (
+        <div key={i} data-testid="row">
+          {columns.map((c) => { const raw = c.valueGetter ? c.valueGetter({ data: r }) : r[c.field ?? '']; return <span key={c.headerName} data-col={c.headerName}>{c.valueFormatter ? c.valueFormatter({ value: raw }) : String(raw ?? '')}</span>; })}
+        </div>))}</div>),
+    VnNumberInput: ({ value, onChange, ...rest }: { value?: string | null; onChange?: (v: string | null) => void; 'aria-label'?: string }) =>
+      <input aria-label={rest['aria-label']} value={value ?? ''} onChange={(e) => onChange?.(e.target.value || null)} />,
+  };
+});
 
 const YEARS = (regime = 'TT133') => [{ fiscalYear: 2026, regime, dateFrom: '2026-01-01', dateTo: '2026-12-31', periods: [
   { periodNo: 1, dateFrom: '2026-01-01', dateTo: '2026-01-31', status: 'open' }, { periodNo: 2, dateFrom: '2026-02-01', dateTo: '2026-02-28', status: 'open' }] }];

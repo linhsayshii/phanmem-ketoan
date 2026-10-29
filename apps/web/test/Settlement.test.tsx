@@ -13,9 +13,11 @@ interface GridColumn {
   valueParser?: (p: { newValue: string; oldValue: unknown; data: unknown }) => unknown;
 }
 // Lưới giả: mỗi dòng một khối, mỗi cột một ô mang tên cột; cột sửa được là ô nhập (Enter hoặc rời ô chốt qua valueParser như AG Grid, ghi thẳng vào đối tượng dòng).
-vi.mock('@kt/ui', async () => {
+vi.mock('@kt/ui', async (importOriginal) => {
   const { useState } = await import('react');
+  const actual = await importOriginal<Record<string, unknown>>();
   return {
+    ...actual,
     KeyboardGrid: ({ rows, columns, onRowsChange }: { rows: Record<string, unknown>[]; columns: GridColumn[]; onRowsChange: (r: Record<string, unknown>[]) => void }) => (
       <div data-testid="grid">{rows.map((r, i) => (
         <div key={i} data-testid="row">
