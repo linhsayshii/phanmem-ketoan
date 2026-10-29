@@ -1,6 +1,6 @@
 # Việc tiếp theo
 
-Cập nhật: 2026-10-29 (E2E xanh sau đợt sửa lỗi), sau khi xong GĐ7 (tag `gd0-hoan-tat`, `gd1-hoan-tat`, `gd1-5-hoan-tat`, `gd2-hoan-tat`, `gd3-hoan-tat`, `gd4-hoan-tat`, `gd5-hoan-tat`, `gd6-hoan-tat`, `gd7-hoan-tat`). Việc tiếp theo: việc tồn đọng của GĐ7 (mục 3) và các mục chờ người dùng (mục 4 và cuối tệp); lộ trình 8 giai đoạn đã hết, nhu cầu mới lập giai đoạn 8 theo `docs/review/2026-10-28-review-toan-san-pham.md` (di trú dữ liệu, tham số lương/TNCN, 01/GTGT TT80, dự phòng 229x, B09/B03a, TT200 định nghĩa báo cáo, hợp nhất TT202). Agent cập nhật file này cuối mỗi giai đoạn và mỗi khi có việc chờ người dùng.
+Cập nhật: 2026-10-29 (giao diện mới toàn bộ apps/web, mục 3b; E2E xanh sau đợt sửa lỗi), sau khi xong GĐ7 (tag `gd0-hoan-tat`, `gd1-hoan-tat`, `gd1-5-hoan-tat`, `gd2-hoan-tat`, `gd3-hoan-tat`, `gd4-hoan-tat`, `gd5-hoan-tat`, `gd6-hoan-tat`, `gd7-hoan-tat`). Việc tiếp theo: việc tồn đọng của GĐ7 (mục 3) và các mục chờ người dùng (mục 4 và cuối tệp); lộ trình 8 giai đoạn đã hết, nhu cầu mới lập giai đoạn 8 theo `docs/review/2026-10-28-review-toan-san-pham.md` (di trú dữ liệu, tham số lương/TNCN, 01/GTGT TT80, dự phòng 229x, B09/B03a, TT200 định nghĩa báo cáo, hợp nhất TT202). Agent cập nhật file này cuối mỗi giai đoạn và mỗi khi có việc chờ người dùng.
 
 Thứ tự làm: mục 2 (phần còn lại) song song mục 3 (GĐ2 → GĐ7). Mục 4 là việc chờ người dùng, không chặn các mục khác.
 
@@ -157,6 +157,17 @@ Chi tiết và lý do trong sổ quyết định `2026-10-22-giai-doan-3-quyet-d
   - `TIEN_MAT_VUOT_NGUONG` coi hóa đơn kê khai trên chứng từ có dòng Có tài khoản tiền mặt là trả tiền mặt; chứng từ gộp nhiều nội dung có thể báo thừa.
   - Chưa đo hiệu năng `CN_LECH_SO_CAI`, `HD_TRUNG` trên dữ liệu lớn (giới hạn 15 giây mỗi quy tắc).
 
+## 3b. Giao diện mới apps/web (2026-10-29): xong
+
+Kế hoạch `docs/superpowers/plans/2026-10-29-giao-dien-moi-chi-tiet.md` (skill `evon:ui-ux`, chế độ dựng luôn). Mỗi phân hệ một commit `feat(web): giao diện mới phân hệ …` (từ `9e2cf40` đến commit đăng nhập/người dùng), trước đó `da66521` (token dày đặc) và `eb21b3b` (khung app, `PageHeader`, `Section`, `StatStrip`, `EmptyState`). Thực hiện: agy (Gemini Flash) qua herdr cho trang thường; Claude Sonnet cho lưới chứng từ, báo cáo B01/B02/B03 và sổ; Claude Opus rà soát, sửa và chạy kiểm thử mỗi phân hệ.
+
+- Quy ước trang: đúng một h1 qua `PageHeader` (chữ tiêu đề giữ như cũ); nút in/xuất/thêm vào `extra`, tham số vào `Toolbar`; thẻ bên trong là `Section`; màu chỉ lấy từ `COLOR` trong `packages/ui/src/theme.ts` (thêm `error`, `errorBg`). Đăng nhập và chọn công ty dùng `AuthCard` (`packages/ui`).
+- Không đổi API, quyền, chữ nút/nhãn trường/thông báo, phím tắt, `KeyboardGrid`. Thân báo cáo (B01/B02/B03, mẫu sổ, sổ HKD) giữ nguyên cấu trúc.
+- Không làm lại: `DeclaredInvoices` là thành phần con trong `VoucherForm` (không phải trang), giữ như cũ.
+- Một số spec E2E đổi locator heading sang `getByRole('heading', { level: 1, name })` (nhap-chung-tu, so-du-dau-ky, ton-dau-ky, tai-san-dau-ky).
+- Kiểm thử cuối đợt: `pnpm lint && pnpm typecheck` xanh, `@kt/ui` 46, `@kt/web` 272 đạt; E2E toàn bộ trên VPS (ketoan_ui, tuần tự): 87/87 đạt. Chạy lại trên cùng DB cần dọn dữ liệu nhớ từ lần trước: `delete from inbound_item_map` (hoa-don-dau-vao mong nút Lập chứng từ bị khóa khi chưa có ánh xạ); phan-bo-thue nay tự đưa bộ lọc nhớ về mặc định.
+- Còn lại: kiểm tay giao diện trên trình duyệt thật (màn rộng 1280–1920 và màn hẹp), nhất là Phân tích tài chính (`StatStrip` sáu ô) và các trang cài đặt.
+
 ## 4. Chờ người dùng
 
 | Việc | Vì sao cần người dùng | Ảnh hưởng nếu chưa có |
@@ -201,6 +212,7 @@ Chi tiết và lý do trong sổ quyết định `2026-10-22-giai-doan-3-quyet-d
 
 ## 5. Ghi chú môi trường
 
+- E2E trên VPS oracle (2026-10-29): DB riêng `ketoan_ui` (không dùng `ketoan` vì lệch migration 0080), cổng `E2E_API_PORT=3001`, `E2E_WEB_PORT=5174`: `cd apps/web && DATABASE_URL=postgres://app_user:app_pass@localhost:5432/ketoan_ui DATABASE_ADMIN_URL=postgres://postgres:postgres@localhost:5432/ketoan_ui E2E_API_PORT=3001 E2E_WEB_PORT=5174 npx playwright test`. DB này giữ dữ liệu giữa các lần chạy; lần đầu cần `create-admin` cho hai công ty `e2e` và `e2ehkd` (lệnh ở đầu `e2e/hkd-sieu-nho.spec.ts`), thiếu `e2ehkd` thì hai spec HKD rớt ở bước đăng nhập API.
 - VPS oracle: repo ở `~/phanmem-ketoan`, remote `origin` = `~/git/phanmem-ketoan.git` (bare). Trên máy Mac của người dùng, remote `oracle` trỏ tới repo bare đó: `git pull oracle main` để lấy về.
 - Xem ứng dụng từ máy Mac: `ssh -L 5173:127.0.0.1:5173 -L 3000:127.0.0.1:3000 oracle` rồi mở `http://localhost:5173`.
 - Máy Mac (chạy cục bộ): Postgres ở container `ketoan-gd7-pg`, cổng 5441 (`.env` vẫn ghi 5432); chạy kiểm thử với `DATABASE_URL=postgres://app_user:app_pass@127.0.0.1:5441/ketoan` và `DATABASE_ADMIN_URL=postgres://postgres:postgres@127.0.0.1:5441/ketoan`. Không chạy E2E đè `pnpm test` (nhiều ca hết 60 giây).
