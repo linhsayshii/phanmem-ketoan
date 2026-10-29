@@ -206,7 +206,7 @@ function RequestList({ box, onOpen }: { box: Box; onOpen(id: string): void }) {
       {screens.md ? (
         <Section bodyPadding={0}>
           <Table<Request> rowKey="id" size="small" loading={q.isLoading} dataSource={q.data ?? []} pagination={{ pageSize: 50, hideOnSinglePage: true }} locale={{ emptyText: <EmptyState title={empty} /> }}
-            {...(box === 'inbox' ? { rowSelection: { selectedRowKeys: picked, onChange: (k: React.Key[]) => setPicked(k as string[]), columnTitle: 'Chọn' } } : {})}
+            {...(box === 'inbox' ? { rowSelection: { selectedRowKeys: picked, onChange: (k: React.Key[]) => setPicked(k as string[]), columnWidth: 44 } } : {})}
             onRow={(r) => ({ onClick: (e) => { if (!(e.target as HTMLElement).closest('.ant-table-selection-column')) onOpen(r.id); }, onKeyDown: (e) => { if (e.key === 'Enter') onOpen(r.id); }, tabIndex: 0, style: { cursor: 'pointer' } })}
             columns={[
               { title: 'Số', dataIndex: 'requestNo', width: 150 },
