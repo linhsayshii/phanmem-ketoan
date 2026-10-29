@@ -173,7 +173,7 @@ function RevalContent({ reval }: { reval: ReturnType<typeof useReval> }) {
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      {tt200 && <Alert type="info" showIcon message="Quy tắc đánh giá lại ngoại tệ theo TT200 chưa được đối chiếu với văn bản gốc; kiểm tra kết quả trước khi ghi sổ" />}
+      {tt200 && <Alert type="info" showIcon message="Đánh giá lại ngoại tệ theo TT200 (Điều 69): tài sản theo tỷ giá mua, nợ phải trả theo tỷ giá bán. Khoản trả trước cho người bán, người mua trả trước, chi phí trả trước không phải khoản mục tiền tệ nhưng phần mềm chưa tách; kiểm tra kết quả trước khi ghi sổ" />}
       <Section
         title="Tỷ giá theo loại tiền"
         bodyPadding={0}

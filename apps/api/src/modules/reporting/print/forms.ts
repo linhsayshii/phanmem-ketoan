@@ -2,17 +2,18 @@ export interface FormRef { formNo: string; issuedBy: string }
 const ISSUED: Record<string, string> = {
   TT99: 'Ban hành theo Thông tư số 99/2025/TT-BTC ngày 27/10/2025 của Bộ Tài chính',
   TT133: 'Ban hành theo Thông tư số 133/2016/TT-BTC ngày 26/8/2016 của Bộ Tài chính',
-  // TT200: không có mục vì chưa có văn bản gốc (ngày ban hành 22/12/2014 cũng chưa đối chiếu): sổ, báo cáo TT200 in không có "Mẫu số" và "Ban hành theo" (GĐ7 gói 2, quyết định 1351).
+  // TT200: chỉ báo cáo tài chính B01-DN, B02-DN, B03-DN có số mẫu và chú thích (Phụ lục 2, Công báo số 289 + 290, đã đối chiếu). Phụ lục 3 (chứng từ), Phụ lục 4 (sổ) không đăng Công báo nên chưa có bản gốc: chứng từ và sổ TT200 in không có "Mẫu số".
+  TT200: 'Ban hành theo Thông tư số 200/2014/TT-BTC ngày 22/12/2014 của Bộ Tài chính',
 };
 // Mẫu số theo phụ lục: DN = TT99, DNN = TT133. Phiếu kế toán không có mẫu bắt buộc: dùng số nội bộ "PKT".
 // CHỈ giữ mục đã đối chiếu văn bản gốc. Đã bỏ (chưa có bằng chứng, GĐ7 gói 2, quyết định 1350): Nhật ký chung S03a, Sổ Cái S03b, S38/S20-DNN, Bảng cân đối số phát sinh S06 (TT99 "S06-DN" và TT133 "S06-DNN" trùng sổ chi tiết vật liệu), S02a/S02b/S02c1 và mọi mục TT200.
 // Không có mục thì sổ in không có "Mẫu số"; kiểm thử forms.test.ts chặn trùng số mẫu giữa các khóa trong cùng chế độ.
 export const FORMS: Record<string, Record<string, string>> = {
   PKT: { TT99: 'PKT', TT133: 'PKT' },
-  // B01/B02/B03: TT99 Phụ lục IV (B01-DN, B02-DN, B03-DN), TT133 Phụ lục 2 (B01a-DNN, B02-DNN, B03-DNN), cùng nguồn với packages/coa-data/data/reports/status.json. TT200 không có mục.
-  B01: { TT99: 'B01-DN', TT133: 'B01a-DNN' },
-  B02: { TT99: 'B02-DN', TT133: 'B02-DNN' },
-  B03: { TT99: 'B03-DN', TT133: 'B03-DNN' },
+  // B01/B02/B03: TT99 Phụ lục IV (B01-DN, B02-DN, B03-DN), TT133 Phụ lục 2 (B01a-DNN, B02-DNN, B03-DNN), TT200 Phụ lục 2 (B01-DN, B02-DN, B03-DN), cùng nguồn với packages/coa-data/data/reports/status.json.
+  B01: { TT99: 'B01-DN', TT133: 'B01a-DNN', TT200: 'B01-DN' },
+  B02: { TT99: 'B02-DN', TT133: 'B02-DNN', TT200: 'B02-DN' },
+  B03: { TT99: 'B03-DN', TT133: 'B03-DNN', TT200: 'B03-DN' },
   // Chứng từ tiền mặt: chép từ mẫu trong văn bản gốc của TT 133/2016 và TT 99/2025 (~/legal-docs); TT200 và TT58 chưa có văn bản gốc đối chiếu nên không có mục (xem voucherFormFor).
   // Sổ quỹ tiền mặt và Sổ tiền gửi ngân hàng: TT133 mẫu S04a-DNN, S05-DNN (Phụ lục 4); TT99 mẫu S07-DN, S08-DN (danh mục sổ). TT200 và TT58 chưa có văn bản gốc đối chiếu nên không có mục (xem bookFormFor).
   'so-quy': { TT99: 'S07-DN', TT133: 'S04a-DNN' },
