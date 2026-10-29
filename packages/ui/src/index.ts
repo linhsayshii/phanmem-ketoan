@@ -9,5 +9,6 @@ export * from './PageHeader.js';
 export * from './Section.js';
 export * from './StatStrip.js';
 export * from './EmptyState.js';
+export * from './NoFiscalYear.js';
 export * from './AuthCard.js';
 export * from './theme.js';
