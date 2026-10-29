@@ -1,0 +1,527 @@
+{
+ "form": "05/KK-TNCN",
+ "version": "TT89",
+ "validFrom": "2026-07-01",
+ "source": "TT 89/2026/TT-BTC ngày 30/6/2026 của Bộ trưởng Bộ Tài chính, Phụ lục I, Mẫu số 05/KK-TNCN \"Tờ khai thuế thu nhập cá nhân (Áp dụng đối với tổ chức, cá nhân trả các khoản thu nhập từ tiền lương, tiền công)\", trang 307-309 của tệp PDF 89-btc.signed.pdf (839 trang, bản quét; https://datafiles.chinhphu.vn/cpp/files/vbpq/2026/7/89-btc.signed.pdf, tải 2026-10-29; lưu ~/Documents/PetProject/legal-docs/tt89-2026/). Mã chỉ tiêu, tên chỉ tiêu, STT và công thức đối chiếu ảnh 300 dpi từng trang (đọc bằng mắt, OCR chỉ tham khảo). Phụ lục 05-1/PBT-KK-TNCN trang 310-311.",
+ "periodKinds": [
+  "quarter"
+ ],
+ "header": [
+  {
+   "code": "01",
+   "label": "Kỳ tính thuế: Quý … năm …",
+   "kind": "period"
+  },
+  {
+   "code": "02",
+   "label": "Lần đầu",
+   "kind": "flag"
+  },
+  {
+   "code": "03",
+   "label": "Bổ sung lần thứ",
+   "kind": "count"
+  },
+  {
+   "code": "04",
+   "label": "Tên người nộp thuế",
+   "kind": "text"
+  },
+  {
+   "code": "05",
+   "label": "Mã số thuế",
+   "kind": "text"
+  },
+  {
+   "code": "06",
+   "label": "Địa chỉ",
+   "kind": "text"
+  },
+  {
+   "code": "07",
+   "label": "Xã/Phường/Đặc khu",
+   "kind": "text"
+  },
+  {
+   "code": "08",
+   "label": "Tỉnh/thành phố",
+   "kind": "text"
+  },
+  {
+   "code": "09",
+   "label": "Điện thoại",
+   "kind": "text"
+  },
+  {
+   "code": "10",
+   "label": "Email",
+   "kind": "text"
+  },
+  {
+   "code": "11",
+   "label": "Mã số thuế",
+   "kind": "text",
+   "note": "In ngay trước chỉ tiêu [12] (mã số thuế của tổ chức, cá nhân cung cấp dịch vụ làm thủ tục về thuế)"
+  },
+  {
+   "code": "12",
+   "label": "Tên tổ chức, cá nhân cung cấp dịch vụ làm thủ tục về thuế (nếu có)",
+   "kind": "text"
+  },
+  {
+   "code": "13",
+   "label": "Hợp đồng dịch vụ làm thủ tục về thuế: Số … Ngày …",
+   "kind": "text"
+  },
+  {
+   "code": "14",
+   "label": "Phân bổ thuế do có đơn vị hạch toán phụ thuộc tại địa bàn cấp tỉnh khác nơi có trụ sở chính",
+   "kind": "flag"
+  }
+ ],
+ "lines": [
+  {
+   "code": "15",
+   "label": "Tổng số người lao động",
+   "section": "I",
+   "stt": "1",
+   "unit": "Người",
+   "kind": "count",
+   "overridable": true
+  },
+  {
+   "code": "16",
+   "label": "Trong đó: Cá nhân cư trú có hợp đồng lao động",
+   "section": "I",
+   "stt": "1",
+   "unit": "Người",
+   "kind": "count",
+   "overridable": true
+  },
+  {
+   "code": "17",
+   "label": "Tổng số cá nhân đã khấu trừ thuế [17]=[18]+[19]",
+   "section": "I",
+   "stt": "2",
+   "unit": "Người",
+   "kind": "formula",
+   "formula": "18+19",
+   "overridable": false
+  },
+  {
+   "code": "18",
+   "label": "Cá nhân cư trú",
+   "section": "I",
+   "stt": "2.1",
+   "unit": "Người",
+   "kind": "count",
+   "overridable": true
+  },
+  {
+   "code": "19",
+   "label": "Cá nhân không cư trú",
+   "section": "I",
+   "stt": "2.2",
+   "unit": "Người",
+   "kind": "count",
+   "overridable": true
+  },
+  {
+   "code": "20",
+   "label": "Tổng thu nhập chịu thuế trả cho cá nhân [20]=[21]+[22]",
+   "section": "I",
+   "stt": "3",
+   "unit": "VNĐ",
+   "kind": "formula",
+   "formula": "21+22",
+   "overridable": false
+  },
+  {
+   "code": "21",
+   "label": "Cá nhân cư trú",
+   "section": "I",
+   "stt": "3.1",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "22",
+   "label": "Cá nhân không cư trú",
+   "section": "I",
+   "stt": "3.2",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "23",
+   "label": "Trong đó: Tổng thu nhập chịu thuế từ tiền phí mua bảo hiểm nhân thọ, bảo hiểm không bắt buộc khác của doanh nghiệp bảo hiểm không thành lập tại Việt Nam cho người lao động",
+   "section": "I",
+   "stt": "3.3",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "24",
+   "label": "Tổng thu nhập được miễn trong kỳ [24]=[25]+[26]+[27]+[28]",
+   "section": "I",
+   "stt": "4",
+   "unit": "VNĐ",
+   "kind": "formula",
+   "formula": "25+26+27+28",
+   "overridable": false
+  },
+  {
+   "code": "25",
+   "label": "Theo quy định của Hợp đồng dầu khí",
+   "section": "I",
+   "stt": "4.1",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "26",
+   "label": "Từ thực hiện nhiệm vụ khoa học, công nghệ và đổi mới sáng tạo.",
+   "section": "I",
+   "stt": "4.2",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "27",
+   "label": "Thu nhập của chuyên gia hỗ trợ khởi nghiệp sáng tạo theo quy định",
+   "section": "I",
+   "stt": "4.3",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "28",
+   "label": "Thu nhập được miễn khác",
+   "section": "I",
+   "stt": "4.4",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "29",
+   "label": "Tổng thu nhập chịu thuế trả cho cá nhân thuộc diện phải khấu trừ thuế [29]=[30]+[31]",
+   "section": "I",
+   "stt": "5",
+   "unit": "VNĐ",
+   "kind": "formula",
+   "formula": "30+31",
+   "overridable": false
+  },
+  {
+   "code": "30",
+   "label": "Cá nhân cư trú",
+   "section": "I",
+   "stt": "5.1",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "31",
+   "label": "Cá nhân không cư trú",
+   "section": "I",
+   "stt": "5.2",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "32",
+   "label": "Thu nhập tính thuế [32]=[33]+[34]",
+   "section": "I",
+   "stt": "6",
+   "unit": "VNĐ",
+   "kind": "formula",
+   "formula": "33+34",
+   "overridable": false
+  },
+  {
+   "code": "33",
+   "label": "Cá nhân cư trú",
+   "section": "I",
+   "stt": "6.1",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "34",
+   "label": "Cá nhân không cư trú",
+   "section": "I",
+   "stt": "6.2",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "35",
+   "label": "Số thuế thu nhập cá nhân phải khấu trừ trong kỳ",
+   "section": "I",
+   "stt": "7",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "36",
+   "label": "Số thuế được miễn trong kỳ",
+   "section": "I",
+   "stt": "8",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true,
+   "note": "Mẫu không in công thức cho chỉ tiêu này"
+  },
+  {
+   "code": "37",
+   "label": "Tổng thu nhập của cá nhân là nhân lực công nghiệp công nghệ số chất lượng cao thuộc trường hợp được miễn thuế",
+   "section": "I",
+   "stt": "8.1",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "38",
+   "label": "Số thuế được miễn của cá nhân là nhân lực công nghiệp công nghệ số chất lượng cao",
+   "section": "I",
+   "stt": "8.2",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "39",
+   "label": "Tổng thu nhập của cá nhân là nhân lực công nghệ cao thuộc trường hợp được miễn thuế",
+   "section": "I",
+   "stt": "8.3",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "40",
+   "label": "Số thuế được miễn của cá nhân là nhân lực công nghệ cao thực hiện hoạt động nghiên cứu và phát triển công nghệ cao hoặc công nghệ chiến lược",
+   "section": "I",
+   "stt": "8.4",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "41",
+   "label": "Số thuế được miễn khác theo quy định",
+   "section": "I",
+   "stt": "8.5",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "42",
+   "label": "Tổng số thuế thu nhập cá nhân đã khấu trừ [42]=[43]+[44]",
+   "section": "I",
+   "stt": "9",
+   "unit": "VNĐ",
+   "kind": "formula",
+   "formula": "43+44",
+   "overridable": false
+  },
+  {
+   "code": "43",
+   "label": "Cá nhân cư trú",
+   "section": "I",
+   "stt": "9.1",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "44",
+   "label": "Cá nhân không cư trú",
+   "section": "I",
+   "stt": "9.2",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "45",
+   "label": "Trong đó: Tổng số thuế thu nhập cá nhân đã khấu trừ trên tiền phí mua bảo hiểm nhân thọ, bảo hiểm không bắt buộc khác của doanh nghiệp bảo hiểm không thành lập tại Việt Nam cho người lao động",
+   "section": "I",
+   "stt": "9.3",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  }
+ ],
+ "appendices": [
+  {
+   "code": "05-1/PBT-KK-TNCN",
+   "title": "Bảng xác định số thuế thu nhập cá nhân phải nộp đối với thu nhập từ tiền lương, tiền công và trúng thưởng (kèm tờ khai 05/KK-TNCN hoặc 06/TNCN)",
+   "note": "Trang 310-311. Chỉ lập khi đánh dấu chỉ tiêu [14] của 05/KK-TNCN (phân bổ thuế cho đơn vị hạch toán phụ thuộc tại địa bàn cấp tỉnh khác). Bảng thứ hai (trúng thưởng, kèm 06/TNCN) không thuộc phạm vi tiền lương. Phần mềm chưa có địa bàn từng đơn vị phụ thuộc nên không tự lập phụ lục này.",
+   "tables": [
+    {
+     "name": "Thu nhập từ tiền lương, tiền công (kèm 05/KK-TNCN)",
+     "header": [
+      {
+       "code": "01",
+       "label": "Kỳ tính thuế: Tháng … Năm …/Quý … năm …"
+      },
+      {
+       "code": "02",
+       "label": "Lần đầu"
+      },
+      {
+       "code": "03",
+       "label": "Bổ sung lần thứ"
+      },
+      {
+       "code": "04",
+       "label": "Tên người nộp thuế"
+      },
+      {
+       "code": "05",
+       "label": "Mã số thuế"
+      }
+     ],
+     "columns": [
+      {
+       "code": "06",
+       "label": "STT"
+      },
+      {
+       "code": "07",
+       "label": "Trụ sở chính/đơn vị hạch toán phụ thuộc"
+      },
+      {
+       "code": "08",
+       "label": "Mã số thuế/Mã địa điểm kinh doanh"
+      },
+      {
+       "code": "08a",
+       "label": "Địa bàn hoạt động sản xuất, kinh doanh: Xã/Phường/Đặc khu"
+      },
+      {
+       "code": "08b",
+       "label": "Địa bàn hoạt động sản xuất, kinh doanh: Tỉnh"
+      },
+      {
+       "code": "09",
+       "label": "Cơ quan thuế quản lý địa bàn nhận phân bổ"
+      },
+      {
+       "code": "10",
+       "label": "Thu nhập chịu thuế trả cho cá nhân",
+       "type": "amount"
+      },
+      {
+       "code": "11",
+       "label": "Thu nhập chịu thuế thuộc diện khấu trừ",
+       "type": "amount"
+      },
+      {
+       "code": "12",
+       "label": "Số lượng cá nhân nhận thu nhập",
+       "type": "count"
+      },
+      {
+       "code": "13",
+       "label": "Số lượng cá nhân phát sinh khấu trừ thuế",
+       "type": "count"
+      },
+      {
+       "code": "14",
+       "label": "Số thuế TNCN đã khấu trừ",
+       "type": "amount"
+      }
+     ],
+     "totals": [
+      {
+       "code": "15",
+       "column": "10"
+      },
+      {
+       "code": "16",
+       "column": "11"
+      },
+      {
+       "code": "17",
+       "column": "12"
+      },
+      {
+       "code": "18",
+       "column": "13"
+      },
+      {
+       "code": "19",
+       "column": "14"
+      }
+     ]
+    },
+    {
+     "name": "Thu nhập trúng thưởng (kèm 06/TNCN, không thuộc phạm vi tiền lương)",
+     "columns": [
+      {
+       "code": "20",
+       "label": "STT"
+      },
+      {
+       "code": "21",
+       "label": "Chỉ tiêu"
+      },
+      {
+       "code": "21a",
+       "label": "Xã/Phường/Đặc khu"
+      },
+      {
+       "code": "21b",
+       "label": "Tỉnh"
+      },
+      {
+       "code": "22",
+       "label": "Cơ quan thuế quản lý địa bàn nhận phân bổ"
+      },
+      {
+       "code": "23",
+       "label": "Thu nhập tính thuế cho cá nhân",
+       "type": "amount"
+      },
+      {
+       "code": "24",
+       "label": "Số thuế TNCN đã khấu trừ",
+       "type": "amount"
+      }
+     ],
+     "totals": [
+      {
+       "code": "25",
+       "column": "23"
+      },
+      {
+       "code": "26",
+       "column": "24"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "notes": [
+  "Tờ khai chỉ áp dụng đối với tổ chức, cá nhân phát sinh trả thu nhập từ tiền lương, tiền công cho cá nhân trong quý, không phân biệt có phát sinh khấu trừ thuế hay không phát sinh khấu trừ thuế.",
+  "Chỉ tiêu [28]: Thu nhập được miễn thuế khác là các khoản thu nhập được miễn thuế thu nhập cá nhân theo quy định của pháp luật và các quy định khác do cơ quan nhà nước có thẩm quyền ban hành.",
+  "Chỉ tiêu [38], [40]: Số thuế được miễn đối với nhân lực công nghiệp công nghệ số chất lượng cao; công nghệ cao trong thời hạn 05 năm được xác định theo quy định tại Điều 41, Điều 42 Nghị định số 253/2026/NĐ-CP ngày 30/6/2026 của Chính phủ."
+ ]
+}

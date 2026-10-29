@@ -1,0 +1,916 @@
+{
+ "form": "05/QTT-TNCN",
+ "version": "TT89",
+ "validFrom": "2026-07-01",
+ "source": "TT 89/2026/TT-BTC ngày 30/6/2026 của Bộ trưởng Bộ Tài chính, Phụ lục I, Mẫu số 05/QTT-TNCN \"Tờ khai quyết toán thuế thu nhập cá nhân (Áp dụng đối với tổ chức, cá nhân trả thu nhập chịu thuế từ tiền lương, tiền công)\", trang 312-314 của tệp PDF 89-btc.signed.pdf (839 trang, bản quét; https://datafiles.chinhphu.vn/cpp/files/vbpq/2026/7/89-btc.signed.pdf, tải 2026-10-29; lưu ~/Documents/PetProject/legal-docs/tt89-2026/). Mã chỉ tiêu, tên chỉ tiêu, STT và công thức đối chiếu ảnh 300 dpi từng trang (đọc bằng mắt, OCR chỉ tham khảo). Phụ lục 05-1/BK-QTT-TNCN trang 315-317, 05-2/BK-QTT-TNCN trang 318-319, 05-3/BK-QTT-TNCN trang 320.",
+ "periodKinds": [
+  "year"
+ ],
+ "header": [
+  {
+   "code": "01",
+   "label": "Kỳ tính thuế: Năm …",
+   "kind": "period"
+  },
+  {
+   "code": "02",
+   "label": "Lần đầu",
+   "kind": "flag"
+  },
+  {
+   "code": "03",
+   "label": "Bổ sung lần thứ",
+   "kind": "count"
+  },
+  {
+   "code": "04",
+   "label": "Tổ chức có quyết toán thuế theo uỷ quyền của cá nhân được điều chuyển từ tổ chức cũ đến tổ chức mới do tổ chức cũ thực hiện sáp nhập, hợp nhất, chia, tách, chuyển đổi loại hình doanh nghiệp hoặc điều chuyển trong cùng hệ thống",
+   "kind": "flag"
+  },
+  {
+   "code": "05",
+   "label": "Tên người nộp thuế",
+   "kind": "text"
+  },
+  {
+   "code": "06",
+   "label": "Mã số thuế",
+   "kind": "text"
+  },
+  {
+   "code": "07",
+   "label": "Địa chỉ",
+   "kind": "text"
+  },
+  {
+   "code": "08",
+   "label": "Xã/Phường/Đặc khu",
+   "kind": "text"
+  },
+  {
+   "code": "09",
+   "label": "Tỉnh/thành phố",
+   "kind": "text"
+  },
+  {
+   "code": "10",
+   "label": "Điện thoại",
+   "kind": "text"
+  },
+  {
+   "code": "11",
+   "label": "Email",
+   "kind": "text"
+  },
+  {
+   "code": "12",
+   "label": "Tên tổ chức, cá nhân cung cấp dịch vụ làm thủ tục về thuế (nếu có)",
+   "kind": "text"
+  },
+  {
+   "code": "13",
+   "label": "Mã số thuế",
+   "kind": "text"
+  },
+  {
+   "code": "14",
+   "label": "Hợp đồng dịch vụ làm thủ tục về thuế: Số … ngày …",
+   "kind": "text"
+  }
+ ],
+ "lines": [
+  {
+   "code": "15",
+   "label": "Tổng số người lao động",
+   "section": "I",
+   "stt": "1",
+   "unit": "Người",
+   "kind": "count",
+   "overridable": true
+  },
+  {
+   "code": "16",
+   "label": "Trong đó: Cá nhân cư trú có hợp đồng lao động",
+   "section": "I",
+   "stt": "1",
+   "unit": "Người",
+   "kind": "count",
+   "overridable": true
+  },
+  {
+   "code": "17",
+   "label": "Tổng số cá nhân đã khấu trừ thuế [17]=[18]+[19]",
+   "section": "I",
+   "stt": "2",
+   "unit": "Người",
+   "kind": "formula",
+   "formula": "18+19",
+   "overridable": false
+  },
+  {
+   "code": "18",
+   "label": "Cá nhân cư trú",
+   "section": "I",
+   "stt": "2.1",
+   "unit": "Người",
+   "kind": "count",
+   "overridable": true
+  },
+  {
+   "code": "19",
+   "label": "Cá nhân không cư trú",
+   "section": "I",
+   "stt": "2.2",
+   "unit": "Người",
+   "kind": "count",
+   "overridable": true
+  },
+  {
+   "code": "20",
+   "label": "Tổng số cá nhân thuộc diện được miễn, giảm thuế theo Hiệp định tránh đánh thuế hai lần",
+   "section": "I",
+   "stt": "3",
+   "unit": "Người",
+   "kind": "count",
+   "overridable": true
+  },
+  {
+   "code": "21",
+   "label": "Tổng số cá nhân giảm trừ gia cảnh",
+   "section": "I",
+   "stt": "4",
+   "unit": "Người",
+   "kind": "count",
+   "overridable": true
+  },
+  {
+   "code": "22",
+   "label": "Tổng thu nhập chịu thuế trả cho cá nhân [22]=[23]+[24]",
+   "section": "I",
+   "stt": "5",
+   "unit": "VNĐ",
+   "kind": "formula",
+   "formula": "23+24",
+   "overridable": false
+  },
+  {
+   "code": "23",
+   "label": "Cá nhân cư trú",
+   "section": "I",
+   "stt": "5.1",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "24",
+   "label": "Cá nhân không cư trú",
+   "section": "I",
+   "stt": "5.2",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "25",
+   "label": "Trong đó: Tổng thu nhập chịu thuế từ tiền phí mua bảo hiểm nhân thọ, bảo hiểm không bắt buộc khác của doanh nghiệp bảo hiểm không thành lập tại Việt Nam cho người lao động",
+   "section": "I",
+   "stt": "5.3",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "26",
+   "label": "Tổng thu nhập được miễn trong kỳ [26]= [27]+[28]+[29]",
+   "section": "I",
+   "stt": "6",
+   "unit": "VNĐ",
+   "kind": "formula",
+   "formula": "27+28+29",
+   "overridable": false
+  },
+  {
+   "code": "27",
+   "label": "Theo quy định của Hợp đồng dầu khí",
+   "section": "I",
+   "stt": "6.1",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "28",
+   "label": "Từ thực hiện nhiệm vụ khoa học, công nghệ và đổi mới sáng tạo",
+   "section": "I",
+   "stt": "6.2",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "29",
+   "label": "Thu nhập của chuyên gia hỗ trợ khởi nghiệp sáng tạo",
+   "section": "I",
+   "stt": "6.3",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "30",
+   "label": "Tổng thu nhập chịu thuế trả cho cá nhân thuộc diện phải khấu trừ thuế [30]=[31]+[32]",
+   "section": "I",
+   "stt": "8",
+   "unit": "VNĐ",
+   "kind": "formula",
+   "formula": "31+32",
+   "overridable": false,
+   "printedAnomaly": true,
+   "note": "Số thứ tự in trên mẫu là 8 ngay sau 6.3 (không có mục 7); giữ như in"
+  },
+  {
+   "code": "31",
+   "label": "Cá nhân cư trú",
+   "section": "I",
+   "stt": "8.1",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "32",
+   "label": "Cá nhân không cư trú",
+   "section": "I",
+   "stt": "8.2",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "33",
+   "label": "Tổng số thuế thu nhập cá nhân đã khấu trừ [33]=[34]+[35]",
+   "section": "I",
+   "stt": "9",
+   "unit": "VNĐ",
+   "kind": "formula",
+   "formula": "34+35",
+   "overridable": false
+  },
+  {
+   "code": "34",
+   "label": "Cá nhân cư trú",
+   "section": "I",
+   "stt": "9.1",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "35",
+   "label": "Cá nhân không cư trú",
+   "section": "I",
+   "stt": "9.2",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "36",
+   "label": "Trong đó: Tổng số thuế thu nhập cá nhân đã khấu trừ trên tiền phí mua bảo hiểm nhân thọ, bảo hiểm không bắt buộc khác của doanh nghiệp bảo hiểm không thành lập tại Việt Nam cho người lao động",
+   "section": "I",
+   "stt": "9.3",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "37",
+   "label": "Tổng số cá nhân uỷ quyền cho tổ chức, cá nhân trả thu nhập quyết toán thay",
+   "section": "II",
+   "stt": "1",
+   "unit": "Người",
+   "kind": "count",
+   "overridable": true
+  },
+  {
+   "code": "38",
+   "label": "Tổng số thuế thu nhập cá nhân đã khấu trừ",
+   "section": "II",
+   "stt": "2",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "39",
+   "label": "Trong đó: Số thuế thu nhập cá nhân đã khấu trừ tại tổ chức trước khi điều chuyển (trường hợp có đánh dấu vào chỉ tiêu [04])",
+   "section": "II",
+   "stt": "2",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "40",
+   "label": "Tổng số thuế thu nhập cá nhân phải nộp",
+   "section": "II",
+   "stt": "3",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "41",
+   "label": "Tổng số thuế thu nhập cá nhân được miễn do cá nhân có số thuế còn phải nộp sau ủy quyền quyết toán từ 50.000 đồng trở xuống",
+   "section": "II",
+   "stt": "4",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "42",
+   "label": "Tổng số thuế thu nhập cá nhân được miễn của cá nhân là nhân lực công nghiệp công nghệ số chất lượng cao",
+   "section": "II",
+   "stt": "5",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "43",
+   "label": "Tổng số thuế thu nhập cá nhân được miễn của cá nhân là nhân lực công nghệ cao",
+   "section": "II",
+   "stt": "6",
+   "unit": "VNĐ",
+   "kind": "amount",
+   "overridable": true
+  },
+  {
+   "code": "44",
+   "label": "Tổng số thuế thu nhập cá nhân còn phải nộp [44] = ([40] - [38] - [41]-[42]-[43]) >0",
+   "section": "II",
+   "stt": "7",
+   "unit": "VNĐ",
+   "kind": "formula",
+   "formula": "40-38-41-42-43",
+   "overridable": false,
+   "clamp": "positivePart",
+   "note": "Mẫu in điều kiện >0: phần mềm lấy phần dương của hiệu"
+  },
+  {
+   "code": "45",
+   "label": "Tổng số thuế thu nhập cá nhân đã nộp thừa [45] = ([40] - [38] - [41]-[42]-[43]) <0",
+   "section": "II",
+   "stt": "8",
+   "unit": "VNĐ",
+   "kind": "formula",
+   "formula": "40-38-41-42-43",
+   "overridable": false,
+   "clamp": "negativePart",
+   "note": "Mẫu in điều kiện <0 (kết quả âm). Giả định của phần mềm: ghi số tiền nộp thừa dưới dạng số dương (giá trị tuyệt đối), như [41]/[43] của 01/GTGT; chưa kiểm chứng với HTKK"
+  }
+ ],
+ "appendices": [
+  {
+   "code": "05-1/BK-QTT-TNCN",
+   "title": "Bảng kê chi tiết cá nhân thuộc diện tính thuế theo biểu lũy tiến từng phần (kèm tờ khai 05/QTT-TNCN)",
+   "note": "Trang 315-317. Ghi chú in trên mẫu: tổ chức trả thu nhập khi quyết toán thuế TNCN không phải khai thông tin chi tiết vào Bảng kê này đối với cán bộ, công chức có hệ số lương theo Quyết định 128/QĐ/TW ngày 14/12/2004, Nghị quyết 730/2004/NQ-UBTVQH11 ngày 30/9/2004, bậc 3 Bảng 1 chuyên gia cao cấp, mức 1-2 Bảng lương cấp bậc quân hàm theo Nghị định 204/2004/NĐ-CP ngày 14/12/2004; kê khai thông tin cá nhân tại các phần tương ứng với từng nội dung phát sinh; chỉ tiêu [57] là các khoản thu nhập được miễn thuế khác; chỉ tiêu [60], [61] xác định theo Điều 41, Điều 42 Nghị định 253/2026/NĐ-CP ngày 30/6/2026.",
+   "tables": [
+    {
+     "name": "Cá nhân có thu nhập từ tiền lương, tiền công thuộc diện tính thuế theo biểu thuế lũy tiến từng phần",
+     "header": [
+      {
+       "code": "01",
+       "label": "Kỳ tính thuế: Năm …"
+      },
+      {
+       "code": "02",
+       "label": "Lần đầu"
+      },
+      {
+       "code": "03",
+       "label": "Bổ sung lần thứ"
+      },
+      {
+       "code": "04",
+       "label": "Tên người nộp thuế"
+      },
+      {
+       "code": "05",
+       "label": "Mã số thuế"
+      }
+     ],
+     "columns": [
+      {
+       "code": "06",
+       "label": "STT"
+      },
+      {
+       "code": "07",
+       "label": "Họ và tên"
+      },
+      {
+       "code": "08",
+       "label": "Mã số thuế"
+      },
+      {
+       "code": "09",
+       "label": "Số ĐDCN/Hộ chiếu (trường hợp chưa có MST)"
+      },
+      {
+       "code": "10",
+       "label": "Cá nhân ủy quyền quyết toán thay",
+       "type": "flag"
+      },
+      {
+       "code": "11",
+       "label": "CN nước ngoài ủy quyền quyết toán dưới 12 tháng",
+       "type": "flag"
+      },
+      {
+       "code": "12",
+       "label": "Thu nhập chịu thuế (TNCT): Tổng thu nhập chịu thuế phát sinh trong kỳ",
+       "type": "amount"
+      },
+      {
+       "code": "13",
+       "label": "Trong đó: thu nhập chịu thuế được miễn theo Hiệp định",
+       "type": "amount"
+      },
+      {
+       "code": "14",
+       "label": "Trong đó: thu nhập chịu thuế được miễn theo quy định của Hợp đồng dầu khí",
+       "type": "amount"
+      },
+      {
+       "code": "15",
+       "label": "Các khoản giảm trừ: Số lượng NPT tính giảm trừ",
+       "type": "count"
+      },
+      {
+       "code": "16",
+       "label": "Tổng số tiền giảm trừ gia cảnh",
+       "type": "amount"
+      },
+      {
+       "code": "17",
+       "label": "Từ thiện, nhân đạo, khuyến học",
+       "type": "amount"
+      },
+      {
+       "code": "18",
+       "label": "Bảo hiểm được trừ",
+       "type": "amount"
+      },
+      {
+       "code": "19",
+       "label": "Quỹ hưu trí tự nguyện được trừ",
+       "type": "amount"
+      },
+      {
+       "code": "20",
+       "label": "Thu nhập tính thuế",
+       "type": "amount"
+      },
+      {
+       "code": "21",
+       "label": "Tổng số thuế TNCN đã khấu trừ",
+       "type": "amount"
+      },
+      {
+       "code": "22",
+       "label": "Chi tiết kết quả quyết toán thay cho cá nhân nộp thuế: Tổng số thuế phải nộp",
+       "type": "amount"
+      },
+      {
+       "code": "23",
+       "label": "Số thuế đã nộp thừa",
+       "type": "amount"
+      },
+      {
+       "code": "24",
+       "label": "Số thuế còn phải nộp",
+       "type": "amount"
+      },
+      {
+       "code": "25",
+       "label": "Cá nhân có số thuế được miễn do có số thuế còn phải nộp từ 50.000 đồng trở xuống",
+       "type": "flag"
+      }
+     ],
+     "totals": [
+      {
+       "code": "26",
+       "column": "12"
+      },
+      {
+       "code": "27",
+       "column": "13"
+      },
+      {
+       "code": "28",
+       "column": "14"
+      },
+      {
+       "code": "29",
+       "column": "15"
+      },
+      {
+       "code": "30",
+       "column": "16"
+      },
+      {
+       "code": "31",
+       "column": "17"
+      },
+      {
+       "code": "32",
+       "column": "18"
+      },
+      {
+       "code": "33",
+       "column": "19"
+      },
+      {
+       "code": "34",
+       "column": "20"
+      },
+      {
+       "code": "35",
+       "column": "21"
+      },
+      {
+       "code": "36",
+       "column": "22"
+      },
+      {
+       "code": "37",
+       "column": "23"
+      },
+      {
+       "code": "38",
+       "column": "24"
+      },
+      {
+       "code": "39",
+       "column": "25"
+      }
+     ]
+    },
+    {
+     "name": "Cá nhân thuộc diện điều chuyển (tổ chức có đánh dấu vào chỉ tiêu [04] trên Tờ khai 05/QTT-TNCN)",
+     "columns": [
+      {
+       "code": "40",
+       "label": "STT"
+      },
+      {
+       "code": "41",
+       "label": "Họ và tên"
+      },
+      {
+       "code": "42",
+       "label": "Mã số thuế"
+      },
+      {
+       "code": "43",
+       "label": "Số ĐDCN/Hộ chiếu (trường hợp chưa có MST)"
+      },
+      {
+       "code": "44",
+       "label": "TNCT tại tổ chức trước khi điều chuyển: Tổng thu nhập chịu thuế",
+       "type": "amount"
+      },
+      {
+       "code": "45",
+       "label": "Trong đó: thu nhập chịu thuế được miễn theo Hiệp định",
+       "type": "amount"
+      },
+      {
+       "code": "46",
+       "label": "Trong đó: thu nhập chịu thuế được miễn theo quy định của Hợp đồng dầu khí",
+       "type": "amount"
+      },
+      {
+       "code": "47",
+       "label": "Các khoản giảm trừ tại tổ chức trước khi điều chuyển: Từ thiện, nhân đạo, khuyến học",
+       "type": "amount"
+      },
+      {
+       "code": "48",
+       "label": "Bảo hiểm được trừ",
+       "type": "amount"
+      },
+      {
+       "code": "49",
+       "label": "Quỹ hưu trí tự nguyện được trừ",
+       "type": "amount"
+      },
+      {
+       "code": "50",
+       "label": "Số thuế TNCN đã khấu trừ số thuế đã khấu trừ tại tổ chức trước khi điều chuyển",
+       "type": "amount"
+      }
+     ]
+    },
+    {
+     "name": "Cá nhân có khoản thu nhập được miễn thuế hoặc có số thuế được miễn theo quy định của pháp luật thuế thu nhập cá nhân",
+     "columns": [
+      {
+       "code": "51",
+       "label": "STT"
+      },
+      {
+       "code": "52",
+       "label": "Họ và tên"
+      },
+      {
+       "code": "53",
+       "label": "Mã số thuế"
+      },
+      {
+       "code": "54",
+       "label": "Số ĐDCN/Hộ chiếu (trường hợp chưa có MST)"
+      },
+      {
+       "code": "55",
+       "label": "Thu nhập được miễn từ thực hiện nhiệm vụ khoa học, công nghệ và đổi mới sáng tạo",
+       "type": "amount"
+      },
+      {
+       "code": "56",
+       "label": "Thu nhập được miễn của chuyên gia hỗ trợ khởi nghiệp sáng tạo theo quy định",
+       "type": "amount"
+      },
+      {
+       "code": "57",
+       "label": "Thu nhập được miễn khác",
+       "type": "amount"
+      },
+      {
+       "code": "58",
+       "label": "Thu nhập của cá nhân là nhân lực công nghiệp công nghệ số chất lượng cao",
+       "type": "amount"
+      },
+      {
+       "code": "59",
+       "label": "Thu nhập của cá nhân là nhân lực công nghệ cao",
+       "type": "amount"
+      },
+      {
+       "code": "60",
+       "label": "Số thuế được miễn của cá nhân là nhân lực công nghiệp công nghệ số chất lượng cao",
+       "type": "amount"
+      },
+      {
+       "code": "61",
+       "label": "Số thuế được miễn của cá nhân là nhân lực công nghệ cao",
+       "type": "amount"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "code": "05-2/BK-QTT-TNCN",
+   "title": "Bảng kê chi tiết cá nhân thuộc diện tính thuế theo thuế suất toàn phần (kèm tờ khai 05/QTT-TNCN)",
+   "note": "Trang 318-319.",
+   "tables": [
+    {
+     "name": "Cá nhân thuộc diện tính thuế theo thuế suất toàn phần",
+     "header": [
+      {
+       "code": "01",
+       "label": "Kỳ tính thuế: Năm …"
+      },
+      {
+       "code": "02",
+       "label": "Lần đầu"
+      },
+      {
+       "code": "03",
+       "label": "Bổ sung lần thứ"
+      },
+      {
+       "code": "04",
+       "label": "Tên người nộp thuế"
+      },
+      {
+       "code": "05",
+       "label": "Mã số thuế"
+      }
+     ],
+     "columns": [
+      {
+       "code": "06",
+       "label": "STT"
+      },
+      {
+       "code": "07",
+       "label": "Họ và tên"
+      },
+      {
+       "code": "08",
+       "label": "Mã số thuế"
+      },
+      {
+       "code": "09",
+       "label": "Số ĐDCN/Hộ chiếu"
+      },
+      {
+       "code": "10",
+       "label": "Cá nhân không cư trú",
+       "type": "flag"
+      },
+      {
+       "code": "11",
+       "label": "Thu nhập chịu thuế (TNCT): Tổng số",
+       "type": "amount"
+      },
+      {
+       "code": "12",
+       "label": "Trong đó: TNCT từ phí mua BH nhân thọ, BH không bắt buộc khác của DN BH không thành lập tại Việt Nam cho người lao động",
+       "type": "amount"
+      },
+      {
+       "code": "13",
+       "label": "Số thuế TNCN được miễn trong kỳ: Cá nhân là nhân lực công nghiệp công nghệ số chất lượng cao",
+       "type": "amount"
+      },
+      {
+       "code": "14",
+       "label": "Cá nhân là nhân lực công nghệ cao",
+       "type": "amount"
+      },
+      {
+       "code": "15",
+       "label": "Các khoản bảo hiểm được trừ",
+       "type": "amount"
+      },
+      {
+       "code": "16",
+       "label": "Thu nhập miễn thuế: Theo Hiệp định",
+       "type": "amount"
+      },
+      {
+       "code": "17",
+       "label": "Theo quy định của Hợp đồng dầu khí",
+       "type": "amount"
+      },
+      {
+       "code": "18",
+       "label": "Từ thực hiện nhiệm vụ khoa học, công nghệ và đổi mới sáng tạo",
+       "type": "amount"
+      },
+      {
+       "code": "19",
+       "label": "Thu nhập của cá nhân là chuyên gia hỗ trợ khởi nghiệp sáng tạo theo quy định",
+       "type": "amount"
+      },
+      {
+       "code": "20",
+       "label": "Số thuế TNCN đã khấu trừ: Tổng số",
+       "type": "amount"
+      },
+      {
+       "code": "21",
+       "label": "Trong đó: Số thuế từ phí mua BH nhân thọ, BH không bắt buộc khác của DN BH không thành lập tại Việt Nam cho người lao động",
+       "type": "amount"
+      }
+     ],
+     "totals": [
+      {
+       "code": "22",
+       "column": "11"
+      },
+      {
+       "code": "23",
+       "column": "12"
+      },
+      {
+       "code": "24",
+       "column": "13"
+      },
+      {
+       "code": "25",
+       "column": "14"
+      },
+      {
+       "code": "26",
+       "column": "15"
+      },
+      {
+       "code": "27",
+       "column": "16"
+      },
+      {
+       "code": "28",
+       "column": "17"
+      },
+      {
+       "code": "29",
+       "column": "18"
+      },
+      {
+       "code": "30",
+       "column": "19"
+      },
+      {
+       "code": "31",
+       "column": "20"
+      },
+      {
+       "code": "32",
+       "column": "21"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "code": "05-3/BK-QTT-TNCN",
+   "title": "Bảng kê chi tiết người phụ thuộc giảm trừ gia cảnh (kèm tờ khai 05/QTT-TNCN)",
+   "note": "Trang 320. Trường hợp người phụ thuộc chưa có mã số thuế thì phải khai thông tin chỉ tiêu [12].",
+   "tables": [
+    {
+     "name": "Người phụ thuộc giảm trừ gia cảnh",
+     "header": [
+      {
+       "code": "01",
+       "label": "Kỳ tính thuế: Năm …"
+      },
+      {
+       "code": "02",
+       "label": "Lần đầu"
+      },
+      {
+       "code": "03",
+       "label": "Bổ sung lần thứ"
+      },
+      {
+       "code": "04",
+       "label": "Tên người nộp thuế"
+      },
+      {
+       "code": "05",
+       "label": "Mã số thuế"
+      }
+     ],
+     "columns": [
+      {
+       "code": "06",
+       "label": "STT"
+      },
+      {
+       "code": "07",
+       "label": "Họ và tên người nộp thuế là người lao động tại tổ chức trả thu nhập"
+      },
+      {
+       "code": "08",
+       "label": "MST của người nộp thuế là người lao động tại tổ chức trả thu nhập"
+      },
+      {
+       "code": "09",
+       "label": "Họ và tên người phụ thuộc"
+      },
+      {
+       "code": "10",
+       "label": "Ngày sinh người phụ thuộc",
+       "type": "date"
+      },
+      {
+       "code": "11",
+       "label": "MST của người phụ thuộc"
+      },
+      {
+       "code": "12",
+       "label": "Loại giấy tờ (Số ĐDCN/Hộ chiếu/GKS) người phụ thuộc"
+      },
+      {
+       "code": "13",
+       "label": "Số giấy tờ"
+      },
+      {
+       "code": "14",
+       "label": "Quan hệ với người nộp thuế"
+      },
+      {
+       "code": "15",
+       "label": "Thời gian tính giảm trừ trong năm tính thuế: Từ tháng"
+      },
+      {
+       "code": "16",
+       "label": "Đến tháng"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "notes": [
+  "Kỳ tính thuế tại chỉ tiêu [01] trong mọi trường hợp quyết toán thuế TNCN của tổ chức, cá nhân trả thu nhập là theo năm dương lịch.",
+  "Tổ chức trả thu nhập khi quyết toán thuế TNCN chỉ phải khai thông tin tổng hợp tại Tờ khai này mà không phải khai vào Bảng kê 05-1/BK-TNCN đối với các cá nhân sau đây: Cán bộ, công chức có hệ số lương quy định tại bảng lương ban hành kèm theo Quyết định số 128/QĐ/TW ngày 14/12/2004 của Ban bí thư Trung ương Đảng; bảng lương ban hành kèm theo Nghị quyết số 730/2004/NQ-UBTVQH11 ngày 30/9/2004 của Ủy ban thường vụ Quốc hội; bậc 3 Bảng 1 chuyên gia cao cấp, mức 1 - 2 Bảng lương cấp bậc quân hàm theo Nghị định số 204/2004/NĐ-CP ngày 14/12/2004 của Chính phủ."
+ ]
+}

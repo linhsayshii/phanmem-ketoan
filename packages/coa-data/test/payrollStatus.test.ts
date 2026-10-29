@@ -8,9 +8,10 @@ const payroll = loadLegalParams().filter((r) => /^(pit_|si_|min_wage|ot_|payroll
 const row = (code: string, from: string) => payroll.find((r) => r.code === code && r.validFrom === from)!;
 
 describe('cổng dữ liệu pháp lý lương và thuế TNCN (GĐ6)', () => {
-  it('tham số lương, thuế TNCN, BHXH, lương tối thiểu vùng đã nhập từ văn bản gốc nên cổng là true; tờ khai 05/KK, 05/QTT chưa có mẫu thì false', () => {
+  it('tham số lương, thuế TNCN, BHXH, lương tối thiểu vùng đã nhập từ văn bản gốc nên cổng là true; mẫu tờ khai 05/KK, 05/QTT đã nhập (true) nhưng định dạng XML HTKK chưa có (false)', () => {
     for (const k of ['payrollParams_pit', 'payrollParams_si', 'payrollParams_minWage']) expect(status[k], k).toBe(true);
-    for (const k of ['05KK_TNCN_TT89', '05QTT_TNCN_TT89']) expect(status[k], k).toBe(false);
+    for (const k of ['05KK_TNCN_TT89', '05QTT_TNCN_TT89']) expect(status[k], k).toBe(true);
+    expect(status['TNCN_XML_HTKK']).toBe(false);
     const note = String(status['payrollParams_note']) + String(status['TNCN_note']);
     for (const t of ['109/2025/QH15', '41/2024/QH15', '293/2025', 'TT 89/2026', '05/KK-TNCN', '05/QTT-TNCN']) expect(note, t).toContain(t);
   });

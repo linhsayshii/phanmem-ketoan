@@ -114,8 +114,22 @@ export interface CitTemplateLine { code: string; label: string; section: string;
 export interface CitTemplate { form: '03/TNDN'; version: 'TT89'; source: string; lines: CitTemplateLine[]; notes: string[] }
 const taxStatus = (): Record<string, unknown> => { const p = dataPath('tax', 'status.json'); return existsSync(p) ? (JSON.parse(readFileSync(p, 'utf8')) as Record<string, unknown>) : {}; };
 export function isCitTemplateComplete(version: 'TT89'): boolean { return taxStatus()[`03TNDN_${version}`] === true && existsSync(dataPath('tax', '03tndn-tt89.json')); }
-// Mẫu 05/KK-TNCN, 05/QTT-TNCN (TT 89/2026 Phụ lục I): cổng status.json 05KK_TNCN_TT89, 05QTT_TNCN_TT89; chưa có tệp chỉ tiêu nên false thì API 409 TNCN_TEMPLATE_UNAVAILABLE.
-export function isTncnTemplateComplete(form: '05KK' | '05QTT'): boolean { return taxStatus()[`${form}_TNCN_TT89`] === true; }
+// Mẫu 05/KK-TNCN, 05/QTT-TNCN và phụ lục (TT 89/2026 Phụ lục I): data/tax/05kk-tncn-tt89.json, 05qtt-tncn-tt89.json; cổng status.json 05KK_TNCN_TT89, 05QTT_TNCN_TT89 (mẫu đã đối chiếu ảnh trang),
+// TNCN_XML_HTKK (định dạng XML HTKK, false: API xuất XML và ký số vẫn 409 TNCN_TEMPLATE_UNAVAILABLE).
+export function isTncnTemplateComplete(form: '05KK' | '05QTT'): boolean { return taxStatus()[`${form}_TNCN_TT89`] === true && existsSync(dataPath('tax', form === '05KK' ? '05kk-tncn-tt89.json' : '05qtt-tncn-tt89.json')); }
+export function isTncnXmlAvailable(): boolean { return taxStatus().TNCN_XML_HTKK === true; }
+// kind: amount (số tiền), count (số người), formula (công thức in trên mẫu), period/flag/text (phần đầu tờ khai). clamp: mẫu in điều kiện >0 hoặc <0 cho kết quả của công thức.
+export type TncnLineKind = 'amount' | 'count' | 'formula';
+export interface TncnTemplateLine { code: string; label: string; section: string; stt: string; unit: string; kind: TncnLineKind; formula?: string; clamp?: 'positivePart' | 'negativePart'; overridable: boolean; printedAnomaly?: boolean; note?: string }
+export interface TncnHeaderField { code: string; label: string; kind: string; note?: string }
+export interface TncnAppendixColumn { code: string; label: string; type?: 'amount' | 'count' | 'flag' | 'date' }
+export interface TncnAppendixTable { name: string; header?: { code: string; label: string }[]; columns: TncnAppendixColumn[]; totals?: { code: string; column: string }[] }
+export interface TncnAppendix { code: string; title: string; note: string; tables: TncnAppendixTable[] }
+export interface TncnTemplate { form: '05/KK-TNCN' | '05/QTT-TNCN'; version: 'TT89'; validFrom: string; source: string; periodKinds: ('quarter' | 'year')[]; header: TncnHeaderField[]; lines: TncnTemplateLine[]; appendices: TncnAppendix[]; notes: string[] }
+export function loadTncnTemplate(form: '05KK' | '05QTT'): TncnTemplate {
+  if (!isTncnTemplateComplete(form)) throw new Error(`Chưa có mẫu tờ khai ${form === '05KK' ? '05/KK-TNCN' : '05/QTT-TNCN'} theo TT 89/2026/TT-BTC đối chiếu văn bản gốc (status.json ${form}_TNCN_TT89)`);
+  return JSON.parse(readFileSync(dataPath('tax', form === '05KK' ? '05kk-tncn-tt89.json' : '05qtt-tncn-tt89.json'), 'utf8')) as TncnTemplate;
+}
 export function loadCitTemplate(version: 'TT89'): CitTemplate {
   if (!isCitTemplateComplete(version)) throw new Error('Chưa có mẫu tờ khai 03/TNDN theo TT 89/2026/TT-BTC đối chiếu văn bản gốc (status.json 03TNDN_TT89)');
   return JSON.parse(readFileSync(dataPath('tax', '03tndn-tt89.json'), 'utf8')) as CitTemplate;
