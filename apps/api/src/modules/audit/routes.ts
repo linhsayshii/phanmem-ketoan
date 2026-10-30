@@ -51,6 +51,11 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         if (q.entity && h.entities.includes(q.entity)) throw new AppError(h.code, h.msg, 403);
         base = base.where('a.entity', 'not in', h.entities as string[]);
       }
+      // Sổ công nợ HKD/DNSN (S4a, book_debt) mang số phải thu và phải trả trong cùng bảng: bỏ dòng theo chiều (side) mà người gọi thiếu cờ.
+      for (const [flag, side] of [['view_receivable', 'recv'], ['view_payable', 'pay']] as const) {
+        if (has(flag)) continue;
+        base = base.where(sql<boolean>`NOT (a.entity = 'book_debt' AND coalesce(a.after->>'side', a.before->>'side') = ${side})`);
+      }
       // Tài khoản bị che: lương, giá vốn (632, kho), phải thu, phải trả theo cờ người gọi thiếu. Ảnh chụp trước/sau của dòng chứng từ đã ghi sổ (sửa diễn giải, chiều) mang số tiền: bỏ mọi dòng của
       // chứng từ có dòng trên các tài khoản đó (dòng đối ứng bằng đúng số tiền). Dòng số dư đầu kỳ: bỏ dòng thuộc tài khoản đó. Đối trừ (settlement): bỏ khi một trong hai khoản thuộc tài khoản đó.
       // Chứng từ đã bỏ ghi sổ rồi xóa nháp không còn dòng để so: xét thêm TK của chính sự kiện và của các sự kiện dòng khác cùng chứng từ.

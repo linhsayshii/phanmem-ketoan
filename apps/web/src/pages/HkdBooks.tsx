@@ -155,7 +155,8 @@ function GroupsTab() {
 }
 
 function StockTab({ regime }: { regime: string }) {
-  const { can } = useAuth(); const qc = useQueryClient(); const [fi] = Form.useForm(); const [fm] = Form.useForm();
+  // Thiếu view_cost: API chặn ghi/xóa dòng nhập, tồn đầu (mang đơn giá) và phiếu 01-VT, 02-VT; chỉ còn ghi dòng xuất (QĐ 1800–1807).
+  const { can, me } = useAuth(); const viewCost = !!me?.sensitive.includes('view_cost'); const qc = useQueryClient(); const [fi] = Form.useForm(); const [fm] = Form.useForm();
   const items = useQuery({ queryKey: ['hkd-items'], queryFn: () => api<Item[]>('/api/hkd/stock-items') });
   const moves = useQuery({ queryKey: ['hkd-moves'], queryFn: () => api<Move[]>('/api/hkd/stock-moves') });
   const dir = Form.useWatch('direction', fm) as string | undefined;
@@ -172,12 +173,12 @@ function StockTab({ regime }: { regime: string }) {
           <Form.Item name="unit" label="Đơn vị tính" rules={[{ required: true }]}><Input style={{ width: 80 }} /></Form.Item><Form.Item name="warehouse" label="Kho"><Input style={{ width: 120 }} /></Form.Item>
           <Button htmlType="submit" loading={addItem.isPending}>Thêm mặt hàng</Button>
         </Form>
-        <Form form={fm} layout="inline" initialValues={{ moveDate: dayjs(), direction: 'in' }} style={{ rowGap: 8 }}
+        <Form form={fm} layout="inline" initialValues={{ moveDate: dayjs(), direction: viewCost ? 'in' : 'out' }} style={{ rowGap: 8 }}
           onFinish={(v) => { const q = decInput(String(v.quantity ?? '')); const p = dir === 'out' ? null : decInput(String(v.unitPrice ?? '')); if (!q || (dir !== 'out' && p === null)) { void message.error('Số lượng và đơn giá không hợp lệ'); return; }
             addMove.mutate({ itemId: v.itemId, moveDate: (v.moveDate as dayjs.Dayjs).format(DATE), docNo: v.docNo || null, description: v.description, direction: v.direction, quantity: q, unitPrice: p }); }}>
           <Form.Item name="itemId" label="Mặt hàng" rules={[{ required: true }]}><Select style={{ width: 220 }} options={(items.data ?? []).map((i) => ({ value: i.id, label: `${i.code} - ${i.name}` }))} /></Form.Item>
           <Form.Item name="moveDate" label="Ngày" rules={[{ required: true }]}><DatePicker format="DD/MM/YYYY" allowClear={false} /></Form.Item>
-          <Form.Item name="direction" label="Loại" rules={[{ required: true }]}><Select style={{ width: 100 }} options={Object.entries(DIR).map(([value, label]) => ({ value, label }))} /></Form.Item>
+          <Form.Item name="direction" label="Loại" rules={[{ required: true }]}><Select style={{ width: 100 }} options={Object.entries(DIR).filter(([value]) => viewCost || value === 'out').map(([value, label]) => ({ value, label }))} /></Form.Item>
           <Form.Item name="docNo" label="Số CT"><Input style={{ width: 90 }} /></Form.Item><Form.Item name="description" label="Diễn giải" rules={[{ required: true }]}><Input style={{ width: 200 }} /></Form.Item>
           <Form.Item name="quantity" label="Số lượng" rules={[{ required: true }]}><Input style={{ width: 90 }} inputMode="decimal" /></Form.Item>
           {dir !== 'out' && <Form.Item name="unitPrice" label="Đơn giá" rules={[{ required: true }]}><Input style={{ width: 110 }} inputMode="decimal" /></Form.Item>}
@@ -187,8 +188,8 @@ function StockTab({ regime }: { regime: string }) {
       <Table<Move> size="small" bordered rowKey="id" dataSource={moves.data ?? []} pagination={{ pageSize: 50 }}
         columns={[{ title: 'Ngày', dataIndex: 'moveDate', width: 100, render: formatVnDate }, { title: 'Mặt hàng', dataIndex: 'itemId', render: (i: number) => name.get(i) }, { title: 'Loại', dataIndex: 'direction', width: 90, render: (d: string) => DIR[d] }, { title: 'Diễn giải', dataIndex: 'description' },
           { title: 'Số lượng', dataIndex: 'quantity', align: 'right', width: 110, render: (v: string) => money(v, 4) }, { title: 'Đơn giá', dataIndex: 'unitPrice', align: 'right', width: 120, render: (v: string | null) => (v ? money(v, 4) : '') },
-          ...(regime === 'TT58' ? [{ title: '', width: 80, render: (_v: unknown, r: Move) => (r.direction === 'in' ? <VoucherButton form="01-VT" docNo={r.docNo} /> : r.direction === 'out' ? <VoucherButton form="02-VT" docNo={r.docNo} /> : null) }] : []),
-          { title: '', width: 70, render: (_v, r) => can('sohkd.delete') && <Popconfirm title="Xóa dòng này?" okText="Xóa" cancelText="Không" onConfirm={() => delMove.mutate(r.id)}><Button size="small" danger type="link">Xóa</Button></Popconfirm> }]} />
+          ...(regime === 'TT58' && viewCost ? [{ title: '', width: 80, render: (_v: unknown, r: Move) => (r.direction === 'in' ? <VoucherButton form="01-VT" docNo={r.docNo} /> : r.direction === 'out' ? <VoucherButton form="02-VT" docNo={r.docNo} /> : null) }] : []),
+          { title: '', width: 70, render: (_v, r) => can('sohkd.delete') && (viewCost || r.direction === 'out') && <Popconfirm title="Xóa dòng này?" okText="Xóa" cancelText="Không" onConfirm={() => delMove.mutate(r.id)}><Button size="small" danger type="link">Xóa</Button></Popconfirm> }]} />
     </Space>
   );
 }

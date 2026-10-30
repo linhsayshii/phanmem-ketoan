@@ -208,9 +208,14 @@ export async function postOpening(trx: Trx, ctx: { tenantId: string; userId: str
   if (old) {
     id = old.id;
     const move = opts.branchId !== undefined && opts.branchId !== old.branch_id;
-    // Đánh số theo chi nhánh: số của DK mang mã chi nhánh cũ, đổi chi nhánh sẽ lệch mã trong số.
-    if (move && old.voucher_no && (await trx.selectFrom('voucher_numbering_setting').select('per_branch').executeTakeFirst())?.per_branch)
-      throw new AppError('OPENING_BRANCH_NUMBERED', `Chứng từ số dư ${old.voucher_no} đã có số theo chi nhánh cũ (đang đánh số theo chi nhánh): không đổi chi nhánh được`, 409);
+    // Đánh số theo chi nhánh: số của DK mang mã chi nhánh cũ, đổi chi nhánh sẽ lệch mã trong số. Xét cả số cấp lúc còn bật rồi tắt sau: số chứa mã chi nhánh cũ (mã trụ sở khi chưa có chi nhánh).
+    if (move && old.voucher_no) {
+      const setting = await trx.selectFrom('voucher_numbering_setting').select(['per_branch', 'hq_code']).executeTakeFirst();
+      const oldCode = old.branch_id === null ? (setting?.hq_code ?? 'TSC')
+        : (await trx.selectFrom('department').select('code').where('id', '=', old.branch_id).executeTakeFirst())?.code ?? '';
+      if (setting?.per_branch || (oldCode && old.voucher_no.includes(oldCode)))
+        throw new AppError('OPENING_BRANCH_NUMBERED', `Chứng từ số dư ${old.voucher_no} đã có số theo chi nhánh cũ: không đổi chi nhánh được`, 409);
+    }
     if (old.state === 'posted') await unpostOpeningVoucher(trx, id);
     if (move) await sql`UPDATE voucher SET branch_id = ${opts.branchId ?? null} WHERE id = ${id}::uuid`.execute(trx);
     await trx.deleteFrom('voucher_line').where('voucher_id', '=', id).where('posting_date', '=', p0.date_from).execute();

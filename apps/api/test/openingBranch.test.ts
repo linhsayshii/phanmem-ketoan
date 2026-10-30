@@ -63,6 +63,15 @@ describe('số dư đầu kỳ theo chi nhánh', () => {
     await ok('PUT', '/api/voucher-numbering/settings', owner, { perBranch: false, hqCode: 'TSC' });
   });
 
+  it('số DK cấp lúc còn đánh số theo chi nhánh rồi tắt: số mang mã chi nhánh cũ nên vẫn không đổi chi nhánh được (409)', async () => {
+    await ok('PUT', '/api/voucher-numbering/settings', owner, { perBranch: true, hqCode: 'TSC' });
+    await ok('POST', '/api/vouchers/renumber', owner, { voucherType: 'DK', fiscalYear: 2026 });
+    await ok('PUT', '/api/voucher-numbering/settings', owner, { perBranch: false, hqCode: 'TSC' });
+    const r = await req('POST', '/api/opening-balance/2026/post', owner, { branch: brA });
+    expect([r.statusCode, r.json().error.code, r.json().error.message]).toEqual([409, 'OPENING_BRANCH_NUMBERED', expect.stringContaining('TSC')]);
+    expect((await req('POST', '/api/opening-balance/2026/post', owner, { branch: 'HO' })).statusCode).toBe(200);
+  });
+
   it('người dùng bị giới hạn chi nhánh không có quyền số dư đầu kỳ (danh sách quyền theo chi nhánh): 403', async () => {
     const username = `obr${Date.now()}`;
     const { id } = await ok('POST', '/api/users', owner, { username, fullName: 'A', password: TEST_PASSWORD, roleCode: 'ketoan_truong', sensitiveFlags: ['view_cost', 'view_receivable', 'view_payable', 'view_salary'] });

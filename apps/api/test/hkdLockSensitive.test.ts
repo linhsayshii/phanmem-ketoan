@@ -133,6 +133,19 @@ describe('cờ nhạy cảm giá vốn của sổ HKD/DNSN', () => {
     expect((await send(withCost, 'GET', '/api/audit?entity=book_stock_move&size=500')).body).toContain('987654');
   });
 
+  it('nhật ký sổ công nợ S4a (book_debt): bỏ dòng theo chiều mà người gọi thiếu cờ', async () => {
+    const s = await setup(`HA${Date.now()}`);
+    await s.ok(s.admin, 'POST', '/api/hkd/debts', { ...debt('2026-09-02'), party: 'NCCPAY', amount: '111222' });
+    await s.ok(s.admin, 'POST', '/api/hkd/debts', { ...debt('2026-09-03'), party: 'KHRECV', side: 'recv', description: 'Bán chịu', amount: '333444' });
+    const body = async (flags: string[]) => (await send(await s.user('ketoan_truong', flags), 'GET', '/api/audit?entity=book_debt&size=500')).body;
+    const noPay = await body(['view_receivable', 'view_cost']);
+    expect([noPay.includes('111222'), noPay.includes('333444')]).toEqual([false, true]);
+    const noRecv = await body(['view_payable', 'view_cost']);
+    expect([noRecv.includes('111222'), noRecv.includes('333444')]).toEqual([true, false]);
+    const all = await body(['view_receivable', 'view_payable']);
+    expect([all.includes('111222'), all.includes('333444')]).toEqual([true, true]);
+  });
+
   it('TT152: sổ kho S2d-HKD cần view_cost', async () => {
     const { cookie } = await bootstrapTenant(ctx, { code: `HD${Date.now()}` });
     const admin = { cookie };
