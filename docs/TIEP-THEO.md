@@ -1,6 +1,6 @@
 # Việc tiếp theo
 
-Cập nhật: 2026-10-30. Lộ trình 8 giai đoạn đã xong (tag `gd0-hoan-tat` … `gd7-hoan-tat`). Tệp này chỉ giữ hai loại: **việc agent tự làm được** và **việc chờ người dùng**. Agent đọc tệp này trước khi làm, cập nhật cuối mỗi đợt.
+Cập nhật: 2026-10-30 (sau đợt tồn đọng T1–T6). Lộ trình 8 giai đoạn đã xong (tag `gd0-hoan-tat` … `gd7-hoan-tat`). Tệp này chỉ giữ hai loại: **việc agent tự làm được** và **việc chờ người dùng**. Agent đọc tệp này trước khi làm, cập nhật cuối mỗi đợt.
 
 - Lịch sử từng giai đoạn (phạm vi, kết quả kiểm thử, nguồn pháp lý): `docs/dev/lich-su-giai-doan.md`.
 - Hạn chế đã biết của sản phẩm (không phải việc tồn đọng): `docs/dev/han-che.md`. Một hạn chế chỉ chuyển sang "Việc agent" khi có người dùng gặp hoặc cần trước khi dùng thật.
@@ -10,9 +10,11 @@ Cập nhật: 2026-10-30. Lộ trình 8 giai đoạn đã xong (tag `gd0-hoan-ta
 
 Quy ước: mỗi dòng là việc làm được ngay, không chờ ai; xong thì xóa dòng và ghi vào `docs/dev/lich-su-giai-doan.md`.
 
-- [ ] (đợt 2026-10-30, đang làm, kế hoạch `docs/superpowers/plans/2026-10-30-ton-dong-chi-tiet.md`) T1–T6: E2E hóa đơn đầu vào chạy lại được, `NoFiscalYear` cho 5 trang còn lại, 11 hộp thoại `confirmLoading` + `forceRender`, nút Từ chối hàng loạt, khóa kỳ và cờ nhạy cảm sổ HKD/DNSN, số dư đầu kỳ theo chi nhánh.
+- Không còn việc agent nào chưa làm (đợt tồn đọng 2026-10-30 xong, xem `docs/dev/lich-su-giai-doan.md`). Việc mới chỉ thêm vào đây khi người dùng ghi màn lỗi ở mục 2a, hoặc yêu cầu một hạn chế/giai đoạn 8.
+- Cần theo dõi: `e2e/tai-san.spec.ts` đỏ một lần khi chạy gộp 8 spec (bước "Đã ghi nhận ghi tăng"), chạy riêng đạt; nếu đỏ lại thì điều tra.
 - Hoãn có chủ ý (chỉ làm khi người dùng yêu cầu, vì rủi ro hoặc cần quyết định thiết kế):
   - QĐ 1318: cờ phiên vượt rào (`app.unposting`, `app.state_change`, `app.locking`, `app.renumbering`) đặt được từ phiên `app_user`; sửa đúng cần định nghĩa lại mọi hàm ghi sổ thành `SECURITY DEFINER`, chỉ khai thác được khi có lỗi tiêm SQL.
+  - Số dư đầu kỳ tách theo từng chi nhánh (nhiều chứng từ DK một năm, QĐ 1809): hiện chọn được một chi nhánh cho cả DK; tách cần `opening_balance.branch_id` + RLS, tồn kho và thẻ tài sản theo chi nhánh, tài khoản nội bộ 136/336 do kế toán khai.
   - Chứng từ lương, giá thành, giá vốn tự sinh gắn chi nhánh của nhân viên/đối tượng tập hợp chi phí (hiện gắn chi nhánh làm việc của người chạy): phải tách một chứng từ thành nhiều theo chi nhánh.
 
 ## 2. Chờ người dùng

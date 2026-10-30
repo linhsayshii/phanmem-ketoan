@@ -78,3 +78,16 @@ DB tạm `ketoan_e2e` (đã xóa), công ty `e2e`, `e2ehkd`, `e2enoyear`, `e2edn
 - Đã sửa (2026-10-30, sổ quyết định `docs/superpowers/plans/2026-10-30-giao-dien-trong-quyet-dinh.md`, 1772–1782): thành phần `NoFiscalYear` (`packages/ui`) và lớp gắn `NoFiscalYearNotice` thay bảng/ô chọn trống ở Kỳ kế toán, Số dư đầu kỳ, Tồn kho đầu kỳ, Tài sản đầu kỳ, Phân tích, Phân bổ khấu hao, Khóa kỳ, Phân bổ dự án, Chạy giá thành, Tính giá vốn, Báo cáo giá thành (hết báo "chưa chạy giá thành" sai ngữ cảnh), Tài khoản. Chỉ cách làm (Kỳ kế toán → "Thêm năm tài chính"); thiếu quyền `period.create` thì dặn liên hệ quản trị viên. Test: `apps/web/test/NoFiscalYearPages.test.tsx`, `packages/ui/test/NoFiscalYear.test.tsx`, E2E `e2e/chua-co-nam.spec.ts` (công ty riêng `e2enoyear`: `pnpm -F @kt/api cli create-admin --username e2enoyear --password 'Matkhau1!' --tenant-code E2ENOYEAR --tenant-name "Công ty E2E chưa có năm"`).
 - Còn lại: Tổng quan còn tự viết `Section` + `EmptyState` riêng (có thể đổi sang `NoFiscalYear`); Hình thức sổ, Ngân sách, Sổ HKD, Báo cáo tài chính dùng `Alert` riêng.
 
+
+## Đợt tồn đọng 2026-10-30: xong
+
+Kế hoạch `docs/superpowers/plans/2026-10-30-ton-dong-chi-tiet.md`, sổ quyết định `2026-10-30-ton-dong-quyet-dinh.md` (1787–1821), migration 0292. Thực hiện: Claude Sonnet (web, E2E lương), Claude Opus (API, rà soát).
+
+- T1: `e2e/hoa-don-dau-vao.spec.ts` đã chạy lại được từ trước (commit `9e6f6ed`), kiểm hai lần liền trên cùng DB.
+- T2: `NoFiscalYear` ở Tổng quan, Hình thức sổ, Ngân sách, Sổ HKD, Báo cáo tài chính; Sổ HKD chỉ báo chưa có năm khi API trả `FISCAL_YEAR_NOT_FOUND`, lỗi khác nêu đúng lỗi.
+- T3: `FormModal` (`packages/ui`) dựng lại chân hộp thoại mỗi lần mở; áp cho 12 hộp thoại `confirmLoading` + `forceRender` và `RowDialog` (QĐ 1603).
+- T4: nút Từ chối hàng loạt trên trang Phê duyệt (lý do bắt buộc).
+- T5: khóa kỳ cho 7 bảng sổ HKD/DNSN (trigger gọi `fn_assert_period_writable`, ghi lùi kỳ khóa sổ cần `voucher.backdate_locked`); cờ `view_cost` cho sổ kho S2d-HKD, S2c-DNSN, phiếu 01-VT/02-VT, đơn giá nhập xuất, nhật ký `book_stock_move`; nhật ký `book_debt` che theo chiều phải thu/phải trả; giao diện Kho ẩn thao tác bị chặn.
+- T6: chọn chi nhánh cho cả chứng từ số dư đầu kỳ (DK); chặn đổi khi số DK mang mã chi nhánh cũ. Tách DK theo từng chi nhánh hoãn (QĐ 1809).
+- Thêm: E2E lương (`chi-luong`, `bao-cao-luong`) đặt lại bộ lọc nhớ trước khi chạy (đỏ do kỳ cũ spec khác để lại, QĐ 1820–1821); `xmldsig.test.ts` hết chập chờn.
+- Kiểm thử cuối đợt (máy Mac): `pnpm lint && pnpm typecheck && pnpm test` xanh, 282 tệp, 2682 kiểm thử. E2E đã chạy: `hoa-don-dau-vao` (hai lần), `chua-co-nam`, `phe-duyet`, `phe-duyet-hang-loat`, `tong-quan`, `hinh-thuc-so`, `ngan-sach`, `ky-so`, `doi-tuong-gia-thanh`, `tai-san`, nhóm lương 11 spec: đạt. Chưa chạy lại toàn bộ E2E sau đợt này.

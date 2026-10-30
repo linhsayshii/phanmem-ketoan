@@ -44,6 +44,8 @@ Người đề nghị **hủy** được đề nghị nháp hoặc đang chờ d
 
 Ở tab **Chờ tôi duyệt** (màn hình rộng), đánh dấu nhiều đề nghị rồi bấm **Duyệt n đề nghị đã chọn** và xác nhận (tối đa 100 đề nghị mỗi lần). Mỗi đề nghị được duyệt riêng theo đúng quy tắc duyệt từng cái; đề nghị không duyệt được (đã được duyệt, sai bước, thiếu quyền xem số liệu...) được liệt kê kèm lý do và không ảnh hưởng các đề nghị khác. Đề nghị bước cuối duyệt xong vẫn sinh phiếu chi nháp như thường. Từ chối hàng loạt có ở API (`/api/approvals/batch/reject`, cần nhập một lý do chung); trên màn hình, từ chối từng đề nghị.
 
+Từ chối nhiều đề nghị cùng lúc: đánh dấu rồi bấm **Từ chối n đề nghị đã chọn**, nhập **Lý do từ chối** (bắt buộc, dùng chung cho mọi đề nghị đã chọn) rồi bấm **Từ chối**. Kết quả báo từng đề nghị như khi duyệt hàng loạt; đề nghị không từ chối được (đã đổi trạng thái, không đến lượt bạn) nêu lý do và không ảnh hưởng các đề nghị khác.
+
 Báo lỗi hàng loạt không nêu tên quyền xem số liệu bị thiếu: đề nghị bạn không có quyền xem chỉ báo "Bạn không duyệt được đề nghị này".
 
 ## Ủy quyền duyệt khi vắng mặt
@@ -74,4 +76,4 @@ Trang Phê duyệt dùng được trên màn hình hẹp: menu trái tự thu g�
 
 Ứng dụng di động riêng (của bên thứ ba) gọi API `/api/mobile/v1` bằng **khóa API phạm vi "Ứng dụng di động"** (menu Hệ thống → Khóa API) hoặc phiên đăng nhập. Khóa chỉ cho xem báo cáo tóm tắt (B01, B02, số dư tiền, doanh thu chi phí kỳ) và duyệt/từ chối đề nghị, theo quyền hiện hành của người tạo khóa; không lập chứng từ, không vào chức năng quản trị. Mất điện thoại: thu hồi khóa ngay ở trang Khóa API. Tài liệu kỹ thuật: `docs/dev/api-mobile.md`.
 
-Chưa có: gửi thông báo qua email hoặc thông báo đẩy; duyệt hàng loạt trên điện thoại (chỉ duyệt từng đề nghị); từ chối hàng loạt trên màn hình; đề nghị thanh toán gắn hóa đơn mua hoặc đối trừ công nợ tự động (kế toán chọn đối trừ trên phiếu chi nháp).
+Chưa có: gửi thông báo qua email hoặc thông báo đẩy; duyệt và từ chối hàng loạt trên điện thoại (chỉ từng đề nghị); đề nghị thanh toán gắn hóa đơn mua hoặc đối trừ công nợ tự động (kế toán chọn đối trừ trên phiếu chi nháp).
